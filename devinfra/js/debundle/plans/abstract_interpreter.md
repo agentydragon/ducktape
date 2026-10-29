@@ -321,13 +321,13 @@ and 8 are covered by the public controls and the e2e suite.
 
 ### Step 0 — baseline
 
-Record `-c opt` profiles and output digests for the public scale controls and
-the private canonical inputs (§ 6). Count the canonical sites that today pass
-only through `native_receiver_certificates` (§ 6.3 risk 3); the decision
-whether those sites become `captured_value_inputs` axioms or keep a
-path-sensitive receiver rule is taken on that count, before step 2. No code
-change. Step 1 waits for this plan to land so the domain file layout is
-reviewed once.
+Done 2026-10-29: <../perf/abstract_interpreter_step0_baseline.md> (public
+controls, both canonical inputs on the pinned and the `devel` engine). The
+canonical inputs depend on one `native_receiver_certificates` site in total (a
+Tana vendor write; none on Claude), so #17's path-sensitive receiver rule is
+replaced by a `captured_value_inputs` axiom at that site in step 2; no
+path-sensitive receiver rule survives in the domain. Step 1 waits for this plan
+to land so the domain file layout is reviewed once.
 
 ### Step 1 — domain and table seed
 
@@ -518,9 +518,13 @@ ReturnedRecord, NamespaceWrapper, ArgumentNoEscape, DescriptorCopy*}` → the
 
 ## 6. Scale and performance
 
-Sizing premise: canonical private inputs carry 2.3M–5.4M dependency edges and
-thousands of top-level statements; the public baseline is 106 s wall / 3.75 GiB
-peak RSS for the large web corpus (<../perf/large_web_corpus_baseline.md>).
+Sizing premise (step 0, `devel` engine 4377a57bae, RBE executor): Tana
+3,146,382 edges, 1,121 s wall, 5.13 GiB peak; Claude 7,366,298 edges over 76
+graphs, 87 s, 9.62 GiB. The pinned engine ecb4a734 does the same inputs in
+2,163,669 edges / 255 s / 3.67 GiB (Tana, accepted) and 6,123,098 edges /
+43.5 s / 4.40 GiB (Claude). The older 106 s / 3.75 GiB figure in
+<../perf/large_web_corpus_baseline.md> is a different engine and spec and is
+not comparable.
 
 ### 6.1 Measure before and after every step
 
@@ -537,14 +541,14 @@ and the children report. Record:
   `cross_module_purity_scale`, `plain_data_escape_scale`,
   `conflict_diagnostics_scale`, `perf/gen_synth_corpus.py` (10k statements).
 - Private canonical inputs: gate verdict, atomic-group count, per-reason edge
-  counts in `dependency_graph.json`, `precision_losses` count by reason. Both
-  gates reject today, so "verdict unchanged" is vacuous; the invariant is that
-  edge counts, atomic-group counts and losses never grow at any step, and the
-  public e2e suite passes unchanged.
-- Flat-profile symbols already known hot: cloning `BTreeSet<Id>` and
-  source-owner sets (28% + 20% in the rejected replay prototype), copying
-  `BTreeSet<RuntimeKey>` (22% in the cached-fallback fanout). Any step that
-  touches these paths reports them explicitly.
+  counts in `dependency_graph.json`, `precision_losses` count by reason. On
+  `devel` both gates reject today (the pinned engine accepts Tana), so "verdict
+  unchanged" is vacuous; the invariant is that edge counts, atomic-group counts
+  and losses never grow at any step, and the public e2e suite passes unchanged.
+- Flat profiles on the public controls (step 0) are dominated by `memcmp`,
+  `Atom::cmp`, `malloc`/`free` and `statement_for_source_unit_ordinal`; the
+  `BTreeSet<Id>` / `BTreeSet<RuntimeKey>` clones seen in earlier replay
+  prototypes are not in either top 20. Re-profile before optimizing either.
 
 ### 6.2 What keeps the interpreter per-statement
 
@@ -588,8 +592,10 @@ budgets; budgets remain for cost.
    `Top`; measure RSS per step.
 3. Loss of #17's reaching-definition precision (§ 2.5). Sites that today pass
    through `native_receiver_certificates` fall back to `Havoc` unless a
-   `captured_value_inputs` axiom is added. Count affected sites in the corpus
-   before step 2.
+   `captured_value_inputs` axiom is added. Step 0 counted one such site across
+   both canonical inputs, so the axiom replaces the rule (step 0 note). The
+   engine does not report sites the rule evaluated and declined, so this count
+   is a lower bound on candidates, not on current acceptance dependence.
 
 ## 7. Not in scope
 
