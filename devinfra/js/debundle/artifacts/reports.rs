@@ -226,7 +226,9 @@ pub enum InteropUseKind {
     UnboundRequire,
     UnboundModule,
     UnboundExports,
-    ImportMetaEscape,
+    ImportMetaDynamicProperty,
+    ImportMetaOtherProperty,
+    ImportMetaValue,
     TsImportEquals,
     TsExportAssignment,
 }
@@ -241,7 +243,9 @@ impl InteropUseKind {
             Self::UnboundRequire => "unbound_require",
             Self::UnboundModule => "unbound_module",
             Self::UnboundExports => "unbound_exports",
-            Self::ImportMetaEscape => "import_meta_escape",
+            Self::ImportMetaDynamicProperty => "import_meta_dynamic_property",
+            Self::ImportMetaOtherProperty => "import_meta_other_property",
+            Self::ImportMetaValue => "import_meta_value",
             Self::TsImportEquals => "ts_import_equals",
             Self::TsExportAssignment => "ts_export_assignment",
         }

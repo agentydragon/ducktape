@@ -896,14 +896,18 @@ impl Visit for ModuleScanVisitor {
         }
         if matches!(&*node.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta) {
             if !member_is_named(node, "require") {
-                // A computed or otherwise unknown property can expose the
-                // host loader. Keep it as an explicit conservative site.
-                self.interop_uses.push((
-                    self.item_index,
-                    node.span,
-                    InteropUseKind::ImportMetaEscape,
-                    None,
-                ));
+                // Keep unknown computed access distinct from a fixed other
+                // property such as `import.meta.url`.
+                let kind = match &node.prop {
+                    MemberProp::Computed(computed)
+                        if !matches!(computed.expr.unwrap_parens(), Expr::Lit(Lit::Str(_))) =>
+                    {
+                        InteropUseKind::ImportMetaDynamicProperty
+                    }
+                    _ => InteropUseKind::ImportMetaOtherProperty,
+                };
+                self.interop_uses
+                    .push((self.item_index, node.span, kind, None));
             }
             node.prop.visit_with(self);
         } else {
@@ -916,7 +920,7 @@ impl Visit for ModuleScanVisitor {
             self.interop_uses.push((
                 self.item_index,
                 node.span,
-                InteropUseKind::ImportMetaEscape,
+                InteropUseKind::ImportMetaValue,
                 None,
             ));
         }
