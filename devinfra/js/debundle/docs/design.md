@@ -2841,10 +2841,12 @@ consumes its source bundle; a pass-through run instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
-For each materialized chunk, `StructuralChunkAnalysis` retains the shared
-top-level item views, static statement facts, and value-flow results independently
-of author assertions. `spec_resolution` gives this layer to the joint selector
-solver, then transfers it to `compute_chunk_analysis`. That pass combines it
+For each materialized chunk, `StructuralChunkSourceFacts` retains the shared
+top-level item views and static statement facts independently of author assertions.
+`spec_resolution` gives this source census to the joint selector solver, then
+transfers it to lowering. After cross-module inputs are resolved, lowering
+completes `StructuralChunkAnalysis` with one canonical value-flow solve and
+passes it to `compute_chunk_analysis`. That pass combines it
 with `AnalysisInputs`: explicit `AnalysisAssumptions`, imported summaries, and
 analysis policy. Imported summaries may themselves depend on contracts declared
 for their source chunks. These inputs remain distinct from inferred facts.

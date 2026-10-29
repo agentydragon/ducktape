@@ -453,3 +453,13 @@ pub struct StructuralChunkAnalysis<'a> {
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
 }
+
+/// Source-only structural census. Selector resolution can consume this before
+/// value-flow roots supplied by validated author inputs are known.
+pub struct StructuralChunkSourceFacts<'a> {
+    pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) imported_bindings: BTreeSet<Id>,
+    pub shadowed: BTreeSet<&'static str>,
+    pub per_statement: Vec<StructuralStatementFacts>,
+    pub top_level_await: Option<SourceUnitOrdinal>,
+}

@@ -711,7 +711,7 @@ fn resolve_value_inputs(
         };
         // Build the canonical structural index once for this provider. Each
         // authored input below contributes only a selector claim against it.
-        let structural = analysis::facts::analyze_chunk_structural(&module, None, |_| None);
+        let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
         let mut chunk_inputs = Vec::with_capacity(options.value_inputs.len());
         for (input_index, contract) in options.value_inputs.iter().enumerate() {
@@ -887,7 +887,7 @@ fn resolve_native_operation_inputs(
             body: facts.body.to_vec(),
             shebang: None,
         };
-        let structural = analysis::facts::analyze_chunk_structural(&module, None, |_| None);
+        let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
         let parser_input_file = provenance.resolve(
             &source.input_file.root,

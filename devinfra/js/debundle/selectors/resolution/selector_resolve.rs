@@ -14,7 +14,7 @@ use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use analysis::facts::StructuralChunkAnalysis;
+use analysis::facts::StructuralChunkSourceFacts;
 use analysis::{DepKind, SourceUnitId, StatementKind};
 use anyhow::{Context, Result, bail};
 use js_ast::statement_for_source_unit_ordinal;
@@ -41,7 +41,7 @@ use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 pub struct Chunk<'m> {
     name: String,
     module: &'m Module,
-    structural: StructuralChunkAnalysis<'m>,
+    structural: StructuralChunkSourceFacts<'m>,
     matcher: OnceCell<ChunkResolver<'m>>,
     places: OnceCell<Places>,
 }
@@ -495,7 +495,7 @@ impl<'m> Chunk<'m> {
     pub fn new(
         name: impl Into<String>,
         module: &'m Module,
-        structural: StructuralChunkAnalysis<'m>,
+        structural: StructuralChunkSourceFacts<'m>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -508,11 +508,11 @@ impl<'m> Chunk<'m> {
 
     /// A chunk read from a file, outside a pipeline run.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
-        let structural = analysis::facts::analyze_chunk_structural(module, None, |_| None);
+        let structural = analysis::facts::collect_chunk_source_facts(module, None, |_| None);
         Self::new(name, module, structural)
     }
 
-    pub fn into_structural(self) -> StructuralChunkAnalysis<'m> {
+    pub fn into_structural(self) -> StructuralChunkSourceFacts<'m> {
         self.structural
     }
 

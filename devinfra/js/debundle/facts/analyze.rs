@@ -81,8 +81,24 @@ impl Visit for TopLevelAwaitFinder {
 pub fn analyze_chunk_structural<'a, F>(
     module: &'a Module,
     source_path: Option<&str>,
-    mut line_range_for_span: F,
+    line_range_for_span: F,
 ) -> StructuralChunkAnalysis<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    complete_chunk_structural(collect_chunk_source_facts(
+        module,
+        source_path,
+        line_range_for_span,
+    ))
+}
+
+/// Collect the source census once, before exact-site inputs are resolved.
+pub fn collect_chunk_source_facts<'a, F>(
+    module: &'a Module,
+    source_path: Option<&str>,
+    mut line_range_for_span: F,
+) -> StructuralChunkSourceFacts<'a>
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
@@ -172,6 +188,26 @@ where
         })
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
+    StructuralChunkSourceFacts {
+        body,
+        imported_bindings,
+        shadowed,
+        per_statement,
+        top_level_await,
+    }
+}
+
+/// Finish the retained source census with one canonical value-flow solve.
+pub fn complete_chunk_structural(
+    source: StructuralChunkSourceFacts<'_>,
+) -> StructuralChunkAnalysis<'_> {
+    let StructuralChunkSourceFacts {
+        body,
+        imported_bindings,
+        shadowed,
+        per_statement,
+        top_level_await,
+    } = source;
     let mut candidate_roots = crate::purity::plain_data_candidate_roots(&body);
     candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
     let value_flow = ChunkValueFlow::analyze_with_candidates(&body, &candidate_roots);

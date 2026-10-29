@@ -1,6 +1,6 @@
 //! Compile spec claims into request types and resolve those requests against source chunks.
 
-use analysis::facts::StructuralChunkAnalysis;
+use analysis::facts::StructuralChunkSourceFacts;
 use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
 use selector_resolve::{
@@ -521,7 +521,7 @@ pub struct ProjectedChunk<'a> {
 pub struct ResolvedChunk<'a> {
     pub resolution: Resolution,
     pub resolved_members: Vec<Vec<usize>>,
-    pub structural_analysis: StructuralChunkAnalysis<'a>,
+    pub structural_analysis: StructuralChunkSourceFacts<'a>,
 }
 
 /// Compile requests into selector-engine modules and project them against one

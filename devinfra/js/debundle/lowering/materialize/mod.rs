@@ -30,7 +30,7 @@ use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
     ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
+use analysis::facts::{ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
     AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
     DependencyGraphOptions, EntryDestination, LocalEffectPolicy, ModuleId, ModuleRole,
@@ -161,7 +161,7 @@ pub(super) struct PreparedLogicalChunk<'a> {
 /// hint-sensitive analysis that follows claim application.
 pub(super) struct ClaimedLogicalChunk<'a> {
     prepared: PreparedLogicalChunk<'a>,
-    structural_analysis: StructuralChunkAnalysis<'a>,
+    structural_analysis: StructuralChunkSourceFacts<'a>,
 }
 
 /// Prepare one chunk's lowering state and project its eligible selector
@@ -265,14 +265,14 @@ pub(super) fn prepare_logical_chunk(
     // The structural half is hint-free. Selector resolution runs over this
     // source-level fact layer so semantic annotations can be projected to
     // concrete bindings before the final, hint-sensitive dependency graph is built.
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "start");
+    emit_debundle_progress(chunk_id, "collect_chunk_source_facts", "start");
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::analyze_chunk_structural(
+    let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
     );
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
+    emit_debundle_progress(chunk_id, "collect_chunk_source_facts", "end");
     // `add_explicit_request` left deferred selector members unclaimed; the
     // resolve every chunk shares assigns them and the anonymous statements
     // over the hint-free structural facts.
@@ -589,6 +589,7 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural
     // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    let structural_analysis = analysis::facts::complete_chunk_structural(structural_analysis);
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
