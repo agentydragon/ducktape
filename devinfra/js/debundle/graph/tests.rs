@@ -21,6 +21,19 @@ mod chunk_constraining_module_edges_tests {
     }
 
     #[test]
+    fn raw_builder_rejects_unresolved_argument_contracts() {
+        let options: DependencyGraphOptions = serde_json::from_str(
+            r#"{"argument_inputs":[{"source_match":{"match":"function keys(input) {}","bindings":["keys"]},"parameter_index":0,"exact_arity":1,"audited_source_sha256":"abc"}]}"#,
+        )
+        .unwrap();
+        let error = build_dependency_graph_with(&parse_facts("const x = 1;"), options).unwrap_err();
+        assert_eq!(
+            error,
+            DependencyGraphBuildError::UnresolvedArgumentInputs { count: 1 }
+        );
+    }
+
+    #[test]
     fn repeated_vars_retain_and_join_both_declaration_source_units() {
         let graph = parse_and_build("var x = 1;\nvar x = 2;\n");
         assert_eq!(graph.num_nodes(), 2);

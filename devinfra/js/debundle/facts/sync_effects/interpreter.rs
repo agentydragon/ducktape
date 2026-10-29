@@ -18,7 +18,9 @@ use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::semantic_inference::{NativeOwnDataReadPremise, SemanticFact, SemanticKey};
+use crate::facts::semantic_inference::{
+    NativeOwnDataReadPremise, SemanticFact, SemanticFacts, SemanticKey,
+};
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
@@ -472,12 +474,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ValueExpr::Binding(binding) = receiver else {
             return false;
         };
-        self.state.initialized_bindings.contains(binding)
+        let admitted = self.state.initialized_bindings.contains(binding)
             && self
                 .inputs
                 .enum_data_members
                 .get(binding)
-                .is_some_and(|keys| keys.contains(property))
+                .is_some_and(|keys| keys.contains(property));
+        if admitted
+            && let Some(uses) = self
+                .inputs
+                .graph
+                .plain_data_inference_uses(binding.0.as_ref())
+        {
+            self.state
+                .inference_uses
+                .borrow_mut()
+                .extend(uses.iter().cloned());
+        }
+        admitted
     }
 
     fn record_returned_record_use(
@@ -6564,6 +6578,40 @@ pub(crate) fn prepare_synchronous_call_index(
     set_iterable_shapes: SetIterableShapes,
     shadowed: &BTreeSet<&'static str>,
 ) -> PreparedSynchronousCallIndex {
+    prepare_synchronous_call_index_with_source_facts(
+        body,
+        flow,
+        hints,
+        plain_array_bindings,
+        PreparedSyncShapeInputs {
+            local_class_construction,
+            set_iterable_shapes,
+            shadowed,
+            source_facts: None,
+        },
+    )
+}
+
+pub(crate) struct PreparedSyncShapeInputs<'a> {
+    pub(crate) local_class_construction: &'a LocalClassConstructionShapes,
+    pub(crate) set_iterable_shapes: SetIterableShapes,
+    pub(crate) shadowed: &'a BTreeSet<&'static str>,
+    pub(crate) source_facts: Option<&'a SemanticFacts>,
+}
+
+pub(crate) fn prepare_synchronous_call_index_with_source_facts(
+    body: &[TopLevelItemView<'_>],
+    flow: &ChunkValueFlow,
+    hints: &AnalysisInputs,
+    plain_array_bindings: &BTreeSet<String>,
+    shapes: PreparedSyncShapeInputs<'_>,
+) -> PreparedSynchronousCallIndex {
+    let PreparedSyncShapeInputs {
+        local_class_construction,
+        set_iterable_shapes,
+        shadowed,
+        source_facts,
+    } = shapes;
     let mut index = ExecutionIndex::collect(
         body,
         hints,
@@ -6580,6 +6628,7 @@ pub(crate) fn prepare_synchronous_call_index(
         classes,
         set_iterable_shapes,
         CallableInferenceInputs::default(),
+        source_facts,
     );
     index.semantic_facts = Some(Arc::clone(&facts));
     index.local_class_construction_proof = LocalClassConstructionProof::new(Arc::clone(&facts));

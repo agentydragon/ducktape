@@ -483,6 +483,7 @@ pub enum InferenceRule {
     PrimitiveSetIteration,
     StableFunction,
     StableProvider,
+    ArgumentNoEscape,
     CallbackFactory,
     ReturnedRecord,
     NamespaceWrapper,
@@ -504,6 +505,9 @@ pub struct InferenceUse {
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_author_refs: BTreeSet<crate::analysis_inputs::DescriptorCopyAuthorRef>,
+    pub argument_input_refs: BTreeSet<crate::analysis_inputs::ArgumentInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub argument_input_spec_locations: BTreeSet<String>,
 }
 
 /// Completeness of the existing synchronous-effect inference, independent of purity.

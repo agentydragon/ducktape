@@ -71,6 +71,8 @@ impl OwnPropertyProof {
             derivation_rules: self.derivation_rules.clone(),
             value_input_refs: self.dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: self.dependencies.descriptor_copy_authors.clone(),
+            argument_input_refs: self.dependencies.argument_inputs.clone(),
+            argument_input_spec_locations: BTreeSet::new(),
         }
     }
 }

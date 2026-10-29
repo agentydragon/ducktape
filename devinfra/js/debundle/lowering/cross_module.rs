@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    CallableSummary, NativeInputKind, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, NativeOperationSelectorProvenance, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, NativeInputKind, NativeIntegrity,
+    NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
+    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
@@ -40,6 +40,56 @@ use swc_common::Spanned;
 use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat};
 
 use super::materialize::ResolvedMemberSite;
+
+fn select_one_declared_binding(
+    selector_chunk: &SelectorChunk<'_>,
+    request_id: &str,
+    claim: &spec::SourceMatchClaim,
+) -> Result<(usize, String)> {
+    ensure!(
+        claim.bindings.len() == 1,
+        "{request_id}.source_match must select exactly one declared binding"
+    );
+    let spec::SourceMatchBinding::Local(local) = &claim.bindings[0] else {
+        bail!("{request_id}.source_match does not accept detailed name/rename payloads");
+    };
+    let mut selectors = source_match_claim_member_selectors(request_id, claim)?;
+    ensure!(
+        selectors.len() == 1,
+        "{request_id}.source_match must produce one selector"
+    );
+    let selector = selectors.pop().expect("one selector was checked");
+    ensure!(
+        selector
+            .parsed_selector
+            .declared_binding_names()
+            .iter()
+            .any(|name| name == local),
+        "{request_id}.source_match binding `{local}` must be declared by its pattern"
+    );
+    let selector_module = spec_resolution::spec_module(
+        request_id.to_owned(),
+        vec![spec_resolution::member_from_source_match(
+            selector.export_name,
+            selector.parsed_selector,
+        )],
+        Vec::new(),
+    );
+    let resolution = selector_chunk.resolve(&[selector_module])?;
+    let outcome = resolution
+        .outcome(0, EntityIndex::Member(0))
+        .with_context(|| format!("{request_id}.source_match produced no selector outcome"))?;
+    match &outcome.outcome {
+        SelectorOutcome::Resolved {
+            body_index,
+            binding: Some(binding),
+            ..
+        } => Ok((*body_index, binding.clone())),
+        other => bail!(
+            "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+        ),
+    }
+}
 
 /// Binding names introduced by an exported declaration (`export function`/
 /// `export const`/`export class`), whose export name equals the local name.
@@ -98,6 +148,7 @@ pub(super) struct CrossModulePurities {
     pub(super) native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
     pub(super) stable_set_spreads:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
+    pub(super) argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -464,6 +515,14 @@ pub(super) fn collect_cross_module_imported_purities(
         chunk_filter,
         resolved_member_sites,
     )?;
+    let argument_inputs = resolve_argument_inputs(
+        artifact,
+        &modules,
+        chunk_analysis_options,
+        graph_provenance,
+        excluded_chunks,
+        chunk_filter,
+    )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
@@ -574,6 +633,7 @@ pub(super) fn collect_cross_module_imported_purities(
         &value_inputs,
         &native_operation_inputs,
         explicit_binding_destinations,
+        &argument_inputs,
     )?;
     Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
@@ -646,6 +706,7 @@ pub(super) fn collect_cross_module_imported_purities(
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
+        argument_inputs: callable_summaries.argument_inputs,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
@@ -1080,6 +1141,151 @@ fn resolve_native_operation_inputs(
             });
         }
         resolved.insert(chunk_name.clone(), chunk_inputs);
+    }
+    Ok(resolved)
+}
+
+fn resolve_argument_inputs(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    options: &BTreeMap<String, DependencyGraphOptions>,
+    graph_provenance: Option<&GraphProvenance>,
+    excluded_chunks: &BTreeSet<ChunkId>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
+    let mut resolved = BTreeMap::new();
+    for (chunk_name, options) in options {
+        if options.argument_inputs.is_empty() {
+            continue;
+        }
+        let prefix = format!("chunk_analysis_options.{chunk_name}.argument_inputs");
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        ensure!(
+            !excluded_chunks.contains(&chunk.chunk_id)
+                && chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an excluded or outside-closure provider"
+        );
+        let facts = modules
+            .get(chunk_name)
+            .with_context(|| format!("{prefix} has no analyzed provider"))?;
+        ensure!(
+            chunk.js.get_file(&chunk.analysis.entry_file).is_some(),
+            "{prefix} has no parser entry file"
+        );
+        let provenance =
+            graph_provenance.context("argument inputs require graph parser-input provenance")?;
+        let source = provenance
+            .chunk_sources
+            .iter()
+            .find(|entry| entry.chunk_id == *chunk_name)
+            .with_context(|| format!("{prefix} has no parser-input provenance"))?;
+        let spec_path = author_input_spec_path(provenance)?;
+        let module = Module {
+            span: Default::default(),
+            body: facts.body.to_vec(),
+            shebang: None,
+        };
+        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
+        let source_contradictions = source_facts.per_statement.clone();
+        let selector_chunk = SelectorChunk::new(chunk_name, &module, source_facts);
+        let parser_input_file = provenance.resolve(
+            &source.input_file.root,
+            &source.input_file.path,
+            &CurrentRoots::default(),
+        )?;
+        let mut selected = Vec::new();
+        for (input_index, contract) in options.argument_inputs.iter().enumerate() {
+            let request_id = format!("{prefix}[{input_index}]");
+            ensure!(
+                contract.audited_source_sha256.len() == 64
+                    && contract
+                        .audited_source_sha256
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit()),
+                "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
+            );
+            ensure!(
+                contract.audited_source_sha256 == source.sha256,
+                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
+                source.sha256,
+                contract.audited_source_sha256
+            );
+            ensure!(
+                contract.parameter_index < contract.exact_arity,
+                "{request_id} parameter_index exceeds exact_arity"
+            );
+            let (body_index, selected_binding) =
+                select_one_declared_binding(&selector_chunk, &request_id, &contract.source_match)?;
+            let item = facts
+                .body
+                .get(body_index)
+                .context("selected source item is missing")?;
+            let function = match item {
+                ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(Decl::Fn(function))) => function,
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    let Decl::Fn(function) = &export.decl else {
+                        bail!("{request_id} requires a direct function declaration");
+                    };
+                    function
+                }
+                _ => bail!("{request_id} requires a direct function declaration"),
+            };
+            ensure!(
+                function.ident.sym.as_ref() == selected_binding
+                    && function.function.params.len() == contract.exact_arity
+                    && function
+                        .function
+                        .params
+                        .iter()
+                        .all(|parameter| matches!(parameter.pat, Pat::Ident(_)))
+                    && !function.function.is_async
+                    && !function.function.is_generator
+                    && function.function.body.is_some(),
+                "{request_id} requires the selected stable synchronous function with exact arity"
+            );
+            let Pat::Ident(parameter) = &function.function.params[contract.parameter_index].pat
+            else {
+                bail!("{request_id} requires a simple positional parameter");
+            };
+            let source_facts = source_contradictions
+                .get(body_index)
+                .context("selected source statement facts are missing")?;
+            let contradictions = source_facts.contradicts_argument_borrow(
+                &function.ident.to_id(),
+                &parameter.id.to_id(),
+                contract.parameter_index,
+            );
+            ensure!(
+                !contradictions,
+                "{request_id} contradicts a visible return, throw, capture, store, or mutation of its parameter"
+            );
+            let evidence = ArgumentInputEvidence {
+                reference: ArgumentInputRef {
+                    defining_chunk: chunk_name.clone(),
+                    input_index,
+                },
+                spec_location: format!("{}:{request_id}", spec_path.display()),
+                source_match: contract.source_match.clone(),
+                source_path: source.source_path.to_string_lossy().into_owned(),
+                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
+                audited_source_sha256: contract.audited_source_sha256.clone(),
+                selected_binding: selected_binding.clone(),
+                parameter_index: contract.parameter_index,
+                exact_arity: contract.exact_arity,
+                declaration_location: None,
+                note: contract.note.clone(),
+            };
+            selected.push(ResolvedArgumentInput {
+                evidence,
+                binding: function.ident.to_id(),
+                function_start: function.function.span.lo.0,
+            });
+        }
+        resolved.insert(chunk_name.clone(), selected);
     }
     Ok(resolved)
 }

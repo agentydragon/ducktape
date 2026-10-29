@@ -426,6 +426,7 @@ pub struct StructuralStatementFacts {
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub(crate) member_write_roots: BTreeSet<Id>,
+    pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) constructor: Option<ConstructorFacts>,
     pub at_init_unresolved_sources: BTreeSet<Id>,
@@ -437,6 +438,17 @@ pub struct StructuralStatementFacts {
     pub global_reads: BTreeSet<String>,
     pub cell_writes_summarizable: bool,
     pub dataflow_summarizable: bool,
+}
+
+impl StructuralStatementFacts {
+    /// Source-only contradiction to a selected direct parameter-borrow input.
+    pub fn contradicts_argument_borrow(&self, function: &Id, parameter: &Id, index: usize) -> bool {
+        self.member_write_roots.contains(parameter)
+            || self
+                .argument_value_escapes
+                .get(function)
+                .is_some_and(|indices| indices.contains(&index))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -469,6 +481,11 @@ pub struct StructuralChunkAnalysis<'a> {
     /// at arbitrary module positions the resulting value class is Number or
     /// pre-initialization `undefined`, never exact Number.
     pub(crate) stable_var_number_candidates: BTreeSet<Id>,
+    pub(crate) plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub(crate) plain_data_inference_uses:
+        BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+    pub(crate) source_semantic_facts:
+        Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,

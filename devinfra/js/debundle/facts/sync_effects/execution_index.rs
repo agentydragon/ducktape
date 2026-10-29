@@ -4993,6 +4993,7 @@ impl ExecutionIndex {
         classes: LocalClassConstructionShapes,
         sets: SetIterableShapes,
         callables: CallableInferenceInputs,
+        source_facts: Option<&SemanticFacts>,
     ) -> Arc<SemanticFacts> {
         let mut collection_bindings = BTreeMap::new();
         let constructors = classes
@@ -5108,55 +5109,58 @@ impl ExecutionIndex {
             })
             .collect();
 
-        Arc::new(SemanticFacts::solve(SemanticRules {
-            classes,
-            sets,
-            collection_bindings,
-            author_empty_set_fields,
-            binding_context: NativeBindingContext {
-                declared_bindings,
-                shadowed_globals: shadowed.clone(),
-                global_object_names: self.global_object_names.clone(),
+        Arc::new(SemanticFacts::solve_with_source(
+            SemanticRules {
+                classes,
+                sets,
+                collection_bindings,
+                author_empty_set_fields,
+                binding_context: NativeBindingContext {
+                    declared_bindings,
+                    shadowed_globals: shadowed.clone(),
+                    global_object_names: self.global_object_names.clone(),
+                },
+                native_call_identity_candidates,
+                native_own_data_reads,
+                descriptor_copy_providers: self.descriptor_copy_factories.clone(),
+                descriptor_copy_calls: self
+                    .descriptor_copy_calls
+                    .iter()
+                    .filter_map(|(site, candidate)| {
+                        let shape = self.own_descriptor_shapes.get(&candidate.source_object)?;
+                        let data_keys = shape
+                            .properties
+                            .iter()
+                            .filter_map(|(key, descriptor)| {
+                                matches!(descriptor, OwnPropertyDescriptorSyntax::Data)
+                                    .then_some(key.clone())
+                            })
+                            .collect();
+                        let accessor_keys = shape
+                            .properties
+                            .iter()
+                            .filter_map(|(key, descriptor)| {
+                                matches!(descriptor, OwnPropertyDescriptorSyntax::Accessor { .. })
+                                    .then_some(key.clone())
+                            })
+                            .collect();
+                        Some((
+                            site.source_span().lo.0,
+                            SemanticDescriptorCopyCallCandidate {
+                                source_object: candidate.source_object,
+                                provider_binding: candidate.provider_binding.clone(),
+                                signature: candidate.signature.clone(),
+                                data_keys,
+                                accessor_keys,
+                            },
+                        ))
+                    })
+                    .collect(),
+                callables,
+                ..self.completed_native_rules()
             },
-            native_call_identity_candidates,
-            native_own_data_reads,
-            descriptor_copy_providers: self.descriptor_copy_factories.clone(),
-            descriptor_copy_calls: self
-                .descriptor_copy_calls
-                .iter()
-                .filter_map(|(site, candidate)| {
-                    let shape = self.own_descriptor_shapes.get(&candidate.source_object)?;
-                    let data_keys = shape
-                        .properties
-                        .iter()
-                        .filter_map(|(key, descriptor)| {
-                            matches!(descriptor, OwnPropertyDescriptorSyntax::Data)
-                                .then_some(key.clone())
-                        })
-                        .collect();
-                    let accessor_keys = shape
-                        .properties
-                        .iter()
-                        .filter_map(|(key, descriptor)| {
-                            matches!(descriptor, OwnPropertyDescriptorSyntax::Accessor { .. })
-                                .then_some(key.clone())
-                        })
-                        .collect();
-                    Some((
-                        site.source_span().lo.0,
-                        SemanticDescriptorCopyCallCandidate {
-                            source_object: candidate.source_object,
-                            provider_binding: candidate.provider_binding.clone(),
-                            signature: candidate.signature.clone(),
-                            data_keys,
-                            accessor_keys,
-                        },
-                    ))
-                })
-                .collect(),
-            callables,
-            ..self.completed_native_rules()
-        }))
+            source_facts,
+        ))
     }
 
     fn validate_value_inputs(
@@ -10998,6 +11002,7 @@ pub(crate) fn infer_callable_capabilities(
             LocalClassConstructionShapes::default(),
             SetIterableShapes::default(),
             callables,
+            None,
         ));
         result.stable_providers = index
             .hoisted_bindings

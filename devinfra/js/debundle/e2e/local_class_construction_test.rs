@@ -9,7 +9,7 @@ use analysis::reports::schema::{
 };
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 const REGISTRY_SOURCE: &str = r#"globalThis.events = [];
 const a = (() => 1)();
@@ -613,6 +613,8 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             ]),
             value_input_refs: captured_input_refs(),
             descriptor_copy_author_refs: Default::default(),
+            argument_input_refs: BTreeSet::new(),
+            argument_input_spec_locations: BTreeSet::new(),
         }
     );
     let unique_execution = unique
@@ -646,6 +648,8 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             ]),
             value_input_refs: captured_input_refs(),
             descriptor_copy_author_refs: Default::default(),
+            argument_input_refs: BTreeSet::new(),
+            argument_input_spec_locations: BTreeSet::new(),
         }
     );
     assert_eq!(
@@ -666,6 +670,8 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             derivation_rules: BTreeSet::from([InferenceRule::LocalClassConstruction]),
             value_input_refs: BTreeSet::new(),
             descriptor_copy_author_refs: Default::default(),
+            argument_input_refs: BTreeSet::new(),
+            argument_input_spec_locations: BTreeSet::new(),
         }
     );
     assert!(plain.heap_native_integrity_uses.is_empty());

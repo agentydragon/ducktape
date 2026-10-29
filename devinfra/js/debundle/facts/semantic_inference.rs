@@ -4,12 +4,17 @@
 //! after their mandatory premises have been proved, and unions their captured
 //! input dependencies. Purity, timing and heap ordering share this same store.
 
-use super::callable_inference::{CallableInferenceInputs, ReturnedRecordFacts};
+use super::callable_inference::{
+    CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordFacts,
+};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
+use super::statement_facts::StructuralStatementFacts;
+use super::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::analysis_inputs::{
-    DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeInputKind, NativeIntrinsic,
-    NativeOperationInputEvidence, NativeOperationInputRef, ProofDependencies,
+    ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeInputKind,
+    NativeIntrinsic, NativeOperationInputEvidence, NativeOperationInputRef, ProofDependencies,
+    ResolvedArgumentInput,
 };
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
@@ -47,6 +52,12 @@ pub(crate) enum SemanticKey {
         binding: Id,
         function: u32,
     },
+    ArgumentNoEscape {
+        binding: Id,
+        function: u32,
+        parameter_index: usize,
+        exact_arity: usize,
+    },
     CallbackFactory {
         binding: Id,
         function: u32,
@@ -76,6 +87,7 @@ impl SemanticKey {
             Self::PrimitiveSetIteration(_) => InferenceRule::PrimitiveSetIteration,
             Self::StableFunction { .. } => InferenceRule::StableFunction,
             Self::StableProvider { .. } => InferenceRule::StableProvider,
+            Self::ArgumentNoEscape { .. } => InferenceRule::ArgumentNoEscape,
             Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
             Self::ReturnedRecord { .. } => InferenceRule::ReturnedRecord,
             Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
@@ -145,6 +157,7 @@ pub(crate) struct SemanticRules {
     pub(crate) callables: CallableInferenceInputs,
     pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
     pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
+    pub(crate) argument_inputs: BTreeMap<(Id, u32, usize, usize), ArgumentInputRef>,
 }
 
 impl SemanticRules {
@@ -296,6 +309,35 @@ impl SemanticRules {
                     candidate.provider_binding.clone(),
                 ))?;
             }
+            SemanticKey::ArgumentNoEscape {
+                binding,
+                function,
+                parameter_index,
+                exact_arity,
+            } => {
+                if self.dynamic_scope {
+                    return None;
+                }
+                let reference = self.argument_inputs.get(&(
+                    binding.clone(),
+                    *function,
+                    *parameter_index,
+                    *exact_arity,
+                ))?;
+                context.require(SemanticKey::StableFunction {
+                    binding: binding.clone(),
+                    function: *function,
+                })?;
+                let source = self.callables.functions.get(binding)?;
+                if !source.hoisted || source.rebound {
+                    return None;
+                }
+                context.assume(&ProofDependencies {
+                    argument_inputs: BTreeSet::from([reference.clone()]),
+                    ..ProofDependencies::default()
+                });
+                return Some(SemanticFact::Certificate);
+            }
             SemanticKey::StableFunction { .. }
             | SemanticKey::StableProvider { .. }
             | SemanticKey::CallbackFactory { .. }
@@ -350,7 +392,23 @@ impl Default for SemanticFacts {
 }
 
 impl SemanticFacts {
-    pub(crate) fn solve(mut rules: SemanticRules) -> Self {
+    pub(crate) fn solve(rules: SemanticRules) -> Self {
+        Self::solve_with_source(rules, None)
+    }
+
+    fn solve_source_only(rules: SemanticRules) -> Self {
+        Self::solve_internal(rules, None, false)
+    }
+
+    pub(crate) fn solve_with_source(rules: SemanticRules, source: Option<&SemanticFacts>) -> Self {
+        Self::solve_internal(rules, source, true)
+    }
+
+    fn solve_internal(
+        mut rules: SemanticRules,
+        source: Option<&SemanticFacts>,
+        include_native_roots: bool,
+    ) -> Self {
         let constructions = std::mem::take(&mut rules.classes.constructions);
         let native_roots = [
             NativeIntrinsic::GlobalObject,
@@ -372,6 +430,7 @@ impl SemanticFacts {
         .into_iter()
         .map(SemanticKey::NativeIntegrity);
         let roots: Vec<_> = native_roots
+            .filter(|_| include_native_roots)
             .chain(rules.native_call_identity_candidates.iter().cloned())
             .chain(
                 rules
@@ -381,6 +440,14 @@ impl SemanticFacts {
                     .map(SemanticKey::NativeOwnDataRead),
             )
             .chain(rules.callables.keys())
+            .chain(rules.argument_inputs.keys().map(
+                |(binding, function, parameter_index, exact_arity)| SemanticKey::ArgumentNoEscape {
+                    binding: binding.clone(),
+                    function: *function,
+                    parameter_index: *parameter_index,
+                    exact_arity: *exact_arity,
+                },
+            ))
             .chain(
                 rules
                     .descriptor_copy_providers
@@ -428,7 +495,12 @@ impl SemanticFacts {
                     .map(SemanticKey::PrimitiveSetIteration),
             )
             .collect();
-        let inference = IterativeInference::new(rules).solve(roots);
+        let inference = match source {
+            Some(source) => {
+                IterativeInference::from_completed(rules, &source.inference).solve(roots)
+            }
+            None => IterativeInference::new(rules).solve(roots),
+        };
         Self {
             inference,
             constructions,
@@ -474,6 +546,118 @@ impl SemanticFacts {
             derivation_rules,
             value_input_refs: dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: dependencies.descriptor_copy_authors.clone(),
+            argument_input_refs: dependencies.argument_inputs.clone(),
+            argument_input_spec_locations: BTreeSet::new(),
         })
+    }
+}
+
+/// Source-only author argument capabilities share the same certificate rules
+/// as other semantic facts. They are solved after selector resolution and the
+/// single canonical value-flow solve, before PlainData and the native census.
+pub(crate) struct ArgumentNoEscapeFacts {
+    facts: SemanticFacts,
+    inputs: BTreeMap<Id, Vec<(u32, usize, usize)>>,
+    spec_locations: BTreeMap<crate::analysis_inputs::ArgumentInputRef, String>,
+}
+
+pub(crate) struct ArgumentBorrowProof {
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) inference_use: InferenceUse,
+}
+
+impl ArgumentNoEscapeFacts {
+    pub(crate) fn into_semantic_facts(self) -> SemanticFacts {
+        self.facts
+    }
+    pub(crate) fn from_source(
+        flow: &ChunkValueFlow,
+        statements: &[StructuralStatementFacts],
+        inputs: &[ResolvedArgumentInput],
+        dynamic_scope: bool,
+    ) -> Self {
+        let mut callables = CallableInferenceInputs::default();
+        let mut selected = BTreeMap::<Id, Vec<(u32, usize, usize)>>::new();
+        let mut rules = BTreeMap::new();
+        let mut spec_locations = BTreeMap::new();
+        for input in inputs {
+            let binding = &input.binding;
+            let function = input.function_start;
+            let values = flow.values_of_binding(binding);
+            if !values.iter().eq([ValueOrigin::Function(function)]) {
+                continue;
+            }
+            let rebound = statements.iter().any(|statement| {
+                statement.rebinds.eager.contains(binding)
+                    || statement.rebinds.lazy.contains(binding)
+            });
+            callables.functions.insert(
+                binding.clone(),
+                FunctionBindingFacts {
+                    values,
+                    hoisted: true,
+                    definite_initializer: true,
+                    rebound,
+                },
+            );
+            let parameter_index = input.evidence.parameter_index;
+            let exact_arity = input.evidence.exact_arity;
+            selected.entry(binding.clone()).or_default().push((
+                function,
+                parameter_index,
+                exact_arity,
+            ));
+            rules.insert(
+                (binding.clone(), function, parameter_index, exact_arity),
+                input.evidence.reference.clone(),
+            );
+            spec_locations.insert(
+                input.evidence.reference.clone(),
+                input.evidence.spec_location.clone(),
+            );
+        }
+        Self {
+            facts: SemanticFacts::solve_source_only(SemanticRules {
+                dynamic_scope,
+                callables,
+                argument_inputs: rules,
+                ..SemanticRules::default()
+            }),
+            inputs: selected,
+            spec_locations,
+        }
+    }
+
+    pub(crate) fn proof(
+        &self,
+        binding: &Id,
+        argument_index: usize,
+        arity: usize,
+    ) -> Option<ArgumentBorrowProof> {
+        self.inputs
+            .get(binding)?
+            .iter()
+            .find_map(|&(function, index, exact_arity)| {
+                (index == argument_index && exact_arity == arity).then(|| {
+                    let key = SemanticKey::ArgumentNoEscape {
+                        binding: binding.clone(),
+                        function,
+                        parameter_index: index,
+                        exact_arity,
+                    };
+                    let mut inference_use = self.facts.inference_use(&key)?;
+                    for reference in &inference_use.argument_input_refs {
+                        if let Some(location) = self.spec_locations.get(reference) {
+                            inference_use
+                                .argument_input_spec_locations
+                                .insert(location.clone());
+                        }
+                    }
+                    Some(ArgumentBorrowProof {
+                        dependencies: self.facts.dependencies(&key)?.clone(),
+                        inference_use,
+                    })
+                })?
+            })
     }
 }

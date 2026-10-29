@@ -40,7 +40,10 @@ pub(crate) fn classify_var_decl_purity(
                 && graph.is_plain_data(name)
                 && is_ts_enum_iife_init_for_binding(init, name)
             {
-                Some(Purity::pure())
+                Some(match graph.plain_data_dependencies(name) {
+                    Some(dependencies) => Purity::pure().with_dependencies(dependencies),
+                    None => Purity::pure(),
+                })
             } else {
                 Some(classify_expr_purity(
                     init,
@@ -458,7 +461,7 @@ fn classify_member_purity(
         // shape. Admitting it as pure would be a soundness hole.
         && !local_shadowed.contains(recv.sym.as_ref())
     {
-        return match &member.prop {
+        let verdict = match &member.prop {
             MemberProp::Ident(_) | MemberProp::PrivateName(_) => Purity::pure(),
             // Computed access runs ToPropertyKey on the key VALUE
             // before the (accessor-free) lookup on the PlainData
@@ -491,6 +494,10 @@ fn classify_member_purity(
                     ))
                 }
             }
+        };
+        return match graph.plain_data_dependencies(recv.sym.as_ref()) {
+            Some(dependencies) => verdict.with_dependencies(dependencies),
+            None => verdict,
         };
     }
     // Member read on a fluent chain (`k.string().description`,
@@ -804,7 +811,13 @@ fn classify_callee_call(
             graph,
         )
     {
-        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+        let verdict = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
+        if let Expr::Ident(argument) = args[0].expr.unwrap_parens()
+            && let Some(dependencies) = graph.plain_data_dependencies(argument.sym.as_ref())
+        {
+            return verdict.with_dependencies(dependencies);
+        }
+        return verdict;
     }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
     if let Expr::Ident(ident) = callee_expr

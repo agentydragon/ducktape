@@ -97,12 +97,23 @@ where
 pub fn collect_chunk_source_facts<'a, F>(
     module: &'a Module,
     source_path: Option<&str>,
+    line_range_for_span: F,
+) -> StructuralChunkSourceFacts<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
+{
+    collect_chunk_source_facts_from_items(&module.body, source_path, line_range_for_span)
+}
+
+pub fn collect_chunk_source_facts_from_items<'a, F>(
+    items: &'a [ModuleItem],
+    source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> StructuralChunkSourceFacts<'a>
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
-    let body = top_level_item_views(&module.body);
+    let body = top_level_item_views(items);
     let shadowed = compute_shadowed_globals(&body);
     let global_object_names = unshadowed_global_object_aliases(&body);
     let async_direct_function_bindings = collect_async_direct_function_bindings(&body);
@@ -185,6 +196,7 @@ where
                 reads: collector.reads,
                 rebinds: collector.rebinds,
                 member_write_roots: collector.member_write_roots,
+                argument_value_escapes: collector.argument_value_escapes,
                 calls: collector.calls,
                 constructor,
                 at_init_unresolved_sources: collector.at_init_unresolved_sources,
@@ -213,13 +225,32 @@ where
 pub fn complete_chunk_structural(
     source: StructuralChunkSourceFacts<'_>,
 ) -> StructuralChunkAnalysis<'_> {
-    complete_chunk_structural_with_native_allocations(source, &[], &BTreeMap::new())
+    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &[])
 }
 
 pub fn complete_chunk_structural_with_native_allocations<'a>(
     source: StructuralChunkSourceFacts<'a>,
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+) -> StructuralChunkAnalysis<'a> {
+    complete_chunk_structural_with_inputs(source, native_operation_inputs, stable_spreads, &[])
+}
+
+pub fn complete_chunk_structural_with_argument_inputs<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+) -> StructuralChunkAnalysis<'a> {
+    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), argument_inputs)
+}
+
+/// Complete the source census with selected native-operation, Set-spread, and
+/// argument inputs before deriving plain-data, Set, and synchronous-call facts.
+/// The argument analysis and native allocation roots share one canonical flow.
+pub fn complete_chunk_structural_with_inputs<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
@@ -237,11 +268,36 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
         &candidate_roots,
         &native_set_allocations,
     );
-    let plain_data_bindings =
-        crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let dynamic_scope = DynamicScopeFact::analyze(&body);
     let stable_var_number_candidates =
         stable_top_level_var_candidates(&per_statement, dynamic_scope);
+    let argument_facts = (!argument_inputs.is_empty()).then(|| {
+        super::semantic_inference::ArgumentNoEscapeFacts::from_source(
+            &value_flow,
+            &per_statement,
+            argument_inputs,
+            dynamic_scope.present,
+        )
+    });
+    let (plain_data_bindings, plain_data_dependencies, plain_data_inference_uses) =
+        match &argument_facts {
+            Some(argument_facts) => {
+                let result = crate::purity::collect_plain_data_bindings_with_arguments(
+                    &body,
+                    &shadowed,
+                    &value_flow,
+                    argument_facts,
+                );
+                (result.bindings, result.dependencies, result.inference_uses)
+            }
+            None => (
+                crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow),
+                BTreeMap::new(),
+                BTreeMap::new(),
+            ),
+        };
+    let source_semantic_facts =
+        argument_facts.map(|facts| std::sync::Arc::new(facts.into_semantic_facts()));
     let set_iterable_proof = SetIterableShapes::analyze(
         &body,
         &shadowed,
@@ -260,6 +316,9 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
         local_class_shapes: local_class_construction_proof,
         plain_data_bindings,
         stable_var_number_candidates,
+        plain_data_dependencies,
+        plain_data_inference_uses,
+        source_semantic_facts,
         shadowed,
         per_statement,
         top_level_await,
@@ -367,20 +426,26 @@ where
         local_class_shapes,
         plain_data_bindings,
         stable_var_number_candidates,
+        plain_data_dependencies,
+        plain_data_inference_uses,
+        source_semantic_facts,
         shadowed,
         per_statement,
         top_level_await,
     } = structural;
     let plain_array_bindings = crate::purity::collect_plain_array_bindings(&body, &shadowed);
     let mut prepared_sync_index =
-        super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+        super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index_with_source_facts(
             &body,
             &value_flow,
             hints,
             &plain_array_bindings,
-            &local_class_shapes,
-            set_iterable_shapes,
-            &shadowed,
+            super::sync_effects::execution_index::interpreter::PreparedSyncShapeInputs {
+                local_class_construction: &local_class_shapes,
+                set_iterable_shapes,
+                shadowed: &shadowed,
+                source_facts: source_semantic_facts.as_deref(),
+            },
         );
     prepared_sync_index.locate_native_integrity_witnesses(|span| {
         let source_path = source_path?;
@@ -417,6 +482,8 @@ where
             &set_iterable_proof,
             &local_class_construction_proof,
             &plain_data_bindings,
+            &plain_data_dependencies,
+            &plain_data_inference_uses,
             &plain_array_bindings,
             &stable_var_number_candidates,
             Some(&per_statement),
@@ -769,6 +836,7 @@ fn assemble_statement_facts(
         global_reads,
         cell_writes_summarizable,
         dataflow_summarizable,
+        argument_value_escapes: _,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
     let mut purity = item_purity(

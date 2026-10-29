@@ -49,6 +49,7 @@ pub enum DependencyGraphBuildError {
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
     UnresolvedValueInputs { count: usize },
     UnresolvedNativeInputs { count: usize },
+    UnresolvedArgumentInputs { count: usize },
 }
 
 impl fmt::Display for DependencyGraphBuildError {
@@ -62,6 +63,10 @@ impl fmt::Display for DependencyGraphBuildError {
             Self::UnresolvedNativeInputs { count } => write!(
                 f,
                 "cannot build a dependency graph with {count} unresolved native author input(s); resolve them against the exact provider source first"
+            ),
+            Self::UnresolvedArgumentInputs { count } => write!(
+                f,
+                "cannot build a dependency graph with {count} unresolved argument input(s); resolve them against the exact provider source first"
             ),
         }
     }
@@ -97,6 +102,11 @@ pub fn build_dependency_graph_with(
     if native_input_count != 0 {
         return Err(DependencyGraphBuildError::UnresolvedNativeInputs {
             count: native_input_count,
+        });
+    }
+    if !options.argument_inputs.is_empty() {
+        return Err(DependencyGraphBuildError::UnresolvedArgumentInputs {
+            count: options.argument_inputs.len(),
         });
     }
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();

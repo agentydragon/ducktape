@@ -794,6 +794,18 @@ dependency field records the assumption used by that purity decision. The
 captured-object assertion itself does not declare the capture initializer pure,
 prevent callbacks or throws, or establish freshness or initialization order.
 
+A SHA-bound `argument_inputs` contract can preserve a plain-data object passed
+to one selected direct local function. The contract names a positional
+parameter and exact arity, and certifies that the function and its callees
+cannot mutate, retain, return, publish, or expose the argument graph through
+callbacks or opaque forwarding during or after an activation. Selection
+requires a direct synchronous function declaration; a shared stable-callable
+fact and complete singleton call target guard each use. Source-visible direct
+mutation, store, return, throw, or capture rejects the assertion. Rebinds, spread
+calls, and arity mismatches keep the ordinary escape path. The assertion says
+nothing about the helper's purity, reentry, or unrelated effects. Opaque native
+behavior is an explicit audit obligation rather than inferred native identity.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.

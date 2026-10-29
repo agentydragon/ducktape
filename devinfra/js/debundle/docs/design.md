@@ -144,6 +144,20 @@ excluded; it never certifies a subsequent invocation of the function value.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 
+`argument_inputs` is a SHA-bound premise about one positional parameter of one
+direct, stable local function declaration. It says that this helper and its
+callees do not mutate, retain, return, publish, or expose that argument graph
+to callbacks or opaque forwarding during or after any activation. The premise
+does not certify the helper as pure or suppress unrelated synchronous effects.
+Only a direct bare call whose target is that exact function and whose arity
+matches the declaration can preserve a plain-data argument through the call.
+The shared callable/value-flow proof guards rebinds and aliases; source-visible
+parameter stores, returns, throws, mutations, and captures contradict the input. For
+opaque behavior such as a replaceable native operation, the author must audit
+the premise against the exact parser-input digest. This capability is distinct
+from native-call identity and does not use the native census as a frozen
+prerequisite.
+
 A source-composed returned-record summary is separate from that callback-input
 contract. It certifies only zero-argument construction timing under the shared
 empty-Map integrity guard. The imported summary retains member/capture source

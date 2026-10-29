@@ -279,6 +279,8 @@ pub struct ProofDependencies {
     pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub argument_inputs: BTreeSet<ArgumentInputRef>,
 }
 
 impl ProofDependencies {
@@ -286,6 +288,7 @@ impl ProofDependencies {
         self.value_inputs.is_empty()
             && self.native_operation_inputs.is_empty()
             && self.descriptor_copy_authors.is_empty()
+            && self.argument_inputs.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -294,6 +297,8 @@ impl ProofDependencies {
             .extend(other.native_operation_inputs.iter().cloned());
         self.descriptor_copy_authors
             .extend(other.descriptor_copy_authors.iter().cloned());
+        self.argument_inputs
+            .extend(other.argument_inputs.iter().cloned());
     }
 }
 
@@ -355,6 +360,34 @@ pub struct NativeOperationInputEvidence {
 pub enum NativeOperationSelectorProvenance {
     SourceMatch(SourceMatchClaim),
     ResolvedMember(spec::ResolvedMemberSelector),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ArgumentInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ArgumentInputEvidence {
+    pub reference: ArgumentInputRef,
+    pub spec_location: String,
+    pub source_match: SourceMatchClaim,
+    pub source_path: String,
+    pub parser_input_file: String,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub parameter_index: usize,
+    pub exact_arity: usize,
+    pub declaration_location: Option<SourceLocation>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedArgumentInput {
+    pub evidence: ArgumentInputEvidence,
+    pub binding: Id,
+    pub function_start: u32,
 }
 
 /// Resolved author input for one canonical source binding. Spans and `Id` are
@@ -449,6 +482,8 @@ pub struct AnalysisAssumptions {
     /// Source-resolved author premises for exact native operation call sites.
     /// They are not native integrity guards or inferred identity facts.
     pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
+    /// Source-selected author premises for one exact local helper parameter.
+    pub argument_inputs: Vec<ResolvedArgumentInput>,
     /// Version-scoped author assertion for exact host operations.
     pub host_no_reentry: Option<spec::HostNoReentry>,
     /// Exact author-certified browser-global slots whose stored capabilities

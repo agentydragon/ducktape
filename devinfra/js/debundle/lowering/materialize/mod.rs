@@ -504,6 +504,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.assumptions.argument_inputs = cross_module_purities
+            .argument_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.assumptions.host_no_reentry = host_no_reentry.cloned();
         inputs.imported_purities = cross_module_purities
             .bindings
@@ -643,12 +648,13 @@ pub(super) fn finish_logical_chunk(
         dependency_graph_options.value_inputs.clear();
         dependency_graph_options.native_operation_inputs.clear();
         dependency_graph_options.native_call_identity_inputs.clear();
+        dependency_graph_options.argument_inputs.clear();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural
     // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let structural_analysis = analysis::facts::complete_chunk_structural_with_native_allocations(
+    let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
         structural_analysis,
         cross_module_purities
             .native_operation_inputs
@@ -659,6 +665,7 @@ pub(super) fn finish_logical_chunk(
             .stable_set_spreads
             .get(chunk_id)
             .unwrap_or(&BTreeMap::new()),
+        &analysis_inputs.assumptions.argument_inputs,
     );
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,

@@ -81,6 +81,7 @@ pub(crate) use local_class_construction::{
 };
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
+pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
 pub use set_iterables::certify_stable_set_spreads;
 pub(crate) use set_iterables::{
     SetIterableProof, SetIterableShapes, primitive_literal_property_keys,
@@ -101,8 +102,10 @@ pub(crate) use value_flow::{
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{
     ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
-    analyze_vendor_prune_chunk, collect_chunk_source_facts, complete_chunk_structural,
-    complete_chunk_structural_with_native_allocations, module_has_top_level_await,
+    analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
+    complete_chunk_structural, complete_chunk_structural_with_argument_inputs,
+    complete_chunk_structural_with_inputs, complete_chunk_structural_with_native_allocations,
+    module_has_top_level_await,
 };
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;

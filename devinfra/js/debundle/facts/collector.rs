@@ -38,6 +38,10 @@ pub(crate) struct StatementFactsCollector {
     /// Direct writes through a binding, including lazy bodies. A trusted
     /// imported decorator member cannot retain its identity if written here.
     pub(crate) member_write_roots: BTreeSet<Id>,
+    /// Source-visible direct value escapes of simple parameters in direct
+    /// top-level function declarations. Member mutations use the existing
+    /// `member_write_roots` fact instead.
+    pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub(crate) calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) at_init_unresolved_sources: BTreeSet<Id>,
     pub(crate) at_init_unresolved_inline_fn: bool,
@@ -56,9 +60,25 @@ pub(crate) struct StatementFactsCollector {
     lazy_depth: u32,
     past_await: bool,
     may_skip_await_depth: u32,
+    active_argument_parameters: Option<(Id, BTreeMap<Id, usize>, u32)>,
 }
 
 impl StatementFactsCollector {
+    fn mark_parameter_value_escape(&mut self, expr: &Expr) {
+        let Some((binding, parameters, _)) = &self.active_argument_parameters else {
+            return;
+        };
+        let escaped: Vec<_> = parameters
+            .iter()
+            .filter_map(|(parameter, index)| {
+                expression_may_retain_parameter(expr, parameter).then_some(*index)
+            })
+            .collect();
+        self.argument_value_escapes
+            .entry(binding.clone())
+            .or_default()
+            .extend(escaped);
+    }
     pub(crate) fn new(
         global_object_names: BTreeSet<&'static str>,
         async_direct_function_bindings: BTreeSet<Id>,
@@ -246,6 +266,29 @@ impl StatementFactsCollector {
                 self.global_reads.insert(key);
             }
         }
+    }
+}
+
+fn expression_may_retain_parameter(expr: &Expr, parameter: &Id) -> bool {
+    match expr.unwrap_parens() {
+        Expr::Ident(id) => &id.to_id() == parameter,
+        Expr::Member(member) => expression_may_retain_parameter(&member.obj, parameter),
+        Expr::Cond(cond) => {
+            expression_may_retain_parameter(&cond.cons, parameter)
+                || expression_may_retain_parameter(&cond.alt, parameter)
+        }
+        Expr::Bin(bin) => {
+            expression_may_retain_parameter(&bin.left, parameter)
+                || expression_may_retain_parameter(&bin.right, parameter)
+        }
+        Expr::Seq(seq) => seq
+            .exprs
+            .iter()
+            .any(|expr| expression_may_retain_parameter(expr, parameter)),
+        Expr::Assign(assign) => expression_may_retain_parameter(&assign.right, parameter),
+        // Calls are under the author's opaque-callee obligation; the direct
+        // call result is not a syntactically proven alias of the parameter.
+        _ => false,
     }
 }
 
@@ -729,6 +772,53 @@ impl Visit for StatementFactsCollector {
 
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(&node.to_id());
+        if let Some((binding, parameters, depth)) = &self.active_argument_parameters
+            && self.lazy_depth > *depth
+            && let Some(index) = parameters.get(&node.to_id())
+        {
+            self.argument_value_escapes
+                .entry(binding.clone())
+                .or_default()
+                .insert(*index);
+        }
+    }
+
+    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let Some(argument) = &node.arg {
+            self.mark_parameter_value_escape(argument);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
+        self.mark_parameter_value_escape(&node.arg);
+        node.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let Some(init) = &node.init {
+            self.mark_parameter_value_escape(init);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_array_lit(&mut self, node: &ArrayLit) {
+        for element in node.elems.iter().flatten() {
+            self.mark_parameter_value_escape(&element.expr);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_key_value_prop(&mut self, node: &KeyValueProp) {
+        self.mark_parameter_value_escape(&node.value);
+        node.visit_children_with(self);
+    }
+
+    fn visit_prop(&mut self, node: &Prop) {
+        if let Prop::Shorthand(id) = node {
+            self.mark_parameter_value_escape(&Expr::Ident(id.clone()));
+        }
+        node.visit_children_with(self);
     }
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
@@ -785,6 +875,7 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        self.mark_parameter_value_escape(&node.right);
         let before_assignment = self.past_await;
         record_assign_target(&node.left, self);
         if let Some(member) = simple_assign_member_target(&node.left)
@@ -1039,7 +1130,24 @@ impl Visit for StatementFactsCollector {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         // The name is a declaration, not an evaluation-time read. Visit the
         // function normally so recursive references in its body stay lazy.
-        node.function.visit_with(self);
+        if self.lazy_depth == 0 {
+            let parameters = node
+                .function
+                .params
+                .iter()
+                .enumerate()
+                .filter_map(|(index, parameter)| match &parameter.pat {
+                    Pat::Ident(id) => Some((id.id.to_id(), index)),
+                    _ => None,
+                })
+                .collect();
+            self.active_argument_parameters =
+                Some((node.ident.to_id(), parameters, self.lazy_depth + 1));
+            node.function.visit_with(self);
+            self.active_argument_parameters = None;
+        } else {
+            node.function.visit_with(self);
+        }
     }
 
     fn visit_fn_expr(&mut self, node: &FnExpr) {

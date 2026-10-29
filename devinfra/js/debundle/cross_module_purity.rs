@@ -39,14 +39,10 @@ use crate::analysis_inputs::{
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
 };
-use crate::facts::{
-    ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, native_set_allocation_roots,
-    top_level_item_views,
-};
+use crate::facts::{TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{
     ChunkCodeGraph, Purity, PurityEffectRules, PurityMode, collect_plain_array_bindings,
-    collect_plain_data_bindings,
 };
 
 /// Stable key identifying a module in the program (the chunk name).
@@ -84,6 +80,8 @@ struct PreparedModulePurityFacts<'a> {
     set_iterable_proof: crate::facts::SetIterableProof,
     local_class_construction_proof: crate::facts::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
+    plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     plain_array_bindings: BTreeSet<String>,
 }
 
@@ -92,42 +90,34 @@ impl<'a> ModulePurityFacts<'a> {
         &self,
         inputs: &crate::analysis_inputs::AnalysisInputs,
     ) -> PreparedModulePurityFacts<'a> {
-        let views = top_level_item_views(self.body);
-        let shadowed = compute_shadowed_globals(&views);
-        let candidate_roots = crate::purity::plain_data_candidate_roots(&views);
-        let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
-            &views,
-            &candidate_roots,
-            &native_set_allocation_roots(
-                &inputs.assumptions.native_operation_inputs,
-                &inputs.stable_set_spreads,
-            ),
+        let structural = crate::facts::complete_chunk_structural_with_inputs(
+            crate::facts::collect_chunk_source_facts_from_items(self.body, None, |_| None),
+            &inputs.assumptions.native_operation_inputs,
+            &inputs.stable_set_spreads,
+            &inputs.assumptions.argument_inputs,
         );
-        let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
+        let views = structural.body;
+        let shadowed = structural.shadowed;
+        let value_flow = structural.value_flow;
+        let plain_data_bindings = structural.plain_data_bindings;
+        let plain_data_dependencies = structural.plain_data_dependencies;
+        let plain_data_inference_uses = structural.plain_data_inference_uses;
+        let source_semantic_facts = structural.source_semantic_facts;
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
-        let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);
-        let set_iterable_proof = crate::facts::SetIterableShapes::analyze(
-            &views,
-            &shadowed,
-            &value_flow,
-            &plain_data_bindings,
-            dynamic_scope,
-        );
-        let local_class_construction_proof = crate::facts::LocalClassConstructionShapes::analyze(
-            &views,
-            &shadowed,
-            &value_flow,
-            dynamic_scope,
-        );
+        let set_iterable_proof = structural.set_iterable_shapes;
+        let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
-            crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+            crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index_with_source_facts(
                 &views,
                 &value_flow,
                 inputs,
                 &plain_array_bindings,
-                &local_class_construction_proof,
-                set_iterable_proof,
-                &shadowed,
+                crate::facts::sync_effects::execution_index::interpreter::PreparedSyncShapeInputs {
+                    local_class_construction: &local_class_construction_proof,
+                    set_iterable_shapes: set_iterable_proof,
+                    shadowed: &shadowed,
+                    source_facts: source_semantic_facts.as_deref(),
+                },
             );
         let local_class_construction_proof =
             prepared_sync_index.local_class_construction_proof().clone();
@@ -138,6 +128,8 @@ impl<'a> ModulePurityFacts<'a> {
             set_iterable_proof,
             local_class_construction_proof,
             plain_data_bindings,
+            plain_data_dependencies,
+            plain_data_inference_uses,
             plain_array_bindings,
         }
     }
@@ -171,6 +163,8 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.set_iterable_proof,
             &prepared.local_class_construction_proof,
             &prepared.plain_data_bindings,
+            &prepared.plain_data_dependencies,
+            &prepared.plain_data_inference_uses,
             &prepared.plain_array_bindings,
             &BTreeSet::new(),
             None,
@@ -302,6 +296,11 @@ pub fn resolve_imported_purities(
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
+                argument_inputs: callable_summaries
+                    .argument_inputs
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default(),
                 ..Default::default()
             },
             imported_callables: callable_summaries
@@ -360,6 +359,8 @@ pub fn resolve_imported_purities(
             set_iterable_proof: &prepared_facts.set_iterable_proof,
             local_class_construction_proof: &prepared_facts.local_class_construction_proof,
             plain_data_bindings: &prepared_facts.plain_data_bindings,
+            plain_data_dependencies: &prepared_facts.plain_data_dependencies,
+            plain_data_inference_uses: &prepared_facts.plain_data_inference_uses,
             plain_array_bindings: &prepared_facts.plain_array_bindings,
             stable_var_number_candidates: &BTreeSet::new(),
             structural_facts: None,
@@ -404,6 +405,7 @@ pub struct ResolvedCallableSummaries {
     pub native_operation_inputs: BTreeMap<ModuleKey, Vec<ResolvedNativeOperationInput>>,
     pub stable_set_spreads:
         BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
+    pub argument_inputs: BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -567,6 +569,7 @@ pub fn resolve_imported_callable_summaries(
     selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
     selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
     explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
+    argument_inputs: &BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
 ) -> Result<ResolvedCallableSummaries> {
     let required: BTreeSet<_> = modules
         .values()
@@ -1165,6 +1168,7 @@ pub fn resolve_imported_callable_summaries(
         value_inputs: resolved_value_inputs,
         native_operation_inputs: resolved_native_operation_inputs,
         stable_set_spreads,
+        argument_inputs: argument_inputs.clone(),
     })
 }
 
@@ -1503,6 +1507,8 @@ mod tests {
                 ]),
                 value_input_refs: BTreeSet::from([reported_dependencies]),
                 descriptor_copy_author_refs: Default::default(),
+                argument_input_refs: BTreeSet::new(),
+                argument_input_spec_locations: BTreeSet::new(),
             },
         });
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
@@ -1828,6 +1834,7 @@ mod tests {
         let resolved = resolve_imported_callable_summaries(
             &modules,
             &asserted,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

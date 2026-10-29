@@ -105,6 +105,21 @@ impl<R: IterativeRules> IterativeInference<R> {
         }
     }
 
+    /// Resume a completed source-only closure under a larger monotone rule
+    /// set. Judgments keep their typed dependencies and direct premise keys;
+    /// the new context schedules all of its producers over those facts. The
+    /// caller must guarantee that the completed source-only premises cannot
+    /// be refined by the later rules.
+    pub(crate) fn from_completed(rules: R, completed: &IterativeFacts<R::Key, R::Fact>) -> Self
+    where
+        R::Fact: Clone,
+    {
+        Self {
+            rules,
+            facts: completed.facts.clone(),
+        }
+    }
+
     pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
         let mut context = IterativeContext::<R>::new(&mut self.facts);
         context.propose(key, value);

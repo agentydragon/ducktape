@@ -20,6 +20,8 @@ use std::sync::Arc;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     pub(crate) bindings: BTreeMap<String, ChunkBinding>,
+    plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     fresh_record_proofs: BTreeMap<u32, FreshRecordProof>,
     pure_new_constructors: BTreeSet<String>,
     /// Per-binding declared-pure member-call set. Looked up by the
@@ -103,6 +105,10 @@ pub(crate) struct PurityShapeInputs<'a> {
     pub(crate) set_iterable_proof: &'a SetIterableProof,
     pub(crate) local_class_construction_proof: &'a LocalClassConstructionProof,
     pub(crate) plain_data_bindings: &'a [String],
+    pub(crate) plain_data_dependencies:
+        &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub(crate) plain_data_inference_uses:
+        &'a BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     pub(crate) plain_array_bindings: &'a BTreeSet<String>,
     pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
     pub(crate) structural_facts: Option<&'a [StructuralStatementFacts]>,
@@ -263,6 +269,8 @@ impl ChunkCodeGraph {
             &set_iterable_proof,
             &local_class_construction_proof,
             &plain_data_bindings,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
             &plain_array_bindings,
             stable_var_number_candidates,
             None,
@@ -285,6 +293,11 @@ impl ChunkCodeGraph {
         set_iterable_proof: &SetIterableProof,
         local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
+        plain_data_dependencies: &BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+        plain_data_inference_uses: &BTreeMap<
+            String,
+            BTreeSet<crate::reports::schema::InferenceUse>,
+        >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
         structural_facts: Option<&[StructuralStatementFacts]>,
@@ -300,6 +313,8 @@ impl ChunkCodeGraph {
             set_iterable_proof,
             local_class_construction_proof,
             plain_data_bindings,
+            plain_data_dependencies,
+            plain_data_inference_uses,
             plain_array_bindings,
             stable_var_number_candidates,
             structural_facts,
@@ -432,6 +447,8 @@ impl ChunkCodeGraph {
             .filter(|name| !function_names.contains(*name))
             .map(|name| (name.clone(), ChunkBinding::PlainData))
             .collect();
+        let plain_data_dependencies = shape_inputs.plain_data_dependencies.clone();
+        let plain_data_inference_uses = shape_inputs.plain_data_inference_uses.clone();
         let ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate> =
             collect_ts_enum_named_data_candidates(body, shape_inputs.plain_data_bindings)
                 .into_iter()
@@ -489,6 +506,8 @@ impl ChunkCodeGraph {
             symbol_const_bindings: value_classes.symbol_const_bindings,
             plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
             ts_enum_named_data_candidates,
+            plain_data_dependencies,
+            plain_data_inference_uses,
             stable_ts_enum_primitive_members,
             set_iterable_proof: shape_inputs.set_iterable_proof.clone(),
             local_class_construction_proof: shape_inputs.local_class_construction_proof.clone(),
@@ -562,6 +581,20 @@ impl ChunkCodeGraph {
     /// `ChunkBinding::PlainData`).
     pub(crate) fn is_plain_data(&self, name: &str) -> bool {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
+    }
+
+    pub(crate) fn plain_data_dependencies(
+        &self,
+        name: &str,
+    ) -> Option<&crate::analysis_inputs::ProofDependencies> {
+        self.plain_data_dependencies.get(name)
+    }
+
+    pub(crate) fn plain_data_inference_uses(
+        &self,
+        name: &str,
+    ) -> Option<&BTreeSet<crate::reports::schema::InferenceUse>> {
+        self.plain_data_inference_uses.get(name)
     }
 
     /// Whether `name` is a static ordinary array binding suitable for

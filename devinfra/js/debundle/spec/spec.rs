@@ -470,6 +470,10 @@ pub struct DependencyGraphOptions {
     /// operation must still pass its ordinary argument and effect guards.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
+    /// Audited no-mutation/no-retention contract for one parameter of an
+    /// exact local helper. Calls and callbacks retain their ordinary effects.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub argument_inputs: Vec<ArgumentInputContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -661,6 +665,22 @@ impl From<NativeOperationInputContract> for NativeOperationInputWire {
 pub struct NativeCallIdentityInputContract {
     pub source_match: SourceMatchClaim,
     pub callee: NativeCallIdentityKind,
+    pub audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One source-selected, SHA-bound local helper argument contract. The author
+/// certifies that an argument at `parameter_index` is never mutated, retained,
+/// returned, published, or exposed to callbacks or opaque callees by this
+/// helper or anything it invokes. This includes later activations of retained
+/// work and is independent of call purity and reentry.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArgumentInputContract {
+    pub source_match: SourceMatchClaim,
+    pub parameter_index: usize,
+    pub exact_arity: usize,
     pub audited_source_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,

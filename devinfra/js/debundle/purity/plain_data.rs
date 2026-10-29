@@ -96,6 +96,30 @@ pub(crate) fn collect_plain_data_bindings(
     shadowed: &BTreeSet<&'static str>,
     value_flow: &crate::facts::ChunkValueFlow,
 ) -> Vec<String> {
+    collect_plain_data_bindings_impl(body, shadowed, value_flow, None).bindings
+}
+
+pub(crate) struct PlainDataBorrowResult {
+    pub(crate) bindings: Vec<String>,
+    pub(crate) dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub(crate) inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+}
+
+pub(crate) fn collect_plain_data_bindings_with_arguments(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+    value_flow: &crate::facts::ChunkValueFlow,
+    arguments: &crate::facts::ArgumentNoEscapeFacts,
+) -> PlainDataBorrowResult {
+    collect_plain_data_bindings_impl(body, shadowed, value_flow, Some(arguments))
+}
+
+fn collect_plain_data_bindings_impl(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+    value_flow: &crate::facts::ChunkValueFlow,
+    arguments: Option<&crate::facts::ArgumentNoEscapeFacts>,
+) -> PlainDataBorrowResult {
     // Aggregate every chunk-top init expression per binding name.
     // The same name can have multiple inits for `var`-bound bindings
     // (`var X = a; var X = b;`); every init must independently pass
@@ -103,7 +127,11 @@ pub(crate) fn collect_plain_data_bindings(
     let inits_by_name = plain_data_init_groups(body);
     let candidates = plain_data_candidate_names(&inits_by_name);
     if candidates.is_empty() {
-        return Vec::new();
+        return PlainDataBorrowResult {
+            bindings: Vec::new(),
+            dependencies: BTreeMap::new(),
+            inference_uses: BTreeMap::new(),
+        };
     }
     let top_level_ids: BTreeMap<String, Id> = body
         .iter()
@@ -164,6 +192,9 @@ pub(crate) fn collect_plain_data_bindings(
         shadowing_scopes: Vec::new(),
         parameter_scopes: Vec::new(),
         value_flow: Some(value_flow),
+        argument_facts: arguments,
+        argument_dependencies: BTreeMap::new(),
+        argument_inference_uses: BTreeMap::new(),
         candidate_index: Some(
             value_flow.candidate_object_index(&object_to_names.keys().copied().collect()),
         ),
@@ -204,6 +235,8 @@ pub(crate) fn collect_plain_data_bindings(
         }
     }
     let mut disqualified = scanner.disqualified;
+    let mut argument_dependencies = scanner.argument_dependencies;
+    let mut argument_inference_uses = scanner.argument_inference_uses;
     let object_to_names = scanner.object_to_names;
     let disqualified_aliases: BTreeSet<String> = object_to_names
         .values()
@@ -211,10 +244,47 @@ pub(crate) fn collect_plain_data_bindings(
         .flat_map(|aliases| aliases.iter().cloned())
         .collect();
     disqualified.extend(disqualified_aliases);
-    candidates
+    for aliases in object_to_names.values() {
+        let mut shared = crate::analysis_inputs::ProofDependencies::default();
+        for alias in aliases {
+            if let Some(dependencies) = argument_dependencies.get(alias) {
+                shared.extend(dependencies);
+            }
+        }
+        if !shared.is_empty() {
+            for alias in aliases {
+                argument_dependencies
+                    .entry(alias.clone())
+                    .or_default()
+                    .extend(&shared);
+            }
+        }
+        let shared_uses: BTreeSet<_> = aliases
+            .iter()
+            .filter_map(|alias| argument_inference_uses.get(alias))
+            .flat_map(|uses| uses.iter().cloned())
+            .collect();
+        if !shared_uses.is_empty() {
+            for alias in aliases {
+                argument_inference_uses
+                    .entry(alias.clone())
+                    .or_default()
+                    .extend(shared_uses.iter().cloned());
+            }
+        }
+    }
+    let admitted: Vec<_> = candidates
         .into_iter()
         .filter(|name| !disqualified.contains(name))
-        .collect()
+        .collect();
+    let admitted_set: BTreeSet<_> = admitted.iter().collect();
+    argument_dependencies.retain(|name, _| admitted_set.contains(name));
+    argument_inference_uses.retain(|name, _| admitted_set.contains(name));
+    PlainDataBorrowResult {
+        bindings: admitted,
+        dependencies: argument_dependencies,
+        inference_uses: argument_inference_uses,
+    }
 }
 
 /// A candidate enum own-key fact. Final binding stability is checked against
@@ -312,6 +382,9 @@ pub(crate) fn collect_plain_array_bindings(
         shadowing_scopes: Vec::new(),
         parameter_scopes: Vec::new(),
         value_flow: None,
+        argument_facts: None,
+        argument_dependencies: BTreeMap::new(),
+        argument_inference_uses: BTreeMap::new(),
         candidate_index: None,
         object_to_names: BTreeMap::new(),
         return_exempt: BTreeSet::new(),
@@ -711,6 +784,9 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     shadowing_scopes: Vec<BTreeSet<String>>,
     parameter_scopes: Vec<BTreeSet<String>>,
     value_flow: Option<&'a crate::facts::ChunkValueFlow>,
+    argument_facts: Option<&'a crate::facts::ArgumentNoEscapeFacts>,
+    argument_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    argument_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     candidate_index: Option<crate::facts::CandidateObjectIndex<'a>>,
     object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
     return_exempt: BTreeSet<String>,
@@ -1193,10 +1269,66 @@ impl Visit for PlainDataWriteScanner<'_> {
             node.callee.visit_with(self);
             return;
         }
-        for arg in &node.args {
-            self.disqualify_value_escape(&arg.expr);
+        let protected: BTreeMap<usize, _> =
+            match (&node.callee, self.value_flow, self.argument_facts) {
+                (Callee::Expr(callee), Some(flow), Some(facts))
+                    if matches!(callee.unwrap_parens(), Expr::Ident(_))
+                        && node.args.iter().all(|argument| argument.spread.is_none()) =>
+                {
+                    let targets = flow.call_targets(callee);
+                    if targets.complete && targets.bindings.len() == 1 {
+                        targets
+                            .bindings
+                            .iter()
+                            .next()
+                            .map(|binding| {
+                                node.args
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(index, argument)| {
+                                        if matches!(argument.expr.unwrap_parens(), Expr::Ident(_)) {
+                                            facts
+                                                .proof(binding, index, node.args.len())
+                                                .map(|proof| (index, proof))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        BTreeMap::new()
+                    }
+                }
+                _ => BTreeMap::new(),
+            };
+        for (index, proof) in &protected {
+            if let Expr::Ident(argument) = node.args[*index].expr.unwrap_parens()
+                && self.candidates.contains(argument.sym.as_ref())
+                && !self.is_shadowed(argument.sym.as_ref())
+            {
+                self.argument_dependencies
+                    .entry(argument.sym.to_string())
+                    .or_default()
+                    .extend(&proof.dependencies);
+                self.argument_inference_uses
+                    .entry(argument.sym.to_string())
+                    .or_default()
+                    .insert(proof.inference_use.clone());
+            }
         }
-        node.visit_children_with(self);
+        for (index, arg) in node.args.iter().enumerate() {
+            if !protected.contains_key(&index) {
+                self.disqualify_value_escape(&arg.expr);
+            }
+        }
+        node.callee.visit_with(self);
+        for (index, arg) in node.args.iter().enumerate() {
+            if !protected.contains_key(&index) {
+                arg.visit_with(self);
+            }
+        }
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
