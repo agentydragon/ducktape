@@ -256,6 +256,7 @@ go_library(
         "types.go",
     ],
     embedsrcs = [
+        "codex/base_instructions.txt",
         "schema/0001_sampler_state.sql",
         "schema/0002_sampler_notification.sql",
     ],

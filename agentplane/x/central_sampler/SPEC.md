@@ -104,7 +104,8 @@ executor URL crosses that API. The relay bounds each message to 1 MiB and each R
 oversized tool messages fail the channel rather than being silently truncated. An open relay
 blocks executor Sandbox autosuspend and publishes the Sandbox-wide `ExecutorRelay` blocker until
 its channel closes. Dispatcher does
-not relay tools. Standing instructions are supported; remote
+not relay tools. Every provider request carries Codex's `gpt-6.1-sol` base instructions as
+`instructions`, whatever the model. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP, approvals/hooks and a Claude sampler are deferred.
 
 ## Evidence and continuation

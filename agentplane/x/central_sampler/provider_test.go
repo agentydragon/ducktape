@@ -36,6 +36,9 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if body.Instructions == "" {
+		t.Fatal("request has no Codex base instructions")
+	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)

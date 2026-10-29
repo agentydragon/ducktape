@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,15 @@ import (
 )
 
 const maxProviderErrorBytes = 1024 * 1024
+
+// Codex rust-v0.162.1 codex-rs/models-manager/models.json: gpt-6.1-sol
+// model_messages.instructions_template, used for every model. Pre-commit trims trailing whitespace.
+// Re-copy it on Codex pin bumps.
+// TODO: Consider pruning or rewriting it for the sampler's tool surface, or choosing it per model
+// as Codex does.
+//
+//go:embed codex/base_instructions.txt
+var baseInstructions string
 
 type ResponseEvidence struct {
 	Store    *Store
@@ -110,7 +120,7 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	}
 	input = append(input, items...)
 	return ResponsesRequest{
-		Model: model, Input: input, Stream: true, Store: false,
+		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
 		Include: []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
 		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
 	}, nil

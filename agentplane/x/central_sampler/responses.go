@@ -180,6 +180,7 @@ type ResponsesPropertySchema struct {
 
 type ResponsesRequest struct {
 	Model          string                    `json:"model"`
+	Instructions   string                    `json:"instructions"`
 	Input          []ResponsesItem           `json:"input"`
 	Stream         bool                      `json:"stream"`
 	Store          bool                      `json:"store"`
