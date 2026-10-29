@@ -2300,9 +2300,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((factory.clone(), call.span))
     }
 
-    /// A locally checked constructor can retain callbacks in a fresh instance
-    /// without publishing them. The ordinary executor still runs the wrapper
-    /// and constructor after this whole-return reachability proof.
+    /// A checked constructor can retain callbacks in a fresh instance without
+    /// exposing them during the initializer. The ordinary executor still runs
+    /// the wrapper and constructor. Exported results require a closure that
+    /// rules out synchronous importer reentry during provider initialization.
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
@@ -2342,7 +2343,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let &key = self.inputs.index.hoisted_bindings.get(factory)?;
         if !fact.declared.contains(binding)
             || !self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
-            || self.inputs.index.exported_bindings.contains(binding)
             || self.inputs.index.exported_bindings.contains(factory)
             || self
                 .state

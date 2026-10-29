@@ -637,20 +637,22 @@ still evaluated; later use or publication of the result can promote its
 retained callbacks.
 
 A direct local wrapper call may also retain callbacks in a fresh checked class
-instance without publishing them. The wrapper must have one return containing
-only checked local `new` allocations, simple parameters, no other calls or
-effects, and a unique stable identity. Inputs must be fresh plain-data records,
-inline functions, or primitives. A fresh record may contain a dense fresh array
-of these inputs or initialized, exact own primitive members of a stable,
+instance without exposing them during the initializer. The wrapper must have
+one return containing only checked local `new` allocations, simple parameters,
+no other calls or effects, and a unique stable identity. Inputs must be fresh
+plain-data records, inline functions, or primitives. A fresh record may contain
+a dense fresh array of these inputs or initialized, exact own primitive members of a stable,
 single-initializer TS enum object. Enum reads retain their eager dependencies;
 mutation, escape, holes, spreads, and unknown keys retain conservative
 reachability. Nested allocations must be inert; constructor
 property reads must resolve to own data or safe missing properties under A11.
 The initializer, wrapper, and class source units still contribute actual synchronous
 effects and ordering. Their execution alone does not expose deferred methods or
-make them available as host accessors. Later invocation or publication of the
-result restores those capabilities. Unsupported constructor paths retain
-conservative reachability.
+make them available as host accessors. An exported result is eligible when the
+analyzed module closure rules out synchronous importer reentry during provider
+initialization. The result binding is written after the checked call returns;
+later use and publication follow the ordinary callback paths. Unsupported
+constructor paths retain conservative reachability.
 
 A binding annotation `retained_record_factory: true` supplies only audited
 prototype premises for this source-checked local factory proof. The author

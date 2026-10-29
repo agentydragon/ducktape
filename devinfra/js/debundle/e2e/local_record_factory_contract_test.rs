@@ -40,6 +40,56 @@ const FRESH_RECORD_WITH_NAME: &str = r#"{
 const FLAGS: &str = r#"var Flags = ((values) => ((values[(values.FIRST = 1)] = "FIRST"), (values[(values.SECOND = 2)] = "SECOND"), values))(Flags || {});
 "#;
 
+const EXPORTED_RECORD_PROVIDER: &str = r#"class Holder {
+  constructor(record) { this.record = record; this.missing = record.missing; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const prefix = new globalThis.Error();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 42;
+})({});
+const command = create({ execute: () => later });
+const later = dynamic;
+export { command };
+"#;
+
+const ACYCLIC_COMMAND_IMPORTER: &str = r#"import { command } from "./provider.js";
+export const observed = command.run();
+console.log(observed);
+"#;
+
+fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalModuleEntry> {
+    let callback_bindings = [
+        Member::new("Holder"),
+        Member::new("create").with_retained_record_factory(),
+        Member::new("command"),
+    ];
+    let callbacks = if callback_statements.is_empty() {
+        logical_module("callbacks/wrapped", &callback_bindings)
+    } else {
+        logical_module_with_anon("callbacks/wrapped", &callback_bindings, callback_statements)
+    };
+    vec![
+        callbacks,
+        logical_module(
+            "values/dynamic",
+            &[Member::new("prefix"), Member::new("dynamic")],
+        ),
+        logical_module("values/later", &[Member::new("later")]),
+    ]
+}
+
+fn run_exported_record_factory(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
+    run_fixture(
+        FixtureOpts::new(ACYCLIC_COMMAND_IMPORTER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&[("static/provider", source)])
+            .with_extra_chunk_logical_modules(&[("static/provider", modules)]),
+    )
+}
+
 fn fixture_source(
     prefix: &str,
     factory: &str,
@@ -190,6 +240,88 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
         &["class Holder", "function create", "const command"],
         &[],
     );
+}
+
+#[test]
+fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
+    let fixture = run_exported_record_factory(
+        EXPORTED_RECORD_PROVIDER,
+        exported_record_factory_modules(&[]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+
+    let graph: analysis::DependencyGraphReport = read_json(
+        &fixture
+            .report_root
+            .join("static/provider/dependency_graph.json"),
+    );
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("provider command source unit");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("provider synchronous execution report");
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(execution.local_record_factory_uses.len(), 1);
+}
+
+#[test]
+fn exported_factory_result_rejects_a_rebound_factory() {
+    let rebound_provider = EXPORTED_RECORD_PROVIDER.replace(
+        "const command = create({ execute: () => later });",
+        "create = function (record) { return new Holder(record); };\nconst command = create({ execute: () => later });",
+    );
+    let rebound_chunks = [("static/consumer", ACYCLIC_COMMAND_IMPORTER)];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(&rebound_provider, exported_record_factory_modules(&[]))
+            .with_chunk_id("static/provider")
+            .with_extra_chunks(&rebound_chunks),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn exported_factory_result_preserves_later_mutation() {
+    let mutated_provider = EXPORTED_RECORD_PROVIDER.replace(
+        "const later = dynamic;",
+        "command.record.execute = () => later + 1;\nconst later = dynamic;",
+    );
+    let consumer_chunks = [("static/consumer", ACYCLIC_COMMAND_IMPORTER)];
+    let mutation = ["command.record.execute = () => later + 1;"];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &mutated_provider,
+            exported_record_factory_modules(&mutation),
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&consumer_chunks),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+    let fixture = run_exported_record_factory(
+        &mutated_provider,
+        vec![logical_module_with_anon(
+            "callbacks/wrapped",
+            &[
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("prefix"),
+                Member::new("dynamic"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+            &mutation,
+        )],
+    );
+    assert_preserved_entry_output(&fixture, "43\n");
 }
 
 #[test]
