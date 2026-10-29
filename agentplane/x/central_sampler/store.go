@@ -1646,6 +1646,121 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 	return next, err
 }
 
+// steeringInputs returns the queued SubmitInput commands at the head of the session's queue, in
+// admission order, that can join its active input turn. Other queued commands keep their order: input
+// admitted after one waits for a later turn. A pending interrupt of the turn takes precedence.
+func steeringInputs(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session) ([]*Command, []*commandpb.SubmitInput, error) {
+	if session.ActiveTurn == nil || session.ActiveCommand == nil || *session.ActiveCommand != *session.ActiveTurn || conversation.Pending != nil {
+		return nil, nil, nil
+	}
+	var interrupting bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_interrupt WHERE conversation_id=$1 AND generation=$2 AND target_turn=$3 AND result IS NULL)`,
+		conversation.ID, conversation.Generation, *session.ActiveTurn).Scan(&interrupting); err != nil {
+		return nil, nil, err
+	}
+	if interrupting {
+		return nil, nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT session_id,id,payload,admission,outcome,failure_reason FROM sampler_command
+		WHERE session_id=$1 AND outcome=$2 ORDER BY admission FOR UPDATE`, session.ID,
+		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var commands []*Command
+	var inputs []*commandpb.SubmitInput
+	for rows.Next() {
+		command, err := scanCommand(rows)
+		if err != nil {
+			return nil, nil, err
+		}
+		if command.ID == *session.ActiveCommand {
+			continue
+		}
+		payload := &commandpb.Command{}
+		if err := proto.Unmarshal(command.Payload, payload); err != nil {
+			return nil, nil, err
+		}
+		if payload.GetSubmitInput() == nil {
+			break
+		}
+		commands = append(commands, command)
+		inputs = append(inputs, payload.GetSubmitInput())
+	}
+	return commands, inputs, rows.Err()
+}
+
+// HasSteeringInput reports whether queued user input can join the session's active turn.
+func (s *Store) HasSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
+	found := false
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		_, session, err := lockSession(ctx, tx, sessionID)
+		if err != nil {
+			return err
+		}
+		commands, _, err := steeringInputs(ctx, tx, conversation, session)
+		found = len(commands) > 0
+		return err
+	})
+	return found, err
+}
+
+// DrainSteeringInput records queued user input into the active turn and applies its commands.
+//
+// Codex rust-v0.162.1 core/src/session/turn.rs run_turn: input submitted while a turn runs is
+// pending input, recorded at the start of the next sampling step; pending input also keeps a turn
+// that would otherwise end sampling.
+func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
+	drained := false
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		_, session, err := lockSession(ctx, tx, sessionID)
+		if err != nil {
+			return err
+		}
+		commands, inputs, err := steeringInputs(ctx, tx, conversation, session)
+		if err != nil || len(commands) == 0 {
+			return err
+		}
+		for index, command := range commands {
+			text := inputs[index].GetText()
+			item, err := newResponsesMessage("user", text)
+			if err != nil {
+				return err
+			}
+			conversation.Items = append(conversation.Items, item)
+			if conversation.ContextItems != nil {
+				conversation.ContextItems = append(conversation.ContextItems, item)
+			}
+			if err := setCommandOutcome(ctx, tx, sessionID, command.ID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
+				return err
+			}
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
+				HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
+					HarnessMessageId: command.ID,
+					Text:             text, OriginCommandIds: []string{command.ID}, TurnId: *session.ActiveTurn,
+				},
+			}}); err != nil {
+				return err
+			}
+		}
+		drained = true
+		if err := updateConversation(ctx, tx, conversation); err != nil {
+			return err
+		}
+		return persistSession(ctx, tx, session)
+	})
+	return drained, err
+}
+
 func scanCommand(row rowScanner) (*Command, error) {
 	var command Command
 	var outcome int32

@@ -18,6 +18,20 @@ continuation, replacing context transactionally with the compaction command outc
 Each interrupt request also records its target turn. Completing or failing that turn settles its
 requests atomically, so a late interrupt cannot cancel the next queued turn under the same owner.
 
+Input submitted while an input turn runs steers that turn, as in Codex: at the next sampling step,
+after the previous step's tool outputs and queued `notify()` outputs, the queued `SubmitInput`
+commands at the head of the queue join the turn in admission order. Each becomes a user message in
+the conversation, a `HarnessUserMessageConfirmed` with the active turn's ID and an `APPLIED`
+command outcome, in one transaction, so it is recorded exactly once. A turn whose model just
+answered continues instead of ending. Input admitted behind another kind of command waits for a later
+turn, and a pending interrupt of the turn takes precedence. While the model waits on a running
+`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`, negotiated
+as the required `yield-observation` capability) so the cell keeps running and the model reads the
+input at once. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
+lets the sampling request finish, because a cut stream leaves its intent uncertain. Codex keeps
+`notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
+`notify()` outputs before its steering input.
+
 Dispatcher routes `HARNESS_CENTRAL_SAMPLER` directly to a configured sampler. Its native ProxyRunner
 continues to serve wrapped Codex/Claude. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.

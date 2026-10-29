@@ -6,8 +6,6 @@ instructions, setup scripts and History export.
 
 ## Port
 
-- **Mid-turn steering:** deliver user input submitted during an active turn at the next boundary,
-  as Codex does, instead of queueing it until the turn ends.
 - **Base instructions:** Codex's `gpt-6.1-sol` template for every model, as a start. Later, consider
   pruning or rewriting it for the sampler, or choosing per model as Codex does.
 - **Environment context:** Codex's `<environment_context>` with cwd, the executor-reported shell and

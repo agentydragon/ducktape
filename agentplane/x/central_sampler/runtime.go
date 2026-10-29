@@ -362,7 +362,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 				if err != nil || result == "done" || result == "interrupted" || result == "effects_unknown" {
 					break
 				}
-				if result == "cell" || result == "sample" || result == "compact" || result == "notification" {
+				if result == "cell" || result == "sample" || result == "compact" || result == "notification" || result == "steer" {
 					continue
 				}
 			}
@@ -546,6 +546,17 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 			if err != nil {
 				return "", err
 			}
+			if len(interrupts) == 0 && live != nil && live.code.HasForeground() {
+				steering, err := r.store.HasSteeringInput(ctx, owner, sessionID)
+				if err != nil {
+					return "", err
+				}
+				if steering {
+					if _, err := live.code.YieldForeground(ctx); err != nil {
+						return "", err
+					}
+				}
+			}
 			if len(interrupts) > 0 {
 				conversation, readErr := r.store.Read(ctx, owner)
 				if readErr != nil {
@@ -683,6 +694,13 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	if drained {
 		return "notification", nil
+	}
+	steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
+	if err != nil {
+		return "", err
+	}
+	if steered {
+		return "steer", nil
 	}
 	if len(conversation.Items) > 0 {
 		last := conversation.Items[len(conversation.Items)-1]

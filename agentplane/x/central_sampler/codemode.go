@@ -33,6 +33,9 @@ type CodeMode struct {
 	delegateDone chan struct{}
 	journal      chan codeJournalEvent
 	journalDone  chan struct{}
+	// foreground is the execute or wait request whose observation the model is waiting on.
+	foreground *int64
+	yielded    bool
 }
 
 type codeJournalEvent struct {
@@ -299,11 +302,14 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 	if err := r.send(ctx, id, codeOperationFrame{Type: "operation/request", ID: id, Request: request}); err != nil {
 		return nil, err
 	}
+	if request.method() == "session/wait" {
+		defer r.setForeground(id)()
+	}
 	resultFrame, err := waitFrame(ctx, response)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
-			_ = r.send(cancelCtx, id, codeCancelRequest{Type: "operation/cancel", ID: id})
+			_ = r.send(cancelCtx, id, codeRequestSignal{Type: "operation/cancel", ID: id})
 			cancel()
 		}
 		return nil, err
@@ -326,16 +332,53 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(cellID), "live"); err != nil {
 		return nil, err
 	}
+	defer r.setForeground(id)()
 	initialFrame, err := waitFrame(ctx, initial)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
-			_ = r.send(cancelCtx, id, codeCancelRequest{Type: "operation/cancel", ID: id})
+			_ = r.send(cancelCtx, id, codeRequestSignal{Type: "operation/cancel", ID: id})
 			cancel()
 		}
 		return nil, err
 	}
 	return validateCodeModeResult(initialFrame)
+}
+
+// setForeground marks request id as the observation the model waits on and returns its reset.
+func (r *CodeMode) setForeground(id int64) func() {
+	r.mu.Lock()
+	r.foreground, r.yielded = &id, false
+	r.mu.Unlock()
+	return func() {
+		r.mu.Lock()
+		r.foreground, r.yielded = nil, false
+		r.mu.Unlock()
+	}
+}
+
+// HasForeground reports whether an execute or wait observation is in flight and not yet yielded.
+func (r *CodeMode) HasForeground() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.foreground != nil && !r.yielded
+}
+
+// YieldForeground asks the host to return the waiting execute or wait observation now while the cell
+// keeps running, at most once per request. It reports whether a yield was sent.
+//
+// Codex rust-v0.162.1 core/src/tools/code_mode (InstantInterrupt, default on): new user input yields
+// foreground code-mode observations so the model can read it at the next sampling step.
+func (r *CodeMode) YieldForeground(ctx context.Context) (bool, error) {
+	r.mu.Lock()
+	if r.foreground == nil || r.yielded {
+		r.mu.Unlock()
+		return false, nil
+	}
+	id := *r.foreground
+	r.yielded = true
+	r.mu.Unlock()
+	return true, r.send(ctx, id, codeRequestSignal{Type: "operation/yield", ID: id})
 }
 
 func waitFrame(ctx context.Context, channel <-chan codeReply) (*codeWireResult, error) {

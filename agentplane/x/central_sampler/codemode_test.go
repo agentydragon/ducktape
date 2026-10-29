@@ -42,7 +42,7 @@ func (p *fakeCodeModePeer) serve() {
 	if decodeProtocolObject(payload, &hello) != nil || hello.Type != "connection/hello" {
 		return
 	}
-	_ = p.send(codeFrame{Type: codeReady, SelectedVersion: 1, Capabilities: []string{}})
+	_ = p.send(codeFrame{Type: codeReady, SelectedVersion: 1, Capabilities: hello.RequiredCapabilities})
 	for {
 		payload, err = readHostFrame(p.input)
 		if err != nil {

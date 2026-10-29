@@ -191,7 +191,7 @@ func (m *CodeModeHost) startHost() (*Host, error) {
 	}
 	timer := time.AfterFunc(m.rpcTimeout, func() { _ = host.Kill() })
 	defer timer.Stop()
-	hello, err := json.Marshal(codeHello{Type: "connection/hello", SupportedVersions: []int{1}, RequiredCapabilities: []string{}, OptionalCapabilities: []string{}})
+	hello, err := json.Marshal(codeHello{Type: "connection/hello", SupportedVersions: []int{1}, RequiredCapabilities: []string{yieldObservationCapability}, OptionalCapabilities: []string{}})
 	if err == nil {
 		err = writeHostFrame(host.Stdin(), hello)
 	}
@@ -207,7 +207,7 @@ func (m *CodeModeHost) startHost() (*Host, error) {
 		_ = host.Close()
 		return nil, err
 	}
-	if ready.Type != codeReady || ready.SelectedVersion != 1 || ready.Capabilities == nil || len(ready.Capabilities) != 0 {
+	if ready.Type != codeReady || ready.SelectedVersion != 1 || len(ready.Capabilities) != 1 || ready.Capabilities[0] != yieldObservationCapability {
 		_ = host.Close()
 		return nil, fmt.Errorf("unexpected code-mode handshake: %s", canonicalJSON(ready))
 	}

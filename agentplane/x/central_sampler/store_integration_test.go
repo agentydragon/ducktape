@@ -850,3 +850,103 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 		})
 	}
 }
+
+func admitInput(t *testing.T, store *Store, sessionID, commandID, text string) {
+	t.Helper()
+	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitInput(t, store, session.ID, "turn-1", "start")
+	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command.ID != "turn-1" {
+		t.Fatalf("turn command=%v err=%v", command, err)
+	}
+	admitInput(t, store, session.ID, "steer-a", "steering text")
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "model", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "fixture-model-2"}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	admitInput(t, store, session.ID, "after-model", "next turn text")
+	if found, err := store.HasSteeringInput(t.Context(), owner, session.ID); err != nil || !found {
+		t.Fatalf("steering input found=%v err=%v", found, err)
+	}
+	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || !drained {
+		t.Fatalf("first drain=%v err=%v", drained, err)
+	}
+	// Input admitted behind a model change waits for a later turn, and nothing drains twice.
+	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
+		t.Fatalf("second drain=%v err=%v", drained, err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := newResponsesMessage("user", "steering text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := conversation.Items[len(conversation.Items)-1]; canonicalJSON(got) != canonicalJSON(expected) {
+		t.Fatalf("last conversation item=%s, want %s", canonicalJSON(got), canonicalJSON(expected))
+	}
+	for id, want := range map[string]samplerpb.CommandOutcome{
+		"steer-a":     samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED,
+		"after-model": samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,
+	} {
+		response, err := store.GetCommand(t.Context(), session.ID, id)
+		if err != nil || response.GetOutcome() != want {
+			t.Fatalf("%s outcome=%v err=%v, want %v", id, response.GetOutcome(), err, want)
+		}
+	}
+	entries, err := store.Events(t.Context(), session.ID, 0, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := false
+	for _, entry := range entries {
+		if message := entry.GetEvent().GetHarnessUserMessageConfirmed(); message != nil && message.GetHarnessMessageId() == "steer-a" {
+			joined = message.GetTurnId() == "turn-1" && message.GetText() == "steering text"
+		}
+		if turn := entry.GetEvent().GetTurnStarted(); turn != nil && turn.GetTurnId() == "steer-a" {
+			t.Fatal("steering input started its own turn")
+		}
+	}
+	if !joined {
+		t.Fatal("steering input was not confirmed into the active turn")
+	}
+	if err := store.FinishCommand(t.Context(), owner, session.ID, "turn-1", "done"); err != nil {
+		t.Fatal(err)
+	}
+	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command.ID != "model" {
+		t.Fatalf("next command=%v err=%v, want model", command, err)
+	}
+	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command.ID != "after-model" {
+		t.Fatalf("next command=%v err=%v, want after-model as a new turn", command, err)
+	}
+}
+
+func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitInput(t, store, session.ID, "turn-1", "start")
+	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "interrupt-1", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	admitInput(t, store, session.ID, "steer", "too late")
+	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
+		t.Fatalf("drain during pending interrupt=%v err=%v", drained, err)
+	}
+}

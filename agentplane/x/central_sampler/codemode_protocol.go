@@ -48,7 +48,11 @@ type codeHello struct {
 	OptionalCapabilities []string `json:"optionalCapabilities"`
 }
 
-type codeCancelRequest struct {
+// Codex rust-v0.162.1 code-mode-protocol/src/host/mod.rs YIELD_OBSERVATION_CAPABILITY.
+const yieldObservationCapability = "yield-observation"
+
+// codeRequestSignal is `operation/cancel` or `operation/yield` for an in-flight request.
+type codeRequestSignal struct {
 	Type string `json:"type"`
 	ID   int64  `json:"id"`
 }
