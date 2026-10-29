@@ -518,11 +518,13 @@ where
     let native_read_uses = super::array_content_effects::annotate_heap_content_effects(
         &body,
         &value_flow,
-        &local_class_heap_proof,
-        &set_iterable_proof,
-        &fresh_freeze_heap_proof,
-        &prepared_sync_index,
-        &native_facts,
+        super::array_content_effects::HeapContentProofs {
+            local_class: &local_class_heap_proof,
+            set_iterable: &set_iterable_proof,
+            fresh_freeze: &fresh_freeze_heap_proof,
+            native_reads: &prepared_sync_index,
+            native_facts: &native_facts,
+        },
         &mut facts,
     );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {

@@ -7,14 +7,18 @@
 
 use super::*;
 
+pub(crate) struct HeapContentProofs<'a> {
+    pub local_class: &'a LocalClassHeapProof,
+    pub set_iterable: &'a SetIterableProof,
+    pub fresh_freeze: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
+    pub native_reads: &'a sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
+    pub native_facts: &'a ValidatedNativeOperationFacts,
+}
+
 pub(crate) fn annotate_heap_content_effects(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
-    local_class_heap_proof: &LocalClassHeapProof,
-    set_iterable_proof: &SetIterableProof,
-    fresh_freeze_proof: &sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
-    native_reads: &super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
-    native_facts: &ValidatedNativeOperationFacts,
+    proofs: HeapContentProofs<'_>,
     facts: &mut [StatementFacts],
 ) -> Vec<(
     Vec<crate::reports::schema::InferenceUse>,
@@ -37,11 +41,11 @@ pub(crate) fn annotate_heap_content_effects(
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
             value_flow,
-            local_class_heap_proof,
-            set_iterable_proof,
-            fresh_freeze_proof,
-            native_reads,
-            native_facts,
+            local_class_heap_proof: proofs.local_class,
+            set_iterable_proof: proofs.set_iterable,
+            fresh_freeze_proof: proofs.fresh_freeze,
+            native_reads: proofs.native_reads,
+            native_facts: proofs.native_facts,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: HeapContentEffects::default(),
