@@ -153,7 +153,12 @@ class ControlListener:
 
     async def _read_facts(self, watch: grpc.aio.UnaryStreamCall) -> None:
         try:
-            async for response in watch:
+            while True:
+                response = await watch.read()
+                if response is grpc.aio.EOF:
+                    return
+                if not isinstance(response, runner_service_pb2.WatchStateResponse):
+                    raise TypeError("Runner WatchState returned an unexpected response")
                 await self._record_facts(response.facts)
         except grpc.aio.AioRpcError:
             pass
