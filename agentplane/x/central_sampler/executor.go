@@ -161,7 +161,7 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
 	}
 	var socket executorSocket
-	closeTransport := func() error { return nil }
+	var closeTransport func() error
 	if settings.GatewayTarget != "" {
 		address, err := settings.GatewayAddress(request.GetExecutor().GetOwner().GetNamespace(), request.GetExecutor().GetSandbox())
 		if err != nil {
