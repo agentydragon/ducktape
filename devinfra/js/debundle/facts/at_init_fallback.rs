@@ -170,6 +170,7 @@ impl Visit for SyncInvocationFinder {
 struct OpaqueAtInitCallFinder<'a> {
     shadowed: &'a BTreeSet<&'static str>,
     hints: &'a AnalysisInputs,
+    native_facts: &'a ValidatedNativeOperationFacts,
     graph: &'a ChunkCodeGraph,
     found: bool,
     lazy_depth: u32,
@@ -192,6 +193,9 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
         }
         if self.lazy_depth == 0 {
             let opaque = match expr {
+                Expr::Call(call) if self.native_facts.symbol_for_literal_proof(call).is_some() => {
+                    false
+                }
                 Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
                     expr,
                     self.shadowed,
@@ -240,11 +244,13 @@ pub(crate) fn has_opaque_at_init_call(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
+    native_facts: &ValidatedNativeOperationFacts,
     graph: &ChunkCodeGraph,
 ) -> bool {
     let mut finder = OpaqueAtInitCallFinder {
         shadowed,
         hints,
+        native_facts,
         graph,
         found: false,
         lazy_depth: 0,

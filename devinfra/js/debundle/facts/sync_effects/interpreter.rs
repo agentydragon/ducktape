@@ -6478,6 +6478,12 @@ impl PreparedSynchronousCallIndex {
             .unwrap_or_default()
     }
 
+    pub(crate) fn resolved_native_operation_inputs(
+        &self,
+    ) -> Vec<crate::analysis_inputs::ResolvedNativeOperationInput> {
+        self.index.validated_native_operation_inputs()
+    }
+
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
         locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,

@@ -451,6 +451,20 @@ integrity derives the same exact-read certificate. Purity, timing, and heap
 ordering consume that certificate. It certifies only a getter-free read:
 invoking the resulting function remains an ordinary call with its usual
 effects, arguments, and return uncertainty.
+For exactly one string-literal argument, a validated `symbol_for` site has a
+separate purity consequence. The original native `Symbol.for` converts that
+string without user code or a throw, then looks up or inserts a symbol in the
+agent-local registry. ECMAScript exposes no registry enumeration or removal:
+[`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
+queries an already held symbol, and repeat `Symbol.for` calls
+for a key return that key's unique symbol. Registry insertion can therefore
+move with this initializer without changing observable JS behavior. The pure
+verdict records the exact native-operation input reference; the array-content
+collector consumes the same checked site instead of adding an opaque frontier.
+This conclusion does not extend to a merely primitive-valued expression:
+evaluating it or converting its result may throw. It also assumes the ordinary
+ECMAScript intrinsic behavior under the author premise, not host access to
+the internal registry.
 
 ## Native `Proxy` construction
 

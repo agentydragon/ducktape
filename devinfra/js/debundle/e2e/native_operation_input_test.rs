@@ -899,6 +899,65 @@ fn selected_symbol_for_call_removes_only_its_synthetic_reentry_barrier() {
 }
 
 #[test]
+fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
+    let source = "const values = [];\nconsole.log('before', values.length);\nconst marker = Symbol.for('fixture.key');\nvalues.push('after');\nconsole.log('after', values.length);\nexport { values, marker };\n";
+    let modules = || {
+        vec![
+            logical_module_with_anon(
+                "outer",
+                &[Member::new("values")],
+                &[
+                    "console.log('before', values.length);",
+                    "values.push('after');",
+                    "console.log('after', values.length);",
+                ],
+            ),
+            logical_module("inner", &[Member::new("marker")]),
+        ]
+    };
+    let baseline = run_rejection_fixture(FixtureOpts::new(source, modules()));
+    let baseline_graph = serde_json::to_value(baseline.dependency_graph()).unwrap();
+    assert_eq!(
+        node_for_binding(&baseline_graph, "marker")["purity"]["kind"],
+        "not_pure"
+    );
+    assert_eq!(
+        node_for_binding(&baseline_graph, "marker")["purity"]["reasons"][0]["rule"],
+        "unknown_call"
+    );
+    assert!(
+        baseline.cycles().iter().any(|cycle| {
+            let members = cycle["modules"].as_array().expect("cycle modules");
+            ["outer", "inner"].iter().all(|module| {
+                members
+                    .iter()
+                    .any(|member| member.as_str() == Some(*module))
+            })
+        }),
+        "unselected member call should retain the outer/inner/outer cycle"
+    );
+
+    let fixture = run_fixture(
+        FixtureOpts::new(source, modules())
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "before 0\nafter 1\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\nconsole.log(Symbol.keyFor(entry.marker), entry.marker === Symbol.for('fixture.key'), entry.values.join(','));\n",
+        "fixture.key true after\n",
+    );
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let marker = node_for_binding(&graph, "marker");
+    assert_eq!(marker["purity"]["kind"], "pure");
+    assert_eq!(
+        marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+        0
+    );
+    assert_eq!(native_input_uses(&graph).len(), 1);
+}
+
+#[test]
 fn selected_symbol_for_rejects_other_callees_and_nonprimitive_conversion() {
     for (source, expected) in [
         (
@@ -966,9 +1025,11 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
             .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
     );
     assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(native_input_uses(&graph).len(), 1);
     assert_eq!(
-        native_input_uses(&serde_json::to_value(fixture.dependency_graph()).unwrap()).len(),
-        1
+        node_for_binding(&graph, "marker")["purity"]["kind"],
+        "not_pure"
     );
 }
 

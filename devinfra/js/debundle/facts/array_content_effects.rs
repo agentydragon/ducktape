@@ -14,6 +14,7 @@ pub(crate) fn annotate_heap_content_effects(
     set_iterable_proof: &SetIterableProof,
     fresh_freeze_proof: &sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
     native_reads: &super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
+    native_facts: &ValidatedNativeOperationFacts,
     facts: &mut [StatementFacts],
 ) -> Vec<(
     Vec<crate::reports::schema::InferenceUse>,
@@ -40,6 +41,7 @@ pub(crate) fn annotate_heap_content_effects(
             set_iterable_proof,
             fresh_freeze_proof,
             native_reads,
+            native_facts,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: HeapContentEffects::default(),
@@ -105,6 +107,7 @@ struct ArrayContentCollector<'a> {
     fresh_freeze_proof: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
     native_reads:
         &'a super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
+    native_facts: &'a ValidatedNativeOperationFacts,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     effects: HeapContentEffects,
@@ -406,6 +409,11 @@ impl Visit for ArrayContentCollector<'_> {
             for arg in &node.args {
                 arg.visit_with(self);
             }
+            return;
+        }
+        // This exact original native call cannot touch array contents or
+        // invoke a callback. The same validated site proves item purity.
+        if self.native_facts.symbol_for_literal_proof(node).is_some() {
             return;
         }
         if let Callee::Expr(callee) = &node.callee {

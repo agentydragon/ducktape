@@ -4969,6 +4969,10 @@ impl ExecutionIndex {
             .collect()
     }
 
+    pub(crate) fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
+        self.resolved_native_operation_inputs.clone()
+    }
+
     /// Build one immutable context from the canonical source index and the
     /// completed native-write census. Callable candidates are input facts;
     /// their returned-record constructors participate in the same native

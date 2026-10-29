@@ -382,6 +382,8 @@ where
             set_iterable_shapes,
             &shadowed,
         );
+    let native_facts =
+        ValidatedNativeOperationFacts::new(prepared_sync_index.resolved_native_operation_inputs());
     prepared_sync_index.locate_native_integrity_witnesses(|span| {
         let source_path = source_path?;
         let (start_line, end_line, start_column) = line_range_for_span(span)?;
@@ -469,6 +471,7 @@ where
                 structural_facts,
                 &shadowed,
                 hints,
+                &native_facts,
                 &graph,
                 &fresh_record_destructuring,
                 &local_effect_context,
@@ -519,6 +522,7 @@ where
         &set_iterable_proof,
         &fresh_freeze_heap_proof,
         &prepared_sync_index,
+        &native_facts,
         &mut facts,
     );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
@@ -738,6 +742,7 @@ fn assemble_statement_facts(
     structural: StructuralStatementFacts,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
+    native_facts: &ValidatedNativeOperationFacts,
     graph: &ChunkCodeGraph,
     fresh_record_destructuring: &crate::purity::FreshRecordDestructuringContext<'_>,
     local_effect_context: &local_effects::LocalEffectContext,
@@ -776,7 +781,10 @@ fn assemble_statement_facts(
         shadowed,
         hints,
         graph,
-        fresh_record_destructuring,
+        &ItemPurityProofs {
+            native_operations: native_facts,
+            fresh_record_destructuring,
+        },
         !local_effects.is_empty(),
     );
     if !var_initializers.is_disjoint(shared_vars) {
@@ -795,7 +803,8 @@ fn assemble_statement_facts(
     // binding edges + rebind co-location rather than the S-chain.
     let trusted_summary = hints.assumptions.trusted_dataflow_summaries && cell_writes_summarizable;
     let dataflow_summarizable = trusted_summary
-        || dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
+        || dataflow_summarizable
+            && !has_opaque_at_init_call(item, shadowed, hints, native_facts, graph);
     // Ordinary eager reads (including `pureWrap(B)`) always remain in
     // `reads.eager`. For classifier/callee-pure statements, clearing the
     // unresolved-call fallback also asserts that opaque calls cannot

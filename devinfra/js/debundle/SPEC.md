@@ -1148,9 +1148,15 @@ The input is consumed only at the exact selected call span; other `Symbol`
 and `Symbol.for` calls retain their ordinary native-integrity checks. Opaque
 possible receiver writes may be covered by this author premise, but their witnesses remain in
 the shared census and report. No whole-lifetime purity, no-reentry or receiver
-guarantee follows. Callee and argument evaluation, throws, other writes,
-callbacks, publication, CommonJS behavior and all other calls keep their
-ordinary analysis.
+guarantee follows. One narrower consequence is proved separately: when the
+selected `symbol_for` initializer has exactly one literal string argument,
+the original native call has no observable write, callback, or throw under
+ECMAScript's agent-local registry semantics. That exact source unit is pure
+with a `native_operation_inputs` proof dependency, and its call adds no opaque
+array-content frontier. Other argument expressions, even if primitive-valued,
+retain their ordinary throw and purity analysis. Callee and argument
+evaluation, other writes, callbacks, publication, CommonJS behavior and all
+other calls keep their ordinary analysis.
 
 `set_from_primitive_array` selects one direct top-level simple binding whose
 entire initializer is `new Set([/* primitive literals */])`. The array must be

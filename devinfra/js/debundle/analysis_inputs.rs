@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
-use swc_ecma_ast::Id;
+use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
 use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
@@ -551,6 +551,40 @@ pub struct AnalysisInputs {
     /// Inferred direct ESM import bindings whose possible values are primitive.
     /// Used only to suppress ToPrimitive callback promotion, never eager reads.
     pub imported_primitives: BTreeSet<String>,
+}
+
+/// Exact-site native inputs after the canonical execution index validated
+/// source shape and local slot contradictions. Whole-program callers also
+/// checked the shared cross-chunk native write census before supplying them.
+pub(crate) struct ValidatedNativeOperationFacts {
+    inputs: Vec<ResolvedNativeOperationInput>,
+}
+
+impl ValidatedNativeOperationFacts {
+    pub(crate) fn new(inputs: Vec<ResolvedNativeOperationInput>) -> Self {
+        Self { inputs }
+    }
+
+    /// The exact-site native input certifies the ordinary original data slots;
+    /// a literal string additionally makes conversion and registry lookup
+    /// nonthrowing and free of user callbacks. The registry insertion cannot
+    /// be observed independently of the returned symbol in ECMAScript.
+    pub(crate) fn symbol_for_literal_proof(
+        &self,
+        call: &CallExpr,
+    ) -> Option<&ResolvedNativeOperationInput> {
+        if call.args.len() != 1
+            || call.args[0].spread.is_some()
+            || !matches!(call.args[0].expr.as_ref(), Expr::Lit(Lit::Str(_)))
+        {
+            return None;
+        }
+        self.inputs.iter().find(|input| {
+            input.call_span == call.span
+                && input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+        })
+    }
 }
 
 impl AnalysisInputs {
