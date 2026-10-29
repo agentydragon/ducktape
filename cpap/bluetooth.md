@@ -47,3 +47,19 @@ python /tmp/airbreak-plus-ble/python/as11_config.py -d ble:8C:6F:B9:05:48:5A rpc
 The client stores reusable pairing secrets in `~/.as11_ble.json`; keep that
 file private and out of Git. Later connections use those credentials without
 another on-screen code.
+
+An encrypted copy lives at `secrets/cpap-ble.sops.json`, readable with the
+workstation user SSH keys listed in `.sops.yaml` (plus admin recovery).
+To restore on another machine, run from the repo root:
+
+```bash
+(
+  umask 077
+  export SOPS_AGE_KEY="$(ssh-to-age -private-key -i ~/.ssh/id_ed25519)"
+  sops -d secrets/cpap-ble.sops.json > ~/.as11_ble.json
+)
+```
+
+This replaces the local credential file; merge entries first if it already
+contains other device pairings. The credentials are independent of the dongle;
+using another adapter or simultaneous clients remains untested.
