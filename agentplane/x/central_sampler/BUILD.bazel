@@ -3,11 +3,13 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
+# gazelle:exclude test_live_provider.py
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -70,6 +72,35 @@ py_library(
         "//agentplane/testing:codex_fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//util/testing:postgres_fixtures",
+    ],
+)
+
+# Live provider (LiteLLM) agent run; manual. See the module docstring for the command.
+live_openai_py_test(
+    name = "test_live_provider",
+    # A real model samples several times per turn over the network; bounded by the test's turn timeout.
+    size = "large",
+    srcs = ["test_live_provider.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":testing",
+        ":testing_store",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/testing:codex_fixtures",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
