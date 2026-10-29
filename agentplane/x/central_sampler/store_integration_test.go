@@ -744,11 +744,12 @@ func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
 
 func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 	for _, test := range []struct {
-		name           string
-		failure        *KnownFailureError
-		wantActive     samplerpb.CommandOutcome
-		wantQueued     samplerpb.CommandOutcome
-		wantQueueError bool
+		name               string
+		failure            error
+		wantActive         samplerpb.CommandOutcome
+		wantQueued         samplerpb.CommandOutcome
+		wantQueueError     bool
+		wantReasonContains string
 	}{
 		{
 			name:       "known failure",
@@ -761,6 +762,14 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			wantActive:     samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN,
 			wantQueued:     samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
 			wantQueueError: true,
+		},
+		{
+			name:               "ordinary execution error",
+			failure:            errors.New("unexpected EOF while reading provider stream"),
+			wantActive:         samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN,
+			wantQueued:         samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
+			wantQueueError:     true,
+			wantReasonContains: "unexpected EOF while reading provider stream",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -797,6 +806,18 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 				}
 				if response.GetOutcome() != want {
 					t.Fatalf("GetCommand(%q) outcome=%v, want %v", commandID, response.GetOutcome(), want)
+				}
+				if commandID == "active-input" && test.wantReasonContains != "" && !strings.Contains(response.GetFailureReason(), test.wantReasonContains) {
+					t.Fatalf("GetCommand(%q) failure_reason=%q, want it to contain %q", commandID, response.GetFailureReason(), test.wantReasonContains)
+				}
+			}
+			if test.wantReasonContains != "" {
+				persisted, err := store.GetSession(t.Context(), session.ID, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if persisted.BlockedReason == nil || !strings.Contains(*persisted.BlockedReason, test.wantReasonContains) {
+					t.Fatalf("GetSession blocked_reason=%v, want it to contain %q", persisted.BlockedReason, test.wantReasonContains)
 				}
 			}
 
@@ -837,15 +858,19 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			if !test.wantQueueError && outcomes["queued-input"] != threadfold.OutcomePending {
 				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], threadfold.OutcomePending)
 			}
-			var failedTurn bool
+			var failedTurn, failedTurnReason bool
 			for _, lifecycle := range folded.LifecycleUpserts {
 				turn := lifecycle.Event.GetTurnCompleted()
 				if turn != nil && turn.GetTurnId() == "active-input" && turn.GetStatus() == eventpb.TurnStatus_TURN_STATUS_FAILED {
 					failedTurn = true
+					failedTurnReason = test.wantReasonContains == "" || strings.Contains(turn.GetError(), test.wantReasonContains)
 				}
 			}
 			if !failedTurn {
 				t.Fatal("History fold did not retain the failed active turn")
+			}
+			if !failedTurnReason {
+				t.Fatal("History fold did not retain the original driver error in the failed turn")
 			}
 		})
 	}

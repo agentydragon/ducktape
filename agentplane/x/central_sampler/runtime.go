@@ -185,7 +185,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 			slog.Error("central sampler execution stopped", "session_id", sessionID, "error", executionErr)
 		}
 		failCtx, cancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
-		if err := r.store.FailExecution(failCtx, owner, sessionID, activeCommand, known); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.store.FailExecution(failCtx, owner, sessionID, activeCommand, executionErr); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("central sampler could not record execution failure", "session_id", sessionID, "error", err)
 		}
 		cancel()

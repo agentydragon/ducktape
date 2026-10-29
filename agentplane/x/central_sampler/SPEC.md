@@ -127,6 +127,8 @@ Explicit provider rejections, terminal provider failures and model-tool validati
 JavaScript dispatch record a rejected intent. When no unresolved effects or live execution remain,
 the command and turn fail without blocking the Session; subsequent input may continue without replaying the failed
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
+The original driver error is retained in command and turn failure reasons and, for blocked sessions,
+in `GetSession.blocked_reason`.
 Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
 executor failures remain conservative because the surrounding JavaScript may already have caused
 effects. Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
