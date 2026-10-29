@@ -111,17 +111,6 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             first = await stub.SubmitInput(request, metadata=METADATA, timeout=10)
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
             async with await endpoint.next() as exchange:
-                # Input admitted while the provider is held steers the running turn.
-                queued = await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
-                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-                        command_id="queued",
-                        text="Also mention the steering input.",
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
-                )
-                assert queued.admission.cursor > first.admission.cursor
                 await exchange.send(
                     *response_stream(
                         [
@@ -137,16 +126,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                     ).events
                 )
             async with await endpoint.next() as exchange:
-                body_input = exchange.request.body["input"]
-                outputs = [item for item in body_input if item["type"] == "custom_tool_call_output"]
-                steering = [
-                    index
-                    for index, item in enumerate(body_input)
-                    if item.get("content") == "Also mention the steering input."
-                ]
-                # Codex records pending input once, at the next step, after the step's tool outputs.
-                assert len(steering) == 1
-                assert body_input.index(outputs[-1]) < steering[0]
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
                 process = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(
                     *response_stream(
@@ -176,6 +156,33 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                     pytest.fail("script did not yield a JS cell")
             async with await endpoint.next() as exchange:
                 assert "received:hello" in json.dumps(exchange.request.body)
+                # Input admitted while the provider is held steers the running turn.
+                queued = await stub.SubmitInput(
+                    runner_service_pb2.SubmitInputRequest(
+                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
+                        command_id="queued",
+                        text="Also mention the steering input.",
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                assert queued.admission.cursor > first.admission.cursor
+                await exchange.send(*response_stream([Message("first answer")], model="test-model").events)
+            async with await endpoint.next() as exchange:
+                # Pending input keeps a turn whose model already answered; it follows that answer once.
+                body_input = exchange.request.body["input"]
+                steering = [
+                    index
+                    for index, item in enumerate(body_input)
+                    if item.get("content") == "Also mention the steering input."
+                ]
+                assert len(steering) == 1
+                answer = next(
+                    index
+                    for index, item in enumerate(body_input)
+                    if item.get("role") == "assistant" and "first answer" in json.dumps(item.get("content"))
+                )
+                assert answer < steering[0]
                 await exchange.send(*response_stream([Message("first complete")], model="test-model").events)
             assert (await completed(stub, "first")).status == event_pb2.TURN_STATUS_COMPLETED
             steered = await stub.GetCommand(
