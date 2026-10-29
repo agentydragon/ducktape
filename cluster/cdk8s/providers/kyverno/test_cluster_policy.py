@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from kyverno_clusterpolicy_crds.io.kyverno import ClusterPolicySpecValidationFailureAction
 
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 
 # cdk8s_import's jsii-generated enum for this field collapses the CRD schema's
@@ -18,9 +21,9 @@ from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy
     ],
 )
 def test_validation_failure_action_passes_through(
-    action: ClusterPolicySpecValidationFailureAction, expected: str
+    tmp_path: Path, action: ClusterPolicySpecValidationFailureAction, expected: str
 ) -> None:
-    chart = Cdk8sTesting.chart()
+    chart = scratch_chart(tmp_path)
     ClusterPolicy(
         chart, "test", metadata=ApiObjectMetadata(name="test-policy"), rules=[], validation_failure_action=action
     )

@@ -16,6 +16,7 @@ import pytest_bazel
 
 from cluster.cdk8s.kyverno.apply import apply_twice, assert_not_mutated
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
+from cluster.cdk8s.testing.scratch import scratch_app
 
 # Policy -> the namespace it matches.
 POLICIES = {"inject-haku-egress-proxy": "haku-sandbox"}
@@ -49,7 +50,7 @@ def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
     """
     resource = tmp_path / "pod.yaml"
     resource.write_text(_pod(POLICIES[request.param]))
-    _, second = apply_twice(policy(request.param, tmp_path), resource, tmp_path)
+    _, second = apply_twice(policy(scratch_app(tmp_path), request.param, tmp_path), resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 
 
@@ -94,7 +95,10 @@ def test_pod_carrying_its_own_wiring_is_left_alone(tmp_path: Path) -> None:
     own `HTTP_PROXY`: env is last-entry-wins, so an appended fleet value would otherwise override
     the pod's.
     """
-    assert_not_mutated(policy("inject-haku-egress-proxy", tmp_path), manifest("pod_self_wired_egress_proxy.yaml"))
+    assert_not_mutated(
+        policy(scratch_app(tmp_path), "inject-haku-egress-proxy", tmp_path),
+        manifest("pod_self_wired_egress_proxy.yaml"),
+    )
 
 
 if __name__ == "__main__":

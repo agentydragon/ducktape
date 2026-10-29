@@ -1,12 +1,15 @@
+from pathlib import Path
+
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 
-def test_bearer_token_secret_endpoint_wire_shape() -> None:
-    chart = Cdk8sTesting.chart()
+def test_bearer_token_secret_endpoint_wire_shape(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     ServiceMonitor(
         chart,
         "test",

@@ -92,6 +92,7 @@ py_test(
         ":seaweedfs_bucket",
         "//:conftest",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

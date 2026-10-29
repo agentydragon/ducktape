@@ -30,6 +30,7 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

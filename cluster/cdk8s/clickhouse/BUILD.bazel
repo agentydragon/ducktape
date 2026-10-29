@@ -92,6 +92,7 @@ py_test(
         ":client",
         ":installation",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

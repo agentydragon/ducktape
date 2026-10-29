@@ -231,6 +231,7 @@ py_test(
     deps = [
         ":grafana_instance",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -301,6 +302,7 @@ py_test(
         ":loki",
         "//:conftest",
         "//cluster/cdk8s:node_feature_discovery",
+        "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
@@ -324,6 +326,7 @@ py_test(
     deps = [
         ":rules",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
@@ -343,6 +346,7 @@ py_test(
     deps = [
         ":gateway_probe",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

@@ -1,15 +1,18 @@
+from pathlib import Path
+
 import pytest
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.seaweedfs import cluster, namespace, s3
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 _TENANT = min(cluster.TENANTS)
 _NOT_A_TENANT = "test-not-a-tenant"
 
 
-def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant() -> None:
-    chart = Cdk8sTesting.chart()
+def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     s3.identity(chart, "local", name="test-local")
     s3.credentials(
         chart, "local-credentials", identity="test-local", namespace=namespace.NAME, secret="test", key_fields=None
@@ -28,8 +31,8 @@ def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant() -> None:
     ]
 
 
-def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit() -> None:
-    chart = Cdk8sTesting.chart()
+def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     with pytest.raises(ValueError, match="TENANTS"):
         s3.bucket(chart, "bucket", name="test", namespace=_NOT_A_TENANT, access=[], adopt_existing=False)
     with pytest.raises(ValueError, match="TENANTS"):

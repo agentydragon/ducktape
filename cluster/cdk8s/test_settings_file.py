@@ -1,7 +1,7 @@
 """`SettingsFile.mount_into` runs after `add_container` returns, through cdk8s-plus's own `mount`
 and `env.add_variable`; the rendered pod spec still resolves the env var to the ConfigMap key."""
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
@@ -9,10 +9,11 @@ from cdk8s_plus_34 import Deployment
 from more_itertools import one
 
 from cluster.cdk8s.settings_file import SettingsFile
+from cluster.cdk8s.testing.scratch import scratch_app
 
 
-def test_the_env_var_names_the_mounted_file() -> None:
-    chart = Chart(Cdk8sTesting.app(), "test")
+def test_the_env_var_names_the_mounted_file(tmp_path: Path) -> None:
+    chart = Chart(scratch_app(tmp_path), "test")
     content = "listen_port: 8080\nallowed_namespaces:\n  - settings-file-test\n"
     settings = SettingsFile(
         chart, "settings", metadata=ApiObjectMetadata(name="app-settings"), content=content, path="/etc/app/app.yaml"

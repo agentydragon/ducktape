@@ -2,6 +2,7 @@
 repository's, whose ref pins it."""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -11,6 +12,7 @@ from constructs import Construct
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.providers.flux.helm_repository import HelmRepository
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 
 def _helm_repository(scope: Construct) -> HelmRepository:
@@ -31,9 +33,9 @@ def _git_repository(scope: Construct) -> GitRepository:
     ("repository", "version"), [(_helm_repository, None), (_git_repository, "1.0.0")], ids=["helm", "git"]
 )
 def test_version_mismatched_to_source_raises(
-    repository: Callable[[Construct], HelmRepository | GitRepository], version: str | None
+    tmp_path: Path, repository: Callable[[Construct], HelmRepository | GitRepository], version: str | None
 ) -> None:
-    chart = Cdk8sTesting.chart()
+    chart = scratch_chart(tmp_path)
     with pytest.raises(ValueError, match="version"):
         helm_release(
             chart,
@@ -47,8 +49,8 @@ def test_version_mismatched_to_source_raises(
         )
 
 
-def test_git_repository_chart_references_its_source() -> None:
-    chart = Cdk8sTesting.chart()
+def test_git_repository_chart_references_its_source(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     helm_release(
         chart,
         "test-release",

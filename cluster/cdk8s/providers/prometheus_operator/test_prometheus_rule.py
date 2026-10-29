@@ -1,11 +1,14 @@
+from pathlib import Path
+
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 
-def test_multiple_groups_wire_shape() -> None:
-    chart = Cdk8sTesting.chart()
+def test_multiple_groups_wire_shape(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     rule = Rule.alert("Example", "up == 0", for_="5m")
     PrometheusRule(
         chart,
@@ -17,8 +20,8 @@ def test_multiple_groups_wire_shape() -> None:
     assert [g["name"] for g in manifest["spec"]["groups"]] == ["group-a", "group-b"]
 
 
-def test_alert_merges_summary_and_description_into_annotations() -> None:
-    chart = Cdk8sTesting.chart()
+def test_alert_merges_summary_and_description_into_annotations(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     PrometheusRule(
         chart,
         "test",
@@ -47,8 +50,8 @@ def test_alert_merges_summary_and_description_into_annotations() -> None:
     }
 
 
-def test_record_has_no_for_or_annotations() -> None:
-    chart = Cdk8sTesting.chart()
+def test_record_has_no_for_or_annotations(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     PrometheusRule(
         chart,
         "test",

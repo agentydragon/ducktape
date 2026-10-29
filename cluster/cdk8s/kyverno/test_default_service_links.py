@@ -9,11 +9,12 @@ import pytest_bazel
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
+from cluster.cdk8s.testing.scratch import scratch_app
 
 
 @pytest.fixture
 def service_links_policy(tmp_path: Path) -> Path:
-    return policy("default-disable-service-links", tmp_path)
+    return policy(scratch_app(tmp_path), "default-disable-service-links", tmp_path)
 
 
 class TestDefaultDisableServiceLinks:

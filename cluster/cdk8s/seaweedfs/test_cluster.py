@@ -8,6 +8,7 @@ git dies of SIGBUS on mmap'd packfiles cluster-wide.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest_bazel
@@ -16,6 +17,7 @@ from more_itertools import one
 
 from cluster.cdk8s import stateful_infra
 from cluster.cdk8s.seaweedfs import cluster
+from cluster.cdk8s.testing.scratch import scratch_app
 
 
 def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, Any]]:
@@ -35,8 +37,8 @@ def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, A
     return found
 
 
-def test_seaweedfs_components_carry_the_protected_priority_class() -> None:
-    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(Cdk8sTesting.app())) if doc["kind"] == "Seaweed")
+def test_seaweedfs_components_carry_the_protected_priority_class(tmp_path: Path) -> None:
+    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(scratch_app(tmp_path))) if doc["kind"] == "Seaweed")
     components = _pod_spawning_components(seaweed["spec"])
 
     assert components, "found no pod-spawning components in the SeaweedFS CR"

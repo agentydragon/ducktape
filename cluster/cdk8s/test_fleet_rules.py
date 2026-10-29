@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from cluster.cdk8s.fleet_rules import (
     unused_waivers,
 )
 from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL
+from cluster.cdk8s.testing.scratch import scratch_app
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
@@ -170,8 +172,8 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
     ]
 
 
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values() -> None:
-    chart = Chart(Cdk8sTesting.app(), "vpa")
+def test_auto_vpa_namespace_owned_policy_requires_controlled_values(tmp_path: Path) -> None:
+    chart = Chart(scratch_app(tmp_path), "vpa")
     ApiObject(
         chart,
         "partial-vpa-policy",
@@ -334,8 +336,8 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
 
 
-def test_rules_fail_synth_naming_the_object() -> None:
-    chart = Chart(Cdk8sTesting.app(), "fleet")
+def test_rules_fail_synth_naming_the_object(tmp_path: Path) -> None:
+    chart = Chart(scratch_app(tmp_path), "fleet")
     ApiObject(
         chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
     ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))

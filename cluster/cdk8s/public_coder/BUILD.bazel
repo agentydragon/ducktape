@@ -87,6 +87,7 @@ py_test(
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",

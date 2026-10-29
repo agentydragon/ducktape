@@ -1,12 +1,15 @@
+from pathlib import Path
+
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef
 
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 
-def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_unset() -> None:
-    chart = Cdk8sTesting.chart()
+def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_unset(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     Bucket(
         chart,
         "bucket",

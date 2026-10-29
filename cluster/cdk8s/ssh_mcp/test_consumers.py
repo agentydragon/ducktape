@@ -17,6 +17,7 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 from more_itertools import one
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
+from cluster.cdk8s.testing.scratch import scratch_chart
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -31,8 +32,10 @@ def ssh_config() -> ssh_mcp_config.SshMcpConfig:
 
 
 @pytest.fixture(scope="module")
-def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
-    chart = Cdk8sTesting.chart()
+def ssh_resources(
+    tmp_path_factory: pytest.TempPathFactory, ssh_config: ssh_mcp_config.SshMcpConfig
+) -> list[dict[str, Any]]:
+    chart = scratch_chart(tmp_path_factory.mktemp("cdk8s"))
     ssh_mcp_backend.SshMcp(
         chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
     )

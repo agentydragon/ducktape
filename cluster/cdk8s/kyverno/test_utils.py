@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 
 from cluster.cdk8s.kyverno import policies, proxy_injection
 from util.bazel.runfiles import get_required_path
@@ -24,9 +27,8 @@ def manifest(name: str) -> Path:
     return get_required_path(f"_main/cluster/cdk8s/kyverno/testdata/{name}")
 
 
-def policy(name: str, directory: Path) -> Path:
+def policy(app: App, name: str, directory: Path) -> Path:
     """Synthesize one policy constructor to a file for the real Kyverno CLI."""
-    app = Cdk8sTesting.app()
     chart = _POLICY_BUILDERS[name](app)
     matches = [
         doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == name

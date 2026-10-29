@@ -1,17 +1,20 @@
 """The shared construct gives only the egress proxy access and copies in no credential; each
 environment's own module decides which credentials it gets."""
 
+from pathlib import Path
+
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
+from cluster.cdk8s.testing.scratch import scratch_chart
 
 _CREDENTIALS_NAMESPACE = "test-egress-credentials"
 _PROXY_NAMESPACE = "test-proxy"
 
 
-def test_only_the_proxy_reads_and_nothing_is_copied() -> None:
-    chart = Cdk8sTesting.chart()
+def test_only_the_proxy_reads_and_nothing_is_copied(tmp_path: Path) -> None:
+    chart = scratch_chart(tmp_path)
     EgressCredentials(chart, "credentials", namespace=_CREDENTIALS_NAMESPACE, proxy_namespace=_PROXY_NAMESPACE)
     objects = Cdk8sTesting.synth(chart)
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)

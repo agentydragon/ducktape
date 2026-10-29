@@ -27,6 +27,7 @@ from more_itertools import one
 
 from cluster.cdk8s import node_feature_discovery
 from cluster.cdk8s.monitoring import loki
+from cluster.cdk8s.testing.scratch import scratch_app
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -47,10 +48,10 @@ _ROAMING_DAEMONSETS = (
 
 
 @pytest.fixture(scope="module")
-def release_manifests() -> list[dict]:
+def release_manifests(tmp_path_factory: pytest.TempPathFactory) -> list[dict]:
     return [
-        *Cdk8sTesting.synth(loki.chart(Cdk8sTesting.app())),
-        *Cdk8sTesting.synth(node_feature_discovery.chart(Cdk8sTesting.app())),
+        *Cdk8sTesting.synth(loki.chart(scratch_app(tmp_path_factory.mktemp("cdk8s")))),
+        *Cdk8sTesting.synth(node_feature_discovery.chart(scratch_app(tmp_path_factory.mktemp("cdk8s")))),
     ]
 
 

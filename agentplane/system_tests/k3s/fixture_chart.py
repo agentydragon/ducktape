@@ -23,7 +23,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
-from cdk8s import ApiObjectMetadata, Chart, Size, Testing
+from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerProps,
@@ -407,7 +407,7 @@ def build_chart(
             "memory": k8s.Quantity.from_string(Size.mebibytes(32).as_string()),
         }
     )
-    app = Testing.app()
+    app = App()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     _add_runner_root(chart)

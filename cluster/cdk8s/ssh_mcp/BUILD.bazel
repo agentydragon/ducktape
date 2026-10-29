@@ -84,6 +84,7 @@ py_test(
         ":config",
         ":conftest",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",

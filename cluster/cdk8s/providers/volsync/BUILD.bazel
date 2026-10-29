@@ -50,6 +50,7 @@ py_test(
         ":replication_source",
         "//:conftest",
         "//cluster/cdk8s/providers/volsync:replicationsource",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

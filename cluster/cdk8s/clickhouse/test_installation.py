@@ -1,13 +1,16 @@
 """The AIQuota history reader's generated credential and database grants stay separate."""
 
+from pathlib import Path
+
 import pytest_bazel
 from cdk8s import Testing as CdkTesting
 
 from cluster.cdk8s.clickhouse import client, installation
+from cluster.cdk8s.testing.scratch import scratch_app
 
 
-def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history() -> None:
-    docs = CdkTesting.synth(installation.clickhouse_chart(CdkTesting.app()))
+def test_aiquota_history_reader_is_minted_and_scoped_to_typed_quota_history(tmp_path: Path) -> None:
+    docs = CdkTesting.synth(installation.clickhouse_chart(scratch_app(tmp_path)))
     user = client.AIQUOTA_HISTORY_USER
     chi = next(doc for doc in docs if doc["kind"] == "ClickHouseInstallation")
     users = chi["spec"]["configuration"]["users"]

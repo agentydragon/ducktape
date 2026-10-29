@@ -19,6 +19,7 @@ from cluster.cdk8s.flux import (
     kustomizations_chart,
 )
 from cluster.cdk8s.generation import config_map_chart, write_directory
+from cluster.cdk8s.testing.scratch import scratch_app
 
 _ARTIFACT = artifact("test-app", "test/app")
 
@@ -65,7 +66,7 @@ def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> Non
     [((), False), (("test-config.yaml",), False), (("test-config.yaml", "test-secret.sops.yaml"), True)],
 )
 def test_flux_decrypts_exactly_when_a_sibling_is_sops(tmp_path: Path, siblings: Sequence[str], decrypted: bool) -> None:
-    chart = kustomizations_chart(Cdk8sTesting.app())
+    chart = kustomizations_chart(scratch_app(tmp_path))
     flux_kustomization(chart, "test-app", write_directory(tmp_path, _ARTIFACT, _chart("first"), siblings=siblings))
     (rendered,) = Cdk8sTesting.synth(chart)
     assert ("decryption" in rendered["spec"]) is decrypted
@@ -88,7 +89,7 @@ def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(tmp_pa
         {"name": "test-secret", "namespace": "test-ns", "files": ["credentials.yaml=source.sops.yaml"]}
     ]
 
-    chart = kustomizations_chart(Cdk8sTesting.app())
+    chart = kustomizations_chart(scratch_app(tmp_path))
     flux_kustomization(chart, "test-app", directory)
     (rendered,) = Cdk8sTesting.synth(chart)
     assert rendered["spec"]["decryption"]["provider"] == "sops"

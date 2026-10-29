@@ -19,12 +19,13 @@ from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db as plaid_db, spend as plaid_spend
 from cluster.cdk8s.public_coder import app as public_coder_app
+from cluster.cdk8s.testing.scratch import scratch_app
 
 
 @pytest.fixture(scope="module")
-def model_resources() -> list[dict[str, Any]]:
+def model_resources(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
     """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
-    app = Cdk8sTesting.app()
+    app = scratch_app(tmp_path_factory.mktemp("cdk8s"))
     charts = [
         agent_rbac_base.chart(app),
         agent_shared_rbac.chart(app),

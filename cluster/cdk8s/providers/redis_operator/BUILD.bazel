@@ -36,6 +36,7 @@ py_test(
         ":redisreplication",
         ":replication",
         "//:conftest",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pytest",

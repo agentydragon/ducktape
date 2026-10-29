@@ -92,6 +92,7 @@ py_test(
         ":apply",
         ":test_support",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -109,6 +110,7 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -128,6 +130,7 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -144,6 +147,7 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -161,6 +165,7 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s/testing:scratch",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

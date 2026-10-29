@@ -31,6 +31,7 @@ from cluster.cdk8s.flux import (
     kustomizations_chart,
     kustomize_kustomization,
 )
+from cluster.cdk8s.testing.scratch import scratch_app
 from util.bazel.runfiles import get_required_path
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
@@ -53,8 +54,8 @@ def _raw_kustomization(chart: Chart, *, wait: bool, health_checks: list[Kustomiz
     )
 
 
-def test_wait_with_health_checks_fails_synth() -> None:
-    chart = kustomizations_chart(Cdk8sTesting.app())
+def test_wait_with_health_checks_fails_synth(tmp_path: Path) -> None:
+    chart = kustomizations_chart(scratch_app(tmp_path))
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
     with pytest.raises(Exception, match="Kustomization/test-app"):
         Cdk8sTesting.synth(chart)
@@ -62,18 +63,20 @@ def test_wait_with_health_checks_fails_synth() -> None:
 
 @pytest.mark.parametrize(("wait", "health_checks"), [(False, _HEALTH_CHECKS), (True, None)])
 def test_wait_or_health_checks_alone_synthesizes(
-    wait: bool, health_checks: list[KustomizationSpecHealthChecks] | None
+    tmp_path: Path, wait: bool, health_checks: list[KustomizationSpecHealthChecks] | None
 ) -> None:
-    chart = kustomizations_chart(Cdk8sTesting.app())
+    chart = kustomizations_chart(scratch_app(tmp_path))
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
     (rendered,) = Cdk8sTesting.synth(chart)
     assert rendered["spec"]["wait"] is wait
 
 
-def test_rendered_directory_refuses_a_second_decryption() -> None:
+def test_rendered_directory_refuses_a_second_decryption(tmp_path: Path) -> None:
     directory = RenderedDirectory(artifact=artifact("test-app", "test/app"), decryption=None)
     with pytest.raises(ValueError, match="decryption="):
-        flux_kustomization(kustomizations_chart(Cdk8sTesting.app()), "test-app", directory, decryption=SOPS_DECRYPTION)
+        flux_kustomization(
+            kustomizations_chart(scratch_app(tmp_path)), "test-app", directory, decryption=SOPS_DECRYPTION
+        )
 
 
 def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> None:
