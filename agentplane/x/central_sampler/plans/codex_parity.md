@@ -24,6 +24,7 @@ instructions, setup scripts and History export.
 - **Subagents and multi-agent:** build as Agentplane-level cross-Session messaging with privileges,
   not a port. Use Codex multi-agent v2 and its agent message board, and Claude Code's subagents, as
   reference designs.
+- **Memories:** Codex-style memory extraction and consolidation across Sessions.
 - **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
   the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
