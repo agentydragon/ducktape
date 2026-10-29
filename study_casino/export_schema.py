@@ -16,10 +16,13 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
+from pydantic import TypeAdapter
+
 from study_casino.app import create_app
 from study_casino.config import Settings
 from study_casino.state import WsStateChangedMessage
 from study_casino.store import SqlStore
+from util.json_schema import register_models
 
 
 class _StubStore:
@@ -42,8 +45,10 @@ def main() -> None:
     # FastAPI doesn't emit WebSocket frame schemas — there are no
     # `response_model` annotations on websocket routes. Inject the
     # `/ws` payload model so the frontend can validate incoming frames.
-    schema.setdefault("components", {}).setdefault("schemas", {})["WsStateChangedMessage"] = (
-        WsStateChangedMessage.model_json_schema(ref_template="#/components/schemas/{model}")
+    register_models(
+        schema.setdefault("components", {}).setdefault("schemas", {}),
+        [("WsStateChangedMessage", "validation", TypeAdapter(WsStateChangedMessage))],
+        ref_template="#/components/schemas/{model}",
     )
     print(json.dumps(schema, indent=2))
 
