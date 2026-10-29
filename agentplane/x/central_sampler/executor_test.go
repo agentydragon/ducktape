@@ -16,8 +16,6 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 		{"negative exec yield", "exec_command", `{"cmd":"touch /tmp/should-not-run","yield_time_ms":-1}`},
 		{"missing cmd", "exec_command", `{"workdir":"/tmp"}`},
 		{"non-object exec input", "exec_command", `"touch /tmp/should-not-run"`},
-		{"escalation under approval policy never", "exec_command", `{"cmd":"touch /tmp/should-not-run","sandbox_permissions":"require_escalated"}`},
-		{"justification without override", "exec_command", `{"cmd":"touch /tmp/should-not-run","justification":"please"}`},
 		{"shell the executor does not report", "exec_command", `{"cmd":"touch /tmp/should-not-run","shell":"zsh"}`},
 		{"string session_id", "write_stdin", `{"session_id":"test-process"}`},
 		{"fractional stdin yield", "write_stdin", `{"session_id":1000,"yield_time_ms":1.5}`},

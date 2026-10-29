@@ -18,8 +18,6 @@ const (
 	defaultWriteStdinYieldMS     = 250
 	interruptInput               = "\x03"
 	remoteEnvironmentID          = "remote"
-	escalationRejectedByNever    = "approval policy is Never; reject command — you cannot ask for escalated permissions if the approval policy is Never"
-	justificationNeedsOverride   = "`justification` requires an explicit `sandbox_permissions`; use `sandbox_permissions: \"require_escalated\"` for unsandboxed execution, or omit `justification`."
 	stdinClosedMessage           = "stdin is closed for this session; rerun exec_command with tty=true to keep stdin open"
 	writeToStdinFailedMessage    = "failed to write to stdin"
 	execCommandToolDescription   = "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
@@ -54,8 +52,10 @@ func schemaBoolean(description string) ResponsesJSONSchema {
 
 // execCommandToolDefinition is upstream's Linux exec_command for Agentplane's wrapped-Codex
 // configuration: one remote environment (no environment_id), login shells allowed (default
-// allow_login_shell, so `login` is offered), unified_exec_tty on, and exec permission approvals
-// off (approval policy never), which still offers the default approval parameters.
+// allow_login_shell, so `login` is offered) and unified_exec_tty on.
+// Deviation: upstream always offers the approval parameters `sandbox_permissions`, `justification`
+// and `prefix_rule`; they are omitted because Agentplane's Sandbox, egress and Action Service own
+// those boundaries (SPEC.md).
 // Codex rust-v0.162.1 core/src/tools/handlers/shell_spec.rs create_exec_command_tool_with_environment_id.
 func execCommandToolDefinition() ResponsesCodeToolDefinition {
 	closed := false
@@ -72,15 +72,6 @@ func execCommandToolDefinition() ResponsesCodeToolDefinition {
 				"max_output_tokens": schemaNumber(outputTokenBudgetPropertyDoc),
 				"shell":             schemaString("Shell binary to launch. Defaults to the user's default shell."),
 				"login":             schemaBoolean("True runs the shell with -l/-i semantics; false disables them. Defaults to true."),
-				"sandbox_permissions": {
-					Type: "string", Enum: []string{"use_default", "require_escalated"},
-					Description: "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
-				},
-				"justification": schemaString("User-facing approval question for `require_escalated`; omit otherwise."),
-				"prefix_rule": {
-					Type: "array", Items: &ResponsesJSONSchema{Type: "string"},
-					Description: `Reusable approval prefix for ` + "`cmd`" + `, only with ` + "`sandbox_permissions: \"require_escalated\"`" + `; for example ["git", "pull"].`,
-				},
 			},
 		},
 		OutputSchema: unifiedExecOutputSchema(),
@@ -125,16 +116,13 @@ func unifiedExecOutputSchema() *ResponsesJSONSchema {
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec.rs ExecCommandArgs and
 // ExecCommandEnvironmentArgs. Unknown fields are ignored and null means omitted, as with serde.
 type execCommandArgs struct {
-	Cmd                *string  `json:"cmd"`
-	Workdir            *string  `json:"workdir"`
-	Shell              *string  `json:"shell"`
-	Login              *bool    `json:"login"`
-	TTY                *bool    `json:"tty"`
-	YieldTimeMS        *uint64  `json:"yield_time_ms"`
-	MaxOutputTokens    *uint64  `json:"max_output_tokens"`
-	SandboxPermissions *string  `json:"sandbox_permissions"`
-	Justification      *string  `json:"justification"`
-	PrefixRule         []string `json:"prefix_rule"`
+	Cmd             *string `json:"cmd"`
+	Workdir         *string `json:"workdir"`
+	Shell           *string `json:"shell"`
+	Login           *bool   `json:"login"`
+	TTY             *bool   `json:"tty"`
+	YieldTimeMS     *uint64 `json:"yield_time_ms"`
+	MaxOutputTokens *uint64 `json:"max_output_tokens"`
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/write_stdin.rs WriteStdinArgs.
@@ -221,16 +209,6 @@ func planExecCommand(input json.RawMessage, cwd string, shell *execShell) (*exec
 			cwd = filepath.Join(cwd, *args.Workdir)
 		}
 	}
-	if args.SandboxPermissions != nil {
-		switch *args.SandboxPermissions {
-		case "use_default", "with_additional_permissions", "require_escalated":
-		default:
-			return nil, &toolError{fmt.Sprintf("failed to parse function arguments: unknown variant `%s`, expected one of `use_default`, `with_additional_permissions`, `require_escalated`", *args.SandboxPermissions)}
-		}
-	}
-	if args.Justification != nil && args.SandboxPermissions == nil {
-		return nil, &toolError{justificationNeedsOverride}
-	}
 	// A remote environment validates a requested shell against the one it reports, then always
 	// launches the reported shell.
 	if args.Shell != nil {
@@ -240,9 +218,6 @@ func planExecCommand(input json.RawMessage, cwd string, shell *execShell) (*exec
 		if detectShellType(*args.Shell) != detectShellType(shell.Name) {
 			return nil, &toolError{fmt.Sprintf("environment `%s` only supports `%s`", remoteEnvironmentID, shell.Name)}
 		}
-	}
-	if args.SandboxPermissions != nil && *args.SandboxPermissions != "use_default" {
-		return nil, &toolError{escalationRejectedByNever}
 	}
 	launch := fallbackExecShell
 	if shell != nil {

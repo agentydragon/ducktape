@@ -69,8 +69,8 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
-Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment
-under approval policy `never`: upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
+Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
+upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
 `exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
 truncation and the unified exec environment overlay. Commands run in the executor-reported shell, as
 a login shell unless `login: false`; a requested `shell` must match it, and an executor that reports
@@ -78,6 +78,13 @@ none falls back to `/bin/sh`. Processes have no stdin pipe without `tty`; there 
 interrupts. Session numbers are random in upstream's range and unique among a conversation's
 processes until their exit is reported. Argument and session errors reject the nested call in
 JavaScript instead of failing the Session, as do exec-server rejections, which have no effect.
+
+**Deviation:** `exec_command` omits upstream's approval parameters (`sandbox_permissions`,
+`justification`, `prefix_rule`); Agentplane's Sandbox, egress and Action Service own those
+boundaries, and sampler approvals are out of scope.
+
+TODO: Revisit the approval parameters upstream `exec_command` includes if the sampler gains an
+approval flow.
 
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits prove insufficient.
