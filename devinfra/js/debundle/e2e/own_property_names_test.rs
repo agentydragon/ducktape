@@ -2,7 +2,7 @@
 
 use analysis::reports::schema::{InferenceRule, InferenceUse};
 use debundle_e2e_support::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 fn own_name_modules() -> Vec<LogicalModuleEntry> {
     vec![

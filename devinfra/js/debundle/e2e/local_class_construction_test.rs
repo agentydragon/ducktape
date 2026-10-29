@@ -9,7 +9,7 @@ use analysis::reports::schema::{
 };
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const REGISTRY_SOURCE: &str = r#"globalThis.events = [];
 const a = (() => 1)();
