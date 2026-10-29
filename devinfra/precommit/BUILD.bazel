@@ -57,9 +57,7 @@ py_library(
     deps = [
         ":filename_conventions",
         ":frozen_specimens",
-        "//devinfra/precommit/enforce_bazel_tests",
         "//util:otel",
-        "//util/bazel:workspace",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
         "@pypi//pygit2",

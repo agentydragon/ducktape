@@ -3,13 +3,11 @@
 Installed as separate console scripts via the ducktape-git-hooks wheel:
 - ducktape-precommit: file validations (filenames, frozen-specimens)
 - ducktape-prepare-commit-msg: block amending already-pushed commits
-- ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from collections.abc import Awaitable
 from pathlib import Path
@@ -20,10 +18,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
-from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
-from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
 from util.otel import JsonlSpanExporter
 
 _IGNORE_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored", "filename-conventions-ignored")
@@ -132,18 +128,6 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
 
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit())
-
-
-def main_enforce_bazel_tests() -> None:
-    if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") not in ("1", "true"):
-        return
-
-    repo = pygit2.Repository(".")
-    repo_root = Path(repo.workdir)
-    workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
-    _, deltas = _staged_deltas(repo)
-
-    enforce_bazel_tests_run(workspace, deltas)
 
 
 def main_prepare_commit_msg() -> int:

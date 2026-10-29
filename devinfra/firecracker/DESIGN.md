@@ -14,7 +14,7 @@ Claude Code web sessions run inside Anthropic's Firecracker VMs with:
 - Disk fills up from accumulated session Bazel caches (2-12G each)
 
 Builds execute remotely via BuildBuddy RBE — the local VM is effectively
-just an expensive JVM host. Profiling data: <devinfra/precommit/enforce_bazel_tests/debug/>.
+just an expensive JVM host.
 
 ## Goal
 

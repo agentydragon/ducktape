@@ -265,7 +265,6 @@ py_package(
     packages = [
         "devinfra",
         "devinfra.precommit",
-        "devinfra.precommit.enforce_bazel_tests",
     ],
     deps = ["//devinfra/precommit:git_hook"],
 )
@@ -277,7 +276,6 @@ py_wheel(
         "console_scripts": [
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
-            "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],
     },
     python_requires = ">=3.14",
