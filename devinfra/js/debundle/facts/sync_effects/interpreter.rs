@@ -1097,16 +1097,39 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let ValueExpr::Binding(binding) = receiver.as_ref() else {
                     return false;
                 };
-                if !(self.inputs.index.host_promise_resolve
-                    && binding.0.as_ref() == "Promise"
-                    && !self.inputs.flow.is_declared(binding)
-                    && !self.inputs.shadowed.contains("Promise")
-                    && self.native_guard_intact(
-                        NativeIntegrityGuard::HostPromiseResolve,
-                        &[IntrinsicRoot::Promise, IntrinsicRoot::GlobalObject],
-                    ))
+                if !self.inputs.index.host_promise_resolve
+                    || binding.0.as_ref() != "Promise"
+                    || self.inputs.flow.is_declared(binding)
+                    || self.inputs.shadowed.contains("Promise")
                 {
                     return false;
+                }
+                let site = CallSite::from(call.span);
+                let native_input = self
+                    .inputs
+                    .index
+                    .native_operation_input_evidence
+                    .get(&site)
+                    .filter(|evidence| {
+                        evidence.operation
+                            == NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve)
+                    });
+                let native_integrity_intact = self.native_guard_intact(
+                    NativeIntegrityGuard::HostPromiseResolve,
+                    &[IntrinsicRoot::Promise, IntrinsicRoot::GlobalObject],
+                );
+                if !native_integrity_intact && native_input.is_none() {
+                    return false;
+                }
+                if !native_integrity_intact && let Some(evidence) = native_input {
+                    self.state.native_operation_input_uses.borrow_mut().insert(
+                        (call.span.lo.0, call.span.hi.0),
+                        crate::reports::schema::NativeOperationInputUse {
+                            evidence: evidence.clone(),
+                            source_location: None,
+                            span: call.span,
+                        },
+                    );
                 }
                 spec::HostNoReentryOperation::PromiseResolve
             }

@@ -141,6 +141,10 @@ For an Object member read, the shared semantic certificate instead binds the
 selected read span and its exact Object property slot. The author premise
 covers unknown mutation paths after known exact-slot contradictions are
 excluded; it never certifies a subsequent invocation of the function value.
+The exact `Promise.resolve()` initializer premise requires stable global
+`Promise` and constructor `resolve` slots in the shared source census. Its
+independent `host_no_reentry` assertion supplies timing; neither assertion
+supplies purity or return shape.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 

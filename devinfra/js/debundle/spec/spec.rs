@@ -705,6 +705,7 @@ pub enum NativeOperationKind {
     /// One static own-data function property read on the original Object constructor.
     ObjectOwnDataFunctionRead,
     ArraySpreadFromPrimitiveArrays,
+    PromiseResolve,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

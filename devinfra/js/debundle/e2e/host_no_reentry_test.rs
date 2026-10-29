@@ -1,6 +1,8 @@
 //! Exact Bun host timing assertions stay opt-in and shape-specific.
 
 use debundle_e2e_support::*;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 fn policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
@@ -35,6 +37,126 @@ fn split<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
             logical_module("host/later", &[Member::new("later")]),
         ],
     )
+}
+
+const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
+const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
+const REFLECT_FILES: &[(&str, &str)] = &[("static/reflect.js", REFLECT_SOURCE)];
+const PROMISE_REENTRY_SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst gate = Promise.resolve();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst laterValue = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(Boolean(gate), laterValue.name, LaterError.name, globalThis.unrelatedKey);\nexport { gate, factory, LaterError, reflect };\n";
+
+fn source_hash(source: &str) -> String {
+    Sha256::digest(source.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn promise_input(source: &str, binding: &str) -> NativeOperationInputContract {
+    let declaration = source
+        .lines()
+        .find(|line| line.starts_with(&format!("const {binding} =")))
+        .expect("fixture has a direct Promise initializer");
+    NativeOperationInputContract {
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [{binding}]\n",
+                declaration.trim()
+            ))
+            .expect("valid declaration source match"),
+        ),
+        operation: NativeOperationKind::PromiseResolve,
+        audited_source_sha256: source_hash(source),
+        note: Some("Neutral fixture audits this one Promise initializer.".to_string()),
+    }
+}
+
+fn promise_reentry_split() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        PROMISE_REENTRY_SOURCE,
+        vec![
+            logical_module_with_anon(
+                "gate",
+                &[Member::new("gate")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    )
+    .with_extra_chunks(REFLECT_CHUNKS)
+    .with_extra_files(REFLECT_FILES)
+}
+
+fn native_input_uses(graph: &Value) -> Vec<Value> {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .flat_map(|node| {
+            node["synchronous_execution"]["native_operation_input_uses"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+        })
+        .collect()
+}
+
+fn host_contract_uses(graph: &Value) -> Vec<Value> {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .flat_map(|node| {
+            node["synchronous_execution"]["author_host_contract_uses"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+        })
+        .collect()
+}
+
+fn unknown_receiver_witness(graph: &Value) -> &Value {
+    graph["native_integrity_witnesses"]
+        .as_array()
+        .expect("native mutation witnesses")
+        .iter()
+        .find(|witness| {
+            witness["operation"] == "mutation_call"
+                && witness["receiver_roots"]
+                    .as_array()
+                    .is_some_and(|roots| roots.iter().any(|root| root == "unknown_global_value"))
+                && witness["source_location"]["source_path"] == "static/reflect.js"
+        })
+        .unwrap_or_else(|| panic!("reflective helper's unknown receiver is absent: {graph}"))
+}
+
+fn node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|candidate| candidate["binding"] == binding)
+                })
+        })
+        .unwrap_or_else(|| panic!("no source node for {binding}: {graph}"))
+}
+
+fn has_unknown_call_target(node: &Value) -> bool {
+    node["synchronous_execution"]["precision_losses"]
+        .as_array()
+        .is_some_and(|losses| {
+            losses
+                .iter()
+                .any(|loss| loss["reason"]["code"] == "unknown_call_target")
+        })
 }
 
 fn assert_host_call_remains_impure(fixture: &Fixture, binding: &str) {
@@ -245,6 +367,248 @@ console.log(Boolean(store), later);
         &["host/value", "host/later"],
         &[],
     );
+}
+
+#[test]
+fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site() {
+    let control = run_rejection_fixture(promise_reentry_split());
+    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    unknown_receiver_witness(&control_graph);
+    assert!(
+        control.atomic_group_conflicts().iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["gate", "later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "the opaque receiver witness must create the baseline split conflict"
+    );
+    assert!(has_unknown_call_target(node_for_binding(
+        &control_graph,
+        "gate"
+    )));
+
+    let native_only = run_rejection_fixture(promise_reentry_split().with_native_operation_inputs(
+        "static/app",
+        vec![promise_input(PROMISE_REENTRY_SOURCE, "gate")],
+    ));
+    assert!(
+        native_only.atomic_group_conflicts().iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["gate", "later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "native identity alone must retain the synthetic conflict"
+    );
+    assert!(
+        native_input_uses(&serde_json::to_value(native_only.dependency_graph()).unwrap())
+            .is_empty(),
+        "native identity alone must not consume the input or suppress reentry"
+    );
+
+    expect_atomic_conflict_rejection(
+        promise_reentry_split()
+            .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+        &["gate", "later"],
+        &[],
+    );
+
+    let fixture = run_fixture(
+        promise_reentry_split()
+            .with_native_operation_inputs(
+                "static/app",
+                vec![promise_input(PROMISE_REENTRY_SOURCE, "gate")],
+            )
+            .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+    );
+    assert_host_call_remains_impure(&fixture, "gate");
+    assert_preserved_entry_output_with_bun(&fixture, "true LaterError LaterError safe\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\nconsole.log(Boolean(entry.gate), entry.factory().name, entry.LaterError.name);\nconst receiver = [];\nconst target = Object.getPrototypeOf(receiver);\nconst key = '__native_operation_input_probe__';\nconst before = Object.getOwnPropertyDescriptor(target, key);\ntry { entry.reflect(receiver, key); console.log(target[key]); } finally { if (before) Object.defineProperty(target, key, before); else delete target[key]; }\n",
+        "true LaterError LaterError\nchanged\n",
+    );
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let native_uses = native_input_uses(&graph);
+    assert_eq!(
+        native_uses.len(),
+        1,
+        "only the selected call consumes input"
+    );
+    assert_eq!(native_uses[0]["evidence"]["operation"], "promise_resolve");
+    assert_eq!(native_uses[0]["evidence"]["selected_binding"], "gate");
+    assert_eq!(
+        native_uses[0]["source_location"]["source_path"],
+        "static/app.js"
+    );
+    let host_uses = host_contract_uses(&graph);
+    assert_eq!(host_uses.len(), 1, "the timing assertion is consumed once");
+    assert_eq!(host_uses[0]["operation"], "promise_resolve");
+
+    let witness = unknown_receiver_witness(&graph);
+    assert!(
+        witness["affected_roots"]
+            .as_array()
+            .is_some_and(|roots| roots.iter().any(|root| root == "global_object")),
+        "the author premise must not erase the original unknown receiver witness: {witness}"
+    );
+    assert!(
+        witness["value_input_refs"]
+            .as_array()
+            .is_none_or(Vec::is_empty),
+        "native identity is not a receiver refinement: {witness}"
+    );
+    assert!(
+        node_for_binding(&graph, "gate")["synchronous_execution"]["native_integrity_checks"]
+            .as_array()
+            .is_some_and(|checks| checks.iter().any(|check| {
+                check["guard"] == "host_promise_resolve"
+                    && check["affected_roots"]
+                        .as_array()
+                        .is_some_and(|roots| roots.iter().any(|root| root == "global_object"))
+            })),
+        "the input must not mint a global-object integrity fact: {graph}"
+    );
+}
+
+#[test]
+fn unselected_promise_resolve_keeps_its_own_reentry_fallback() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst gate = Promise.resolve();\nvar other = Promise.resolve();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(Boolean(gate), Boolean(other), factory().name);\nexport { gate, other, factory, LaterError, reflect };\n";
+    let opts = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "gate",
+                &[Member::new("gate")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("other", &[Member::new("other")]),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    )
+    .with_extra_chunks(REFLECT_CHUNKS)
+    .with_extra_files(REFLECT_FILES)
+    .with_native_operation_inputs("static/app", vec![promise_input(source, "gate")])
+    .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve]));
+    let rejected = run_rejection_fixture(opts);
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    assert!(
+        rejected.atomic_group_conflicts().iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["other", "later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "the unselected call must retain the atomic conflict: {:#?}",
+        rejected.atomic_group_conflicts()
+    );
+    assert!(has_unknown_call_target(node_for_binding(&graph, "other")));
+    let uses = native_input_uses(&graph);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "gate");
+    assert_eq!(host_contract_uses(&graph).len(), 1);
+}
+
+#[test]
+fn promise_resolve_input_rejects_wrong_hash_unsupported_shapes_and_known_mutations() {
+    let source = "const gate = Promise.resolve();\nexport { gate };\n";
+    let mut wrong_hash = promise_input(source, "gate");
+    wrong_hash.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("selected", &[Member::new("gate")])],
+        )
+        .with_native_operation_inputs("static/app", vec![wrong_hash]),
+        &["audited_source_sha256"],
+    );
+
+    for (source, expected) in [
+        (
+            "const gate = Promise.resolve();\nconst Promise = function() {};\nexport { gate };\n",
+            "shadowed Promise",
+        ),
+        (
+            "const gate = Promise.resolve(1);\nexport { gate };\n",
+            "unsupported Promise.resolve call shape",
+        ),
+        (
+            "const gate = Promise.resolve(...[]);\nexport { gate };\n",
+            "Promise.resolve() call",
+        ),
+        (
+            "const gate = Promise.resolve?.();\nexport { gate };\n",
+            "Promise.resolve()",
+        ),
+        (
+            "const gate = Promise['resolve']();\nexport { gate };\n",
+            "direct uncomputed Promise.resolve() call",
+        ),
+        (
+            "const resolve = Promise.resolve;\nconst gate = resolve();\nexport { gate };\n",
+            "direct uncomputed Promise.resolve() call",
+        ),
+        (
+            "const original = globalThis.Promise;\nglobalThis.Promise = function Replacement() {};\nglobalThis.Promise = original;\nconst gate = Promise.resolve();\nexport { gate };\n",
+            "global Promise replacement",
+        ),
+        (
+            "Object.defineProperty(globalThis, 'Promise', { configurable: true, get() { return function Replacement() {}; } });\nconst gate = Promise.resolve();\nexport { gate };\n",
+            "global Promise replacement",
+        ),
+        (
+            "const original = Promise.resolve;\nPromise.resolve = function replacement() {};\nPromise.resolve = original;\nconst gate = Promise.resolve();\nexport { gate };\n",
+            "Promise.resolve overwrite",
+        ),
+        (
+            "Object.defineProperty(Promise, 'resolve', { configurable: true, get() { return function replacement() {}; } });\nconst gate = Promise.resolve();\nexport { gate };\n",
+            "Promise.resolve overwrite",
+        ),
+        (
+            "const original = Promise.resolve;\ndelete Promise.resolve;\nPromise.resolve = original;\nconst gate = Promise.resolve();\nexport { gate };\n",
+            "Promise.resolve overwrite",
+        ),
+        (
+            "const gate = Promise.resolve();\nconst original = Promise.resolve;\nPromise.resolve = function replacement() {};\nPromise.resolve = original;\nexport { gate };\n",
+            "Promise.resolve overwrite",
+        ),
+        (
+            "const original = Promise.resolve;\nfunction replaceAndRestore() { Promise.resolve = function replacement() {}; Promise.resolve = original; }\nconst gate = Promise.resolve();\nexport { gate, replaceAndRestore };\n",
+            "Promise.resolve overwrite",
+        ),
+    ] {
+        let input = promise_input(source, "gate");
+        let opts = FixtureOpts::new(
+            source,
+            vec![logical_module("selected", &[Member::new("gate")])],
+        )
+        .with_native_operation_inputs("static/app", vec![input.clone()]);
+        // Shape checks run before host timing; source-level mutation checks do
+        // not depend on whether a runtime policy is present.
+        expect_rejection_containing_all(opts, &[expected]);
+    }
+}
+
+#[test]
+fn promise_resolve_input_rejects_known_mutation_in_another_analyzed_chunk() {
+    const MUTATION: &str = "const original = globalThis.Promise;\nglobalThis.Promise = function Replacement() {};\nglobalThis.Promise = original;\nexport {};\n";
+    let source = "import './mutation.js';\nconst gate = Promise.resolve();\nexport { gate };\n";
+    let opts = FixtureOpts::new(
+        source,
+        vec![logical_module("selected", &[Member::new("gate")])],
+    )
+    .with_extra_chunks(&[("static/mutation", MUTATION)])
+    .with_native_operation_inputs("static/app", vec![promise_input(source, "gate")]);
+    expect_rejection_containing_all(opts, &["global Promise replacement", "static/mutation"]);
 }
 
 #[test]

@@ -1040,6 +1040,35 @@ fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Op
     }
 }
 
+fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
+    match operation {
+        NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+            "direct Symbol(...) call (unsupported Symbol call shape)"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
+            "direct Symbol.for(...) call (unsupported Symbol.for call shape)"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
+            "direct Promise.resolve() call (unsupported Promise.resolve call shape)"
+        }
+        _ => "supported native operation",
+    }
+}
+
+fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
+    match operation {
+        NativeInputKind::Operation(
+            spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
+        ) => {
+            "global Symbol replacement or accessor installation"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
+            "global Promise replacement or Promise.resolve overwrite, accessor installation, or deletion"
+        }
+        _ => "native operation mutation",
+    }
+}
+
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -6024,9 +6053,6 @@ impl ExecutionIndex {
             }
             return;
         }
-        let known_symbol_mutation = self.known_global_symbol_mutation();
-        let known_symbol_for_mutation = self.known_symbol_for_mutation();
-
         for input in selected {
             let request = &input.evidence.spec_location;
             if input.evidence.operation
@@ -6248,18 +6274,23 @@ impl ExecutionIndex {
                     });
                 continue;
             }
-            if let Some(chunk_owner) = known_symbol_mutation {
+            if let Some(owner) =
+                self.known_global_native_operation_mutation(input.evidence.operation)
+            {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation (source unit {chunk_owner})"
+                    "{request} is contradicted by a positively identified {} (source unit {})",
+                    native_operation_mutation_name(input.evidence.operation),
+                    owner.0
                 ));
                 continue;
             }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
-                && let Some(chunk_owner) = known_symbol_for_mutation
+                && let Some(owner) = self.known_symbol_for_mutation()
             {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {chunk_owner})"
+                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {})",
+                    owner.0
                 ));
                 continue;
             }
@@ -6295,39 +6326,11 @@ impl ExecutionIndex {
             };
             let ValueExpr::Call(callee, args, call_site) = initializer else {
                 self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct top-level binding initialized by a nonoptional Symbol call; unsupported Symbol call shape"
+                    "{request} must select a direct top-level binding initialized by a {}",
+                    native_operation_call_name(input.evidence.operation)
                 ));
                 continue;
             };
-            let Some(symbol) = selected_symbol_binding(callee, input.evidence.operation) else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct uncomputed Symbol identifier call or Symbol.for dot call"
-                ));
-                continue;
-            };
-            if symbol.0.as_ref() != "Symbol" {
-                self.native_operation_input_errors.push(format!(
-                    "{request} operation does not match the selected direct Symbol initializer"
-                ));
-                continue;
-            }
-            if self.property_key_declarations.contains(symbol)
-                || self.imported_bindings.contains(symbol)
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} selects a shadowed Symbol binding; only the original unshadowed global Symbol binding is supported"
-                ));
-                continue;
-            }
-            if !self.primitive_native_symbol_calls.contains(call_site)
-                || !self.ordinary_top_call_sites.contains(call_site)
-                || args.len() > 1
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} has an unsupported Symbol call shape; use one ordinary direct call with zero or one syntactically primitive argument and no spread"
-                ));
-                continue;
-            }
             let Some(call) = self.top_calls[declaration.owner.0]
                 .iter()
                 .find(|call| CallSite::from(call.span) == *call_site)
@@ -6337,22 +6340,15 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            if call.kind != CallKind::Call || call.has_spread || call.caller.is_some() {
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select a nonoptional, nonspread, direct top-level Symbol call"
-                ));
-                continue;
-            }
-            let Some((model, _)) = native_call_identity_key(CallKind::Call, callee) else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} does not resolve through the exact native Symbol call model"
-                ));
-                continue;
-            };
-            if model.intrinsic != IntrinsicRoot::Symbol {
-                self.native_operation_input_errors.push(format!(
-                    "{request} selected an unsupported native operation model"
-                ));
+            if let Some(reason) = self.native_operation_call_shape_error(
+                input.evidence.operation,
+                callee,
+                args,
+                *call_site,
+                call,
+            ) {
+                self.native_operation_input_errors
+                    .push(format!("{request} {reason}"));
                 continue;
             }
             let mut evidence = input.evidence.clone();
@@ -6527,18 +6523,23 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
-            if let Some(chunk_owner) = known_symbol_mutation {
+            if let Some(owner) =
+                self.known_global_native_operation_mutation(input.evidence.operation)
+            {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation (source unit {chunk_owner})"
+                    "{request} is contradicted by a positively identified {} (source unit {})",
+                    native_operation_mutation_name(input.evidence.operation),
+                    owner.0
                 ));
                 continue;
             }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
-                && let Some(chunk_owner) = known_symbol_for_mutation
+                && let Some(owner) = self.known_symbol_for_mutation()
             {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {chunk_owner})"
+                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {})",
+                    owner.0
                 ));
                 continue;
             }
@@ -6555,30 +6556,41 @@ impl ExecutionIndex {
             let Some(ValueExpr::Call(callee, args, call_site)) = declaration.initializer.as_ref()
             else {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer selects a direct Symbol initializer"
+                    "{request} no longer selects a direct Symbol or Promise.resolve initializer"
                 ));
                 continue;
             };
+            let Some(call) = self.top_calls[declaration.owner.0]
+                .iter()
+                .find(|call| CallSite::from(call.span) == *call_site)
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer resolves to a direct top-level call site"
+                ));
+                continue;
+            };
+            if let Some(reason) = self.native_operation_call_shape_error(
+                input.evidence.operation,
+                callee,
+                args,
+                *call_site,
+                call,
+            ) {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer identifies the selected operation: {reason}"
+                ));
+                continue;
+            }
             let is_same = declaration.direct_top_level
                 && declaration.simple_identifier
                 && declaration.binding_span == input.declaration_span
                 && declaration.initializer_span == Some(input.initializer_span)
                 && declaration.owner == input.initializer_ordinal
                 && input.binding.0.as_ref() == input.evidence.selected_binding
-                && *call_site == CallSite::from(input.call_span)
-                && selected_symbol_binding(callee, input.evidence.operation).is_some_and(
-                    |symbol| {
-                        symbol.0.as_ref() == "Symbol"
-                            && !self.property_key_declarations.contains(symbol)
-                            && !self.imported_bindings.contains(symbol)
-                    },
-                )
-                && self.primitive_native_symbol_calls.contains(call_site)
-                && self.ordinary_top_call_sites.contains(call_site)
-                && args.len() <= 1;
+                && *call_site == CallSite::from(input.call_span);
             if !is_same {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer identifies the same direct unshadowed primitive Symbol initializer"
+                    "{request} no longer identifies the same direct unshadowed native initializer"
                 ));
                 continue;
             }
@@ -6735,6 +6747,113 @@ impl ExecutionIndex {
                 .chain(self.native_integrity_witnesses.iter()),
             slot,
         )
+    }
+
+    fn native_operation_call_shape_error(
+        &self,
+        operation: NativeInputKind,
+        callee: &ValueExpr,
+        args: &[ValueExpr],
+        call_site: CallSite,
+        call: &Call,
+    ) -> Option<&'static str> {
+        if call.kind != CallKind::Call || call.has_spread || call.caller.is_some() {
+            return Some(match operation {
+                NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+                    "must select a nonoptional, nonspread, direct top-level Symbol call"
+                }
+                NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
+                    "must select a nonoptional, nonspread, direct top-level Promise.resolve() call"
+                }
+                _ => "must select an ordinary direct top-level native call",
+            });
+        }
+        if !self.ordinary_top_call_sites.contains(&call_site) {
+            return Some("must select an ordinary direct top-level call");
+        }
+        match operation {
+            NativeInputKind::Operation(
+                spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
+            ) => {
+                let Some(symbol) = selected_symbol_binding(callee, operation) else {
+                    return Some("must select a direct uncomputed Symbol identifier call or Symbol.for dot call");
+                };
+                if symbol.0.as_ref() != "Symbol" {
+                    return Some("operation does not match the selected direct Symbol initializer");
+                }
+                if self.declared_bindings().contains(symbol) {
+                    return Some(
+                        "selects a shadowed Symbol binding; only the original unshadowed global Symbol binding is supported",
+                    );
+                }
+                if !self.primitive_native_symbol_calls.contains(&call_site) || args.len() > 1 {
+                    return Some(
+                        "has an unsupported Symbol call shape; use one ordinary direct call with zero or one syntactically primitive argument and no spread",
+                    );
+                }
+                let Some((model, _)) = native_call_identity_key(CallKind::Call, callee) else {
+                    return Some("does not resolve through the exact native Symbol call model");
+                };
+                (model.intrinsic == IntrinsicRoot::Symbol)
+                    .then_some(())
+                    .is_none()
+                    .then_some("selected an unsupported native Symbol call model")
+            }
+            NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
+                let ValueExpr::Member(receiver, Some(member), true) = callee else {
+                    return Some("must select a direct uncomputed Promise.resolve() call");
+                };
+                let ValueExpr::Binding(promise) = receiver.as_ref() else {
+                    return Some("must select a direct uncomputed Promise.resolve() call");
+                };
+                if member != "resolve" || promise.0.as_ref() != "Promise" {
+                    return Some(
+                        "operation does not match the selected direct Promise.resolve() initializer",
+                    );
+                }
+                if self.declared_bindings().contains(promise) {
+                    return Some(
+                        "selects a shadowed Promise binding; only the original unshadowed global Promise binding is supported",
+                    );
+                }
+                if !args.is_empty() || !call.no_reentry_candidate {
+                    return Some(
+                        "has an unsupported Promise.resolve call shape; use one ordinary direct zero-argument call with no spread",
+                    );
+                }
+                None
+            }
+            _ => Some("operation does not match the selected native call"),
+        }
+    }
+
+    fn known_global_native_operation_mutation(
+        &self,
+        operation: NativeInputKind,
+    ) -> Option<SourceUnitOrdinal> {
+        match operation {
+            NativeInputKind::Operation(
+                spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
+            ) => {
+                self.known_global_symbol_mutation()
+            }
+            NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => [
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::GlobalObject,
+                    key: NativePropertyKey::String("Promise".to_owned()),
+                },
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Promise),
+                    key: NativePropertyKey::String("resolve".to_owned()),
+                },
+            ]
+            .iter()
+            .find_map(|slot| match self.source_slot_overlap(slot) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            }),
+            _ => None,
+        }
     }
 
     fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
@@ -11450,8 +11569,11 @@ impl PreparedCallableCapabilities {
         self.index.resolved_native_operation_inputs.clone()
     }
 
-    pub(crate) fn known_global_symbol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
-        self.index.known_global_symbol_mutation()
+    pub(crate) fn known_global_native_operation_mutation_owner(
+        &self,
+        operation: NativeInputKind,
+    ) -> Option<SourceUnitOrdinal> {
+        self.index.known_global_native_operation_mutation(operation)
     }
 
     pub(crate) fn known_symbol_for_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

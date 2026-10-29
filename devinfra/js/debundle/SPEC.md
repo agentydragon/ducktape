@@ -1139,7 +1139,7 @@ member's canonical selector result, including relational selectors; it does
 not resolve another source template. Both forms retain their actual selector
 provenance, parser-input SHA-256, spec location, selected binding and original
 site in the report. The digest uses the same parser-input provenance as
-`value_inputs`. The operation set accepts `symbol`, `symbol_for`,
+`value_inputs`. The operation set accepts `symbol`, `symbol_for`, `promise_resolve`,
 `set_from_primitive_array`, `set_from_set_spread`, `object_own_data_function_read`,
 and `array_spread_from_primitive_arrays`.
 The `symbol_for` operation selects `Symbol.for(...)` and asserts both original
@@ -1161,24 +1161,36 @@ constructor, prototype, descendant, and unknown receiver paths with string,
 existing family-wide guard effects; an opaque path or key is a witness rather
 than a source-known contradiction of the input.
 
+A `promise_resolve` selector must identify one direct top-level simple binding
+initialized by an ordinary, nonoptional, uncomputed, zero-argument
+`Promise.resolve()` call. Shadowed globals, aliases and detached callees are
+rejected. The shared native write census rejects known writes to the global
+`Promise` slot or the constructor's `resolve` property, including accessor
+installation, deletion and replacement later restored in any analyzed chunk.
+
 This is explicit author input, not an inferred source fact or a point-in-time
-snapshot. The author asserts that the direct callee remains the original native
-`Symbol` data binding and, for `symbol_for`, the original `for` data property
-throughout every synchronous initialization schedule allowed by emission.
-A11's external native-identity obligation still applies.
-The input is consumed only at the exact selected call span; other `Symbol`
-and `Symbol.for` calls retain their ordinary native-integrity checks. Opaque
-possible receiver writes may be covered by this author premise, but their witnesses remain in
-the shared census and report. No whole-lifetime purity, no-reentry or receiver
-guarantee follows. One narrower consequence is proved separately: when the
-selected `symbol_for` initializer has exactly one literal string argument,
-the original native call has no observable write, callback, or throw under
-ECMAScript's agent-local registry semantics. That exact source unit is pure
-with a `native_operation_inputs` proof dependency, and its call adds no opaque
-array-content frontier. Other argument expressions, even if primitive-valued,
-retain their ordinary throw and purity analysis. Callee and argument
-evaluation, other writes, callbacks, publication, CommonJS behavior and all
-other calls keep their ordinary analysis.
+snapshot. For `symbol` and `symbol_for`, the author asserts that the direct
+callee remains the original native `Symbol` data binding and, for `symbol_for`,
+the original `for` data property throughout every synchronous initialization
+schedule allowed by emission. For `promise_resolve`, the author asserts that
+the global Promise data binding and its `resolve` data property retain the
+original native identity throughout those schedules. A Promise input is
+consumed only when the exact selected call also has the independent matching
+`host_no_reentry.operations: [promise_resolve]` assertion; it cannot by itself
+admit the host timing contract. A11's external native-identity obligation
+still applies. The input is consumed only at the exact selected call span;
+other native calls retain their ordinary native-integrity checks. Opaque
+possible receiver writes may be covered by this author premise, but their
+witnesses remain in the shared census and report. No whole-lifetime purity,
+no-reentry or receiver guarantee follows. One narrower consequence is proved
+separately: when the selected `symbol_for` initializer has exactly one literal
+string argument, the original native call has no observable write, callback,
+or throw under ECMAScript's agent-local registry semantics. That exact source
+unit is pure with a `native_operation_inputs` proof dependency, and its call
+adds no opaque array-content frontier. Other argument expressions, even if
+primitive-valued, retain their ordinary throw and purity analysis. Callee and
+argument evaluation, other writes, callbacks, publication, CommonJS behavior
+and all other calls keep their ordinary analysis.
 
 `set_from_primitive_array` selects one direct top-level simple binding whose
 entire initializer is `new Set([/* primitive literals */])`. The array must be
@@ -1912,10 +1924,15 @@ from Bun's builtin `async_hooks` or `node:async_hooks`, and a direct ordinary
 allows a named import alias (`as M`) but not a subsequent local alias; the
 latter rejects a shadowed, aliased, replaced, computed, detached, or optional
 callee. Both reject arguments and spreads. Visible global/`Promise` mutation
-and dynamic scope disable the Promise contract. The assertions only suppress
-the opaque synchronous callback-reentry fallback after the callee and
-arguments have evaluated. Purity, ordering, possible throws, return shape,
-later method calls, and module-loader reentry retain their ordinary analysis.
+and dynamic scope disable the Promise contract. When opaque in-source receiver
+effects defeat the Promise/global integrity guard, the Promise timing assertion
+must be paired with a source-selected `native_operation_inputs`
+`promise_resolve` assertion for that same initializer. This pair admits only
+the exact call's native identity and Bun timing; it does not repair global
+integrity or affect other calls. The assertions only suppress the opaque
+synchronous callback-reentry fallback after the callee and arguments have
+evaluated. Purity, ordering, possible throws, return shape, later method calls,
+and module-loader reentry retain their ordinary analysis.
 
 `node_builtin_module_leaves` is separate from `operations` and requires the
 `bun_standalone_build` identity above; the legacy `bun_standalone_1_3_10`

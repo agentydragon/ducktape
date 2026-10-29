@@ -363,7 +363,8 @@ heap barrier. Unselected calls use the ordinary guards.
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
-`operation: symbol`, `operation: symbol_for`, `operation: set_from_primitive_array`,
+`operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
+`operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, and `operation: object_own_data_function_read`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
@@ -394,16 +395,19 @@ covered by the explicit premise. Alias and reflective writes with a
 source-known target still contradict it.
 
 This input does not mint `NativeCallIdentity` or native-integrity facts. It
-consumes the existing exact native `Symbol` model only at the selected call
-span, and the report records the author provenance at that site. Other
-`Symbol` and `Symbol.for` calls still require the ordinary shared integrity
-proof. Primitive argument evaluation and conversion may throw; a Symbol-valued
-or object-valued argument is not admitted. Argument and callee evaluation,
-their effects and throws, and surrounding writes, callback
-invocation, publication, CommonJS behavior and ordering remain on the normal
-conservative paths. The premise grants no whole-lifetime purity, general
-receiver guarantee or native integrity outside analyzed code; the external A11
-identity obligation still applies.
+consumes the existing exact native model only at the selected call span, and
+its report records the author provenance at that site. A `promise_resolve`
+input is effective only together with the matching independent
+`host_no_reentry` operation; the pair satisfies the exact Promise timing check
+without changing other native guards or Promise call sites. Other calls still
+require the ordinary shared integrity proof. For `symbol` and `symbol_for`,
+primitive argument evaluation and conversion may throw; a Symbol-valued or
+object-valued argument is not admitted. Argument and callee evaluation, their
+effects and throws, and surrounding writes, callback invocation, publication,
+CommonJS behavior and ordering remain on the normal conservative paths. The
+premise grants no whole-lifetime purity, general receiver guarantee or native
+integrity outside analyzed code; the external A11 identity obligation still
+applies.
 
 For `set_from_primitive_array`, the selected initializer is one direct
 unshadowed `new Set([primitive literals])` with a dense, nonspread array.

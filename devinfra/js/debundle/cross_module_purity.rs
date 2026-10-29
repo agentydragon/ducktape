@@ -675,40 +675,37 @@ pub fn resolve_imported_callable_summaries(
         prepared_module.locate_native_writes(module, facts.source.as_ref());
         prepared.insert(module, prepared_module);
     }
-    if selected_native_operation_inputs
+    for input in selected_native_operation_inputs
         .values()
         .flatten()
-        .any(|input| {
+        .filter(|input| {
             matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(
-                    spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor
+                    spec::NativeOperationKind::Symbol
+                        | spec::NativeOperationKind::SymbolFor
+                        | spec::NativeOperationKind::PromiseResolve
                 )
             )
         })
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_global_symbol_mutation_owner()
-                .map(|owner| (module, owner))
-        })
     {
-        let request = selected_native_operation_inputs
-            .values()
-            .flatten()
-            .find(|input| {
-                matches!(
-                    input.evidence.operation,
+        if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_global_native_operation_mutation_owner(input.evidence.operation)
+                .map(|owner| (module, owner))
+        }) {
+            bail!(
+                "{} is contradicted by a positively identified global {} replacement or operation mutation in provider {module}, source unit {}",
+                input.evidence.spec_location,
+                match input.evidence.operation {
                     NativeInputKind::Operation(
-                        spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor
-                    )
-                )
-            })
-            .map(|input| input.evidence.spec_location.as_str())
-            .unwrap_or("native_operation_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified global Symbol replacement or accessor installation in provider {module}, source unit {}",
-            owner.0
-        );
+                        spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
+                    ) => "Symbol",
+                    _ => "Promise",
+                },
+                owner.0
+            );
+        }
     }
     if selected_native_operation_inputs
         .values()
