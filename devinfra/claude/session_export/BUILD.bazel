@@ -363,13 +363,7 @@ py_test(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":settings",
-        ":store",
-        ":supervisor",
-        ":web",
-        "@pypi//httpx",
-    ],
+    deps = [":web"],
 )
 
 py_library(

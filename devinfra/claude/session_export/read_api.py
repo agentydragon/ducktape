@@ -5,7 +5,7 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
@@ -97,12 +97,21 @@ async def _event_cursor(store: SessionStore, session_id: str, cursor: str | None
     return sequence
 
 
-def create_read_api(store: SessionStore) -> APIRouter:
+def _store(request: Request) -> SessionStore:
+    # Attached by `create_web_app`/`create_app` once the routes are registered.
+    return cast(SessionStore, request.app.state.store)
+
+
+_Store = Annotated[SessionStore, Depends(_store)]
+
+
+def create_read_api() -> APIRouter:
     """Claude Code-compatible list, detail, and event history route shapes, restricted to reads."""
     router = APIRouter(prefix="/v1/code", dependencies=[Depends(_no_store)])
 
     @router.get("/sessions", response_model=SessionListPage)
     async def list_sessions(
+        store: _Store,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
         cursor: str | None = None,
         statuses: Annotated[list[str] | None, Query()] = None,
@@ -121,7 +130,10 @@ def create_read_api(store: SessionStore) -> APIRouter:
 
     @router.get("/sessions/watch")
     async def watch_sessions(
-        request: Request, resume_token: str | None = None, last_event_id: Annotated[str | None, Header()] = None
+        request: Request,
+        store: _Store,
+        resume_token: str | None = None,
+        last_event_id: Annotated[str | None, Header()] = None,
     ) -> StreamingResponse:
         token = last_event_id or resume_token
         if token is None:
@@ -155,7 +167,7 @@ def create_read_api(store: SessionStore) -> APIRouter:
         )
 
     @router.get("/sessions/{session_id}", response_model=SessionDetail)
-    async def get_session(session_id: str) -> SessionDetail:
+    async def get_session(session_id: str, store: _Store) -> SessionDetail:
         raw = await store.session(_session_id(session_id))
         if raw is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found.")
@@ -164,6 +176,7 @@ def create_read_api(store: SessionStore) -> APIRouter:
     @router.get("/sessions/{session_id}/events", response_model=SessionEventPage)
     async def list_events(
         session_id: str,
+        store: _Store,
         limit: Annotated[int, Query(ge=1, le=500)] = 500,
         sort_order: Literal["asc", "desc"] = "asc",
         cursor: str | None = None,

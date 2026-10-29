@@ -3,6 +3,7 @@ that drives it (`frontend/`), behind the Authentik login of `util/oidc_login.py`
 
 import logging
 from pathlib import Path
+from typing import Annotated, cast
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
@@ -37,19 +38,27 @@ def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-def _api(supervisor: SyncSupervisor) -> APIRouter:
+def _supervisor(request: Request) -> SyncSupervisor:
+    # Attached by `create_control_app`/`create_app` once the routes are registered.
+    return cast(SyncSupervisor, request.app.state.supervisor)
+
+
+_Supervisor = Annotated[SyncSupervisor, Depends(_supervisor)]
+
+
+def _api() -> APIRouter:
     router = APIRouter(prefix="/api", dependencies=[Depends(_no_store)])
 
     @router.get("/status")
-    async def get_status() -> SyncStatus:
+    async def get_status(supervisor: _Supervisor) -> SyncStatus:
         return await supervisor.status()
 
     @router.post("/pairing")
-    async def start_pairing() -> PairingStart:
+    async def start_pairing(supervisor: _Supervisor) -> PairingStart:
         return PairingStart(authorization_url=supervisor.start_pairing())
 
     @router.post("/pairing/complete")
-    async def finish_pairing(body: PairingFinish) -> SyncStatus:
+    async def finish_pairing(body: PairingFinish, supervisor: _Supervisor) -> SyncStatus:
         try:
             await supervisor.finish_pairing(body.redirect_url)
         except ValueError as refused:
@@ -68,7 +77,7 @@ def _api(supervisor: SyncSupervisor) -> APIRouter:
         return await supervisor.status()
 
     @router.post("/sync", status_code=status.HTTP_202_ACCEPTED)
-    async def sync_now() -> None:
+    async def sync_now(supervisor: _Supervisor) -> None:
         supervisor.sync_now()
 
     return router
@@ -98,8 +107,7 @@ def _health_route(app: FastAPI) -> None:
 
 def _frontend(app: FastAPI, frontend_dir: Path | None) -> None:
     if frontend_dir is None:
-        # Only the server binary packages the SPA. The library is also imported without it: by its own tests,
-        # and by the OpenAPI exporter the frontend's types come from, which cannot depend on the bundle.
+        # Only the server binary packages the SPA; the library is also imported without it, by its own tests.
         index = find_path(_FRONTEND_INDEX)
         if index is None:
             logger.warning("the frontend bundle is not present in runfiles")
@@ -164,8 +172,9 @@ def create_control_app(*, supervisor: SyncSupervisor) -> FastAPI:
     The cluster exposes this only through a ClusterIP Service and a Cilium policy that admits the public web Pods.
     """
     app = FastAPI(title="claude-session-sync-control", version="1")
+    app.state.supervisor = supervisor
     _health_route(app)
-    app.include_router(_api(supervisor))
+    app.include_router(_api())
     return app
 
 
@@ -175,23 +184,35 @@ def create_web_app(
     """Stateless, owner-authenticated web tier; control state and the credential stay in the control process."""
     app = FastAPI(title="claude-session-sync", version="1")
     app.state.control_client = control_client
+    app.state.store = store
     _health_route(app)
     app.include_router(_proxy_api(), dependencies=[Depends(_no_store)])
-    app.include_router(create_read_api(store))
+    app.include_router(create_read_api())
     install_login(app, _login_config(settings))
     _frontend(app, frontend_dir)
+    return app
+
+
+def create_routes() -> FastAPI:
+    """The all-in-one app's route graph (control API and read API in one process) with nothing behind it yet.
+
+    Registration reads route signatures only. `create_app` attaches the supervisor and the store and installs login
+    and the SPA; the OpenAPI exporter stops here, so it acquires none of them.
+    """
+    app = FastAPI(title="claude-session-sync", version="1")
+    _health_route(app)
+    app.include_router(_api())
+    app.include_router(create_read_api())
     return app
 
 
 def create_app(
     *, supervisor: SyncSupervisor, settings: ServeSettings, store: SessionStore, frontend_dir: Path | None = None
 ) -> FastAPI:
-    """Local all-in-one app, retained for development and the OpenAPI type exporter."""
-    app = FastAPI(title="claude-session-sync", version="1")
-    _health_route(app)
-
-    app.include_router(_api(supervisor))
-    app.include_router(create_read_api(store))
+    """Local all-in-one app, retained for development."""
+    app = create_routes()
+    app.state.supervisor = supervisor
+    app.state.store = store
     install_login(app, _login_config(settings))
     _frontend(app, frontend_dir)
     return app
