@@ -393,6 +393,13 @@ independent branches. A later Claude sampler could share this code-mode runtime 
 contract characterization. CLIProxyAPI translation/cloaking alone does not supply native tool,
 instruction, cache or continuation semantics or prove live provider/account support.
 
+TODO: For a Claude sampler, compare wrapping code-mode `exec` as a JSON `{code}` tool (the Messages
+API has no freeform/grammar tools) against Anthropic programmatic tool calling: `code_execution`
+with `allowed_callers` on our custom tools, so Claude's code calls `exec_command` and friends through
+pending `tool_use` round-trips. That code runs in Anthropic's container, not our V8 host (no
+`store`/`load`/`notify`), and excludes strict tools, forced `tool_choice` and MCP tools. Also check
+how LiteLLM translates Responses `custom` tools for Anthropic models.
+
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53
 [thread-env]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L136-L144
