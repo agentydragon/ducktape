@@ -149,30 +149,70 @@ are those the report marks `realizable: false` (they carry constraining module
 edges); on the web corpus all 12 are cycles and the gate still accepted the
 run, so that flag alone is not a rejection count.
 
-Against the plan's § 6 sizing premise: the web corpus is at the low end of the
-quoted 2.3M–5.4M edge range (2.16M) and the CLI corpus is above it (6.12M
-summed, 3.86M in one chunk); the web corpus's 255 s / 3.67 GiB on the pinned
-engine is far from the 106 s / 3.75 GiB large-web-corpus figure in
-<large_web_corpus_baseline.md>, which measured an older engine on a different
-spec revision, so that figure should not be used as the step 0 wall baseline.
 The pinned engine predates `native_receiver_certificates` (PR #12646), so the
 pinned graphs carry no certificate rows and no `inference_uses`; the receiver
 count in the next section comes from the devel engine.
 
 ## Canonical inputs, measured devel engine
 
-Pending. Both pipelines were started with the same flags on the measured devel
-head, selected through an uncommitted `DUCKTAPE_COMMIT` patch, in Bazel
-invocation
+The same two pipelines, same flags and execution mode, with the private
+repository's pin pointed at the measured devel head through an uncommitted
+`DUCKTAPE_COMMIT` edit that `bbr` carried as its patch, in invocation
 [b9e9ab47-23d9-46a2-9bf5-d22a1e119f48](https://app.buildbuddy.io/invocation/b9e9ab47-23d9-46a2-9bf5-d22a1e119f48)
-(runner `f1f96e04-d89b-4d5e-865c-e2687e628c2c`); the engine was still compiling
-when this note was committed. The receiver-certificate count depends on this
-run, since only the devel engine emits `native_receiver_certificates`. A
-parallel worker's local run of the web corpus on a devel-equivalent engine
-reported a rejection with 5 atomic-group conflicts (210, 7, 9, 2, 3 members),
-3,146,382 edges, 1,121 s wall and 5.1 GiB peak RSS; that measurement is in a
-different execution mode and is quoted here only as the expected shape, not as
-a row of the table above.
+(runner `f1f96e04-d89b-4d5e-865c-e2687e628c2c`; the private base moved one
+debug-note commit between the two runs, spec and source unchanged). The engine
+was rebuilt from source on RBE (graph `provenance.engine_sha256`
+`19e74bb03dbd25b622369f3a42b8d8085fdc40511a0f3a960a96f16530d8d1d0`; Bazel
+1,560 s elapsed, 40 remote executions). These rows are the step 0 baseline the
+§ 6.1 budget is measured against; the pinned-engine rows above are context.
+
+| Input            | Verdict  | Atomic conflicts (members)                             | Wall (s) | CPU (s) | Peak RSS (GiB) | Graphs | Source units |     Edges | Atomic groups (multi-unit) | Module SCCs (cycles / constrained) | Precision losses |
+| ---------------- | -------- | ------------------------------------------------------ | -------: | ------: | -------------: | -----: | -----------: | --------: | -------------------------: | ---------------------------------: | ---------------: |
+| Large web corpus | rejected | 5 (210, 7, 9, 2, 3)                                    |  1,121.4 | 1,156.2 |           5.13 |      1 |        9,709 | 3,146,382 |                 9,218 (91) |                          966 (5/5) |           10,479 |
+| CLI corpus       | rejected | 10 (3,050, 1,096, 800, 586, 149, 117, 112, 88, 30, 18) |     87.2 |   153.5 |           9.62 |     76 |       43,949 | 7,366,298 |                34,738 (73) |                        132 (43/15) |           45,291 |
+
+Edges by reason (web / CLI): `eager_use` 1,605,183 / 3,866,020; `sequenced`
+1,520,638 / 3,442,243; `lazy_use` 19,612 / 57,081; `hoisted_use` 525 / 699;
+`local_effect` 317 / 0; `lazy_rebind` 96 / 216; `deferred_rebind` 9 / 25;
+`eager_rebind` 2 / 14. Precision losses by reason (web / CLI):
+`unknown_call_target` 5,401 / 29,727; `unsupported_operation` 3,729 / 11,411;
+`callback_pool_limit` 1,107 / 3,202; `invocation_expansion_limit` 125 / 513;
+`recursive_invocation` 117 / 438. The web corpus's 5 cyclic SCCs are one
+1,833-module cycle plus 3, 2, 2, 2 (the pinned engine had 41 cycles of at most
+45 modules); its module quotient grew from 206,450 to 347,754 edges. The CLI
+main chunk alone carries 5,103,755 edges and the 3,050-unit conflict group.
+Census rows, for the step that touches them: `native_integrity_witnesses` 133
+(web) / 2,508 (CLI); `native_prototype_mutations` 88,617 / 10,230,588;
+`inference_uses` are all `local_class_construction`, 310 / 38.
+
+Pinned engine to devel head on the same inputs and mode: web wall 255 s → 1,121 s
+and peak 3.67 → 5.13 GiB with 45% more edges (all `eager_use` and `sequenced`),
+and the gate flips from accepted to rejected; CLI wall 43.5 s → 87.2 s and peak
+4.40 → 9.62 GiB with 20% more edges. Both devel gates reject, as the plan
+assumes; the pinned engine's acceptance of the web corpus is the exception to
+"both gates reject today".
+
+### Receiver-certificate site count (§ 6.3 risk 3)
+
+**1 site** across both canonical inputs: the web corpus's graph carries exactly
+one `native_receiver_certificates` row (a vendor-chunk member write whose prior
+native root was the global object, discharged by a dominating local
+initializer); the CLI corpus's 76 graphs carry none. Each row is one mutation
+site discharged by the local receiver identity rule, so this is the count of
+sites whose current acceptance rests on that rule. The report does not expose
+sites the rule evaluated and declined, so the number of candidates a
+`captured_value_inputs` axiom would have to cover beyond this one is not
+measurable from the engine's output today; the remaining failed native
+premises are the 133 and 2,508 `native_integrity_witnesses` rows above.
+
+## Against the plan's § 6 sizing premise
+
+The web corpus is inside the quoted 2.3M–5.4M edge range on the devel engine
+(3.15M) and below it on the pinned engine (2.16M); the CLI corpus is above it
+summed over chunks (7.37M) and at 5.10M in its largest chunk. The 106 s /
+3.75 GiB figure from <large_web_corpus_baseline.md> was an older engine
+(`c7168bee`) on an older spec and is not comparable with either canonical row;
+the web corpus's step 0 wall baseline is 1,121 s on an RBE executor.
 
 Private detail (chunk names, conflict members, module paths, the exact
 private commit and spec fingerprints) is in the private repository's note
