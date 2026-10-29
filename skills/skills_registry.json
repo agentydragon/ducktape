@@ -238,7 +238,7 @@
     {
       "name": "semantic_branch_pruner",
       "pkg": "skill-semantic_branch_pruner",
-      "target": "//skills/semantic_branch_pruner:semantic_branch_pruner_skill",
+      "target": "//devinfra/skills/semantic_branch_pruner:semantic_branch_pruner_skill",
       "filename": "semantic_branch_pruner.skill"
     },
     {
