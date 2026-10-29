@@ -29,6 +29,8 @@ instructions, setup scripts and History export.
 - Realtime/voice.
 - Browser use, computer use and dictation.
 - `update_plan`: only as an Agentplane-wide feature, not a sampler-only tool.
+- Maybe, very low priority: lifecycle hooks (`hooks.json`), and `request_user_input` with async
+  messages to the user.
 - Context-awareness tools, if wanted: Codex's `get_context_remaining`, `new_context_window`, and
   token-budget and current-time reminders in context.
 
