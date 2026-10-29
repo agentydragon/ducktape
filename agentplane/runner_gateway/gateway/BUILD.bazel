@@ -29,6 +29,7 @@ go_library(
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/go/auth",
         "@com_github_google_uuid//:uuid",
+        "@com_github_sethvargo_go_retry//:go-retry",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//discovery/v1:discovery",

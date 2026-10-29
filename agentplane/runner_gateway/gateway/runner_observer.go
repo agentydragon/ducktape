@@ -13,6 +13,7 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -89,9 +90,16 @@ func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 				defer workers.Done()
 				defer close(done)
 				defer cancel()
-				if err := g.observeRunner(workerCtx, destination); err != nil && workerCtx.Err() == nil && !errors.Is(err, errRunnerOwned) {
-					slog.Warn("runner observer ended", "sandbox", destination.identity.Name, "error", err)
-				}
+				_ = retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
+					err := g.observeRunner(ctx, destination)
+					if err == nil || ctx.Err() != nil || errors.Is(err, errRunnerOwned) {
+						return err
+					}
+					// Transport recovery does not depend on the slower discovery scan.
+					// Each attempt claims a fresh epoch before accepting the new boot.
+					slog.Warn("runner observer reconnecting", "sandbox", destination.identity.Name, "error", err)
+					return retry.RetryableError(err)
+				})
 			}()
 		}
 		select {

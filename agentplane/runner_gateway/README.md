@@ -23,6 +23,9 @@ The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox deliv
 and database ownership generations. The connection role keeps separate connection Leases and
 EndpointSlices; delivery on one replica routes to the replica holding the runner connection.
 There is no separate Gateway database or Session registry and no History Service client.
+After losing a Runner observation, the owning Gateway retries after one second without waiting for
+the next Sandbox discovery scan. Each attempt claims a fresh Lease epoch and validates the current
+workload and Runner boot before serving calls. A foreign Lease holder waits for discovery instead.
 [Queue semantics](dispatcher/README.md) remain distinct from History's retained
 conversation and from Runner admission.
 

@@ -20,9 +20,14 @@ The runner adopts that incarnation before publishing its boot ID and facts, then
 on changes and periodically. The Gateway publishes validated facts and the boot ID to the Lease
 and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
 not a connected runner. Other replicas wait for the owner's Lease to expire before taking over.
+The owning Gateway retries a lost observation after one second, independently of Sandbox discovery.
+Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
+periodic heartbeats still publish unchanged facts.
 
 Unary Runner calls and each `RunnerExec.Connect` stream carry the Sandbox UID, incarnation UID,
-runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch.
+runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch
+before admission with `UNAVAILABLE`. This lets queued commands retry through the current observer;
+`ABORTED` remains the explicit refusal of new work for a workload incarnation.
 A superseded observer cannot clear its successor. Observation loss stops executor streams and new
 control calls; admitted journal work remains runner-owned and continues independently. Each
 executor connection uses an ordinary bidirectional gRPC stream.

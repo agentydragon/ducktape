@@ -20,6 +20,7 @@ import (
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -157,7 +158,10 @@ func (r *Runner) authorizeDirectCall(ctx context.Context) (*directWatch, error) 
 	if watch == nil || !watch.ready || watch.ctx.Err() != nil || watch.sandboxUID != sandboxUID ||
 		watch.incarnationUID != incarnationUID || watch.epoch != epoch || bootID != r.bootID {
 		r.directMu.RUnlock()
-		return nil, status.Error(codes.Aborted, "Runner control call is outside the current connection epoch")
+		// A process restart can leave the Gateway briefly holding the previous boot's
+		// connection. This rejects before admission and must remain retryable; Aborted
+		// means the Runner refused new work for this entire workload incarnation.
+		return nil, status.Error(codes.Unavailable, "Runner control call is outside the current connection epoch")
 	}
 	r.directMu.RUnlock()
 	return watch, nil
@@ -198,32 +202,56 @@ func (r *Runner) WatchState(
 	if err := r.markDirectWatchReady(watch); err != nil {
 		return err
 	}
+	return r.forwardWatchState(
+		watch.ctx,
+		func() (*runnerservicepb.WatchStateResponse, error) {
+			facts, err := r.facts()
+			if err != nil {
+				return nil, rpcError(err)
+			}
+			return &runnerservicepb.WatchStateResponse{
+				SandboxUid: watch.sandboxUID, IncarnationUid: watch.incarnationUID,
+				RunnerBootId: r.bootID, ConnectionEpoch: watch.epoch, Facts: facts,
+			}, nil
+		},
+		server.Send,
+	)
+}
+
+func (r *Runner) forwardWatchState(
+	ctx context.Context,
+	response func() (*runnerservicepb.WatchStateResponse, error),
+	send func(*runnerservicepb.WatchStateResponse) error,
+) error {
 	ticker := time.NewTicker(forwardHeartbeatInterval)
 	defer ticker.Stop()
+	var lastResponse *runnerservicepb.WatchStateResponse
+	forceHeartbeat := true
 	for {
-		if err := r.authorizeGatewayPeer(watch.ctx); err != nil {
+		if err := r.authorizeGatewayPeer(ctx); err != nil {
 			return err
 		}
 		changed := r.changesSince()
-		facts, err := r.facts()
+		current, err := response()
 		if err != nil {
-			return rpcError(err)
-		}
-		response := &runnerservicepb.WatchStateResponse{
-			SandboxUid: watch.sandboxUID, IncarnationUid: watch.incarnationUID,
-			RunnerBootId: r.bootID, ConnectionEpoch: watch.epoch, Facts: facts,
-		}
-		if err := streaming.SendWithin(watch.ctx, forwardWriteTimeout, server.Send, response); err != nil {
-			if errors.Is(err, streaming.ErrSendTimeout) {
-				return status.Error(codes.DeadlineExceeded, "Runner state write timed out")
-			}
 			return err
 		}
+		if forceHeartbeat || lastResponse == nil || !proto.Equal(lastResponse, current) {
+			if err := streaming.SendWithin(ctx, forwardWriteTimeout, send, current); err != nil {
+				if errors.Is(err, streaming.ErrSendTimeout) {
+					return status.Error(codes.DeadlineExceeded, "Runner state write timed out")
+				}
+				return err
+			}
+			lastResponse = current
+			forceHeartbeat = false
+		}
 		select {
-		case <-watch.ctx.Done():
-			return status.FromContextError(watch.ctx.Err()).Err()
+		case <-ctx.Done():
+			return status.FromContextError(ctx.Err()).Err()
 		case <-changed:
 		case <-ticker.C:
+			forceHeartbeat = true
 		}
 	}
 }

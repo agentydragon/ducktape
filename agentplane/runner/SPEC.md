@@ -181,11 +181,16 @@ budget remains authoritative across all of its native services.
   before state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod
   or virt-launcher incarnation UID, and Lease connection epoch. Runner adopts that incarnation
   before publishing its first facts snapshot, then sends changed facts and a ten-second heartbeat.
+  Internal notifications with unchanged facts do not publish extra snapshots. The Gateway retries
+  a lost observation independently of Sandbox discovery and claims a fresh connection epoch before
+  accepting the replacement Runner boot.
   Cancelling or superseding the watch changes observer readiness but does not cancel already
   admitted durable work.
 - Every unary call and direct executor stream is fenced with the Sandbox UID, incarnation
   UID, Runner boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
-  observer's readiness. `RunnerExec.Connect` carries one executor relay per stream and applies the
+  observer's readiness. Calls with stale boot or observer metadata fail before admission with
+  `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
+  the whole workload incarnation as refusing work. `RunnerExec.Connect` carries one executor relay per stream and applies the
   per-Runner stream and message limits. Closing one stream leaves other executor relays running.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a

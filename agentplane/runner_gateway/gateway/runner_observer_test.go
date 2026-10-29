@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -236,5 +237,101 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	destination.peerURI = newURI
 	if err := g.validateRunnerDestination(t.Context(), destination); err != nil {
 		t.Fatalf("current credential was rejected: %v", err)
+	}
+}
+
+// reconnectingRunner replaces its boot after the first observation ends without changing Pod identity.
+type reconnectingRunner struct {
+	runnerservicepb.UnimplementedRunnerServer
+	observations atomic.Int32
+	disconnect   chan struct{}
+}
+
+func (r *reconnectingRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
+	observation := r.observations.Add(1)
+	if err := stream.Send(&runnerservicepb.WatchStateResponse{
+		SandboxUid: request.SandboxUid, IncarnationUid: request.IncarnationUid,
+		ConnectionEpoch: request.ConnectionEpoch, RunnerBootId: fmt.Sprintf("boot-%d", observation),
+		Facts: &runnerstatepb.RunnerFacts{},
+	}); err != nil {
+		return err
+	}
+	if observation == 1 {
+		select {
+		case <-r.disconnect:
+			return status.Error(codes.Unavailable, "runner restarted")
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if got := md.Get("agentplane-runner-boot-id"); len(got) != 1 || got[0] != fmt.Sprintf("boot-%d", r.observations.Load()) {
+		return nil, status.Error(codes.Unavailable, "stale runner boot")
+	}
+	return &runnerpb.RunnerStatus{}, nil
+}
+
+func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.T) {
+	f := newSandboxFixture(t)
+	pod := f.pod.DeepCopy()
+	pod.Status.PodIP = "127.0.0.1"
+	if _, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	g := f.newGateway(t, "test-reconnecting-gateway", "192.0.2.30")
+	g.config.RunnerSecurity = runner_transport.Security{Mode: runner_transport.Insecure}
+	// Discovery is deliberately later than this test's deadline: transport loss must trigger its own retry.
+	g.config.ControlTiming.HeartbeatInterval = time.Hour
+	listener, err := net.Listen("tcp", "127.0.0.1:9090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	runner := &reconnectingRunner{disconnect: make(chan struct{})}
+	runnerservicepb.RegisterRunnerServer(server, runner)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- g.RunRunnerObservers(ctx) }()
+	defer func() {
+		cancel()
+		<-finished
+	}()
+	awaitBoot := func(bootID string) *runnerConnection {
+		t.Helper()
+		poll := time.NewTicker(time.Millisecond)
+		defer poll.Stop()
+		for {
+			connection, err := g.connections.holder(string(f.sandbox.UID))
+			if err == nil && connection.bootID == bootID {
+				return connection
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Runner did not publish %s before the next discovery: %v", bootID, ctx.Err())
+			case <-poll.C:
+			}
+		}
+	}
+	first := awaitBoot("boot-1")
+	close(runner.disconnect)
+	second := awaitBoot("boot-2")
+	if second.epoch <= first.epoch || second.podUID != first.podUID {
+		t.Fatalf("reconnect changed incarnation or failed to advance epoch: first=%+v second=%+v", first, second)
+	}
+	g.connections.remove(first, errSupersededConnection)
+	if _, err := second.runner.GetStatus(ctx, &runnerpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("replacement Runner did not serve calls: %v", err)
+	}
+	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity}
+	if _, err := runnerservicepb.NewRunnerClient(stale).GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("old boot remained usable after reconnect: %v", err)
 	}
 }

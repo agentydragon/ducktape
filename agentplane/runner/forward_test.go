@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
@@ -19,7 +21,93 @@ import (
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+type watchStateTestStream struct {
+	ctx       context.Context
+	responses chan *runnerservicepb.WatchStateResponse
+}
+
+func (s *watchStateTestStream) Send(response *runnerservicepb.WatchStateResponse) error {
+	select {
+	case s.responses <- proto.Clone(response).(*runnerservicepb.WatchStateResponse):
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func TestWatchStatePublishesChangesAndPeriodicHeartbeat(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		r := &Runner{
+			config:  Config{Control: RunnerControlConfiguration{Security: runnertransport.Security{Mode: runnertransport.Insecure}}},
+			changes: make(chan struct{}),
+		}
+		facts := &runnerstatepb.RunnerFacts{}
+		stream := &watchStateTestStream{
+			ctx:       ctx,
+			responses: make(chan *runnerservicepb.WatchStateResponse, 8),
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- r.forwardWatchState(ctx, func() (*runnerservicepb.WatchStateResponse, error) {
+				return &runnerservicepb.WatchStateResponse{
+					SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", RunnerBootId: "runner-boot-id",
+					ConnectionEpoch: 1, Facts: proto.Clone(facts).(*runnerstatepb.RunnerFacts),
+				}, nil
+			}, stream.Send)
+		}()
+
+		initial := <-stream.responses
+		if initial.GetFacts() == nil || initial.GetIncarnationUid() != "pod-uid" {
+			t.Fatalf("initial WatchState response = %v", initial)
+		}
+		synctest.Wait()
+
+		// Internal notifications can be duplicated or unrelated to WatchState facts.
+		r.changed()
+		r.changed()
+		synctest.Wait()
+		select {
+		case response := <-stream.responses:
+			t.Fatalf("unchanged facts produced another WatchState response: %v", response)
+		default:
+		}
+
+		facts.SetupsRunning = true
+		r.changed()
+		synctest.Wait()
+		changed := <-stream.responses
+		if proto.Equal(initial, changed) {
+			t.Fatalf("changed facts produced the same response: %v", changed)
+		}
+
+		r.changed()
+		r.changed()
+		synctest.Wait()
+		select {
+		case response := <-stream.responses:
+			t.Fatalf("unchanged facts after a change produced another response: %v", response)
+		default:
+		}
+
+		heartbeatTimer := time.NewTimer(forwardHeartbeatInterval)
+		<-heartbeatTimer.C
+		synctest.Wait()
+		heartbeat := <-stream.responses
+		if !proto.Equal(changed, heartbeat) {
+			t.Fatalf("periodic heartbeat = %v, want unchanged response %v", heartbeat, changed)
+		}
+
+		cancel()
+		if err := <-done; status.Code(err) != codes.Canceled {
+			t.Fatalf("WatchState cancellation error = %v, want Canceled", err)
+		}
+	})
+}
 
 func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 	for _, mode := range []runnertransport.SecurityMode{runnertransport.MutualTLS, runnertransport.Insecure} {
@@ -101,14 +189,19 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	if _, err := statusClient.GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
-		t.Fatalf("GetStatus for old runner boot = %v, want Aborted", err)
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetStatus for old runner boot = %v, want Unavailable", err)
+	}
+	if _, err := statusClient.SubmitInput(callContext("pod-uid-1", "old-runner-boot", 1), &runnerservicepb.SubmitInputRequest{
+		SessionId: "not-created", CommandId: "stale-boot-input", Text: "must not be admitted",
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("SubmitInput for old runner boot = %v, want retryable rejection before admission", err)
 	}
 	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 1), &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("current-epoch GetStatus: %v", err)
 	}
-	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
-		t.Fatalf("stale GetStatus error = %v, want Aborted", err)
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("stale GetStatus error = %v, want Unavailable", err)
 	}
 
 	newWatch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
@@ -258,8 +351,8 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if _, err := client.GetStatus(callContext(ctx, 1, first.GetRunnerBootId()), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
-		t.Fatalf("call after WatchState cancellation = %v, want Aborted", err)
+	if _, err := client.GetStatus(callContext(ctx, 1, first.GetRunnerBootId()), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("call after WatchState cancellation = %v, want Unavailable", err)
 	}
 	watch, err = client.WatchState(ctx, &runnerservicepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 2,
