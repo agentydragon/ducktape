@@ -130,6 +130,7 @@ fn graph_with_conditioned_set_proof(
         &plain_arrays,
         &BTreeSet::new(),
         None,
+        None,
     )
 }
 
@@ -1726,6 +1727,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &plain_data,
         &plain_arrays,
         &BTreeSet::new(),
+        None,
         None,
     );
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {

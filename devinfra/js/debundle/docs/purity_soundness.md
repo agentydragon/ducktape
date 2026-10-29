@@ -1084,6 +1084,15 @@ can certify their inner named fields; computed or unknown read keys cannot.
 The member read remains an eager dependency and is evaluated normally. Array
 holes and spreads are outside this proof.
 
+For a computed object-property key, the same initialized exact-member proof
+also establishes that `ToPropertyKey` receives a primitive, so it cannot call
+user code through the enum member value. The candidate additionally requires
+the canonical structural facts to show no eager or lazy enum-binding rebind
+outside its initializer. This removes only the coercion/reentry concern:
+member access and key-expression evaluation remain ordinary eager effects.
+Computed enum member names, member mutation, opaque escape, reflective writes,
+accessors, and unknown receiver forms continue through conservative handling.
+
 Why member reads on PlainData are pure:
 
 - **No accessor channels at any program point.** The initial init is a

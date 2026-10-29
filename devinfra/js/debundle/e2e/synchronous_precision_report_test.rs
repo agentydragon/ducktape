@@ -115,6 +115,89 @@ console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
 }
 
 #[test]
+fn stable_ts_enum_primitive_member_is_safe_as_computed_property_key() {
+    let source = r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+const preferences = { [Status.READY]: true };
+console.log(preferences.ready);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "true\n");
+
+    let graph = fixture.dependency_graph();
+    let preferences_unit = source_unit_for_binding(&graph, "preferences");
+    let status_unit = source_unit_for_binding(&graph, "Status");
+    let preferences = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == preferences_unit)
+        .expect("preferences source unit");
+    assert_eq!(
+        serde_json::to_value(preferences).expect("serialize node")["purity"]["kind"],
+        "pure"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == preferences_unit
+                && edge.target == status_unit
+                && edge.binding.as_deref() == Some("Status")
+                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.constrains_init_order
+        }),
+        "the primitive enum proof must retain the eager binding dependency"
+    );
+}
+
+#[test]
+fn enum_property_key_proof_rejects_rebinds_mutations_unknown_keys_accessors_and_escapes() {
+    let source = r#"var Rebound = ((values) => ((values.READY = "ready"), values))(Rebound || {});
+let reboundCalls = 0;
+Rebound = { READY: { toString() { reboundCalls++; return "rebound"; } } };
+const rebound = { [Rebound.READY]: true };
+
+var Mutated = ((values) => ((values.READY = "ready"), values))(Mutated || {});
+Mutated.READY = { toString() { return "mutated"; } };
+const mutated = { [Mutated.READY]: true };
+
+var Dynamic = ((values) => ((values.READY = "ready"), values))(Dynamic || {});
+const memberName = "READY";
+const dynamic = { [Dynamic[memberName]]: true };
+
+let getterCalls = 0;
+const Accessor = { get READY() { getterCalls++; return "accessor"; } };
+const accessor = { [Accessor.READY]: true };
+
+var Escaped = ((values) => ((values.READY = "ready"), values))(Escaped || {});
+globalThis.retainEnum = (value) => value;
+globalThis.retainEnum(Escaped);
+const escaped = { [Escaped.READY]: true };
+
+console.log(rebound.rebound, reboundCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "true 1 true true true 1 true\n");
+
+    let graph = fixture.dependency_graph();
+    for binding in ["rebound", "mutated", "dynamic", "accessor", "escaped"] {
+        let unit = source_unit_for_binding(&graph, binding);
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == unit)
+            .expect("source unit");
+        let purity = serde_json::to_value(node).expect("serialize node")["purity"].clone();
+        assert_eq!(purity["kind"], "not_pure", "{binding}: {purity}");
+        assert!(
+            purity["reasons"].as_array().is_some_and(|reasons| {
+                reasons
+                    .iter()
+                    .any(|reason| reason["rule"] == "to_property_key_coercion")
+            }),
+            "{binding} must retain the coercion concern: {purity}"
+        );
+    }
+}
+
+#[test]
 fn enum_member_read_before_initializer_remains_a_throwing_read() {
     let source = r#"const selected = [Status.READY];
 var Status = ((values) => ((values.READY = "ready"), values))(Status || {});

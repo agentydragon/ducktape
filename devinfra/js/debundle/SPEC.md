@@ -647,6 +647,14 @@ opaque escape, reflective writes, accessors, unknown keys, and reads before the
 initializer keep the conservative member-read path. Purity of the initializer
 alone does not establish the receiver's property identity.
 
+When that same stable enum member is used as a computed property key, the
+shared purity analysis may also prove its value primitive and omit only the
+possible `ToPropertyKey` callback/reentry. The member expression still runs
+normally and retains its eager binding dependency; only an exact static own
+member of the single recognized initializer qualifies. Whole-chunk mutation,
+escape, and accessor checks still apply, as do binding rebind and source-order
+checks.
+
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered source units

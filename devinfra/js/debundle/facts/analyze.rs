@@ -419,6 +419,7 @@ where
             &plain_data_bindings,
             &plain_array_bindings,
             &stable_var_number_candidates,
+            Some(&per_statement),
             Some(&mut locate),
         )
     };

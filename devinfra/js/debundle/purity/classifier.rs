@@ -480,7 +480,8 @@ fn classify_member_purity(
                     local_shadowed,
                     &graph.primitive_bindings,
                     &graph.symbol_const_bindings,
-                ) {
+                ) || graph.is_stable_ts_enum_primitive_member(&computed.expr, local_shadowed)
+                {
                     key_purity
                 } else {
                     key_purity.worst(Purity::from_reason_with_detail(
@@ -957,7 +958,8 @@ fn classify_propname_purity(
                 local_shadowed,
                 &graph.primitive_bindings,
                 &graph.symbol_const_bindings,
-            ) {
+            ) || graph.is_stable_ts_enum_primitive_member(&c.expr, local_shadowed)
+            {
                 key_purity
             } else {
                 key_purity.worst(Purity::from_reason_with_detail(
