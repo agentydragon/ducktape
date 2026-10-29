@@ -1037,7 +1037,7 @@ chunk_analysis_options:
 
 The selector and digest use the same canonical source-match and parser-input
 provenance as `value_inputs`. The operation set accepts `symbol`,
-`set_from_primitive_array`, and `set_from_set_spread`.
+`set_from_primitive_array`, `set_from_set_spread`, and `object_own_data_function_read`.
 The selector must identify one direct top-level simple binding initializer
 whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call
 with zero or one syntactically primitive argument and no spread. Shadowed
@@ -1101,6 +1101,20 @@ heap ordering graph, and proof dependencies on all required selected native
 operations. A different output, uncertified intervening source unit, or
 unselected seed rejects the input. Calls and mutations outside the interval
 retain ordinary ordering; this premise does not certify later Set operations.
+`object_own_data_function_read` selects one simple top-level binding whose
+entire initializer is an uncomputed, nonoptional `Object.<name>` member read.
+`Object` must be the unshadowed global binding and `<name>` must occur in the
+shared `PURE_STATIC_FUNCTION_REFS` own-data table. The author asserts that the
+original `Object` constructor binding and that exact own-data property retain
+their native identities throughout every admitted initialization schedule.
+Known writes to either exact slot in any analyzed chunk contradict the input;
+unknown receiver/key effects remain an explicit audit obligation. A sibling
+property write does not contradict this premise. An intact whole-program native
+integrity proof can certify the read without author input. The shared semantic
+certificate is consumed by purity, synchronous timing, and heap ordering at
+the exact read span. Receiver evaluation remains; an invocation of the read
+function still follows ordinary call effect analysis. The input grants no
+function-call purity, argument contract, or return shape.
 
 ## Ordinary own-property inspection
 

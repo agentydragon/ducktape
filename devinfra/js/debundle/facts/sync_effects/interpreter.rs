@@ -10,7 +10,7 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
-    NativePointEffects, RetainedCallbackCall,
+    NativePointEffects, RetainedCallbackCall, object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -18,7 +18,7 @@ use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::semantic_inference::SemanticKey;
+use crate::facts::semantic_inference::{NativeOwnDataReadPremise, SemanticFact, SemanticKey};
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
@@ -5766,6 +5766,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 return;
             }
+            if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
+                .is_some()
+                && self
+                    .inputs
+                    .index
+                    .semantic_facts
+                    .as_ref()
+                    .and_then(|facts| facts.fact(&SemanticKey::NativeOwnDataRead(call.span.lo.0)))
+                    .is_none()
+            {
+                let selected = self.evaluate(&call.callee, env, captures);
+                self.promote_raw_callbacks(&selected, outcome);
+                self.invoke_possible_callbacks(&[selected], false, outcome);
+                self.note_unknown_call(call);
+                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+                outcome.unknown_call = true;
+                return;
+            }
             let ValueExpr::Member(receiver, property, _) = &call.callee else {
                 unreachable!()
             };
@@ -6426,6 +6444,7 @@ pub(crate) struct SynchronousCallProofs<'a> {
 pub(crate) struct PreparedSynchronousCallIndex {
     index: ExecutionIndex,
     set_iterable_proof: SetIterableProof,
+    native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>>,
 }
 
 /// Exact native calls whose own heap action cannot observe an existing array
@@ -6441,6 +6460,13 @@ impl FreshRecordFreezeHeapProof {
 }
 
 impl PreparedSynchronousCallIndex {
+    pub(crate) fn native_own_data_read_candidates(&self, owner: SourceUnitOrdinal) -> &[Span] {
+        self.native_own_data_read_candidates
+            .get(&owner)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
         locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
@@ -6481,6 +6507,40 @@ impl PreparedSynchronousCallIndex {
             })
             .collect();
         FreshRecordFreezeHeapProof { sites }
+    }
+
+    pub(crate) fn native_own_data_read(
+        &self,
+        span: Span,
+    ) -> Option<(
+        crate::reports::schema::InferenceUse,
+        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
+        ProofDependencies,
+    )> {
+        let key = SemanticKey::NativeOwnDataRead(span.lo.0);
+        let facts = self.index.semantic_facts.as_ref()?;
+        let proof = facts.inference_use(&key)?;
+        let dependencies = facts.dependencies(&key)?.clone();
+        let evidence = self
+            .index
+            .native_operation_input_evidence
+            .get(&CallSite::from(span))
+            .filter(|evidence| {
+                evidence.operation
+                    == NativeInputKind::Operation(
+                        spec::NativeOperationKind::ObjectOwnDataFunctionRead,
+                    )
+            })
+            .cloned();
+        match (facts.fact(&key)?, &evidence) {
+            (SemanticFact::NativeOwnDataRead(NativeOwnDataReadPremise::SourceIntegrity), None) => {}
+            (
+                SemanticFact::NativeOwnDataRead(NativeOwnDataReadPremise::Author(reference)),
+                Some(evidence),
+            ) if reference == &evidence.reference => {}
+            _ => return None,
+        }
+        Some((proof, evidence, dependencies))
     }
 }
 
@@ -6530,9 +6590,26 @@ pub(crate) fn prepare_synchronous_call_index(
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)
     });
+    let mut native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>> =
+        BTreeMap::new();
+    for writes in index.binding_declaration_writes.values() {
+        if let [write] = writes.as_slice()
+            && write.direct_top_level
+            && write.simple_identifier
+            && let Some(initializer) = &write.initializer
+            && object_own_data_read_property(initializer, |id| flow.is_declared(id)).is_some()
+            && let Some(span) = write.initializer_span
+        {
+            native_own_data_read_candidates
+                .entry(write.owner)
+                .or_default()
+                .push(span);
+        }
+    }
     PreparedSynchronousCallIndex {
         index,
         set_iterable_proof,
+        native_own_data_read_candidates,
     }
 }
 

@@ -813,6 +813,34 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
+    for (provider, inputs) in &resolved_native_operation_inputs {
+        for input in inputs {
+            if input.evidence.operation
+                != NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
+            {
+                continue;
+            }
+            let property = prepared[provider]
+                .object_read_property(input)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{} lost its exact Object own-data read during preparation",
+                        input.evidence.spec_location
+                    )
+                })?;
+            if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+                facts
+                    .known_object_read_contradiction_owner(&property)
+                    .map(|owner| (module, owner))
+            }) {
+                bail!(
+                    "{} is contradicted by a known Object binding or Object.{property} write in provider {module}, source unit {}",
+                    input.evidence.spec_location,
+                    owner.0
+                );
+            }
+        }
+    }
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {

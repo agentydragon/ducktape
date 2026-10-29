@@ -1782,6 +1782,25 @@ fn source_slot_overlap<'a>(
     }
 }
 
+pub(super) fn object_own_data_read_property(
+    value: &ValueExpr,
+    is_declared: impl Fn(&Id) -> bool,
+) -> Option<&str> {
+    let ValueExpr::Member(receiver, Some(property), true) = value else {
+        return None;
+    };
+    let ValueExpr::Binding(object) = receiver.as_ref() else {
+        return None;
+    };
+    if object.0.as_ref() != "Object" || is_declared(object) {
+        return None;
+    }
+    crate::purity::PURE_STATIC_FUNCTION_REFS
+        .iter()
+        .any(|&(root, member)| root == "Object" && member == property)
+        .then_some(property.as_str())
+}
+
 fn receiver_uses_intrinsic_alias(
     value: &ValueExpr,
     aliases: &BTreeMap<Id, NativeReceiverRoots>,
@@ -4010,6 +4029,40 @@ impl ExecutionIndex {
             })
             .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
             .collect();
+        let native_own_data_reads = self
+            .binding_declaration_writes
+            .values()
+            .filter(|writes| writes.len() == 1)
+            .flat_map(|writes| writes.iter())
+            .filter(|write| write.direct_top_level && write.simple_identifier)
+            .filter_map(|write| {
+                object_own_data_read_property(write.initializer.as_ref()?, |id| {
+                    flow.is_declared(id)
+                })?;
+                let span = write.initializer_span?;
+                let premise = self
+                    .native_operation_input_evidence
+                    .get(&CallSite::from(span))
+                    .filter(|evidence| {
+                        evidence.operation
+                            == NativeInputKind::Operation(
+                                spec::NativeOperationKind::ObjectOwnDataFunctionRead,
+                            )
+                    })
+                    .map(|evidence| {
+                        super::super::semantic_inference::NativeOwnDataReadPremise::Author(
+                            evidence.reference.clone(),
+                        )
+                    })
+                    .unwrap_or(
+                        super::super::semantic_inference::NativeOwnDataReadPremise::SourceIntegrity,
+                    );
+                // The candidate is an exact original own-data slot. The
+                // inference rule decides whether source integrity or the
+                // selected author premise establishes its runtime identity.
+                Some((span.lo.0, premise))
+            })
+            .collect();
 
         Arc::new(SemanticFacts::solve(SemanticRules {
             classes,
@@ -4022,6 +4075,7 @@ impl ExecutionIndex {
                 global_object_names: self.global_object_names.clone(),
             },
             native_call_identity_candidates,
+            native_own_data_reads,
             descriptor_copy_providers: self.descriptor_copy_factories.clone(),
             descriptor_copy_calls: self
                 .descriptor_copy_calls
@@ -4376,6 +4430,12 @@ impl ExecutionIndex {
         for input in selected {
             let request = &input.evidence.spec_location;
             if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
+            {
+                self.validate_selected_object_read(input);
+                continue;
+            }
+            if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
             {
                 if let Some(owner) = self.known_global_set_mutation() {
@@ -4704,6 +4764,12 @@ impl ExecutionIndex {
         for input in resolved {
             let request = &input.evidence.spec_location;
             if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
+            {
+                self.validate_resolved_object_read(input);
+                continue;
+            }
+            if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
             {
                 if let Some(owner) = self.known_global_set_mutation() {
@@ -4904,6 +4970,125 @@ impl ExecutionIndex {
         }
     }
 
+    fn validate_selected_object_read(&mut self, input: &SelectedNativeOperationInput) {
+        let request = &input.evidence.spec_location;
+        let candidates: Vec<_> = self
+            .binding_declaration_writes
+            .iter()
+            .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+            .flat_map(|(binding, writes)| {
+                writes.iter().filter_map(move |write| {
+                    (write.simple_identifier
+                        && write.direct_top_level
+                        && span_contains(input.selected_statement_span, write.binding_span))
+                    .then_some((binding.clone(), write.clone()))
+                })
+            })
+            .collect();
+        let [(binding, declaration)] = candidates.as_slice() else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select exactly one direct simple top-level declaration of `{}`",
+                input.selected_binding
+            ));
+            return;
+        };
+        let Some(property) = declaration
+            .initializer
+            .as_ref()
+            .and_then(|initializer| {
+                object_own_data_read_property(initializer, |id| {
+                    self.declared_bindings().contains(id)
+                })
+            })
+            .map(str::to_owned)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select an unshadowed static Object own-data function read initializer"
+            ));
+            return;
+        };
+        if let Some(owner) = self.known_object_read_contradiction(&property) {
+            self.native_operation_input_errors.push(format!(
+                "{request} is contradicted by a known Object binding or Object.{property} write in source unit {}", owner.0
+            ));
+            return;
+        }
+        let Some(span) = declaration.initializer_span else {
+            self.native_operation_input_errors
+                .push(format!("{request} has no exact initializer span"));
+            return;
+        };
+        let mut evidence = input.evidence.clone();
+        evidence.selected_binding = input.selected_binding.clone();
+        self.native_operation_input_evidence
+            .insert(CallSite::from(span), evidence.clone());
+        self.resolved_native_operation_inputs
+            .push(ResolvedNativeOperationInput {
+                evidence,
+                binding: binding.clone(),
+                selected_statement_span: input.selected_statement_span,
+                declaration_span: declaration.binding_span,
+                initializer_span: span,
+                call_span: span,
+                initializer_ordinal: declaration.owner,
+                spread_source: None,
+                spread_source_span: None,
+                spread_token_span: None,
+            });
+    }
+
+    fn validate_resolved_object_read(&mut self, input: &ResolvedNativeOperationInput) {
+        let request = &input.evidence.spec_location;
+        let Some([declaration]) = self
+            .binding_declaration_writes
+            .get(&input.binding)
+            .map(Vec::as_slice)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer resolves to one canonical binding declaration"
+            ));
+            return;
+        };
+        let Some(property) = declaration
+            .initializer
+            .as_ref()
+            .and_then(|initializer| {
+                object_own_data_read_property(initializer, |id| {
+                    self.declared_bindings().contains(id)
+                })
+            })
+            .map(str::to_owned)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer selects an unshadowed static Object own-data function read"
+            ));
+            return;
+        };
+        if !declaration.direct_top_level
+            || !declaration.simple_identifier
+            || !span_contains(input.selected_statement_span, declaration.binding_span)
+            || declaration.binding_span != input.declaration_span
+            || declaration.initializer_span != Some(input.initializer_span)
+            || input.call_span != input.initializer_span
+            || declaration.owner != input.initializer_ordinal
+            || input.binding.0.as_ref() != input.evidence.selected_binding
+        {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer identifies the same exact Object own-data member read"
+            ));
+            return;
+        }
+        if let Some(owner) = self.known_object_read_contradiction(&property) {
+            self.native_operation_input_errors.push(format!(
+                "{request} is contradicted by a known Object binding or Object.{property} write in source unit {}", owner.0
+            ));
+            return;
+        }
+        self.native_operation_input_evidence
+            .insert(CallSite::from(input.call_span), input.evidence.clone());
+        self.resolved_native_operation_inputs.push(input.clone());
+    }
+
     fn source_slot_overlap(&self, slot: &NativeWriteSlot) -> NativeSlotOverlap {
         source_slot_overlap(
             self.native_write_census
@@ -4957,6 +5142,24 @@ impl ExecutionIndex {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         })
+    }
+
+    fn known_object_read_contradiction(&self, property: &str) -> Option<SourceUnitOrdinal> {
+        for slot in [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Object".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                key: NativePropertyKey::String(property.to_owned()),
+            },
+        ] {
+            if let NativeSlotOverlap::Known(owner) = self.source_slot_overlap(&slot) {
+                return Some(owner);
+            }
+        }
+        None
     }
 
     fn known_descriptor_copy_mutation(
@@ -9499,6 +9702,31 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_set_spread_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_set_spread_protocol_mutation()
+    }
+
+    pub(crate) fn known_object_read_contradiction_owner(
+        &self,
+        property: &str,
+    ) -> Option<SourceUnitOrdinal> {
+        self.index.known_object_read_contradiction(property)
+    }
+
+    pub(crate) fn object_read_property(
+        &self,
+        input: &ResolvedNativeOperationInput,
+    ) -> Option<String> {
+        let [declaration] = self
+            .index
+            .binding_declaration_writes
+            .get(&input.binding)?
+            .as_slice()
+        else {
+            return None;
+        };
+        object_own_data_read_property(declaration.initializer.as_ref()?, |id| {
+            self.index.declared_bindings().contains(id)
+        })
+        .map(str::to_owned)
     }
 
     pub(crate) fn locate_value_inputs(

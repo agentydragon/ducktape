@@ -9,7 +9,7 @@ use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use crate::analysis_inputs::{
     DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeInputKind, NativeIntrinsic,
-    NativeOperationInputEvidence, ProofDependencies,
+    NativeOperationInputEvidence, NativeOperationInputRef, ProofDependencies,
 };
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
@@ -30,6 +30,8 @@ pub(crate) enum SemanticKey {
         intrinsic: NativeIntrinsic,
         global_this_qualified: bool,
     },
+    /// Exact original native own-data member read; the key is its source span.
+    NativeOwnDataRead(u32),
     EmptyCollection(Id),
     EmptyCollectionSite {
         binding: Id,
@@ -66,6 +68,7 @@ impl SemanticKey {
         match self {
             Self::NativeIntegrity(_) => InferenceRule::NativeIntegrity,
             Self::NativeCallIdentity { .. } => InferenceRule::NativeCallIdentity,
+            Self::NativeOwnDataRead(_) => InferenceRule::NativeOwnDataRead,
             Self::EmptyCollection(_) | Self::EmptyCollectionSite { .. } => {
                 InferenceRule::EmptyCollectionConstruction
             }
@@ -87,6 +90,7 @@ impl SemanticKey {
 #[derive(Debug, Clone)]
 pub(crate) enum SemanticFact {
     Certificate,
+    NativeOwnDataRead(NativeOwnDataReadPremise),
     Function(u32),
     CallbackFactory(u32),
     ReturnedRecord(Arc<ReturnedRecordFacts>),
@@ -112,6 +116,13 @@ pub(crate) struct DescriptorCopyCallCandidate {
     pub(crate) accessor_keys: BTreeSet<String>,
 }
 
+/// Distinguishes a source proof from one exact reviewed author premise.
+#[derive(Debug, Clone)]
+pub(crate) enum NativeOwnDataReadPremise {
+    SourceIntegrity,
+    Author(NativeOperationInputRef),
+}
+
 /// Immutable inputs from the canonical structural analysis and completed native
 /// census. A new source, policy or author-input context needs a new instance.
 #[derive(Debug, Default)]
@@ -130,6 +141,7 @@ pub(crate) struct SemanticRules {
     pub(crate) binding_context: NativeBindingContext,
     /// Exact syntactic native-call candidates found by the canonical call index.
     pub(crate) native_call_identity_candidates: BTreeSet<SemanticKey>,
+    pub(crate) native_own_data_reads: BTreeMap<u32, NativeOwnDataReadPremise>,
     pub(crate) callables: CallableInferenceInputs,
     pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
     pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
@@ -179,6 +191,23 @@ impl SemanticRules {
                 }
                 context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::GlobalObject))?;
                 context.require(SemanticKey::NativeIntegrity(*intrinsic))?;
+            }
+            SemanticKey::NativeOwnDataRead(span) => {
+                let premise = self.native_own_data_reads.get(span)?;
+                match premise {
+                    NativeOwnDataReadPremise::SourceIntegrity => {
+                        context
+                            .require(SemanticKey::NativeIntegrity(NativeIntrinsic::GlobalObject))?;
+                        context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Object))?;
+                    }
+                    NativeOwnDataReadPremise::Author(reference) => {
+                        context.assume(&ProofDependencies {
+                            native_operation_inputs: BTreeSet::from([reference.clone()]),
+                            ..ProofDependencies::default()
+                        });
+                    }
+                }
+                return Some(SemanticFact::NativeOwnDataRead(premise.clone()));
             }
             SemanticKey::EmptyCollection(binding) => {
                 let root = self.collection_bindings.get(binding)?;
@@ -344,6 +373,13 @@ impl SemanticFacts {
         .map(SemanticKey::NativeIntegrity);
         let roots: Vec<_> = native_roots
             .chain(rules.native_call_identity_candidates.iter().cloned())
+            .chain(
+                rules
+                    .native_own_data_reads
+                    .keys()
+                    .copied()
+                    .map(SemanticKey::NativeOwnDataRead),
+            )
             .chain(rules.callables.keys())
             .chain(
                 rules

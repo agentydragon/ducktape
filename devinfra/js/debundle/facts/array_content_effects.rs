@@ -13,8 +13,12 @@ pub(crate) fn annotate_heap_content_effects(
     local_class_heap_proof: &LocalClassHeapProof,
     set_iterable_proof: &SetIterableProof,
     fresh_freeze_proof: &sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
+    native_reads: &super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
     facts: &mut [StatementFacts],
-) {
+) -> Vec<(
+    Vec<crate::reports::schema::InferenceUse>,
+    Vec<crate::reports::schema::NativeOperationInputUse>,
+)> {
     let mut origins = ArrayOriginCollector::default();
     for item in body {
         item.as_module_item().visit_with(&mut origins);
@@ -28,16 +32,20 @@ pub(crate) fn annotate_heap_content_effects(
             .map(ValueOrigin::NativeSet),
     );
     let reachability = value_flow.candidate_object_index(&candidates);
+    let mut proof_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
             value_flow,
             local_class_heap_proof,
             set_iterable_proof,
             fresh_freeze_proof,
+            native_reads,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: HeapContentEffects::default(),
             heap_native_integrity_uses: BTreeSet::new(),
+            native_read_inferences: BTreeMap::new(),
+            native_read_inputs: BTreeMap::new(),
             lazy_depth: 0,
             past_await: false,
             may_skip_await_depth: 0,
@@ -46,10 +54,15 @@ pub(crate) fn annotate_heap_content_effects(
         fact.heap_contents = collector.effects;
         fact.heap_native_integrity_uses =
             collector.heap_native_integrity_uses.into_iter().collect();
+        proof_uses.push((
+            collector.native_read_inferences.into_values().collect(),
+            collector.native_read_inputs.into_values().collect(),
+        ));
         if fact.kind == StatementKind::Export {
             record_opaque(&mut fact.heap_contents.opaque, 0, false);
         }
     }
+    proof_uses
 }
 
 pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<ValueOrigin> {
@@ -79,10 +92,14 @@ struct ArrayContentCollector<'a> {
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
     fresh_freeze_proof: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
+    native_reads:
+        &'a super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     effects: HeapContentEffects,
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
+    native_read_inferences: BTreeMap<u32, crate::reports::schema::InferenceUse>,
+    native_read_inputs: BTreeMap<u32, crate::reports::schema::NativeOperationInputUse>,
     lazy_depth: u32,
     past_await: bool,
     may_skip_await_depth: u32,
@@ -248,6 +265,20 @@ impl ArrayContentCollector<'_> {
     }
 
     fn record_member_read(&mut self, member: &MemberExpr) {
+        if let Some((proof, evidence, _)) = self.native_reads.native_own_data_read(member.span) {
+            self.native_read_inferences.insert(member.span.lo.0, proof);
+            if let Some(evidence) = evidence {
+                self.native_read_inputs.insert(
+                    member.span.lo.0,
+                    crate::reports::schema::NativeOperationInputUse {
+                        evidence,
+                        source_location: None,
+                        span: member.span,
+                    },
+                );
+            }
+            return;
+        }
         self.record_set_expr(&member.obj, true, false, true);
         if let Some(opaque) = self.member_content_kind(member) {
             self.record_array_expr(&member.obj, true, false, opaque);

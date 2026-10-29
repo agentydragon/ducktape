@@ -390,6 +390,20 @@ where
                 &local_effect_context,
                 &shared_vars,
             );
+            // The exact native-reference initializer uses the same semantic
+            // certificate for purity as for heap and synchronous timing.
+            // A known replacement or unsupported read must not inherit the
+            // older name-based static-reference purity verdict.
+            for &span in prepared_sync_index.native_own_data_read_candidates(fact.ordinal) {
+                fact.purity = if let Some((_, _, dependencies)) =
+                    prepared_sync_index.native_own_data_read(span)
+                {
+                    fact.purity.with_dependencies(&dependencies)
+                } else {
+                    fact.purity
+                        .worst(Purity::from_reason(PurityRule::UnknownMember, span))
+                };
+            }
             // Resolve any reason spans on `fact.purity` to
             // SourceLocations using the same per-chunk line index.
             // Done after fact construction because the classifier
@@ -414,12 +428,13 @@ where
     value_flow.augment_calls(&body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
     let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
-    super::array_content_effects::annotate_heap_content_effects(
+    let native_read_uses = super::array_content_effects::annotate_heap_content_effects(
         &body,
         &value_flow,
         &local_class_heap_proof,
         &set_iterable_proof,
         &fresh_freeze_heap_proof,
+        &prepared_sync_index,
         &mut facts,
     );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
@@ -437,6 +452,20 @@ where
             &mut facts,
         );
         discharge_checked_local_record_factory_calls(&mut facts);
+    }
+    for (fact, (inferences, inputs)) in facts.iter_mut().zip(native_read_uses) {
+        if let Some(calls) = &mut fact.synchronous_calls {
+            for use_ in inferences {
+                if !calls.inference_uses.contains(&use_) {
+                    calls.inference_uses.push(use_);
+                }
+            }
+            for use_ in inputs {
+                if !calls.native_operation_input_uses.contains(&use_) {
+                    calls.native_operation_input_uses.push(use_);
+                }
+            }
+        }
     }
     if let Some(source_path) = source_path {
         let source_locations: Vec<_> = facts

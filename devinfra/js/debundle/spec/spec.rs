@@ -523,6 +523,8 @@ pub enum NativeOperationKind {
     Symbol,
     SetFromPrimitiveArray,
     SetFromSetSpread,
+    /// One static own-data function property read on the original Object constructor.
+    ObjectOwnDataFunctionRead,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

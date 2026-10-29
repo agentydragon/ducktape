@@ -477,6 +477,7 @@ pub struct NativeIntegrityUse {
 pub enum InferenceRule {
     NativeIntegrity,
     NativeCallIdentity,
+    NativeOwnDataRead,
     EmptyCollectionConstruction,
     LocalClassConstruction,
     PrimitiveSetIteration,

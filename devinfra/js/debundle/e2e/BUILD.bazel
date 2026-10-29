@@ -34,6 +34,15 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "native_own_data_read_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
+)
+
 debundle_e2e_test(name = "rejection_fixture_report_test")
 
 debundle_e2e_test(

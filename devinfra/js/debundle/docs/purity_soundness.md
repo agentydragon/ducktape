@@ -345,9 +345,9 @@ heap barrier. Unselected calls use the ordinary guards.
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
-`operation: symbol`, `operation: set_from_primitive_array`, and
-`operation: set_from_set_spread`. For `symbol`,
-the canonical selector engine identifies one
+`operation: symbol`, `operation: set_from_primitive_array`,
+`operation: set_from_set_spread`, and `operation: object_own_data_function_read`.
+For `symbol`, the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
 uncomputed `Symbol(...)` call with zero or one syntactically primitive
 argument and no spread; the parser-input SHA-256 binds that selection to the
@@ -416,6 +416,18 @@ iterator override, alias mutation, callback, separate output, or other
 unproved source unit in the interval rejects the source certificate. Later
 Set methods and escaped observations remain on their ordinary conservative
 paths.
+The own-data read operation selects a single direct `Object.<name>` initializer
+whose name is in the shared native own-data function-reference table. An
+unshadowed `Object` binding is checked by the canonical source index; the
+native-write census supplies known-write exclusions. A known write to the global
+`Object` slot or the exact `Object.<name>` slot in any analyzed chunk rejects
+the assertion. Other property names, prototype mutations, and opaque receiver
+effects are not misreported as known exact-slot contradictions; the author
+must audit the latter. Without author input, intact Object/global-object
+integrity derives the same exact-read certificate. Purity, timing, and heap
+ordering consume that certificate. It certifies only a getter-free read:
+invoking the resulting function remains an ordinary call with its usual
+effects, arguments, and return uncertainty.
 
 ## Native `Proxy` construction
 
