@@ -9,6 +9,8 @@
   ...
 }:
 {
+  imports = [ ./tmp-leak-reaper.nix ];
+
   programs.chromium = {
     enable = true;
     extensions = [
