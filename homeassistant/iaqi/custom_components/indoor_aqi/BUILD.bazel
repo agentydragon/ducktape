@@ -18,7 +18,6 @@ py_library(
 )
 
 _TEST_ARGS = [
-    "--import-mode=importlib",
     "-p",
     "pytest_homeassistant_custom_component",
 ]

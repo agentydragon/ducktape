@@ -69,7 +69,11 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         fail("Use requires_docker parameter instead of 'requires_docker' tag in {}".format(name))
 
     base_env_inherit = list(env_inherit or [])
-    base_args = list(args or [])
+
+    # importlib: pytest imports test modules without inserting their directories into sys.path.
+    # Prepend mode would put e.g. cluster/cdk8s on sys.path for a conftest there, letting
+    # cluster/cdk8s/agentplane shadow the top-level agentplane package.
+    base_args = ["--import-mode=importlib"] + list(args or [])
     base_deps = list(deps or [])
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
