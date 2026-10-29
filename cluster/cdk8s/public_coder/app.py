@@ -545,10 +545,6 @@ def _credentials(scope: Construct) -> None:
     )
 
 
-def _role_ref(kind: str, name: str) -> k8s.RoleRef:
-    return k8s.RoleRef(api_group=_RBAC_GROUP, kind=kind, name=name)
-
-
 def _rbac(scope: Construct) -> None:
     # Namespace-scoped read-only Role for the public-coder-agent namespace.
     #
