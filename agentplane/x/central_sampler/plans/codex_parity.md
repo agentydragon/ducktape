@@ -25,6 +25,7 @@ instructions, setup scripts and History export.
   not a port. Use Codex multi-agent v2 and its agent message board, and Claude Code's subagents, as
   reference designs.
 - **Memories:** Codex-style memory extraction and consolidation across Sessions.
+- **Goals:** persisted Session goals with automatic continuation.
 - **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
   the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
@@ -37,6 +38,7 @@ instructions, setup scripts and History export.
 - `update_plan`: only as an Agentplane-wide feature, not a sampler-only tool.
 - Maybe, very low priority: lifecycle hooks (`hooks.json`), and `request_user_input` with async
   messages to the user.
+- Very low priority: undo of turns.
 - Context-awareness tools, if wanted: Codex's `get_context_remaining`, `new_context_window`, and
   token-budget and current-time reminders in context.
 
@@ -45,7 +47,7 @@ instructions, setup scripts and History export.
 - Sandboxing, execpolicy, approvals and the network proxy: the Sandbox, egress proxy and Action
   Service own these boundaries.
 - Codex local persistence (rollout files, thread store, state DB): PostgreSQL and History replace it.
-- Turn diffs, desktop in-app panes and fast mode.
+- Turn diffs, review mode, desktop in-app panes and fast mode.
 - Codex plugins, apps and connectors, unless specifically wanted later.
 - Image generation: a different API; if wanted, an Agentplane Action instead.
 - Shell plumbing (shell snapshots, zsh fork, login-shell PATH, PowerShell), worktree management and
