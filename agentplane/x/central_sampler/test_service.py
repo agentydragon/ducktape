@@ -1,9 +1,12 @@
 """Standalone API with real Postgres, V8 host and executor; no Runner or History."""
 
 import asyncio
+import base64
+import io
 import json
 import re
 import shlex
+import textwrap
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -11,6 +14,7 @@ from typing import Any
 import grpc
 import pytest
 import pytest_bazel
+from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
@@ -710,6 +714,66 @@ async def test_interrupt_discards_queued_notify_output(
             if entry.event.boundary_record.boundary == "notification"
         ]
         assert settled == ["discarded"]
+
+
+async def test_view_image_reads_executor_file_and_prepares_cell_image(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    oversized = io.BytesIO()
+    Image.new("RGB", (3000, 1000), (255, 0, 0)).save(oversized, format="PNG")
+    (tmp_path / "oversized.png").write_bytes(oversized.getvalue())
+    (tmp_path / "notes.txt").write_text("not an image")
+    source = textwrap.dedent(
+        """\
+        const viewed = await tools.view_image({path: "oversized.png"});
+        text(viewed.detail);
+        image(viewed);
+        for (const path of ["missing.png", "notes.txt"]) {
+          try {
+            await tools.view_image({path});
+          } catch {
+            text(`rejected ${path}`);
+          }
+        }
+        """
+    )
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="view-image", text="Look at the image."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream([CustomToolCall("view-image", "exec", source)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                (output,) = [
+                    item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                ]
+                # The first part is the cell's status header.
+                texts = [part["text"] for part in output["output"][1:] if part["type"] == "input_text"]
+                assert texts == ["high", "rejected missing.png", "rejected notes.txt"]
+                (shown,) = [part for part in output["output"] if part["type"] == "input_image"]
+                header, encoded = shown["image_url"].split(",", 1)
+                assert header == "data:image/png;base64"
+                # 3000x1000 exceeds high detail's 2048-pixel bound; the aspect ratio is kept.
+                assert Image.open(io.BytesIO(base64.b64decode(encoded))).size == (2048, 683)
+                await exchange.send(*response_stream([Message("Seen.")], model="test-model").events)
+            assert (await completed(stub, "view-image")).status == event_pb2.TURN_STATUS_COMPLETED
+            # Nested read evidence keeps digests, not the file's bytes.
+            file_base64 = base64.b64encode(oversized.getvalue()).decode()
+            assert not [
+                intent for intent in await Store(engine).intents() if file_base64 in f"{intent.request}{intent.result}"
+            ]
 
 
 if __name__ == "__main__":

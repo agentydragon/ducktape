@@ -54,7 +54,12 @@ func newCodeModeBinding(parent context.Context, manager *CodeModeHost, host *Hos
 }
 
 func (r *CodeMode) send(ctx context.Context, requestID int64, value any) error {
-	object, err := protocolObject(value)
+	return r.sendJournaled(ctx, requestID, value, value)
+}
+
+// sendJournaled journals journal in place of the sent frame value.
+func (r *CodeMode) sendJournaled(ctx context.Context, requestID int64, value, journal any) error {
+	object, err := protocolObject(journal)
 	if err != nil {
 		return err
 	}
@@ -223,8 +228,10 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		}
 		return
 	}
-	resultEvidence, err := protocolObject(result)
-	if err != nil {
+	var resultEvidence map[string]any
+	if viewed, ok := result.(*viewImageResult); ok {
+		resultEvidence = viewed.evidence()
+	} else if resultEvidence, err = protocolObject(result); err != nil {
 		r.fail(err)
 		return
 	}
@@ -239,8 +246,14 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		r.fail(err)
 		return
 	}
+	encodedEvidence, err := json.Marshal(resultEvidence)
+	if err != nil {
+		r.fail(err)
+		return
+	}
 	response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "tool/result", Result: encoded}}}
-	if err := r.send(ctx, id, response); err != nil && ctx.Err() == nil {
+	journal := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "tool/result", Result: encodedEvidence}}}
+	if err := r.sendJournaled(ctx, id, response, journal); err != nil && ctx.Err() == nil {
 		r.fail(err)
 	}
 }
@@ -392,7 +405,12 @@ func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]Respo
 	if duration := observation.Cell.CodeModeHostDurationNS; duration != nil {
 		wallTime = time.Duration(*duration)
 	}
-	return cellOutput(observation, r.cellHandle(observation.Cell.CellID), prepared.maxTokens, wallTime)
+	output, err := cellOutput(observation, r.cellHandle(observation.Cell.CellID), prepared.maxTokens, wallTime)
+	if err != nil {
+		return nil, err
+	}
+	// Upstream prepares images when the truncated output enters history.
+	return prepareOutputImages(output)
 }
 
 type preparedCall struct {

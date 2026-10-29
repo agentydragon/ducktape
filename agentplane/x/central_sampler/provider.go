@@ -51,6 +51,8 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 			Description: "Apply a Codex *** Begin Patch / *** End Patch patch through upstream apply-patch.",
 			Kind:        "freeform",
 		},
+		viewImageToolDefinition(),
+		// TODO: update_plan and Action-backed (MCP) tools, which Codex also nests.
 	}
 }
 

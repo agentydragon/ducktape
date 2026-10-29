@@ -153,6 +153,41 @@ type (
 	}
 )
 
+// sandbox is always null: like process/start, reads run with the executor's own permissions.
+type (
+	executorFSGetMetadata struct {
+		Path    string    `json:"path"`
+		Sandbox *struct{} `json:"sandbox"`
+	}
+	executorFSMetadata struct {
+		IsDirectory bool   `json:"isDirectory"`
+		IsFile      bool   `json:"isFile"`
+		IsSymlink   bool   `json:"isSymlink"`
+		Size        uint64 `json:"size"`
+	}
+	executorFSOpen struct {
+		HandleID string    `json:"handleId"`
+		Path     string    `json:"path"`
+		Mode     string    `json:"mode"`
+		Sandbox  *struct{} `json:"sandbox"`
+	}
+	executorFSOpened struct {
+		HandleID string `json:"handleId"`
+	}
+	executorFSReadBlock struct {
+		HandleID string `json:"handleId"`
+		Offset   uint64 `json:"offset"`
+		Len      int    `json:"len"`
+	}
+	executorFSBlock struct {
+		Chunk []byte `json:"chunk"`
+		EOF   bool   `json:"eof"`
+	}
+	executorFSClose struct {
+		HandleID string `json:"handleId"`
+	}
+)
+
 // Decode one complete JSON object. Raw payloads remain available to the evidence journal.
 func decodeProtocolObject(data []byte, value any) error {
 	trimmed := bytes.TrimSpace(data)
@@ -184,7 +219,11 @@ func protocolObject(value any) (map[string]any, error) {
 }
 
 func executorRPC[R any, P any](ctx context.Context, e *Executor, method string, params P) (*R, error) {
-	raw, err := e.rpc(ctx, method, params)
+	return executorRPCWithEvidence[R](ctx, e, method, params, nil)
+}
+
+func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, method string, params P, resultEvidence func(map[string]any) map[string]any) (*R, error) {
+	raw, err := e.rpc(ctx, method, params, resultEvidence)
 	if err != nil {
 		return nil, err
 	}

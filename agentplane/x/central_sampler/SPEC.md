@@ -111,7 +111,12 @@ the command and turn fail without blocking the Session; subsequent input may con
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
 executor failures remain conservative because the surrounding JavaScript may already have caused
-effects. A submitted input is effected in History when it is confirmed and retained in the conversation;
+effects. Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
+or non-image files reject the cell's tool promise with upstream's message and resolve the intent.
+Its reads and result journal digests, not image bytes. Images a cell emits are prepared like upstream
+tool output (bounded to high- or original-detail size, labelled with their real MIME type) before
+entering the conversation; ones that cannot be prepared become upstream's placeholder text.
+A submitted input is effected in History when it is confirmed and retained in the conversation;
 a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
 without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
