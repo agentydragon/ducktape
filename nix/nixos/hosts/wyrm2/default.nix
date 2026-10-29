@@ -535,6 +535,10 @@ in
   # fail closed rather than writing pod state back onto the root filesystem.
   systemd.services.kubelet.unitConfig.RequiresMountsFor = "/var/lib/kubelet /var/log/pods";
 
+  # Mask systemd's stock tmp.conf (`q /tmp ... 10d`): the 14d /tmp rule below is the only one,
+  # so tmpfiles-clean no longer logs "Duplicate line for path /tmp, ignoring".
+  environment.etc."tmpfiles.d/tmp.conf".text = "";
+
   # Directories for Bazel caches under the single SSD cache mount.
   systemd.tmpfiles.rules = [
     "d /home/agentydragon/.cache/bazel 0755 agentydragon users -"
