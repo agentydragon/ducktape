@@ -16,5 +16,5 @@
   `mcp.types.CallToolResult` is Pydantic with camelCase aliases (`isError`,
   `structuredContent`). Convert at boundaries.
 
-@docs/fastmcp_pydantic.md
-@docs/fastmcp_exceptions.md
+- For tool parameter and result schemas, see [FastMCP with Pydantic](docs/fastmcp_pydantic.md).
+- For tool error handling and client results, see [FastMCP tool errors](docs/fastmcp_exceptions.md).
