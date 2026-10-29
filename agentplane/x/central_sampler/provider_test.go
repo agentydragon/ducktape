@@ -3,6 +3,7 @@ package centralsampler
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -43,10 +44,25 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tools := map[string]ResponsesAdditionalTool{}
+	for _, tool := range body.Input[0].Tools {
+		tools[tool.Name] = tool
+	}
+	if exec := tools["exec"]; exec.Type != "custom" || exec.Format == nil || exec.Format.Type != "grammar" || exec.Format.Syntax != "lark" {
+		t.Fatalf("exec is not a Lark-grammar freeform tool: %+v", exec)
+	}
+	wait := tools["wait"]
+	var parameters struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(wait.Parameters, &parameters); err != nil {
+		t.Fatal(err)
+	}
+	if wait.Type != "function" || !slices.Equal(parameters.Required, []string{"cell_id"}) {
+		t.Fatalf("wait is not a function tool requiring cell_id: %+v", wait)
+	}
 	for _, expected := range []string{
 		`"type":"additional_tools"`,
-		`"name":"exec"`,
-		`"name":"wait"`,
 		`"include":["reasoning.encrypted_content"]`,
 		`"store":false`,
 		`"stream":true`,

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 const maxCodeModeFrame = 64 * 1024 * 1024
@@ -351,16 +352,17 @@ func validateCodeModeResult(frame *codeWireResult) (json.RawMessage, error) {
 }
 
 func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]ResponsesContentPart, error) {
-	request, execute, err := r.prepareCall(ctx, call)
+	prepared, err := r.prepareCall(ctx, call)
 	if err != nil {
 		return nil, &KnownFailureError{Evidence: map[string]any{"reason": err.Error(), "call": call, "dispatched": false}}
 	}
-	value, err := r.request(ctx, request, execute)
+	started := time.Now()
+	value, err := r.request(ctx, prepared.operation, prepared.execute)
 	if err != nil {
 		return nil, err
 	}
 	var observation codeObservation
-	if !execute {
+	if !prepared.execute {
 		observation, err = decodeWaitObservation(value)
 	} else {
 		err = decodeProtocolObject(value, &observation)
@@ -368,80 +370,187 @@ func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]Respo
 	if err != nil {
 		return nil, err
 	}
-	return r.observe(ctx, observation)
+	if err := r.observe(ctx, observation); err != nil {
+		return nil, err
+	}
+	wallTime := time.Since(started)
+	if duration := observation.Cell.CodeModeHostDurationNS; duration != nil {
+		wallTime = time.Duration(*duration)
+	}
+	return cellOutput(observation, r.cellHandle(observation.Cell.CellID), prepared.maxTokens, wallTime)
 }
 
-func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (codeOperation, bool, error) {
-	name := call.Name
-	if name == "wait" {
-		input := call.Input
-		var arguments waitInput
-		if err := decodeToolInput([]byte(input), &arguments); err != nil {
-			return nil, false, err
-		}
-		cellID := arguments.CellID
-		if cellID == "" {
-			return nil, false, errors.New("wait requires a string cell_id")
-		}
-		terminate := arguments.Terminate
-		state, err := r.store.ExecutionState(ctx, r.owner)
-		if err != nil {
-			return nil, false, err
-		}
-		known := false
-		for _, cell := range state.Cells {
-			if cell.ID == cellID && cell.Status == "live" {
-				known = true
-				break
-			}
-		}
-		if !known {
-			return nil, false, errors.New("wait requires a known live cell_id; process session_id is not accepted")
-		}
-		nativeID, err := r.nativeCell(cellID)
-		if err != nil {
-			return nil, false, err
-		}
-		if terminate {
-			return codeTerminateOperation{codeSessionOperation: codeSessionOperation{Method: "session/terminate", SessionID: r.sessionID}, CellID: nativeID}, false, nil
-		}
-		yieldMS, err := toolYieldTime(arguments.YieldTimeMS, 1000)
-		if err != nil {
-			return nil, false, err
-		}
-		return codeWaitOperation{codeSessionOperation: codeSessionOperation{Method: "session/wait", SessionID: r.sessionID}, Request: codeWaitRequest{CellID: nativeID, YieldTimeMS: yieldMS}}, false, nil
+type preparedCall struct {
+	operation codeOperation
+	execute   bool
+	// maxTokens is the model's output token budget; nil uses the Codex default.
+	maxTokens *int
+}
+
+func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+	if call.Name == "wait" && call.Type == ResponsesItemFunctionCall {
+		return r.prepareWait(ctx, call.Input)
 	}
-	if name != "exec" {
-		return nil, false, fmt.Errorf("unsupported model tool %q", name)
+	if call.Name != "exec" || call.Type != ResponsesItemCustomToolCall {
+		return preparedCall{}, fmt.Errorf("unsupported model tool %q (%s)", call.Name, call.Type)
 	}
-	source := call.Input
-	yieldMS := 60000
-	if strings.HasPrefix(source, "// @exec:") {
-		pragma, rest, found := strings.Cut(source, "\n")
-		if !found {
-			rest = ""
-		}
-		var arguments execPragma
-		if err := decodeToolInput([]byte(strings.TrimSpace(strings.TrimPrefix(pragma, "// @exec:"))), &arguments); err != nil {
-			return nil, false, errors.New("exec pragma must contain a JSON object")
-		}
-		var err error
-		yieldMS, err = toolYieldTime(arguments.YieldTimeMS, 60000)
-		if err != nil {
-			return nil, false, err
-		}
-		source = rest
-	}
-	definitions, err := json.Marshal(toolDefinitions())
+	source, err := parseExecSource(call.Input)
 	if err != nil {
-		return nil, false, err
+		return preparedCall{}, err
 	}
-	callID := call.CallID
-	return codeExecuteOperation{codeSessionOperation: codeSessionOperation{Method: "session/execute", SessionID: r.sessionID}, Request: codeExecuteRequest{ToolCallID: callID, Source: source, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: 10000}}, true, nil
+	yieldMS := defaultExecYieldTimeMS
+	if source.yieldTimeMS != nil {
+		yieldMS = *source.yieldTimeMS
+	}
+	hostDefinitions, err := hostToolDefinitions(toolDefinitions())
+	if err != nil {
+		return preparedCall{}, err
+	}
+	definitions, err := json.Marshal(hostDefinitions)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	request := codeExecuteRequest{ToolCallID: call.CallID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
+	return preparedCall{
+		operation: codeExecuteOperation{codeSessionOperation: codeSessionOperation{Method: "session/execute", SessionID: r.sessionID}, Request: request},
+		execute:   true, maxTokens: source.maxOutputTokens,
+	}, nil
 }
 
-func (r *CodeMode) observe(ctx context.Context, observation codeObservation) ([]ResponsesContentPart, error) {
-	value := observation.Cell
+type waitArguments struct {
+	cellID      string
+	yieldTimeMS int
+	// maxTokens is nil when the model omits it.
+	maxTokens *int
+	terminate bool
+}
+
+// parseWaitArguments applies Codex rust-v0.162.1 core/src/tools/code_mode/wait_handler.rs
+// ExecWaitArgs defaults.
+func parseWaitArguments(input string) (waitArguments, error) {
+	var arguments waitInput
+	if err := decodeToolInput([]byte(input), &arguments); err != nil {
+		return waitArguments{}, err
+	}
+	if arguments.CellID == "" {
+		return waitArguments{}, errors.New("wait requires a string cell_id")
+	}
+	yieldMS, err := safeIntegerArgument("yield_time_ms", arguments.YieldTimeMS)
+	if err != nil {
+		return waitArguments{}, err
+	}
+	maxTokens, err := safeIntegerArgument("max_tokens", arguments.MaxTokens)
+	if err != nil {
+		return waitArguments{}, err
+	}
+	parsed := waitArguments{cellID: arguments.CellID, yieldTimeMS: defaultWaitYieldTimeMS, maxTokens: maxTokens, terminate: arguments.Terminate}
+	if yieldMS != nil {
+		parsed.yieldTimeMS = *yieldMS
+	}
+	return parsed, nil
+}
+
+func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {
+	arguments, err := parseWaitArguments(input)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	cellID := arguments.cellID
+	state, err := r.store.ExecutionState(ctx, r.owner)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	known := false
+	for _, cell := range state.Cells {
+		if cell.ID == cellID && cell.Status == "live" {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return preparedCall{}, errors.New("wait requires a known live cell_id; process session_id is not accepted")
+	}
+	nativeID, err := r.nativeCell(cellID)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	session := codeSessionOperation{Method: "session/wait", SessionID: r.sessionID}
+	if arguments.terminate {
+		session.Method = "session/terminate"
+		return preparedCall{operation: codeTerminateOperation{codeSessionOperation: session, CellID: nativeID}, maxTokens: arguments.maxTokens}, nil
+	}
+	request := codeWaitRequest{CellID: nativeID, YieldTimeMS: arguments.yieldTimeMS}
+	return preparedCall{operation: codeWaitOperation{codeSessionOperation: session, Request: request}, maxTokens: arguments.maxTokens}, nil
+}
+
+// safeIntegerArgument bounds an unsigned tool argument to the JavaScript safe integer range, as
+// Codex does, so it fits the host protocol's integers.
+func safeIntegerArgument(name string, value *uint64) (*int, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if *value > maxJSSafeInteger {
+		return nil, fmt.Errorf("%s must be a non-negative safe integer", name)
+	}
+	converted := int(*value)
+	return &converted, nil
+}
+
+type execSource struct {
+	code            string
+	yieldTimeMS     *int
+	maxOutputTokens *int
+}
+
+// parseExecSource ports Codex rust-v0.162.1 code-mode-protocol/src/description.rs
+// parse_exec_source, including its model-facing error text.
+func parseExecSource(input string) (execSource, error) {
+	const supported = "supported fields `yield_time_ms` and `max_output_tokens`"
+	if strings.TrimSpace(input) == "" {
+		return execSource{}, errors.New("exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.")
+	}
+	firstLine, rest, _ := strings.Cut(input, "\n")
+	pragma, found := strings.CutPrefix(strings.TrimLeftFunc(firstLine, unicode.IsSpace), execPragmaPrefix)
+	if !found {
+		return execSource{code: input}, nil
+	}
+	if strings.TrimSpace(rest) == "" {
+		return execSource{}, errors.New("exec pragma must be followed by JavaScript source on subsequent lines")
+	}
+	directive := strings.TrimSpace(pragma)
+	if directive == "" {
+		return execSource{}, errors.New("exec pragma must be a JSON object with " + supported)
+	}
+	var value any
+	if err := json.Unmarshal([]byte(directive), &value); err != nil {
+		return execSource{}, fmt.Errorf("exec pragma must be valid JSON with %s: %w", supported, err)
+	}
+	fields, ok := value.(map[string]any)
+	if !ok {
+		return execSource{}, errors.New("exec pragma must be a JSON object with " + supported)
+	}
+	for key := range fields {
+		if key != "yield_time_ms" && key != "max_output_tokens" {
+			return execSource{}, fmt.Errorf("exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `%s`", key)
+		}
+	}
+	var arguments execPragma
+	if err := json.Unmarshal([]byte(directive), &arguments); err != nil {
+		return execSource{}, fmt.Errorf("exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: %w", err)
+	}
+	yieldMS, err := safeIntegerArgument("exec pragma field `yield_time_ms`", arguments.YieldTimeMS)
+	if err != nil {
+		return execSource{}, err
+	}
+	maxOutputTokens, err := safeIntegerArgument("exec pragma field `max_output_tokens`", arguments.MaxOutputTokens)
+	if err != nil {
+		return execSource{}, err
+	}
+	return execSource{code: rest, yieldTimeMS: yieldMS, maxOutputTokens: maxOutputTokens}, nil
+}
+
+// observe records the observed cell's lifecycle status.
+func (r *CodeMode) observe(ctx context.Context, observation codeObservation) error {
 	status := "completed"
 	switch observation.Kind {
 	case codeYielded:
@@ -450,27 +559,9 @@ func (r *CodeMode) observe(ctx context.Context, observation codeObservation) ([]
 		status = "terminated"
 	case codeResult:
 	default:
-		return nil, fmt.Errorf("unsupported cell observation %q", observation.Kind)
+		return fmt.Errorf("unsupported cell observation %q", observation.Kind)
 	}
-	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(value.CellID), status); err != nil {
-		return nil, err
-	}
-	items := make([]ResponsesContentPart, 0, len(value.ContentItems)+1)
-	for _, raw := range value.ContentItems {
-		var item ResponsesContentPart
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if observation.Kind == codeYielded {
-		items = append(items, ResponsesContentPart{Type: "input_text", Text: "Script running with cell ID " + r.cellHandle(value.CellID) + ". Use wait to continue."})
-	} else if observation.Kind == codeTerminated {
-		items = append(items, ResponsesContentPart{Type: "input_text", Text: "Cell terminated. Partial effects may have occurred."})
-	} else if value.ErrorText != nil && *value.ErrorText != "" {
-		items = append(items, ResponsesContentPart{Type: "input_text", Text: *value.ErrorText})
-	}
-	return items, nil
+	return r.store.CellResult(ctx, r.owner, r.cellHandle(observation.Cell.CellID), status)
 }
 
 func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
@@ -500,7 +591,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 			outcomes[cell.ID] = map[string]any{"error": err.Error()}
 			continue
 		}
-		if _, err := r.observe(ctx, observation); err != nil {
+		if err := r.observe(ctx, observation); err != nil {
 			outcomes[cell.ID] = map[string]any{"error": err.Error()}
 		} else {
 			outcomes[cell.ID] = map[string]any{"stopped": observation.Kind != codeYielded}

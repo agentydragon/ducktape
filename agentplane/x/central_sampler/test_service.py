@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
@@ -132,7 +132,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                process = json.loads(outputs[-1]["output"][0]["text"])["session_id"]
+                process = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(
                     *response_stream(
                         [
@@ -153,7 +153,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 if match is not None:
                     await exchange.send(
                         *response_stream(
-                            [CustomToolCall("wait", "wait", json.dumps({"cell_id": match[1], "yield_time_ms": 1000}))],
+                            [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 1000})],
                             model="test-model",
                         ).events
                     )
@@ -494,7 +494,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                process_id = json.loads(outputs[-1]["output"][0]["text"])["session_id"]
+                process_id = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(*response_stream([Message("Process started.")], model="test-model").events)
             assert (await completed(stub, "background")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
@@ -542,7 +542,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                assert json.loads(outputs[-1]["output"][0]["text"]) == {"output": "retained-output", "exit_code": 0}
+                assert json.loads(outputs[-1]["output"][1]["text"]) == {"output": "retained-output", "exit_code": 0}
                 await exchange.send(*response_stream([Message("Retained output read.")], model="test-model").events)
             assert (await completed(stub, "read-retained")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
@@ -551,11 +551,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process.buffered_output == b""
 
 
-def tool_outputs(body: dict[str, Any]) -> list[tuple[str, str]]:
+def tool_outputs(body: dict[str, Any]) -> list[tuple[str, list[str]]]:
+    """(call_id, text parts) per tool output; cell results lead with Codex's status header part."""
     return [
-        (item["call_id"], "".join(part["text"] for part in item["output"]))
+        (item["call_id"], [part["text"] for part in item["output"]])
         for item in body["input"]
-        if item["type"] == "custom_tool_call_output"
+        if item["type"] in {"custom_tool_call_output", "function_call_output"}
     ]
 
 
@@ -583,7 +584,11 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
                     ).events
                 )
             async with await endpoint.next() as exchange:
-                assert tool_outputs(exchange.request.body) == [("completed", "final"), ("completed", "progress")]
+                (exec_call, exec_parts), notification = tool_outputs(exchange.request.body)
+                assert exec_call == "completed"
+                assert exec_parts[0].startswith("Script completed")
+                assert exec_parts[1:] == ["final"]
+                assert notification == ("completed", ["progress"])
                 source = (
                     '// @exec: {"yield_time_ms": 10}\n'
                     "await new Promise((resolve) => setTimeout(resolve, 1500));\n"
@@ -596,15 +601,21 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
             async with await endpoint.next() as exchange:
                 outputs = tool_outputs(exchange.request.body)
                 assert "late" not in json.dumps(outputs)
-                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", outputs[-1][1])
+                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", outputs[-1][1][0])
                 assert match is not None
-                arguments = json.dumps({"cell_id": match[1], "yield_time_ms": 10000})
                 await exchange.send(
-                    *response_stream([CustomToolCall("wait", "wait", arguments)], model="test-model").events
+                    *response_stream(
+                        [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 10000})],
+                        model="test-model",
+                    ).events
                 )
             async with await endpoint.next() as exchange:
                 # The yielded cell's notification belongs to its exec call but follows the wait output.
-                assert tool_outputs(exchange.request.body)[-2:] == [("wait", "done"), ("yielded", "late")]
+                (wait_call, wait_parts), notification = tool_outputs(exchange.request.body)[-2:]
+                assert wait_call == "wait"
+                assert wait_parts[0].startswith("Script completed")
+                assert wait_parts[1:] == ["done"]
+                assert notification == ("yielded", ["late"])
                 await exchange.send(*response_stream([Message("notified")], model="test-model").events)
             assert (await completed(stub, "notify", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
 

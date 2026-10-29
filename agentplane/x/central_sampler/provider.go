@@ -40,6 +40,8 @@ func (r ProviderResponse) Audit() map[string]any {
 	return map[string]any{"response": r.Terminal, "events": r.Events}
 }
 
+// TODO: Codex also nests update_plan and MCP tools (namespaced, e.g. via the Action Service);
+// consider exposing them here.
 func toolDefinitions() []ResponsesCodeToolDefinition {
 	return []ResponsesCodeToolDefinition{
 		{
@@ -71,23 +73,16 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 }
 
 func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState) (ResponsesRequest, error) {
-	description := "Run raw JavaScript as an async module in a fresh V8 isolate. Call tools.exec_command({cmd, workdir?}) " +
-		"or tools.apply_patch(patch). Emit results with text(value). No Node, filesystem, network or console. " +
-		"exec_command supports tty and yield_time_ms; a running process returns session_id. " +
-		"Use tools.write_stdin({session_id, chars?, eof?, yield_time_ms?}) to send input or poll. " +
-		`An exec first-line // @exec: {"yield_time_ms": 10} yields an active JS cell; ` +
-		"call wait with JSON {cell_id, yield_time_ms?, terminate?} to observe it. " +
-		"Process session_id and JavaScript cell_id are distinct. No persistent JS store. " +
-		"notify(value) injects an extra custom_tool_call_output for the current exec call. Await all tool calls. "
-	definitionBytes, err := json.Marshal(toolDefinitions())
+	description, err := execToolDescription(toolDefinitions())
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
-	description += string(definitionBytes)
+	strict := false
 	input := []ResponsesItem{{
 		Type: ResponsesItemAdditionalTools, Role: "developer", Tools: []ResponsesAdditionalTool{
-			{Type: "custom", Name: "exec", Description: description, Format: ResponsesToolFormat{Type: "text"}},
-			{Type: "custom", Name: "wait", Description: "Observe a yielded JavaScript cell. Input JSON: {cell_id, yield_time_ms?, terminate?}.", Format: ResponsesToolFormat{Type: "text"}},
+			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
+			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
+			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 		},
 	}}
 	if instructions != nil && *instructions != "" {

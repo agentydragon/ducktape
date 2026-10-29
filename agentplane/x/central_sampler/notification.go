@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"unicode/utf8"
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/delegate.rs (CoreTurnHost::notify) injects a
@@ -17,9 +16,6 @@ import (
 // truncation policy (Tokens(10000) for every model in models-manager/models.json) with
 // utils/output-truncation's 20% serialization allowance.
 const notificationTokenLimit = 12000
-
-// approxBytesPerToken matches utils/string/src/truncate.rs.
-const approxBytesPerToken = 4
 
 // QueueNotification durably queues a non-empty notify() text for the active turn. It returns
 // ErrPrecondition when no turn is active; upstream then reports "no active turn" to the host.
@@ -111,7 +107,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 		}
 		item := ResponsesItem{
 			Type: ResponsesItemCustomToolOutput, CallID: notification.callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: truncateMiddleTokens(notification.text, notificationTokenLimit)}},
+			Output: []ResponsesContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}},
 		}
 		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
 			map[string]any{"cell_id": notification.cellID, "item": item}); err != nil {
@@ -123,24 +119,4 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 		}
 	}
 	return record && len(notifications) > 0, nil
-}
-
-// truncateMiddleTokens ports utils/string/src/truncate.rs truncate_middle_with_token_budget for a
-// positive budget: keep equal byte halves of the estimate on UTF-8 boundaries around a marker.
-func truncateMiddleTokens(text string, maxTokens int) string {
-	maxBytes := maxTokens * approxBytesPerToken
-	if len(text) <= maxBytes {
-		return text
-	}
-	left := maxBytes / 2
-	prefixEnd := left
-	for prefixEnd > 0 && !utf8.RuneStart(text[prefixEnd]) {
-		prefixEnd--
-	}
-	suffixStart := len(text) - (maxBytes - left)
-	for suffixStart < len(text) && !utf8.RuneStart(text[suffixStart]) {
-		suffixStart++
-	}
-	removed := (len(text) - maxBytes + approxBytesPerToken - 1) / approxBytesPerToken
-	return fmt.Sprintf("%s…%d tokens truncated…%s", text[:prefixEnd], removed, text[suffixStart:])
 }

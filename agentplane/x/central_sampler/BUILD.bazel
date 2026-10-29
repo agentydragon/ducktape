@@ -237,7 +237,9 @@ go_library(
     name = "central_sampler",
     srcs = [
         "codemode.go",
+        "codemode_description.go",
         "codemode_host.go",
+        "codemode_output.go",
         "codemode_protocol.go",
         "evidence.go",
         "executor.go",
@@ -257,6 +259,11 @@ go_library(
     ],
     embedsrcs = [
         "codex/base_instructions.txt",
+        "codex/deferred_nested_tools_guidance.txt",
+        "codex/exec_description.txt",
+        "codex/legacy_image_helper.txt",
+        "codex/mcp_typescript_preamble.txt",
+        "codex/wait_description.txt",
         "schema/0001_sampler_state.sql",
         "schema/0002_sampler_notification.sql",
     ],
@@ -294,6 +301,8 @@ go_test(
     name = "central_sampler_test",
     size = "medium",
     srcs = [
+        "codemode_description_test.go",
+        "codemode_output_test.go",
         "codemode_protocol_test.go",
         "codemode_test.go",
         "executor_test.go",

@@ -73,7 +73,7 @@ type codeExecuteRequest struct {
 	Source          string          `json:"source"`
 	EnabledTools    json.RawMessage `json:"enabled_tools"`
 	YieldTimeMS     int             `json:"yield_time_ms"`
-	MaxOutputTokens int             `json:"max_output_tokens"`
+	MaxOutputTokens *int            `json:"max_output_tokens"`
 }
 
 type codeWaitOperation struct {
@@ -154,6 +154,8 @@ type codeCellOutput struct {
 	CellID       string            `json:"cell_id"`
 	ContentItems []json.RawMessage `json:"content_items"`
 	ErrorText    *string           `json:"error_text"`
+	// Codex rust-v0.162.1 code-mode-protocol/src/host/payload.rs WireRuntimeResponse timing.
+	CodeModeHostDurationNS *uint64 `json:"code_mode_host_duration_ns"`
 }
 
 type codeObservation struct {

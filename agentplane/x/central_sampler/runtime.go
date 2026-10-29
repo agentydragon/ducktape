@@ -650,7 +650,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 	}
 	if call := pendingCall(conversation.Items); call != nil {
-		if call.Name != "exec" && call.Name != "wait" {
+		if !call.IsModelTool() {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "call": call}}
 		}
 		if live == nil {
@@ -670,8 +670,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", err
 		}
-		result := map[string]any{"type": string(ResponsesItemCustomToolOutput), "call_id": call.CallID, "output": content}
-		item := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: call.CallID, Output: content}
+		item := call.OutputItem(content)
+		result := map[string]any{"type": string(item.Type), "call_id": call.CallID, "output": content}
 		if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
 			return "", err
 		}
@@ -733,14 +733,15 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	for _, item := range response.Output {
-		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && item.Type != ResponsesItemCustomToolCall {
+		call, isCall := item.ToolCall()
+		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && !isCall {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported provider output type", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err
 			}
 			return "", failure
 		}
-		if item.Type == ResponsesItemCustomToolCall && item.Name != "exec" && item.Name != "wait" {
+		if isCall && !call.IsModelTool() {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err
@@ -834,36 +835,25 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 }
 
 func pendingCall(items []ResponsesItem) *ResponsesToolCall {
-	completed := map[string]struct{}{}
-	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
-			completed[item.CallID] = struct{}{}
-		}
+	calls := unansweredCalls(items)
+	if len(calls) == 0 {
+		return nil
 	}
-	for _, item := range items {
-		call, ok := item.ToolCall()
-		if !ok {
-			continue
-		}
-		if _, ok := completed[call.CallID]; !ok {
-			return &call
-		}
-	}
-	return nil
+	return &calls[0]
 }
 
 func checkPairs(items []ResponsesItem) error {
 	pending, seen := map[string]struct{}{}, map[string]struct{}{}
 	for _, item := range items {
 		switch item.Type {
-		case ResponsesItemCustomToolCall:
+		case ResponsesItemCustomToolCall, ResponsesItemFunctionCall:
 			callID := item.CallID
 			if _, exists := seen[callID]; exists {
 				return &UnknownEffectError{Reason: "duplicate tool call " + callID}
 			}
 			seen[callID] = struct{}{}
 			pending[callID] = struct{}{}
-		case ResponsesItemCustomToolOutput:
+		case ResponsesItemCustomToolOutput, ResponsesItemFunctionOutput:
 			// notify() adds outputs for an exec call that may already have its own.
 			callID := item.CallID
 			if _, exists := seen[callID]; !exists {

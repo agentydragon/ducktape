@@ -131,7 +131,7 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, owner
 			return nil, err
 		}
 	}
-	if kind == "cell" && phase == "result" && isMap && payloadMap["type"] == "custom_tool_call_output" {
+	if kind == "cell" && phase == "result" && isMap && (payloadMap["type"] == string(ResponsesItemCustomToolOutput) || payloadMap["type"] == string(ResponsesItemFunctionOutput)) {
 		callID, _ := payloadMap["call_id"].(string)
 		output, err := json.Marshal(payloadMap["output"])
 		if err != nil {
@@ -170,6 +170,7 @@ func (s *Store) providerObservation(ctx context.Context, tx *sql.Tx, session *Se
 			string(ResponsesItemMessage):        eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT,
 			string(ResponsesItemReasoning):      eventpb.ItemKind_ITEM_KIND_REASONING,
 			string(ResponsesItemCustomToolCall): eventpb.ItemKind_ITEM_KIND_TOOL_CALL,
+			string(ResponsesItemFunctionCall):   eventpb.ItemKind_ITEM_KIND_TOOL_CALL,
 		}
 		kind, supported := kinds[string(item.Type)]
 		if !supported {
@@ -186,14 +187,19 @@ func (s *Store) providerObservation(ctx context.Context, tx *sql.Tx, session *Se
 			})
 			return err
 		}
-		if item.Type == ResponsesItemCustomToolCall {
-			arguments, err := json.Marshal(struct {
-				Source string `json:"source"`
-			}{Source: DisplayText(item.Input)})
-			if err != nil {
-				return err
+		if call, ok := item.ToolCall(); ok {
+			// Function arguments are already JSON; raw tool input is wrapped as its source.
+			arguments := []byte(call.Input)
+			if call.Type != ResponsesItemFunctionCall || len(arguments) > DisplayBytes || !json.Valid(arguments) {
+				var err error
+				arguments, err = json.Marshal(struct {
+					Source string `json:"source"`
+				}{Source: DisplayText(call.Input)})
+				if err != nil {
+					return err
+				}
 			}
-			_, err = appendEvent(ctx, tx, session, &eventpb.Event{
+			_, err := appendEvent(ctx, tx, session, &eventpb.Event{
 				SourceSequences: sources,
 				Observation:     &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: id, ArgumentsJson: string(arguments)}},
 			})

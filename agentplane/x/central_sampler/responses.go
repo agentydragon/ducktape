@@ -16,6 +16,8 @@ const (
 	ResponsesItemReasoning         ResponsesItemType = "reasoning"
 	ResponsesItemCustomToolCall    ResponsesItemType = "custom_tool_call"
 	ResponsesItemCustomToolOutput  ResponsesItemType = "custom_tool_call_output"
+	ResponsesItemFunctionCall      ResponsesItemType = "function_call"
+	ResponsesItemFunctionOutput    ResponsesItemType = "function_call_output"
 	ResponsesItemCompaction        ResponsesItemType = "compaction"
 	ResponsesItemCompactionTrigger ResponsesItemType = "compaction_trigger"
 )
@@ -40,6 +42,7 @@ type ResponsesItem struct {
 	CallID           string                    `json:"call_id,omitempty"`
 	Name             string                    `json:"name,omitempty"`
 	Input            string                    `json:"input,omitempty"`
+	Arguments        string                    `json:"arguments,omitempty"`
 	Content          json.RawMessage           `json:"content,omitempty"`
 	Summary          json.RawMessage           `json:"summary,omitempty"`
 	Output           []ResponsesContentPart    `json:"output,omitempty"`
@@ -59,6 +62,7 @@ func (item *ResponsesItem) UnmarshalJSON(data []byte) error {
 		CallID           string                    `json:"call_id"`
 		Name             string                    `json:"name"`
 		Input            string                    `json:"input"`
+		Arguments        string                    `json:"arguments"`
 		Content          json.RawMessage           `json:"content"`
 		Summary          json.RawMessage           `json:"summary"`
 		Output           []ResponsesContentPart    `json:"output"`
@@ -70,7 +74,7 @@ func (item *ResponsesItem) UnmarshalJSON(data []byte) error {
 	}
 	*item = ResponsesItem{
 		Type: wire.Type, ID: wire.ID, Role: wire.Role, CallID: wire.CallID, Name: wire.Name,
-		Input: wire.Input, Content: cloneJSON(wire.Content), Summary: cloneJSON(wire.Summary),
+		Input: wire.Input, Arguments: wire.Arguments, Content: cloneJSON(wire.Content), Summary: cloneJSON(wire.Summary),
 		Output: wire.Output, EncryptedContent: wire.EncryptedContent, Tools: wire.Tools, Raw: cloneJSON(data),
 	}
 	return nil
@@ -84,11 +88,22 @@ func (item ResponsesItem) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire(item))
 }
 
+// ToolCall returns a model tool call. Input holds a custom call's raw input or a function
+// call's JSON arguments.
 func (item ResponsesItem) ToolCall() (ResponsesToolCall, bool) {
-	if item.Type != ResponsesItemCustomToolCall {
+	switch item.Type {
+	case ResponsesItemCustomToolCall:
+		return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Input}, true
+	case ResponsesItemFunctionCall:
+		return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Arguments}, true
+	default:
 		return ResponsesToolCall{}, false
 	}
-	return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Input}, true
+}
+
+// IsToolOutput reports whether the item answers a model tool call.
+func (item ResponsesItem) IsToolOutput() bool {
+	return item.Type == ResponsesItemCustomToolOutput || item.Type == ResponsesItemFunctionOutput
 }
 
 func (item ResponsesItem) TextParts() ([]ResponsesContentPart, error) {
@@ -111,6 +126,22 @@ type ResponsesToolCall struct {
 	CallID string            `json:"call_id"`
 	Name   string            `json:"name"`
 	Input  string            `json:"input"`
+}
+
+// IsModelTool reports whether the call names a model-facing tool with its declared kind: freeform
+// `exec` and function `wait`.
+func (call ResponsesToolCall) IsModelTool() bool {
+	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||
+		call.Name == "wait" && call.Type == ResponsesItemFunctionCall
+}
+
+// OutputItem answers the call with the output item type its call type requires.
+func (call ResponsesToolCall) OutputItem(content []ResponsesContentPart) ResponsesItem {
+	outputType := ResponsesItemCustomToolOutput
+	if call.Type == ResponsesItemFunctionCall {
+		outputType = ResponsesItemFunctionOutput
+	}
+	return ResponsesItem{Type: outputType, CallID: call.CallID, Output: content}
 }
 
 type ResponsesContentPart struct {
@@ -142,15 +173,20 @@ func (part ResponsesContentPart) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire(part))
 }
 
+// ResponsesAdditionalTool is a `custom` tool (Format) or a `function` tool (Strict, Parameters).
 type ResponsesAdditionalTool struct {
-	Type        string              `json:"type"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Format      ResponsesToolFormat `json:"format"`
+	Type        string               `json:"type"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
+	Strict      *bool                `json:"strict,omitempty"`
+	Parameters  json.RawMessage      `json:"parameters,omitempty"`
+	Format      *ResponsesToolFormat `json:"format,omitempty"`
 }
 
 type ResponsesToolFormat struct {
-	Type string `json:"type"`
+	Type       string `json:"type"`
+	Syntax     string `json:"syntax,omitempty"`
+	Definition string `json:"definition,omitempty"`
 }
 
 type ResponsesCodeToolDefinition struct {

@@ -10,25 +10,6 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 )
 
-// Cases from Codex rust-v0.162.1 utils/string/src/truncate/tests.rs.
-func TestTruncateMiddleTokensMatchesUpstream(t *testing.T) {
-	for _, tc := range []struct {
-		input     string
-		maxTokens int
-		want      string
-	}{
-		{"short output", 100, "short output"},
-		{"😀😀😀😀😀😀😀😀😀😀\nsecond line with text\n", 8, "😀😀😀😀…8 tokens truncated… line with text\n"},
-		{"a😀b😀c", 1, "a…2 tokens truncated…c"},
-		{"é中😀é", 1, "é…2 tokens truncated…é"},
-		{"😀😀😀", 1, "…2 tokens truncated…"},
-	} {
-		if got := truncateMiddleTokens(tc.input, tc.maxTokens); got != tc.want {
-			t.Errorf("truncateMiddleTokens(%q, %d)=%q, want %q", tc.input, tc.maxTokens, got, tc.want)
-		}
-	}
-}
-
 func startTurnForStore(t *testing.T, store *Store, session *Session, owner Owner, commandID string) {
 	t.Helper()
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{

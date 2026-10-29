@@ -2460,54 +2460,42 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 	return err
 }
 
-func notDispatchedOutputs(items []ResponsesItem) []ResponsesItem {
+func unansweredCalls(items []ResponsesItem) []ResponsesToolCall {
 	completed := map[string]struct{}{}
 	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
+		if item.IsToolOutput() {
 			completed[item.CallID] = struct{}{}
 		}
 	}
-	var outputs []ResponsesItem
+	var calls []ResponsesToolCall
 	for _, item := range items {
-		callID := item.CallID
-		if item.Type != ResponsesItemCustomToolCall {
+		call, ok := item.ToolCall()
+		if !ok {
 			continue
 		}
-		if _, ok := completed[callID]; ok {
-			continue
+		if _, ok := completed[call.CallID]; !ok {
+			calls = append(calls, call)
 		}
-		outputs = append(outputs, ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: "Not dispatched because the turn failed."}},
-		})
+	}
+	return calls
+}
+
+func notDispatchedOutputs(items []ResponsesItem) []ResponsesItem {
+	var outputs []ResponsesItem
+	for _, call := range unansweredCalls(items) {
+		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "Not dispatched because the turn failed."}}))
 	}
 	return outputs
 }
 
 func interruptedOutputs(items []ResponsesItem, activeCall string) []ResponsesItem {
-	completed := map[string]struct{}{}
-	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
-			completed[item.CallID] = struct{}{}
-		}
-	}
 	var outputs []ResponsesItem
-	for _, item := range items {
-		callID := item.CallID
-		if item.Type != ResponsesItemCustomToolCall {
-			continue
-		}
-		if _, ok := completed[callID]; ok {
-			continue
-		}
+	for _, call := range unansweredCalls(items) {
 		text := "Not started because user interrupted the turn."
-		if callID == activeCall {
+		if call.CallID == activeCall {
 			text = "Interrupted by user. Partial effects may have occurred."
 		}
-		outputs = append(outputs, ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: text}},
-		})
+		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: text}}))
 	}
 	return outputs
 }

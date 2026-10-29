@@ -1,0 +1,4 @@
+Some deferred nested tools may be omitted from this description. They are still available on the global `tools` object and listed in `ALL_TOOLS`.
+To find one, filter `ALL_TOOLS` by `name` and `description`.
+
+Tool availability can change between calls.

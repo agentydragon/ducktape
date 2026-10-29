@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
@@ -77,7 +77,7 @@ async def test_failed_turn_preserves_safe_continuation(
                     await exchange.send(
                         *response_stream(
                             [
-                                CustomToolCall("bad-wait", "wait", '{"cell_id":"missing"}'),
+                                FunctionCall("bad-wait", "wait", {"cell_id": "missing"}),
                                 CustomToolCall(
                                     "sibling", "exec", 'text(await tools.exec_command({cmd:"touch unwanted"}));'
                                 ),
@@ -128,7 +128,9 @@ async def test_failed_turn_preserves_safe_continuation(
             async with await endpoint.next() as exchange:
                 if failure == "invalid_wait":
                     outputs = [
-                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                        item
+                        for item in exchange.request.body["input"]
+                        if item["type"] in {"custom_tool_call_output", "function_call_output"}
                     ]
                     assert {item["call_id"] for item in outputs} == {"bad-wait", "sibling"}
                     assert not (tmp_path / "unwanted").exists()
