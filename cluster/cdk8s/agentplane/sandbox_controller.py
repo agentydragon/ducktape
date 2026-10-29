@@ -130,9 +130,9 @@ class SandboxController(Construct):
                 # reads the resulting leaf Secret before attaching it to a workload.
                 RolePolicyRule(
                     resources=[custom_resource("cert-manager.io", "certificates")],
-                    verbs=["get", "list", "create", "delete"],
+                    verbs=["get", "list", "watch", "create", "delete"],
                 ),
-                RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "delete"]),
+                RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "watch", "delete"]),
                 # Update adds and removes the Sandbox owner reference; patch backfills the durable
                 # state-volume layout record on an older controller-owned claim.
                 RolePolicyRule(
