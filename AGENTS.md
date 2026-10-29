@@ -59,7 +59,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 
 - Conflicts are not dependencies — whoever lands second rebases. The only real dependency is content that can't be specified until an open question is answered.
 - Never queue ready work behind a contested change. Stack on unmerged PRs (say so, name the commit to review).
-- When stacking PRs on GitHub, use native GitHub Stacks and follow <skills/github_stacks/SKILL.md>.
+- When stacking PRs on GitHub, use native GitHub Stacks and follow <devinfra/skills/github_stacks/SKILL.md>.
 - Under review, split uncontested parts (including those called "uncontroversial" or commented around) into PRs that land first; debounce a few minutes for the rest of the round.
 - State what a PR deliberately leaves out, and why.
 - Parallel agents may collide; don't coordinate or narrow scope to avoid it.

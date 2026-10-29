@@ -148,7 +148,7 @@
     {
       "name": "github_stacks",
       "pkg": "skill-github_stacks",
-      "target": "//skills/github_stacks:github_stacks_skill",
+      "target": "//devinfra/skills/github_stacks:github_stacks_skill",
       "filename": "github_stacks.skill"
     },
     {
