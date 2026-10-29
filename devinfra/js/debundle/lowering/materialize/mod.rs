@@ -441,6 +441,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.assumptions.native_operation_inputs = cross_module_purities
+            .native_operation_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.assumptions.host_no_reentry = host_no_reentry.cloned();
         inputs.imported_purities = cross_module_purities
             .bindings
@@ -578,6 +583,7 @@ pub(super) fn finish_logical_chunk(
         // program prepared execution index. Pure graph construction has no
         // parser/source context and must not silently consume this spec field.
         dependency_graph_options.value_inputs.clear();
+        dependency_graph_options.native_operation_inputs.clear();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

@@ -34,7 +34,7 @@ use serde_json::Value;
 pub use spec::{
     CapturedValueContract, CapturedValueKind, ExecutionRuntime, HostNoReentry,
     HostNoReentryOperation, HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
-    ValueInputContract, VendorLevel, VendorMark,
+    NativeOperationInputContract, NativeOperationKind, ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;
@@ -398,6 +398,35 @@ pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
 pub fn assert_preserved_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.source_path, expected_stdout, "");
     assert_entry_output(fixture, expected_stdout);
+}
+
+/// Assert that the original and emitted entry both fail with the same runtime
+/// error class and stdout. This covers top-level initialization failures, whose
+/// modules cannot be imported inside a catch block by the generated-module
+/// probe helper.
+pub fn assert_preserved_entry_error(fixture: &Fixture, expected_error: &str) {
+    let original = run_node_script(&fixture.source_path);
+    let emitted = run_node_script(&fixture.entry_path);
+    for (path, result) in [
+        (&fixture.source_path, &original),
+        (&fixture.entry_path, &emitted),
+    ] {
+        assert!(
+            !result.status.success(),
+            "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+            path.display(),
+            result.stdout,
+            result.stderr,
+        );
+        assert!(
+            result.stderr.contains(expected_error),
+            "node {} stderr did not contain {expected_error:?}:\n{}",
+            path.display(),
+            result.stderr,
+        );
+    }
+    assert_eq!(original.status.code(), emitted.status.code());
+    assert_eq!(original.stdout, emitted.stdout);
 }
 
 /// Compare both files under the pinned Bun release supplied in this test's

@@ -446,6 +446,16 @@ where
                         },
                     );
                 }
+                for proof_use in &mut calls.native_operation_input_uses {
+                    proof_use.source_location = line_range_for_span(proof_use.span).map(
+                        |(start_line, end_line, start_column)| SourceLocation {
+                            source_path: source_path.to_string(),
+                            start_line,
+                            end_line,
+                            start_column: Some(start_column),
+                        },
+                    );
+                }
             }
         }
     }

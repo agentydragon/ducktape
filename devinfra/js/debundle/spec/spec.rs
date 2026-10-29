@@ -347,6 +347,13 @@ pub struct DependencyGraphOptions {
     /// construction and never select emission roots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_inputs: Vec<ValueInputContract>,
+    /// Author-certified identity of one direct native operation initializer.
+    /// The author audits the ordinary initial global binding and every
+    /// synchronous initialization schedule admitted by emission. This is
+    /// neither a source inference nor a whole-lifetime integrity claim. See
+    /// docs/purity_soundness.md.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_operation_inputs: Vec<NativeOperationInputContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -451,6 +458,28 @@ pub struct ValueInputContract {
     /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// Author premise for one source-selected direct native operation initializer.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperationInputContract {
+    /// Structural selector for exactly one declared local binding.
+    pub source_match: SourceMatchClaim,
+    /// Operation whose original native binding the author has audited.
+    pub operation: NativeOperationKind,
+    /// SHA-256 of the parser input bytes recorded for this provider entry.
+    pub audited_source_sha256: String,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Native operations admitted by `native_operation_inputs`.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationKind {
+    Symbol,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

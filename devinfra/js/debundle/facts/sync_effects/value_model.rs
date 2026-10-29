@@ -5,7 +5,7 @@ use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use swc_common::Span;
+use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
 pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
@@ -133,6 +133,10 @@ impl AbstractValue {
 impl CallSite {
     pub(super) fn allocation_id(self) -> u32 {
         self.start
+    }
+
+    pub(super) fn source_span(self) -> Span {
+        Span::new(BytePos(self.start), BytePos(self.end))
     }
 }
 

@@ -159,7 +159,9 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   `chunk_analysis_options.<chunk_id>.local_property_effects`
   makes `X.prop = <pure-rhs>;` a local effect on `X` (A10);
   `deferred_global_publications` narrows callback reentry for audited inert
-  browser-global data slots while retaining write ordering.
+  browser-global data slots while retaining write ordering;
+  `native_operation_inputs` carries a source-selected author premise for one
+  direct `Symbol` initializer across all admitted initialization schedules.
 - **Input-chunk admission**: every materialized chunk is screened for A1 (top-level
   `eval`), A3 (dynamic `import(...)`), A5 (`import.meta`) before quotient/lowering
   (`chunk_analysis/chunk_admission.rs`); audited corpora disable checks with

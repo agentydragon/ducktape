@@ -13,8 +13,9 @@ use super::value_model::{
 };
 use crate::analysis_inputs::{
     AnalysisInputs, NamespaceWrapperSummary, NativeIntegrity, NativeIntrinsic as IntrinsicRoot,
-    ProofDependencies, ResolvedBindingValueInput, SelectedBindingValueInput, ValueInputEvidence,
-    ValueInputRef,
+    NativeOperationInputEvidence, ProofDependencies, ResolvedBindingValueInput,
+    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -1003,6 +1004,11 @@ fn native_call_identity_key(
             global_this_qualified,
         },
     ))
+}
+
+fn value_has_symbol_property(value: &ValueExpr) -> bool {
+    matches!(value, ValueExpr::ObjectLiteral(_, properties)
+        if properties.iter().any(|(name, _)| name.as_deref() == Some("Symbol")))
 }
 
 fn shallow_data_pattern(pattern: &Pat) -> bool {
@@ -3306,6 +3312,10 @@ struct ExecutionIndex {
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
     value_input_errors: Vec<String>,
+    resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
+    native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
+    native_operation_input_errors: Vec<String>,
+    primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
     destructuring_source: Option<ValueExpr>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
@@ -3460,6 +3470,10 @@ impl Default for ExecutionIndex {
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
             value_input_errors: Vec::new(),
+            resolved_native_operation_inputs: Vec::new(),
+            native_operation_input_evidence: BTreeMap::new(),
+            native_operation_input_errors: Vec::new(),
+            primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
             destructuring_source: None,
             destructuring_member_writes: Vec::new(),
@@ -3915,6 +3929,323 @@ impl ExecutionIndex {
         }
     }
 
+    fn validate_native_operation_inputs(
+        &mut self,
+        selected: &[SelectedNativeOperationInput],
+        resolved: &[ResolvedNativeOperationInput],
+        flow: Option<&ChunkValueFlow>,
+    ) {
+        if selected.is_empty() && resolved.is_empty() {
+            return;
+        }
+        if !self.dynamic_scope_owners.is_empty() {
+            for input in selected {
+                self.native_operation_input_errors.push(format!(
+                    "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
+                    input.evidence.spec_location
+                ));
+            }
+            for input in resolved {
+                self.native_operation_input_errors.push(format!(
+                    "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
+                    input.evidence.spec_location
+                ));
+            }
+            return;
+        }
+        let Some(flow) = flow else {
+            self.native_operation_input_errors.push(
+                "native_operation_inputs require canonical binding facts, but no value-flow index is available".to_owned(),
+            );
+            return;
+        };
+
+        let known_symbol_mutation = self
+            .known_global_symbol_mutation()
+            .map(|chunk_owner| format!("source unit {chunk_owner}"));
+
+        for input in selected {
+            let request = &input.evidence.spec_location;
+            if known_symbol_mutation.is_some() {
+                self.native_operation_input_errors.push(format!(
+                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
+                    known_symbol_mutation.as_deref().unwrap_or_default()
+                ));
+                continue;
+            }
+            let candidates: Vec<_> = self
+                .binding_declaration_writes
+                .iter()
+                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+                .flat_map(|(binding, writes)| {
+                    writes.iter().filter_map(move |write| {
+                        (write.simple_identifier
+                            && write.direct_top_level
+                            && span_contains(input.selected_statement_span, write.binding_span))
+                        .then_some((binding.clone(), write.clone()))
+                    })
+                })
+                .collect();
+            let [(binding, declaration)] = candidates.as_slice() else {
+                self.native_operation_input_errors.push(format!(
+                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                    input.selected_binding,
+                    candidates.len()
+                ));
+                continue;
+            };
+            let binding = (*binding).clone();
+            let declaration = (*declaration).clone();
+            let Some(initializer) = declaration.initializer.as_ref() else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} selected `{}` without an initializer",
+                    input.selected_binding
+                ));
+                continue;
+            };
+            let ValueExpr::Call(callee, args, call_site) = initializer else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} must select a direct top-level binding initialized by a nonoptional Symbol call; unsupported Symbol call shape"
+                ));
+                continue;
+            };
+            let ValueExpr::Binding(symbol) = callee.as_ref() else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} must select a direct uncomputed Symbol identifier call"
+                ));
+                continue;
+            };
+            if input.evidence.operation != spec::NativeOperationKind::Symbol
+                || symbol.0.as_ref() != "Symbol"
+            {
+                self.native_operation_input_errors.push(format!(
+                    "{request} operation does not match the selected direct Symbol initializer"
+                ));
+                continue;
+            }
+            if flow.is_declared(symbol) {
+                self.native_operation_input_errors.push(format!(
+                    "{request} selects a shadowed Symbol binding; only the original unshadowed global Symbol binding is supported"
+                ));
+                continue;
+            }
+            if !self.primitive_native_symbol_calls.contains(call_site)
+                || !self.ordinary_top_call_sites.contains(call_site)
+                || args.len() > 1
+            {
+                self.native_operation_input_errors.push(format!(
+                    "{request} has an unsupported Symbol call shape; use one ordinary direct call with zero or one syntactically primitive argument and no spread"
+                ));
+                continue;
+            }
+            let Some(call) = self.top_calls[declaration.owner.0]
+                .iter()
+                .find(|call| CallSite::from(call.span) == *call_site)
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer resolves to a direct top-level call site"
+                ));
+                continue;
+            };
+            if call.kind != CallKind::Call || call.has_spread || call.caller.is_some() {
+                self.native_operation_input_errors.push(format!(
+                    "{request} must select a nonoptional, nonspread, direct top-level Symbol call"
+                ));
+                continue;
+            }
+            let Some((model, _)) = native_call_identity_key(CallKind::Call, callee) else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} does not resolve through the exact native Symbol call model"
+                ));
+                continue;
+            };
+            if model.intrinsic != IntrinsicRoot::Symbol {
+                self.native_operation_input_errors.push(format!(
+                    "{request} selected an unsupported native operation model"
+                ));
+                continue;
+            }
+            let mut evidence = input.evidence.clone();
+            evidence.selected_binding = input.selected_binding.clone();
+            self.native_operation_input_evidence
+                .insert(*call_site, evidence.clone());
+            self.resolved_native_operation_inputs
+                .push(ResolvedNativeOperationInput {
+                    evidence,
+                    binding,
+                    declaration_span: declaration.binding_span,
+                    initializer_span: declaration.initializer_span.unwrap_or(call.span),
+                    call_span: call.span,
+                    initializer_ordinal: declaration.owner,
+                });
+        }
+
+        for input in resolved {
+            let request = &input.evidence.spec_location;
+            if known_symbol_mutation.is_some() {
+                self.native_operation_input_errors.push(format!(
+                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
+                    known_symbol_mutation.as_deref().unwrap_or_default()
+                ));
+                continue;
+            }
+            let Some([declaration]) = self
+                .binding_declaration_writes
+                .get(&input.binding)
+                .map(Vec::as_slice)
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer resolves to one canonical binding declaration"
+                ));
+                continue;
+            };
+            let Some(ValueExpr::Call(callee, args, call_site)) = declaration.initializer.as_ref()
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer selects a direct Symbol initializer"
+                ));
+                continue;
+            };
+            let is_same = declaration.direct_top_level
+                && declaration.simple_identifier
+                && declaration.binding_span == input.declaration_span
+                && declaration.initializer_span == Some(input.initializer_span)
+                && declaration.owner == input.initializer_ordinal
+                && input.binding.0.as_ref() == input.evidence.selected_binding
+                && *call_site == CallSite::from(input.call_span)
+                && matches!(callee.as_ref(), ValueExpr::Binding(symbol)
+                    if symbol.0.as_ref() == "Symbol" && !flow.is_declared(symbol))
+                && self.primitive_native_symbol_calls.contains(call_site)
+                && self.ordinary_top_call_sites.contains(call_site)
+                && args.len() <= 1;
+            if !is_same {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer identifies the same direct unshadowed primitive Symbol initializer"
+                ));
+                continue;
+            }
+            self.native_operation_input_evidence
+                .insert(*call_site, input.evidence.clone());
+            self.resolved_native_operation_inputs.push(input.clone());
+        }
+
+        let original_len = self.resolved_native_operation_inputs.len();
+        let mut references = BTreeSet::new();
+        let mut sites = BTreeSet::new();
+        self.resolved_native_operation_inputs.retain(|input| {
+            references.insert(input.evidence.reference.clone())
+                && sites.insert(CallSite::from(input.call_span))
+        });
+        if self.resolved_native_operation_inputs.len() != original_len {
+            self.native_operation_input_errors.push(
+                "native_operation_inputs contain duplicate assertion references or call sites"
+                    .to_owned(),
+            );
+        }
+    }
+
+    fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        let assignments: Vec<_> = self
+            .top_assignments
+            .iter()
+            .flatten()
+            .chain(
+                self.callables
+                    .values()
+                    .flat_map(|callable| callable.local_assignments.iter()),
+            )
+            .collect();
+        let raw_aliases = close_raw_intrinsic_aliases(&assignments, &self.global_object_names);
+        let declared: BTreeSet<_> = self
+            .property_key_declarations
+            .iter()
+            .chain(self.hoisted_bindings.keys())
+            .chain(self.imported_bindings.iter())
+            .chain(self.class_ids.iter())
+            .cloned()
+            .collect();
+        for write in &self.intrinsic_writes {
+            let roots = intrinsic_roots(
+                &write.receiver,
+                &raw_aliases,
+                &self.global_object_names,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            );
+            if !roots.contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject)) {
+                continue;
+            }
+            let key_is_symbol = write.key.as_ref().is_some_and(|key| {
+                matches!(
+                    property_key_evidence(key, &self.property_key_assignments, &declared).domain,
+                    PropertyKeyDomain::FiniteStrings(keys) if keys.contains("Symbol")
+                )
+            });
+            if key_is_symbol {
+                return Some(write.owner);
+            }
+        }
+
+        let assignments = self
+            .top_assignments
+            .iter()
+            .enumerate()
+            .flat_map(|(owner, values)| {
+                values
+                    .iter()
+                    .map(move |(binding, _)| (SourceUnitOrdinal(owner), binding))
+            })
+            .chain(self.callables.values().flat_map(|callable| {
+                callable
+                    .local_assignments
+                    .iter()
+                    .map(move |(binding, _)| (callable.owner, binding))
+            }));
+        if let Some((owner, _)) = assignments.into_iter().find(|(_, binding)| {
+            binding.0.as_ref() == "Symbol" && !self.property_key_declarations.contains(binding)
+        }) {
+            return Some(owner);
+        }
+
+        if let Some(write) = self.intrinsic_writes.iter().find(|write| {
+            write.operation == NativeMutationOperation::Update
+                && matches!(&write.receiver, ValueExpr::Binding(binding)
+                    if binding.0.as_ref() == "Symbol"
+                        && !self.property_key_declarations.contains(binding))
+        }) {
+            return Some(write.owner);
+        }
+
+        for call in &self.prototype_calls {
+            let ValueExpr::Member(receiver, Some(method), _) = &call.callee else {
+                continue;
+            };
+            if !matches!(method.as_str(), "assign" | "defineProperties") {
+                continue;
+            }
+            let target_is_global = intrinsic_roots(
+                call.args.first().unwrap_or(receiver),
+                &raw_aliases,
+                &self.global_object_names,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+            .contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject));
+            if !target_is_global {
+                continue;
+            }
+            let sources = if method == "assign" {
+                call.args.get(1..).unwrap_or_default()
+            } else {
+                call.args.get(1..2).unwrap_or_default()
+            };
+            if sources.iter().any(value_has_symbol_property) {
+                return Some(call.owner);
+            }
+        }
+        None
+    }
+
     /// Map exact local callable return summaries through hoisted declarations
     /// and, when prepared, canonical value-flow aliases. A returned captured
     /// binding stays an opaque descendant at the call site; this does not infer
@@ -4339,6 +4670,11 @@ impl ExecutionIndex {
             &hints.selected_value_inputs,
             &hints.assumptions.captured_value_inputs,
             &raw_intrinsic_aliases,
+        );
+        index.validate_native_operation_inputs(
+            &hints.selected_native_operation_inputs,
+            &hints.assumptions.native_operation_inputs,
+            flow,
         );
         let callable_return_inputs = index.callable_return_value_inputs(flow);
         let intrinsic_aliases = close_post_author_intrinsic_aliases(
@@ -7515,6 +7851,18 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        if self.current.is_none()
+            && call.args.len() <= 1
+            && call
+                .args
+                .iter()
+                .all(|argument| argument.spread.is_none() && primitive_constant(&argument.expr))
+            && matches!(&call.callee, Callee::Expr(callee)
+                if matches!(callee.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol"))
+        {
+            self.primitive_native_symbol_calls
+                .insert(CallSite::from(call.span));
+        }
         if let Callee::Expr(callee) = &call.callee {
             if let Expr::Fn(function) = callee.unwrap_parens()
                 && function.ident.is_none()
@@ -8064,6 +8412,18 @@ impl PreparedCallableCapabilities {
         self.index.resolved_value_inputs.clone()
     }
 
+    pub(crate) fn native_operation_input_errors(&self) -> &[String] {
+        &self.index.native_operation_input_errors
+    }
+
+    pub(crate) fn resolved_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
+        self.index.resolved_native_operation_inputs.clone()
+    }
+
+    pub(crate) fn known_global_symbol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_global_symbol_mutation()
+    }
+
     pub(crate) fn locate_value_inputs(
         &mut self,
         source: Option<&(String, js_ast::SourceLineIndex)>,
@@ -8100,6 +8460,30 @@ impl PreparedCallableCapabilities {
                 .iter()
                 .filter_map(|reference| self.index.value_input_evidence.get(reference).cloned())
                 .collect();
+        }
+    }
+
+    pub(crate) fn locate_native_operation_inputs(
+        &mut self,
+        source: Option<&(String, js_ast::SourceLineIndex)>,
+    ) {
+        let locate = |span: Span| {
+            let (path, index) = source?;
+            let (start_line, end_line, start_column) =
+                index.line_range_and_start_column_for_span(span)?;
+            Some(crate::reports::schema::SourceLocation {
+                source_path: path.clone(),
+                start_line,
+                end_line,
+                start_column: Some(start_column),
+            })
+        };
+        for input in &mut self.index.resolved_native_operation_inputs {
+            input.evidence.declaration_location = locate(input.declaration_span);
+            input.evidence.initializer_location = locate(input.initializer_span);
+            self.index
+                .native_operation_input_evidence
+                .insert(CallSite::from(input.call_span), input.evidence.clone());
         }
     }
 
@@ -8199,13 +8583,16 @@ pub(crate) fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     exported_locals: BTreeSet<String>,
     selected_value_inputs: Vec<SelectedBindingValueInput>,
+    selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
 ) -> PreparedCallableCapabilities {
-    let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
+    let flow = (!selected_value_inputs.is_empty() || !selected_native_operation_inputs.is_empty())
+        .then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
         index: ExecutionIndex::collect(
             body,
             &AnalysisInputs {
                 selected_value_inputs,
+                selected_native_operation_inputs,
                 ..AnalysisInputs::default()
             },
             flow.as_ref(),

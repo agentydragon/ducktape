@@ -270,6 +270,29 @@ pub struct ValueInputEvidence {
     pub note: Option<String>,
 }
 
+/// Stable reference to one exact author assertion for a native operation.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NativeOperationInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Provenance retained for an author-certified native operation site.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeOperationInputEvidence {
+    pub reference: NativeOperationInputRef,
+    pub spec_location: String,
+    pub source_match: SourceMatchClaim,
+    pub operation: spec::NativeOperationKind,
+    pub source_path: String,
+    pub parser_input_file: String,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub declaration_location: Option<SourceLocation>,
+    pub initializer_location: Option<SourceLocation>,
+    pub note: Option<String>,
+}
+
 /// Resolved author input for one canonical source binding. Spans and `Id` are
 /// session-local; serialized evidence uses the stable source locations above.
 #[derive(Debug, Clone)]
@@ -292,6 +315,28 @@ pub struct SelectedBindingValueInput {
     /// canonical execution index maps this span to its split source unit and
     /// validates the declaration and complete write summary.
     pub selected_statement_span: Span,
+}
+
+/// A native-operation input after the canonical selector engine has selected
+/// one exact top-level source unit. The execution index validates the
+/// initializer call and resolves it to its precise call span.
+#[derive(Debug, Clone)]
+pub struct SelectedNativeOperationInput {
+    pub evidence: NativeOperationInputEvidence,
+    pub selected_binding: String,
+    pub selected_statement_span: Span,
+}
+
+/// Resolved author input for one exact native operation call. Spans and `Id`
+/// are session-local; serialized evidence uses stable source provenance.
+#[derive(Debug, Clone)]
+pub struct ResolvedNativeOperationInput {
+    pub evidence: NativeOperationInputEvidence,
+    pub binding: Id,
+    pub declaration_span: Span,
+    pub initializer_span: Span,
+    pub call_span: Span,
+    pub initializer_ordinal: SourceUnitOrdinal,
 }
 
 /// Resolved whole-program native integrity, derived from source facts and any
@@ -317,6 +362,9 @@ pub struct AnalysisAssumptions {
     /// keyed by canonical IDs from the prepared entry AST and are distinct from
     /// inferred source facts and all purity/callback contracts.
     pub captured_value_inputs: Vec<ResolvedBindingValueInput>,
+    /// Source-resolved author premises for exact native operation call sites.
+    /// They are not native integrity guards or inferred identity facts.
+    pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     /// Version-scoped author assertion for exact host operations.
     pub host_no_reentry: Option<spec::HostNoReentry>,
     /// Exact author-certified browser-global slots whose stored capabilities
@@ -399,6 +447,9 @@ pub struct AnalysisInputs {
     /// Source-match results awaiting canonical binding/write-index validation
     /// in the whole-program prepared analysis.
     pub selected_value_inputs: Vec<SelectedBindingValueInput>,
+    /// Source-match results awaiting canonical call-shape validation in the
+    /// whole-program prepared analysis.
+    pub selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
     pub local_effect_policy: LocalEffectPolicy,
     /// Cross-module purity verdicts for this chunk's imported function
     /// bindings, keyed by local binding name. Produced by the program-level

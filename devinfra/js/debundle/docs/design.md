@@ -103,6 +103,15 @@ an author assertion or the checked immutable wrapper's local binding and
 source location. Projection onto the importer's local name preserves this evidence;
 the execution index uses the capability only for eligible call shapes. Inline-only,
 retained-signature, and namespace-member author contracts remain distinct.
+`native_operation_inputs` is a separate premise: the selector and parser-input
+digest identify one direct native initializer, while `AnalysisAssumptions`
+retains its validated evidence separately from inferred native identity. The
+current operation is direct `Symbol` only. The author asserts that its global
+data binding denotes the original operation through every synchronous
+initialization schedule admitted by emission. This is not a point observation
+or a whole-lifetime integrity claim; known in-source global `Symbol` changes
+anywhere in that region contradict it, and opaque receiver-write witnesses
+remain in the shared census. Only the selected call span consumes the premise.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 
@@ -420,6 +429,9 @@ alone explains lost precision. Other eligibility conditions may also fail.
 source witnesses, bounding rows with the same total/emitted/truncated metadata as
 its other sections. Diagnostics do not
 change the census, guard verdicts, or dependency edges.
+An exact native-operation input is reported independently at the call site that
+consumes it, with the selector, parser hash and author rationale. It does not
+erase or relabel any native write witness.
 
 `synchronous_execution.native_prefix_observations` separately records the
 conservative native-root and Object-prototype-property effects active at each

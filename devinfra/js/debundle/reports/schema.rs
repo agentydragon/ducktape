@@ -480,6 +480,10 @@ pub struct SynchronousExecutionReport {
     /// Successful native guards that consumed author-conditioned census facts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_uses: Vec<NativeIntegrityUse>,
+    /// Exact native-operation sites admitted by a source-selected author
+    /// premise. This is author evidence, not a native-integrity inference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_operation_input_uses: Vec<NativeOperationInputUse>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -488,6 +492,15 @@ pub struct SynchronousExecutionReport {
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<HostNoReentryUse>,
+}
+
+/// One exact call site that consumed a native-operation author premise.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeOperationInputUse {
+    pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
 }
 
 /// A consumed author assertion on a local unary record-retaining factory.

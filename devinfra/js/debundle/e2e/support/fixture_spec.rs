@@ -717,6 +717,8 @@ pub struct FixtureOpts<'a> {
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
     /// Author-conditioned captured-value inputs keyed by their defining chunk.
     pub value_inputs: Vec<(String, Vec<spec::ValueInputContract>)>,
+    /// Source-selected native-operation identity premises keyed by provider.
+    pub native_operation_inputs: Vec<(String, Vec<spec::NativeOperationInputContract>)>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
     pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
     /// Keep only `chunk_id` in the materialization artifact while retaining
@@ -752,6 +754,7 @@ impl<'a> FixtureOpts<'a> {
             extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
             value_inputs: Vec::new(),
+            native_operation_inputs: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
         }
@@ -793,6 +796,16 @@ impl<'a> FixtureOpts<'a> {
         inputs: Vec<spec::ValueInputContract>,
     ) -> Self {
         self.value_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    /// Attach source-selected native-operation inputs to one provider chunk.
+    pub fn with_native_operation_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::NativeOperationInputContract>,
+    ) -> Self {
+        self.native_operation_inputs.push((chunk.into(), inputs));
         self
     }
 
@@ -1093,11 +1106,13 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         || !opts.deferred_global_publications.is_empty()
         || !opts.non_reentrant_global_membership.is_empty()
         || !opts.admission_overrides.is_empty()
+        || !opts.native_operation_inputs.is_empty()
     {
         BTreeMap::from([(
             chunk_id.to_string(),
             DependencyGraphOptions {
                 value_inputs: Vec::new(),
+                native_operation_inputs: Vec::new(),
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
@@ -1148,6 +1163,12 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .entry(chunk.clone())
             .or_insert_with(DependencyGraphOptions::default)
             .value_inputs = value_inputs.clone();
+    }
+    for (chunk, native_operation_inputs) in &opts.native_operation_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .native_operation_inputs = native_operation_inputs.clone();
     }
 
     let chunk_export_purity: BTreeMap<String, spec::ChunkExportPurity> = opts

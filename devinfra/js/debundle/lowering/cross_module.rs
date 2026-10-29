@@ -9,8 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    CallableSummary, NativeIntegrity, ResolvedBindingValueInput, SelectedBindingValueInput,
-    ValueInputEvidence, ValueInputRef,
+    CallableSummary, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
+    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
@@ -90,6 +91,8 @@ pub(super) struct CrossModulePurities {
     pub(super) native_integrity: Option<NativeIntegrity>,
     /// Source-resolved author inputs for the provider's own local analysis.
     pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
+    /// Source-resolved native operation premises for the provider initializer.
+    pub(super) native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -443,6 +446,14 @@ pub(super) fn collect_cross_module_imported_purities(
         excluded_chunks,
         chunk_filter,
     )?;
+    let native_operation_inputs = resolve_native_operation_inputs(
+        artifact,
+        &modules,
+        chunk_analysis_options,
+        graph_provenance,
+        excluded_chunks,
+        chunk_filter,
+    )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
@@ -538,8 +549,12 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
-    let callable_summaries =
-        resolve_imported_callable_summaries(&modules, &asserted_callback_factories, &value_inputs)?;
+    let callable_summaries = resolve_imported_callable_summaries(
+        &modules,
+        &asserted_callback_factories,
+        &value_inputs,
+        &native_operation_inputs,
+    )?;
     Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
@@ -609,6 +624,7 @@ pub(super) fn collect_cross_module_imported_purities(
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         value_inputs: callable_summaries.value_inputs,
+        native_operation_inputs: callable_summaries.native_operation_inputs,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
@@ -687,7 +703,7 @@ fn resolve_value_inputs(
                     "chunk_analysis_options.{chunk_name}.value_inputs requires explicit graph parser-input provenance"
                 )
             })?;
-        let spec_path = value_input_spec_path(provenance)?;
+        let spec_path = author_input_spec_path(provenance)?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -814,11 +830,175 @@ fn resolve_value_inputs(
     Ok(resolved)
 }
 
+fn resolve_native_operation_inputs(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    options: &BTreeMap<String, DependencyGraphOptions>,
+    graph_provenance: Option<&GraphProvenance>,
+    excluded_chunks: &BTreeSet<ChunkId>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
+    let mut resolved = BTreeMap::new();
+    for (chunk_name, options) in options {
+        if options.native_operation_inputs.is_empty() {
+            continue;
+        }
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| {
+                format!(
+                    "chunk_analysis_options.{chunk_name}.native_operation_inputs names no loaded provider chunk"
+                )
+            })?;
+        ensure!(
+            !excluded_chunks.contains(&chunk.chunk_id),
+            "chunk_analysis_options.{chunk_name}.native_operation_inputs cannot target a fully swapped or excluded provider"
+        );
+        ensure!(
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "chunk_analysis_options.{chunk_name}.native_operation_inputs provider is outside the existing analyzed import closure"
+        );
+        let facts = modules.get(chunk_name).with_context(|| {
+            format!(
+                "chunk_analysis_options.{chunk_name}.native_operation_inputs provider entry is unavailable to whole-program analysis"
+            )
+        })?;
+        let entry_file = &chunk.analysis.entry_file;
+        ensure!(
+            chunk.js.get_file(entry_file).is_some(),
+            "provider {chunk_name} is missing its analyzed entry file {entry_file}"
+        );
+        let provenance = graph_provenance
+            .context("native operation inputs require explicit graph parser-input provenance")?;
+        let source = provenance
+            .chunk_sources
+            .iter()
+            .find(|source| source.chunk_id == *chunk_name)
+            .with_context(|| {
+                format!(
+                    "chunk_analysis_options.{chunk_name}.native_operation_inputs requires explicit graph parser-input provenance"
+                )
+            })?;
+        let spec_path = author_input_spec_path(provenance)?;
+        let module = Module {
+            span: Default::default(),
+            body: facts.body.to_vec(),
+            shebang: None,
+        };
+        let structural = analysis::facts::analyze_chunk_structural(&module, None, |_| None);
+        let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
+        let parser_input_file = provenance.resolve(
+            &source.input_file.root,
+            &source.input_file.path,
+            &CurrentRoots::default(),
+        )?;
+        let mut chunk_inputs = Vec::with_capacity(options.native_operation_inputs.len());
+        for (input_index, contract) in options.native_operation_inputs.iter().enumerate() {
+            let request_id = format!(
+                "chunk_analysis_options.{chunk_name}.native_operation_inputs[{input_index}]"
+            );
+            ensure!(
+                contract.audited_source_sha256.len() == 64
+                    && contract
+                        .audited_source_sha256
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit()),
+                "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
+            );
+            ensure!(
+                contract.audited_source_sha256 == source.sha256,
+                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
+                source.sha256,
+                contract.audited_source_sha256
+            );
+            ensure!(
+                contract.source_match.bindings.len() == 1,
+                "{request_id}.source_match must select exactly one declared binding"
+            );
+            let spec::SourceMatchBinding::Local(local) = &contract.source_match.bindings[0] else {
+                bail!("{request_id}.source_match does not accept detailed name/rename payloads");
+            };
+            let mut selectors =
+                source_match_claim_member_selectors(&request_id, &contract.source_match)?;
+            ensure!(
+                selectors.len() == 1,
+                "{request_id}.source_match must produce exactly one selector"
+            );
+            let selector = selectors.pop().expect("one selector was checked");
+            ensure!(
+                selector
+                    .parsed_selector
+                    .declared_binding_names()
+                    .iter()
+                    .any(|name| name == local),
+                "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
+            );
+            let selector_module = spec_resolution::spec_module(
+                format!("native_operation_input_{input_index}"),
+                vec![spec_resolution::member_from_source_match(
+                    selector.export_name,
+                    selector.parsed_selector,
+                )],
+                Vec::new(),
+            );
+            let resolution = selector_chunk.resolve(&[selector_module])?;
+            let outcome = resolution
+                .outcome(0, EntityIndex::Member(0))
+                .with_context(|| {
+                    format!("{request_id}.source_match produced no selector outcome")
+                })?;
+            let (body_index, selected_binding) = match &outcome.outcome {
+                SelectorOutcome::Resolved {
+                    body_index,
+                    binding: Some(binding),
+                    ..
+                } => (*body_index, binding.clone()),
+                other => bail!(
+                    "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+                ),
+            };
+            let selected_statement_span = facts
+                .body
+                .get(body_index)
+                .with_context(|| {
+                    format!("{request_id}.source_match selected a missing module item")
+                })?
+                .span();
+            let reference = NativeOperationInputRef {
+                defining_chunk: chunk_name.clone(),
+                input_index,
+            };
+            let evidence = NativeOperationInputEvidence {
+                reference,
+                spec_location: format!("{}:{request_id}", spec_path.display()),
+                source_match: contract.source_match.clone(),
+                operation: contract.operation,
+                source_path: source.source_path.to_string_lossy().into_owned(),
+                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
+                audited_source_sha256: contract.audited_source_sha256.clone(),
+                selected_binding: selected_binding.clone(),
+                declaration_location: None,
+                initializer_location: None,
+                note: contract.note.clone(),
+            };
+            chunk_inputs.push(SelectedNativeOperationInput {
+                evidence,
+                selected_binding,
+                selected_statement_span,
+            });
+        }
+        resolved.insert(chunk_name.clone(), chunk_inputs);
+    }
+    Ok(resolved)
+}
+
 /// Return the original authored flat-spec or tree-config path recorded when
 /// the graph was captured. Flat specs do not populate `config_path`; their
 /// canonical `--spec` argument is retained in the provenance generation
 /// command and is already the source of truth for replay.
-fn value_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
+fn author_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
     if let Some(config_path) = &provenance.config_path {
         return Ok(provenance.roots.spec.join(config_path));
     }
@@ -827,7 +1007,7 @@ fn value_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
         .iter()
         .position(|argument| argument == "--spec")
         .and_then(|index| provenance.generation_command.get(index + 1))
-        .context("graph provenance has no recorded flat spec path for value input evidence")?;
+        .context("graph provenance has no recorded flat spec path for author input evidence")?;
     Ok(PathBuf::from(spec_arg))
 }
 

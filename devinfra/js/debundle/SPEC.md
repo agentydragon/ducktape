@@ -950,6 +950,46 @@ carries no value-input use. The source digest
 binds the input to parsed bytes, but it does not establish the external runtime
 audit, code outside the analyzed prefix, or host behavior.
 
+## Native-operation inputs
+
+`chunk_analysis_options.<defining chunk>.native_operation_inputs` can certify
+the identity of one direct native operation initializer:
+
+```yaml
+chunk_analysis_options:
+  static/peer:
+    native_operation_inputs:
+      - source_match:
+          match: "const marker = Symbol('marker');"
+          bindings: [marker]
+        operation: symbol
+        audited_source_sha256: "<64 hex characters for the parser input>"
+        note: "The original Symbol data binding is stable during chunk initialization."
+```
+
+The selector and digest use the same canonical source-match and parser-input
+provenance as `value_inputs`. The current operation set accepts only `symbol`.
+The selector must identify one direct top-level simple binding initializer
+whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call
+with zero or one syntactically primitive argument and no spread. Shadowed
+`Symbol`, computed or optional calls, other expression shapes and known
+in-source writes to the global `Symbol` binding/property are rejected. The
+known-write check covers the analyzed initialization region, including
+deferred bodies, so replacement followed by restoration cannot be reordered
+around the selected call.
+
+This is explicit author input, not an inferred source fact or a point-in-time
+snapshot. The author asserts that the direct callee remains the original native
+`Symbol` data binding throughout every synchronous initialization schedule
+allowed by emission. A11's external native-identity obligation still applies.
+The input is consumed only at the exact selected call span; other `Symbol`
+calls retain their ordinary native-integrity checks. Opaque possible receiver
+writes may be covered by this author premise, but their witnesses remain in
+the shared census and report. No whole-lifetime purity, no-reentry or receiver
+guarantee follows. Callee and argument evaluation, throws, other writes,
+callbacks, publication, CommonJS behavior and all other calls keep their
+ordinary analysis.
+
 ## Ordinary own-property inspection
 
 A guarded `Object.getOwnPropertyNames` or `Object.getOwnPropertyDescriptors`

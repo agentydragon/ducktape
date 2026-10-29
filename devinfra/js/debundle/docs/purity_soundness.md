@@ -312,6 +312,40 @@ native callees, and syntax errors. `math_round_timing_test` retains effectful
 argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
 
+### Source-selected native-operation inputs
+
+`chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
+author premise for one exact direct native initializer. The current schema
+admits only `operation: symbol`. The canonical selector engine identifies one
+direct top-level simple binding initialized by an ordinary, nonoptional,
+uncomputed `Symbol(...)` call with zero or one syntactically primitive
+argument and no spread; the parser-input SHA-256 binds that selection to the
+audited bytes. The execution index validates the selected binding and call
+span before the synchronous interpreter can consume it.
+
+The author asserts that, from provider evaluation start through the selected
+call in every synchronous initialization schedule allowed by emission, the
+ordinary global environment resolves `Symbol` to the original native function
+through its ordinary data binding. The author must audit the host entry state:
+there is no hostile preseeded `Symbol` alias or accessor, and no foreign
+reentry before the selected call. This is not a snapshot of the binding at the
+call's original point: a later or deferred known replacement could move before
+the call in an emitted schedule. Therefore any positively identified in-source
+write to the global `Symbol` binding or global-object `Symbol` slot anywhere in
+the analyzed initialization region contradicts the input, including a
+replacement later restored. Opaque receiver mutations are the uncertainty
+this premise may cover; they remain visible as their original census witnesses.
+
+This input does not mint `NativeCallIdentity` or native-integrity facts. It
+consumes the existing exact native `Symbol` model only at the selected call
+span, and the report records the author provenance at that site. Other
+`Symbol` calls still require the ordinary shared integrity proof. Argument and
+callee evaluation, their effects and throws, and surrounding writes, callback
+invocation, publication, CommonJS behavior and ordering remain on the normal
+conservative paths. The premise grants no whole-lifetime purity, general
+receiver guarantee or native integrity outside analyzed code; the external A11
+identity obligation still applies.
+
 ## Native `Proxy` construction
 
 `new Proxy(target, handler)` is admitted only when the global `Proxy` name is

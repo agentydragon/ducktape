@@ -36,7 +36,8 @@ use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
     NamespaceWrapperSummary, NativeIntegrity, ProofDependencies, ResolvedBindingValueInput,
-    ReturnedRecordSummary, SelectedBindingValueInput,
+    ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
+    SelectedNativeOperationInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
@@ -281,6 +282,11 @@ pub fn resolve_imported_purities(
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
+                native_operation_inputs: callable_summaries
+                    .native_operation_inputs
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default(),
                 ..Default::default()
             },
             imported_callables: callable_summaries
@@ -378,6 +384,7 @@ pub struct ResolvedCallableSummaries {
     pub imported_callables: BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<ModuleKey, Vec<ResolvedBindingValueInput>>,
+    pub native_operation_inputs: BTreeMap<ModuleKey, Vec<ResolvedNativeOperationInput>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -535,6 +542,7 @@ pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
     selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
+    selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
 ) -> Result<ResolvedCallableSummaries> {
     let required: BTreeSet<_> = modules
         .values()
@@ -575,6 +583,7 @@ pub fn resolve_imported_callable_summaries(
     }
     let mut prepared = BTreeMap::new();
     let mut resolved_value_inputs = BTreeMap::new();
+    let mut resolved_native_operation_inputs = BTreeMap::new();
     for (module, facts) in modules {
         let locals = facts
             .exports
@@ -596,6 +605,10 @@ pub fn resolve_imported_callable_summaries(
                     .get(module)
                     .cloned()
                     .unwrap_or_default(),
+                selected_native_operation_inputs
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default(),
             );
         if !prepared_module.value_input_errors().is_empty() {
             bail!(
@@ -613,8 +626,42 @@ pub fn resolve_imported_callable_summaries(
         if !module_inputs.is_empty() {
             resolved_value_inputs.insert(module.clone(), module_inputs);
         }
+        if !prepared_module.native_operation_input_errors().is_empty() {
+            bail!(
+                "invalid native operation input for provider {module}: {}",
+                prepared_module.native_operation_input_errors().join("; ")
+            );
+        }
+        prepared_module.locate_native_operation_inputs(facts.source.as_ref());
+        let module_native_inputs = prepared_module.resolved_native_operation_inputs();
+        if !module_native_inputs.is_empty() && facts.source.is_none() {
+            bail!(
+                "native operation input for provider {module} has no retained parser source locations"
+            );
+        }
+        if !module_native_inputs.is_empty() {
+            resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
+        }
         prepared_module.locate_native_writes(module, facts.source.as_ref());
         prepared.insert(module, prepared_module);
+    }
+    if !selected_native_operation_inputs.is_empty()
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_global_symbol_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .next()
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_operation_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified global Symbol replacement or accessor installation in provider {module}, source unit {}",
+            owner.0
+        );
     }
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
@@ -817,6 +864,7 @@ pub fn resolve_imported_callable_summaries(
         imported_callables,
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
+        native_operation_inputs: resolved_native_operation_inputs,
     })
 }
 
@@ -1475,9 +1523,14 @@ mod tests {
             ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
-        let resolved = resolve_imported_callable_summaries(&modules, &asserted, &BTreeMap::new())
-            .unwrap()
-            .imported_callables;
+        let resolved = resolve_imported_callable_summaries(
+            &modules,
+            &asserted,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .unwrap()
+        .imported_callables;
         assert_eq!(
             resolved["app"]["localWrap"].callback_factory_evidence(),
             &BTreeSet::from([CallbackFactoryEvidence::InferredImmutableWrapper {

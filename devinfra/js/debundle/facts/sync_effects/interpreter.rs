@@ -48,6 +48,15 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
 
+enum NativeCallModelSource {
+    Inferred {
+        semantic_key: SemanticKey,
+    },
+    AuthorInput {
+        evidence: Box<crate::analysis_inputs::NativeOperationInputEvidence>,
+    },
+}
+
 fn from_flow(values: FlowValues) -> Values {
     values
         .into_iter()
@@ -264,6 +273,8 @@ pub(super) struct ExecutionState {
     uncertain_native_execution: bool,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
+    native_operation_input_uses:
+        RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
     proof_dependencies: RefCell<ProofDependencies>,
     inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
@@ -858,8 +869,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-    ) -> Option<(NativeCallModel, SemanticKey)> {
+        site: CallSite,
+    ) -> Option<(NativeCallModel, NativeCallModelSource)> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
+        if kind == CallKind::Call
+            && model.intrinsic == IntrinsicRoot::Symbol
+            && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
+            && evidence.operation == spec::NativeOperationKind::Symbol
+        {
+            return Some((
+                model,
+                NativeCallModelSource::AuthorInput {
+                    evidence: Box::new(evidence.clone()),
+                },
+            ));
+        }
         let facts = self.inputs.index.semantic_facts.as_ref()?;
         let judgment = facts.judgment(&key)?;
         let proof = facts.inference_use(&key)?;
@@ -868,7 +892,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             proof,
             judgment.dependencies(),
         );
-        Some((model, key))
+        Some((model, NativeCallModelSource::Inferred { semantic_key: key }))
     }
 
     /// A successful model lookup certifies the operation after its inputs
@@ -877,6 +901,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
+        site: CallSite,
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<NativeCallResolution> {
@@ -884,6 +909,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.request(RuntimeOperation::Heap(HeapOperation::ResolveNative {
                 kind,
                 callee: callee.clone(),
+                site,
                 expressions: expressions.to_vec(),
                 arguments: args.to_vec(),
             }))
@@ -897,10 +923,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
+        site: CallSite,
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<NativeCallResolution> {
-        let (model, native_call_identity) = self.exact_native_call_model(kind, callee)?;
+        let (model, source) = self.exact_native_call_model(kind, callee, site)?;
+        let native_call_identity = match &source {
+            NativeCallModelSource::Inferred { semantic_key } => Some(semantic_key.clone()),
+            NativeCallModelSource::AuthorInput { .. } => None,
+        };
         let mut own_property_projection = None;
 
         let admitted = match model.inputs {
@@ -921,7 +952,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 own_property_projection = Some(self.own_property_projection(
                     values,
                     OwnPropertyRequest::Descriptors {
-                        native_call_identity: native_call_identity.clone(),
+                        native_call_identity: native_call_identity.clone()?,
                     },
                 )?);
                 true
@@ -933,7 +964,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 own_property_projection = Some(self.own_property_projection(
                     values,
                     OwnPropertyRequest::Names {
-                        native_call_identity: native_call_identity.clone(),
+                        native_call_identity: native_call_identity.clone()?,
                     },
                 )?);
                 true
@@ -965,6 +996,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         if !admitted {
             return None;
+        }
+        if let NativeCallModelSource::AuthorInput { evidence } = source {
+            let source_span = site.source_span();
+            self.state.native_operation_input_uses.borrow_mut().insert(
+                (source_span.lo.0, source_span.hi.0),
+                crate::reports::schema::NativeOperationInputUse {
+                    evidence: *evidence,
+                    source_location: None,
+                    span: source_span,
+                },
+            );
         }
         if let Some(proof) = &own_property_projection {
             self.state
@@ -4904,14 +4946,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     ]);
                 }
                 if let Some(returns) =
-                    self.resolve_native_call(CallKind::Call, callee, expressions, &args)
+                    self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
                 {
                     return self.native_return_values(returns, &args, args_may_throw, *span);
                 }
                 if args.len() == 2
                     && self.ordinary_object_prototype_intact()
                     && self
-                        .exact_native_call_model(CallKind::Call, callee)
+                        .exact_native_call_model(CallKind::Call, callee, *span)
                         .is_some_and(|(model, _)| {
                             matches!(model.returns, CallReturn::DefinedPropertiesTarget)
                         })
@@ -5017,7 +5059,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     args_may_throw |= values.remove(&AbstractValue::Unavailable);
                 }
                 if let Some(returns) =
-                    self.resolve_native_call(CallKind::New, callee, args, &successful_args)
+                    self.resolve_native_call(CallKind::New, callee, *span, args, &successful_args)
                 {
                     return self.native_return_values(
                         returns,
@@ -5781,8 +5823,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if !call.has_spread
-            && let Some(returns) =
-                self.resolve_native_call(call.kind, &call.callee, &call.args, &args)
+            && let Some(returns) = self.resolve_native_call(
+                call.kind,
+                &call.callee,
+                CallSite::from(call.span),
+                &call.args,
+                &args,
+            )
         {
             if matches!(returns.returns, CallReturn::DefinedPropertiesTarget) {
                 self.apply_own_descriptor_map(&args);
@@ -6615,6 +6662,7 @@ pub(crate) fn annotate_synchronous_calls(
         uncertain_native_execution: false,
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
+        native_operation_input_uses: RefCell::default(),
         proof_dependencies: RefCell::default(),
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
@@ -6736,6 +6784,7 @@ impl Executor<'_, '_> {
             .clear();
         self.state.native_prefix_observations.borrow_mut().clear();
         self.state.native_integrity_uses.borrow_mut().clear();
+        self.state.native_operation_input_uses.borrow_mut().clear();
         *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
         self.state.inference_uses.borrow_mut().clear();
         self.state.current_top_owner = Some(fact.ordinal);
@@ -7045,6 +7094,10 @@ impl Executor<'_, '_> {
         outcome.effects.native_integrity_uses =
             std::mem::take(self.state.native_integrity_uses.get_mut())
                 .into_iter()
+                .collect();
+        outcome.effects.native_operation_input_uses =
+            std::mem::take(self.state.native_operation_input_uses.get_mut())
+                .into_values()
                 .collect();
         outcome.effects.inference_uses = std::mem::take(self.state.inference_uses.get_mut())
             .into_iter()
