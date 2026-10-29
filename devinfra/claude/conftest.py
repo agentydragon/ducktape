@@ -1,24 +1,8 @@
 """Pytest fixtures for Claude tests."""
 
-import uuid
 from pathlib import Path
 
 import pytest
-
-from devinfra.claude.session_paths import SessionPaths
-
-
-@pytest.fixture
-def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPaths:
-    """Minimal SessionPaths for tests that don't need proxy infrastructure."""
-    home = tmp_path / "session-home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    session_id = f"test-session-{uuid.uuid4().hex[:8]}"
-    paths = SessionPaths.from_env(session_id, {"HOME": str(home)})
-    # Pre-create subdirs that production code expects to exist
-    paths.session_dir.mkdir(parents=True, exist_ok=True)
-    return paths
 
 
 @pytest.fixture

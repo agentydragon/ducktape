@@ -26,6 +26,7 @@ from hamcrest import assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.testing.matchers import exited_successfully
 from props.agents.critic_dev.testing.mocks import CriticDevMock
+from props.core.agent_types import CriticDevImproveTypeConfig
 from props.db.database import Database
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
@@ -106,7 +107,8 @@ async def test_prompt_improve_e2e_creates_package(
 
     with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
-        assert agent_run.critic_dev_improve_config().allowed_examples == [subtract_file_example]
+        assert isinstance(agent_run.type_config, CriticDevImproveTypeConfig)
+        assert agent_run.type_config.allowed_examples == [subtract_file_example]
 
 
 if __name__ == "__main__":

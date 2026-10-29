@@ -1592,7 +1592,7 @@ fn place_segments(
     Ok(false)
 }
 
-/// Match two var-decl statements and, on success, return the greedy-leftmost
+/// Match two var-decl statements over prebuilt indices and, on success, return the greedy-leftmost
 /// declarator alignment (needle declarator index → subject declarator index,
 /// `None` for a `DECLARATORS`-hole-absorbed needle position); `None` if they do
 /// not match. `prebind` pins needle identifiers to subject identifiers in the
@@ -1601,26 +1601,6 @@ fn place_segments(
 /// var-decl match (wrapper symmetry, `var`/`let`/`const` kind, declarator
 /// alignment): a `Some` result *is* a faithful match. Fail-closed on an
 /// unsupported needle construct.
-pub fn var_declarator_alignment(
-    needle: &ChunkFacts,
-    subject: &ChunkFacts,
-    mode: Mode,
-    prebind: &[(&str, &str)],
-    free: &BTreeSet<String>,
-) -> Result<Option<Matched<Vec<Option<usize>>>>, Unsupported> {
-    var_declarator_alignment_indexed(
-        &Index::build(needle),
-        &Index::build(subject),
-        mode,
-        prebind,
-        free,
-    )
-}
-
-/// Like [`var_declarator_alignment`], but over **prebuilt** indices, so the
-/// declarator-hole resolver can reuse cached body indices across the
-/// source_unit × candidate-binding inner loop instead of rebuilding both indices on
-/// every alignment attempt.
 pub fn var_declarator_alignment_indexed(
     needle: &Index,
     subject: &Index,
@@ -2115,27 +2095,13 @@ impl ExactRangeContext<'_> {
     }
 }
 
-/// Match a multi-statement needle (each element one statement's facts, in source
-/// order) against a chunk body (each element one top-level statement's facts, in
+/// Match a multi-statement needle (each element one statement's index, in source
+/// order) against a chunk body (each element one top-level statement's index, in
 /// body order) as an ordered subsequence with module-level `STMT_LIST` holes,
 /// **enumerating every alignment** (needle-index → body-index, `None` for a hole
 /// position). Never anchored at module level, and an all-holes needle pins
 /// nothing (no alignment). Fail-closed on an unsupported non-hole needle
 /// statement.
-pub fn match_top_level_sequence(
-    needles: &[ChunkFacts],
-    subject_items: &[ChunkFacts],
-    mode: Mode,
-    free: &BTreeSet<String>,
-) -> Result<Vec<Matched<Vec<Option<usize>>>>, Unsupported> {
-    let needle_idx: Vec<Index> = needles.iter().map(Index::build).collect();
-    let subject_idx: Vec<Index> = subject_items.iter().map(Index::build).collect();
-    match_top_level_sequence_indexed(&needle_idx, &subject_idx, mode, free)
-}
-
-/// Like [`match_top_level_sequence`], but over **prebuilt** subject indices so a
-/// caller resolving many multi-statement needles against one chunk body reuses
-/// the cached body `Index`es instead of rebuilding them all per call.
 pub fn match_top_level_sequence_indexed(
     needle_idx: &[Index],
     subject_idx: &[Index],

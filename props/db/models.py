@@ -35,7 +35,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 from sqlalchemy.types import TypeDecorator
 
 from openai_utils.api_shape import LLMApiShape
-from props.core.agent_types import AgentType, CriticDevImproveTypeConfig, CriticTypeConfig, GraderTypeConfig, TypeConfig
+from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig, TypeConfig
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
@@ -1467,8 +1467,3 @@ class AgentRun(Base):
         if isinstance(self.type_config, GraderTypeConfig):
             return self.type_config
         raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
-
-    def critic_dev_improve_config(self) -> CriticDevImproveTypeConfig:
-        if isinstance(self.type_config, CriticDevImproveTypeConfig):
-            return self.type_config
-        raise ValueError(f"Expected CriticDevImproveTypeConfig, got {type(self.type_config).__name__}")

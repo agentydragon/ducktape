@@ -1,10 +1,8 @@
 # Plan: Stable Session Identity for Hook State
 
-**Status**: Draft, unimplemented. Re-checked 2026-08-16: `SessionPaths` still
-keys `~/.claude/session-env/` on the hook's per-transition UUID
-(`session_paths.py`), and `write_session_bazelrc` still points
-`startup --output_base` inside that per-UUID directory, so the goal below is
-still live.
+**Status**: Draft, unimplemented. The Rust hook's `home_session_dir` and
+`write_session_bazelrc` in `claude_hook/main.rs` key the session directory and
+Bazel output base on the hook's per-transition UUID.
 **Created**: 2026-03-30
 
 ## Problem
@@ -152,7 +150,7 @@ mode would be novel.
 
 ## Implementation Order
 
-1. **Make `CLAUDE_CODE_SESSION_ID` available to SessionPaths** — thread
+1. **Make `CLAUDE_CODE_SESSION_ID` available to the Rust hook's path computations** — thread
    it from CallerContext through to path computation
 2. **Stable bazelrc** — change path generation to use stable key
 3. **Bazel wrapper** — update `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` to

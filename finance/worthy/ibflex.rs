@@ -218,12 +218,6 @@ const FLEX_API_VERSION: i32 = 3;
 const ENDPOINT: &str =
     "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest";
 
-pub fn parse_flex_statement_response(
-    text: &str,
-) -> Result<FlexStatementResponse, serde_xml_rs::Error> {
-    serde_xml_rs::from_str(text)
-}
-
 #[derive(Debug, PartialEq)]
 enum IBFlexError {
     ParseError,

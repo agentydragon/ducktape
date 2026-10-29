@@ -24,10 +24,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":session_paths",
-        "@pypi//pytest",
-    ],
+    deps = ["@pypi//pytest"],
 )
 
 py_test(

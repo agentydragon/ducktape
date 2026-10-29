@@ -69,10 +69,6 @@ class ClaudeHarness:
     async def interrupt(self, *, cancel_queued: bool, reason: str = "capture") -> ClaudeReceipt:
         return await self.request(driver.interrupt(cancel_queued=cancel_queued, reason=reason))
 
-    async def signal_interrupt(self, *, cancel_queued: bool, reason: str) -> None:
-        """Send an interrupt without waiting for Claude's control acknowledgement."""
-        await self.transport.send(driver.interrupt(cancel_queued=cancel_queued, reason=reason))
-
     async def set_model(self, model: str) -> ClaudeReceipt:
         return await self.request(driver.set_model(model))
 

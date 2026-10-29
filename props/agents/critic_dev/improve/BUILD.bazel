@@ -50,6 +50,7 @@ py_test(
         "//props:conftest",
         "//props/agents:conftest",
         "//props/agents/critic_dev/testing:mocks",
+        "//props/core:agent_types",
         "//props/db:database",
         "//props/db:models",
         "//props/testing:constants",
