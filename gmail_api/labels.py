@@ -5,7 +5,7 @@ See: https://developers.google.com/gmail/api/reference/rest/v1/users.labels
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 
@@ -61,12 +61,6 @@ class PatchLabelRequest(BaseModel):
     name: str | None = None
     label_list_visibility: LabelListVisibility | None = None
     message_list_visibility: MessageListVisibility | None = None
-
-
-class LabelsListResponse(BaseModel):
-    """Response body of `users.labels.list`."""
-
-    labels: list[GmailLabel] = Field(default_factory=list)
 
 
 class SystemLabel(StrEnum):
