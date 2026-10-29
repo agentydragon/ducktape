@@ -8,7 +8,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from email.message import Message
 from html.parser import HTMLParser
-from http.client import HTTPResponse
+from typing import IO
 
 DEFAULT_SSID = "ez Share"
 DEFAULT_WIFI_PASSWORD = "88888888"
@@ -23,7 +23,7 @@ class RestoreError(Exception):
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(
-        self, req: urllib.request.Request, fp: HTTPResponse, code: int, msg: str, headers: Message, newurl: str
+        self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str, headers: Message, newurl: str
     ) -> None:
         return None
 
