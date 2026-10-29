@@ -48,6 +48,7 @@ py_library(
         ":native_artifacts",
         ":ollama_warmup",
         ":scripted_upstream",
+        "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",

@@ -27,9 +27,10 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.app.testing.client import Client
+from agentplane.crd_group import GROUP
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import SANDBOX_LABEL, OperatingMode
+from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import native_artifacts, scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from util.net import Listener
@@ -299,7 +300,7 @@ async def _write_cleanup_diagnostics(client: Client, name: str, last_snapshot: A
     resource, lease, pods, controller_logs, gateway_logs = await asyncio.gather(
         kubectl("get", "sandbox", name, "-o", "json"),
         kubectl("get", "lease", f"{name}-runner", "-o", "json"),
-        kubectl("get", "pods", "-l", f"{SANDBOX_LABEL}={name}", "-o", "json"),
+        kubectl("get", "pods", "-l", f"{GROUP}/sandbox={name}", "-o", "json"),
         kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
         kubectl("logs", "deployment/runner-gateway", "--all-pods=true", "--tail=100", "--since=10m"),
     )
