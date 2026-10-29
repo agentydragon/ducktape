@@ -182,9 +182,9 @@ jobs:
           # 8-unit (~20 GiB RAM) shape for the analysis-heavy sweep; recycling
           # and the 100 GiB disk request remain enabled.
           compute_units: 8
-          # Rotate the runner/snapshot namespace after the exhausted workspace;
-          # recycling remains enabled for subsequent full //... runs.
-          runner_recycling_key: ducktape-bazel-ci-v3
+          # Start a fresh recyclable runner/snapshot namespace after Bazel's
+          # profiler crashed while reporting regressed elapsed time.
+          runner_recycling_key: ducktape-bazel-ci-v4
           run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build,race
           bazel_invocation_ids: ${{ steps.invocation-ids.outputs.test }},${{ steps.invocation-ids.outputs.build }},${{ steps.invocation-ids.outputs.race }}
