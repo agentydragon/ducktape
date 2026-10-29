@@ -534,6 +534,20 @@ without a spec-assigned name are not changed by this cross-chunk pass.
 
 ## Runtime loading contract
 
+`static-imports` is a read-only query over the original parsed source chunks.
+It reads the authored input list and prepares each chunk once, then follows only
+`OrdinaryEsm` static requests resolved to an analyzed chunk entry file. It does
+not require selectors, the realizability gate, or materialization to succeed.
+For `--from` and each `--target`, JSON reports strict nonempty shortest request
+paths in both directions and a separate strict target self-cycle. `same_chunk`
+records zero-edge identity; a `null` path means no path in this resolved
+ordinary-static-request subgraph. Each witness edge names the source chunk,
+literal specifier, resolver kind, target file, and target chunk. Unresolved,
+nonordinary, missing-target, and nonentry requests in the traversed source
+closures are counted as request issues, with a bounded displayed prefix.
+Neither a path nor its absence asserts cache residency, runtime reachability,
+module purity, or loader behavior.
+
 Flat and tree specs accept `execution_runtime: generic` (the default) or
 `execution_runtime: native_browser_esm`. The latter declares execution through
 the browser's native ESM loader, with no synchronous host API that can obtain

@@ -14,6 +14,21 @@ JSON-on-stdout / readable-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
+To inspect original static ESM loading paths before a spec passes validation,
+run `debundle static-imports` with the same flat-spec or tree inputs as `run`:
+
+```bash
+debundle static-imports --spec spec.yaml --from main \
+  --target dependency --target other --format json
+```
+
+The command reports strict request-edge paths from `main` to each target,
+back to `main`, and from each target back to itself. A null witness means no
+path through resolved ordinary static ESM requests; `request_issues` identifies
+unresolved, nonordinary, or nonentry requests in the inspected closures.
+`--max-issues` limits displayed issues while `request_issue_count` retains the
+total. This is source-graph evidence, not a cache or runtime verdict.
+
 The README's [task chooser](../README.md#choose-a-task) links to the recipe for
 inspection, extraction, reorganization, naming, selector stabilization, gate
 diagnosis, or delegation.

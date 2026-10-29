@@ -17,6 +17,7 @@ mod selector_explanation;
 mod selector_input;
 mod snapshot;
 mod spec_commands;
+mod static_imports;
 
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -360,6 +361,9 @@ enum DebundleCommand {
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
     InspectSource(InspectSourceArgs),
+    /// Query original chunks' resolved ordinary static ESM import paths.
+    #[command(name = "static-imports")]
+    StaticImports(static_imports::StaticImportsArgs),
     /// List SCCs in the module-quotient graph.
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's source_unit.
@@ -486,6 +490,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         DebundleCommand::InspectSource(args) => {
             inspection_commands::run_inspect_source(args, source_context.as_ref())
         }
+        DebundleCommand::StaticImports(args) => static_imports::run(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => spec_commands::run(args),
@@ -526,6 +531,7 @@ fn command_output_format(command: &DebundleCommand) -> OutputFormat {
         DebundleCommand::GraphSummary(args) => args.format,
         DebundleCommand::Describe(args) => args.format,
         DebundleCommand::InspectSource(args) => args.format,
+        DebundleCommand::StaticImports(args) => args.format,
         _ => None,
     };
     OutputFormat::resolve(format)
@@ -642,6 +648,7 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
         DebundleCommand::GraphSummary(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Describe(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::InspectSource(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::StaticImports(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Scc(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Cluster(args) => Some(OutputFormat::resolve(args.format)),
         _ => None,
