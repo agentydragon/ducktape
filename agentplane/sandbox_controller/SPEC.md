@@ -155,6 +155,10 @@ A foreign same-name Service blocks new workload starts.
   acknowledged each seal, so history holds every Session through its seal before its state goes.
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
   recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
+- The current validated incarnation stays published while it seals, including during certificate
+  renewal, so the Gateway can continue reporting quiesce progress. A replacement must bind its own
+  credential before publication. A restart needed for sealing uses the same certificate readiness
+  gate and credential rotation as an ordinary start; deletion never reuses the previous workload's key.
 - Then the Pod or VM is deleted, then, once it and any VMI are gone, the controller removes old
   runner Certificate resources and their cert-manager-generated TLS Secrets. The finalizer clears
   and the PVC goes with the Sandbox only after that cleanup finishes.

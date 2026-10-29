@@ -883,6 +883,9 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed the Pod or the state PVC before the Sessions were sealed")
 	}
+	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.Name != sandboxName || incarnation.UID != "uid-pod" {
+		t.Fatalf("deletion dropped the live runner route before it sealed: incarnation=%v", incarnation)
+	}
 	if reason := runningReason(t, c); reason != "Quiescing" {
 		t.Errorf("Running reason = %s, want Quiescing", reason)
 	}
@@ -1230,10 +1233,39 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 		t.Fatal("deletion did not keep the Pod and state PVC behind the failed quiesce")
 	}
 
-	// A restarted runner gets a new Pod UID and must be asked immediately, even within the old deadline.
+	// A replacement runner has a fresh credential, matching TLS Secret mount, and bound Pod UID; it
+	// must be asked immediately, even within the old deadline.
 	pod := getPod(t, c)
-	pod.UID = "uid-next"
-	if err := c.Update(context.Background(), pod); err != nil {
+	sandbox := getSandbox(t, c)
+	ensureAnnotations(sandbox)
+	sandbox.Annotations[RunnerCredentialIDAnnotation] = runnerCredentialTestID
+	sandbox.Annotations[RunnerCredentialKindAnnotation] = "pod"
+	sandbox.Annotations[RunnerCredentialPodUIDAnnotation] = "uid-next"
+	sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation] = runnerCredentialTestID
+	if err := c.Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID); err != nil {
+		t.Fatal(err)
+	} else if pending != nil {
+		if pending, err = r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID); err != nil || pending != nil {
+			t.Fatalf("replacement runner certificate was not ready before Pod creation: pending=%v err=%v", pending, err)
+		}
+	}
+	template, blocked, err := r.template(context.Background(), sandbox)
+	if err != nil || blocked != nil {
+		t.Fatalf("replacement template: blocked=%v err=%v", blocked, err)
+	}
+	replacement, blocked := render(sandbox, template, runnerCredentialTestID)
+	if blocked != nil {
+		t.Fatalf("render replacement Pod: %v", blocked)
+	}
+	replacement.UID = "uid-next"
+	replacement.OwnerReferences = pod.OwnerReferences
+	if err := c.Delete(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Create(context.Background(), replacement); err != nil {
 		t.Fatal(err)
 	}
 	var lease coordinationv1.Lease
@@ -1251,6 +1283,9 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 	}
 	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-next" {
 		t.Fatalf("new runner attempt = %v, want uid-next", attempt)
+	}
+	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.UID != "uid-next" {
+		t.Fatalf("bound replacement Pod route = %v, want UID uid-next (Running reason = %s)", incarnation, runningReason(t, c))
 	}
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed state before the new runner completed quiesce")

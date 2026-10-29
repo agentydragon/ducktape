@@ -122,6 +122,13 @@ func (w workload) incarnation() *corev1.Pod {
 	return w.launcher
 }
 
+func previouslyPublishedRunnerIncarnation(sandbox *sandboxapi.Sandbox, w workload) bool {
+	incarnation := w.incarnation()
+	previous := sandbox.Status.Incarnation
+	return incarnation != nil && incarnation.UID != "" && previous != nil &&
+		previous.Name == incarnation.Name && previous.UID == string(incarnation.UID)
+}
+
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	var sandbox sandboxapi.Sandbox
 	if err := r.Get(ctx, req.NamespacedName, &sandbox); err != nil {
@@ -148,7 +155,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w)
+	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -253,7 +260,11 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	if needsQuiesce {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
-		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
+		w, credentialGate, err := r.ensureRunnerCredential(ctx, sandbox, w, true)
+		if err != nil {
+			return w, nil, err
+		}
+		w, blocked, err := r.converge(ctx, sandbox, w, true, credentialGate)
 		if err != nil || blocked != nil {
 			return w, blocked, err
 		}

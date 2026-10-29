@@ -174,7 +174,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm, vmi).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
-	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi})
+	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,12 +248,151 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm, vmi, certificate, runnerCredentialTestSecret(sandbox, runnerCredentialTestID)).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
-	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi})
+	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil || pending != nil {
 		t.Fatalf("accepted VMI: pending=%v err=%v", pending, err)
 	}
 	if !w.runnerCredentialAccepted || !w.runnerIncarnationPublished {
 		t.Fatalf("matching, certificate-ready VMI was not published: workload=%#v", w)
+	}
+}
+
+func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
+	ctx := context.Background()
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
+		Annotations: map[string]string{
+			RunnerCredentialIDAnnotation:         runnerCredentialTestID,
+			RunnerCredentialKindAnnotation:       "vm",
+			RunnerCredentialLastVMIUIDAnnotation: "vmi-old",
+			RunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
+		},
+	}}
+	halted := kubevirtv1.RunStrategyHalted
+	vm := &kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
+		Annotations: map[string]string{
+			RunnerCredentialIDAnnotation:     runnerCredentialTestID,
+			RunnerCredentialVMIUIDAnnotation: "vmi-old",
+		},
+	}, Spec: kubevirtv1.VirtualMachineSpec{RunStrategy: &halted}}
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm).Build()
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm}, true)
+	if err != nil || pending == nil {
+		t.Fatalf("fresh VM credential should gate restart while cert-manager issues it: pending=%v err=%v", pending, err)
+	}
+	if w.runnerCredentialAccepted || w.runnerIncarnationPublished {
+		t.Fatalf("new VM identity was accepted before a VMI bound it: %#v", w)
+	}
+	var gotVM kubevirtv1.VirtualMachine
+	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &gotVM); err != nil {
+		t.Fatal(err)
+	}
+	newID := gotVM.Annotations[RunnerCredentialIDAnnotation]
+	if !validRunnerCredentialID(newID) || newID == runnerCredentialTestID {
+		t.Fatalf("finalizer restart did not rotate the old VMI credential: %q", newID)
+	}
+	if gotVM.Annotations[RunnerCredentialVMIUIDAnnotation] != "" || gotVM.Annotations[RunnerCredentialLastVMIUIDAnnotation] != "vmi-old" {
+		t.Fatalf("stopped VM lost the prior VMI fence: %#v", gotVM.Annotations)
+	}
+	if gotVM.Spec.RunStrategy == nil || *gotVM.Spec.RunStrategy != kubevirtv1.RunStrategyHalted {
+		t.Fatalf("credential issuance started the VM before readiness: runStrategy=%v", gotVM.Spec.RunStrategy)
+	}
+	var gotSandbox sandboxapi.Sandbox
+	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &gotSandbox); err != nil {
+		t.Fatal(err)
+	}
+	if gotSandbox.Annotations[RunnerCredentialIDAnnotation] != newID {
+		t.Fatalf("Sandbox credential %q does not match VM credential %q", gotSandbox.Annotations[RunnerCredentialIDAnnotation], newID)
+	}
+	_, gate, err := r.converge(ctx, &gotSandbox, w, true, pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gate == nil {
+		t.Fatal("converge discarded the pending certificate gate")
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(vm), &gotVM); err != nil {
+		t.Fatal(err)
+	}
+	if gotVM.Spec.RunStrategy == nil || *gotVM.Spec.RunStrategy != kubevirtv1.RunStrategyHalted {
+		t.Fatal("VM started while its replacement credential was pending")
+	}
+}
+
+func TestDeletingVMRetainsOnlyPreviouslyPublishedLauncher(t *testing.T) {
+	deletionTimestamp := metav1.NewTime(testNow)
+	vm := &kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "sandboxes", Name: "test", UID: "vm-uid", DeletionTimestamp: &deletionTimestamp,
+		Finalizers:  []string{"test.example/finalizer"},
+		Annotations: map[string]string{RunnerCredentialIDAnnotation: runnerCredentialTestID},
+	}}
+	for _, tc := range []struct {
+		name       string
+		launcherID string
+		wantLive   bool
+	}{
+		{name: "current", launcherID: "launcher-current", wantLive: true},
+		{name: "replacement", launcherID: "launcher-replacement", wantLive: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			launcher := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "virt-launcher-test", UID: types.UID(tc.launcherID)}}
+			sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
+				Annotations: map[string]string{RunnerCredentialIDAnnotation: runnerCredentialTestID},
+			}}
+			sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: launcher.Name, UID: "launcher-current"}
+			c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm.DeepCopy()).Build()
+			r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+			w, pending, err := r.ensureVMRunnerCredential(context.Background(), sandbox, workload{vm: vm.DeepCopy(), launcher: launcher}, true)
+			if err != nil || pending != nil {
+				t.Fatalf("deleting VM should not wait on credential mutation: pending=%v err=%v", pending, err)
+			}
+			if w.runnerIncarnationPublished != tc.wantLive {
+				t.Fatalf("published replacement launcher = %v, want %v", w.runnerIncarnationPublished, tc.wantLive)
+			}
+			var gotVM kubevirtv1.VirtualMachine
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(vm), &gotVM); err != nil {
+				t.Fatal(err)
+			}
+			if gotVM.Annotations[RunnerCredentialIDAnnotation] != runnerCredentialTestID {
+				t.Fatalf("deleting VM credential changed to %q", gotVM.Annotations[RunnerCredentialIDAnnotation])
+			}
+		})
+	}
+}
+
+func TestPodCredentialMismatchDoesNotPublishReplacementDuringFinalization(t *testing.T) {
+	ctx := context.Background()
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
+		Annotations: map[string]string{
+			RunnerCredentialIDAnnotation:     runnerCredentialTestID,
+			RunnerCredentialKindAnnotation:   "pod",
+			RunnerCredentialPodUIDAnnotation: "pod-old",
+		},
+	}}
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: sandbox.Name, UID: "pod-old"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "pod-replacement",
+		Labels: map[string]string{
+			sandboxapi.RunnerCredentialLabel: runnerCredentialTestID,
+			sandboxapi.RunnerTransportLabel:  string(sandboxapi.RunnerTransportReverse),
+		},
+	}}
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, pod).Build()
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	w, pending, err := r.ensureRunnerCredential(ctx, sandbox, workload{pod: pod}, true)
+	if err != nil || pending == nil || pending.reason != "RunnerCredentialMismatch" {
+		t.Fatalf("replacement Pod should remain fenced: pending=%v err=%v", pending, err)
+	}
+	if w.runnerIncarnationPublished {
+		t.Fatal("replacement Pod inherited the prior Pod UID's published route")
+	}
+	var gotPod corev1.Pod
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pod), &gotPod); !apierrors.IsNotFound(err) {
+		t.Fatalf("stale replacement Pod was not deleted: %v", err)
 	}
 }
 

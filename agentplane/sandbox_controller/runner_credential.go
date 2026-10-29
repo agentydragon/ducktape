@@ -69,17 +69,17 @@ func newRunnerCredentialID() (string, error) {
 // accepts a running VM incarnation only after its VMI UID has been bound to that credential ID.
 // Every replacement gets a fresh Secret name; changing a Secret mounted by an old runner could
 // otherwise let that process acquire the replacement's identity.
-func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
+func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, needsRunner bool) (workload, *unready, error) {
 	if w.pod != nil {
 		id := w.pod.Labels[sandboxapi.RunnerCredentialLabel]
 		if !validRunnerCredentialID(id) {
-			// Keep a legacy active incarnation visible to the normal quiesce/stop path. A
-			// new Gateway cannot authenticate it without the mTLS credential.
-			w.runnerIncarnationPublished = w.pod.UID != ""
+			// A legacy runner can stay published only while it is the exact incarnation already
+			// recorded in status. A replacement without a credential must never inherit that route.
+			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 			return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued runner credential", w.pod.Name)}, nil
 		}
 		if !validRunnerTransport(w.pod.Labels[sandboxapi.RunnerTransportLabel]) {
-			w.runnerIncarnationPublished = w.pod.UID != ""
+			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 			return w, &unready{reason: "RunnerTransportMissing", message: fmt.Sprintf("Pod %s has no explicit runner transport", w.pod.Name)}, nil
 		}
 		boundID := sandbox.Annotations[RunnerCredentialIDAnnotation]
@@ -107,16 +107,17 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 		}
 		blocked, err := r.ensureRunnerCertificate(ctx, sandbox, id)
 		w.runnerCredentialAccepted = blocked == nil
-		w.runnerIncarnationPublished = w.runnerCredentialAccepted
+		w.runnerIncarnationPublished = w.runnerCredentialAccepted || previouslyPublishedRunnerIncarnation(sandbox, w)
 		return w, blocked, err
 	}
 	if w.vm != nil {
-		return r.ensureVMRunnerCredential(ctx, sandbox, w)
+		return r.ensureVMRunnerCredential(ctx, sandbox, w, needsRunner)
 	}
 	if w.vmi != nil {
+		w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 		return w, &unready{reason: "VMIStopping", message: fmt.Sprintf("VMI %s is still stopping", w.vmi.Name)}, nil
 	}
-	if !sandboxRunning(sandbox) {
+	if !needsRunner {
 		return w, nil, nil
 	}
 	template, blocked, err := r.template(ctx, sandbox)
@@ -158,16 +159,25 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 	return w, nil, nil
 }
 
-func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
+func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, needsRunner bool) (workload, *unready, error) {
 	vm := w.vm
+	if !vm.DeletionTimestamp.IsZero() {
+		// KubeVirt owns a deleting VM. Keep only the exact published launcher in status; never
+		// bind or start a replacement while finalization is underway.
+		w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
+		return w, nil, nil
+	}
 	id := vm.Annotations[RunnerCredentialIDAnnotation]
 	expectedVMIUID := vm.Annotations[RunnerCredentialVMIUIDAnnotation]
 	if !validRunnerCredentialID(id) {
 		// Let an existing legacy incarnation finish through the normal quiesce/stop path before
 		// installing credentials. Silently halting here could discard an active turn.
 		if vmRunning(vm) || w.vmi != nil {
-			w.runnerIncarnationPublished = w.vmi != nil && w.vmi.UID != ""
+			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 			return w, &unready{reason: "RunnerCredentialRequired", message: "runner mTLS credentials are installed after the legacy VM stops"}, nil
+		}
+		if !needsRunner {
+			return w, nil, nil
 		}
 		var err error
 		if id, err = newRunnerCredentialID(); err != nil {
@@ -187,15 +197,19 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		}
 		expectedVMIUID = ""
 	}
+	if w.vmi == nil && !vmRunning(vm) && !needsRunner {
+		return w, nil, nil
+	}
 
 	// A stopped VM starts a new VMI incarnation. Rotate its credential only after the previous VMI
 	// has gone, keeping the old Secret mounted only in that old guest.
-	if sandboxRunning(sandbox) && !vmRunning(vm) && w.vmi == nil && expectedVMIUID != "" {
+	if needsRunner && !vmRunning(vm) && w.vmi == nil && expectedVMIUID != "" {
 		var err error
 		if id, err = newRunnerCredentialID(); err != nil {
 			return w, nil, err
 		}
 		ensureAnnotations(&vm.ObjectMeta)
+		vm.Annotations[RunnerCredentialLastVMIUIDAnnotation] = expectedVMIUID
 		vm.Annotations[RunnerCredentialIDAnnotation] = id
 		vm.Annotations[RunnerCredentialVMIUIDAnnotation] = ""
 		if err := r.Update(ctx, vm); err != nil {
@@ -272,6 +286,11 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 			}
 			expectedVMIUID = string(w.vmi.UID)
 		}
+	}
+	if w.vmi != nil && expectedVMIUID == string(w.vmi.UID) && w.vmi.Labels[sandboxapi.RunnerCredentialLabel] == id {
+		// A pending certificate must not erase the route for the same already-published launcher;
+		// Gateway still validates its live owner chain and credential label on each observation.
+		w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 	}
 
 	if certificateGate != nil {
