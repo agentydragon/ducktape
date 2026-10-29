@@ -109,24 +109,30 @@ func TestOnlyFullCleanWatchEndAdvancesFreshness(t *testing.T) {
 	}
 }
 
-func TestEachFreshnessCycleRequiresAListRun(t *testing.T) {
+func TestConsecutiveCyclesAdvanceFreshnessWithinAListRun(t *testing.T) {
 	first := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	index := &Index{
 		cycles:    map[string]time.Time{},
 		listRuns:  map[string]uint64{},
 		cycleRuns: map[string]uint64{},
 	}
+	index.recordCycle(PolicySetsKind, index.listRun(PolicySetsKind), first)
+	if _, ok := index.cycles[PolicySetsKind]; ok {
+		t.Fatal("cycle before any list recorded freshness")
+	}
 	firstListRun := index.recordList(PolicySetsKind)
 	index.recordCycle(PolicySetsKind, firstListRun, first)
-	index.recordCycle(PolicySetsKind, firstListRun, first.Add(5*time.Second))
-	if got := index.cycles[PolicySetsKind]; !got.Equal(first) {
-		t.Fatalf("cycle without a new list advanced freshness to %s, want %s", got, first)
+	second := first.Add(5 * time.Minute)
+	index.recordCycle(PolicySetsKind, firstListRun, second)
+	if got := index.cycles[PolicySetsKind]; !got.Equal(second) {
+		t.Fatalf("second cycle of the same list run left freshness at %s, want %s", got, second)
 	}
 	secondListRun := index.recordList(PolicySetsKind)
-	second := first.Add(10 * time.Second)
-	index.recordCycle(PolicySetsKind, secondListRun, second)
-	if got := index.cycles[PolicySetsKind]; !got.Equal(second) {
-		t.Fatalf("cycle after a new list advanced freshness to %s, want %s", got, second)
+	third := second.Add(5 * time.Minute)
+	index.recordCycle(PolicySetsKind, secondListRun, third)
+	index.recordCycle(PolicySetsKind, firstListRun, third.Add(time.Second))
+	if got := index.cycles[PolicySetsKind]; !got.Equal(third) {
+		t.Fatalf("cycle from a superseded list run moved freshness to %s, want %s", got, third)
 	}
 }
 

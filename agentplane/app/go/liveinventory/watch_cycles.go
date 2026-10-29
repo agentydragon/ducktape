@@ -116,9 +116,12 @@ func (i *Index) listRun(kind string) uint64 {
 	return i.listRuns[kind]
 }
 
+// recordCycle counts every completed watch cycle. client-go re-watches from the last resourceVersion
+// after a server timeout without relisting, so consecutive cycles share a list run; a cycle that
+// started before any list, or under a list run older than the last recorded one, does not count.
 func (i *Index) recordCycle(kind string, listRun uint64, ended time.Time) {
 	i.mu.Lock()
-	if listRun > i.cycleRuns[kind] {
+	if listRun > 0 && listRun >= i.cycleRuns[kind] {
 		i.cycles[kind] = ended
 		i.cycleRuns[kind] = listRun
 	}

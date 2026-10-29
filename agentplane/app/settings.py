@@ -180,7 +180,7 @@ class Settings(AppSettingsConfig):
     )
     resync_seconds: int = Field(
         default=300,
-        description="Watch lifetime; every kind the live stream pushes is relisted this often, and a "
+        description="Watch lifetime; every kind the live stream pushes renews its watch this often, and a "
         "kind that misses several cycles is what the stream reports as stale.",
     )
     token_audience: str = Field(
