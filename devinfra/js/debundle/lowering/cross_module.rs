@@ -10,8 +10,9 @@ use std::sync::Arc;
 
 use analysis::analysis_inputs::{
     CallableSummary, NativeInputKind, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    NativeOperationInputRef, NativeOperationSelectorProvenance, ResolvedBindingValueInput,
+    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
@@ -34,9 +35,11 @@ use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_match::source_match_claim_member_selectors;
-use spec::{ChunkExportPurity, DependencyGraphOptions};
+use spec::{ChunkExportPurity, DependencyGraphOptions, NativeOperationInputSelector};
 use swc_common::Spanned;
 use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat};
+
+use super::materialize::ResolvedMemberSite;
 
 /// Binding names introduced by an exported declaration (`export function`/
 /// `export const`/`export class`), whose export name equals the local name.
@@ -192,6 +195,7 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
+    pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -208,6 +212,7 @@ pub(super) fn collect_cross_module_imported_purities(
         chunk_analysis_options,
         graph_provenance,
         explicit_binding_destinations,
+        resolved_member_sites,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -457,6 +462,7 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         excluded_chunks,
         chunk_filter,
+        resolved_member_sites,
     )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
@@ -852,6 +858,7 @@ fn resolve_native_operation_inputs(
     graph_provenance: Option<&GraphProvenance>,
     excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
     let mut resolved = BTreeMap::new();
     for (chunk_name, options) in options {
@@ -919,7 +926,7 @@ fn resolve_native_operation_inputs(
                 (
                     index,
                     format!("chunk_analysis_options.{chunk_name}.native_operation_inputs[{index}]"),
-                    &contract.source_match,
+                    contract.selector.clone(),
                     &contract.audited_source_sha256,
                     contract.note.clone(),
                     NativeInputKind::Operation(contract.operation),
@@ -930,7 +937,7 @@ fn resolve_native_operation_inputs(
                     (
                         options.native_operation_inputs.len() + index,
                         format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]"),
-                        &contract.source_match,
+                        NativeOperationInputSelector::SourceMatch(contract.source_match.clone()),
                         &contract.audited_source_sha256,
                         contract.note.clone(),
                         NativeInputKind::CallIdentity(contract.callee),
@@ -940,8 +947,7 @@ fn resolve_native_operation_inputs(
         let mut chunk_inputs = Vec::with_capacity(
             options.native_operation_inputs.len() + options.native_call_identity_inputs.len(),
         );
-        for (input_index, request_id, source_match, audited_source_sha256, note, operation) in
-            contracts
+        for (input_index, request_id, selector, audited_source_sha256, note, operation) in contracts
         {
             ensure!(
                 audited_source_sha256.len() == 64
@@ -956,50 +962,92 @@ fn resolve_native_operation_inputs(
                 source.sha256,
                 audited_source_sha256
             );
-            ensure!(
-                source_match.bindings.len() == 1,
-                "{request_id}.source_match must select exactly one declared binding"
-            );
-            let spec::SourceMatchBinding::Local(local) = &source_match.bindings[0] else {
-                bail!("{request_id}.source_match does not accept detailed name/rename payloads");
-            };
-            let mut selectors = source_match_claim_member_selectors(&request_id, source_match)?;
-            ensure!(
-                selectors.len() == 1,
-                "{request_id}.source_match must produce exactly one selector"
-            );
-            let selector = selectors.pop().expect("one selector was checked");
-            ensure!(
-                selector
-                    .parsed_selector
-                    .declared_binding_names()
-                    .iter()
-                    .any(|name| name == local),
-                "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
-            );
-            let selector_module = spec_resolution::spec_module(
-                format!("native_operation_input_{input_index}"),
-                vec![spec_resolution::member_from_source_match(
-                    selector.export_name,
-                    selector.parsed_selector,
-                )],
-                Vec::new(),
-            );
-            let resolution = selector_chunk.resolve(&[selector_module])?;
-            let outcome = resolution
-                .outcome(0, EntityIndex::Member(0))
-                .with_context(|| {
-                    format!("{request_id}.source_match produced no selector outcome")
-                })?;
-            let (body_index, selected_binding) = match &outcome.outcome {
-                SelectorOutcome::Resolved {
-                    body_index,
-                    binding: Some(binding),
-                    ..
-                } => (*body_index, binding.clone()),
-                other => bail!(
-                    "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
-                ),
+            let (body_index, selected_binding, selector_provenance) = match selector {
+                NativeOperationInputSelector::SourceMatch(source_match) => {
+                    ensure!(
+                        source_match.bindings.len() == 1,
+                        "{request_id}.source_match must select exactly one declared binding"
+                    );
+                    let spec::SourceMatchBinding::Local(local) = &source_match.bindings[0] else {
+                        bail!(
+                            "{request_id}.source_match does not accept detailed name/rename payloads"
+                        );
+                    };
+                    let mut selectors =
+                        source_match_claim_member_selectors(&request_id, &source_match)?;
+                    ensure!(
+                        selectors.len() == 1,
+                        "{request_id}.source_match must produce exactly one selector"
+                    );
+                    let selector = selectors.pop().expect("one selector was checked");
+                    ensure!(
+                        selector
+                            .parsed_selector
+                            .declared_binding_names()
+                            .iter()
+                            .any(|name| name == local),
+                        "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
+                    );
+                    let selector_module = spec_resolution::spec_module(
+                        format!("native_operation_input_{input_index}"),
+                        vec![spec_resolution::member_from_source_match(
+                            selector.export_name,
+                            selector.parsed_selector,
+                        )],
+                        Vec::new(),
+                    );
+                    let resolution = selector_chunk.resolve(&[selector_module])?;
+                    let outcome =
+                        resolution
+                            .outcome(0, EntityIndex::Member(0))
+                            .with_context(|| {
+                                format!("{request_id}.source_match produced no selector outcome")
+                            })?;
+                    let (body_index, binding) = match &outcome.outcome {
+                        SelectorOutcome::Resolved {
+                            body_index,
+                            binding: Some(binding),
+                            ..
+                        } => (*body_index, binding.clone()),
+                        other => bail!(
+                            "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+                        ),
+                    };
+                    (
+                        body_index,
+                        binding,
+                        NativeOperationSelectorProvenance::SourceMatch(source_match),
+                    )
+                }
+                NativeOperationInputSelector::ResolvedMember(member) => {
+                    let sites = resolved_member_sites
+                        .get(&(member.module.clone(), member.name.clone()))
+                        .with_context(|| {
+                            format!("{request_id}.resolved_member names no logical module member")
+                        })?;
+                    let mut provider_sites = sites
+                        .iter()
+                        .filter(|site| site.provider_chunk == *chunk_name);
+                    let site = provider_sites.next().with_context(|| {
+                        format!(
+                            "{request_id}.resolved_member belongs to another provider, not {chunk_name}"
+                        )
+                    })?;
+                    ensure!(
+                        provider_sites.next().is_none(),
+                        "{request_id}.resolved_member is ambiguous in provider {chunk_name}"
+                    );
+                    let declaration = site.declaration.as_ref().with_context(|| {
+                        format!(
+                            "{request_id}.resolved_member has no unique original local declaration"
+                        )
+                    })?;
+                    (
+                        declaration.body_index,
+                        declaration.binding.clone(),
+                        NativeOperationSelectorProvenance::ResolvedMember(member),
+                    )
+                }
             };
             let selected_statement_span = facts
                 .body
@@ -1015,7 +1063,7 @@ fn resolve_native_operation_inputs(
             let evidence = NativeOperationInputEvidence {
                 reference,
                 spec_location: format!("{}:{request_id}", spec_path.display()),
-                source_match: source_match.clone(),
+                selector: selector_provenance,
                 operation,
                 source_path: source.source_path.to_string_lossy().into_owned(),
                 parser_input_file: parser_input_file.to_string_lossy().into_owned(),

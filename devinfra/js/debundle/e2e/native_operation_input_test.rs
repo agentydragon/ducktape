@@ -20,11 +20,13 @@ fn source_hash(source: &str) -> String {
 
 fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [marker]\n",
-            declaration.trim()
-        ))
-        .expect("valid declaration source match"),
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [marker]\n",
+                declaration.trim()
+            ))
+            .expect("valid declaration source match"),
+        ),
         operation: NativeOperationKind::Symbol,
         audited_source_sha256: source_hash(source),
         note: Some("Neutral fixture audits this one initialization call.".to_string()),
@@ -45,11 +47,13 @@ fn primitive_set_input(source: &str) -> NativeOperationInputContract {
         .find(|line| line.starts_with("const made = new Set("))
         .expect("fixture has a direct Set initializer");
     NativeOperationInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [made]\n",
-            declaration.trim()
-        ))
-        .expect("valid Set declaration source match"),
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [made]\n",
+                declaration.trim()
+            ))
+            .expect("valid Set declaration source match"),
+        ),
         operation: NativeOperationKind::SetFromPrimitiveArray,
         audited_source_sha256: source_hash(source),
         note: Some("Neutral fixture audits this one Set construction site.".to_string()),
@@ -63,11 +67,13 @@ fn selected_set_input(
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [{binding}]\n",
-            declaration.trim()
-        ))
-        .expect("valid Set declaration source match"),
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [{binding}]\n",
+                declaration.trim()
+            ))
+            .expect("valid Set declaration source match"),
+        ),
         operation,
         audited_source_sha256: source_hash(source),
         note: Some("Neutral fixture audits this exact Set operation.".to_string()),
@@ -901,11 +907,13 @@ fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
         };
         let mut input = input_for(source, declaration);
         if selected_name == "selected" {
-            input.source_match = serde_yaml::from_str(&format!(
-                "match: {:?}\nbindings: [selected]\n",
-                declaration.trim()
-            ))
-            .unwrap();
+            input.selector = NativeOperationInputSelector::SourceMatch(
+                serde_yaml::from_str(&format!(
+                    "match: {:?}\nbindings: [selected]\n",
+                    declaration.trim()
+                ))
+                .unwrap(),
+            );
         }
         expect_rejection_containing_all(rejected_opts(source, selected_name, input), &[expected]);
     }

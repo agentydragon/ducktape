@@ -481,12 +481,14 @@ pub struct ValueInputContract {
     pub note: Option<String>,
 }
 
-/// Author premise for one source-selected direct native operation initializer.
+/// Author premise for one exact native operation initializer.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
+#[serde(
+    try_from = "NativeOperationInputWire",
+    into = "NativeOperationInputWire"
+)]
 pub struct NativeOperationInputContract {
-    /// Structural selector for exactly one declared local binding.
-    pub source_match: SourceMatchClaim,
+    pub selector: NativeOperationInputSelector,
     /// Operation whose original native binding the author has audited.
     pub operation: NativeOperationKind,
     /// SHA-256 of the parser input bytes recorded for this provider entry.
@@ -494,6 +496,67 @@ pub struct NativeOperationInputContract {
     /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum NativeOperationInputSelector {
+    SourceMatch(SourceMatchClaim),
+    ResolvedMember(ResolvedMemberSelector),
+}
+
+/// A previously resolved logical member in this provider chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedMemberSelector {
+    pub module: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct NativeOperationInputWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_match: Option<SourceMatchClaim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_member: Option<ResolvedMemberSelector>,
+    operation: NativeOperationKind,
+    audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+impl TryFrom<NativeOperationInputWire> for NativeOperationInputContract {
+    type Error = String;
+
+    fn try_from(wire: NativeOperationInputWire) -> std::result::Result<Self, Self::Error> {
+        let selector = match (wire.source_match, wire.resolved_member) {
+            (Some(source), None) => NativeOperationInputSelector::SourceMatch(source),
+            (None, Some(member)) => NativeOperationInputSelector::ResolvedMember(member),
+            _ => return Err("exactly one of source_match or resolved_member is required".into()),
+        };
+        Ok(Self {
+            selector,
+            operation: wire.operation,
+            audited_source_sha256: wire.audited_source_sha256,
+            note: wire.note,
+        })
+    }
+}
+
+impl From<NativeOperationInputContract> for NativeOperationInputWire {
+    fn from(contract: NativeOperationInputContract) -> Self {
+        let (source_match, resolved_member) = match contract.selector {
+            NativeOperationInputSelector::SourceMatch(source) => (Some(source), None),
+            NativeOperationInputSelector::ResolvedMember(member) => (None, Some(member)),
+        };
+        Self {
+            source_match,
+            resolved_member,
+            operation: contract.operation,
+            audited_source_sha256: contract.audited_source_sha256,
+            note: contract.note,
+        }
+    }
 }
 
 /// Exact source-selected native callee identity, scoped to every synchronous

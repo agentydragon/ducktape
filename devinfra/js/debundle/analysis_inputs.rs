@@ -339,7 +339,7 @@ pub enum NativeInputKind {
 pub struct NativeOperationInputEvidence {
     pub reference: NativeOperationInputRef,
     pub spec_location: String,
-    pub source_match: SourceMatchClaim,
+    pub selector: NativeOperationSelectorProvenance,
     pub operation: NativeInputKind,
     pub source_path: String,
     pub parser_input_file: String,
@@ -348,6 +348,13 @@ pub struct NativeOperationInputEvidence {
     pub declaration_location: Option<SourceLocation>,
     pub initializer_location: Option<SourceLocation>,
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationSelectorProvenance {
+    SourceMatch(SourceMatchClaim),
+    ResolvedMember(spec::ResolvedMemberSelector),
 }
 
 /// Resolved author input for one canonical source binding. Spans and `Id` are
@@ -390,7 +397,7 @@ pub struct SelectedNativeOperationInput {
 pub struct ResolvedNativeOperationInput {
     pub evidence: NativeOperationInputEvidence,
     pub binding: Id,
-    /// Original top-level statement selected by source_match, before the
+    /// Original top-level statement selected by the input, before the
     /// analysis view splits a multi-declarator declaration into source units.
     pub selected_statement_span: Span,
     pub declaration_span: Span,

@@ -9,11 +9,13 @@ const SOURCE_INFERRED: &str = "const sentinel = [1];\nconst before = Math.random
 
 fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [alias]\n",
-            declaration.trim()
-        ))
-        .unwrap(),
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [alias]\n",
+                declaration.trim()
+            ))
+            .unwrap(),
+        ),
         operation: NativeOperationKind::ObjectOwnDataFunctionRead,
         audited_source_sha256: Sha256::digest(source.as_bytes())
             .iter()
@@ -52,6 +54,175 @@ fn node<'a>(graph: &'a Value, name: &str) -> &'a Value {
                 .is_some_and(|bindings| bindings.iter().any(|binding| binding["binding"] == name))
         })
         .unwrap()
+}
+
+fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
+    format!(
+        "var g{suffix} = Object.getOwnPropertyDescriptor;\nvar p{suffix} = Object.defineProperty;\n\
+         var d{suffix} = (decorators, target, key) => {{\n  const desc = g{suffix}(target, key);\n\
+           for (const decorator of decorators) decorator(target, key, desc);\n\
+           p{suffix}(target, key, desc);\n}};\n\
+         class {class} {{ m() {{ return '{role}'; }} }}\n\
+         d{suffix}([], {class}.prototype, 'm', 1);\n"
+    )
+}
+
+fn relational_opts<'a>(source: &'a str, input: NativeOperationInputContract) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "alpha",
+                &[
+                    Member::source_alpha("Alpha", "class Alpha { m() { return 'alpha role'; } }"),
+                    Member::makes_decorate_call("decorate", "Alpha", None, None),
+                    Member::intrinsic_alias("alphaDefine", "defineProperty", "decorate"),
+                    Member::intrinsic_alias("alphaGetter", "getOwnPropertyDescriptor", "decorate"),
+                ],
+            ),
+            logical_module(
+                "beta",
+                &[
+                    Member::source_alpha("Beta", "class Beta { m() { return 'beta role'; } }"),
+                    Member::makes_decorate_call("decorate", "Beta", None, None),
+                    Member::intrinsic_alias("betaDefine", "defineProperty", "decorate"),
+                ],
+            ),
+        ],
+    )
+    .with_native_operation_inputs("static/app", vec![input])
+}
+
+fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {
+    NativeOperationInputContract {
+        selector: NativeOperationInputSelector::ResolvedMember(ResolvedMemberSelector {
+            module: module.to_owned(),
+            name: name.to_owned(),
+        }),
+        operation: NativeOperationKind::ObjectOwnDataFunctionRead,
+        audited_source_sha256: Sha256::digest(source.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        note: Some("One resolved original read is audited.".to_owned()),
+    }
+}
+
+#[test]
+fn resolved_member_certifies_only_the_selected_relational_alias() {
+    let source = format!(
+        "{}{}",
+        decorator_trio("a", "Alpha", "alpha role"),
+        decorator_trio("b", "Beta", "beta role")
+    );
+    let fixture = run_fixture(relational_opts(
+        &source,
+        relational_input(&source, "alpha", "alphaDefine"),
+    ));
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let selected = node(&graph, "pa");
+    let other = node(&graph, "pb");
+    let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
+    assert_eq!(evidence["reference"]["defining_chunk"], "static/app");
+    assert_eq!(evidence["reference"]["input_index"], 0);
+    assert!(
+        evidence["spec_location"]
+            .as_str()
+            .unwrap()
+            .contains("native_operation_inputs[0]")
+    );
+    assert_eq!(
+        evidence["audited_source_sha256"],
+        relational_input(&source, "alpha", "alphaDefine").audited_source_sha256
+    );
+    assert_eq!(
+        selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["selector"]
+            ["resolved_member"]["module"],
+        "alpha"
+    );
+    assert_eq!(
+        selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["selector"]
+            ["resolved_member"]["name"],
+        "alphaDefine"
+    );
+    assert!(
+        other["synchronous_execution"]["native_operation_input_uses"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+    );
+}
+
+#[test]
+fn resolved_member_rejects_stale_hash_and_wrong_reference_or_shape() {
+    let source = format!(
+        "{}{}",
+        decorator_trio("a", "Alpha", "alpha role"),
+        decorator_trio("b", "Beta", "beta role")
+    );
+    let mut stale = relational_input(&source, "alpha", "alphaDefine");
+    stale.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        relational_opts(&source, stale),
+        &["stale audited_source_sha256"],
+    );
+    expect_rejection_containing_all(
+        relational_opts(&source, relational_input(&source, "alpha", "missing")),
+        &["resolved_member names no logical module member"],
+    );
+    expect_rejection_containing_all(
+        relational_opts(&source, relational_input(&source, "alpha", "decorate")),
+        &["unshadowed static Object own-data function read initializer"],
+    );
+}
+
+#[test]
+fn resolved_member_cannot_reference_another_provider_chunk() {
+    const CONSUMER: &str = "import { alias } from './peer.js';\nconsole.log(alias);\n";
+    const PROVIDER: &str = "var alias = Object.defineProperty;\nexport { alias };\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_extra_chunk_logical_modules(&[(
+                "static/peer",
+                vec![logical_module("peer", &[Member::new("alias")])],
+            )])
+            .with_native_operation_inputs(
+                "static/app",
+                vec![relational_input(CONSUMER, "peer", "alias")],
+            ),
+        &["resolved_member belongs to another provider"],
+    );
+}
+
+#[test]
+fn native_input_requires_exactly_one_selector_variant() {
+    let common = "operation: object_own_data_function_read\naudited_source_sha256: ";
+    let hash = "0".repeat(64);
+    let none = format!("{common}{hash}\n");
+    assert!(
+        serde_yaml::from_str::<NativeOperationInputContract>(&none)
+            .unwrap_err()
+            .to_string()
+            .contains("exactly one of source_match or resolved_member")
+    );
+    let both = format!(
+        "{common}{hash}\nsource_match:\n  match: 'var alias = Object.defineProperty;'\n  bindings: [alias]\nresolved_member:\n  module: alpha\n  name: alphaDefine\n"
+    );
+    assert!(
+        serde_yaml::from_str::<NativeOperationInputContract>(&both)
+            .unwrap_err()
+            .to_string()
+            .contains("exactly one of source_match or resolved_member")
+    );
+    let legacy = format!(
+        "{common}{hash}\nsource_match:\n  match: 'var alias = Object.defineProperty;'\n  bindings: [alias]\n"
+    );
+    assert!(matches!(
+        serde_yaml::from_str::<NativeOperationInputContract>(&legacy)
+            .unwrap()
+            .selector,
+        NativeOperationInputSelector::SourceMatch(_)
+    ));
 }
 
 #[test]

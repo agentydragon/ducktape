@@ -164,6 +164,18 @@ pub(super) struct ClaimedLogicalChunk<'a> {
     structural_analysis: StructuralChunkSourceFacts<'a>,
 }
 
+pub(super) struct ResolvedMemberDeclaration {
+    pub(super) binding: String,
+    pub(super) body_index: usize,
+}
+
+pub(super) struct ResolvedMemberSite {
+    pub(super) provider_chunk: String,
+    pub(super) module: String,
+    pub(super) name: String,
+    pub(super) declaration: Option<ResolvedMemberDeclaration>,
+}
+
 /// Prepare one chunk's lowering state and project its eligible selector
 /// requests through the shared spec-resolution service.
 pub(super) fn prepare_logical_chunk(
@@ -347,6 +359,40 @@ pub(super) fn claim_prepared_chunk<'a>(
 }
 
 impl ClaimedLogicalChunk<'_> {
+    pub(super) fn resolved_member_sites(&self) -> Vec<ResolvedMemberSite> {
+        let prepared = &self.prepared;
+        let owned = prepared.builder.owned_binding_destinations();
+        let mut sites = Vec::new();
+        for (request_index, request) in prepared.explicit_requests.iter().enumerate() {
+            for member in &request.members {
+                let site = prepared
+                    .builder
+                    .resolved_binding_for_member(request_index, member)
+                    .and_then(|binding| {
+                        let id = top_level_id(&binding, prepared.runtime_ast.top_level_mark);
+                        if !owned.contains_key(&id) {
+                            return None;
+                        }
+                        let statements = prepared.ast_analysis.declaration_by_name.get(&id)?;
+                        if statements.len() != 1 {
+                            return None;
+                        }
+                        Some(ResolvedMemberDeclaration {
+                            binding,
+                            body_index: statements[0].0,
+                        })
+                    });
+                sites.push(ResolvedMemberSite {
+                    provider_chunk: prepared.context.chunk_id.to_owned(),
+                    module: request.target_path.clone(),
+                    name: member.export_name.clone(),
+                    declaration: site,
+                });
+            }
+        }
+        sites
+    }
+
     pub(super) fn explicit_binding_destinations(&self) -> (&str, HashMap<Id, usize>) {
         (
             self.prepared.context.chunk_id,

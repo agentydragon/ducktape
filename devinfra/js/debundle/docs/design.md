@@ -121,7 +121,11 @@ span and known-write census, but requires only the global `Set` binding slot.
 Its input-dependent shared empty-collection certificate feeds the existing
 local-class construction proof; it does not certify Set methods or grant
 native integrity to other Set sites.
-The `native_operation_inputs` selector and parser-input digest identify one
+The `native_operation_inputs` selector may be a direct `source_match` or a
+reference to one already resolved logical member in the same provider chunk.
+The latter reuses the member's canonical selector result, including relational
+member selectors, and evidence records which selector form was used.
+The selector and parser-input digest identify one
 direct native initializer, while `AnalysisAssumptions` retains its validated
 evidence separately from inferred native identity. Operations include direct
 `Symbol` calls, exact Set constructions, and static `Object` own-data function

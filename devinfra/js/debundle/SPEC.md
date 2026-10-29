@@ -1035,8 +1035,15 @@ chunk_analysis_options:
         note: "The original Symbol data binding is stable during chunk initialization."
 ```
 
-The selector and digest use the same canonical source-match and parser-input
-provenance as `value_inputs`. The operation set accepts `symbol`,
+An input must give exactly one selector: the existing `source_match`, or
+`resolved_member: { module: <logical module path>, name: <public member name> }`.
+The latter refers to an already resolved, unique logical member in the same
+provider chunk and must identify one original local declaration. It reuses the
+member's canonical selector result, including relational selectors; it does
+not resolve another source template. Both forms retain their actual selector
+provenance, parser-input SHA-256, spec location, selected binding and original
+site in the report. The digest uses the same parser-input provenance as
+`value_inputs`. The operation set accepts `symbol`,
 `set_from_primitive_array`, `set_from_set_spread`, and `object_own_data_function_read`.
 The selector must identify one direct top-level simple binding initializer
 whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call

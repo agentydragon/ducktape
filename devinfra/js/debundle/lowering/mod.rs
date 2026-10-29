@@ -403,6 +403,15 @@ pub fn materialize_logical_modules(
         .map(|chunk| chunk.explicit_binding_destinations())
         .map(|(chunk, destinations)| (chunk.to_owned(), destinations))
         .collect();
+    let mut resolved_member_sites = BTreeMap::new();
+    for chunk in &claimed {
+        for site in chunk.resolved_member_sites() {
+            resolved_member_sites
+                .entry((site.module.clone(), site.name.clone()))
+                .or_insert_with(Vec::new)
+                .push(site);
+        }
+    }
     let cross_module_purities = cross_module::collect_cross_module_imported_purities(
         &artifact,
         &artifact_indexes,
@@ -411,6 +420,7 @@ pub fn materialize_logical_modules(
             chunk_analysis_options,
             graph_provenance: options.graph_provenance.as_ref(),
             explicit_binding_destinations: &explicit_binding_destinations,
+            resolved_member_sites: &resolved_member_sites,
         },
         &declared_pure_new,
         &full_swap_chunk_ids,
