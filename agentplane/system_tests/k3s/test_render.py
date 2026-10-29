@@ -43,11 +43,7 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
-            ca_cert="fixture-ca\n",
-            ca_key="fixture-key\n",
-            system_roots="system-roots\n",
-            cluster_ca="cluster-ca\n",
-            runner_ca_cert="runner-ca\n",
+            ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
@@ -65,7 +61,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
             "HTTPRoute",
             "ExternalSecret",
             "Password",
-            "Bundle",
             "ServiceMonitor",
             "PrometheusRule",
             "ResourceQuota",
@@ -74,6 +69,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         for doc in docs
     )
     assert {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Certificate"} == {
+        "test-runner-root",
         "agentplane-runner-ca",
         "agentplane-runner-gateway",
     }
@@ -81,8 +77,12 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
     assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
     assert set(gateway_certificate["spec"]["usages"]) >= {"client auth", "server auth"}
-    trust_bundle = _resource(docs, "ConfigMap", "cluster-internal-ca-bundle")
-    assert trust_bundle["data"]["ca-certificates.crt"] == "runner-ca\n"
+    trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
+    root = _resource(docs, "Certificate", "test-runner-root")
+    assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
+    assert trust_bundle["spec"]["target"]["namespaceSelector"]["matchLabels"] == {
+        "kubernetes.io/metadata.name": fixture.namespace
+    }
     assert not any(
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )

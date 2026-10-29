@@ -34,7 +34,7 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
-from agentplane.system_tests.k3s import block_storage, certificate_issuer, guest_logs, rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.testing import tls
@@ -515,18 +515,13 @@ def running_stack(
         cleanup.callback(raw_block.close)
         cleanup.callback(k3s.stop, process)
         ca_cert, ca_key = _openssl_ca(work)
-        runner_ca = tls.make_ca("test-k3s-runner-root")
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
         mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
         fixture = rendered_fixture.fill(
             fixture,
             rendered_fixture.RuntimeInputs(
-                ca_cert=ca_cert,
-                ca_key=ca_key,
-                system_roots=system_roots,
-                cluster_ca=cluster_ca,
-                runner_ca_cert=runner_ca.cert_pem.decode(),
+                ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca
             ),
             models,
             mcp,
@@ -544,11 +539,15 @@ def running_stack(
             k3s.import_images(infrastructure_images, timeline)
             vm_sandboxes.install(k3s.kubectl, releases)
             timeline.mark("KubeVirt and Kyverno applied")
+        cert_manager, trust_manager = certificates.releases()
+        cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
+        k3s.import_images(certificates.images(cert_manager + trust_manager), timeline)
+        certificates.install(k3s.kubectl, cert_manager, trust_manager)
+        timeline.mark("cert-manager and trust-manager ready")
         k3s.import_images(fixture_images, timeline)
         timeline.mark("fixture images imported" if guest_images else "images imported")
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
-        certificate_issuer.FixtureCertificateIssuer.install_crds(k3s.kubectl)
         if fixture.vm_sandboxes:
             vm_sandboxes.wait_for_apis(k3s.kubectl)
         timeline.mark("CRDs applied")
@@ -556,27 +555,14 @@ def running_stack(
         namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
         rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-        cert_issuer = cleanup.enter_context(certificate_issuer.FixtureCertificateIssuer(str(k3s.kubeconfig), runner_ca))
         if fixture.vm_sandboxes:
             k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(raw_block.prepare()))
             timeline.mark("raw block PVs applied")
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
         timeline.mark("manifests applied")
-        for certificate in ("agentplane-runner-ca", "agentplane-runner-gateway"):
-            cert_ready = k3s.kubectl(
-                "wait",
-                "--for=condition=Ready",
-                f"certificate/{certificate}",
-                "-n",
-                fixture.namespace,
-                "--timeout=60s",
-                check=False,
-            )
-            if "condition met" not in cert_ready:
-                cert_issuer.check()
-                raise RuntimeError(f"fixture Certificate {certificate} did not become Ready: {cert_ready}")
-        cert_issuer.check()
+        certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
+        timeline.mark("runner certificates issued and trust distributed")
         if guest_images:
             # Both guest images are used only by Sandboxes the test creates after this stack is ready.
             k3s.import_images(guest_images, timeline)

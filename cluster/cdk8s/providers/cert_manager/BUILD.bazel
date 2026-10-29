@@ -15,7 +15,10 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager",
     module_name = "cert_manager_crds",
     module_path = "io/cert_manager",
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
 )
 
 cdk8s_import(
@@ -24,7 +27,10 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager/trust",
     module_name = "trust_manager_crds",
     module_path = "io/cert_manager/trust",
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
 )
 
 cdk8s_import(
@@ -33,7 +39,10 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager",
     module_name = "cert_manager_clusterissuer_crds",
     module_path = "io/cert_manager",
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
 )
 
 cdk8s_import(
@@ -48,7 +57,10 @@ cdk8s_import(
 py_library(
     name = "cert_manager_certificate",
     srcs = ["certificate.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":certificate",
         "@pypi//cdk8s",
@@ -59,7 +71,10 @@ py_library(
 py_library(
     name = "cluster_issuer",
     srcs = ["cluster_issuer.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":clusterissuer",
         "@pypi//cdk8s",
@@ -81,7 +96,10 @@ py_library(
 py_library(
     name = "cert_manager_bundle",
     srcs = ["bundle.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":bundle",
         "@pypi//cdk8s",

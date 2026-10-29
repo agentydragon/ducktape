@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from typing import Any
 from uuid import UUID, uuid4
@@ -102,6 +103,16 @@ async def _ready_certificate(
     assert secret["metadata"]["annotations"]["cert-manager.io/certificate-name"] == name
     assert secret["metadata"]["labels"][_SANDBOX_LABEL] == sandbox_name
     assert secret["metadata"]["labels"][_RUNNER_CREDENTIAL_LABEL] == credential_id
+    requests = json.loads(await kubectl("get", "certificaterequests", "-o", "json"))["items"]
+    issued = [
+        request
+        for request in requests
+        if any(owner["uid"] == certificate["metadata"]["uid"] for owner in request["metadata"]["ownerReferences"])
+        and any(c["type"] == "Ready" and c["status"] == "True" for c in request.get("status", {}).get("conditions", []))
+    ]
+    assert len(issued) == 1
+    assert any(c["type"] == "Approved" and c["status"] == "True" for c in issued[0]["status"]["conditions"])
+    assert base64.b64decode(issued[0]["status"]["certificate"]) == base64.b64decode(secret["data"]["tls.crt"])
 
 
 async def _wait_suspended(client: Client, name: str) -> None:
@@ -121,6 +132,47 @@ async def _open_agent(client: Client, name: str, harness: runner_pb2.Harness, mo
     agent = await Agent.open(client, sandbox=name, harness=harness, model=model_name)
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent
+
+
+async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
+    name = f"test-reissue-{uuid4().hex[:8]}"
+    await kubectl(
+        "apply",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": {"name": name},
+            "spec": {
+                "secretName": name,
+                "issuerRef": {"name": "agentplane-runner-ca", "kind": "Issuer"},
+                "uris": [f"spiffe://agentplane/test-reissue/{name}"],
+                "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Always"},
+                "usages": ["digital signature", "client auth", "server auth"],
+            },
+        },
+    )
+    await kubectl("wait", "--for=condition=Ready", f"certificate/{name}", f"--timeout={REQUEST_SECONDS}s")
+    original = json.loads(await kubectl("get", "secret", name, "-o", "json"))
+    certificate = json.loads(await kubectl("get", "certificate", name, "-o", "json"))
+    revision = certificate["status"]["revision"]
+    await kubectl("delete", "secret", name, "--wait=false")
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(REQUEST_SECONDS),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            encoded = await kubectl("get", "secret", name, "--ignore-not-found", "-o", "json")
+            assert encoded
+            replacement = json.loads(encoded)
+            assert replacement["metadata"]["uid"] != original["metadata"]["uid"]
+            certificate = json.loads(await kubectl("get", "certificate", name, "-o", "json"))
+            assert certificate["status"]["revision"] > revision
+            assert any(c["type"] == "Ready" and c["status"] == "True" for c in certificate["status"]["conditions"])
+    assert replacement["data"]["tls.crt"] != original["data"]["tls.crt"]
 
 
 @pytest.mark.scripted_model

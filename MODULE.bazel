@@ -306,6 +306,38 @@ oci.pull(
     tag = "18.6-minimal-trixie",
 )
 
+# Bare-k3s PKI fixture: install upstream cert-manager and trust-manager releases
+# from pinned manifests/chart, with their exact OCI images already imported into
+# containerd before either operator starts.
+oci.pull(
+    name = "cert_manager_controller",
+    digest = "sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8",
+    image = "quay.io/jetstack/cert-manager-controller",
+    platforms = ["linux/amd64"],
+    tag = "v1.21.2",
+)
+oci.pull(
+    name = "cert_manager_webhook",
+    digest = "sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae",
+    image = "quay.io/jetstack/cert-manager-webhook",
+    platforms = ["linux/amd64"],
+    tag = "v1.21.2",
+)
+oci.pull(
+    name = "cert_manager_cainjector",
+    digest = "sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562",
+    image = "quay.io/jetstack/cert-manager-cainjector",
+    platforms = ["linux/amd64"],
+    tag = "v1.21.2",
+)
+oci.pull(
+    name = "trust_manager",
+    digest = "sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17",
+    image = "quay.io/jetstack/trust-manager",
+    platforms = ["linux/amd64"],
+    tag = "v0.25.0",
+)
+
 # Bare-k3s fixture: the Dex and `mcp-everything` images
 # (//agentplane/system_tests/k3s:{dex,mcp_fixture_servers}) for MCP scenarios.
 oci.pull(
@@ -473,7 +505,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
+use_repo(oci, "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -927,6 +959,44 @@ use_repo(crate, "crates")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Bare-k3s PKI fixture inputs. cert-manager's release bundle is the upstream
+# complete installation manifest; trust-manager has no release YAML, so Bazel
+# renders its tagged source chart with this pinned Helm binary.
+http_file(
+    name = "cert_manager_v1_21_2_release",
+    downloaded_file_path = "cert-manager.yaml",
+    sha256 = "e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f",
+    urls = ["https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml"],
+)
+
+http_archive(
+    name = "trust_manager_chart_v0_25_0",
+    build_file_content = '''
+filegroup(
+    name = "chart_files",
+    srcs = glob(["deploy/charts/trust-manager/**"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "chart_yaml",
+    srcs = ["deploy/charts/trust-manager/Chart.yaml"],
+    visibility = ["//visibility:public"],
+)
+''',
+    sha256 = "e4f05f49c662efa7c1df3a333d8b812f2972fbb8701352bc6607ae4120034a05",
+    strip_prefix = "trust-manager-0.25.0",
+    urls = ["https://github.com/cert-manager/trust-manager/archive/refs/tags/v0.25.0.tar.gz"],
+)
+
+http_archive(
+    name = "helm_3_20_2_linux_amd64",
+    build_file_content = 'exports_files(["helm"], visibility = ["//visibility:public"])',
+    sha256 = "258e830a9e613c8a7a302d6059b4bb3b9758f2f3e1bb8ea0d707ce10a9a72fea",
+    strip_prefix = "linux-amd64",
+    urls = ["https://get.helm.sh/helm-v3.20.2-linux-amd64.tar.gz"],
+)
 
 # Exact runtime for Debundle's version-scoped Bun host-timing regressions.
 # Baseline x64 runs on RBE workers without requiring AVX2.

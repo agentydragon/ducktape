@@ -1,0 +1,12 @@
+replicaCount: 1
+
+defaultPackage:
+  enabled: false
+
+app:
+  trust:
+    namespace: cert-manager
+  webhook:
+    tls:
+      helmCert:
+        enabled: false

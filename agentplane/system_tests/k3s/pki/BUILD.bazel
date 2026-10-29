@@ -1,0 +1,59 @@
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+
+package(default_testonly = True)
+
+_LAYOUTS = {
+    "cert_manager_controller": "@cert_manager_controller_linux_amd64",
+    "cert_manager_webhook": "@cert_manager_webhook_linux_amd64",
+    "cert_manager_cainjector": "@cert_manager_cainjector_linux_amd64",
+    "trust_manager": "@trust_manager_linux_amd64",
+}
+
+[
+    oci_layout_rloc(
+        name = name + "_layout",
+        image = image,
+        visibility = ["//agentplane/system_tests/k3s:__pkg__"],
+    )
+    for name, image in _LAYOUTS.items()
+]
+
+filegroup(
+    name = "all_image_layouts",
+    srcs = [":" + name + "_layout" for name in _LAYOUTS],
+    visibility = ["//agentplane/system_tests/k3s:__pkg__"],
+)
+
+genrule(
+    name = "cert_manager_install_yaml",
+    srcs = ["@cert_manager_v1_21_2_release//file"],
+    outs = ["cert-manager.yaml"],
+    cmd = "cp $(location @cert_manager_v1_21_2_release//file) $@",
+    visibility = [
+        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
+    ],
+)
+
+genrule(
+    name = "trust_manager_install_yaml",
+    srcs = [
+        "trust-manager-values.yaml",
+        "@trust_manager_chart_v0_25_0//:chart_files",
+        "@trust_manager_chart_v0_25_0//:chart_yaml",
+    ],
+    outs = ["trust-manager.yaml"],
+    cmd = """
+chart_manifest="$(location @trust_manager_chart_v0_25_0//:chart_yaml)"
+chart_dir="$${chart_manifest%/Chart.yaml}"
+$(location @helm_3_20_2_linux_amd64//:helm) template trust-manager "$${chart_dir}" \\
+  --namespace cert-manager \\
+  --values $(location trust-manager-values.yaml) \\
+  --include-crds > "$@"
+""",
+    tools = ["@helm_3_20_2_linux_amd64//:helm"],
+    visibility = [
+        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests/k3s:__pkg__",
+    ],
+)

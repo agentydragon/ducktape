@@ -64,13 +64,21 @@ through the shared construct. MCP fixture stacks add the edge OAuth Secret and D
 One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
-the service-owned databases. Unsupported Cilium, Gateway API, Kyverno, Prometheus, cert-manager and External
-Secrets resources are omitted during construction. The chart instantiates the Go Runner Gateway
+the service-owned databases. Unsupported Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
+construction. VM stacks install Kyverno for the launcher relay. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
 Service names remain. A Goose init container runs before the Go server container and uses the
 Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so no action downloads K3s at runtime.
+
+Every stack installs real cert-manager and trust-manager from pinned upstream manifests/charts and
+Bazel-pulled OCI layouts. Startup probes admission through both webhooks before applying the fixture.
+A self-signed bootstrap ClusterIssuer issues the test root CA; the production runner Certificate/Issuer
+constructs issue the intermediate CA and Gateway leaf. Sandbox Controller creates each runner's
+Certificate. trust-manager distributes the root through a Bundle into the workload namespace;
+startup waits for certificate readiness and Bundle synchronization. Controller logs and PKI resource
+status are retained under `certificates/` in undeclared test outputs.
 
 Node readiness and the appearance of the bundled DNS/storage Deployments share a 180-second
 bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;

@@ -32,6 +32,9 @@ _VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
 _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 
+_CERT_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:cert_manager_install_yaml"
+_TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
+
 def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False, vm_systemd_proof = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
     where it runs, and `name + "_real_model"` when `real_model` is True.
@@ -108,9 +111,13 @@ def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [
         data = [
             fixture,
             K3S_BINARY,
+            _CERT_MANAGER_INSTALL,
+            _TRUST_MANAGER_INSTALL,
         ] + ([runner_layout] if runner_layout != None else []) + layouts + data,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+            "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
+            "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
             "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND": "scripted_model",
             "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + fixture + ")",
             "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),

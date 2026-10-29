@@ -38,9 +38,18 @@ from cdk8s_plus_34 import (
     MemoryResources,
     k8s,
 )
+from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecUsages
 from constructs import Construct
 from more_itertools import one
 from pydantic import AnyHttpUrl
+from trust_manager_crds.io.cert_manager.trust import (
+    BundleSpecSources,
+    BundleSpecSourcesSecret,
+    BundleSpecTarget,
+    BundleSpecTargetConfigMap,
+    BundleSpecTargetNamespaceSelector,
+)
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
@@ -93,6 +102,9 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
@@ -280,26 +292,55 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
     )
 
 
+def _add_runner_root(chart: Chart) -> None:
+    bootstrap = ClusterIssuer(
+        chart,
+        "runner-root-bootstrap",
+        metadata=ApiObjectMetadata(name="test-runner-root-bootstrap"),
+        self_signed=ClusterIssuerSpecSelfSigned(),
+    )
+    root_secret = "test-runner-root"
+    Certificate(
+        chart,
+        "runner-root",
+        metadata=ApiObjectMetadata(name="test-runner-root", namespace="cert-manager"),
+        secret_name=root_secret,
+        common_name="test-k3s-runner-root",
+        is_ca=True,
+        duration="87600h",
+        renew_before="8760h",
+        private_key=CertificatePrivateKey.ecdsa_p256(),
+        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+    )
+    ClusterIssuer(
+        chart,
+        "runner-internal-issuer",
+        # add_runner_certificates uses the production issuer reference.
+        metadata=ApiObjectMetadata(name="cluster-internal-ca"),
+        ca=ClusterIssuerSpecCa(secret_name=root_secret),
+    )
+    Bundle(
+        chart,
+        "runner-trust",
+        metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
+        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+            ),
+        ),
+    )
+
+
 def objects(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    runner_ca_cert: str,
-    models: Models,
-    vm_sandboxes: bool,
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
     env = environment(vm_sandboxes=vm_sandboxes, models=models)
     fixture = build_chart(
-        ca_cert=ca_cert,
-        ca_key=ca_key,
-        system_roots=system_roots,
-        cluster_ca=cluster_ca,
-        runner_ca_cert=runner_ca_cert,
-        models=models,
-        env=env,
+        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
@@ -309,14 +350,7 @@ def objects(
 
 
 def build_chart(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    runner_ca_cert: str,
-    models: Models,
-    env: Environment,
+    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, env: Environment
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
     app_origin = str(env.app.origin)
@@ -331,6 +365,7 @@ def build_chart(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    _add_runner_root(chart)
     add_runner_certificates(chart, env)
     fixture_database.add_database(chart, env)
     app_database_url = (
@@ -590,12 +625,6 @@ def build_chart(
         "fixture-egress-upstream-ca",
         metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},
-    )
-    ConfigMap(
-        chart,
-        "fixture-runner-trust",
-        metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE, namespace=NAMESPACE),
-        data={RUNNER_TRUST_BUNDLE_KEY: runner_ca_cert},
     )
     key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
     add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})
