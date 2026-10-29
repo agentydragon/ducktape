@@ -1,7 +1,10 @@
 """Real central sampling through Gateway, Runner, exec-server and authenticated History."""
 
 import asyncio
+import base64
+import io
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -9,6 +12,7 @@ from uuid import UUID, uuid4
 import grpc
 import pytest
 import pytest_bazel
+from PIL import Image
 
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
@@ -151,9 +155,19 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             "*** Begin Patch\n*** Update File: artifact.txt\n@@\n-before\n+after\n*** End Patch"
                         )
                         + '));\ntext(await tools.exec_command({cmd:"cat artifact.txt"}));'
+                        # The cell reports on the image instead of emitting it: the scripted
+                        # provider accepts at most 1 MiB request bodies.
+                        + '\nconst viewed = await tools.view_image({path:"noise.png"});'
+                        + "\ntext(viewed.image_url.length);\ntext(viewed.image_url.slice(-64));"
                     )
+                    # Incompressible pixels keep the file above the relay's 1 MiB message bound.
+                    noise = io.BytesIO()
+                    Image.frombytes("RGB", (640, 640), os.urandom(640 * 640 * 3)).save(noise, format="PNG")
+                    assert noise.tell() > 1024 * 1024
+                    noise_url = "data:application/octet-stream;base64," + base64.b64encode(noise.getvalue()).decode()
                     async with await endpoint.next() as exchange:
                         assert (tmp_path / "workspace" / "artifact.txt").read_text() == "before"
+                        (tmp_path / "workspace" / "noise.png").write_bytes(noise.getvalue())
                         await exchange.send(
                             *response_stream([CustomToolCall("shell-patch", "exec", code)], model="test-model").events
                         )
@@ -163,6 +177,10 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         ]
                         assert "after" in json.dumps(outputs)
                         assert (tmp_path / "workspace" / "artifact.txt").read_text() == "after\n"
+                        assert [part["text"] for part in outputs[-1]["output"][-2:]] == [
+                            str(len(noise_url)),
+                            noise_url[-64:],
+                        ]
                         await exchange.send(
                             *response_stream([Message("Patched artifact: after")], model="test-model").events
                         )

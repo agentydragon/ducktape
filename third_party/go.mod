@@ -46,6 +46,9 @@ require (
 // Direct dependency for the central sampler's isolated JavaScript host
 require github.com/containerd/cgroups/v3 v3.1.3
 
+// Direct dependency for the central sampler's view_image decoding and resizing
+require golang.org/x/image v0.46.0
+
 // Direct dependencies for Agentplane integration-test fixtures
 require (
 	github.com/moby/moby/client v0.5.1

@@ -315,7 +315,9 @@ func (e *Executor) send(ctx context.Context, value any) error {
 	return e.socket.Send(ctx, data)
 }
 
-func (e *Executor) rpc(ctx context.Context, method string, params any) (json.RawMessage, error) {
+// rpc journals each call as a nested intent. resultEvidence derives the journaled result from
+// the decoded reply object; nil journals the reply as received.
+func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	e.rpcMu.Lock()
 	defer e.rpcMu.Unlock()
 	if e.rpcTimeout > 0 {
@@ -371,6 +373,9 @@ func (e *Executor) rpc(ctx context.Context, method string, params any) (json.Raw
 		if err := decodeProtocolObject(reply.Result, &evidence); err != nil {
 			return nil, fmt.Errorf("exec-server %s result: %w", method, err)
 		}
+		if resultEvidence != nil {
+			evidence = resultEvidence(evidence)
+		}
 		if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
 			return nil, err
 		}
@@ -388,6 +393,8 @@ func (e *Executor) Invoke(ctx context.Context, name string, arguments json.RawMe
 		return e.writeStdin(ctx, arguments)
 	case "apply_patch":
 		return e.applyPatch(ctx, arguments)
+	case "view_image":
+		return e.viewImage(ctx, arguments)
 	default:
 		return nil, fmt.Errorf("unsupported nested tool %q", name)
 	}

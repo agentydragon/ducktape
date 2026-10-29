@@ -2502,6 +2502,7 @@ use_repo(
     "org_golang_x_arch",
     "org_golang_x_crypto",
     "org_golang_x_exp_typeparams",
+    "org_golang_x_image",
     "org_golang_x_net",
     "org_golang_x_oauth2",
     "org_golang_x_sync",
