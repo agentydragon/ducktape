@@ -1312,7 +1312,6 @@ chunk_analysis_options:
             match: "decorate([], Widget.prototype, 'state', 2);"
         b:
           resolved_member: { module: app/settings, name: settings }
-        audited_source_sha256: "<64 hex characters for the parser input>"
         note: "The decorator installs an own property the settings initializer never reads."
 ```
 
@@ -1329,10 +1328,10 @@ that does not resolve, resolves to several source units, or names a member of
 another chunk is a spec error that fails `spec validate` and `run` with a
 diagnostic naming the entry and endpoint (`commuting_statements[<i>].a`). A
 pair whose endpoints are one source unit, and a pair repeating another entry's
-unordered source-unit set, are errors. `audited_source_sha256` is the parser
-input digest of `value_inputs` and `native_operation_inputs`; a stale digest
-fails. When a selector no longer resolves on a new snapshot, validation fails
-like any member's; the premise is never silently kept.
+unordered source-unit set, are errors. An entry carries no parser-input
+digest: the two structural selectors pin the statements. When a selector no
+longer resolves on a new snapshot, validation fails like any member's; the
+premise is never silently kept.
 
 The premise removes only `sequenced` (side-effect ordering) constraining edges
 between the two selected source units. It never removes `eager_use` edges: an

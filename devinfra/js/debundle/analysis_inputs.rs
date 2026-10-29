@@ -469,7 +469,6 @@ pub struct CommutingEndpoint {
 pub struct ResolvedCommutingStatements {
     pub reference: CommutingStatementsRef,
     pub spec_location: String,
-    pub audited_source_sha256: String,
     pub a: CommutingEndpoint,
     pub b: CommutingEndpoint,
     pub note: Option<String>,

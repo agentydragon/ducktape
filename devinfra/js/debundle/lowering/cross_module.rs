@@ -1192,14 +1192,9 @@ fn resolve_commuting_statements(
         let facts = modules
             .get(chunk_name)
             .with_context(|| format!("{prefix} has no analyzed provider"))?;
-        let provenance = graph_provenance
-            .context("commuting statements require graph parser-input provenance")?;
-        let source = provenance
-            .chunk_sources
-            .iter()
-            .find(|entry| entry.chunk_id == *chunk_name)
-            .with_context(|| format!("{prefix} has no parser-input provenance"))?;
-        let spec_path = author_input_spec_path(provenance)?;
+        let spec_path = author_input_spec_path(
+            graph_provenance.context("commuting statements require graph provenance")?,
+        )?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -1211,20 +1206,6 @@ fn resolve_commuting_statements(
         let mut chunk_pairs = Vec::with_capacity(options.commuting_statements.len());
         for (input_index, contract) in options.commuting_statements.iter().enumerate() {
             let request_id = format!("{prefix}[{input_index}]");
-            ensure!(
-                contract.audited_source_sha256.len() == 64
-                    && contract
-                        .audited_source_sha256
-                        .bytes()
-                        .all(|byte| byte.is_ascii_hexdigit()),
-                "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
-            );
-            ensure!(
-                contract.audited_source_sha256 == source.sha256,
-                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
-                source.sha256,
-                contract.audited_source_sha256
-            );
             let a = resolve_source_unit_endpoint(
                 &selector_chunk,
                 facts.body,
@@ -1263,7 +1244,6 @@ fn resolve_commuting_statements(
                     input_index,
                 },
                 spec_location: format!("{}:{request_id}", spec_path.display()),
-                audited_source_sha256: contract.audited_source_sha256.clone(),
                 a,
                 b,
                 note: contract.note.clone(),

@@ -4,17 +4,9 @@
 //! when it is accepted without them.
 
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 const SOURCE: &str = "const registry = [];\nfunction factory(value) { registry.push(value); return value; }\nconst a = factory(1);\nconst b = factory(2);\nvar first = factory(3), second = factory(4);\nregistry.push(0);\nregistry.push(0);\nconsole.log(a, b, first, second, registry.length);\nexport { a, b, factory, first, second };\n";
 const ENTRY: &str = "commuting_statements[0]";
-
-fn digest(source: &str) -> String {
-    Sha256::digest(source.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
 
 fn selector(yaml: &str) -> SourceUnitSelector {
     serde_yaml::from_str(yaml).expect("valid endpoint selector")
@@ -36,11 +28,10 @@ fn member(module: &str, name: &str) -> SourceUnitSelector {
     ))
 }
 
-fn pair(source: &str, a: SourceUnitSelector, b: SourceUnitSelector) -> CommutingStatementsContract {
+fn pair(a: SourceUnitSelector, b: SourceUnitSelector) -> CommutingStatementsContract {
     CommutingStatementsContract {
         a,
         b,
-        audited_source_sha256: digest(source),
         note: Some("Neutral fixture; neither statement observes the other.".to_owned()),
     }
 }
@@ -87,13 +78,8 @@ fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, tokens: &[&str]) {
 #[test]
 fn valid_pairs_resolve_through_every_selector_form() {
     let pairs = vec![
+        pair(declared("const a = factory(1);", "a"), member("all", "b")),
         pair(
-            SOURCE,
-            declared("const a = factory(1);", "a"),
-            member("all", "b"),
-        ),
-        pair(
-            SOURCE,
             anonymous("console.log(a, b, first, second, registry.length);"),
             declared("var first = factory(3), second = factory(4);", "second"),
         ),
@@ -108,7 +94,6 @@ fn unresolved_endpoint_names_the_entry_and_endpoint() {
     expect_rejected(
         || {
             opts(vec![pair(
-                SOURCE,
                 declared("const a = factory(1);", "a"),
                 declared("const missing = factory(9);", "missing"),
             )])
@@ -118,7 +103,6 @@ fn unresolved_endpoint_names_the_entry_and_endpoint() {
     expect_rejected(
         || {
             opts(vec![pair(
-                SOURCE,
                 anonymous("console.log(a, b, first, second, registry.length);"),
                 selector(
                     "source_match:\n  match: \"var first = factory(3), second = factory(4);\"\n  bindings: [first, second]\n",
@@ -134,7 +118,6 @@ fn ambiguous_anonymous_endpoint_is_rejected() {
     expect_rejected(
         || {
             opts(vec![pair(
-                SOURCE,
                 anonymous("registry.push(0);"),
                 declared("const a = factory(1);", "a"),
             )])
@@ -148,7 +131,6 @@ fn same_source_unit_pair_is_rejected() {
     expect_rejected(
         || {
             opts(vec![pair(
-                SOURCE,
                 declared("const a = factory(1);", "a"),
                 member("all", "a"),
             )])
@@ -163,28 +145,13 @@ fn duplicate_unordered_pair_is_rejected() {
         || {
             opts(vec![
                 pair(
-                    SOURCE,
                     declared("const a = factory(1);", "a"),
                     declared("const b = factory(2);", "b"),
                 ),
-                pair(SOURCE, member("all", "b"), member("all", "a")),
+                pair(member("all", "b"), member("all", "a")),
             ])
         },
         &["commuting_statements[1] duplicates", ENTRY],
-    );
-}
-
-#[test]
-fn stale_digest_is_rejected() {
-    let mut stale = pair(
-        SOURCE,
-        declared("const a = factory(1);", "a"),
-        member("all", "b"),
-    );
-    stale.audited_source_sha256 = "0".repeat(64);
-    expect_rejected(
-        move || opts(vec![stale.clone()]),
-        &[ENTRY, "stale audited_source_sha256"],
     );
 }
 
@@ -204,11 +171,7 @@ fn endpoint_in_another_chunk_is_rejected() {
                 .with_extra_chunk_logical_modules(&peer_modules)
                 .with_commuting_statements(
                     "static/app",
-                    vec![pair(
-                        CONSUMER,
-                        anonymous("console.log(1);"),
-                        member("peer", "alias"),
-                    )],
+                    vec![pair(anonymous("console.log(1);"), member("peer", "alias"))],
                 )
         },
         &[&format!("{ENTRY}.b"), "belongs to another provider"],
@@ -217,9 +180,7 @@ fn endpoint_in_another_chunk_is_rejected() {
 
 #[test]
 fn endpoint_requires_exactly_one_selector_variant() {
-    let common = "audited_source_sha256: ".to_owned()
-        + &"0".repeat(64)
-        + "\nb:\n  resolved_member: { module: all, name: b }\n";
+    let common = "b:\n  resolved_member: { module: all, name: b }\n";
     for a in [
         "a: {}\n",
         "a:\n  source_match: { match: 'const a = factory(1);' }\n  resolved_member: { module: all, name: a }\n",
