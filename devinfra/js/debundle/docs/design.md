@@ -103,15 +103,18 @@ an author assertion or the checked immutable wrapper's local binding and
 source location. Projection onto the importer's local name preserves this evidence;
 the execution index uses the capability only for eligible call shapes. Inline-only,
 retained-signature, and namespace-member author contracts remain distinct.
-`native_operation_inputs` is a separate premise: the selector and parser-input
-digest identify one direct native initializer, while `AnalysisAssumptions`
-retains its validated evidence separately from inferred native identity. The
-current operation is direct `Symbol` only. The author asserts that its global
-data binding denotes the original operation through every synchronous
-initialization schedule admitted by emission. This is not a point observation
-or a whole-lifetime integrity claim; known in-source global `Symbol` changes
-anywhere in that region contradict it, and opaque receiver-write witnesses
-remain in the shared census. Only the selected call span consumes the premise.
+`native_operation_inputs` and `native_call_identity_inputs` are distinct
+author premises resolved through the same canonical selector and call index.
+The first certifies selected initializer operations; the second certifies only
+the original callee at a selected direct call in a top-level function body.
+Both retain exact-site evidence separately from inferred native integrity.
+The call-identity input currently admits `Object.freeze`: the shared typed
+slot census rejects known global `Object` or constructor `freeze` writes across
+the analyzed program, while opaque and sibling write witnesses remain visible
+under the explicit author assertion. The interpreter consumes this evidence
+only at the selected call span; its existing argument-shape, return, heap,
+throw and purity checks are unchanged. Neither input promotes a family-wide
+native-integrity fact.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 

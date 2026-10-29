@@ -274,20 +274,31 @@ pub struct ValueInputEvidence {
     pub note: Option<String>,
 }
 
-/// Stable reference to one exact author assertion for a native operation.
+/// Stable reference to one exact native author assertion. The index is in
+/// native-operation inputs followed by native-call-identity inputs for that
+/// defining chunk, so the two fields cannot collide.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NativeOperationInputRef {
     pub defining_chunk: String,
     pub input_index: usize,
 }
 
-/// Provenance retained for an author-certified native operation site.
+/// Shared evidence discriminator for the two distinct authored native-input
+/// fields. Their spec enums cannot express each other's cases.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum NativeInputKind {
+    Operation(spec::NativeOperationKind),
+    CallIdentity(spec::NativeCallIdentityKind),
+}
+
+/// Provenance retained for an author-certified native operation or call site.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeOperationInputEvidence {
     pub reference: NativeOperationInputRef,
     pub spec_location: String,
     pub source_match: SourceMatchClaim,
-    pub operation: spec::NativeOperationKind,
+    pub operation: NativeInputKind,
     pub source_path: String,
     pub parser_input_file: String,
     pub audited_source_sha256: String,

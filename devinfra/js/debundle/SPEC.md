@@ -950,6 +950,46 @@ carries no value-input use. The source digest
 binds the input to parsed bytes, but it does not establish the external runtime
 audit, code outside the analyzed prefix, or host behavior.
 
+## Exact-site native-call identity inputs
+
+`chunk_analysis_options.<defining chunk>.native_call_identity_inputs` supplies
+an author-audited native **callee identity** at one exact call site:
+
+```yaml
+chunk_analysis_options:
+  static/peer:
+    native_call_identity_inputs:
+      - source_match:
+          match: "function makeRecord(name) { return Object.freeze({ name }); }"
+          bindings: [makeRecord]
+        callee: object_freeze
+        audited_source_sha256: "<64 hex characters for the parser input>"
+```
+
+The selector must resolve to exactly one direct top-level function declaration
+whose sole body statement directly returns an ordinary, nonoptional,
+uncomputed `Object.freeze(arg)` call with one nonspread argument. Async or
+generator functions, shadowed/imported `Object`, and other call/body shapes
+are rejected. The canonical call index identifies the exact call span; another
+`Object.freeze` call does not gain the premise. Only `callee: object_freeze` is
+currently supported.
+
+The author asserts that the ordinary global `Object` binding and its original
+own data `freeze` member retain their native identities at **every** synchronous
+at-init activation of the selected site in all emitted schedules, including
+reentry. This is an explicit assertion about opaque host and source behavior,
+not an inference from missing writes. Positively identified writes to either
+required slot anywhere in the analyzed program contradict the input, including
+alias, reflective, deferred, cross-chunk and restored writes. Opaque receiver
+or key writes remain visible witnesses covered by the author premise; a write
+to an apparently unrelated property can still invoke a setter or Proxy trap.
+
+The input only supplies the callee identity needed by the existing native-call
+model. `Object.freeze` still requires its existing fresh plain-data record
+argument proof; argument evaluation, heap effects, throws, purity and callback
+timing retain their ordinary analysis. No whole-family `Object` integrity,
+general call purity or exception-free result follows.
+
 ## Native-operation inputs
 
 `chunk_analysis_options.<defining chunk>.native_operation_inputs` can certify

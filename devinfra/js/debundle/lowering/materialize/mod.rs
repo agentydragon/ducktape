@@ -596,6 +596,7 @@ pub(super) fn finish_logical_chunk(
         // parser/source context and must not silently consume this spec field.
         dependency_graph_options.value_inputs.clear();
         dependency_graph_options.native_operation_inputs.clear();
+        dependency_graph_options.native_call_identity_inputs.clear();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

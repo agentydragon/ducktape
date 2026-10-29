@@ -41,13 +41,14 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
-/// Graph construction is intentionally source-free. Captured value inputs
-/// must be resolved by the prepared whole-program AST/index pipeline before
-/// callers extract StatementFacts and build this graph.
+/// Graph construction is intentionally source-free. Captured value and native
+/// author inputs must be resolved by the prepared whole-program AST/index
+/// pipeline before callers extract StatementFacts and build this graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencyGraphBuildError {
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
     UnresolvedValueInputs { count: usize },
+    UnresolvedNativeInputs { count: usize },
 }
 
 impl fmt::Display for DependencyGraphBuildError {
@@ -57,6 +58,10 @@ impl fmt::Display for DependencyGraphBuildError {
             Self::UnresolvedValueInputs { count } => write!(
                 f,
                 "cannot build a dependency graph with {count} unresolved captured value input(s); resolve them against the exact provider source first"
+            ),
+            Self::UnresolvedNativeInputs { count } => write!(
+                f,
+                "cannot build a dependency graph with {count} unresolved native author input(s); resolve them against the exact provider source first"
             ),
         }
     }
@@ -85,6 +90,13 @@ pub fn build_dependency_graph_with(
     if !options.value_inputs.is_empty() {
         return Err(DependencyGraphBuildError::UnresolvedValueInputs {
             count: options.value_inputs.len(),
+        });
+    }
+    let native_input_count =
+        options.native_operation_inputs.len() + options.native_call_identity_inputs.len();
+    if native_input_count != 0 {
+        return Err(DependencyGraphBuildError::UnresolvedNativeInputs {
+            count: native_input_count,
         });
     }
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
@@ -1516,6 +1528,18 @@ impl UnresolvedCallFallback {
 #[cfg(test)]
 mod array_heap_frontier_tests {
     use super::*;
+
+    #[test]
+    fn raw_graph_builder_rejects_unresolved_native_call_identity_input() {
+        let options: DependencyGraphOptions = serde_json::from_str(
+            r#"{"native_call_identity_inputs":[{"source_match":{"match":"function f(x) { return Object.freeze(x); }","bindings":["f"]},"callee":"object_freeze","audited_source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            build_dependency_graph_with(&[], options).unwrap_err(),
+            DependencyGraphBuildError::UnresolvedNativeInputs { count: 1 }
+        );
+    }
 
     fn heap_event(
         ordinal: usize,

@@ -12,10 +12,10 @@ use super::value_model::{
     static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, NamespaceWrapperSummary, NativeIntegrity, NativeIntrinsic as IntrinsicRoot,
-    NativeOperationInputEvidence, ProofDependencies, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    AnalysisInputs, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
+    NativeIntrinsic as IntrinsicRoot, NativeOperationInputEvidence, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
+    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -3678,6 +3678,10 @@ struct ExecutionIndex {
     global_alias_written: bool,
     imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
+    direct_top_level_functions: BTreeSet<Id>,
+    /// Exact sole-return calls in top-level function declarations, collected
+    /// by the canonical structural visitor alongside callable/call facts.
+    direct_return_calls: BTreeMap<Id, Span>,
     exported_hoisted_functions: BTreeSet<u32>,
     global_object_names: BTreeSet<&'static str>,
     hoisted_function_owners: BTreeSet<SourceUnitOrdinal>,
@@ -3834,6 +3838,8 @@ impl Default for ExecutionIndex {
             global_alias_written: false,
             imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
+            direct_top_level_functions: BTreeSet::new(),
+            direct_return_calls: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
             global_object_names: BTreeSet::new(),
             hoisted_function_owners: BTreeSet::new(),
@@ -4307,13 +4313,67 @@ impl ExecutionIndex {
 
         for input in selected {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation
+                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            {
+                if let Some(owner) = self.known_object_freeze_mutation() {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
+                        owner.0
+                    ));
+                    continue;
+                }
+                let candidates: Vec<_> = self
+                    .hoisted_bindings
+                    .keys()
+                    .filter(|binding| binding.0.as_ref() == input.selected_binding)
+                    .filter(|binding| {
+                        self.hoisted_bindings
+                            .get(*binding)
+                            .and_then(|key| self.callable_spans.get(key))
+                            .is_some_and(|span| span_contains(input.selected_statement_span, *span))
+                    })
+                    .collect();
+                let [binding] = candidates.as_slice() else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} must select exactly one direct top-level function declaration"
+                    ));
+                    continue;
+                };
+                let Some(call) =
+                    self.direct_freeze_return_call(binding, input.selected_statement_span)
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} requires a nonasync top-level function whose sole statement directly returns one unshadowed Object.freeze call"
+                    ));
+                    continue;
+                };
+                let mut evidence = input.evidence.clone();
+                evidence.selected_binding = input.selected_binding.clone();
+                self.native_operation_input_evidence
+                    .insert(call.span.into(), evidence.clone());
+                self.resolved_native_operation_inputs
+                    .push(ResolvedNativeOperationInput {
+                        evidence,
+                        binding: (*binding).clone(),
+                        selected_statement_span: input.selected_statement_span,
+                        declaration_span: self.callable_spans[&self.hoisted_bindings[*binding]],
+                        initializer_span: call.span,
+                        call_span: call.span,
+                        initializer_ordinal: call.owner,
+                        spread_source: None,
+                        spread_source_span: None,
+                        spread_token_span: None,
+                    });
+                continue;
+            }
             if matches!(
                 input.evidence.operation,
-                spec::NativeOperationKind::SetFromPrimitiveArray
-                    | spec::NativeOperationKind::SetFromSetSpread
+                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+                    | NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
             ) {
-                let spread =
-                    input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread;
+                let spread = input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread);
                 let known_mutation = if spread {
                     self.known_set_spread_protocol_mutation()
                 } else {
@@ -4469,7 +4529,8 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            if input.evidence.operation != spec::NativeOperationKind::Symbol
+            if input.evidence.operation
+                != NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
                 || symbol.0.as_ref() != "Symbol"
             {
                 self.native_operation_input_errors.push(format!(
@@ -4542,13 +4603,44 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation
+                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            {
+                if let Some(owner) = self.known_object_freeze_mutation() {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
+                        owner.0
+                    ));
+                    continue;
+                }
+                let is_same = self
+                    .direct_freeze_return_call(&input.binding, input.selected_statement_span)
+                    .is_some_and(|call| {
+                        call.span == input.call_span
+                            && call.owner == input.initializer_ordinal
+                            && input.declaration_span
+                                == self.callable_spans[&self.hoisted_bindings[&input.binding]]
+                            && input.initializer_span == call.span
+                            && input.binding.0.as_ref() == input.evidence.selected_binding
+                    });
+                if !is_same {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer identifies the same direct unshadowed Object.freeze return call"
+                    ));
+                    continue;
+                }
+                self.native_operation_input_evidence
+                    .insert(input.call_span.into(), input.evidence.clone());
+                self.resolved_native_operation_inputs.push(input.clone());
+                continue;
+            }
             if matches!(
                 input.evidence.operation,
-                spec::NativeOperationKind::SetFromPrimitiveArray
-                    | spec::NativeOperationKind::SetFromSetSpread
+                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+                    | NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
             ) {
-                let spread =
-                    input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread;
+                let spread = input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread);
                 let known_mutation = if spread {
                     self.known_set_spread_protocol_mutation()
                 } else {
@@ -4704,6 +4796,70 @@ impl ExecutionIndex {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
+    }
+
+    fn known_object_freeze_mutation(&self) -> Option<SourceUnitOrdinal> {
+        [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Object".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                key: NativePropertyKey::String("freeze".to_owned()),
+            },
+        ]
+        .iter()
+        .find_map(|slot| match self.source_slot_overlap(slot) {
+            NativeSlotOverlap::Known(owner) => Some(owner),
+            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+        })
+    }
+
+    fn direct_freeze_return_call(&self, binding: &Id, selected_span: Span) -> Option<Call> {
+        if !self.direct_top_level_functions.contains(binding) {
+            return None;
+        }
+        let key = *self.hoisted_bindings.get(binding)?;
+        let declaration = *self.callable_spans.get(&key)?;
+        if !span_contains(selected_span, declaration) || self.async_callables.contains(&key) {
+            return None;
+        }
+        let callable = self.callables.get(&key)?;
+        if callable.generator {
+            return None;
+        }
+        let site = CallSite::from(*self.direct_return_calls.get(binding)?);
+        let call = callable
+            .calls
+            .iter()
+            .find(|call| call.kind == CallKind::Call && CallSite::from(call.span) == site)?;
+        if call.kind != CallKind::Call
+            || call.caller != Some(key)
+            || call.has_spread
+            || CallSite::from(call.span) != site
+            || call.args.len() != 1
+        {
+            return None;
+        }
+        let ValueExpr::Member(receiver, Some(member), true) = &call.callee else {
+            return None;
+        };
+        let ValueExpr::Binding(object) = receiver.as_ref() else {
+            return None;
+        };
+        if object.0.as_ref() != "Object"
+            || member != "freeze"
+            || self.declared_bindings().contains(object)
+        {
+            return None;
+        }
+        let (model, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
+        (model.intrinsic == IntrinsicRoot::Object
+            && matches!(model.inputs, native_calls::CallInputs::FreshDataRecord)
+            && matches!(model.returns, native_calls::CallReturn::Argument(0))
+            && model.heap_effect == native_calls::NativeHeapEffect::Opaque)
+            .then(|| call.clone())
     }
 
     fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
@@ -5123,6 +5279,21 @@ impl ExecutionIndex {
                             .insert(local.to_id(), members.clone());
                     }
                 }
+            }
+            match item.as_module_item() {
+                ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
+                    index
+                        .direct_top_level_functions
+                        .insert(function.ident.to_id());
+                }
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                    if let Decl::Fn(function) = &export.decl {
+                        index
+                            .direct_top_level_functions
+                            .insert(function.ident.to_id());
+                    }
+                }
+                _ => {}
             }
             item.as_module_item().visit_with(&mut index);
             index.direct_top_level_var_declaration = false;
@@ -7322,6 +7493,16 @@ impl Visit for ExecutionIndex {
         } else {
             self.hoisted_bindings
                 .insert(declaration.ident.to_id(), declaration.function.span.lo.0);
+            if let Some(Expr::Call(call)) = declaration
+                .function
+                .body
+                .as_ref()
+                .and_then(sole_return_expression)
+                .map(Expr::unwrap_parens)
+            {
+                self.direct_return_calls
+                    .insert(declaration.ident.to_id(), call.span);
+            }
         }
         declaration.visit_children_with(self);
         let function = &declaration.function;
@@ -9033,6 +9214,10 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_global_symbol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_global_symbol_mutation()
+    }
+
+    pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_object_freeze_mutation()
     }
 
     pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

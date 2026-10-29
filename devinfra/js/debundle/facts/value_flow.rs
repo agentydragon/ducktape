@@ -44,8 +44,14 @@ pub(crate) fn native_set_allocation_roots(
     inputs
         .iter()
         .filter(|input| {
-            input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
-                || (input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread
+            input.evidence.operation
+                == crate::analysis_inputs::NativeInputKind::Operation(
+                    spec::NativeOperationKind::SetFromPrimitiveArray,
+                )
+                || (input.evidence.operation
+                    == crate::analysis_inputs::NativeInputKind::Operation(
+                        spec::NativeOperationKind::SetFromSetSpread,
+                    )
                     && stable_spreads.contains_key(&input.call_span.lo.0))
         })
         .map(|input| (input.call_span.lo.0, input.evidence.reference.clone()))

@@ -4,7 +4,7 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
-use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
+use super::native_calls::{CallInputs, CallReturn, NativeCallModel, NativeHeapEffect};
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
@@ -12,7 +12,7 @@ use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     NativePointEffects, RetainedCallbackCall,
 };
-use crate::analysis_inputs::{AnalysisInputs, ProofDependencies};
+use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
@@ -875,9 +875,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> Option<(NativeCallModel, NativeCallModelSource)> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
         if kind == CallKind::Call
-            && model.intrinsic == IntrinsicRoot::Symbol
             && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
-            && evidence.operation == spec::NativeOperationKind::Symbol
+            && ((model.intrinsic == IntrinsicRoot::Symbol
+                && evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::Symbol))
+                || (model.intrinsic == IntrinsicRoot::Object
+                    && evidence.operation
+                        == NativeInputKind::CallIdentity(
+                            spec::NativeCallIdentityKind::ObjectFreeze,
+                        )
+                    && matches!(model.inputs, CallInputs::FreshDataRecord)
+                    && matches!(model.returns, CallReturn::Argument(0))
+                    && model.heap_effect == NativeHeapEffect::Opaque))
         {
             return Some((
                 model,
@@ -6336,8 +6345,10 @@ pub(crate) fn prepare_synchronous_call_index(
         .native_operation_input_evidence
         .iter()
         .filter(|(site, evidence)| {
-            evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
-                || (evidence.operation == spec::NativeOperationKind::SetFromSetSpread
+            evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+                || (evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
                     && hints.stable_set_spreads.contains_key(&site.allocation_id()))
         })
         .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))

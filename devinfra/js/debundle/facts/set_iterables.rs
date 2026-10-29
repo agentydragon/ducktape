@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::analysis_inputs::{
-    NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
+    NativeInputKind, NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
     StableSetIterableUse,
 };
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
@@ -26,15 +26,16 @@ pub fn certify_stable_set_spreads(
     let by_ordinal: BTreeMap<_, _> = inputs
         .iter()
         .filter(|input| {
-            input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
         })
         .map(|input| (input.initializer_ordinal.0, input))
         .collect();
     let mut stable = BTreeMap::new();
-    for spread in inputs
-        .iter()
-        .filter(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
-    {
+    for spread in inputs.iter().filter(|input| {
+        input.evidence.operation
+            == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
+    }) {
         let Some(source) = spread.spread_source.as_ref() else {
             bail!(
                 "{} has no exact Set spread source",

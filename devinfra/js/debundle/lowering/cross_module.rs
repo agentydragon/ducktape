@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    CallableSummary, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
-    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
-    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    CallableSummary, NativeInputKind, NativeIntegrity, NativeOperationInputEvidence,
+    NativeOperationInputRef, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
@@ -846,7 +846,9 @@ fn resolve_native_operation_inputs(
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
     let mut resolved = BTreeMap::new();
     for (chunk_name, options) in options {
-        if options.native_operation_inputs.is_empty() {
+        if options.native_operation_inputs.is_empty()
+            && options.native_call_identity_inputs.is_empty()
+        {
             continue;
         }
         let chunk = artifact
@@ -900,34 +902,59 @@ fn resolve_native_operation_inputs(
             &source.input_file.path,
             &CurrentRoots::default(),
         )?;
-        let mut chunk_inputs = Vec::with_capacity(options.native_operation_inputs.len());
-        for (input_index, contract) in options.native_operation_inputs.iter().enumerate() {
-            let request_id = format!(
-                "chunk_analysis_options.{chunk_name}.native_operation_inputs[{input_index}]"
-            );
+        let contracts = options
+            .native_operation_inputs
+            .iter()
+            .enumerate()
+            .map(|(index, contract)| {
+                (
+                    index,
+                    format!("chunk_analysis_options.{chunk_name}.native_operation_inputs[{index}]"),
+                    &contract.source_match,
+                    &contract.audited_source_sha256,
+                    contract.note.clone(),
+                    NativeInputKind::Operation(contract.operation),
+                )
+            })
+            .chain(options.native_call_identity_inputs.iter().enumerate().map(
+                |(index, contract)| {
+                    (
+                        options.native_operation_inputs.len() + index,
+                        format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]"),
+                        &contract.source_match,
+                        &contract.audited_source_sha256,
+                        contract.note.clone(),
+                        NativeInputKind::CallIdentity(contract.callee),
+                    )
+                },
+            ));
+        let mut chunk_inputs = Vec::with_capacity(
+            options.native_operation_inputs.len() + options.native_call_identity_inputs.len(),
+        );
+        for (input_index, request_id, source_match, audited_source_sha256, note, operation) in
+            contracts
+        {
             ensure!(
-                contract.audited_source_sha256.len() == 64
-                    && contract
-                        .audited_source_sha256
+                audited_source_sha256.len() == 64
+                    && audited_source_sha256
                         .bytes()
                         .all(|byte| byte.is_ascii_hexdigit()),
                 "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
             );
             ensure!(
-                contract.audited_source_sha256 == source.sha256,
+                audited_source_sha256 == &source.sha256,
                 "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
                 source.sha256,
-                contract.audited_source_sha256
+                audited_source_sha256
             );
             ensure!(
-                contract.source_match.bindings.len() == 1,
+                source_match.bindings.len() == 1,
                 "{request_id}.source_match must select exactly one declared binding"
             );
-            let spec::SourceMatchBinding::Local(local) = &contract.source_match.bindings[0] else {
+            let spec::SourceMatchBinding::Local(local) = &source_match.bindings[0] else {
                 bail!("{request_id}.source_match does not accept detailed name/rename payloads");
             };
-            let mut selectors =
-                source_match_claim_member_selectors(&request_id, &contract.source_match)?;
+            let mut selectors = source_match_claim_member_selectors(&request_id, source_match)?;
             ensure!(
                 selectors.len() == 1,
                 "{request_id}.source_match must produce exactly one selector"
@@ -979,15 +1006,15 @@ fn resolve_native_operation_inputs(
             let evidence = NativeOperationInputEvidence {
                 reference,
                 spec_location: format!("{}:{request_id}", spec_path.display()),
-                source_match: contract.source_match.clone(),
-                operation: contract.operation,
+                source_match: source_match.clone(),
+                operation,
                 source_path: source.source_path.to_string_lossy().into_owned(),
                 parser_input_file: parser_input_file.to_string_lossy().into_owned(),
-                audited_source_sha256: contract.audited_source_sha256.clone(),
+                audited_source_sha256: audited_source_sha256.clone(),
                 selected_binding: selected_binding.clone(),
                 declaration_location: None,
                 initializer_location: None,
-                note: contract.note.clone(),
+                note,
             };
             chunk_inputs.push(SelectedNativeOperationInput {
                 evidence,

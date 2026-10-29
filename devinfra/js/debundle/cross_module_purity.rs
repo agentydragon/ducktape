@@ -35,9 +35,9 @@ use swc_ecma_ast::{Id, ModuleItem};
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    NamespaceWrapperSummary, NativeIntegrity, ProofDependencies, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
-    SelectedNativeOperationInput,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
+    SelectedBindingValueInput, SelectedNativeOperationInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, native_set_allocation_roots,
@@ -664,7 +664,10 @@ pub fn resolve_imported_callable_summaries(
     if selected_native_operation_inputs
         .values()
         .flatten()
-        .any(|input| input.evidence.operation == spec::NativeOperationKind::Symbol)
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+        })
         && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_global_symbol_mutation_owner()
@@ -674,11 +677,41 @@ pub fn resolve_imported_callable_summaries(
         let request = selected_native_operation_inputs
             .values()
             .flatten()
-            .find(|input| input.evidence.operation == spec::NativeOperationKind::Symbol)
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+            })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
         bail!(
             "{request} is contradicted by a positively identified global Symbol replacement or accessor installation in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+        })
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_object_freeze_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            })
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_call_identity_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
             owner.0
         );
     }
@@ -696,7 +729,10 @@ pub fn resolve_imported_callable_summaries(
     if selected_native_operation_inputs
         .values()
         .flatten()
-        .any(|input| input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray)
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+        })
         && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_set_protocol_mutation_owner()
@@ -707,7 +743,8 @@ pub fn resolve_imported_callable_summaries(
             .values()
             .flatten()
             .find(|input| {
-                input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+                input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
@@ -719,7 +756,10 @@ pub fn resolve_imported_callable_summaries(
     if selected_native_operation_inputs
         .values()
         .flatten()
-        .any(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
+        })
         && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_set_spread_protocol_mutation_owner()
@@ -729,7 +769,10 @@ pub fn resolve_imported_callable_summaries(
         let request = selected_native_operation_inputs
             .values()
             .flatten()
-            .find(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
+            })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
         bail!(

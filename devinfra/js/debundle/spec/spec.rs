@@ -354,6 +354,11 @@ pub struct DependencyGraphOptions {
     /// docs/purity_soundness.md.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
+    /// Author-certified original native callee at one selected direct call in
+    /// a top-level function body. This supplies identity only; the modeled
+    /// operation must still pass its ordinary argument and effect guards.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -473,6 +478,25 @@ pub struct NativeOperationInputContract {
     /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// Exact source-selected native callee identity, scoped to every synchronous
+/// at-init activation of the selected call site across permitted schedules.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCallIdentityInputContract {
+    pub source_match: SourceMatchClaim,
+    pub callee: NativeCallIdentityKind,
+    pub audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Typed native callee models eligible for exact-site identity premises.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeCallIdentityKind {
+    ObjectFreeze,
 }
 
 /// Native operations admitted by `native_operation_inputs`.

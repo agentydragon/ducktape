@@ -312,6 +312,28 @@ native callees, and syntax errors. `math_round_timing_test` retains effectful
 argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
 
+### Source-selected native-call identity inputs
+
+`chunk_analysis_options.<chunk>.native_call_identity_inputs` is a separate
+exact-site author premise for a direct call in a selected top-level function
+declaration. The initial typed callee is `object_freeze`; the function's sole
+statement must directly return one ordinary, uncomputed `Object.freeze(arg)`
+call. The parser-input digest and canonical selector pin the function, while
+the existing structural call index pins its call span. The assertion covers
+the original global `Object` data binding and original own data `freeze` member
+at every synchronous at-init execution of that site across permitted emitted
+schedules and reentry. Source-known writes to either exact slot in any analyzed
+chunk reject the entire input, even if later restored. Opaque receiver/key
+writes remain witnesses under the explicit premise; sibling writes are not
+assumed inert because an inherited setter or Proxy trap could indirectly change
+the required slots.
+
+This input only resolves native callee identity. The existing `FreshDataRecord`
+guard must separately establish an ordinary fresh plain-data argument before
+the native `Object.freeze` return and no-reentry model can be used. It does not
+assert call purity, suppress argument effects or throws, or establish
+whole-family native integrity. Unselected calls use the ordinary guards.
+
 ### Source-selected native-operation inputs
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected

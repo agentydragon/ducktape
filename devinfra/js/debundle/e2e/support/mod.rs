@@ -34,7 +34,8 @@ use serde_json::Value;
 pub use spec::{
     CapturedValueContract, CapturedValueKind, ExecutionRuntime, HostNoReentry,
     HostNoReentryOperation, HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
-    NativeOperationInputContract, NativeOperationKind, ValueInputContract, VendorLevel, VendorMark,
+    NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
+    NativeOperationKind, ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;
