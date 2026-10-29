@@ -17,7 +17,7 @@ mod chunk_constraining_module_edges_tests {
     }
 
     fn parse_and_build(source: &str) -> DependencyGraph {
-        build_dependency_graph_with(&parse_facts(source), Default::default()).unwrap()
+        build_dependency_graph_with(&parse_facts(source), Default::default(), &[]).unwrap()
     }
 
     #[test]
@@ -26,7 +26,8 @@ mod chunk_constraining_module_edges_tests {
             r#"{"argument_inputs":[{"source_match":{"match":"function keys(input) {}","bindings":["keys"]},"parameter_index":0,"exact_arity":1,"audited_source_sha256":"abc"}]}"#,
         )
         .unwrap();
-        let error = build_dependency_graph_with(&parse_facts("const x = 1;"), options).unwrap_err();
+        let error =
+            build_dependency_graph_with(&parse_facts("const x = 1;"), options, &[]).unwrap_err();
         assert_eq!(
             error,
             DependencyGraphBuildError::UnresolvedArgumentInputs { count: 1 }
@@ -174,7 +175,9 @@ mod from_report_tests {
                 constrains_init_order: true,
                 role,
                 sequenced_cause: None,
+                commuting_premise: None,
             }],
+            commuting_statements: Vec::new(),
             quotient: ModuleQuotientReport {
                 nodes: Vec::new(),
                 edges: Vec::new(),

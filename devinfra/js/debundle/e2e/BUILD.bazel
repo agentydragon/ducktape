@@ -57,6 +57,14 @@ debundle_e2e_test(
     deps = ["@crates//:serde_yaml"],
 )
 
+debundle_e2e_test(
+    name = "commuting_statements_gate_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
 debundle_e2e_test(name = "rejection_fixture_report_test")
 
 debundle_e2e_test(

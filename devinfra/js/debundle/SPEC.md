@@ -1333,26 +1333,38 @@ digest: the two structural selectors pin the statements. When a selector no
 longer resolves on a new snapshot, validation fails like any member's; the
 premise is never silently kept.
 
-The premise removes only `sequenced` (side-effect ordering) constraining edges
-between the two selected source units. It never removes `eager_use` edges: an
-at-init read is a dataflow dependence whose reordering changes behavior, and
-the remedy there remains co-location. An entry is accepted only when at least
-one endpoint's effect on the edge is opaque to the analysis (an unknown call, an
-escaped receiver); when the engine has derived that the two effects definitely
-conflict, the entry is rejected as contradicting a source fact. An entry whose
-endpoints resolve but which removes no edge is reported as unused and fails
-validation. This is explicit author input, not an inferred fact: A1–A11 and
-every other contract still apply, and it grants no purity, no-reentry or
-receiver guarantee.
+The premise makes inert only the `sequenced` (side-effect ordering) edges
+between the two selected source units, in either direction. The dependency
+graph still records each such edge as what source analysis found, with
+`constrains_init_order: false` and `commuting_premise` naming the entry, and
+`dependency_graph.json.commuting_statements[]` lists per entry the edge ids it
+inerted and the spec location; a blocking SCC in `cycles.json` lists the inert
+edges between its members as `inert_commuting_edges`. The premise never
+touches `eager_use` edges: an at-init read is a dataflow dependence whose
+reordering changes behavior, and the remedy there remains co-location.
 
-Current state: the schema, endpoint resolution, exactly-one and duplicate
-checks, and `AnalysisAssumptions.commuting_statements` land first; the gate
-does not yet consume a pair, and the known-conflict and unused-entry checks
-are not yet enforced.
-
-<!-- CLEANUP(added 2026-10-29): delete the "Current state" paragraph once the
-realizability gate consumes `AnalysisAssumptions.commuting_statements` and
-enforces the known-conflict and unused-entry checks. -->
+An entry is accepted only when at least one endpoint's effect on each edge is
+opaque to the analysis. It is rejected as contradicting a source fact when the
+analysis derived that the two source units definitely conflict, read from each
+`sequenced` edge's retained cause (§ Realizability cut explanations) and the
+two recorded effect summaries: a `cell_order` edge with a `read_after_write`,
+`write_after_write`, `write_after_read` or `use_after_allocation` relation; a
+`binding_timeline`, `shared_var_access` or `uninitialized_observation` edge;
+two summaries sharing a cell (a binding, a static `globalThis` property, array
+or Set contents) with at least one write; or a shared `var` declaration. A
+`cell_order` edge carrying only barrier relations (`after_barrier`,
+`barrier_after_prior`, `frontier_after_cell`), and a `strict_chain` edge with
+an endpoint that is not dataflow-summarizable, exist because an effect is
+opaque (a call the classifier cannot prove pure, an escaped global-object
+alias, a dynamic key, incomplete synchronous execution, an opaque heap
+frontier); those the premise makes inert. An entry whose endpoints share no
+`sequenced` edge, or only `strict_chain` edges between two summarized effects
+on disjoint cells (which `dataflow_aware_s_chain` already leaves unordered), is
+unused and fails validation. Both failures fail `spec validate` and `run` with
+a diagnostic naming the entry, both source units and, for a contradiction,
+each conflicting effect. This is explicit author input, not an inferred fact:
+A1–A11 and every other contract still apply, and it grants no purity,
+no-reentry or receiver guarantee.
 
 ## Ordinary own-property inspection
 

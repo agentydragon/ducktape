@@ -7,6 +7,7 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::ModuleId;
+use crate::analysis_inputs::CommutingStatementsRef;
 use crate::facts::{DataflowOpacityCause, EffectCell};
 
 use super::dependency_graph::SourceUnitId;
@@ -94,6 +95,13 @@ impl EdgeRole {
 ///
 /// `role` (see [`EdgeRole`]) selects which projection rule the
 /// quotient/gate/reports consumers apply to the edge.
+///
+/// A `Sequenced` reason an author `commuting_statements` premise accepted is
+/// marked inert (`inerted_by`): the edge stays in the graph as the record of
+/// what source analysis found, but [`EdgeReason::constrains_init_order`] is
+/// `false`, so no gate, quotient, linker-order or atomic-group consumer
+/// treats it as a constraint. Only `Sequenced` reasons are ever inerted
+/// (`graph/build.rs::apply_commuting_statements`).
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub kind: DepKind,
@@ -104,6 +112,7 @@ pub struct EdgeReason {
     /// rule that produced it and how it classified both endpoints.
     /// Boxed so the far more numerous binding edges stay small.
     sequenced_cause: Option<Box<SequencedCause>>,
+    pub(crate) inerted_by: Option<CommutingStatementsRef>,
 }
 
 /// Why a `Sequenced` edge `(from, to)` exists: the emission rule in
@@ -376,6 +385,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -385,6 +395,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -394,6 +405,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -403,6 +415,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -412,6 +425,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -421,6 +435,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -430,6 +445,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -439,6 +455,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
     pub(crate) fn sequenced(so: SourceUnitOrdinal, cause: SequencedCause) -> Self {
@@ -448,6 +465,7 @@ impl EdgeReason {
             binding: None,
             role: EdgeRole::Direct,
             sequenced_cause: Some(Box::new(cause)),
+            inerted_by: None,
         }
     }
     pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -457,6 +475,7 @@ impl EdgeReason {
             binding: Some(b),
             role: EdgeRole::Direct,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
 
@@ -485,6 +504,7 @@ impl EdgeReason {
             binding: None,
             role,
             sequenced_cause: None,
+            inerted_by: None,
         }
     }
 
@@ -495,10 +515,22 @@ impl EdgeReason {
         self
     }
 
+    /// Mark the reason inert under `premise`, or reattach a marker read
+    /// back from `dependency_graph.json` (`DependencyEdgeReport::commuting_premise`).
+    pub fn with_commuting_premise(mut self, premise: Option<CommutingStatementsRef>) -> Self {
+        self.inerted_by = premise;
+        self
+    }
+
     /// Retained emission cause of a `Sequenced` edge; `None` for every
     /// other kind and for synthetic edges whose report lacked it.
     pub fn sequenced_cause(&self) -> Option<&SequencedCause> {
         self.sequenced_cause.as_deref()
+    }
+
+    /// The `commuting_statements` entry that made this edge inert.
+    pub fn commuting_premise(&self) -> Option<&CommutingStatementsRef> {
+        self.inerted_by.as_ref()
     }
 
     /// The role this reason was emitted with. See [`EdgeRole`].
@@ -525,17 +557,19 @@ impl EdgeReason {
         self.kind == DepKind::Sequenced
     }
     /// Every kind except `LazyUse`, `HoistedUse` and `DeferredRebind` constrains
-    /// realizability. `DeferredRebind` writes never fire at module
+    /// realizability, unless an author `commuting_statements` premise made
+    /// the edge inert. `DeferredRebind` writes never fire at module
     /// init (the write site is nested ≥2 closures deep or past an
     /// await), so they impose no init-order constraint — but they
     /// still participate in cross-destination-rebind rejection and
     /// `G_atomic` co-location, because ESM imports are read-only at
     /// ANY time, not just during init.
     pub fn constrains_init_order(&self) -> bool {
-        !matches!(
-            self.kind,
-            DepKind::LazyUse | DepKind::HoistedUse | DepKind::DeferredRebind
-        )
+        self.inerted_by.is_none()
+            && !matches!(
+                self.kind,
+                DepKind::LazyUse | DepKind::HoistedUse | DepKind::DeferredRebind
+            )
     }
 }
 

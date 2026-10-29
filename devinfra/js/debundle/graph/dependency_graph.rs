@@ -5,6 +5,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
+use crate::analysis_inputs::CommutingStatementsRef;
 use crate::facts::CallbackFactoryBarrierFact;
 use crate::purity::Purity;
 use crate::{SourceLocation, StatementKind};
@@ -41,6 +42,23 @@ pub struct DependencyGraph {
     pub(crate) out_edges: Vec<Vec<DependencyEdgeId>>,
     /// CSR adjacency by target source unit.
     pub(crate) in_edges: Vec<Vec<DependencyEdgeId>>,
+    /// Author `commuting_statements` premises the build applied, in spec
+    /// order. Each listed edge carries the matching
+    /// [`EdgeReason::commuting_premise`] marker.
+    pub(crate) commuting_premises: Vec<AppliedCommutingPremise>,
+}
+
+/// One `commuting_statements` entry the graph build accepted: every
+/// `Sequenced` edge between `a` and `b` (either direction) is inert, listed
+/// in `inerted_edges`. An accepted premise inerts at least one edge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedCommutingPremise {
+    pub reference: CommutingStatementsRef,
+    pub spec_location: String,
+    pub a: SourceUnitId,
+    pub b: SourceUnitId,
+    pub inerted_edges: Vec<DependencyEdgeId>,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +131,11 @@ impl DependencyGraph {
     /// Total dependency edge count.
     pub fn num_edges(&self) -> usize {
         self.edges.len()
+    }
+
+    /// Author `commuting_statements` premises applied to this graph.
+    pub fn commuting_premises(&self) -> &[AppliedCommutingPremise] {
+        &self.commuting_premises
     }
 
     /// Dependency-edge row by `DependencyEdgeId`. CSR adjacency returns IDs;
@@ -216,8 +239,12 @@ impl DependencyGraph {
                 Some(role) => role.resolve(&by_id),
                 None => EdgeRole::Direct,
             };
+            // Round-trip the inert marker too: `constrains_init_order` reads
+            // it, so dropping it would hand the planner a stricter gate than
+            // the materializer ran.
             let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role)
-                .with_sequenced_cause(edge.sequenced_cause.clone());
+                .with_sequenced_cause(edge.sequenced_cause.clone())
+                .with_commuting_premise(edge.commuting_premise.clone());
             let id = DependencyEdgeId(edges.len());
             edges.push(DependencyEdge {
                 id,
@@ -226,13 +253,47 @@ impl DependencyGraph {
                 reason,
             });
         }
+        let edge_by_report_id: HashMap<&str, DependencyEdgeId> = report
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(i, edge)| (edge.id.as_str(), DependencyEdgeId(i)))
+            .collect();
+        let mut commuting_premises = Vec::with_capacity(report.commuting_statements.len());
+        for premise in &report.commuting_statements {
+            let resolve = |endpoint: &String| {
+                by_id
+                    .get(endpoint)
+                    .copied()
+                    .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
+                        edge_id: premise.spec_location.clone(),
+                        endpoint: endpoint.clone(),
+                    })
+            };
+            commuting_premises.push(AppliedCommutingPremise {
+                reference: premise.reference.clone(),
+                spec_location: premise.spec_location.clone(),
+                a: resolve(&premise.a)?,
+                b: resolve(&premise.b)?,
+                inerted_edges: premise
+                    .inerted_edge_ids
+                    .iter()
+                    .filter_map(|id| edge_by_report_id.get(id.as_str()).copied())
+                    .collect(),
+                note: premise.note.clone(),
+            });
+        }
 
-        Ok(Self::from_parts(nodes, edges))
+        Ok(Self::from_parts(nodes, edges, commuting_premises))
     }
 
     /// Assemble the graph from `nodes` and `edges` (`edges[i].id` is
     /// `DependencyEdgeId(i)`), deriving the CSR adjacency in one pass.
-    pub(super) fn from_parts(nodes: Vec<SourceUnit>, edges: Vec<DependencyEdge>) -> Self {
+    pub(super) fn from_parts(
+        nodes: Vec<SourceUnit>,
+        edges: Vec<DependencyEdge>,
+        commuting_premises: Vec<AppliedCommutingPremise>,
+    ) -> Self {
         let mut out_edges: Vec<Vec<DependencyEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut in_edges: Vec<Vec<DependencyEdgeId>> = vec![Vec::new(); nodes.len()];
         for edge in &edges {
@@ -248,6 +309,7 @@ impl DependencyGraph {
             edges,
             out_edges,
             in_edges,
+            commuting_premises,
         }
     }
 }

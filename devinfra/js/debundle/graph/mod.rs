@@ -31,7 +31,8 @@ pub use build::{
     build_dependency_graph_with,
 };
 pub use dependency_graph::{
-    DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
+    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId,
+    UnresolvedDependencyEdgeEndpoint,
 };
 pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,

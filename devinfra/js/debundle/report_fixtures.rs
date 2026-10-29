@@ -170,6 +170,7 @@ pub fn dependency_edge(
         constrains_init_order: constrains,
         role: None,
         sequenced_cause: None,
+        commuting_premise: None,
     }
 }
 
@@ -271,6 +272,7 @@ pub fn graph_of(
         native_receiver_certificates: Vec::new(),
         imported_callable_summaries: Vec::new(),
         edges,
+        commuting_statements: Vec::new(),
         quotient: ModuleQuotientReport {
             nodes: module_nodes,
             edges: vec![],

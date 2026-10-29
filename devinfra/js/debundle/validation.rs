@@ -13,6 +13,7 @@ use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
+use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::{
     DepKind, DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
     SequencedSourceUnitCause,
@@ -79,6 +80,12 @@ pub struct CycleReport {
     /// bail summary can show how the cycle forms even though no
     /// lazy edge is ever part of the cut.
     pub lazy_closure: Vec<CycleEdge>,
+    /// `sequenced` edges between SCC members that an author
+    /// `commuting_statements` premise made inert (each row names its
+    /// premise). They never constrain and never appear in `cut`; listed so
+    /// an author can see what the premise bought while the SCC still
+    /// blocks.
+    pub inert_commuting_edges: Vec<CycleEdge>,
 }
 
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
@@ -107,6 +114,9 @@ pub struct BlockingSccEntry {
     /// toward breaking the SCC. See [`CycleReport::cut`] for the
     /// per-rejection-kind derivation.
     pub cut: Vec<CycleEdge>,
+    /// See [`CycleReport::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
 }
 
 impl BlockingSccEntry {
@@ -117,6 +127,7 @@ impl BlockingSccEntry {
             id,
             modules: cycle.modules.clone(),
             cut: cycle.cut.clone(),
+            inert_commuting_edges: cycle.inert_commuting_edges.clone(),
         }
     }
 
@@ -170,6 +181,10 @@ pub struct CycleEdge {
     /// retained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<CutEdgeExplanation>,
+    /// The author `commuting_statements` entry that made this edge inert;
+    /// `None` for every constraining edge (and so for every `cut` row).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commuting_premise: Option<CommutingStatementsRef>,
 }
 
 /// Per-kind reasoning behind a constraining [`CycleEdge`].
@@ -553,6 +568,13 @@ pub fn validate_assignment(
                     .collect(),
                 cut,
                 lazy_closure,
+                inert_commuting_edges: inert_commuting_edges(
+                    dependency_graph,
+                    assignment,
+                    &diagnosis.core.modules,
+                    module_path,
+                    &from_binding_by_ordinal,
+                ),
             }
         })
         .collect();
@@ -625,11 +647,36 @@ fn cycle_edges_for(
                     edge,
                 ),
                 explanation: explain_edge(dependency_graph, edge),
+                commuting_premise: edge.reason.commuting_premise().cloned(),
             }
         })
         .collect();
     CycleEdge::sort_for_report(&mut out);
     out
+}
+
+/// Cross-module edges between members of `modules` (gate view) that an
+/// author `commuting_statements` premise made inert. See
+/// [`CycleReport::inert_commuting_edges`].
+fn inert_commuting_edges(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    modules: &BTreeSet<ModuleId>,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
+) -> Vec<CycleEdge> {
+    let inert_edge_ids = dependency_graph.iter_edges().filter_map(|edge| {
+        edge.reason.commuting_premise()?;
+        let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)?;
+        (modules.contains(&from) && modules.contains(&to)).then_some(edge.id)
+    });
+    cycle_edges_for(
+        dependency_graph,
+        assignment,
+        inert_edge_ids,
+        module_path,
+        from_binding_by_ordinal,
+    )
 }
 
 /// Nonconstraining cross-module read edges between members of `modules`, gate

@@ -3,7 +3,9 @@ use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_atoms::Atom;
 
-use crate::analysis_inputs::{CallbackFactoryEvidence, ReturnedRecordSummary};
+use crate::analysis_inputs::{
+    CallbackFactoryEvidence, CommutingStatementsRef, ReturnedRecordSummary,
+};
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
@@ -91,9 +93,27 @@ pub struct DependencyGraphReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_callable_summaries: Vec<ImportedCallableSummaryReport>,
     pub edges: Vec<DependencyEdgeReport>,
+    /// Author `commuting_statements` premises the graph build applied and
+    /// what each one bought (SPEC.md § Commuting statements).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commuting_statements: Vec<CommutingStatementsReport>,
     #[serde(rename = "module_graph")]
     pub quotient: ModuleQuotientReport,
     pub atomic_graph: AtomicGraphReport,
+}
+
+/// One applied `commuting_statements` premise: the pair's source units
+/// (`unit:N` keys into `nodes`) and the `sequenced` edges (`edges[].id`) it
+/// made inert. An applied premise inerts at least one edge.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommutingStatementsReport {
+    pub reference: CommutingStatementsRef,
+    pub spec_location: String,
+    pub a: String,
+    pub b: String,
+    pub inerted_edge_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -699,6 +719,11 @@ pub struct DependencyEdgeReport {
     /// on graphs written before the cause was retained.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sequenced_cause: Option<crate::graph::SequencedCause>,
+    /// The author `commuting_statements` entry that made this edge inert
+    /// (`constrains_init_order` is then `false`). The edge stays in the
+    /// report as the record of what source analysis found.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub commuting_premise: Option<CommutingStatementsRef>,
 }
 
 /// Wire-format projection of [`crate::EdgeRole`]. The typed variant

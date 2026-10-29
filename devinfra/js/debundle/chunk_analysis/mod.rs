@@ -135,6 +135,7 @@ where
     let dependency_graph_and_atomic_groups = compute_dependency_graph_and_atomic_groups_with(
         &fact_analysis.facts,
         dependency_graph_options,
+        &hints.assumptions.commuting_statements,
     )
     .with_context(|| format!("building dependency graph for chunk {chunk_id}"))?;
     Ok(ChunkAnalysisOutput {

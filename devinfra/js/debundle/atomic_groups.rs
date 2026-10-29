@@ -33,6 +33,7 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
+use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
     DepKind, DependencyGraph, DependencyGraphBuildError, DependencyGraphOptions, SourceUnitId,
@@ -69,8 +70,9 @@ pub struct DependencyGraphAndAtomicGroups {
 pub fn compute_dependency_graph_and_atomic_groups_with(
     facts: &[StatementFacts],
     options: DependencyGraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
-    let dependency_graph = build_dependency_graph_with(facts, options)?;
+    let dependency_graph = build_dependency_graph_with(facts, options, commuting_statements)?;
     let atomic_groups = compute_atomic_groups(&dependency_graph);
     Ok(DependencyGraphAndAtomicGroups {
         dependency_graph,
@@ -92,9 +94,12 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
             continue;
         }
         match edge.reason.kind {
-            DepKind::EagerUse | DepKind::Sequenced => {
+            // A `Sequenced` edge an author `commuting_statements` premise
+            // made inert constrains nothing, so it must not close a group.
+            DepKind::EagerUse | DepKind::Sequenced if edge.reason.constrains_init_order() => {
                 g_atomic.add_edge(edge.from, edge.to, ());
             }
+            DepKind::EagerUse | DepKind::Sequenced => {}
             DepKind::LazyUse | DepKind::HoistedUse => {}
             DepKind::EagerRebind
             | DepKind::LazyRebind

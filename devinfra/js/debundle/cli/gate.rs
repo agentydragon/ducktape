@@ -1282,6 +1282,7 @@ fn recompute_evidence(
                 .then(|| impure_source_unit_cause(source))
                 .flatten(),
             explanation,
+            commuting_premise: edge.commuting_premise.clone(),
         });
     }
     CycleEdge::sort_for_report(&mut out);

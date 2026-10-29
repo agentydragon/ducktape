@@ -929,6 +929,44 @@ pub fn unassigned_mode_inline() -> UnassignedMode {
     UnassignedMode::InlineInEntry
 }
 
+fn source_unit_selector(yaml: &str) -> spec::SourceUnitSelector {
+    serde_yaml::from_str(yaml).expect("valid source-unit selector")
+}
+
+/// `commuting_statements` endpoint: the anonymous statement matching
+/// `statement` exactly.
+pub fn anonymous_source_unit(statement: &str) -> spec::SourceUnitSelector {
+    source_unit_selector(&format!("source_match:\n  match: {statement:?}\n"))
+}
+
+/// `commuting_statements` endpoint: `binding`'s declaration inside the
+/// statement matching `statement` exactly.
+pub fn declared_source_unit(statement: &str, binding: &str) -> spec::SourceUnitSelector {
+    source_unit_selector(&format!(
+        "source_match:\n  match: {statement:?}\n  bindings: [{binding}]\n"
+    ))
+}
+
+/// `commuting_statements` endpoint: the source unit of an already resolved
+/// logical member.
+pub fn member_source_unit(module: &str, name: &str) -> spec::SourceUnitSelector {
+    source_unit_selector(&format!(
+        "resolved_member:\n  module: {module}\n  name: {name}\n"
+    ))
+}
+
+/// One `commuting_statements` entry over two endpoint selectors.
+pub fn commuting_pair(
+    a: spec::SourceUnitSelector,
+    b: spec::SourceUnitSelector,
+) -> spec::CommutingStatementsContract {
+    spec::CommutingStatementsContract {
+        a,
+        b,
+        note: Some("Neutral fixture; neither statement observes the other.".to_owned()),
+    }
+}
+
 /// Build an `unassigned_mode: catchall_file` entry.
 /// `target` of `None` means "default residual target", which the
 /// materializer resolves to `residual/unhandled`.

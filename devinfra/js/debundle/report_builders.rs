@@ -10,8 +10,8 @@ use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
 use analysis::reports::schema::{
-    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, ImportedCallableSummaryReport,
-    LineRange, ReturnedRecordUseReport,
+    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
+    ImportedCallableSummaryReport, LineRange, ReturnedRecordUseReport,
 };
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
@@ -145,6 +145,9 @@ pub(crate) fn build_dependency_graph_report(
         purity_causes,
         imported_callable_summaries,
         edges,
+        commuting_statements: build_commuting_statements_reports(
+            assignment_analysis.inputs().dependency_graph(),
+        ),
         quotient: ModuleQuotientReport {
             nodes: quotient_nodes,
             edges: quotient_edges,
@@ -342,9 +345,31 @@ fn build_source_unit_nodes_and_edges(
             constrains_init_order: edge.reason.constrains_init_order(),
             role: edge_role_report(edge.reason.role()),
             sequenced_cause: edge.reason.sequenced_cause().cloned(),
+            commuting_premise: edge.reason.commuting_premise().cloned(),
         })
         .collect();
     (nodes, edges)
+}
+
+fn build_commuting_statements_reports(
+    dependency_graph: &analysis::DependencyGraph,
+) -> Vec<CommutingStatementsReport> {
+    dependency_graph
+        .commuting_premises()
+        .iter()
+        .map(|premise| CommutingStatementsReport {
+            reference: premise.reference.clone(),
+            spec_location: premise.spec_location.clone(),
+            a: source_unit_key(premise.a),
+            b: source_unit_key(premise.b),
+            inerted_edge_ids: premise
+                .inerted_edges
+                .iter()
+                .map(|id| id.report_key())
+                .collect(),
+            note: premise.note.clone(),
+        })
+        .collect()
 }
 
 fn binding_reports<'a, I>(

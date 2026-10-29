@@ -15,10 +15,11 @@ pub use ast_assertions::{
 use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
-    logical_module_with_anon_comment, logical_module_with_binding_groups,
-    logical_module_with_comment, mixed_selector_failure_fixture, unassigned_mode_catchall_file,
-    unassigned_mode_inline, unassigned_mode_per_atomic_group,
+    anonymous_source_unit, commuting_pair, declared_source_unit, logical_module,
+    logical_module_with_anon, logical_module_with_anon_alpha, logical_module_with_anon_comment,
+    logical_module_with_binding_groups, logical_module_with_comment, member_source_unit,
+    mixed_selector_failure_fixture, unassigned_mode_catchall_file, unassigned_mode_inline,
+    unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 

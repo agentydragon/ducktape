@@ -164,6 +164,22 @@ supplies purity or return shape.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 
+`commuting_statements` is a premise about two selected source units of one
+chunk: during synchronous initialization neither observes the other's effect.
+The graph build applies it after every edge exists, marking the `sequenced`
+edges between the pair inert (`EdgeReason::constrains_init_order` is the one
+predicate every gate, quotient, linker-order and atomic-group consumer reads,
+so no walker special-cases the premise) and keeping the edges in the graph
+with their premise as provenance. The decision reads each `Sequenced` edge's
+retained `SequencedCause` plus the endpoints' recorded effect summaries
+(`graph/build.rs::premise_verdict`): a cell relation, a binding timeline, a
+shared `var`, an uninitialized observation or a shared written cell
+contradicts the premise and fails the build; a pair with no inertable edge is
+unused and fails the build. The premise therefore covers only orderings the
+analysis emitted because an endpoint's effects were not summarizable (barrier
+relations of `cell_order`, a `strict_chain` edge with an opaque endpoint) and
+never `eager_use`, rebind or co-location edges.
+
 `argument_inputs` is a SHA-bound premise about one positional parameter of one
 direct, stable local function declaration. It says that this helper and its
 callees do not mutate, retain, return, publish, or expose that argument graph

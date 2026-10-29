@@ -6,9 +6,10 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use swc_ecma_ast::Id;
 
+use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::{EffectCell, SourceUnitReadClosure};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::{StatementFacts, StatementKind};
+use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
 // `DependencyGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
 // and the graph-build API consume the same type. Re-exported from
@@ -16,9 +17,9 @@ use crate::{StatementFacts, StatementKind};
 // to be the canonical path for external callers.
 pub use spec::DependencyGraphOptions;
 
-use super::dependency_graph::{DependencyGraph, SourceUnit, SourceUnitId};
+use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitId};
 use super::edge::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
+    BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
 };
 use crate::facts::DataflowOpacityCause;
@@ -45,6 +46,130 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
+/// A derived source fact an author `commuting_statements` premise contradicts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KnownConflict {
+    /// The retained cause of a `Sequenced` edge derived from both
+    /// endpoints' recorded effects (a cell relation, a binding timeline, a
+    /// shared `var`, an uninitialized observation).
+    Sequenced(SequencedCause),
+    /// The two summaries share `cell` with at least one write, whatever
+    /// rule emitted the edge between them.
+    SharedCell { cell: EffectCellReport },
+    /// Both source units declare the shared `var` `binding`.
+    CoDeclaration { binding: swc_atoms::Atom },
+    /// A `Sequenced` edge without a retained cause (never produced by this
+    /// builder); treated as a conflict so the premise never widens silently.
+    Unclassified,
+}
+
+impl fmt::Display for KnownConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sequenced(cause) => cause.fmt(f),
+            Self::SharedCell { cell } => write!(f, "both summaries touch {cell}, one writing it"),
+            Self::CoDeclaration { binding } => {
+                write!(f, "both declare shared `var` `{binding}`")
+            }
+            Self::Unclassified => f.write_str("side-effect ordering of unclassified cause"),
+        }
+    }
+}
+
+/// One dependency edge `from -> to` between the premise's endpoints whose
+/// cause the premise contradicts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContradictingEdge {
+    pub from: SourceUnitOrdinal,
+    pub to: SourceUnitOrdinal,
+    pub conflict: KnownConflict,
+}
+
+/// A `commuting_statements` entry whose endpoints the analysis derived to
+/// definitely conflict (SPEC.md § Commuting statements).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommutingStatementsContradiction {
+    pub spec_location: String,
+    pub a: SourceUnitOrdinal,
+    pub a_binding: Option<String>,
+    pub b: SourceUnitOrdinal,
+    pub b_binding: Option<String>,
+    pub conflicts: Vec<ContradictingEdge>,
+}
+
+fn source_unit_label(ordinal: SourceUnitOrdinal, binding: &Option<String>) -> String {
+    match binding {
+        Some(binding) => format!("#{} (`{binding}`)", ordinal.0),
+        None => format!("#{} (anonymous statement)", ordinal.0),
+    }
+}
+
+impl fmt::Display for CommutingStatementsContradiction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} contradicts a source fact: source units {} and {} definitely conflict: ",
+            self.spec_location,
+            source_unit_label(self.a, &self.a_binding),
+            source_unit_label(self.b, &self.b_binding),
+        )?;
+        for (i, edge) in self.conflicts.iter().enumerate() {
+            if i > 0 {
+                f.write_str("; ")?;
+            }
+            write!(f, "#{} -> #{}: {}", edge.from.0, edge.to.0, edge.conflict)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for CommutingStatementsContradiction {}
+
+/// Why a `commuting_statements` entry inerts nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnusedPremiseReason {
+    /// No `sequenced` edge joins the two source units.
+    NoSequencedEdge,
+    /// Every `sequenced` edge between them orders two summarized effects on
+    /// disjoint cells (the strict S-chain's adjacency): the analysis already
+    /// knows the pair commutes and `dataflow_aware_s_chain` drops the edge
+    /// without any premise.
+    SummarizedEndpoints,
+}
+
+/// A `commuting_statements` entry whose endpoints resolve but which inerts
+/// no edge: the premise buys nothing and the spec carries a stale trust
+/// assertion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommutingStatementsUnused {
+    pub spec_location: String,
+    pub a: SourceUnitOrdinal,
+    pub a_binding: Option<String>,
+    pub b: SourceUnitOrdinal,
+    pub b_binding: Option<String>,
+    pub reason: UnusedPremiseReason,
+}
+
+impl fmt::Display for CommutingStatementsUnused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} inerts no sequenced edge: source units {} and {} {}; remove the entry",
+            self.spec_location,
+            source_unit_label(self.a, &self.a_binding),
+            source_unit_label(self.b, &self.b_binding),
+            match self.reason {
+                UnusedPremiseReason::NoSequencedEdge => "are already unordered",
+                UnusedPremiseReason::SummarizedEndpoints =>
+                    "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` \
+                     already leaves unordered",
+            },
+        )
+    }
+}
+
+impl std::error::Error for CommutingStatementsUnused {}
+
 /// Graph construction is intentionally source-free. Captured value and native
 /// author inputs must be resolved by the prepared whole-program AST/index
 /// pipeline before callers extract StatementFacts and build this graph.
@@ -54,12 +179,16 @@ pub enum DependencyGraphBuildError {
     UnresolvedValueInputs { count: usize },
     UnresolvedNativeInputs { count: usize },
     UnresolvedArgumentInputs { count: usize },
+    CommutingStatementsContradicted(CommutingStatementsContradiction),
+    CommutingStatementsUnused(CommutingStatementsUnused),
 }
 
 impl fmt::Display for DependencyGraphBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DuplicateTopLevelDeclaration(error) => error.fmt(f),
+            Self::CommutingStatementsContradicted(error) => error.fmt(f),
+            Self::CommutingStatementsUnused(error) => error.fmt(f),
             Self::UnresolvedValueInputs { count } => write!(
                 f,
                 "cannot build a dependency graph with {count} unresolved captured value input(s); resolve them against the exact provider source first"
@@ -90,11 +219,17 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 /// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping source units to
 /// destination modules.
 ///
+/// `commuting_statements` are the chunk's resolved author premises; each is
+/// applied by [`apply_commuting_statements`] after every edge exists, so the
+/// emitted graph still records what source analysis found and marks the
+/// edges a premise made inert.
+///
 /// [`build_module_quotient`]: super::quotient::build_module_quotient
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
     options: DependencyGraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraph, DependencyGraphBuildError> {
     if !options.value_inputs.is_empty() {
         return Err(DependencyGraphBuildError::UnresolvedValueInputs {
@@ -445,7 +580,7 @@ pub fn build_dependency_graph_with(
             .then(reason_a.statement_ordinal.cmp(&reason_b.statement_ordinal))
             .then(reason_a.binding.cmp(&reason_b.binding))
     });
-    let edges: Vec<DependencyEdge> = raw_edges
+    let mut edges: Vec<DependencyEdge> = raw_edges
         .into_iter()
         .enumerate()
         .map(|(idx, (from, to, reason))| DependencyEdge {
@@ -455,7 +590,199 @@ pub fn build_dependency_graph_with(
             reason,
         })
         .collect();
-    Ok(DependencyGraph::from_parts(nodes, edges))
+    let commuting_premises =
+        apply_commuting_statements(&mut edges, &stmt_by_source_unit, commuting_statements)?;
+    Ok(DependencyGraph::from_parts(
+        nodes,
+        edges,
+        commuting_premises,
+    ))
+}
+
+/// How a `commuting_statements` premise may treat one edge between its
+/// endpoints.
+enum PremiseVerdict {
+    /// The premise may make the edge inert.
+    Inertable,
+    /// The analysis already knows the two effects are unordered; the edge
+    /// exists only as strict-chain adjacency.
+    Summarized,
+    /// The analysis derived a definite conflict the premise contradicts.
+    Known(KnownConflict),
+}
+
+/// Classify one dependency edge between the two source units of a premise
+/// from its retained cause and the endpoints' recorded effects. This is the
+/// soundness boundary of `commuting_statements`:
+///
+/// - `CoDeclaration`, `SharedVarAccess`, `BindingTimeline` and
+///   `UninitializedObservation` are derived from a named binding both sides
+///   touch: known.
+/// - `CellOrder` with an explicit relation (`ReadAfterWrite`,
+///   `WriteAfterWrite`, `WriteAfterRead`, `UseAfterAllocation`) is derived
+///   from recorded effects on both sides, whatever each side's class: known.
+///   A `CellOrder` edge carrying only barrier relations (`AfterBarrier`,
+///   `BarrierAfterPrior`, `FrontierAfterCell`) exists because one side's
+///   effects are not summarizable; that is what the premise certifies.
+/// - `StrictChain` consults no cells, so the endpoints' facts decide: an
+///   unsummarizable endpoint (`dataflow_opacity` non-empty) makes the edge
+///   inertable; two summarized endpoints are already decided by the
+///   analysis and the premise buys nothing (`Summarized`).
+/// - Before accepting any edge, the two recorded summaries are compared:
+///   a shared cell with a write is a known conflict even when the emitting
+///   rule did not name it (a barrier target's own recorded effects).
+/// - A missing cause is treated as known, so the premise never widens
+///   through an unclassified edge.
+///
+/// Not covered: heap effects a barrier *target* inherited from a resolved
+/// callee are not in its recorded summary, so a premise over such a pair is
+/// accepted on the barrier relation alone.
+fn premise_verdict(
+    edge: &DependencyEdge,
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+) -> Option<PremiseVerdict> {
+    let from = stmt_by_source_unit[&edge.from];
+    let to = stmt_by_source_unit[&edge.to];
+    let verdict = match edge.reason.kind {
+        DepKind::CoDeclaration => PremiseVerdict::Known(KnownConflict::CoDeclaration {
+            binding: edge
+                .reason
+                .binding()
+                .expect("co-declaration edges name their binding")
+                .0
+                .clone(),
+        }),
+        DepKind::Sequenced => match edge.reason.sequenced_cause() {
+            None => PremiseVerdict::Known(KnownConflict::Unclassified),
+            Some(
+                cause @ (SequencedCause::SharedVarAccess { .. }
+                | SequencedCause::BindingTimeline { .. }
+                | SequencedCause::UninitializedObservation { .. }),
+            ) => PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone())),
+            Some(cause @ SequencedCause::CellOrder { conflicts, .. }) => {
+                let explicit = conflicts.iter().any(|conflict| {
+                    matches!(
+                        conflict,
+                        CellConflict::ReadAfterWrite { .. }
+                            | CellConflict::WriteAfterWrite { .. }
+                            | CellConflict::WriteAfterRead { .. }
+                            | CellConflict::UseAfterAllocation { .. }
+                    )
+                });
+                if explicit {
+                    PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone()))
+                } else {
+                    PremiseVerdict::Inertable
+                }
+            }
+            Some(SequencedCause::StrictChain) => {
+                if from.dataflow_summarizable() && to.dataflow_summarizable() {
+                    PremiseVerdict::Summarized
+                } else {
+                    PremiseVerdict::Inertable
+                }
+            }
+        },
+        _ => return None,
+    };
+    if matches!(verdict, PremiseVerdict::Known(_)) {
+        return Some(verdict);
+    }
+    // Recorded cells are facts even on an unsummarizable statement (its
+    // unknown effects come on top), so a shared written cell wins.
+    Some(
+        conflicting_cell(&from.effects(), &to.effects()).map_or(verdict, |cell| {
+            PremiseVerdict::Known(KnownConflict::SharedCell {
+                cell: EffectCellReport::from(&cell),
+            })
+        }),
+    )
+}
+
+/// A cell one summary writes and the other reads or writes, if any.
+fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<EffectCell> {
+    a.writes
+        .iter()
+        .find(|cell| b.writes.contains(cell) || b.reads.contains(cell))
+        .or_else(|| b.writes.iter().find(|cell| a.reads.contains(cell)))
+        .cloned()
+}
+
+/// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
+/// statements). For each pair, every `Sequenced` edge between the two source
+/// units (either direction) becomes inert — unless [`premise_verdict`] finds
+/// a definite conflict, in which case the entry contradicts a source fact and
+/// the build fails. `EagerUse` edges are never touched: an at-init read is a
+/// dataflow dependence, not an ordering of effects. A pair with no inertable
+/// edge is unused and the build fails so the spec sheds the stale assertion.
+fn apply_commuting_statements(
+    edges: &mut [DependencyEdge],
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    commuting_statements: &[ResolvedCommutingStatements],
+) -> Result<Vec<AppliedCommutingPremise>, DependencyGraphBuildError> {
+    let mut applied = Vec::with_capacity(commuting_statements.len());
+    for premise in commuting_statements {
+        let a = SourceUnitId(premise.a.source_unit.0);
+        let b = SourceUnitId(premise.b.source_unit.0);
+        let mut conflicts = Vec::new();
+        let mut inertable = Vec::new();
+        let mut summarized = false;
+        for edge in edges.iter() {
+            if !((edge.from == a && edge.to == b) || (edge.from == b && edge.to == a)) {
+                continue;
+            }
+            match premise_verdict(edge, stmt_by_source_unit) {
+                None => {}
+                Some(PremiseVerdict::Inertable) => inertable.push(edge.id),
+                Some(PremiseVerdict::Summarized) => summarized = true,
+                Some(PremiseVerdict::Known(conflict)) => conflicts.push(ContradictingEdge {
+                    from: SourceUnitOrdinal(edge.from.0),
+                    to: SourceUnitOrdinal(edge.to.0),
+                    conflict,
+                }),
+            }
+        }
+        if !conflicts.is_empty() {
+            return Err(DependencyGraphBuildError::CommutingStatementsContradicted(
+                CommutingStatementsContradiction {
+                    spec_location: premise.spec_location.clone(),
+                    a: premise.a.source_unit,
+                    a_binding: premise.a.selected_binding.clone(),
+                    b: premise.b.source_unit,
+                    b_binding: premise.b.selected_binding.clone(),
+                    conflicts,
+                },
+            ));
+        }
+        if inertable.is_empty() {
+            return Err(DependencyGraphBuildError::CommutingStatementsUnused(
+                CommutingStatementsUnused {
+                    spec_location: premise.spec_location.clone(),
+                    a: premise.a.source_unit,
+                    a_binding: premise.a.selected_binding.clone(),
+                    b: premise.b.source_unit,
+                    b_binding: premise.b.selected_binding.clone(),
+                    reason: if summarized {
+                        UnusedPremiseReason::SummarizedEndpoints
+                    } else {
+                        UnusedPremiseReason::NoSequencedEdge
+                    },
+                },
+            ));
+        }
+        for id in &inertable {
+            edges[id.0].reason.inerted_by = Some(premise.reference.clone());
+        }
+        applied.push(AppliedCommutingPremise {
+            reference: premise.reference.clone(),
+            spec_location: premise.spec_location.clone(),
+            a,
+            b,
+            inerted_edges: inertable,
+            note: premise.note.clone(),
+        });
+    }
+    Ok(applied)
 }
 
 /// Preserve source-order observations of mutable array contents. Binding-cell
@@ -1770,7 +2097,7 @@ mod array_heap_frontier_tests {
         )
         .unwrap();
         assert_eq!(
-            build_dependency_graph_with(&[], options).unwrap_err(),
+            build_dependency_graph_with(&[], options, &[]).unwrap_err(),
             DependencyGraphBuildError::UnresolvedNativeInputs { count: 1 }
         );
     }

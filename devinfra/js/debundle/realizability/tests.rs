@@ -20,7 +20,7 @@ use report_fixtures::{
 fn parse_and_build(source: &str) -> DependencyGraph {
     let module = raw_js_test_support::parse(source);
     let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
-    build_dependency_graph_with(&facts, Default::default()).unwrap()
+    build_dependency_graph_with(&facts, Default::default(), &[]).unwrap()
 }
 
 /// The hypothetical full gate must reproduce the pure canonical projection
