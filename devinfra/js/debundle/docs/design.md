@@ -761,8 +761,10 @@ globalThis`) marks the bindings it flows into (transitively,
   An exact checked implicit local construction can omit its own opaque heap
   effect. The shared local-class proof supplies accepted field shapes and stable
   construction sites; the canonical native index validates every native field's
-  identity/integrity premise, and `NativeCallModel` separately supplies a
-  fresh-allocation heap capability for zero-argument collection construction.
+  identity/integrity premise, and the keyed-collection rows of the builtin
+  table (`facts/abstract_domain/builtins.rs`, `allocates`) separately supply
+  the fresh-allocation heap capability for zero-argument collection
+  construction.
   This is not derived from purity or synchronous-call completeness. The array
   collector projects call promotions per operation before unioning a source
   unit, using the same value-flow call-target query as ordinary call facts.

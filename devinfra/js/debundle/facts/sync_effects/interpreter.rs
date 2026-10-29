@@ -4,7 +4,6 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
-use super::native_calls::{CallInputs, CallReturn, NativeCallModel, NativeHeapEffect};
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
@@ -15,6 +14,8 @@ use super::{
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
+use crate::facts::abstract_domain::builtins::{ArgSel, IntrinsicOp, Return, Row};
+use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
@@ -51,7 +52,7 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
 
-enum NativeCallModelSource {
+enum NativeIdentitySource {
     Inferred {
         semantic_key: SemanticKey,
     },
@@ -186,7 +187,7 @@ struct OwnDescriptorMapState {
 
 #[derive(Debug, Clone)]
 pub(super) struct NativeCallResolution {
-    returns: CallReturn,
+    row: &'static Row,
     own_property_projection: Option<OwnPropertyProof>,
 }
 
@@ -904,31 +905,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    /// Return a native model only after proving the source-level intrinsic
-    /// identity. Input eligibility is checked separately.
-    fn exact_native_call_model(
+    /// Return a builtin row only after proving the source-level intrinsic
+    /// identity. Operand eligibility is checked separately.
+    fn exact_native_call_row(
         &self,
         kind: CallKind,
         callee: &ValueExpr,
         site: CallSite,
-    ) -> Option<(NativeCallModel, NativeCallModelSource)> {
-        let (model, key) = super::native_call_identity_key(kind, callee)?;
+    ) -> Option<(&'static Row, NativeIdentitySource)> {
+        let (row, key) = super::native_call_identity_key(kind, callee)?;
         if kind == CallKind::Call
             && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
-            && ((model.intrinsic == NativeIntrinsic::Symbol
+            && ((row.requires == NativeIntrinsic::Symbol
                 && super::selected_symbol_binding(callee, evidence.operation).is_some())
-                || (model.intrinsic == NativeIntrinsic::Object
+                || (row.op == IntrinsicOp::ObjectFreeze
                     && evidence.operation
                         == NativeInputKind::CallIdentity(
                             spec::NativeCallIdentityKind::ObjectFreeze,
-                        )
-                    && matches!(model.inputs, CallInputs::FreshDataRecord)
-                    && matches!(model.returns, CallReturn::Argument(0))
-                    && model.heap_effect == NativeHeapEffect::Opaque))
+                        )))
         {
             return Some((
-                model,
-                NativeCallModelSource::AuthorInput {
+                row,
+                NativeIdentitySource::AuthorInput {
                     evidence: Box::new(evidence.clone()),
                 },
             ));
@@ -941,11 +939,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             proof,
             judgment.dependencies(),
         );
-        Some((model, NativeCallModelSource::Inferred { semantic_key: key }))
+        Some((row, NativeIdentitySource::Inferred { semantic_key: key }))
     }
 
-    /// A successful model lookup certifies the operation after its inputs
-    /// have evaluated. It does not infer purity or exception freedom.
+    /// An admitted row certifies the operation after its inputs have
+    /// evaluated. It does not infer purity or exception freedom.
     fn resolve_native_call(
         &mut self,
         kind: CallKind,
@@ -968,6 +966,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *resolution
     }
 
+    /// Admit a row for the call's operands. The row's writes are proved
+    /// first; each proof names the operands it shows to be exact ordinary
+    /// objects, on which the listed internal methods run no user code. Every
+    /// remaining coercion must land on a primitive operand.
     pub(super) fn resolve_native_call_transfer(
         &mut self,
         kind: CallKind,
@@ -976,77 +978,102 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<NativeCallResolution> {
-        let (model, source) = self.exact_native_call_model(kind, callee, site)?;
+        let (row, source) = self.exact_native_call_row(kind, callee, site)?;
+        if !row.arity.contains(&args.len()) || !row.invokes.is_empty() {
+            return None;
+        }
         let native_call_identity = match &source {
-            NativeCallModelSource::Inferred { semantic_key } => Some(semantic_key.clone()),
-            NativeCallModelSource::AuthorInput { .. } => None,
+            NativeIdentitySource::Inferred { semantic_key } => Some(semantic_key.clone()),
+            NativeIdentitySource::AuthorInput { .. } => None,
         };
+        let mut ordinary_operands = BTreeSet::new();
         let mut own_property_projection = None;
-
-        let admitted = match model.inputs {
-            CallInputs::Primitives { min, max } => {
-                (min..=max).contains(&args.len())
-                    && args.iter().all(|values| {
-                        !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
-                    })
-            }
-            CallInputs::FreshDataRecord => {
-                matches!(expressions, [ValueExpr::ObjectLiteral(object, _)]
-                    if self.inputs.index.plain_data_objects.contains(object))
-            }
-            CallInputs::OwnDescriptorRecord => {
-                let [values] = args else {
-                    return None;
-                };
-                own_property_projection = Some(self.own_property_projection(
-                    values,
-                    OwnPropertyRequest::Descriptors {
-                        native_call_identity: native_call_identity.clone()?,
-                    },
-                )?);
-                true
-            }
-            CallInputs::OwnPropertyNamesRecord => {
-                let [values] = args else {
-                    return None;
-                };
-                own_property_projection = Some(self.own_property_projection(
-                    values,
-                    OwnPropertyRequest::Names {
-                        native_call_identity: native_call_identity.clone()?,
-                    },
-                )?);
-                true
-            }
-            CallInputs::FreshDescriptorMapTarget => {
-                matches!(args, [target_values, map_values]
-                    if self.ordinary_object_prototype_intact()
+        for mutation in row.mutates {
+            match *mutation {
+                // Freezing is silent only on the fresh plain-data literal itself.
+                Mutation::Integrity(ArgSel::Arg(index)) => {
+                    if !matches!(expressions.get(index), Some(ValueExpr::ObjectLiteral(object, _))
+                        if self.inputs.index.plain_data_objects.contains(object))
+                    {
+                        return None;
+                    }
+                    ordinary_operands.insert(index);
+                }
+                Mutation::DefineProperties {
+                    target: ArgSel::Arg(target),
+                    descriptors: ArgSel::Arg(descriptors),
+                } => {
+                    let (Some(target_values), Some(map_values)) =
+                        (args.get(target), args.get(descriptors))
+                    else {
+                        return None;
+                    };
+                    if !(self.ordinary_object_prototype_intact()
                         && matches!(target_values.iter().collect::<Vec<_>>().as_slice(),
-                            [AbstractValue::Origin(ValueOrigin::Object(target))]
-                                if self.inputs.index.plain_data_objects.contains(target)
-                                    && !self.state.tainted_objects.contains(target)
-                                    && self.state.prefix_object_properties.get(target)
+                            [AbstractValue::Origin(ValueOrigin::Object(object))]
+                                if self.inputs.index.plain_data_objects.contains(object)
+                                    && !self.state.tainted_objects.contains(object)
+                                    && self.state.prefix_object_properties.get(object)
                                         .is_some_and(BTreeMap::is_empty)
-                                    && !self.state.applied_accessors.contains_key(target))
+                                    && !self.state.applied_accessors.contains_key(object))
                         && matches!(map_values.iter().collect::<Vec<_>>().as_slice(),
                             [AbstractValue::OwnDescriptorMap(map_site)]
                                 if self.state.own_descriptor_maps.get(map_site)
                                     .is_some_and(|map| map.valid)))
+                    {
+                        return None;
+                    }
+                    ordinary_operands.extend([target, descriptors]);
+                }
+                Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(index)) => {
+                    own_property_projection = Some(self.own_property_projection(
+                        args.get(index)?,
+                        OwnPropertyRequest::Descriptors {
+                            native_call_identity: native_call_identity.clone()?,
+                        },
+                    )?);
+                    ordinary_operands.insert(index);
+                }
+                Mutation::FreshOwnKeysOf(ArgSel::Arg(index)) => {
+                    own_property_projection = Some(self.own_property_projection(
+                        args.get(index)?,
+                        OwnPropertyRequest::Names {
+                            native_call_identity: native_call_identity.clone()?,
+                        },
+                    )?);
+                    ordinary_operands.insert(index);
+                }
+                // Retention needs one known callable; the slot stores it
+                // without invoking it.
+                Mutation::FreshRetains(ArgSel::Arg(index)) => {
+                    let values = args.get(index)?;
+                    if values.len() != 1
+                        || !values.iter().next().is_some_and(|value| {
+                            matches!(
+                                value,
+                                AbstractValue::Origin(ValueOrigin::Function(_))
+                                    | AbstractValue::Closure(_, _)
+                            )
+                        })
+                    {
+                        return None;
+                    }
+                }
             }
-            CallInputs::OrdinaryCallable => {
-                matches!(args, [values]
-                if values.len() == 1
-                    && values.iter().next().is_some_and(|value| matches!(
-                        value,
-                        AbstractValue::Origin(ValueOrigin::Function(_))
-                            | AbstractValue::Closure(_, _)
-                    )))
-            }
-        };
-        if !admitted {
-            return None;
         }
-        if let NativeCallModelSource::AuthorInput { evidence } = source {
+        for (ArgSel::Arg(index), _) in row.coerces {
+            if ordinary_operands.contains(index) {
+                continue;
+            }
+            // An absent argument is `undefined`.
+            let Some(values) = args.get(*index) else {
+                continue;
+            };
+            if values.is_empty() || !values.iter().all(AbstractValue::is_primitive) {
+                return None;
+            }
+        }
+        if let NativeIdentitySource::AuthorInput { evidence } = source {
             let source_span = site.source_span();
             self.state.native_operation_input_uses.borrow_mut().insert(
                 (source_span.lo.0, source_span.hi.0),
@@ -1064,7 +1091,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(proof.inference_use());
         }
         Some(NativeCallResolution {
-            returns: model.returns,
+            row,
             own_property_projection,
         })
     }
@@ -1155,38 +1182,61 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         site: CallSite,
     ) -> Values {
         let NativeCallResolution {
-            returns,
+            row,
             own_property_projection,
         } = resolution;
-        let mut values = match returns {
-            CallReturn::Unknown => unknown(),
-            CallReturn::Primitive => Values::from([AbstractValue::NonCallable]),
-            CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
-            CallReturn::OwnDescriptorMap => self
-                .capture_own_descriptor_map(site, own_property_projection)
-                .map(|map| Values::from([map]))
-                .unwrap_or_else(unknown),
-            CallReturn::OwnPropertyNames => self
-                .own_property_names_array(site, own_property_projection)
-                .map(|array| Values::from([array]))
-                .unwrap_or_else(unknown),
-            CallReturn::DefinedPropertiesTarget => args.first().cloned().unwrap_or_else(unknown),
-            CallReturn::DeferredArgument(index) => {
-                let Some(argument) = args.get(index) else {
-                    return unknown();
-                };
-                // Data descriptors retain object identities, whose fields can
-                // acquire callbacks later. Also snapshot current callbacks so
-                // replacing a source property cannot erase copied closures.
-                let mut retained = argument.clone();
-                retained.extend(self.callback_values(argument));
-                // This retained graph establishes no recursive ordinary-data
-                // shape or stronger retained-factory input contract.
-                Values::from([self.deferred_callbacks(retained), AbstractValue::Unknown])
-            }
+        let mut values = match row.returns {
+            Return::Unknown => unknown(),
+            Return::Primitive => Values::from([AbstractValue::NonCallable]),
+            Return::Arg(ArgSel::Arg(index)) => args.get(index).cloned().unwrap_or_else(unknown),
+            Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
         };
         if may_throw {
             values.insert(AbstractValue::Unavailable);
+        }
+        values
+    }
+
+    /// The fresh allocation's value: its contents are the row's writes to
+    /// it; an allocation with no tracked contents is unknown.
+    fn fresh_allocation_values(
+        &mut self,
+        row: &Row,
+        args: &[Values],
+        site: CallSite,
+        mut own_property_projection: Option<OwnPropertyProof>,
+    ) -> Values {
+        let mut values = Values::new();
+        for mutation in row.mutates {
+            match *mutation {
+                Mutation::FreshOwnDescriptorsOf(_) => {
+                    values.extend(
+                        self.capture_own_descriptor_map(site, own_property_projection.take()),
+                    );
+                }
+                Mutation::FreshOwnKeysOf(_) => {
+                    values.extend(
+                        self.own_property_names_array(site, own_property_projection.take()),
+                    );
+                }
+                Mutation::FreshRetains(ArgSel::Arg(index)) => {
+                    let Some(argument) = args.get(index) else {
+                        return unknown();
+                    };
+                    // Data descriptors retain object identities, whose fields can
+                    // acquire callbacks later. Also snapshot current callbacks so
+                    // replacing a source property cannot erase copied closures.
+                    let mut retained = argument.clone();
+                    retained.extend(self.callback_values(argument));
+                    // This retained graph establishes no recursive ordinary-data
+                    // shape or stronger retained-factory input contract.
+                    values.extend([self.deferred_callbacks(retained), AbstractValue::Unknown]);
+                }
+                Mutation::Integrity(_) | Mutation::DefineProperties { .. } => {}
+            }
+        }
+        if values.is_empty() {
+            return unknown();
         }
         values
     }
@@ -5153,18 +5203,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if let Some(proof) = self.descriptor_copy_projection(callee, &args, *span) {
                     return self.install_descriptor_copy_result(proof, &args, *span);
                 }
-                if let Some(returns) =
+                if let Some(resolution) =
                     self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
                 {
-                    return self.native_return_values(returns, &args, args_may_throw, *span);
+                    return self.native_return_values(resolution, &args, args_may_throw, *span);
                 }
                 if args.len() == 2
                     && self.ordinary_object_prototype_intact()
                     && self
-                        .exact_native_call_model(CallKind::Call, callee, *span)
-                        .is_some_and(|(model, _)| {
-                            matches!(model.returns, CallReturn::DefinedPropertiesTarget)
-                        })
+                        .exact_native_call_row(CallKind::Call, callee, *span)
+                        .is_some_and(|(row, _)| row.op == IntrinsicOp::ObjectDefineProperties)
                 {
                     // This is only a successful-result identity fact. The
                     // call-timing lane still needs a live descriptor map and
@@ -6122,7 +6170,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if !call.has_spread
-            && let Some(returns) = self.resolve_native_call(
+            && let Some(resolution) = self.resolve_native_call(
                 call.kind,
                 &call.callee,
                 CallSite::from(call.span),
@@ -6130,7 +6178,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &args,
             )
         {
-            if matches!(returns.returns, CallReturn::DefinedPropertiesTarget) {
+            if resolution
+                .row
+                .mutates
+                .iter()
+                .any(|mutation| matches!(mutation, Mutation::DefineProperties { .. }))
+            {
                 self.apply_own_descriptor_map(&args);
             }
             return;

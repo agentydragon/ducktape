@@ -853,21 +853,20 @@ Reassignment to an object or an unknown alternative restores conservative
 conversion analysis. This does not fold the imported value, prove the operator
 cannot throw, or remove binding-read and import-order constraints.
 
-Native call models share one checked projection for call timing and successful
-return values. A direct `Math.round`, `floor`, `ceil`, `trunc`, `abs`, or `sign`
-call with one proven primitive argument has no synchronous callback effect and
-returns a primitive. That return fact composes with subsequent conversions.
-Direct `Symbol` and `Symbol.for` calls with zero or one primitive argument also
-have no synchronous callback effect and return a primitive.
-Direct `RegExp` calls and construction admit zero to two primitive arguments
-for timing only; their results remain opaque and compilation may still throw.
-Fresh-record `Object.freeze` uses the same projection and returns its original
-argument identity, preserving callbacks stored in that object.
+Guarded native call summaries share one checked projection for call timing
+and successful return values. The summarized operations, the argument counts
+and operand shapes they admit, their allocations, writes and return shapes are
+the rows of `facts/abstract_domain/builtins.rs`, each with its ECMA-262
+citation. A call is admitted only when every coercion its row lists lands on a
+proven primitive or exact ordinary operand. A row returning a primitive
+composes with subsequent conversions; a row returning an argument keeps that
+argument's identity and the callbacks stored in it; a row with an untracked
+result stays opaque.
 
 The intrinsic must be undeclared and unshadowed. Dynamic scope or visible
 writes to its intrinsic/global family, including aliases and reflective writes,
-disable the model. Spreads and unsupported input shapes remain conservative.
-Callee and argument evaluation retain their effects and throws. These models
+disable the row. Spreads and unsupported input shapes remain conservative.
+Callee and argument evaluation retain their effects and throws. These summaries
 neither classify calls as pure nor bypass their ordinary source-order constraints.
 
 ## Purity hint diagnostics
@@ -1410,12 +1409,13 @@ contract.
 ## Inferred FinalizationRegistry callback retention
 
 A direct `new FinalizationRegistry(cleanup)` or
-`new globalThis.FinalizationRegistry(cleanup)` may use the native call model
-when `cleanup` evaluates to exactly one known ordinary function origin or
-closure. The constructor retains that callback in its new registry; it does
-not invoke it during construction. The successful result is opaque and retains
-the callback and its captures. Later use or opaque consumption promotes those
-callbacks through the ordinary retained-value analysis.
+`new globalThis.FinalizationRegistry(cleanup)` uses the `FinalizationRegistry`
+row of the builtin table when `cleanup` evaluates to exactly one known ordinary
+function origin or closure. The constructor retains that callback in its new
+registry; it does not invoke it during construction. The successful result is
+opaque and retains the callback and its captures. Later use or opaque
+consumption promotes those callbacks through the ordinary retained-value
+analysis.
 
 The bare global and `globalThis` binding must be undeclared and unshadowed.
 `globalThis` support is limited to direct static dot-member callees, including
@@ -1425,8 +1425,9 @@ namespace access, spreads, unknown or mixed callback values, and noncallable
 inputs remain on the conservative path. Dynamic scope, or any visible write to
 the global object or the target intrinsic in any analyzed module, disables the
 model. Callee and argument evaluation, throws, and at-init ordering remain
-represented. The constructor remains impure and opaque for heap ordering; this
-is not a purity, throw-freedom, fresh-allocation, registration or method model.
+represented. The constructor remains impure and opaque for heap ordering: no
+consumer reads the row's allocation as a heap-locality certificate, and this is
+not a purity, throw-freedom, registration or method model.
 
 The [FinalizationRegistry constructor](https://tc39.es/ecma262/2025/multipage/managing-memory.html#sec-finalization-registry-constructor)
 checks callability, creates registry state and stores the callback through
@@ -2303,6 +2304,11 @@ into the package island. These explain the stripper's conservative classificatio
 they do not assert that every reported dependency executes synchronously.
 
 ## Native collection callback effects
+
+Direct native calls and constructions the interpreter can summarize without
+running user code are the rows of `facts/abstract_domain/builtins.rs`
+(§ Synchronous analysis limits). The proofs below cover array iteration and
+`push`, which have no row yet.
 
 An unexported `const` facade built by the exact nested
 `Object.freeze(Object.defineProperty({__proto__: null, ...ownData},
