@@ -110,7 +110,13 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
     """Wait for setup's retained terminal event before starting the short-timeout provider read."""
     async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
         async for _ in changes:
-            retained = await deployed.history.read_session_events(session_id, limit=1000)
+            try:
+                retained = await deployed.history.read_session_events(session_id, limit=1000)
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+                # Dispatcher admission can precede this Session's first History export.
+                continue
             for entry in retained.entries:
                 if entry.event.HasField("setup_interrupted"):
                     raise AssertionError(f"sampler setup was interrupted for Session {session_id}")
