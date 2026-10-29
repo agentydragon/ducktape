@@ -31,10 +31,11 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 async def _capture_session_diagnostics(
-    deployed: CentralStack, session_id: str, command_id: str, admission: str
+    deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
 ) -> None:
     """Retain sampler, History, Sandbox, and full event evidence for a Session."""
     diagnostic: dict[str, object] = {
+        "phase": phase,
         "session_id": session_id,
         "command_id": command_id,
         "dispatcher_admission": admission,
@@ -75,6 +76,24 @@ async def _capture_session_diagnostics(
         }
     except Exception as error:
         diagnostic["sandbox_error"] = repr(error)
+    try:
+        runner_lease = await kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
+        diagnostic["runner_lease"] = json.loads(runner_lease)
+    except Exception as error:
+        diagnostic["runner_lease_error"] = repr(error)
+    try:
+        diagnostic["cluster_services_endpoints_pods"] = json.loads(
+            await kubectl("get", "services,endpointslices,pods", "-o", "json")
+        )
+    except Exception as error:
+        diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
+    for component in ("runner-gateway", "history-service"):
+        try:
+            diagnostic[f"{component}_logs"] = await kubectl(
+                "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
+            )
+        except Exception as error:
+            diagnostic[f"{component}_logs_error"] = repr(error)
     (undeclared_outputs_dir() / "central-sampler-session-diagnostics.json").write_text(
         json.dumps(diagnostic, indent=2) + "\n"
     )
@@ -166,7 +185,9 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
             await _wait_for_setup(deployed, session_id)
             first_exchange = await endpoint.next()
         except Exception:
-            await _capture_session_diagnostics(deployed, session_id, command_id, admission)
+            await _capture_session_diagnostics(
+                deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
+            )
             raise
         async with first_exchange as exchange:
             assert any(item.get("content") == prompt for item in exchange.request.body["input"])
@@ -192,31 +213,40 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
                     model=MODEL,
                 ).events
             )
-        async with await endpoint.next() as exchange:
-            outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-            result = json.loads(outputs[-1]["output"][0]["text"])
-            assert result["exit_code"] == 0
-            if is_vm:
-                assert "prepared-on-executor\n" in result["output"]
-                assert "VM_PID1 systemd\n" in result["output"]
-                assert "VM_EXECUTOR_UID 107\n" in result["output"]
-                (cgroup_line,) = [
-                    line for line in result["output"].splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")
-                ]
-                executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
-                assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
-                    executor_cgroup
+        try:
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                result = json.loads(outputs[-1]["output"][0]["text"])
+                assert result["exit_code"] == 0
+                if is_vm:
+                    assert "prepared-on-executor\n" in result["output"]
+                    assert "VM_PID1 systemd\n" in result["output"]
+                    assert "VM_EXECUTOR_UID 107\n" in result["output"]
+                    (cgroup_line,) = [
+                        line for line in result["output"].splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")
+                    ]
+                    executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
+                    assert executor_cgroup.startswith(
+                        "/agentplane.slice/agentplane-executors.slice/agentplane-native-"
+                    ), executor_cgroup
+                    assert executor_cgroup.count("/") == 3, executor_cgroup
+                    assert executor_cgroup.endswith(".service"), executor_cgroup
+                    vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
+                else:
+                    assert result["output"] == "prepared-on-executor\n"
+                assert any(
+                    item.get("encrypted_content") == "test-opaque-central-reasoning"
+                    for item in exchange.request.body["input"]
                 )
-                assert executor_cgroup.count("/") == 3, executor_cgroup
-                assert executor_cgroup.endswith(".service"), executor_cgroup
-                vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
-            else:
-                assert result["output"] == "prepared-on-executor\n"
-            assert any(
-                item.get("encrypted_content") == "test-opaque-central-reasoning"
-                for item in exchange.request.body["input"]
-            )
-            await exchange.send(*response_stream([Message(answer)], model=MODEL).events)
+                await exchange.send(*response_stream([Message(answer)], model=MODEL).events)
+        except Exception as error:
+            try:
+                await _capture_session_diagnostics(
+                    deployed, session_id, command_id, admission, phase="tool_result_model_request"
+                )
+            except Exception as diagnostic_error:
+                error.add_note(f"Could not capture central sampler diagnostics: {diagnostic_error!r}")
+            raise
         events = deployed.sampler.FollowEvents(
             sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
             metadata=deployed.sampler_metadata,
@@ -261,7 +291,9 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
         assert finished[0].event.setup_finished.exit_code == 0
         setup_stdout = b"".join(entry.event.setup_output.stdout for entry in retained.entries)
         if setup_stdout != b"setup-on-executor\n":
-            await _capture_session_diagnostics(deployed, session_id, command_id, admission)
+            await _capture_session_diagnostics(
+                deployed, session_id, command_id, admission, phase="setup_stdout_assertion"
+            )
         assert setup_stdout == b"setup-on-executor\n"
         completed = [entry for entry in retained.entries if entry.event.HasField("item_completed")]
         for text in (reasoning, answer):
