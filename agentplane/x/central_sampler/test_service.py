@@ -11,6 +11,7 @@ from typing import Any
 import grpc
 import pytest
 import pytest_bazel
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import SseEvent
@@ -36,6 +37,57 @@ async def completed(
     finally:
         stream.cancel()
     raise AssertionError("event stream ended")
+
+
+async def test_session_store_survives_idle_leases_and_is_separate_between_sessions(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            first = open_request(tmp_path)
+            second = open_request(tmp_path)
+            second.session_id = "ad901ef2-5cf6-443a-b456-f15fa74c9b07"
+            for request in (first, second):
+                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+
+            async def run_cell(session_id: str, command_id: str, source: str, expected: str) -> int:
+                await stub.SubmitInput(
+                    runner_service_pb2.SubmitInputRequest(
+                        session_id=session_id, command_id=command_id, text="Run the next cell."
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                async with await endpoint.next() as exchange:
+                    await exchange.send(
+                        *response_stream([CustomToolCall(command_id, "exec", source)], model="test-model").events
+                    )
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                    ]
+                    assert expected in json.dumps(outputs[-1])
+                    await exchange.send(*response_stream([Message("cell complete")], model="test-model").events)
+                assert (await completed(stub, command_id, session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+                # Require the driver to release its lease so the next turn binds a new Owner.
+                async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
+                    with attempt:
+                        generation = await store.idle_generation(session_id)
+                        assert generation is not None
+                        return generation
+                raise AssertionError("lease release retry loop ended")
+
+            generation = await run_cell(
+                first.session_id, "store-first", 'store("key", "first-value"); text("saved");', "saved"
+            )
+            await run_cell(second.session_id, "store-second", 'store("key", "second-value"); text("saved");', "saved")
+            successor = await run_cell(first.session_id, "load-first", 'text(load("key"));', "first-value")
+            assert successor > generation
+            await run_cell(second.session_id, "load-second", 'text(load("key"));', "second-value")
 
 
 async def test_api_wait_stdin_queue_compaction_and_restart(

@@ -7,11 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +31,7 @@ type Runtime struct {
 	tasks    map[string]struct{}
 	changed  chan struct{}
 	drivers  sync.WaitGroup
+	codeHost *CodeModeHost
 }
 
 func NewRuntime(store *Store, settings Settings) *Runtime {
@@ -61,6 +58,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 	r.started = true
 	r.runCtx, r.cancel = context.WithCancel(ctx)
+	r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
+	codeHost := r.codeHost
 	r.mu.Unlock()
 
 	recoveryDone := make(chan struct{})
@@ -71,12 +70,18 @@ func (r *Runtime) Run(ctx context.Context) error {
 	<-r.runCtx.Done()
 	r.mu.Lock()
 	r.stopping = true
+	codeHost.StopAccepting()
 	r.cancel()
 	r.mu.Unlock()
 	<-recoveryDone
 	// Drivers deliberately use independent bounded contexts for Claim and Release. Waiting here
 	// closes the committed-but-not-returned Claim and blocked Release shutdown races.
 	r.drivers.Wait()
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := codeHost.Close(closeCtx); err != nil {
+		slog.Error("central sampler code-mode host close failed", "error", err)
+	}
+	closeCancel()
 	return nil
 }
 
@@ -292,6 +297,12 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			case <-ctx.Done():
 				timer.Stop()
 				return activeCommand, ctx.Err()
+			case <-liveDone(live):
+				timer.Stop()
+				if err := live.code.Err(); err != nil {
+					return activeCommand, err
+				}
+				return activeCommand, errors.New("code-mode session detached while remote effects were live")
 			case <-r.changed:
 				timer.Stop()
 			case <-timer.C:
@@ -438,32 +449,18 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 type liveHost struct {
 	code           *CodeMode
 	executor       *Executor
-	host           *Host
 	closeTransport func() error
-	monitorCancel  context.CancelFunc
-	monitorDone    chan struct{}
 	closeOnce      sync.Once
 	closeErr       error
 }
 
 func (h *liveHost) Close(ctx context.Context) error {
 	var errs []error
-	h.stopMonitor()
 	if h.code != nil {
-		errs = append(errs, h.code.Stop(ctx))
+		errs = append(errs, h.code.Detach(ctx))
 	}
 	errs = append(errs, h.CloseTransport())
 	return errors.Join(errs...)
-}
-
-func (h *liveHost) stopMonitor() {
-	if h.monitorCancel != nil {
-		h.monitorCancel()
-		if h.monitorDone != nil {
-			<-h.monitorDone
-		}
-		h.monitorCancel = nil
-	}
 }
 
 func (h *liveHost) CloseTransport() error {
@@ -484,64 +481,19 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 	if err != nil {
 		return nil, err
 	}
-	logPath := filepath.Join(r.settings.Logs, session.SourceID+".log")
-	host, err := StartHost(ctx, r.settings.CodeModeHost, logPath)
+	code, err := r.codeHost.OpenSession(ctx, owner.ConversationID, owner, executor)
 	if err != nil {
 		_ = closeTransport()
 		return nil, err
 	}
-	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
-	code, err := NewCodeModeWithHandshake(ctx, handshakeCtx, host, r.store, owner, executor)
-	cancelHandshake()
-	if err != nil {
-		_ = host.Close()
-		_ = closeTransport()
-		return nil, err
-	}
-	monitorCtx, monitorCancel := context.WithCancel(ctx)
-	live := &liveHost{
-		code: code, executor: executor, host: host, closeTransport: closeTransport,
-		monitorCancel: monitorCancel, monitorDone: make(chan struct{}),
-	}
-	go r.superviseHost(monitorCtx, live)
-	return live, nil
+	return &liveHost{code: code, executor: executor, closeTransport: closeTransport}, nil
 }
 
-// TODO: Revisit per-host kernel limits if aggregate container limits prove insufficient.
-func (r *Runtime) superviseHost(ctx context.Context, live *liveHost) {
-	defer close(live.monitorDone)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-live.host.Done():
-			if ctx.Err() == nil {
-				live.code.fail(fmt.Errorf("code-mode host exited: %w", live.host.Wait()))
-			}
-			return
-		case <-ticker.C:
-			statm, err := os.ReadFile(filepath.Join("/proc", fmt.Sprint(live.host.PID()), "statm"))
-			if err != nil {
-				live.code.fail(fmt.Errorf("read code-mode host RSS: %w", err))
-				_ = live.host.Kill()
-				return
-			}
-			fields := strings.Fields(string(statm))
-			if len(fields) < 2 {
-				live.code.fail(errors.New("invalid code-mode host statm"))
-				_ = live.host.Kill()
-				return
-			}
-			pages, err := strconv.ParseInt(fields[1], 10, 64)
-			if err != nil || pages*int64(os.Getpagesize()) > r.settings.HostRSSBytes {
-				live.code.fail(errors.New("code-mode host exceeded its configured RSS limit"))
-				_ = live.host.Kill()
-				return
-			}
-		}
+func liveDone(live *liveHost) <-chan struct{} {
+	if live == nil || live.code == nil {
+		return nil
 	}
+	return live.code.Done()
 }
 
 func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, provider Provider, session *Session) (string, error) {
@@ -581,6 +533,14 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 			<-completed
 			joined = true
 			return "", ctx.Err()
+		case <-liveDone(live):
+			cancel()
+			<-completed
+			joined = true
+			if err := live.code.Err(); err != nil {
+				return "", err
+			}
+			return "", errors.New("code-mode session detached during advance")
 		case <-ticker.C:
 			interrupts, err := r.store.PendingInterrupts(ctx, owner)
 			if err != nil {
@@ -615,20 +575,24 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	defer cancel()
 	cells, processes := map[string]any{}, map[string]any{}
 	var cleanupErr error
+	delegatesPending := false
 	if live != nil {
-		live.stopMonitor()
+		delegatesPending = live.code.hasDelegates()
 		live.executor.stopDispatch()
 		cells, cleanupErr = live.code.Interrupt(cleanupCtx)
 		var processErr error
 		processes, processErr = live.executor.InterruptAll(cleanupCtx)
 		cleanupErr = errors.Join(cleanupErr, processErr)
-		if stopErr := live.code.Stop(cleanupCtx); stopErr != nil {
-			cleanupErr = errors.Join(cleanupErr, stopErr)
+		if detachErr := live.code.Detach(cleanupCtx); detachErr != nil {
+			cleanupErr = errors.Join(cleanupErr, detachErr)
 		}
 	}
 	state, stateErr := r.store.ExecutionState(cleanupCtx, owner)
 	cleanupErr = errors.Join(cleanupErr, stateErr)
 	complete := cleanupErr == nil && stateErr == nil && len(state.Cells) == 0
+	if delegatesPending {
+		complete = false
+	}
 	if stateErr == nil {
 		for _, process := range state.Processes {
 			if process.Status != "exited" && process.Status != "exited_unread" {
@@ -637,9 +601,6 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 		}
 	}
 	if live != nil {
-		if live.code.hasDelegates() {
-			complete = false
-		}
 		if closeErr := live.CloseTransport(); closeErr != nil {
 			cleanupErr = errors.Join(cleanupErr, closeErr)
 			complete = false

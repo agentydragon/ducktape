@@ -46,7 +46,6 @@ class Settings(BaseModel):
     gateway_token_file: Path | None = None
     direct_executor_url: str | None = None
     max_live_sessions: int = Field(gt=0)
-    host_rss_bytes: int = Field(gt=0)
     turn_timeout_seconds: int = Field(gt=0)
     rpc_timeout_seconds: int = Field(gt=0)
     lease_seconds: int = Field(gt=30)

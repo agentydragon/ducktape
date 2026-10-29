@@ -34,7 +34,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     dispatcher[Gateway Dispatcher]
-    sampler[Central sampler and per-Session JS host]
+    sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
     gateway[Gateway ExecutorGateway]
     runner[Sandbox Runner]
@@ -51,8 +51,11 @@ flowchart LR
     sampler -->|Session identity| llm --> provider
 ```
 
-The JS hosts run as subprocesses in the sampler container, one supervised process per live Session.
-The Pod has aggregate CPU/memory limits; individual hosts have no dedicated kernel resource boundary.
+The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
+logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells
+and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
+Provider continuation stays in the sampler.
+The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
 Gateway relays the pinned upstream exec-server protocol without interpreting tools. Dispatcher
 is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history

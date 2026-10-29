@@ -2,272 +2,167 @@ package centralsampler
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const maxCodeModeFrame = 64 * 1024 * 1024
 
 type CodeMode struct {
+	manager      *CodeModeHost
 	host         *Host
 	store        *Store
 	owner        Owner
 	executor     *Executor
 	sessionID    string
-	nextID       int64
 	mu           sync.Mutex
-	responses    map[int64]chan codeReply
-	initials     map[int64]chan codeReply
-	delegates    map[int64]struct{}
-	cancelled    map[int64]struct{}
+	delegates    map[int64]context.CancelFunc
+	delegateCtx  map[int64]context.Context
 	delegateWG   sync.WaitGroup
-	writeGate    chan struct{}
 	error        error
-	readerDone   chan struct{}
-	readerCancel context.CancelFunc
-	closeOnce    sync.Once
-	stopErr      error
-	stopped      bool
+	detached     bool
+	done         chan struct{}
+	bindingCtx   context.Context
+	cancel       context.CancelFunc
+	detachOnce   sync.Once
+	delegateDone chan struct{}
+	journal      chan codeJournalEvent
+	journalDone  chan struct{}
 }
 
-func NewCodeMode(ctx context.Context, host *Host, store *Store, owner Owner, executor *Executor) (*CodeMode, error) {
-	return NewCodeModeWithHandshake(ctx, ctx, host, store, owner, executor)
+type codeJournalEvent struct {
+	operationID string
+	phase       string
+	object      map[string]any
+	done        chan error
 }
 
-func NewCodeModeWithHandshake(lifetimeCtx, handshakeCtx context.Context, host *Host, store *Store, owner Owner, executor *Executor) (*CodeMode, error) {
+func newCodeModeBinding(parent context.Context, manager *CodeModeHost, host *Host, store *Store, owner Owner, executor *Executor, sessionID string) *CodeMode {
+	bindingCtx, cancel := context.WithCancel(parent)
 	runtime := &CodeMode{
-		host: host, store: store, owner: owner, executor: executor, sessionID: uuid.NewString(),
-		responses: map[int64]chan codeReply{}, initials: map[int64]chan codeReply{}, delegates: map[int64]struct{}{},
-		cancelled: map[int64]struct{}{}, readerDone: make(chan struct{}), writeGate: make(chan struct{}, 1),
+		manager: manager, host: host, store: store, owner: owner, executor: executor, sessionID: sessionID,
+		delegates: map[int64]context.CancelFunc{}, delegateCtx: map[int64]context.Context{}, done: make(chan struct{}), bindingCtx: bindingCtx, cancel: cancel,
+		journal: make(chan codeJournalEvent, 256), journalDone: make(chan struct{}), delegateDone: make(chan struct{}),
 	}
-	if err := runtime.send(handshakeCtx, codeHello{Type: "connection/hello", SupportedVersions: []int{1}, RequiredCapabilities: []string{}, OptionalCapabilities: []string{}}); err != nil {
-		return nil, errors.Join(err, host.Close())
-	}
-	frame, err := runtime.receive(handshakeCtx)
-	if err != nil {
-		return nil, errors.Join(err, host.Close())
-	}
-	if frame.Type != codeReady || frame.SelectedVersion != 1 || frame.Capabilities == nil || len(frame.Capabilities) != 0 {
-		return nil, errors.Join(fmt.Errorf("unexpected code-mode handshake: %s", canonicalJSON(frame)), host.Close())
-	}
-	pumpCtx, cancel := context.WithCancel(lifetimeCtx)
-	runtime.readerCancel = cancel
-	go runtime.pump(pumpCtx)
-	_, err = runtime.request(handshakeCtx, codeSessionOperation{Method: "session/open", SessionID: runtime.sessionID}, false)
-	if err != nil {
-		cancel()
-		<-runtime.readerDone
-		return nil, errors.Join(err, host.Close())
-	}
-	return runtime, nil
+	go runtime.journalLoop()
+	return runtime
 }
 
-func (r *CodeMode) send(ctx context.Context, value any) error {
+func (r *CodeMode) send(ctx context.Context, requestID int64, value any) error {
 	object, err := protocolObject(value)
 	if err != nil {
 		return err
 	}
-	operationID := r.sessionID + ":" + fmt.Sprint(object["id"])
-	if object["id"] == nil {
-		operationID = r.sessionID + ":connection"
+	operationID := r.operationID(requestID)
+	if r.store != nil {
+		if err := r.store.ProtocolEvent(ctx, r.owner, operationID, "javascript", "send", object); err != nil {
+			return err
+		}
 	}
-	if err := r.store.ProtocolEvent(ctx, r.owner, operationID, "javascript", "send", object); err != nil {
-		return err
+	return r.manager.send(r.host, ctx, value)
+}
+
+func (r *CodeMode) operationID(id int64) string {
+	if id == 0 {
+		return r.sessionID + ":connection"
 	}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return err
+	return fmt.Sprintf("%s:%d", r.sessionID, id)
+}
+
+func (r *CodeMode) enqueueProtocol(raw []byte, id int64, phase string) (<-chan error, bool) {
+	var object map[string]any
+	if err := decodeProtocolObject(raw, &object); err != nil {
+		return nil, false
 	}
-	if len(payload) > maxCodeModeFrame {
-		return errors.New("upstream code-mode frame exceeds protocol limit")
-	}
+	done := make(chan error, 1)
+	event := codeJournalEvent{operationID: r.operationID(id), phase: phase, object: object, done: done}
 	select {
-	case r.writeGate <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
+	case r.journal <- event:
+		return done, true
+	default:
+		return nil, false
 	}
-	defer func() { <-r.writeGate }()
-	var header [4]byte
-	binary.LittleEndian.PutUint32(header[:], uint32(len(payload)))
-	return writeFrameWithContext(ctx, r.host, header[:], payload)
 }
 
-func writeFrameWithContext(ctx context.Context, host *Host, header, payload []byte) error {
-	stopWriteCancellation := make(chan struct{})
-	writeCancellationDone := make(chan struct{})
-	if ctx.Done() != nil {
-		go func() {
-			defer close(writeCancellationDone)
-			select {
-			case <-ctx.Done():
-				_ = host.stdin.Close()
-				_ = host.Kill()
-			case <-stopWriteCancellation:
-			}
-		}()
-	}
-	writeErr := writeFrame(host.stdin, header, payload)
-	close(stopWriteCancellation)
-	if ctx.Done() != nil {
-		<-writeCancellationDone
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return writeErr
-}
-
-func writeFrame(writer io.Writer, header, payload []byte) error {
-	for _, part := range [][]byte{header, payload} {
-		for len(part) > 0 {
-			written, err := writer.Write(part)
-			if err != nil {
-				return err
-			}
-			if written == 0 {
-				return io.ErrShortWrite
-			}
-			part = part[written:]
+func (r *CodeMode) journalLoop() {
+	defer close(r.journalDone)
+	for event := range r.journal {
+		if r.store == nil {
+			event.done <- nil
+			continue
 		}
-	}
-	return nil
-}
-
-func (r *CodeMode) receive(ctx context.Context) (*codeFrame, error) {
-	type frameResult struct {
-		frame *codeFrame
-		raw   json.RawMessage
-		err   error
-	}
-	ch := make(chan frameResult, 1)
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		var header [4]byte
-		if _, err := io.ReadFull(r.host.stdout, header[:]); err != nil {
-			ch <- frameResult{err: err}
-			return
-		}
-		length := binary.LittleEndian.Uint32(header[:])
-		if length > maxCodeModeFrame {
-			ch <- frameResult{err: errors.New("upstream code-mode frame exceeds protocol limit")}
-			return
-		}
-		payload := make([]byte, int(length))
-		if _, err := io.ReadFull(r.host.stdout, payload); err != nil {
-			ch <- frameResult{err: err}
-			return
-		}
-		var frame codeFrame
-		if err := decodeProtocolObject(payload, &frame); err != nil {
-			ch <- frameResult{err: err}
-			return
-		}
-		ch <- frameResult{frame: &frame, raw: payload}
-	}()
-	select {
-	case <-ctx.Done():
-		_ = r.host.stdout.Close()
-		<-readDone
-		return nil, ctx.Err()
-	case result := <-ch:
-		<-readDone
-		if result.err != nil {
-			return nil, result.err
-		}
-		operationID := r.sessionID + ":connection"
-		if result.frame.ID != nil {
-			operationID = fmt.Sprintf("%s:%d", r.sessionID, *result.frame.ID)
-		}
-		object, err := protocolObject(result.raw)
+		ctx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
+		err := r.store.ProtocolEvent(ctx, r.owner, event.operationID, "javascript", event.phase, event.object)
+		cancel()
+		event.done <- err
 		if err != nil {
-			return nil, err
-		}
-		if err := r.store.ProtocolEvent(ctx, r.owner, operationID, "javascript", "receive", object); err != nil {
-			return nil, err
-		}
-		return result.frame, nil
-	}
-}
-
-func (r *CodeMode) pump(ctx context.Context) {
-	defer close(r.readerDone)
-	for {
-		frame, err := r.receive(ctx)
-		if err != nil {
-			if ctx.Err() == nil {
-				r.fail(err)
-			}
-			return
-		}
-		switch frame.Type {
-		case codeDelegateRequest:
-			if frame.ID == nil {
-				r.fail(errors.New("code-mode delegate request has an invalid ID"))
-				return
-			}
-			delegateID := *frame.ID
-			r.mu.Lock()
-			r.delegates[delegateID] = struct{}{}
-			r.mu.Unlock()
-			r.delegateWG.Add(1)
-			go func(frame *codeFrame, id int64) {
-				defer r.delegateWG.Done()
-				r.delegate(ctx, id, frame)
-			}(frame, delegateID)
-		case codeDelegateCancel:
-			if frame.ID != nil {
-				delegateID := *frame.ID
-				r.mu.Lock()
-				r.cancelled[delegateID] = struct{}{}
-				r.mu.Unlock()
-			}
-		case codeResponse, codeInitialResponse:
-			if frame.ID == nil {
-				r.fail(errors.New("code-mode response has an invalid ID"))
-				return
-			}
-			id := *frame.ID
-			r.mu.Lock()
-			channel := r.responses[id]
-			if frame.Type == codeInitialResponse {
-				channel = r.initials[id]
-			}
-			r.mu.Unlock()
-			if channel == nil {
-				r.fail(fmt.Errorf("code-mode response references unknown request %d", id))
-				return
-			}
-			select {
-			case channel <- codeReply{Result: frame.Result}:
-			default:
-				r.fail(fmt.Errorf("duplicate code-mode response for request %d", id))
-				return
-			}
-		case codeCellClosed:
-		default:
-			r.fail(fmt.Errorf("unexpected code-mode frame: %s", canonicalJSON(frame)))
-			return
+			r.fail(fmt.Errorf("write code-mode protocol evidence: %w", err))
 		}
 	}
 }
 
-func (r *CodeMode) delegate(ctx context.Context, id int64, frame *codeFrame) {
+func (r *CodeMode) beginDelegate(id int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.error != nil || r.detached {
+		return false
+	}
+	ctx, cancel := context.WithCancel(r.bindingCtx)
+	r.delegates[id] = cancel
+	r.delegateCtx[id] = ctx
+	r.delegateWG.Add(1)
+	return true
+}
+
+func (r *CodeMode) cancelDelegate(id int64) {
+	r.mu.Lock()
+	cancel := r.delegates[id]
+	r.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) {
+	defer r.delegateWG.Done()
+	r.mu.Lock()
+	cancel := r.delegates[id]
+	ctx := r.delegateCtx[id]
+	r.mu.Unlock()
+	if cancel == nil || ctx == nil {
+		return
+	}
 	defer func() {
 		r.mu.Lock()
 		delete(r.delegates, id)
+		delete(r.delegateCtx, id)
+		cancel()
 		r.mu.Unlock()
+		r.manager.endDelegate(r, id)
 	}()
-	if frame.Request == nil || frame.Request.Type != "tool/invoke" {
-		r.fail(errors.New("code-mode only supports tool/invoke delegates"))
+	if err := waitJournal(ctx, journaled); err != nil {
+		if ctx.Err() == nil {
+			r.fail(err)
+		}
+		return
+	}
+	if frame.Request == nil {
+		r.fail(errors.New("code-mode delegate request has no request"))
+		return
+	}
+	if frame.Request.Type == "notification/send" {
+		response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "notification/delivered"}}}
+		if err := r.send(ctx, id, response); err != nil && r.bindingCtx.Err() == nil {
+			r.fail(err)
+		}
+		return
+	}
+	if frame.Request.Type != "tool/invoke" {
+		r.fail(fmt.Errorf("unsupported code-mode delegate type %q", frame.Request.Type))
 		return
 	}
 	invocation := frame.Request.Invocation
@@ -275,7 +170,6 @@ func (r *CodeMode) delegate(ctx context.Context, id int64, frame *codeFrame) {
 		r.fail(errors.New("code-mode tool invocation has no supported tool name"))
 		return
 	}
-	input := invocation.Input
 	requestJournal, err := protocolObject(invocation)
 	if err != nil {
 		r.fail(err)
@@ -287,12 +181,16 @@ func (r *CodeMode) delegate(ctx context.Context, id int64, frame *codeFrame) {
 	}
 	intent, err := r.store.RecordNested(ctx, r.owner, requestJournal)
 	if err != nil {
-		r.fail(err)
+		if ctx.Err() == nil {
+			r.fail(err)
+		}
 		return
 	}
-	result, err := r.executor.Invoke(ctx, invocation.ToolName.Name, input)
+	result, err := r.executor.Invoke(ctx, invocation.ToolName.Name, invocation.Input)
 	if err != nil {
-		r.fail(err)
+		if ctx.Err() == nil {
+			r.fail(err)
+		}
 		return
 	}
 	resultEvidence, err := protocolObject(result)
@@ -301,13 +199,9 @@ func (r *CodeMode) delegate(ctx context.Context, id int64, frame *codeFrame) {
 		return
 	}
 	if err := r.store.FinishNested(ctx, r.owner, intent, resultEvidence); err != nil {
-		r.fail(err)
-		return
-	}
-	r.mu.Lock()
-	_, cancelled := r.cancelled[id]
-	r.mu.Unlock()
-	if cancelled {
+		if ctx.Err() == nil {
+			r.fail(err)
+		}
 		return
 	}
 	encoded, err := json.Marshal(result)
@@ -315,33 +209,26 @@ func (r *CodeMode) delegate(ctx context.Context, id int64, frame *codeFrame) {
 		r.fail(err)
 		return
 	}
-	if err := r.send(ctx, codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: codeToolResult{Type: "tool/result", Result: encoded}}}); err != nil {
+	response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "tool/result", Result: encoded}}}
+	if err := r.send(ctx, id, response); err != nil && ctx.Err() == nil {
 		r.fail(err)
 	}
 }
 
 func (r *CodeMode) fail(err error) {
 	r.mu.Lock()
-	if r.error == nil {
+	changed := false
+	if r.error == nil && !r.detached {
 		r.error = err
+		close(r.done)
+		changed = true
+		for _, cancel := range r.delegates {
+			cancel()
+		}
 	}
-	r.notifyPendingLocked(r.error)
 	r.mu.Unlock()
-}
-
-func (r *CodeMode) notifyPendingLocked(err error) {
-	reply := codeReply{Err: err}
-	for _, channel := range r.responses {
-		select {
-		case channel <- reply:
-		default:
-		}
-	}
-	for _, channel := range r.initials {
-		select {
-		case channel <- reply:
-		default:
-		}
+	if changed {
+		r.manager.failBinding(r, err)
 	}
 }
 
@@ -358,37 +245,24 @@ func (r *CodeMode) hasDelegates() bool {
 }
 
 func (r *CodeMode) request(ctx context.Context, request codeOperation, execute bool) (json.RawMessage, error) {
-	r.mu.Lock()
-	if r.stopped {
-		r.mu.Unlock()
-		return nil, errors.New("code-mode session is stopped")
-	}
-	if r.error != nil && request.method() != "session/terminate" {
-		err := r.error
-		r.mu.Unlock()
+	if err := r.Err(); err != nil && request.method() != "session/terminate" {
 		return nil, err
 	}
-	r.nextID++
-	id := r.nextID
-	response := make(chan codeReply, 1)
-	r.responses[id] = response
-	var initial chan codeReply
-	if execute {
-		initial = make(chan codeReply, 1)
-		r.initials[id] = initial
+	id, response, initial, err := r.manager.registerRequest(r, execute)
+	if err != nil {
+		return nil, err
 	}
-	r.mu.Unlock()
-	defer func() {
-		r.mu.Lock()
-		delete(r.responses, id)
-		delete(r.initials, id)
-		r.mu.Unlock()
-	}()
-	if err := r.send(ctx, codeOperationFrame{Type: "operation/request", ID: id, Request: request}); err != nil {
+	defer r.manager.removeRequest(id, r)
+	if err := r.send(ctx, id, codeOperationFrame{Type: "operation/request", ID: id, Request: request}); err != nil {
 		return nil, err
 	}
 	resultFrame, err := waitFrame(ctx, response)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
+			_ = r.send(cancelCtx, id, codeCancelRequest{Type: "operation/cancel", ID: id})
+			cancel()
+		}
 		return nil, err
 	}
 	value, err := validateCodeModeResult(resultFrame)
@@ -411,6 +285,11 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 	}
 	initialFrame, err := waitFrame(ctx, initial)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			cancelCtx, cancel := context.WithTimeout(context.Background(), r.manager.rpcTimeout)
+			_ = r.send(cancelCtx, id, codeCancelRequest{Type: "operation/cancel", ID: id})
+			cancel()
+		}
 		return nil, err
 	}
 	return validateCodeModeResult(initialFrame)
@@ -424,10 +303,25 @@ func waitFrame(ctx context.Context, channel <-chan codeReply) (*codeWireResult, 
 		if reply.Err != nil {
 			return nil, reply.Err
 		}
+		if err := waitJournal(ctx, reply.Journaled); err != nil {
+			return nil, err
+		}
 		if reply.Result == nil {
 			return nil, errors.New("code-mode frame has no result object")
 		}
 		return reply.Result, nil
+	}
+}
+
+func waitJournal(ctx context.Context, journaled <-chan error) error {
+	if journaled == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-journaled:
+		return err
 	}
 }
 
@@ -601,33 +495,40 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 	return outcomes, nil
 }
 
-func (r *CodeMode) Stop(ctx context.Context) error {
-	r.closeOnce.Do(func() {
+func (r *CodeMode) Done() <-chan struct{} { return r.done }
+
+func (r *CodeMode) Detach(ctx context.Context) error {
+	r.detachOnce.Do(func() {
+		// Unregister first. The host reader adds delegates only while holding the
+		// manager lock, so no Add can race with the Wait below.
+		r.manager.detach(r)
 		r.mu.Lock()
-		r.stopped = true
-		stopErr := r.error
-		if stopErr == nil {
-			stopErr = errors.New("code-mode session stopped")
+		r.detached = true
+		for _, cancel := range r.delegates {
+			cancel()
 		}
-		r.notifyPendingLocked(stopErr)
-		r.mu.Unlock()
-		if r.readerCancel != nil {
-			r.readerCancel()
-			<-r.readerDone
+		r.cancel()
+		if r.error == nil {
+			close(r.done)
 		}
-		hostErr := r.host.Close()
-		// The reader is the only producer of delegateWG.Add, so joining it first makes Wait
-		// safe. Delegates use the reader context; cancellation above stops their executor
-		// calls before the caller releases the lease.
-		r.delegateWG.Wait()
-		result := errors.Join(hostErr, ctx.Err())
-		r.mu.Lock()
-		r.stopErr = result
 		r.mu.Unlock()
+		close(r.journal)
+		go func() {
+			r.delegateWG.Wait()
+			close(r.delegateDone)
+		}()
 	})
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.stopErr
+	select {
+	case <-r.journalDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-r.delegateDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (r *CodeMode) cellHandle(nativeID string) string { return r.sessionID + ":" + nativeID }
@@ -635,7 +536,7 @@ func (r *CodeMode) cellHandle(nativeID string) string { return r.sessionID + ":"
 func (r *CodeMode) nativeCell(handle string) (string, error) {
 	prefix := r.sessionID + ":"
 	if !strings.HasPrefix(handle, prefix) {
-		return "", errors.New("cell handle belongs to another JavaScript host")
+		return "", errors.New("cell handle belongs to another code-mode session")
 	}
 	return strings.TrimPrefix(handle, prefix), nil
 }

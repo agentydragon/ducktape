@@ -1,10 +1,13 @@
 # Central sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses API loop and runs the real pinned **Codex 0.162.1** JavaScript host beside it. Shell,
-stdin, patch and filesystem operations go through Gateway to a Sandbox's loopback exec-server.
-Existing wrapped Codex and Claude retain their current paths. Nothing here deploys the service,
-changes existing Sessions, or migrates native harness state.
+Responses API loop and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
+logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
+memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
+cells, and provider continuation remains in the sampler. Shell, stdin, patch and filesystem
+operations go through Gateway to a Sandbox's loopback exec-server. Existing wrapped Codex and Claude
+retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
+environment configures it; existing native Sessions are not migrated.
 
 The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
@@ -27,8 +30,8 @@ initialization retains Session identities, conversation state, evidence and outb
 `//agentplane/x/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../../system_tests/README.md#central-sampler) run that image in its
 own Pod, initialize its DB with an init container, and use projected service-account tokens for
-Gateway and History. The sampler and all of its JavaScript hosts share the Pod container's
-aggregate CPU and memory limits.
+Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
+CPU and memory limits.
 
 Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
 model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
@@ -45,17 +48,20 @@ fixtures. Templates accept DNS-label executor names and only these two placehold
 `direct_executor_url` supports standalone fixtures without Gateway; choose exactly one transport.
 Optional `history_target` and `history_token_file` enable retained History export.
 
-`max_live_sessions` bounds the number of concurrent Session hosts. The service samples each host
-leader's RSS every 100 ms and kills its process group when the configured `host_rss_bytes` limit is
-exceeded. This is a supervisor guard, not a kernel-enforced per-host memory limit; descendants are
-not included in the RSS sample. Configure CPU and memory limits on the sampler container. Those
-limits cover the Go service and every live host together, so container memory exhaustion can stop
-all Sessions in the Pod. PostgreSQL retains durable conversation and effect records, but live
-JavaScript cells cannot be restored after the service or host exits. Ordinary shutdown kills a
-host's process group; descendants that create a new session may remain until the container stops.
+`max_live_sessions` bounds concurrent active Session drivers; it does not cap the number of stored
+idle Sessions. The host starts lazily when code-mode work first needs it and multiplexes Sessions,
+while executor delegates and process-handle namespaces remain per Session. Interrupting a Session
+does not stop the shared host.
 
-TODO: Revisit a delegated per-host kernel boundary if shared container limits stop meeting the
-production resource contract.
+Host failure interrupts pending work for every attached Session; later code-mode work may start a
+fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU
+and memory limits on the sampler container. Those limits cover the Go service and shared host, so
+container exhaustion can interrupt every active Session. PostgreSQL retains durable conversation
+and effect records, but host-memory `store()` / `load()` values and live JavaScript cells are lost
+when the shared host exits.
+
+TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
+container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
@@ -86,5 +92,5 @@ Provider compaction uses Codex's remote-v2 beta protocol; choose a supporting en
 See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results and fixture diagnosis.
 
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
-allowlists. Preserve the sampler DB and History records. Reverting this code does not convert a
-central Session into a native harness Session. No deployment or database deletion is part of this PR.
+allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a
+central Session into a native harness Session.

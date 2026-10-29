@@ -82,7 +82,12 @@ func killProcessGroup(pid int) error {
 
 func (h *Host) Stdin() io.WriteCloser { return h.stdin }
 func (h *Host) Stdout() io.ReadCloser { return h.stdout }
-func (h *Host) PID() int              { return h.cmd.Process.Pid }
+func (h *Host) PID() int {
+	if h.cmd == nil || h.cmd.Process == nil {
+		return 0
+	}
+	return h.cmd.Process.Pid
+}
 func (h *Host) Done() <-chan struct{} { return h.done }
 
 func (h *Host) Wait() error {
@@ -93,7 +98,7 @@ func (h *Host) Wait() error {
 }
 
 func (h *Host) Kill() error {
-	if h.cmd.Process == nil {
+	if h.cmd == nil || h.cmd.Process == nil {
 		return nil
 	}
 	// Keep targeting the original process group after its leader exits: a child

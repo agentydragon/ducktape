@@ -97,6 +97,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
@@ -236,6 +237,7 @@ go_library(
     name = "central_sampler",
     srcs = [
         "codemode.go",
+        "codemode_host.go",
         "codemode_protocol.go",
         "evidence.go",
         "executor.go",

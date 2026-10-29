@@ -240,8 +240,7 @@ def environment(
                     reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
                 )
             },
-            max_live_sessions=1,
-            host_rss_bytes=1024 * _MIB,
+            max_live_sessions=2,
             turn_timeout_seconds=60,
             rpc_timeout_seconds=10,
             lease_seconds=60,

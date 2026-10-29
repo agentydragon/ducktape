@@ -4,11 +4,16 @@ Evidence for [PR #12225](https://github.com/agentydragon/ducktape/pull/12225), 2
 The [service contract](../x/central_sampler/SPEC.md) and
 [runtime instructions](../x/central_sampler/README.md) describe the implementation.
 
+The results below validate the earlier per-Session host implementation. The selected 2026-10-28
+runtime shares one lazy Codex host across logical Sessions and isolates each code-mode cell in a
+fresh V8 isolate; these historical runs do not establish that concurrency contract.
+
 ## Go runtime validation
 
 The central service, sampling loop, persistence and exporter are now Go. Acceptance fixtures
 start the actual Go binary, including schema initialization and TokenReview authentication.
-The pinned upstream JavaScript host remains a separately supervised process.
+The pinned upstream JavaScript host is a process separate from the Go sampler; the selected runtime
+shares one lazy host across logical Sessions.
 
 [The native Go suite passed](https://app.buildbuddy.io/invocation/4257efda-6967-4d64-a782-93fc4bd193b3)
 in 27.160 seconds, including real PostgreSQL lease fencing, shutdown ownership races,
@@ -112,7 +117,7 @@ The next [k3s run](https://app.buildbuddy.io/invocation/ffb97a01-891a-42fc-9f63-
 
 The corrected [k3s scenario passed](https://app.buildbuddy.io/invocation/650b3fa1-c2ee-4b9f-a8a8-ed615a9ed55e), including fixture-library mypy and Ruff checks. The fixture resolves the Sandbox-owned, Gateway-managed EndpointSlice and waits for it to name the restarted holding Gateway before admitting a Session. It then verifies setup output, the model's exact executor output and opaque reasoning continuation, the final answer, raw source links, and matching completed reasoning/assistant/tool/input entities in History. The retained `test.outputs/central-sampler-k3s.json` reports setup success and `terminal_cursor == folded_through == 157`. Stack startup took 131.9 seconds; pytest took 206.64 seconds and the Bazel test action took 225.541 seconds.
 
-That Python k3s scenario used deployed Dispatcher, Gateway, Runner, History, PostgreSQL and Kubernetes TokenReview with the actual pinned JS host and exec-server. It assembled the Python sampler objects on the test node. The Go fixture now starts the service binary on that node. An in-cluster sampler Deployment, delegated host cgroups and live provider compatibility still require separate coverage.
+That Python k3s scenario used deployed Dispatcher, Gateway, Runner, History, PostgreSQL and Kubernetes TokenReview with the actual pinned JS host and exec-server. It assembled the Python sampler objects on the test node. The Go fixture now starts the service binary on that node. An in-cluster sampler Deployment, shared-host concurrency and live provider compatibility are outside this historical run and require separate coverage.
 
 ### Split prerequisite landing and full CI
 
@@ -263,5 +268,6 @@ The fixture now runs the sampler itself in a Pod using its own OCI image. Its in
 container applies the schema; the serving container gets Kubernetes API, Gateway and History
 credentials from its own service account and projected token volumes. A Service and gRPC health
 probe make readiness and request routing part of the integration test. The node-host process and
-dummy identity Pod are removed. Ordinary VM tests still omit the Pod runner image. Fixture mode
-still omits delegated per-JS-host cgroups, so this does not validate that deployment boundary.
+dummy identity Pod are removed. Ordinary VM tests still omit the Pod runner image. The selected
+runtime uses aggregate Pod CPU/memory limits; per-Session or per-cell kernel isolation remains a
+future design question rather than a fixture requirement.

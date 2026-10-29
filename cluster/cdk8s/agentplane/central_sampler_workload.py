@@ -40,7 +40,7 @@ _LOGS_PATH = "/var/log/central-sampler"
 
 
 class CentralSampler(Construct):
-    """A single sampler replica owns multiple concurrent, supervised code-mode hosts."""
+    """A single sampler replica owns one shared host for concurrent logical Sessions."""
 
     def __init__(
         self,
@@ -87,7 +87,6 @@ class CentralSampler(Construct):
             gateway_target=runner_gateway.control_target(namespace),
             gateway_token_file=_GATEWAY_TOKEN_FILE,
             max_live_sessions=props.max_live_sessions,
-            host_rss_bytes=props.host_rss_bytes,
             turn_timeout_seconds=props.turn_timeout_seconds,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             lease_seconds=props.lease_seconds,

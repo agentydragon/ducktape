@@ -646,9 +646,11 @@ landed in [PR #12288](https://github.com/agentydragon/ducktape/pull/12288) and
 [PR #12292](https://github.com/agentydragon/ducktape/pull/12292). Both are incorporated from `devel`;
 this PR retains the central service integration and central-only shared runtime extensions.
 The placement decision is accepted: a shared independent sampler with its own PostgreSQL
-continuation, per-Session supervised JS host, fixed Sandbox/incarnation executor via the pinned
-Codex exec-server protocol, Dispatcher direct command routing and existing History ingress.
-Wrapped Codex/Claude retain local execution and sampling. Required v1 capabilities are compaction,
+continuation and one lazy Codex JS host multiplexing logical Sessions. Each code-mode cell runs in
+a fresh V8 isolate/thread; executor delegates and process-handle namespaces remain per Session.
+The executor is fixed to a Sandbox/incarnation via the pinned Codex exec-server protocol, with
+Dispatcher direct command routing and existing History ingress. Wrapped Codex/Claude retain local
+execution and sampling. Required v1 capabilities are compaction,
 model-facing wait, stdin and interrupts. Remote AGENTS.md discovery and executor replacement are
 deferred; neither gates v1. OpenAI-shaped Responses API/code mode is the selected provider scope.
 
@@ -668,24 +670,24 @@ native regressions and remaining deployment-specific limits.
 
 **In flight; Codex, operator requested 2026-10-28; in [PR #12225](https://github.com/agentydragon/ducktape/pull/12225).** Rewrite the
 sampler service, provider/tool loop, persistence and History exporter in Go. The original Python
-prototype supplies the contracts and acceptance evidence; the pinned upstream JS host remains a
-separate supervised process. Carry forward its authenticated
-API, PostgreSQL continuation and leases, uncertain-effect handling, supervised JS hosts,
+prototype supplies the contracts and acceptance evidence; the pinned upstream JS host is one lazy
+shared process that multiplexes logical Sessions and creates a fresh V8 isolate for each code cell.
+Carry forward its authenticated API, PostgreSQL continuation and leases, uncertain-effect handling,
 compaction/wait/stdin/interrupts, Gateway relay and History outbox semantics. Reuse the wire fixtures
 and acceptance scenarios to validate the replacement. Exit: reviewed implementation with equivalent
 acceptance coverage, including recovery, fencing and native harness coexistence.
 
 ### `CENTRAL_SAMPLER_DEPLOYMENT` — opt-in runtime deployment
 
-**In flight; Codex, operator requested 2026-10-28.** Deploy an
-isolated database, optional shared cdk8s sampler workload, audience/token and
-allowlists, configured provider route, History ingress network path and staging app offering.
-Operator selected concurrent JS host subprocesses in one container with aggregate Pod limits;
-stronger per-host isolation is deferred.
-Preserve existing native Session identities, history, state and wrapped harness operation. Validate
-the shared chart through k3s and trusted Session attribution; scripted wire fixtures alone do not
-establish live endpoint/model compaction support. No default switch, native data conversion or
-executor replacement implied. Exit: bounded new-Session acceptance and data-preserving rollback.
+**In flight; Codex, operator requested 2026-10-28.** Deploy an isolated database, optional shared
+cdk8s sampler workload, audience/token and allowlists, configured provider route, History ingress
+network path and staging app offering. The one lazy Codex process and Go service share aggregate Pod
+CPU/memory limits; stronger per-cell or per-Session kernel isolation is deferred for future
+evaluation. Preserve existing native Session identities, history, state and wrapped harness
+operation. Validate the shared chart through k3s and trusted Session attribution; scripted wire
+fixtures alone do not establish live endpoint/model compaction support. Existing Sessions are not
+converted and new central Sessions remain explicitly selected. Exit: bounded acceptance for
+concurrent logical Sessions and data-preserving rollback.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 

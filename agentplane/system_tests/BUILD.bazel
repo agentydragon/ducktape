@@ -682,6 +682,7 @@ system_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/grpc:calls",
         "//agentplane/history_service:history_service_pb2",
+        "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",

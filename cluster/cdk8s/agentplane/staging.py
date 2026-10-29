@@ -398,7 +398,6 @@ ENV = Environment(
             )
         },
         max_live_sessions=32,
-        host_rss_bytes=512 * 1024 * 1024,
         turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,
         lease_seconds=60,

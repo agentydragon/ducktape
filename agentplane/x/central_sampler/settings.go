@@ -35,7 +35,6 @@ type Settings struct {
 	GatewayTokenFile   string              `json:"gateway_token_file"`
 	DirectExecutorURL  string              `json:"direct_executor_url"`
 	MaxLiveSessions    int                 `json:"max_live_sessions"`
-	HostRSSBytes       int64               `json:"host_rss_bytes"`
 	TurnTimeoutSeconds int                 `json:"turn_timeout_seconds"`
 	RPCTimeoutSeconds  int                 `json:"rpc_timeout_seconds"`
 	LeaseSeconds       int                 `json:"lease_seconds"`
@@ -116,7 +115,7 @@ func (s Settings) Validate() error {
 	if strings.ContainsAny(remaining, "{}") {
 		return errors.New("gateway target supports only namespace and sandbox placeholders")
 	}
-	if s.MaxLiveSessions <= 0 || s.HostRSSBytes <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
+	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
 	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {

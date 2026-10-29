@@ -21,6 +21,8 @@ const (
 type codeFrame struct {
 	Type            codeFrameType   `json:"type"`
 	ID              *int64          `json:"id"`
+	SessionID       string          `json:"sessionId"`
+	CellID          string          `json:"cellId"`
 	SelectedVersion int             `json:"selectedVersion"`
 	Capabilities    []string        `json:"capabilities"`
 	Request         *codeDelegate   `json:"request"`
@@ -34,8 +36,9 @@ type codeWireResult struct {
 }
 
 type codeReply struct {
-	Result *codeWireResult
-	Err    error
+	Result    *codeWireResult
+	Err       error
+	Journaled <-chan error
 }
 
 type codeHello struct {
@@ -43,6 +46,11 @@ type codeHello struct {
 	SupportedVersions    []int    `json:"supportedVersions"`
 	RequiredCapabilities []string `json:"requiredCapabilities"`
 	OptionalCapabilities []string `json:"optionalCapabilities"`
+}
+
+type codeCancelRequest struct {
+	Type string `json:"type"`
+	ID   int64  `json:"id"`
 }
 
 type (
@@ -97,6 +105,9 @@ type codeToolName struct {
 type codeDelegate struct {
 	Type       string             `json:"type"`
 	Invocation codeToolInvocation `json:"invocation"`
+	CallID     string             `json:"callId"`
+	CellID     string             `json:"cellId"`
+	Text       string             `json:"text"`
 }
 
 type codeToolInvocation struct {
@@ -114,13 +125,14 @@ type codeDelegateResponse struct {
 }
 
 type codeDelegateResult struct {
-	Status string         `json:"status"`
-	Value  codeToolResult `json:"value"`
+	Status  string          `json:"status"`
+	Value   *codeToolResult `json:"value,omitempty"`
+	Message string          `json:"message,omitempty"`
 }
 
 type codeToolResult struct {
 	Type   string          `json:"type"`
-	Result json.RawMessage `json:"result"`
+	Result json.RawMessage `json:"result,omitempty"`
 }
 
 type codeHostResponse struct {

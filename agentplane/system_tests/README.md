@@ -217,7 +217,9 @@ serving container uses in-cluster Kubernetes credentials and projected Gateway, 
 workload tokens. The app catalog, Dispatcher admission, Gateway executor path, History ingress, and
 LLM ingress caller policy are rendered with the sampler. The sampler sends its scripted Responses
 requests through LLM ingress to the test node, so the scenario exercises that authenticated provider
-boundary as well. Pod state, init/service logs, and JS-host logs are retained in test outputs. The
+boundary as well. Two logical Sessions share one lazily started Codex host; each code-mode cell uses
+a fresh V8 isolate, while the test overlaps turns and interrupts one Session independently. Pod
+state, init/service logs, and shared-host logs are retained in test outputs. The
 execution/History summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash

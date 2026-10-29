@@ -120,7 +120,6 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
         logs=logs,
         direct_executor_url=executor_url,
         max_live_sessions=2,
-        host_rss_bytes=1024 * 1024 * 1024,
         turn_timeout_seconds=40,
         rpc_timeout_seconds=10,
         lease_seconds=60,

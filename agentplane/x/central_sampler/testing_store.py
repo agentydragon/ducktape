@@ -55,6 +55,18 @@ class Store:
             ).one()
         return SessionSnapshot(cursor=row.cursor, blocked=row.blocked)
 
+    async def idle_generation(self, session_id: str) -> int | None:
+        async with self.engine.connect() as connection:
+            generation = await connection.scalar(
+                text(
+                    "SELECT c.generation FROM sampler_conversation c "
+                    "JOIN sampler_session s ON s.conversation_id=c.id "
+                    "WHERE s.id=:session_id AND c.owner IS NULL"
+                ),
+                {"session_id": session_id},
+            )
+        return None if generation is None else int(generation)
+
     async def intents(self) -> list[IntentSnapshot]:
         async with self.engine.connect() as connection:
             rows = (

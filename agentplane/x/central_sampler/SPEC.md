@@ -31,20 +31,27 @@ completion acknowledgement. Successful setup is not repeated when later commands
 
 ## Runtime and effects
 
-One shared service runs the provider loop; one separately supervised upstream JS host serves each
-live Session. The host runs in the sampler container. The RSS supervisor samples its leader every
-100 ms and kills its process group when `host_rss_bytes` is exceeded; descendants are not included
-in that sample. Pod CPU and memory limits are aggregate bounds for the Go service and all Session
-hosts together, so container memory exhaustion can interrupt every live Session. Ordinary host
-shutdown kills its process group; descendants that create a new session can remain until the
-container stops. Completed-cell state is checkpointed in PostgreSQL. Model-facing
-`exec` and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream
-protocol. Live JavaScript state is process memory and cannot be restored from PostgreSQL. Lost
-live cells or uncertain effects block automatic continuation; requests/tools are never replayed
-merely because a transport failed. Process handles inherit upstream's detached retention limits.
+One shared service runs the provider loop and owns one lazy upstream Codex JavaScript host process.
+The host starts when the first code-mode Session needs it and stays up until runtime shutdown or
+host failure. It multiplexes logical Session IDs over one reader/writer, with globally allocated operation and
+delegate IDs; each Session retains its own executor/delegate and process-handle namespace. Each
+sampler Session has a stable upstream protocol-session ID across idle drivers and lease generations.
+Protocol-session ownership is separate from the active owner and executor binding. Each code-mode
+cell runs in a fresh V8 isolate/thread with no JavaScript globals shared across cells; provider
+continuation stays in the sampler. Interrupting one Session does not stop the
+shared process. A host failure fails pending work for every attached Session. Future opens can start
+a new host, but failed in-flight provider or executor work is never replayed.
 
-TODO: Revisit per-host kernel-enforced resource limits if the shared container boundary proves
-insufficient.
+Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
+exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
+remain process memory and cannot be restored after host exit. Completed-cell outcomes and provider
+continuation are checkpointed in PostgreSQL. Lost live cells or uncertain effects block automatic
+continuation. Model-facing `exec` and `wait`, yielded process handles, stdin and external interrupts
+use the pinned upstream protocol. Process handles inherit
+upstream's detached retention limits.
+
+TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
+container limits prove insufficient.
 
 The provider boundary uses a small typed adapter for Codex Responses requests, streamed events,
 terminal responses, items and content parts. The public OpenAI SDK types do not model Codex's
@@ -100,8 +107,9 @@ Raw records use at most 1 MiB byte fragments with a shared record ID, zero-based
 and total count. Concatenating payload bytes in index order reconstructs the full UTF-8 JSON
 record; derived Events reference every fragment sequence. Normalized display strings cap at
 256 KiB with an explicit truncation marker. Exact full content remains in raw evidence and
-continuation. Recovery selects only queued work/live handles and caps drivers and hosts at the
-configured Session limit; it releases completed driver tasks.
+continuation. Recovery selects only queued work/live handles and caps concurrent active Session
+drivers at the configured Session limit; it releases completed driver tasks. Idle logical Sessions
+may exceed that active-driver cap. Those Sessions share the one lazy Codex host process.
 
 The exporter uses existing `RunnerIngress.Push` with an explicitly authorized sampler announcement,
 then replays original immutable entries. History's acknowledgement advances its durable local

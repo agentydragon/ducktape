@@ -12,6 +12,7 @@ import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
+from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import (
@@ -122,8 +123,61 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
         raise TimeoutError("History watch ended before sampler setup finished")
 
 
+async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, kind: str, phase: str) -> None:
+    events = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=60,
+    )
+    try:
+        async for frame in events:
+            event = frame.entry.event
+            if event.HasField("execution_progress"):
+                progress = event.execution_progress
+                if progress.kind == kind and progress.phase == phase:
+                    return
+        raise TimeoutError(f"History ended before Session {session_id} {kind} reached {phase!r}")
+    finally:
+        events.cancel()
+
+
+async def _sampler_code_mode_host_pid(deployed: CentralStack) -> tuple[Path, str]:
+    """Read the shared host PID through the sampler Pod's existing diagnostic EmptyDir."""
+    pod = json.loads(await kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
+    pod_uid = pod["metadata"]["uid"]
+    pid_file = Path(f"/var/lib/kubelet/pods/{pod_uid}/volumes/kubernetes.io~empty-dir/logs/code-mode-host.pid")
+    pid = await asyncio.to_thread(pid_file.read_text)
+    pid = pid.strip()
+    assert pid.isdecimal(), f"invalid code-mode host PID {pid!r}"
+    return pid_file, pid
+
+
+async def _read_code_mode_host_pid(pid_file: Path) -> str:
+    return (await asyncio.to_thread(pid_file.read_text)).strip()
+
+
+async def _wait_for_turn_status(
+    deployed: CentralStack, session_id: str, turn_id: str, status: event_pb2.TurnStatus
+) -> None:
+    events = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=60,
+    )
+    try:
+        async for frame in events:
+            event = frame.entry.event
+            if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
+                assert event.turn_completed.status == status, event.turn_completed
+                return
+        raise TimeoutError(f"History ended before turn {turn_id} completed")
+    finally:
+        events.cancel()
+
+
 async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, *, template: str, cwd: str) -> None:
     session_id, command_id = str(uuid4()), str(uuid4())
+    interrupted_session_id, interrupted_command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
@@ -132,16 +186,66 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
     async with central_stack(tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
+        session_spec = runner_pb2.SessionSpec(
+            harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
+            cwd=cwd,
+            model=MODEL,
+            central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE, provider=PROVIDER),
+        )
+        interrupted_opening = await deployed.dispatcher.OpenSession(
+            session_dispatcher_pb2.OpenSessionRequest(
+                session_id=interrupted_session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert interrupted_opening.opening.sandbox_uid == deployed.sandbox_uid
+        interrupted_input = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=interrupted_session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                command_id=interrupted_command_id,
+                text="Start a long-running executor command and keep this turn active.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert interrupted_input.dispatch.command_id == interrupted_command_id
+        await _wait_for_setup(deployed, interrupted_session_id)
+        interrupted_request = await model.request()
+        assert interrupted_request.native.client_metadata.session_id == interrupted_session_id
+        assert interrupted_request.native.code_mode
+        async with interrupted_request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.Reasoning(
+                            "I will keep this executor command running until the turn is interrupted.",
+                            "test-opaque-interrupted-session-reasoning",
+                        ),
+                        responses_sse.CustomToolCall(
+                            "long-lived-executor-cell",
+                            "exec",
+                            '// @exec: {"yield_time_ms": 1}\nawait tools.exec_command({"cmd":"sleep 120"});',
+                        ),
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        await _wait_for_execution_progress(deployed, interrupted_session_id, "cell", "live")
+        host_pid_file, host_pid = await _sampler_code_mode_host_pid(deployed)
+        # A yielded cell returns control to sampling. Hold that continuation explicitly so
+        # B's request is the next scripted exchange and A remains active until interruption.
+        continuation = await model.request()
+        assert continuation.native.client_metadata.session_id == interrupted_session_id
+        await model.hold(continuation)
+
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,
                 sandbox=deployed.sandbox,
-                spec=runner_pb2.SessionSpec(
-                    harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
-                    cwd=cwd,
-                    model=MODEL,
-                    central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE, provider=PROVIDER),
-                ),
+                spec=session_spec,
                 setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
             ),
             metadata=deployed.metadata,
@@ -198,11 +302,12 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
         assert request.native.client_metadata.session_id == session_id
         assert prompt in request.user_texts
         tool_command = (
-            "set -eu; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; printf 'CENTRAL_EXECUTOR_OK\\n'"
+            "set -eu; sleep 10; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+            "printf 'CENTRAL_EXECUTOR_OK\\n'"
         )
         if is_vm:
             tool_command = (
-                "set -eu; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
+                "set -eu; sleep 10; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
                 "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
                 "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
                 "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
@@ -210,6 +315,26 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             )
         try:
             await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
+            # Require the executor process to be running before interrupting Session A; B's shell
+            # command sleeps for ten seconds so it can finish and return its real-executor output.
+            await _wait_for_execution_progress(deployed, session_id, "process", "running")
+            assert await _read_code_mode_host_pid(host_pid_file) == host_pid
+            interruption = await deployed.dispatcher.InterruptTurn(
+                session_dispatcher_pb2.InterruptTurnRequest(
+                    command_id=str(uuid4()),
+                    session_id=interrupted_session_id,
+                    sandbox=deployed.sandbox,
+                    sandbox_uid=deployed.sandbox_uid,
+                    turn_id=interrupted_command_id,
+                ),
+                metadata=deployed.metadata,
+                timeout=15,
+            )
+            assert interruption.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+            await _wait_for_turn_status(
+                deployed, interrupted_session_id, interrupted_command_id, event_pb2.TURN_STATUS_INTERRUPTED
+            )
+            assert await _read_code_mode_host_pid(host_pid_file) == host_pid
             request = await model.request()
             (tool_output,) = request.tool_outputs
             output = "\n".join(tool_output.blocks)

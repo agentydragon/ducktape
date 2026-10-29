@@ -52,7 +52,6 @@ class CentralSamplerProps:
 
     providers: Mapping[str, Provider]
     max_live_sessions: int
-    host_rss_bytes: int
     turn_timeout_seconds: int
     rpc_timeout_seconds: int
     lease_seconds: int

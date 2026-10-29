@@ -1,6 +1,6 @@
 # Sampling outside Sandboxes
 
-**Research, no direction chosen (operator request, 2026-10-27).** Could Agentplane run the agent loop
+**Research and decision record (operator request, 2026-10-27).** Could Agentplane run the agent loop
 (model sampling, prompt assembly, the native conversation store) outside Sandboxes, with a Sandbox only
 running the agent's processes and file operations? Rai: "could we run LLM sampling and talking to ai
 APIs outside of the sandboxes, just executing processes inside them? Iiuc, codex code mode has synergy
@@ -341,22 +341,26 @@ Alternatives to compare:
 
 ## Accepted central sampler v1
 
-Operator agreement, 2026-10-27: implement and open a PR for an independent central code-mode
-sampler with its own database and standalone API. The shared sampler hosts a separately supervised,
-JS subprocess per live Session. Dispatcher admits/routes central commands directly
-to it; tools use sampler → Gateway → mTLS RunnerExec → loopback exec-server. Wrapped Codex
-and Claude keep execution and sampling together on their existing paths. Experimental code lives
-under `x/`; no deployment, default change or native-state migration is selected.
+Operator agreement, 2026-10-27: implement an independent central code-mode sampler with its own
+database and standalone API. Dispatcher admits/routes central commands directly to it; tools use
+sampler → Gateway → mTLS RunnerExec → loopback exec-server. Wrapped Codex and Claude keep execution
+and sampling together on their existing paths. Experimental code lives under `x/`; existing native
+Session state is not migrated.
 
 Operator request, 2026-10-28: rewrite the sampler in Go. This includes the service, provider/tool
 loop, persistence and History exporter. Preserve the prototype's API, PostgreSQL state,
-persistence/failure semantics and acceptance scenarios. The upstream JS host remains a separately
-supervised process.
+persistence/failure semantics and acceptance scenarios. The pinned upstream JS host remains a
+separate process from the Go service.
 
 Operator selection, 2026-10-28: enable the optional shared cdk8s workload in staging, offering the
-existing Codex models, and use that construct in k3s acceptance tests. Multiple Session hosts run
-as subprocesses in the same container under aggregate Pod CPU/memory limits. Mandatory delegated
-per-host cgroups are removed; stronger per-host isolation can be reconsidered if needed.
+existing Codex models, and use that construct in k3s acceptance tests. One lazy Codex host process
+multiplexes many logical sampler Sessions and retains per-Session `store()` / `load()` values across
+cells and idle turns. Each Session keeps its upstream protocol-session ID across idle drivers and
+lease generations; active owner and executor binding are separate. Each code-mode cell runs in a
+fresh V8 isolate/thread with no JS globals shared across cells. Provider continuation stays in the
+sampler, and Gateway delegates
+remain scoped per Session. Pod CPU/memory limits bound the Go service and shared host in aggregate.
+Stronger kernel-enforced isolation for cells or Sessions is deferred for future evaluation.
 
 The selected provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
 and executor. Compaction, wait, stdin and interrupts are required. Standing instructions are
