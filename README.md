@@ -13,8 +13,9 @@ Preserve the other report directory and this navigation. Remove stale optional
 attribution only within the report being refreshed. Use Git history for earlier
 measurements; do not accumulate dated run directories. This branch continues the
 history of `ci-latency-history`; pre-migration latency snapshots are at the root
-of their historical commits. Download/open HTML locally; this branch is not a
-deployed GitHub Pages site.
+of their historical commits. GitHub Pages serves this branch at
+<https://agentydragon.com/ducktape/> (root `index.html` lists the reports;
+`.nojekyll` keeps Pages from processing the files).
 
 Collection and publication tools remain on
 [devel](https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency).

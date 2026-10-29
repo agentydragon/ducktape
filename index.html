@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ducktape CI reports</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/picocss/2.0.6/pico.min.css">
+<style>
+  .reports { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+  .reports article { margin: 0; }
+  .reports small { display: block; color: var(--pico-muted-color); }
+</style>
+</head>
+<body>
+<main class="container">
+<header>
+<h1>Ducktape CI reports</h1>
+<p>Latest-only snapshots published from the <a href="https://github.com/agentydragon/ducktape/tree/ci-reports"><code>ci-reports</code></a> branch. Each report is standalone; its reviewed measurements sit beside it as <code>evidence.json</code> and its source commit and observation window in <code>manifest.json</code>. Earlier snapshots are in the branch's git history.</p>
+</header>
+<section class="reports">
+  <article><h2><a href="latency/">Latency</a></h2><p>From a PR commit to required checks green: PR-class feedback distributions, where Bazel/runner time goes, landed changes measured, ranked actions.</p><small data-manifest="latency/manifest.json"></small><p><a href="latency/evidence.json">evidence</a> · <a href="latency/manifest.json">manifest</a></p></article>
+  <article><h2><a href="reliability/">Reliability</a></h2><p>Failed invocations with denominators, remote-error classes, failure clusters and their owners, soak status, ranked interventions.</p><small data-manifest="reliability/manifest.json"></small><p><a href="reliability/evidence.json">evidence</a> · <a href="reliability/manifest.json">manifest</a></p></article>
+  <article><h2><a href="visual-reliability/">Visual reliability</a></h2><p>Browser/visual test stability.</p><small data-manifest="visual-reliability/manifest.json"></small><p><a href="visual-reliability/evidence.json">evidence</a> · <a href="visual-reliability/manifest.json">manifest</a></p></article>
+</section>
+<footer><p><small>Collection and publication tools live on <a href="https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency">devel</a>. Reports are refreshed through PRs against <code>ci-reports</code>; this site redeploys on merge.</small></p></footer>
+</main>
+<script>
+document.querySelectorAll('[data-manifest]').forEach(function (el) {
+  fetch(el.dataset.manifest).then(function (r) { return r.json(); }).then(function (m) {
+    el.textContent = 'Window ' + m.window_start_utc + ' → ' + m.window_end_utc + ' · devel ' + m.source_devel_commit.slice(0, 10) + ' · published ' + m.published_at_utc.slice(0, 16) + 'Z';
+  }).catch(function () {});
+});
+</script>
+</body>
+</html>
