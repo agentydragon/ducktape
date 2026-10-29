@@ -199,6 +199,7 @@ go_library(
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
