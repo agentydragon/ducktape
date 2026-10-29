@@ -1244,7 +1244,7 @@ audited_source_sha256: "<64 hex characters for the parser input>"
 The author asserts that the original Array iterator and iterator-next data
 operations remain intact throughout every possible initialization schedule.
 The parser-bound input can cover opaque writes, but positively identified
-Array-family or global Symbol writes contradict it. Without this input, the
+Array-family and iterator-next writes contradict it. Without this input, the
 engine needs completed `Array` native integrity. The source-derived shape
 proves fresh dense elements and a closed, inert interval; the graph co-locates
 the producer and consumer statements to retain that interval in the emitted

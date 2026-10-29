@@ -129,6 +129,31 @@ fn direct_array_protocol_write_contradicts_exact_input() {
 }
 
 #[test]
+fn imported_sibling_protocol_writes_contradict_exact_input() {
+    for mutation in [
+        "Array.prototype[Symbol.iterator] = function* () { yield 'changed'; };\nexport {};\n",
+        "Object.getPrototypeOf([][Symbol.iterator]()).next = function () { return { done: true }; };\nexport {};\n",
+    ] {
+        let source = SOURCE.replacen(
+            "const clientBefore",
+            "import './mutation.js';\nconst clientBefore",
+            1,
+        );
+        let extra_chunks = [("static/mutation", mutation)];
+        let opts = FixtureOpts::new(&source, modules())
+            .with_extra_chunks(&extra_chunks)
+            .with_native_operation_inputs(
+                "static/app",
+                vec![spread_input(&source, declaration(&source))],
+            );
+        expect_rejection_containing_all(
+            opts,
+            &["Array iterator protocol write", "static/mutation"],
+        );
+    }
+}
+
+#[test]
 fn source_shape_rejects_exposure_holes_and_intervening_effects() {
     for statement in [
         "const first = ['a'], leaked = (globalThis.saved = first), scopes = ['base', ...first];",

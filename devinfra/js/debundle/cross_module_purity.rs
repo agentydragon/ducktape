@@ -710,6 +710,24 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
+    if let Some(request) = selected_native_operation_inputs
+        .values()
+        .flatten()
+        .find(|input| {
+            input.evidence.operation == spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays
+        })
+        .map(|input| input.evidence.spec_location.as_str())
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_array_iterator_protocol_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        bail!(
+            "{request} is contradicted by a known Array iterator protocol write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
     if selected_native_operation_inputs
         .values()
         .flatten()

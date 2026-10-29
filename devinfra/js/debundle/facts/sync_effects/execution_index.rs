@@ -10985,6 +10985,10 @@ impl PreparedCallableCapabilities {
         .map(str::to_owned)
     }
 
+    pub(crate) fn known_array_iterator_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_array_iterator_protocol_mutation()
+    }
+
     pub(crate) fn locate_value_inputs(
         &mut self,
         source: Option<&(String, js_ast::SourceLineIndex)>,
