@@ -156,7 +156,7 @@ struct InteropChunk {
     has_cjs_interop: bool,
     has_own_cjs_export_surface: bool,
     site_count: usize,
-    kinds: std::collections::BTreeMap<String, usize>,
+    kinds: std::collections::BTreeMap<InteropUseKind, usize>,
 }
 
 #[derive(Serialize)]
@@ -334,17 +334,21 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                 ));
                 for chunk in &census.chunks {
                     out.push_str(&format!(
-                        "  {}: {} sites {:?}\n",
-                        chunk.chunk, chunk.site_count, chunk.kinds
+                        "  {}: {} sites {}\n",
+                        chunk.chunk,
+                        chunk.site_count,
+                        serde_json::to_string(&chunk.kinds).expect("typed census keys serialize")
                     ));
                 }
                 for site in &census.sites {
+                    let kind =
+                        serde_json::to_string(&site.kind).expect("typed census kind serializes");
                     out.push_str(&format!(
                         "  {} item {} line {:?}: {}{}{}\n",
                         site.chunk,
                         site.item,
                         site.line,
-                        site.kind.label(),
+                        kind.trim_matches('"'),
                         site.specifier
                             .as_deref()
                             .map_or(String::new(), |specifier| format!(" {specifier:?}")),
@@ -526,7 +530,7 @@ fn collect_interop_census(
         let name = artifact.chunk_table.name(chunk.chunk_id).to_string();
         let mut kinds = std::collections::BTreeMap::new();
         for site in uses {
-            *kinds.entry(site.kind.label().to_string()).or_insert(0) += 1;
+            *kinds.entry(site.kind).or_insert(0) += 1;
             site_count += 1;
             if sites.len() >= max_sites {
                 continue;

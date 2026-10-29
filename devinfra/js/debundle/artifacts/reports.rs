@@ -8,6 +8,7 @@ use std::path::Path;
 use analysis::DepKind;
 use anyhow::{Context, Result};
 use serde::Serialize;
+use swc_common::Span;
 
 use crate::FileRole;
 use crate::metrics::{DecompositionMetrics, OutputMetrics};
@@ -212,11 +213,13 @@ pub struct ChunkRuntimeFacts {
 pub struct InteropUse {
     pub item_index: usize,
     pub line: Option<usize>,
+    /// Exact original SWC site, retained for future phase/call joins.
+    pub span: Span,
     pub kind: InteropUseKind,
     pub specifier: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InteropUseKind {
     ImportMetaRequireLiteralCall,
@@ -231,25 +234,6 @@ pub enum InteropUseKind {
     ImportMetaValue,
     TsImportEquals,
     TsExportAssignment,
-}
-
-impl InteropUseKind {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::ImportMetaRequireLiteralCall => "import_meta_require_literal_call",
-            Self::ImportMetaRequireDynamicCall => "import_meta_require_dynamic_call",
-            Self::ImportMetaRequireReference => "import_meta_require_reference",
-            Self::GlobalThisRequire => "global_this_require",
-            Self::UnboundRequire => "unbound_require",
-            Self::UnboundModule => "unbound_module",
-            Self::UnboundExports => "unbound_exports",
-            Self::ImportMetaDynamicProperty => "import_meta_dynamic_property",
-            Self::ImportMetaOtherProperty => "import_meta_other_property",
-            Self::ImportMetaValue => "import_meta_value",
-            Self::TsImportEquals => "ts_import_equals",
-            Self::TsExportAssignment => "ts_export_assignment",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

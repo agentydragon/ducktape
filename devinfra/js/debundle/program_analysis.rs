@@ -417,6 +417,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             .map(|(item_index, span, kind, specifier)| InteropUse {
                 item_index,
                 line: line_index.line_for_span(span),
+                span,
                 kind,
                 specifier,
             })
