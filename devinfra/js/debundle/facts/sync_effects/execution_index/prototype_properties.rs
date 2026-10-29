@@ -33,7 +33,7 @@ fn prototype_intrinsic_roots(
         &index.global_object_names,
         declared,
         &BTreeMap::new(),
-        &BTreeMap::new(),
+        &CallableReturnInputs::default(),
     )
     .into_iter()
     .filter_map(|root| match root {

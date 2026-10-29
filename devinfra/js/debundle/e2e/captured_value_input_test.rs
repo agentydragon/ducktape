@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const OPAQUE: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
+const OPAQUE_ARRAY_CHILD: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { child: Array.prototype }; } };\n";
 const PROVIDER_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
 // The raw fixture entry is `static/app.js`; the emitted entry is
 // `static/app/entry.js`. Both resolve their relative `./opaque.js` import.
@@ -70,6 +71,29 @@ fn input_refs(value: &Value) -> bool {
             reference["defining_chunk"] == "static/peer" && reference["input_index"] == 0
         })
     })
+}
+
+fn reject_array_descendant_mutation(flow_source: &str) -> RejectedFixture {
+    let provider = format!(
+        "import {{ readLater }} from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nfunction get(key) {{ return captured[key]; }}\n{flow_source}\nreceiver[Symbol.iterator] = function evil() {{ return 0; }};\nexport function factory() {{ const state = new Map(); return {{ get size() {{ return state.size; }}, label() {{ return readLater().name; }} }}; }}\n"
+    );
+    let chunks = [("static/peer", provider.as_str())];
+    let opaque_files = [
+        ("static/opaque.js", OPAQUE_ARRAY_CHILD),
+        ("static/app/opaque.js", OPAQUE_ARRAY_CHILD),
+    ];
+    run_rejection_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), copied.length);\nexport { queue, Later };\n",
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(&opaque_files)
+        .with_value_inputs("static/peer", vec![captured_input(&provider)]),
+    )
 }
 
 #[test]
@@ -223,6 +247,77 @@ fn captured_primitive_predicate_return_preserves_cli_runtime() {
                     && input_refs(&witness["value_input_refs"])
             }),
         "captured predicate must preserve consumed input provenance: {graph}"
+    );
+}
+
+#[test]
+fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nfunction key() { globalThis.runtimeSettings.events.push('key'); return 'child'; }\nfunction get(name) { return captured[name]; }\nexport function childSize() { return get(key()).size; }\nObject.assign(captured, { ready: true });\nconst alias = captured;\nObject.assign(alias, {});\nfunction unrelatedOpaque() { return ({}).child; }\nObject.assign({}, unrelatedOpaque());\n";
+    let chunks = [("static/peer", provider)];
+    let opaque_files = [
+        (
+            "static/opaque.js",
+            "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n",
+        ),
+        (
+            "static/app/opaque.js",
+            "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n",
+        ),
+    ];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport { childSize } from './peer.js';\nconsole.log(childSize(), globalThis.runtimeSettings.events.join(','));\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(&opaque_files)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "0 capture,key,child\n");
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["chunk_id"] == "static/peer"
+                    && witness["operation"] == "mutation_call"
+                    && input_refs(&witness["value_input_refs"])
+                    && witness["affected_roots"]
+                        .as_array()
+                        .is_some_and(Vec::is_empty)
+            }),
+        "the exact captured receiver remains refined while its returned child is read: {graph}"
+    );
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["chunk_id"] == "static/peer"
+                    && witness["operation"] == "mutation_call"
+                    && witness["source_location"]["start_line"] == 7
+                    && input_refs(&witness["value_input_refs"])
+                    && witness["affected_roots"]
+                        .as_array()
+                        .is_some_and(Vec::is_empty)
+            }),
+        "a stable direct alias retains ordinary input identity: {graph}"
+    );
+    assert!(
+        !graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["chunk_id"] == "static/peer"
+                    && witness["operation"] == "mutation_call"
+                    && witness["source_location"]["start_line"] == 9
+            }),
+        "an unrelated opaque return must retain the source-only call behavior: {graph}"
     );
 }
 
@@ -387,29 +482,29 @@ fn recognized_native_and_any_rebinding_reject_the_value_input() {
             "must be declared by its pattern",
         ),
         (
-            "var captured = globalThis.runtimeSettings.state;\nfunction getChild() { return captured.child; }\nObject.assign(getChild(), {});\n",
-            "var captured = globalThis.runtimeSettings.state;",
-            "only synchronous direct same-binding or statically primitive returns are supported",
-        ),
-        (
-            "var captured = globalThis.runtimeSettings.state;\nfunction getMaybeChild() { return captured.ready ? false : captured.child; }\nObject.assign(captured, {});\n",
-            "var captured = globalThis.runtimeSettings.state;",
-            "only synchronous direct same-binding or statically primitive returns are supported",
-        ),
-        (
             "var captured = globalThis.runtimeSettings.state;\nfunction getUnknown() { return captured?.run?.(); }\nObject.assign(captured, {});\n",
             "var captured = globalThis.runtimeSettings.state;",
-            "only synchronous direct same-binding or statically primitive returns are supported",
+            "capturing synchronous return path is unsupported, unresolved, or opaque",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nfunction getMaybe(value) { if (captured.ready) return value; return captured.child; }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "capturing synchronous return path is unsupported, unresolved, or opaque",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nfunction recurse() { return recurse(); }\nfunction getMaybe() { if (captured.ready) return captured.child; return recurse(); }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "capturing synchronous return path is unsupported, unresolved, or opaque",
         ),
         (
             "var captured = globalThis.runtimeSettings.state;\nasync function getAsync() { return captured.ready ? false : true; }\nObject.assign(captured, {});\n",
             "var captured = globalThis.runtimeSettings.state;",
-            "only synchronous direct same-binding or statically primitive returns are supported",
+            "capturing synchronous return path is unsupported, unresolved, or opaque",
         ),
         (
             "var captured = globalThis.runtimeSettings.state;\nfunction* getGenerator() { yield captured.child; return false; }\nObject.assign(captured, {});\n",
             "var captured = globalThis.runtimeSettings.state;",
-            "only synchronous direct same-binding or statically primitive returns are supported",
+            "capturing synchronous return path is unsupported, unresolved, or opaque",
         ),
     ] {
         let chunks = [("static/peer", source)];
@@ -419,6 +514,139 @@ fn recognized_native_and_any_rebinding_reject_the_value_input() {
         opts = opts.with_value_inputs("static/peer", vec![input]);
         expect_rejection_containing_all(opts, &[expected]);
     }
+}
+
+#[test]
+fn mixed_primitive_and_recursive_return_producers_do_not_close_the_capture_flow() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nfunction recurse() { return recurse(); }\nfunction get() { void captured; let result = false; if (globalThis.runtimeSettings.branch) result = recurse(); return result; }\nObject.assign(captured, {});\n";
+    let chunks = [("static/peer", provider)];
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport './peer.js';\nconsole.log('ready');\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("capturing synchronous return path is unsupported, unresolved, or opaque"),
+        "the unresolved recursive producer must not be hidden by the primitive producer: {}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn unrelated_object_literal_native_fields_do_not_create_no_input_aliases() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const receiver = { child: Array.prototype };\nreceiver[Symbol.iterator] = function evil() { return 0; };\nconsole.log('ready');\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let invented_native_alias =
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| {
+                witnesses.iter().any(|witness| {
+                    witness["operation"] == "property_assignment"
+                        && witness["source_location"]["start_line"] == 2
+                        && witness["receiver_roots"] == serde_json::json!(["unknown_global_value"])
+                })
+            });
+    assert!(
+        !invented_native_alias,
+        "an intrinsic-valued field does not make its fresh container a native alias: {graph}"
+    );
+}
+
+#[test]
+fn returned_descendant_alias_wrapper_and_container_keep_array_iterator_barriers() {
+    for flow_source in [
+        "function getChild() { return captured.child; }\nconst receiver = getChild();",
+        "function getChild() { return captured.child; }\nconst child = getChild();\nconst receiver = child;",
+        "function wrap(param) { const result = get(param); return result; }\nconst receiver = wrap('child');",
+        "function wrap() { return { child: get('child') }; }\nconst receiver = wrap().child;",
+        "function makeReader() { return function readChild() { return captured.child; }; }\nconst reader = makeReader();\nconst receiver = reader();",
+    ] {
+        let rejected = reject_array_descendant_mutation(flow_source);
+        assert!(
+            rejected.atomic_group_conflicts().iter().any(|conflict| {
+                let claims = conflict["claims"].as_array().expect("conflict claims");
+                ["queue", "later"].iter().all(|module| {
+                    claims
+                        .iter()
+                        .any(|claim| claim["module"].as_str() == Some(*module))
+                })
+            }),
+            "the possible Array.prototype write must retain the split conflict for: {flow_source}"
+        );
+
+        let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+        assert!(
+            graph["native_integrity_witnesses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|witness| {
+                    witness["chunk_id"] == "static/peer"
+                        && witness["operation"] == "property_assignment"
+                        && witness["receiver_roots"] == serde_json::json!(["unknown_global_value"])
+                        && witness["affected_roots"] == serde_json::json!(["global_object"])
+                        && input_refs(&witness["value_input_refs"])
+                }),
+            "descendant mutation must retain its captured-value provenance and unknown-global barrier for {flow_source}: {graph}"
+        );
+        let copied = graph["nodes"].as_array().unwrap().iter().find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "copied")
+                })
+        });
+        assert!(
+            copied.is_some_and(|node| {
+                node["synchronous_execution"]["native_integrity_checks"]
+                    .as_array()
+                    .is_some_and(|checks| {
+                        checks.iter().any(|check| {
+                            check["guard"] == "array_intrinsics"
+                                && check["affected_roots"].as_array().is_some_and(|roots| {
+                                    roots.iter().any(|root| root == "global_object")
+                                })
+                        })
+                    })
+            }),
+            "the Array iterator guard must observe the retained descendant barrier for {flow_source}: {graph}"
+        );
+    }
+}
+
+#[test]
+fn arbitrary_member_projection_does_not_borrow_capture_or_fresh_object_safety() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.prototype.child = Array.prototype;\nfunction get() { void captured; return ({}).child; }\nconst receiver = get();\nreceiver[Symbol.iterator] = function evil() { return 0; };\n";
+    let chunks = [("static/peer", provider)];
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport './peer.js';\nconsole.log('ready');\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("capturing synchronous return path is unsupported, unresolved, or opaque"),
+        "the capture must be rejected because this member projection is unproven: {}",
+        rejected.stderr
+    );
 }
 
 #[test]

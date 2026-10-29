@@ -964,16 +964,22 @@ conditioned witness, including when its affected-root set is empty. A member or
 descendant of the captured object remains `unknown_global_value`, including
 computed, symbol and `constructor` paths. Calls or construction involving a
 captured value are widened only when the existing value facts show that input
-is involved. A synchronous local callable whose canonical return summary
-contains only the selected binding is recognized as returning an opaque
-descendant, so its call result keeps the `unknown_global_value` barrier. A
-synchronous callable whose returns are all statically primitive is also
-accepted; those results do not create captured-object aliases. Mixed, unknown
-or member-valued returns, and captured async or generator callables, are
-rejected as unsupported. This remains an intra-chunk direct-return case, not a
-general return or cross-module alias analysis. A write through a descendant
-therefore retains the usual global/native barrier, and recognized native writes
-elsewhere in the analyzed program remain effective.
+is involved. A synchronous local callable may return a member or descendant
+rooted in the selected binding. The shared value-flow closure carries that
+opaque possible-native descendant through local aliases, synchronous wrappers
+and supported object or array literal projections. Returned containers do not
+inherit the captured binding's ordinary direct identity; a container field
+creates this descendant flow only when it carries the selected input. Every
+reaching assignment producer and return site in a capture-connected flow must
+close. Unknown parameters, unresolved recursive paths and unsupported escapes
+retain their possible-native roots and cause the input contract to be rejected
+when they prevent a closed summary. A synchronous callable whose returns are
+all statically primitive is also accepted; those results do not create
+captured-object aliases. Captured async or generator callables remain
+unsupported. This is an intra-chunk analysis over the existing value
+expressions, not a general return or cross-module alias analysis. A write
+through a descendant therefore retains the usual global/native barrier, and
+recognized native writes elsewhere in the analyzed program remain effective.
 
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
