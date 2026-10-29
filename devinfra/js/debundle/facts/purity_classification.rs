@@ -6,6 +6,7 @@ pub(crate) fn item_purity(
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
+    fresh_record_destructuring: &crate::purity::FreshRecordDestructuringContext<'_>,
     has_local_effect: bool,
 ) -> Purity {
     match kind {
@@ -50,6 +51,7 @@ pub(crate) fn item_purity(
                     &BTreeSet::new(),
                     &hints.assumptions.declared_pure,
                     graph,
+                    fresh_record_destructuring,
                 )
             })
             .unwrap_or(Purity::pure()),

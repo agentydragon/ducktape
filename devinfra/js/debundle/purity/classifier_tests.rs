@@ -1477,6 +1477,11 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
             &BTreeSet::new(),
             &BTreeSet::new(),
             &graph,
+            &FreshRecordDestructuringContext {
+                flow: &ChunkValueFlow::default(),
+                dynamic_scope: DynamicScopeFact::default(),
+                rebindings: &BTreeSet::new(),
+            },
         )
         .dependencies(),
         Some(&dependencies),

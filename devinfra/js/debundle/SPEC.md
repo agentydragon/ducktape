@@ -665,6 +665,19 @@ ordinary effect and reachability paths apply. Calls and eager dependencies are
 still evaluated; later use or publication of the result can promote its
 retained callbacks.
 
+At an immediate top-level object destructuring declaration, a direct call to
+one stable local function may also supply a fresh own-data record shape. The
+function must be synchronous and have a straight-line prefix followed by an
+unconditional terminal return of an object literal with only distinct static
+own data fields. Each selected pattern key must be present; defaults, nested
+patterns, rest, computed keys, accessors, spreads, `__proto__`, alternate
+returns retain the conservative pattern reason. Factory calls also require no
+dynamic scope or callee rebindings. The value-flow target must be one canonical
+local function identity.
+This removes only the destructuring getter/proxy purity reason; the call and
+all prefix, argument, throw, read and callback effects remain independently
+analyzed. An immediate fresh object literal uses the same own-data check.
+
 A direct local wrapper call may also retain callbacks in a fresh checked class
 instance without exposing them during the initializer. The wrapper must have
 one return containing only checked local `new` allocations, simple parameters,

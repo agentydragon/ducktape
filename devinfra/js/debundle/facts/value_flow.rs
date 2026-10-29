@@ -701,6 +701,10 @@ pub(crate) struct ChunkValueFlow {
     candidate_bindings: BTreeMap<Id, Arc<Vec<u64>>>,
     /// Callable identity to its chunk-top declaration binding, if any.
     canonical: BTreeMap<ValueOrigin, Id>,
+    /// Structural successful-return shapes, kept separate from the
+    /// over-approximating return-origin fixed point. A missing entry says
+    /// nothing about the value returned by the function.
+    fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     pub(crate) callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
     /// Exact native Set allocation sites, each backed by a validated author
     /// operation input. Other constructor results remain unknown.
@@ -1120,6 +1124,32 @@ impl ChunkValueFlow {
         self.canonical.get(&origin)
     }
 
+    /// An exact local call target whose every normal return is a newly
+    /// allocated record with the listed own data fields. Call evaluation and
+    /// the function body's effects remain outside this value-shape fact.
+    pub(crate) fn fresh_returned_record_keys(&self, call: &CallExpr) -> Option<&BTreeSet<String>> {
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let Expr::Ident(ident) = callee.unwrap_parens() else {
+            return None;
+        };
+        if call.args.iter().any(|arg| arg.spread.is_some()) {
+            return None;
+        }
+        let values = self.values_of_binding(&ident.to_id());
+        let mut origins = values.iter();
+        let ValueOrigin::Function(function) = origins.next()? else {
+            return None;
+        };
+        if origins.next().is_some()
+            || self.canonical_callable(ValueOrigin::Function(function)) != Some(&ident.to_id())
+        {
+            return None;
+        }
+        self.fresh_returned_record_keys.get(&function)
+    }
+
     pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
         self.properties
             .get(&object)
@@ -1513,6 +1543,7 @@ struct FlowProgram {
     canonical: BTreeMap<ValueOrigin, Id>,
     callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
 impl FlowProgram {
@@ -1534,6 +1565,7 @@ impl FlowProgram {
             canonical: BTreeMap::new(),
             callable_source_unit: BTreeMap::new(),
             native_set_allocations: native_set_allocations.clone(),
+            fresh_returned_record_keys: BTreeMap::new(),
         };
         for (ordinal, item) in body.iter().enumerate() {
             collector.source_unit = SourceUnitOrdinal(ordinal);
@@ -1554,6 +1586,7 @@ impl FlowProgram {
             canonical: collector.canonical,
             callable_source_unit: collector.callable_source_unit,
             native_set_allocations: native_set_allocations.clone(),
+            fresh_returned_record_keys: collector.fresh_returned_record_keys,
         }
     }
 
@@ -1566,6 +1599,7 @@ impl FlowProgram {
             canonical,
             callable_source_unit,
             native_set_allocations,
+            fresh_returned_record_keys,
         } = self;
         let producer_count = events.len();
         #[cfg(test)]
@@ -1605,6 +1639,7 @@ impl FlowProgram {
             canonical,
             callable_source_unit,
             native_set_allocations,
+            fresh_returned_record_keys,
             ..ChunkValueFlow::default()
         };
         for (key, fact) in facts {
@@ -1656,6 +1691,7 @@ struct FlowProgramCollector {
     canonical: BTreeMap<ValueOrigin, Id>,
     callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
 impl Visit for FlowProgramCollector {
@@ -1788,6 +1824,13 @@ impl Visit for FlowProgramCollector {
 
     fn visit_function(&mut self, node: &Function) {
         let function = node.span.lo.0;
+        if !node.is_async
+            && !node.is_generator
+            && let Some(body) = &node.body
+            && let Some(keys) = fresh_returned_record_keys(body)
+        {
+            self.fresh_returned_record_keys.insert(function, keys);
+        }
         self.origins.insert(ValueOrigin::Function(function));
         self.callable_source_unit
             .entry(ValueOrigin::Function(function))
@@ -1810,6 +1853,12 @@ impl Visit for FlowProgramCollector {
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let function = node.span.lo.0;
+        if !node.is_async
+            && let ArrowFunctionBody::FunctionBody(body) = node.body.as_ref()
+            && let Some(keys) = fresh_returned_record_keys(body)
+        {
+            self.fresh_returned_record_keys.insert(function, keys);
+        }
         self.origins.insert(ValueOrigin::Function(function));
         self.callable_source_unit
             .entry(ValueOrigin::Function(function))
@@ -1886,6 +1935,51 @@ fn direct_callable_origin(expr: &Expr) -> Option<ValueOrigin> {
         Expr::Class(class) => Some(ValueOrigin::Class(class.class.span.lo.0)),
         _ => None,
     }
+}
+
+/// A straight-line prefix cannot complete normally before the final return.
+/// Throws in a prefix simply prevent the destructuring from running; their
+/// ordinary call/throw/effect analysis is deliberately unchanged.
+fn fresh_returned_record_keys(body: &FunctionBody) -> Option<BTreeSet<String>> {
+    let (last, prefix) = body.stmts.split_last()?;
+    if !prefix
+        .iter()
+        .all(|statement| matches!(statement, Stmt::Decl(Decl::Var(_)) | Stmt::Expr(_)))
+    {
+        return None;
+    }
+    let Stmt::Return(ret) = last else {
+        return None;
+    };
+    let Expr::Object(object) = ret.arg.as_deref()?.unwrap_parens() else {
+        return None;
+    };
+    own_data_keys(object)
+}
+
+/// Exact own data fields created by one fresh ordinary object literal.
+/// Spread, computed names, accessors, methods and `__proto__` retain the
+/// conservative getter/proxy classification at the consuming pattern.
+pub(crate) fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
+    let mut keys = BTreeSet::new();
+    for prop in &object.props {
+        let PropOrSpread::Prop(prop) = prop else {
+            return None;
+        };
+        let key = match prop.as_ref() {
+            Prop::KeyValue(pair) => match &pair.key {
+                PropName::Ident(ident) => ident.sym.to_string(),
+                PropName::Str(string) => string.value.to_string_lossy().into_owned(),
+                _ => return None,
+            },
+            Prop::Shorthand(ident) => ident.sym.to_string(),
+            _ => return None,
+        };
+        if key == "__proto__" || !keys.insert(key) {
+            return None;
+        }
+    }
+    Some(keys)
 }
 
 #[cfg(test)]

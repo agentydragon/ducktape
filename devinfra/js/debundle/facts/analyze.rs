@@ -241,6 +241,7 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
         body,
         imported_bindings,
         value_flow,
+        dynamic_scope,
         set_iterable_shapes: set_iterable_proof,
         local_class_shapes: local_class_construction_proof,
         plain_data_bindings,
@@ -298,6 +299,7 @@ where
         body,
         imported_bindings,
         value_flow,
+        dynamic_scope,
         set_iterable_shapes,
         local_class_shapes,
         plain_data_bindings,
@@ -376,6 +378,22 @@ where
             }
         }
     }
+    let rebindings: BTreeSet<Id> = per_statement
+        .iter()
+        .flat_map(|statement| {
+            statement
+                .rebinds
+                .lazy
+                .iter()
+                .chain(&statement.rebinds.eager)
+        })
+        .cloned()
+        .collect();
+    let fresh_record_destructuring = crate::purity::FreshRecordDestructuringContext {
+        flow: &value_flow,
+        dynamic_scope,
+        rebindings: &rebindings,
+    };
     let mut facts: Vec<StatementFacts> = body
         .iter()
         .zip(per_statement)
@@ -387,6 +405,7 @@ where
                 &shadowed,
                 hints,
                 &graph,
+                &fresh_record_destructuring,
                 &local_effect_context,
                 &shared_vars,
             );
@@ -648,12 +667,14 @@ where
 /// complete [`StatementFacts`] record. Called once per statement by
 /// [`analyze_chunk_with_policy`] after the policy-independent layer
 /// has already walked the AST.
+#[allow(clippy::too_many_arguments)] // The prepared shape context extends the existing assembly inputs.
 fn assemble_statement_facts(
     item: &ModuleItem,
     structural: StructuralStatementFacts,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
+    fresh_record_destructuring: &crate::purity::FreshRecordDestructuringContext<'_>,
     local_effect_context: &local_effects::LocalEffectContext,
     shared_vars: &BTreeSet<Id>,
 ) -> StatementFacts {
@@ -687,6 +708,7 @@ fn assemble_statement_facts(
         shadowed,
         hints,
         graph,
+        fresh_record_destructuring,
         !local_effects.is_empty(),
     );
     if !var_initializers.is_disjoint(shared_vars) {

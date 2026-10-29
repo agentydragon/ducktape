@@ -228,6 +228,24 @@ purity or exception freedom.
 
 ## Source-composed returned records
 
+An immediate top-level object pattern can read selected own data fields from
+a fresh literal, or from a direct call to a source-proven local factory, without
+running user getters or Proxy traps. The shared value-flow collector supplies
+the exact callable origin and records the structural return shape separately
+from its over-approximating return-value set. The factory has a straight-line
+prefix of variable declarations or expression statements and a terminal
+object-literal return; it is neither async nor a generator. This shape proof
+does not erase prefix effects, arguments, calls, throws, eager binding reads or
+later callback behavior. A whole-chunk dynamic-scope check and a rebind scan
+protect callable identity, including deferred writes. The selected keys must
+all be statically present as distinct own data properties. Missing keys,
+accessors, spreads, computed keys, `__proto__`, alternate returns, defaults,
+nested patterns and rest retain the ordinary conservative pattern reason.
+
+This local purity fact is independent of the imported returned-record timing
+summary below. That summary can contain getters and asserts no member-read
+purity.
+
 A stable directly exported hoisted function declaration can supply a separate
 successful-return timing summary for a zero-argument function with exactly two statements: allocation of a fresh
 empty `Map` in one identifier binding, then return of an object containing only

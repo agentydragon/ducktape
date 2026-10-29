@@ -448,6 +448,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
+    pub(crate) dynamic_scope: super::DynamicScopeFact,
     pub(crate) set_iterable_shapes: super::SetIterableShapes,
     pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
     pub(crate) plain_data_bindings: Vec<String>,

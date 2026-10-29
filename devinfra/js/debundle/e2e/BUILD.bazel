@@ -382,6 +382,11 @@ debundle_e2e_test(
     deps = ["//devinfra/js/debundle:analysis"],
 )
 
+debundle_e2e_test(
+    name = "fresh_returned_record_destructuring_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
 
 debundle_e2e_test(name = "return_object_residual_alias_import_test")

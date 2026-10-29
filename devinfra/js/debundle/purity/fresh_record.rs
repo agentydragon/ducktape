@@ -1,4 +1,59 @@
 use super::*;
+use crate::facts::{ChunkValueFlow, DynamicScopeFact, own_data_keys};
+
+/// Prepared value shape and whole-chunk identity guards for the ordinary
+/// declaration classifier. The initializer still follows its normal purity
+/// path, including call/argument effects and proof dependencies.
+pub(crate) struct FreshRecordDestructuringContext<'a> {
+    pub(crate) flow: &'a ChunkValueFlow,
+    pub(crate) dynamic_scope: DynamicScopeFact,
+    pub(crate) rebindings: &'a BTreeSet<Id>,
+}
+
+impl FreshRecordDestructuringContext<'_> {
+    pub(crate) fn has_own_data_fields(&self, pattern: &Pat, init: &Expr) -> bool {
+        let Pat::Object(pattern) = pattern else {
+            return false;
+        };
+        let keys = match init.unwrap_parens() {
+            Expr::Object(object) => own_data_keys(object),
+            Expr::Call(call) => {
+                if self.dynamic_scope.present {
+                    return false;
+                }
+                let Callee::Expr(callee) = &call.callee else {
+                    return false;
+                };
+                let Expr::Ident(ident) = callee.unwrap_parens() else {
+                    return false;
+                };
+                if self.rebindings.contains(&ident.to_id()) {
+                    return false;
+                }
+                self.flow.fresh_returned_record_keys(call).cloned()
+            }
+            _ => None,
+        };
+        let Some(keys) = keys else {
+            return false;
+        };
+        pattern
+            .props
+            .iter()
+            .map(|prop| match prop {
+                ObjectPatProp::KeyValue(pair) if matches!(pair.value.as_ref(), Pat::Ident(_)) => {
+                    match &pair.key {
+                        PropName::Ident(ident) => Some(ident.sym.to_string()),
+                        PropName::Str(string) => Some(string.value.to_string_lossy().into_owned()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .is_some_and(|selected| selected.iter().all(|key| keys.contains(key)))
+    }
+}
 
 /// An ordered, closed function body that writes only to data fields already
 /// owned by one newly allocated record. The single SWC parse supplies this

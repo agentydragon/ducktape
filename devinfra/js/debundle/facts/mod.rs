@@ -95,7 +95,7 @@ pub(crate) use statement_facts::{
     ConstructorFacts, HeapContentEffects, LocalRecordFactoryPurityCertificate,
 };
 pub(crate) use value_flow::{
-    CandidateObjectIndex, ChunkValueFlow, ValueOrigin, native_set_allocation_roots,
+    CandidateObjectIndex, ChunkValueFlow, ValueOrigin, native_set_allocation_roots, own_data_keys,
 };
 
 // Public API: importable at `facts::<item>` exactly as before the split.

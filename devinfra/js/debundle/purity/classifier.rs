@@ -6,6 +6,7 @@ pub(crate) fn classify_var_decl_purity(
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
+    fresh_record_destructuring: &FreshRecordDestructuringContext<'_>,
 ) -> Purity {
     var.decls
         .iter()
@@ -16,14 +17,16 @@ pub(crate) fn classify_var_decl_purity(
                 // `const [x] = o`) fire getters / the iterator
                 // protocol on the initializer value — user code the
                 // init expression's own classification doesn't see.
-                // Simplest sound rule: any non-Ident pattern makes
-                // the statement not pure, regardless of init shape.
-                // (A fresh-plain-data-literal RHS would be sound to
-                // admit; deliberately not done — the shape is rare
-                // at chunk top and the uniform rule is easier to
-                // audit.)
-                let pattern_purity = param_destructuring_purity(&decl.name)
-                    .unwrap_or_else(|| Purity::from_reason(PurityRule::Other, decl.span));
+                // Exact own data fields on an immediately fresh record
+                // cannot invoke getters. The call and all its effects are
+                // still classified by the initializer below.
+                let pattern_purity =
+                    if fresh_record_destructuring.has_own_data_fields(&decl.name, init) {
+                        Purity::pure()
+                    } else {
+                        param_destructuring_purity(&decl.name)
+                            .unwrap_or_else(|| Purity::from_reason(PurityRule::Other, decl.span))
+                    };
                 return Some(pattern_purity.worst(classify_expr_purity(
                     init,
                     shadowed,
