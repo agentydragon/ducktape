@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+func TestCompletedItemTextJoinsReasoningSummaryParts(t *testing.T) {
+	for _, test := range []struct {
+		item string
+		want string
+	}{
+		{`{"type":"reasoning","summary":[{"type":"summary_text","text":"**Plan**"},{"type":"summary_text","text":"Read the file."}]}`, "**Plan**\nRead the file."},
+		{`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"one "},{"type":"output_text","text":"answer"}]}`, "one answer"},
+	} {
+		var item ResponsesItem
+		if err := json.Unmarshal([]byte(test.item), &item); err != nil {
+			t.Fatal(err)
+		}
+		got, err := responsesText(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != test.want {
+			t.Fatalf("responsesText(%s) = %q, want %q", test.item, got, test.want)
+		}
+	}
+}
+
 func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"type":"response.output_item.done","item":{"type":"reasoning","opaque_sequence":9007199254740993}}`,
@@ -67,7 +89,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 		`"store":false`,
 		`"stream":true`,
 		// The provider rejects Responses Lite requests without these.
-		`"reasoning":{"context":"all_turns"}`,
+		`"context":"all_turns"`,
 		`"parallel_tool_calls":false`,
 		`"encrypted_content":"opaque"`,
 		`"provider_sequence":9007199254740993`,

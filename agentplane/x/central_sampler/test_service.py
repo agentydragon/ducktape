@@ -17,7 +17,13 @@ import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
+from agentplane.native.codex.testing.responses_sse import (
+    CustomToolCall,
+    FunctionCall,
+    Message,
+    Reasoning,
+    response_stream,
+)
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
@@ -335,6 +341,48 @@ async def test_nested_command_inherits_executor_environment(
     assert variables.get("PATH")
     assert variables.get("HOME")
     assert variables.get("AGENTPLANE_DESTINATION")
+
+
+async def test_reasoning_summaries_are_requested_and_reach_history(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        request = open_request(tmp_path)
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="think", text="Think, then answer."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                reasoning = exchange.request.body["reasoning"]
+                await exchange.send(
+                    *response_stream(
+                        [Reasoning("Weighing the answer.", encrypted_content="test-opaque"), Message("answered")],
+                        model="test-model",
+                    ).events
+                )
+            assert (await completed(stub, "think", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+        events = [entry.event for entry in await store.events(request.session_id, 0, limit=10000)]
+    assert reasoning["summary"] == "auto"
+    reasoning_items = {
+        event.item_started.item_id
+        for event in events
+        if event.HasField("item_started") and event.item_started.kind == event_pb2.ITEM_KIND_REASONING
+    }
+    summaries = [
+        event.item_completed.text
+        for event in events
+        if event.HasField("item_completed") and event.item_completed.item_id in reasoning_items
+    ]
+    assert summaries == ["Weighing the answer."]
 
 
 async def test_restart_never_replays_unresolved_provider_intent(

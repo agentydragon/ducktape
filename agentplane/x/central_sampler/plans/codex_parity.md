@@ -12,7 +12,6 @@ instructions, setup scripts and History export.
   pruning or rewriting it for the sampler, or choosing per model as Codex does.
 - **Environment context:** Codex's `<environment_context>` with cwd, the executor-reported shell and
   the current date. Timezone deferred.
-- **Reasoning summaries:** request them like Codex, so History can show reasoning.
 
 ## Later
 

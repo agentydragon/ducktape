@@ -236,11 +236,19 @@ type ResponsesClientMetadata struct {
 }
 
 type ResponsesReasoningConfig struct {
-	Effort string `json:"effort,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	Summary string `json:"summary,omitempty"`
 	// Codex rust-v0.162.1 core/src/client.rs build_reasoning: the Responses Lite header
 	// (provider.go) requires `all_turns`; the provider rejects any other value.
 	Context string `json:"context"`
 }
+
+// Codex rust-v0.162.1 core/src/client.rs build_reasoning and session/step_settings.rs: the summary is
+// the configured model_reasoning_summary, else the model's default_reasoning_summary. Agentplane's
+// model routes (e.g. chatgpt-sub/oai-responses/gpt-6-luna) are not slugs in Codex's bundled
+// catalog, so Codex uses models-manager/src/model_info.rs model_info_from_slug fallback metadata:
+// supports_reasoning_summary_parameter with default "auto". Wrapped Codex therefore sends "auto".
+const codexReasoningSummary = "auto"
 
 type ResponsesEvent struct {
 	Type        ResponsesEventType `json:"type"`
@@ -423,9 +431,15 @@ func responsesText(item ResponsesItem) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var result strings.Builder
-	for _, part := range parts {
-		result.WriteString(part.Text)
+	// Reasoning summary parts are separate paragraphs; native Codex Sessions join them with a newline
+	// (agentplane/runner/codex/adapter.go). Message content parts are one continuous text.
+	separator := ""
+	if item.Type == ResponsesItemReasoning {
+		separator = "\n"
 	}
-	return result.String(), nil
+	texts := make([]string, len(parts))
+	for index, part := range parts {
+		texts[index] = part.Text
+	}
+	return strings.Join(texts, separator), nil
 }
