@@ -761,6 +761,14 @@ globalThis`) marks the bindings it flows into (transitively,
   top-level code gains little: every statement with an unproven call
   is chained.
 
+  Every `Sequenced` edge retains the rule that emitted it and the effect
+  classification of both endpoints (`SequencedCause` in `graph/edge.rs`:
+  strict chain, shared `var` access, at-init binding timeline, uninitialized
+  observation, or the cell-order relation with each endpoint's class and the
+  conflicting cells). Cycle reports surface it as the cut edge's
+  `explanation` (<../SPEC.md> § Realizability cut explanations); it is
+  diagnostic provenance only and feeds no gate decision.
+
 ### Relationship
 
 ```

@@ -50,7 +50,7 @@ pub(crate) struct StatementFactsCollector {
     pub(crate) global_writes: BTreeSet<String>,
     pub(crate) global_reads: BTreeSet<String>,
     pub(crate) cell_writes_summarizable: bool,
-    pub(crate) dataflow_summarizable: bool,
+    pub(crate) dataflow_opacity: BTreeSet<DataflowOpacityCause>,
     /// Unshadowed global-object alias names for this chunk
     /// (`globalThis`, `window`, ...). See
     /// [`unshadowed_global_object_aliases`].
@@ -86,7 +86,7 @@ impl StatementFactsCollector {
     ) -> Self {
         Self {
             cell_writes_summarizable: true,
-            dataflow_summarizable: true,
+            dataflow_opacity: BTreeSet::new(),
             global_object_names,
             async_direct_function_bindings,
             promise_global_unshadowed,
@@ -229,7 +229,8 @@ impl StatementFactsCollector {
     /// question (member writes, alias shapes). The vendor strip's
     /// write-cell view stays summarizable.
     fn bail_summarizable(&mut self) {
-        self.dataflow_summarizable = false;
+        self.dataflow_opacity
+            .insert(DataflowOpacityCause::MemberWriteOrAlias);
     }
 
     /// Bail every consumer: the statement may WRITE arbitrary cells
@@ -237,7 +238,8 @@ impl StatementFactsCollector {
     /// `defineProperty`/`Proxy` on the global object).
     fn bail_cell_writes(&mut self) {
         self.cell_writes_summarizable = false;
-        self.dataflow_summarizable = false;
+        self.dataflow_opacity
+            .insert(DataflowOpacityCause::DynamicCellWrites);
     }
 
     fn is_global_object_expr(&self, expr: &Expr) -> bool {

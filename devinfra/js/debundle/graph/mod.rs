@@ -33,7 +33,10 @@ pub use build::{
 pub use dependency_graph::{
     DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
 };
-pub use edge::{DepKind, DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
+pub use edge::{
+    BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
+    EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+};
 pub use linker_order::{
     ChunkConstrainingEdgeSet, chunk_constraining_module_edges, chunk_linker_order_from_pairs,
     chunk_source_import_order_from_adjacency, position_lookup,

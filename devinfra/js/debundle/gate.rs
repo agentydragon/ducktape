@@ -28,8 +28,9 @@ pub use realizability::{
     simulated_evaluation_post_order,
 };
 pub use validation::{
-    AssignmentReport, BlockingSccEntry, CycleEdge, CycleReport,
-    render_atomic_group_conflict_summary, render_cycle_summary, validate_assignment,
+    AssignmentReport, AtInitReadPosition, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
+    CycleReport, render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
+    validate_assignment,
 };
 
 #[cfg(test)]

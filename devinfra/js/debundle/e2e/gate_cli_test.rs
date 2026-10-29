@@ -255,6 +255,32 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
             .any(|edge| edge["sequenced_source_unit"].is_object()),
         "fixture must exercise sequencing provenance: {cut}"
     );
+    // Every constraining edge explains itself, from stored provenance
+    // (`cycles.json`) and from the recomputed `dependency_graph.json`
+    // evidence alike: strict-chain sequencing names both impure
+    // endpoints; the at-init reads here are all direct (`wrap(A)`,
+    // `wrap(C)` read their argument in the statement's own position).
+    for edge in cut_edges.iter().chain(evidence) {
+        match edge["kind"].as_str().unwrap() {
+            "sequenced" => {
+                assert_eq!(
+                    edge["explanation"]["cause"],
+                    serde_json::json!({ "rule": "strict_chain" }),
+                    "{edge}"
+                );
+                assert_eq!(
+                    edge["explanation"]["target_source_unit"]["purity"]["kind"], "not_pure",
+                    "{edge}"
+                );
+            }
+            "eager_use" => assert_eq!(
+                edge["explanation"],
+                serde_json::json!({ "kind": "at_init_read", "position": { "kind": "direct" } }),
+                "{edge}"
+            ),
+            _ => assert!(edge["explanation"].is_null(), "{edge}"),
+        }
+    }
     // Both directions of the at-init cycle appear, naming the
     // bindings whose reads forced it.
     assert!(

@@ -341,6 +341,7 @@ fn build_source_unit_nodes_and_edges(
             statement_ordinal: edge.reason.statement_ordinal,
             constrains_init_order: edge.reason.constrains_init_order(),
             role: edge_role_report(edge.reason.role()),
+            sequenced_cause: edge.reason.sequenced_cause().cloned(),
         })
         .collect();
     (nodes, edges)

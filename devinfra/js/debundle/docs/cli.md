@@ -1132,7 +1132,13 @@ which source units it covers, which modules its members would land in, and the
 When a sequenced side-effect edge is involved, the existing conflict/cycle
 records also include each impure initializer source unit, its binding name, source
 path and 1-based line/column, plus the `PurityRule`, optional detail, and any
-author guidance. Unknown calls point to the member-level `purity` annotation;
+author guidance. Each cut edge also carries a typed `explanation` of why the
+gate treats it as constraining — the at-init read position for `eager_use`, or
+the retained emission rule (`strict_chain`, `cell_order` with both endpoints'
+effect classes and the conflicting cells, …) and the target side's impure
+initializer for `sequenced`; the bail summary prints it under each binding-pair
+row ([SPEC](../SPEC.md#realizability-cut-explanations)).
+Unknown calls point to the member-level `purity` annotation;
 imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
 Unknown imported constructors point to
 `chunk_export_purity.<defining chunk>.pure_new_exports`.
@@ -1176,10 +1182,13 @@ The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
 exit 0.
 
 For a sequencing edge, `gate describe` retains the impure initializer source
-unit and its purity reasons. Supply `--modules` and `--source-root` together to
-get `sequenced_source_inspections`, a runnable `inspect-source` command keyed by
-each stored source unit. The text view prints the same commands. The graph and
-source snapshot must still match.
+unit and its purity reasons, and every cut and evidence edge carries the same
+`explanation` the stored cut has (the evidence rebuilds it from
+`dependency_graph.json`'s `edges[].role` and `edges[].sequenced_cause`). Supply
+`--modules` and `--source-root` together to get `sequenced_source_inspections`,
+a runnable `inspect-source` command keyed by each stored source unit (source
+and target sides alike). The text view prints the same commands and a `why:`
+line per edge. The graph and source snapshot must still match.
 
 `gate diagnose <binding>` traces constraining promoted-at-initialization edges
 to a matched callback-factory contract rejected by a supported static member

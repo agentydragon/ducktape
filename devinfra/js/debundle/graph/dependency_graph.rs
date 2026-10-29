@@ -216,7 +216,8 @@ impl DependencyGraph {
                 Some(role) => role.resolve(&by_id),
                 None => EdgeRole::Direct,
             };
-            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role);
+            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role)
+                .with_sequenced_cause(edge.sequenced_cause.clone());
             let id = DependencyEdgeId(edges.len());
             edges.push(DependencyEdge {
                 id,
