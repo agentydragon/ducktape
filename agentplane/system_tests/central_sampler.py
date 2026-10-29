@@ -215,7 +215,18 @@ async def _sampler_diagnostics(core: k8s.CoreV1Api) -> None:
 
 
 async def _delete_sampler() -> None:
-    await kubectl("delete", f"pod/{SERVICE}", "--wait=true", "--timeout=60s")
+    await kubectl(
+        "delete",
+        f"pod/{SERVICE}",
+        f"service/{SERVICE}",
+        f"configmap/{SERVICE}",
+        f"serviceaccount/{SERVICE}",
+        f"clusterrole/{SERVICE}",
+        f"clusterrolebinding/{SERVICE}",
+        "--ignore-not-found",
+        "--wait=true",
+        "--timeout=60s",
+    )
 
 
 async def _create_sampler(connection: k8s.ApiClient, config: Settings) -> None:
@@ -365,6 +376,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
         incarnation = ready["status"]["incarnation"]["uid"]
         history_target = await _address(core, "history-service", 8081)
+        stack.push_async_callback(_delete_sampler)
         service = await core.create_namespaced_service(
             namespace(),
             k8s.V1Service(
@@ -414,7 +426,6 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
             lease_seconds=60,
         )
         await _create_sampler(connection, config)
-        stack.push_async_callback(_delete_sampler)
         stack.push_async_callback(_sampler_diagnostics, core)
         await kubectl("wait", f"pod/{SERVICE}", "--for=condition=Ready", "--timeout=60s")
         sampler_token = await _bound_token(core, "runner-gateway", gateway_pod, SERVICE)
