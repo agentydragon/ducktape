@@ -124,7 +124,14 @@ fn direct_array_protocol_write_contradicts_exact_input() {
             "static/app",
             vec![spread_input(&source, declaration(&source))],
         );
-        expect_rejection_containing_all(opts, &["known Array iterator protocol write"]);
+        let rejected = run_rejection_fixture(opts);
+        assert!(
+            rejected
+                .stderr
+                .contains("known Array iterator protocol write"),
+            "mutation {mutation:?} was not identified as a known Array iterator write:\n{}",
+            rejected.stderr
+        );
     }
 }
 
@@ -146,11 +153,84 @@ fn imported_sibling_protocol_writes_contradict_exact_input() {
                 "static/app",
                 vec![spread_input(&source, declaration(&source))],
             );
-        expect_rejection_containing_all(
-            opts,
-            &["Array iterator protocol write", "static/mutation"],
+        let rejected = run_rejection_fixture(opts);
+        assert!(
+            rejected.stderr.contains("Array iterator protocol write")
+                && rejected.stderr.contains("static/mutation"),
+            "mutation {mutation:?} was not identified as an imported Array iterator write:\n{}",
+            rejected.stderr
         );
     }
+}
+
+#[test]
+fn sibling_symbol_iterator_replacement_keeps_other_symbol_key_write_opaque() {
+    let source = format!("import './symbol.js';\nimport './mutation.js';\n{SOURCE}");
+    let extra_chunks = [
+        (
+            "static/symbol",
+            "globalThis.Symbol = { iterator: Symbol('replacement') };\nexport {};\n",
+        ),
+        (
+            "static/mutation",
+            "Array.prototype[Symbol.iterator] = function* () { yield 'changed'; };\nexport {};\n",
+        ),
+    ];
+    let opts = FixtureOpts::new(&source, modules())
+        .with_extra_chunks(&extra_chunks)
+        .with_native_operation_inputs(
+            "static/app",
+            vec![spread_input(&source, declaration(&source))],
+        );
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
+}
+
+#[test]
+fn sibling_global_array_replacement_does_not_contradict_literal_array_iterator() {
+    let source = format!("import './array.js';\nimport './mutation.js';\n{SOURCE}");
+    let extra_chunks = [
+        (
+            "static/array",
+            "globalThis.Array = { prototype: {} };\nexport {};\n",
+        ),
+        (
+            "static/mutation",
+            "Array.prototype[Symbol.iterator] = function* () { yield 'changed'; };\nexport {};\n",
+        ),
+    ];
+    let opts = FixtureOpts::new(&source, modules())
+        .with_extra_chunks(&extra_chunks)
+        .with_native_operation_inputs(
+            "static/app",
+            vec![spread_input(&source, declaration(&source))],
+        );
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
+}
+
+#[test]
+fn shadowed_object_cannot_identify_array_iterator_prototype_receiver() {
+    let source = format!(
+        "function mutate(Object) {{ Object.getPrototypeOf([][Symbol.iterator]()).next = function () {{ return {{ done: true }}; }}; }}\n{SOURCE}"
+    );
+    let modules = vec![logical_module(
+        "scopes",
+        &[
+            Member::new("clientBefore"),
+            Member::new("apiError"),
+            Member::new("clientAfter"),
+            Member::new("first"),
+            Member::new("second"),
+            Member::new("scopes"),
+        ],
+    )];
+    let opts = FixtureOpts::new(&source, modules).with_native_operation_inputs(
+        "static/app",
+        vec![spread_input(&source, declaration(&source))],
+    );
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
 }
 
 #[test]

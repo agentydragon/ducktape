@@ -710,24 +710,6 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
-    if let Some(request) = selected_native_operation_inputs
-        .values()
-        .flatten()
-        .find(|input| {
-            input.evidence.operation == spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays
-        })
-        .map(|input| input.evidence.spec_location.as_str())
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_array_iterator_protocol_mutation_owner()
-                .map(|owner| (module, owner))
-        })
-    {
-        bail!(
-            "{request} is contradicted by a known Array iterator protocol write in provider {module}, source unit {}",
-            owner.0
-        );
-    }
     if selected_native_operation_inputs
         .values()
         .flatten()
@@ -995,6 +977,48 @@ pub fn resolve_imported_callable_summaries(
                     );
                 }
             }
+        }
+    }
+    // Array-protocol contradictions use a premise-relative copy of the
+    // all-source census. It preserves each candidate's Array effect and its
+    // conservative fallback, but the selected Array-spread premise may
+    // identify the iterator receiver while Object/Symbol remain independent.
+    let array_spread_request = selected_native_operation_inputs
+        .values()
+        .flatten()
+        .find_map(|input| {
+            (input.evidence.operation
+                == NativeInputKind::Operation(
+                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
+                ))
+            .then_some(input.evidence.spec_location.as_str())
+        })
+        .or_else(|| {
+            resolved_native_operation_inputs
+                .values()
+                .flatten()
+                .find_map(|input| {
+                    (input.evidence.operation
+                        == NativeInputKind::Operation(
+                            spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
+                        ))
+                    .then_some(input.evidence.spec_location.as_str())
+                })
+        });
+    if let Some(request) = array_spread_request {
+        let protocol_integrity =
+            crate::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(
+                prepared.values().map(|facts| facts.native_writes()),
+            );
+        if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_array_iterator_protocol_mutation_owner_in(&protocol_integrity)
+                .map(|owner| (module, owner))
+        }) {
+            bail!(
+                "{request} is contradicted by a known Array iterator protocol write in provider {module}, source unit {}",
+                owner.0
+            );
         }
     }
     let inferred: BTreeMap<_, _> = prepared
