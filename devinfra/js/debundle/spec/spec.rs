@@ -197,7 +197,7 @@ pub enum NodeBuiltinModule {
 }
 
 impl NodeBuiltinModule {
-    /// Recognize only exact audited static-import spellings. This is not a
+    /// Recognize only explicitly supported static-import spellings. This is not a
     /// bare-package or `node:` prefix fallback resolver.
     pub fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {

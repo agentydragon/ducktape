@@ -91,7 +91,7 @@ fn selected_builtin_leaves_are_reported_with_exact_identity_and_source_uses() {
 fn unselected_bare_and_replacement_packages_remain_unresolved() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import 'node:path';\nimport 'unknown_package';\nimport 'ws';\nexport const value = 1;\n",
+            "import 'node:path';\nimport 'crypto';\nimport 'unknown_package';\nimport 'ws';\nexport const value = 1;\n",
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
@@ -107,7 +107,7 @@ fn unselected_bare_and_replacement_packages_remain_unresolved() {
         .filter(|blocker| blocker["reason"] == "unresolved_static_request")
         .map(|blocker| blocker["specifier"].as_str().unwrap())
         .collect();
-    assert_eq!(unresolved, ["unknown_package", "ws"]);
+    assert_eq!(unresolved, ["crypto", "unknown_package", "ws"]);
 }
 
 #[test]
