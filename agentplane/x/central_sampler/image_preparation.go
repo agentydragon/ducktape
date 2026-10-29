@@ -59,6 +59,12 @@ func (e *imagePreparationError) Unwrap() error { return e.err }
 
 // prepareOutputImages replaces each inline input_image with its prompt-prepared form, or with
 // upstream's placeholder text when it cannot be prepared.
+//
+// TODO: Consider upstream's attachment store (core/src/image_preparation.rs prepare_image uploads
+// prepared bytes and may reference them by file_id). Prepared images stay inline here, so every
+// provider request and every sampling intent's journaled body carries their full base64 again.
+// The 32 MiB view_image cap (view_image.go) also differs from upstream, which has none and
+// fails only at the 64 MiB WebSocket message or code-mode frame bounds.
 func prepareOutputImages(parts []ResponsesContentPart) ([]ResponsesContentPart, error) {
 	for index, part := range parts {
 		if part.Type != "input_image" {
