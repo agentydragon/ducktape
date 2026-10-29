@@ -25,9 +25,10 @@ the conversation, a `HarnessUserMessageConfirmed` with the active turn's ID and 
 command outcome, in one transaction, so it is recorded exactly once. A turn whose model just
 answered continues instead of ending. Input admitted behind another kind of command waits for a later
 turn, and a pending interrupt of the turn takes precedence. While the model waits on a running
-`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`, negotiated
-as the required `yield-observation` capability) so the cell keeps running and the model reads the
-input at once. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
+`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`) so the cell
+keeps running and the model reads the input at once. As in Codex, `yield-observation` is offered as an
+optional capability and used only when the host acknowledges it; otherwise the input waits for the
+observation to return. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
 lets the sampling request finish, because a cut stream leaves its intent uncertain. Codex keeps
 `notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
 `notify()` outputs before its steering input.

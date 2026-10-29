@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -191,7 +192,13 @@ func (m *CodeModeHost) startHost() (*Host, error) {
 	}
 	timer := time.AfterFunc(m.rpcTimeout, func() { _ = host.Kill() })
 	defer timer.Stop()
-	hello, err := json.Marshal(codeHello{Type: "connection/hello", SupportedVersions: []int{1}, RequiredCapabilities: []string{yieldObservationCapability}, OptionalCapabilities: []string{}})
+	// Codex rust-v0.162.1 code-mode/src/remote_session/connection.rs establish: no required
+	// capabilities; yield-observation is optional and used only once the host acknowledges it
+	// (supported_yield_signal).
+	// TODO: Codex also offers session-cell-execution-resource-limits as optional; the sampler does
+	// not negotiate per-session cell execution resource limits yet.
+	offered := []string{yieldObservationCapability}
+	hello, err := json.Marshal(codeHello{Type: "connection/hello", SupportedVersions: []int{1}, RequiredCapabilities: []string{}, OptionalCapabilities: offered})
 	if err == nil {
 		err = writeHostFrame(host.Stdin(), hello)
 	}
@@ -207,10 +214,17 @@ func (m *CodeModeHost) startHost() (*Host, error) {
 		_ = host.Close()
 		return nil, err
 	}
-	if ready.Type != codeReady || ready.SelectedVersion != 1 || len(ready.Capabilities) != 1 || ready.Capabilities[0] != yieldObservationCapability {
+	if ready.Type != codeReady || ready.SelectedVersion != 1 || ready.Capabilities == nil {
 		_ = host.Close()
 		return nil, fmt.Errorf("unexpected code-mode handshake: %s", canonicalJSON(ready))
 	}
+	for _, capability := range ready.Capabilities {
+		if !slices.Contains(offered, capability) {
+			_ = host.Close()
+			return nil, fmt.Errorf("code-mode host acknowledged unoffered capability %q", capability)
+		}
+	}
+	host.capabilities = ready.Capabilities
 	return host, nil
 }
 

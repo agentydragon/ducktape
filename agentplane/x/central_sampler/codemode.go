@@ -358,7 +358,12 @@ func (r *CodeMode) setForeground(id int64) func() {
 }
 
 // HasForeground reports whether an execute or wait observation is in flight and not yet yielded.
+// Without an acknowledged yield-observation capability there is nothing to yield: input then waits
+// for the observation to return.
 func (r *CodeMode) HasForeground() bool {
+	if !r.host.acknowledged(yieldObservationCapability) {
+		return false
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.foreground != nil && !r.yielded
@@ -370,6 +375,9 @@ func (r *CodeMode) HasForeground() bool {
 // Codex rust-v0.162.1 core/src/tools/code_mode (InstantInterrupt, default on): new user input yields
 // foreground code-mode observations so the model can read it at the next sampling step.
 func (r *CodeMode) YieldForeground(ctx context.Context) (bool, error) {
+	if !r.host.acknowledged(yieldObservationCapability) {
+		return false, nil
+	}
 	r.mu.Lock()
 	if r.foreground == nil || r.yielded {
 		r.mu.Unlock()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,14 +20,17 @@ type fakeCodeModePeer struct {
 	frames     chan map[string]json.RawMessage
 	closed     chan struct{}
 	closeError error
+	// acknowledge lists the offered optional capabilities this host supports.
+	acknowledge []string
 }
 
-func newFakeCodeModePeer() *fakeCodeModePeer {
+func newFakeCodeModePeer(acknowledge []string) *fakeCodeModePeer {
 	input, hostInput := io.Pipe()
 	hostOutput, output := io.Pipe()
 	peer := &fakeCodeModePeer{
 		input: input, output: output,
 		frames: make(chan map[string]json.RawMessage, 32), closed: make(chan struct{}),
+		acknowledge: acknowledge,
 	}
 	peer.host = &Host{stdin: hostInput, stdout: hostOutput, done: make(chan struct{})}
 	go peer.serve()
@@ -42,7 +46,13 @@ func (p *fakeCodeModePeer) serve() {
 	if decodeProtocolObject(payload, &hello) != nil || hello.Type != "connection/hello" {
 		return
 	}
-	_ = p.send(codeFrame{Type: codeReady, SelectedVersion: 1, Capabilities: hello.RequiredCapabilities})
+	granted := []string{}
+	for _, capability := range hello.OptionalCapabilities {
+		if slices.Contains(p.acknowledge, capability) {
+			granted = append(granted, capability)
+		}
+	}
+	_ = p.send(codeFrame{Type: codeReady, SelectedVersion: 1, Capabilities: granted})
 	for {
 		payload, err = readHostFrame(p.input)
 		if err != nil {
@@ -114,13 +124,13 @@ func (p *fakeCodeModePeer) close() error {
 	return p.closeError
 }
 
-func newFakeCodeModeManager(t *testing.T) (*CodeModeHost, func() []*fakeCodeModePeer) {
+func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
 	t.Helper()
 	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: "fake", Logs: t.TempDir(), RPCTimeoutSeconds: 2}, nil)
 	var mu sync.Mutex
 	var peers []*fakeCodeModePeer
 	manager.startProcess = func(context.Context, string, string) (*Host, error) {
-		peer := newFakeCodeModePeer()
+		peer := newFakeCodeModePeer(acknowledge)
 		mu.Lock()
 		peers = append(peers, peer)
 		mu.Unlock()
@@ -489,5 +499,58 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 	}
 	if err := third.Detach(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		acknowledge []string
+		next        string
+	}{
+		{name: "acknowledged", acknowledge: []string{yieldObservationCapability}, next: "operation/yield"},
+		// Without the capability the input waits for the observation; the request ends uncancelled.
+		{name: "not acknowledged", next: "operation/cancel"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, peers := newFakeCodeModeManager(t, test.acknowledge...)
+			code := openFakeSession(t, manager, "conversation")
+			peer := peers()[0]
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				_, _ = code.request(ctx, codeSessionOperation{Method: "session/wait", SessionID: code.sessionID}, false)
+				close(done)
+			}()
+			id := receiveOperationRequest(t, peer, code.sessionID)
+			deadline := time.Now().Add(3 * time.Second)
+			for test.next == "operation/yield" && !code.HasForeground() {
+				if time.Now().After(deadline) {
+					t.Fatal("wait request never became the foreground observation")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			sent, err := code.YieldForeground(ctx)
+			if err != nil || sent != (test.next == "operation/yield") {
+				t.Fatalf("yield sent=%v err=%v", sent, err)
+			}
+			cancel()
+			<-done
+			select {
+			case fields := <-peer.frames:
+				var frame struct {
+					Type string `json:"type"`
+					ID   int64  `json:"id"`
+				}
+				if err := decodeProtocolObject(mustMarshalFields(t, fields), &frame); err != nil {
+					t.Fatal(err)
+				}
+				if frame.Type != test.next || frame.ID != id {
+					t.Fatalf("frame after the wait request=%+v, want %s id=%d", frame, test.next, id)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("no frame followed the wait request")
+			}
+		})
 	}
 }
