@@ -96,6 +96,68 @@ fn later_opaque_call_keeps_tdz_callback_rejection() {
 }
 
 #[test]
+fn guarded_registration_preserves_condition_effects_and_callback_lifetime() {
+    for (guard, expected) in [
+        (
+            "(console.log('guard'), typeof console !== 'undefined')",
+            "guard\nregistered topic\nfired\n1\n",
+        ),
+        (
+            "true && (console.log('guard'), typeof missingGlobal !== 'undefined')",
+            "guard\nfired\n0\n",
+        ),
+    ] {
+        let statement =
+            format!("{guard} && peer.register('topic', () => {{ later.count += 1; }});");
+        let main = format!(
+            "import * as peer from './peer.js';\n{statement}\nconst later = {{ count: 0 }};\npeer.fire();\nconsole.log(later.count);\n"
+        );
+        let registration_module = format!(
+            "anonymous_statements:\n  - match: \"{statement}\"\n    no_reentry_call: {{callback_arguments: [1]}}\n"
+        );
+        let run = run_registration_fixture(&main, &registration_module);
+        assert!(
+            run.result.status.success(),
+            "guarded registration should permit the proven split\nstdout:\n{}\nstderr:\n{}",
+            run.result.stdout,
+            run.result.stderr,
+        );
+        assert_node_output(&run.root().join("snapshot/main.js"), expected, "");
+        assert_node_output(&run.out_root.join("app/main/entry.js"), expected, "");
+    }
+}
+
+#[test]
+fn guarded_registration_keeps_guard_and_later_call_tdz_rejections() {
+    for (guard, before_initializer) in [
+        ("later.count === 0", ""),
+        ("(() => later.count === 0)()", ""),
+        ("true", "peer.fire();"),
+    ] {
+        let statement =
+            format!("{guard} && peer.register('topic', () => {{ later.count += 1; }});");
+        let main = format!(
+            "import * as peer from './peer.js';\n{statement}\n{before_initializer}\nconst later = {{ count: 0 }};\npeer.fire();\n"
+        );
+        let registration_module = format!(
+            "anonymous_statements:\n  - match: \"{statement}\"\n    no_reentry_call: {{callback_arguments: [1]}}\n"
+        );
+        let run = run_registration_fixture(&main, &registration_module);
+        assert!(
+            !run.result.status.success(),
+            "guard and later opaque-call effects must remain eager\nstdout:\n{}\nstderr:\n{}",
+            run.result.stdout,
+            run.result.stderr,
+        );
+        assert!(
+            run.result.stderr.contains("EagerUse cycle"),
+            "expected a TDZ rejection, got:\n{}",
+            run.result.stderr
+        );
+    }
+}
+
+#[test]
 fn registration_signature_errors_are_reported() {
     let duplicate = run_registration_fixture(
         "import * as peer from './peer.js';\nfunction callback() { later.count += 1; }\npeer.register('topic', callback);\nconst later = { count: 0 };\npeer.fire();\n",

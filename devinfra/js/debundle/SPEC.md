@@ -1310,10 +1310,18 @@ anonymous_statements:
 
 `callback_arguments` positions are zero-based, must be nonempty and unique, and
 must be within the matched call's argument list. The selector must resolve to
-one top-level bare call statement. Only a direct identifier callee or a static
-member callee on an identifier receiver is admitted. Optional or computed
-members, effectful receivers, spread arguments, and nested eager calls remain
-on the conservative path. Callback arguments must be ordinary stable local
+one top-level expression statement: either a bare call or a call in the
+rightmost operand of an `&&` chain, allowing parentheses. For example,
+`typeof window !== 'undefined' && window.addEventListener('resize', callback);`
+asserts timing only for `addEventListener`. Guard evaluation, including any
+calls in the guard, keeps its ordinary effects and reentry obligations. A
+conditional expression, sequence expression, or other operator surrounding
+the terminal call does not activate the assertion.
+
+Only a direct identifier callee or a static member callee on an identifier
+receiver is admitted. Optional or computed members, effectful receivers,
+spread arguments, and nested eager calls inside arguments remain on the
+conservative path. Callback arguments must be ordinary stable local
 functions or closures; other positions must use the admitted inert primitive
 syntax above. Runtime values must still resolve to one stable callable
 identity at the call site.

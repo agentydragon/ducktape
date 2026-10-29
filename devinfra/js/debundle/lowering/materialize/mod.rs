@@ -871,9 +871,8 @@ fn collect_analysis_assumptions(
             // The ordinary synchronous-call analysis remains in force.
             continue;
         };
-        let Expr::Call(call) = expression_statement.expr.as_ref() else {
-            // Optional calls, wrapped expressions, and non-call statements
-            // remain on the conservative path.
+        let Some(call) = asserted_registration_call(&expression_statement.expr) else {
+            // Unsupported expressions keep ordinary synchronous-call analysis.
             continue;
         };
         let argument_count = call.args.len();
@@ -896,6 +895,18 @@ fn collect_analysis_assumptions(
     }
     collect_chunk_rename_analysis_assumptions(chunk_renames, module, &mut assumptions)?;
     Ok(assumptions)
+}
+
+/// Select only the terminal registration call. Every guard expression keeps
+/// its ordinary effects; the premise is keyed to this call's exact span.
+fn asserted_registration_call(expression: &Expr) -> Option<&CallExpr> {
+    match expression.unwrap_parens() {
+        Expr::Call(call) => Some(call),
+        Expr::Bin(binary) if binary.op == BinaryOp::LogicalAnd => {
+            asserted_registration_call(&binary.right)
+        }
+        _ => None,
+    }
 }
 
 fn collect_chunk_rename_analysis_assumptions(
