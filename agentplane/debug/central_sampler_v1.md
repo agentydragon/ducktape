@@ -246,7 +246,7 @@ it did not fail importing or starting an image.
 
 The old failure hook captured early setup/provider stalls, so this later assertion left no
 nested `process/read` reply evidence. The fixture now writes
-`central-sampler-session-diagnostics.json` for this mismatch too, retaining full History events
+`central-sampler-session-diagnostics-<session-id>.json` for this mismatch too, retaining full History events
 and their boundary-record request/reply bodies. That evidence must distinguish an empty
 exec-server reply from loss after the sampler receives a chunk before choosing a backend fix.
 The stdout assertion remains unchanged.

@@ -15,7 +15,14 @@ from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, Reasoning, response_stream
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.system_tests.central_sampler import MODEL, PROVIDER, SERVICE, CentralStack, central_stack
+from agentplane.system_tests.central_sampler import (
+    MODEL,
+    PROVIDER,
+    SERVICE,
+    CentralStack,
+    capture_sampler_diagnostics,
+    central_stack,
+)
 from agentplane.system_tests.cluster import kubectl
 from agentplane.system_tests.conftest import (
     FORWARD_POD_TEMPLATE,
@@ -40,6 +47,11 @@ async def _capture_session_diagnostics(
         "command_id": command_id,
         "dispatcher_admission": admission,
     }
+    try:
+        pod_artifacts = await capture_sampler_diagnostics()
+        diagnostic["sampler_pod_artifacts"] = str(pod_artifacts.relative_to(undeclared_outputs_dir()))
+    except Exception as error:
+        diagnostic["sampler_pod_artifacts_error"] = repr(error)
     try:
         snapshot = await deployed.sampler.GetSession(
             sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=5
@@ -94,7 +106,7 @@ async def _capture_session_diagnostics(
             )
         except Exception as error:
             diagnostic[f"{component}_logs_error"] = repr(error)
-    (undeclared_outputs_dir() / "central-sampler-session-diagnostics.json").write_text(
+    (undeclared_outputs_dir() / f"central-sampler-session-diagnostics-{session_id}.json").write_text(
         json.dumps(diagnostic, indent=2) + "\n"
     )
 

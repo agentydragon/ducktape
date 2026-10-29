@@ -197,21 +197,26 @@ async def _diagnostics() -> None:
         )
 
 
-async def _sampler_diagnostics(core: k8s.CoreV1Api) -> None:
-    output = undeclared_outputs_dir()
+async def capture_sampler_diagnostics() -> Path:
+    """Retain this sampler Pod's logs before another scenario replaces the Pod."""
     state = await kubectl("get", f"pod/{SERVICE}", "-o", "json")
-    (output / "central-sampler-pod.json").write_text(state)
-    for container in ("initialize", "sampler"):
-        try:
-            log = await core.read_namespaced_pod_log(SERVICE, namespace(), container=container)
-        except ApiException as error:
-            log = f"Container logs unavailable: {error}"
-        (output / f"central-sampler-{container}.log").write_text(log)
+    uid = str(json.loads(state)["metadata"]["uid"])
+    output = undeclared_outputs_dir() / "central-sampler-pods" / uid
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "pod.json").write_text(state)
+    async with api_client() as connection:
+        core = k8s.CoreV1Api(connection)
+        for container in ("initialize", "sampler"):
+            try:
+                log = await core.read_namespaced_pod_log(SERVICE, namespace(), container=container)
+            except ApiException as error:
+                log = f"Container logs unavailable: {error}"
+            (output / f"{container}.log").write_text(log)
     # The test owns this k3s node; preserve the Pod's EmptyDir before deletion removes it.
-    uid = json.loads(state)["metadata"]["uid"]
     logs = Path(f"/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/logs")
     if await asyncio.to_thread(logs.exists):
-        await asyncio.to_thread(shutil.copytree, logs, output / "central-sampler", dirs_exist_ok=True)
+        await asyncio.to_thread(shutil.copytree, logs, output / "sessions", dirs_exist_ok=True)
+    return output
 
 
 async def _delete_sampler() -> None:
@@ -426,7 +431,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
             lease_seconds=60,
         )
         await _create_sampler(connection, config)
-        stack.push_async_callback(_sampler_diagnostics, core)
+        stack.push_async_callback(capture_sampler_diagnostics)
         await kubectl("wait", f"pod/{SERVICE}", "--for=condition=Ready", "--timeout=60s")
         sampler_token = await _bound_token(core, "runner-gateway", gateway_pod, SERVICE)
         sampler_channel = await stack.enter_async_context(dial(target))
