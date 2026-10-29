@@ -12,10 +12,10 @@ use super::value_model::{
     static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic as IntrinsicRoot, NativeOperationInputEvidence, ProofDependencies,
-    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
-    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    AnalysisInputs, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic,
+    NativeOperationInputEvidence, ProofDependencies, ResolvedBindingValueInput,
+    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -1482,13 +1482,13 @@ fn returned_function_span(expr: &Expr) -> Option<Span> {
     }
 }
 
-type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
+type IntrinsicRoots = BTreeSet<NativeIntrinsic>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum NativeReceiverRoot {
-    Intrinsic(IntrinsicRoot),
-    IntrinsicPrototype(IntrinsicRoot),
-    IntrinsicDescendant(IntrinsicRoot),
+    Intrinsic(NativeIntrinsic),
+    IntrinsicPrototype(NativeIntrinsic),
+    IntrinsicDescendant(NativeIntrinsic),
     ArrayIteratorPrototype,
     SetIteratorPrototype,
     OrdinaryDirect {
@@ -1522,7 +1522,7 @@ enum ReceiverFlowKey {
 enum CallableReturnOutcome {
     Safe,
     Descendant(ValueInputRef, SourceUnitOrdinal),
-    Intrinsic(IntrinsicRoot),
+    Intrinsic(NativeIntrinsic),
     Unknown,
 }
 
@@ -1662,8 +1662,8 @@ fn is_opaque_member_slot(value: &ValueExpr) -> bool {
 /// object. Preserve that uncertainty instead of treating it as the global
 /// object itself and discarding an unrelated descendant property name.
 fn native_mutation_roots(mut roots: IntrinsicRoots) -> IntrinsicRoots {
-    if roots.remove(&IntrinsicRoot::UnknownGlobalValue) {
-        roots.insert(IntrinsicRoot::GlobalObject);
+    if roots.remove(&NativeIntrinsic::UnknownGlobalValue) {
+        roots.insert(NativeIntrinsic::GlobalObject);
     }
     roots
 }
@@ -1722,8 +1722,8 @@ fn project_receiver_roots(
             }
             NativeReceiverRoot::ArrayIteratorPrototype
             | NativeReceiverRoot::SetIteratorPrototype => {
-                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
-                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                prior_roots.insert(NativeIntrinsic::UnknownGlobalValue);
+                effective_roots.insert(NativeIntrinsic::UnknownGlobalValue);
             }
             NativeReceiverRoot::OrdinaryDirect {
                 reference,
@@ -1732,21 +1732,21 @@ fn project_receiver_roots(
                 // The input discharges this prior unknown-global possibility
                 // only for the exact captured receiver, preserving the fact
                 // dependency even when the resulting mutation roots are empty.
-                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                prior_roots.insert(NativeIntrinsic::UnknownGlobalValue);
                 value_input_refs.insert(reference.clone());
             }
             NativeReceiverRoot::OrdinaryDirect { .. } => {
                 // The initializer or stable copy has not completed at this
                 // observation. Preserve the prior opaque behavior.
-                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
-                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                prior_roots.insert(NativeIntrinsic::UnknownGlobalValue);
+                effective_roots.insert(NativeIntrinsic::UnknownGlobalValue);
             }
             NativeReceiverRoot::OrdinaryDescendant {
                 reference,
                 available_after,
             } => {
-                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
-                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                prior_roots.insert(NativeIntrinsic::UnknownGlobalValue);
+                effective_roots.insert(NativeIntrinsic::UnknownGlobalValue);
                 if owner > *available_after {
                     value_input_refs.insert(reference.clone());
                 }
@@ -1778,7 +1778,7 @@ fn native_write_slots(
     };
     let roots = if roots.is_empty() {
         BTreeSet::from([NativeReceiverRoot::Intrinsic(
-            IntrinsicRoot::UnknownGlobalValue,
+            NativeIntrinsic::UnknownGlobalValue,
         )])
     } else {
         roots.clone()
@@ -1787,10 +1787,10 @@ fn native_write_slots(
         .iter()
         .flat_map(|root| {
             let receiver = match root {
-                NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject) => {
+                NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject) => {
                     NativeReceiverPath::GlobalObject
                 }
-                NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                 | NativeReceiverRoot::OrdinaryDirect { .. }
                 | NativeReceiverRoot::OrdinaryDescendant { .. } => NativeReceiverPath::Unknown,
                 NativeReceiverRoot::Intrinsic(root) => NativeReceiverPath::Constructor(*root),
@@ -1840,11 +1840,11 @@ fn array_spread_protocol_slot_overlap<'a>(
     let (expected_dependencies, independently_required, premise_allowed) =
         match (&slot.receiver, &slot.key) {
             (
-                NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                NativeReceiverPath::Prototype(NativeIntrinsic::Array),
                 NativePropertyKey::SymbolIterator,
             ) => (
-                IntrinsicRoots::from([IntrinsicRoot::Symbol]),
-                IntrinsicRoots::from([IntrinsicRoot::Symbol]),
+                IntrinsicRoots::from([NativeIntrinsic::Symbol]),
+                IntrinsicRoots::from([NativeIntrinsic::Symbol]),
                 IntrinsicRoots::new(),
             ),
             (NativeReceiverPath::ArrayIteratorPrototype, NativePropertyKey::String(property))
@@ -1852,15 +1852,15 @@ fn array_spread_protocol_slot_overlap<'a>(
             {
                 (
                     IntrinsicRoots::from([
-                        IntrinsicRoot::Object,
-                        IntrinsicRoot::Array,
-                        IntrinsicRoot::Symbol,
+                        NativeIntrinsic::Object,
+                        NativeIntrinsic::Array,
+                        NativeIntrinsic::Symbol,
                     ]),
-                    IntrinsicRoots::from([IntrinsicRoot::Object, IntrinsicRoot::Symbol]),
+                    IntrinsicRoots::from([NativeIntrinsic::Object, NativeIntrinsic::Symbol]),
                     // The selected Array-spread premise supplies only the Array
                     // iterator receiver identity; Object.getPrototypeOf and the
                     // Symbol.iterator key still require independent source proof.
-                    IntrinsicRoots::from([IntrinsicRoot::Array]),
+                    IntrinsicRoots::from([NativeIntrinsic::Array]),
                 )
             }
             _ => return NativeSlotOverlap::Absent,
@@ -1896,11 +1896,11 @@ fn array_spread_protocol_slot_overlap<'a>(
             || (matches!(
                 (&slot.receiver, &slot.key),
                 (
-                    NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                    NativeReceiverPath::Prototype(NativeIntrinsic::Array),
                     NativePropertyKey::SymbolIterator
                 )
             ) && global_array_binding_mutated)
-            || source_mutated.contains(&IntrinsicRoot::GlobalObject)
+            || source_mutated.contains(&NativeIntrinsic::GlobalObject)
             || !independently_required.is_disjoint(source_mutated)
             || !witness
                 .key_dependencies
@@ -1940,9 +1940,9 @@ fn exact_array_iterator_next_candidate(witness: &NativeMutationWitness) -> bool 
         })
         && witness.key_dependencies
             == IntrinsicRoots::from([
-                IntrinsicRoot::Object,
-                IntrinsicRoot::Array,
-                IntrinsicRoot::Symbol,
+                NativeIntrinsic::Object,
+                NativeIntrinsic::Array,
+                NativeIntrinsic::Symbol,
             ])
 }
 
@@ -2038,7 +2038,7 @@ fn intrinsic_roots(
             if bindings.iter().any(|binding| {
                 declared.contains(binding) && matches!(binding.0.as_ref(), "Object" | "Symbol")
             }) {
-                BTreeSet::from([intrinsic(IntrinsicRoot::UnknownGlobalValue)])
+                BTreeSet::from([intrinsic(NativeIntrinsic::UnknownGlobalValue)])
             } else {
                 BTreeSet::from([NativeReceiverRoot::ArrayIteratorPrototype])
             }
@@ -2053,46 +2053,46 @@ fn intrinsic_roots(
             roots.get(id).cloned().unwrap_or_default()
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Error)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Error)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Function" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Function)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Function)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Object" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Object)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Object)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Array" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Array)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Array)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Math" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Math)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Math)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "RegExp" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::RegExp)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::RegExp)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Symbol" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Symbol)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Symbol)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Promise" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Promise)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Promise)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Map" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Map)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Map)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Set" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::Set)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::Set)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::WeakMap)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::WeakMap)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "WeakSet" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::WeakSet)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::WeakSet)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "FinalizationRegistry" => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::FinalizationRegistry)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::FinalizationRegistry)])
         }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
-            BTreeSet::from([intrinsic(IntrinsicRoot::GlobalObject)])
+            BTreeSet::from([intrinsic(NativeIntrinsic::GlobalObject)])
         }
         ValueExpr::Binding(id) => roots.get(id).cloned().unwrap_or_default(),
         ValueExpr::Origin(ValueOrigin::Function(_)) => NativeReceiverRoots::new(),
@@ -2131,7 +2131,7 @@ fn intrinsic_roots(
             }
             let mut out = NativeReceiverRoots::new();
             if !references.is_empty() {
-                out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                 out.extend(references.into_iter().map(|(reference, available_after)| {
                     NativeReceiverRoot::OrdinaryDescendant {
                         reference,
@@ -2181,7 +2181,7 @@ fn intrinsic_roots(
             }
             if unknown_arm {
                 for (reference, available_after) in ordinary_refs {
-                    combined.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                    combined.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                     combined.insert(NativeReceiverRoot::OrdinaryDescendant {
                         reference,
                         available_after,
@@ -2210,22 +2210,22 @@ fn intrinsic_roots(
                         reference,
                         available_after,
                     } => {
-                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                         out.insert(NativeReceiverRoot::OrdinaryDescendant {
                             reference,
                             available_after,
                         });
                     }
-                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject) => {
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject) => {
                         out.insert(intrinsic(
                             property
                                 .as_deref()
-                                .and_then(IntrinsicRoot::for_global_binding)
-                                .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
+                                .and_then(NativeIntrinsic::for_global_binding)
+                                .unwrap_or(NativeIntrinsic::UnknownGlobalValue),
                         ));
                     }
-                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => {
-                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => {
+                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                     }
                     NativeReceiverRoot::Intrinsic(root) => {
                         out.insert(if property.as_deref() == Some("prototype") {
@@ -2242,7 +2242,7 @@ fn intrinsic_roots(
                             .as_deref()
                             .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
                         {
-                            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                            out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                         }
                     }
                     NativeReceiverRoot::IntrinsicPrototype(root)
@@ -2252,12 +2252,12 @@ fn intrinsic_roots(
                             .as_deref()
                             .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
                         {
-                            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                            out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                         }
                     }
                     NativeReceiverRoot::ArrayIteratorPrototype
                     | NativeReceiverRoot::SetIteratorPrototype => {
-                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                     }
                 }
             }
@@ -2305,7 +2305,7 @@ fn intrinsic_roots(
                         ordinary_inputs,
                         callable_return_inputs,
                     )
-                    .contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::Object))
+                    .contains(&NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object))
                 }
                 _ => false,
             };
@@ -2314,7 +2314,7 @@ fn intrinsic_roots(
                 // builtin through an ordinary input. Keep its result opaque
                 // and carry the possible native roots through result aliases;
                 // a later write must not evade the completed census.
-                input_roots.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                input_roots.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                 return input_roots;
             }
             if let ValueExpr::Binding(binding) = callee.as_ref()
@@ -2369,7 +2369,7 @@ fn intrinsic_roots(
                 };
             }
             let mut out = input_roots;
-            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+            out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
             out.extend(
                 ordinary_refs
                     .into_iter()
@@ -2647,7 +2647,7 @@ fn receiver_member_roots(
             NativeReceiverRoot::ArrayIteratorPrototype
             | NativeReceiverRoot::SetIteratorPrototype => {
                 out.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
             NativeReceiverRoot::OrdinaryDirect {
@@ -2659,23 +2659,23 @@ fn receiver_member_roots(
                 available_after,
             } => {
                 out.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
                 out.insert(NativeReceiverRoot::OrdinaryDescendant {
                     reference: reference.clone(),
                     available_after: *available_after,
                 });
             }
-            NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject) => {
+            NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject) => {
                 out.insert(NativeReceiverRoot::Intrinsic(
                     property
-                        .and_then(IntrinsicRoot::for_global_binding)
-                        .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
+                        .and_then(NativeIntrinsic::for_global_binding)
+                        .unwrap_or(NativeIntrinsic::UnknownGlobalValue),
                 ));
             }
-            NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => {
+            NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => {
                 out.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
             NativeReceiverRoot::Intrinsic(root) => {
@@ -2686,7 +2686,7 @@ fn receiver_member_roots(
                 });
                 if property.is_none_or(|property| matches!(property, "__proto__" | "constructor")) {
                     out.insert(NativeReceiverRoot::Intrinsic(
-                        IntrinsicRoot::UnknownGlobalValue,
+                        NativeIntrinsic::UnknownGlobalValue,
                     ));
                 }
             }
@@ -2695,7 +2695,7 @@ fn receiver_member_roots(
                 out.insert(NativeReceiverRoot::IntrinsicDescendant(*root));
                 if property.is_none_or(|property| matches!(property, "__proto__" | "constructor")) {
                     out.insert(NativeReceiverRoot::Intrinsic(
-                        IntrinsicRoot::UnknownGlobalValue,
+                        NativeIntrinsic::UnknownGlobalValue,
                     ));
                 }
             }
@@ -2822,7 +2822,7 @@ fn evaluate_receiver_value(
             if !ordinary_refs.is_empty() {
                 result.fact.safe = false;
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
             result.fact.roots.extend(ordinary_refs.into_iter().map(
@@ -2865,7 +2865,7 @@ fn evaluate_receiver_value(
             }
             if result.fact.opaque {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
         }
@@ -2894,7 +2894,7 @@ fn evaluate_receiver_value(
             }
             if result.fact.opaque {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
         }
@@ -2962,7 +2962,7 @@ fn evaluate_receiver_value(
             }
             if !ordinary_refs.is_empty() {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
                 result.fact.roots.extend(ordinary_refs.iter().map(
                     |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
@@ -3024,7 +3024,7 @@ fn evaluate_receiver_value(
             result.fact.complete &= !result.pending;
             if result.fact.opaque {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
             }
         }
@@ -3075,7 +3075,7 @@ fn evaluate_receiver_value(
                 .collect();
             if !ordinary_refs.is_empty() {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    IntrinsicRoot::UnknownGlobalValue,
+                    NativeIntrinsic::UnknownGlobalValue,
                 ));
                 result.fact.roots.extend(ordinary_refs.into_iter().map(
                     |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
@@ -3156,7 +3156,7 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                                 }
                             }
                             NativeReceiverRoot::OrdinaryDirect { .. } => {
-                                NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                                NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                             }
                             NativeReceiverRoot::OrdinaryDescendant {
                                 reference,
@@ -3168,14 +3168,14 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                                 }
                             }
                             NativeReceiverRoot::OrdinaryDescendant { .. } => {
-                                NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                                NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                             }
                             other => other,
                         })
                         .collect();
                 } else if !ordinary_refs.is_empty() {
                     fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                        IntrinsicRoot::UnknownGlobalValue,
+                        NativeIntrinsic::UnknownGlobalValue,
                     ));
                     fact.roots.extend(ordinary_refs.into_iter().map(
                         |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
@@ -3541,7 +3541,7 @@ fn close_receiver_flow(
                         roots.retain(|root| {
                             !matches!(
                                 root,
-                                NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                                NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                             )
                         });
                     }
@@ -3614,7 +3614,7 @@ fn captured_roots(
             | NativeReceiverRoot::OrdinaryDescendant { reference, .. } => {
                 selected_refs.contains(reference)
             }
-            NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => has_selected_ref,
+            NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => has_selected_ref,
             NativeReceiverRoot::Intrinsic(_)
             | NativeReceiverRoot::IntrinsicPrototype(_)
             | NativeReceiverRoot::IntrinsicDescendant(_)
@@ -3641,7 +3641,7 @@ fn outcomes_to_receiver_roots(
             }
             CallableReturnOutcome::Intrinsic(root) => Some(NativeReceiverRoot::Intrinsic(*root)),
             CallableReturnOutcome::Unknown => Some(NativeReceiverRoot::Intrinsic(
-                IntrinsicRoot::UnknownGlobalValue,
+                NativeIntrinsic::UnknownGlobalValue,
             )),
         })
         .collect::<NativeReceiverRoots>();
@@ -3778,13 +3778,13 @@ fn property_key_evidence<'a>(
             PropertyKeyExpr::SymbolIterator(namespace) if !declared.contains(namespace) => {
                 return PropertyKeyEvidence {
                     domain: PropertyKeyDomain::SymbolIterator,
-                    dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+                    dependencies: BTreeSet::from([NativeIntrinsic::Symbol]),
                 };
             }
             PropertyKeyExpr::SymbolFor(namespace) if !declared.contains(namespace) => {
                 return PropertyKeyEvidence {
                     domain: PropertyKeyDomain::Symbol,
-                    dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+                    dependencies: BTreeSet::from([NativeIntrinsic::Symbol]),
                 };
             }
             PropertyKeyExpr::EntriesKeys(namespace, keys) if !declared.contains(namespace) => {
@@ -3792,7 +3792,7 @@ fn property_key_evidence<'a>(
                     domain: PropertyKeyDomain::FiniteStrings(keys.clone()),
                     // Both the outer entries array and each destructured pair use
                     // the Array iterator, so the premise covers both protocols.
-                    dependencies: BTreeSet::from([IntrinsicRoot::Object, IntrinsicRoot::Array]),
+                    dependencies: BTreeSet::from([NativeIntrinsic::Object, NativeIntrinsic::Array]),
                 };
             }
             _ => return PropertyKeyEvidence::unknown(),
@@ -3927,9 +3927,9 @@ impl NativeWriteCensus {
             // receiver. Keep the original fallback for a failed independent
             // Object/Symbol proof, and retain the Array effect so other
             // conditional writes still see this mutation in the fixed point.
-            write.refined = IntrinsicRoots::from([IntrinsicRoot::Array]);
+            write.refined = IntrinsicRoots::from([NativeIntrinsic::Array]);
             write.dependencies =
-                IntrinsicRoots::from([IntrinsicRoot::Object, IntrinsicRoot::Symbol]);
+                IntrinsicRoots::from([NativeIntrinsic::Object, NativeIntrinsic::Symbol]);
             premise_authorized_next_writes.insert(array_iterator_next_write_id(&write.witness));
         }
         (census, premise_authorized_next_writes)
@@ -3959,7 +3959,7 @@ impl IterativeRules for NativeIntegrityRootRules<'_> {
             let Some(mutated) = context.read(()) else {
                 return;
             };
-            mutated.contains(&IntrinsicRoot::GlobalObject)
+            mutated.contains(&NativeIntrinsic::GlobalObject)
                 || !write.dependencies.is_disjoint(mutated)
         };
         context.propose(
@@ -4002,7 +4002,7 @@ pub(crate) fn resolve_native_integrity<'a>(
             witnesses.push(witness);
             continue;
         }
-        let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
+        let invalid = mutated.contains(&NativeIntrinsic::GlobalObject)
             || !write.dependencies.is_disjoint(&mutated);
         witness.affected_roots = if invalid {
             write.fallback.clone()
@@ -4012,10 +4012,10 @@ pub(crate) fn resolve_native_integrity<'a>(
         if invalid && write.refined != write.fallback {
             witness.invalidated_key_dependencies =
                 write.dependencies.intersection(&mutated).copied().collect();
-            if mutated.contains(&IntrinsicRoot::GlobalObject) {
+            if mutated.contains(&NativeIntrinsic::GlobalObject) {
                 witness
                     .invalidated_key_dependencies
-                    .insert(IntrinsicRoot::GlobalObject);
+                    .insert(NativeIntrinsic::GlobalObject);
             }
         }
         if !witness.affected_roots.is_empty() || !witness.value_input_refs.is_empty() {
@@ -4045,13 +4045,13 @@ pub(crate) fn resolve_native_integrity<'a>(
                 .map(|mut mutation| {
                     if !mutation.key_dependencies.is_disjoint(&mutated)
                         || (!mutation.key_dependencies.is_empty()
-                            && mutated.contains(&IntrinsicRoot::GlobalObject))
+                            && mutated.contains(&NativeIntrinsic::GlobalObject))
                     {
                         mutation.properties = None;
-                        if mutated.contains(&IntrinsicRoot::GlobalObject) {
+                        if mutated.contains(&NativeIntrinsic::GlobalObject) {
                             mutation
                                 .key_dependencies
-                                .insert(IntrinsicRoot::GlobalObject);
+                                .insert(NativeIntrinsic::GlobalObject);
                         }
                     }
                     mutation
@@ -5638,7 +5638,7 @@ impl ExecutionIndex {
             .chain(callables.namespace_wrappers.values().map(|candidate| {
                 SemanticKey::NativeCallIdentity {
                     binding: candidate.object.clone(),
-                    intrinsic: IntrinsicRoot::Object,
+                    intrinsic: NativeIntrinsic::Object,
                     global_this_qualified: false,
                 }
             }))
@@ -5852,7 +5852,7 @@ impl ExecutionIndex {
                 let contradictions: BTreeSet<_> = roots
                     .iter()
                     .filter_map(|root| match root {
-                        NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => None,
+                        NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => None,
                         NativeReceiverRoot::Intrinsic(root)
                         | NativeReceiverRoot::IntrinsicPrototype(root)
                         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
@@ -5888,7 +5888,7 @@ impl ExecutionIndex {
             if !raw_roots.iter().any(|root| {
                 matches!(
                     root,
-                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                 )
             }) {
                 self.value_input_errors.push(format!(
@@ -5990,7 +5990,7 @@ impl ExecutionIndex {
                     NativeReceiverRoot::Intrinsic(root)
                         | NativeReceiverRoot::IntrinsicPrototype(root)
                         | NativeReceiverRoot::IntrinsicDescendant(root)
-                        if *root != IntrinsicRoot::UnknownGlobalValue
+                        if *root != NativeIntrinsic::UnknownGlobalValue
                 )
             });
             if contradiction {
@@ -6002,7 +6002,7 @@ impl ExecutionIndex {
             if !roots.iter().any(|root| {
                 matches!(
                     root,
-                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
                 )
             }) {
                 self.value_input_errors.push(format!(
@@ -6794,7 +6794,7 @@ impl ExecutionIndex {
                 let Some((model, _)) = native_call_identity_key(CallKind::Call, callee) else {
                     return Some("does not resolve through the exact native Symbol call model");
                 };
-                (model.intrinsic == IntrinsicRoot::Symbol)
+                (model.intrinsic == NativeIntrinsic::Symbol)
                     .then_some(())
                     .is_none()
                     .then_some("selected an unsupported native Symbol call model")
@@ -6841,7 +6841,7 @@ impl ExecutionIndex {
                     key: NativePropertyKey::String("Promise".to_owned()),
                 },
                 NativeWriteSlot {
-                    receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Promise),
+                    receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Promise),
                     key: NativePropertyKey::String("resolve".to_owned()),
                 },
             ]
@@ -6867,7 +6867,7 @@ impl ExecutionIndex {
 
     fn known_symbol_for_mutation(&self) -> Option<SourceUnitOrdinal> {
         match self.source_slot_overlap(&NativeWriteSlot {
-            receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Symbol),
+            receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Symbol),
             key: NativePropertyKey::String("for".to_owned()),
         }) {
             NativeSlotOverlap::Known(owner) => Some(owner),
@@ -6892,7 +6892,7 @@ impl ExecutionIndex {
                 key: NativePropertyKey::String("Object".to_owned()),
             },
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
                 key: NativePropertyKey::String("freeze".to_owned()),
             },
         ]
@@ -6910,7 +6910,7 @@ impl ExecutionIndex {
                 key: NativePropertyKey::String("Object".to_owned()),
             },
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
                 key: NativePropertyKey::String(property.to_owned()),
             },
         ] {
@@ -6940,12 +6940,12 @@ impl ExecutionIndex {
                 ]
                 .into_iter()
                 .map(|key| NativeWriteSlot {
-                    receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                    receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
                     key: NativePropertyKey::String(key.to_owned()),
                 }),
             )
             .chain(assigned_keys.iter().map(|key| NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Object),
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Object),
                 key: NativePropertyKey::String(key.clone()),
             }));
         slots
@@ -6995,7 +6995,7 @@ impl ExecutionIndex {
             return None;
         }
         let (model, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
-        (model.intrinsic == IntrinsicRoot::Object
+        (model.intrinsic == NativeIntrinsic::Object
             && matches!(model.inputs, native_calls::CallInputs::FreshDataRecord)
             && matches!(model.returns, native_calls::CallReturn::Argument(0))
             && model.heap_effect == native_calls::NativeHeapEffect::Opaque)
@@ -7051,7 +7051,7 @@ impl ExecutionIndex {
     ) -> Option<SourceUnitOrdinal> {
         [
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
                 key: NativePropertyKey::SymbolIterator,
             },
             NativeWriteSlot {
@@ -7181,11 +7181,11 @@ impl ExecutionIndex {
                 key: NativePropertyKey::String("Set".to_owned()),
             },
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Set),
                 key: NativePropertyKey::String("add".to_owned()),
             },
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
                 key: NativePropertyKey::SymbolIterator,
             },
             NativeWriteSlot {
@@ -7204,7 +7204,7 @@ impl ExecutionIndex {
         self.known_set_protocol_mutation().or_else(|| {
             [
                 NativeWriteSlot {
-                    receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                    receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Set),
                     key: NativePropertyKey::SymbolIterator,
                 },
                 NativeWriteSlot {
@@ -7699,48 +7699,48 @@ impl ExecutionIndex {
             for (id, _) in assignments {
                 match id.0.as_ref() {
                     "Error" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Error);
+                        mutated_intrinsics.insert(NativeIntrinsic::Error);
                     }
                     "Function" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Function);
+                        mutated_intrinsics.insert(NativeIntrinsic::Function);
                     }
                     "Object" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Object);
+                        mutated_intrinsics.insert(NativeIntrinsic::Object);
                     }
                     "Array" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Array);
+                        mutated_intrinsics.insert(NativeIntrinsic::Array);
                     }
                     "Math" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Math);
+                        mutated_intrinsics.insert(NativeIntrinsic::Math);
                     }
                     "RegExp" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::RegExp);
+                        mutated_intrinsics.insert(NativeIntrinsic::RegExp);
                     }
                     "Symbol" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Symbol);
+                        mutated_intrinsics.insert(NativeIntrinsic::Symbol);
                     }
                     "Promise" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Promise);
+                        mutated_intrinsics.insert(NativeIntrinsic::Promise);
                     }
                     "Map" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Map);
+                        mutated_intrinsics.insert(NativeIntrinsic::Map);
                     }
                     "Set" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::Set);
+                        mutated_intrinsics.insert(NativeIntrinsic::Set);
                     }
                     "WeakMap" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::WeakMap);
+                        mutated_intrinsics.insert(NativeIntrinsic::WeakMap);
                     }
                     "WeakSet" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::WeakSet);
+                        mutated_intrinsics.insert(NativeIntrinsic::WeakSet);
                     }
                     "FinalizationRegistry" => {
-                        mutated_intrinsics.insert(IntrinsicRoot::FinalizationRegistry);
+                        mutated_intrinsics.insert(NativeIntrinsic::FinalizationRegistry);
                     }
                     _ => {}
                 }
-                if let Some(root) = IntrinsicRoot::for_global_binding(id.0.as_ref())
-                    .filter(|root| *root != IntrinsicRoot::GlobalObject)
+                if let Some(root) = NativeIntrinsic::for_global_binding(id.0.as_ref())
+                    .filter(|root| *root != NativeIntrinsic::GlobalObject)
                     && binding_write_sites.insert((owner, root))
                 {
                     unconditional_witnesses.push(NativeMutationWitness {
@@ -7770,7 +7770,7 @@ impl ExecutionIndex {
             }
         }
         if !index.dynamic_scope_owners.is_empty() {
-            mutated_intrinsics.insert(IntrinsicRoot::GlobalObject);
+            mutated_intrinsics.insert(NativeIntrinsic::GlobalObject);
         }
         index.native_write_census.unconditional = mutated_intrinsics;
         index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
@@ -7897,9 +7897,9 @@ impl ExecutionIndex {
                         source_roots
                             .contains(&NativeReceiverRoot::ArrayIteratorPrototype)
                             .then_some([
-                                IntrinsicRoot::Object,
-                                IntrinsicRoot::Array,
-                                IntrinsicRoot::Symbol,
+                                NativeIntrinsic::Object,
+                                NativeIntrinsic::Array,
+                                NativeIntrinsic::Symbol,
                             ])
                             .into_iter()
                             .flatten(),
@@ -7908,9 +7908,9 @@ impl ExecutionIndex {
                         source_roots
                             .contains(&NativeReceiverRoot::SetIteratorPrototype)
                             .then_some([
-                                IntrinsicRoot::Object,
-                                IntrinsicRoot::Set,
-                                IntrinsicRoot::Symbol,
+                                NativeIntrinsic::Object,
+                                NativeIntrinsic::Set,
+                                NativeIntrinsic::Symbol,
                             ])
                             .into_iter()
                             .flatten(),
@@ -7936,14 +7936,14 @@ impl ExecutionIndex {
             let fallback = native_mutation_roots(roots.clone());
             let mut refined: IntrinsicRoots = roots
                 .iter()
-                .filter(|root| **root != IntrinsicRoot::GlobalObject)
+                .filter(|root| **root != NativeIntrinsic::GlobalObject)
                 .copied()
                 .collect();
-            if roots.contains(&IntrinsicRoot::GlobalObject) {
+            if roots.contains(&NativeIntrinsic::GlobalObject) {
                 match &evidence.domain {
                     PropertyKeyDomain::FiniteStrings(keys) => {
                         for key in keys {
-                            refined.extend(IntrinsicRoot::for_global_binding(key));
+                            refined.extend(NativeIntrinsic::for_global_binding(key));
                         }
                     }
                     PropertyKeyDomain::Symbol | PropertyKeyDomain::SymbolIterator => {}
@@ -8019,8 +8019,8 @@ impl ExecutionIndex {
             // A11 supplies the standard Error allocation/prototype behavior. Reject
             // visible replacement of that intrinsic, including writes through local
             // aliases of a known global object. This is not a general effect proof.
-            let intrinsic_mutated = mutated_intrinsics.contains(&IntrinsicRoot::Error)
-                || mutated_intrinsics.contains(&IntrinsicRoot::GlobalObject);
+            let intrinsic_mutated = mutated_intrinsics.contains(&NativeIntrinsic::Error)
+                || mutated_intrinsics.contains(&NativeIntrinsic::GlobalObject);
             if !intrinsic_mutated
                 && index.dynamic_scope_owners.is_empty()
                 && let Some(flow) = flow
@@ -8621,7 +8621,7 @@ impl ExecutionIndex {
                 && !prototype_write
                 && !index
                     .mutated_intrinsic_roots
-                    .contains(&IntrinsicRoot::Object)
+                    .contains(&NativeIntrinsic::Object)
                 && !index.global_receiver_exposed(first_probe, &protected, &roots)
             {
                 index
@@ -8749,7 +8749,7 @@ impl ExecutionIndex {
             .chain(external.prototype_mutations.iter())
             .any(|mutation| mutation.kind == NativePrototypeMutationKind::DynamicScope)
         {
-            initial.roots.insert(IntrinsicRoot::GlobalObject);
+            initial.roots.insert(NativeIntrinsic::GlobalObject);
         }
         let mut by_activation = BTreeMap::<_, NativePointEffects>::new();
         for witness in self.native_write_census.witnesses.iter() {
@@ -8789,7 +8789,7 @@ impl ExecutionIndex {
                 || (!mutation.key_dependencies.is_empty()
                     && self
                         .mutated_intrinsic_roots
-                        .contains(&IntrinsicRoot::GlobalObject))
+                        .contains(&NativeIntrinsic::GlobalObject))
             {
                 mutation.properties = None;
             }
@@ -8811,7 +8811,7 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    fn native_integrity_is_proven(&self, root: IntrinsicRoot) -> bool {
+    fn native_integrity_is_proven(&self, root: NativeIntrinsic) -> bool {
         self.semantic_facts
             .as_ref()
             .is_some_and(|facts| facts.fact(&SemanticKey::NativeIntegrity(root)).is_some())
@@ -11892,7 +11892,7 @@ pub(crate) fn infer_callable_capabilities(
             index.completed_native_rules(),
         )));
     }
-    result.map_integrity = index.native_integrity_is_proven(IntrinsicRoot::Map);
+    result.map_integrity = index.native_integrity_is_proven(NativeIntrinsic::Map);
     result
 }
 

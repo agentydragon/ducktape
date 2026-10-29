@@ -268,7 +268,7 @@ pub(crate) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
 /// receiver) or mutates descriptor state (`freeze`); the plain-data
 /// receiver gate closes both holes. Per-entry ECMA-262 soundness +
 /// the excluded shortlist (`Object.assign`,
-/// `Object.getOwnPropertyNames`, `Array.from`) live in
+/// `Object.getPrototypeOf` / `getOwnPropertyDescriptor`, `Array.from`) live in
 /// <docs/purity_soundness.md> § "PURE_OBJECT_CALLS_ON_PLAIN_DATA".
 pub(crate) const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
     ("Object", "keys"),

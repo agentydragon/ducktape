@@ -140,8 +140,9 @@ member selectors, and evidence records which selector form was used.
 The selector and parser-input digest identify one
 direct native initializer, while `AnalysisAssumptions` retains its validated
 evidence separately from inferred native identity. Operations include direct
-`Symbol` and `Symbol.for` calls, exact Set constructions, and static `Object` own-data function
-member reads. For `Symbol`, the author asserts that its global
+`Symbol` and `Symbol.for` calls, exact Set constructions, static `Object` own-data function
+member reads, and primitive array spreads from preceding primitive-array
+declarators. For `Symbol`, the author asserts that its global
 data binding denotes the original operation through every synchronous
 initialization schedule admitted by emission. This is not a point observation
 or a whole-lifetime integrity claim; known in-source global `Symbol` changes
@@ -153,6 +154,9 @@ For an Object member read, the shared semantic certificate instead binds the
 selected read span and its exact Object property slot. The author premise
 covers unknown mutation paths after known exact-slot contradictions are
 excluded; it never certifies a subsequent invocation of the function value.
+For a primitive array spread, the premise covers only the Array iterator and
+iterator `next` identities at the selected initializer; the source shape, not
+the author, proves the declarator interval has no producer.
 The exact `Promise.resolve()` initializer premise requires stable global
 `Promise` and constructor `resolve` slots in the shared source census. Its
 independent `host_no_reentry` assertion supplies timing; neither assertion

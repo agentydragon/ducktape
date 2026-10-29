@@ -9,8 +9,8 @@ use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
-    Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
-    NativePointEffects, RetainedCallbackCall, object_own_data_read_property,
+    Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
+    NativeIntrinsic, NativePointEffects, RetainedCallbackCall, object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -530,7 +530,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[IntrinsicRoot]) -> bool {
+    fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[NativeIntrinsic]) -> bool {
         self.observe_native_prefix(guard, None);
         let Some(facts) = self.inputs.index.semantic_facts.as_ref() else {
             return false;
@@ -711,7 +711,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(
                 NativeIntegrityGuard::OrdinaryObjectPrototype,
-                &[IntrinsicRoot::GlobalObject, IntrinsicRoot::Object],
+                &[NativeIntrinsic::GlobalObject, NativeIntrinsic::Object],
             )
     }
 
@@ -915,9 +915,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
         if kind == CallKind::Call
             && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
-            && ((model.intrinsic == IntrinsicRoot::Symbol
+            && ((model.intrinsic == NativeIntrinsic::Symbol
                 && super::selected_symbol_binding(callee, evidence.operation).is_some())
-                || (model.intrinsic == IntrinsicRoot::Object
+                || (model.intrinsic == NativeIntrinsic::Object
                     && evidence.operation
                         == NativeInputKind::CallIdentity(
                             spec::NativeCallIdentityKind::ObjectFreeze,
@@ -1116,7 +1116,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     });
                 let native_integrity_intact = self.native_guard_intact(
                     NativeIntegrityGuard::HostPromiseResolve,
-                    &[IntrinsicRoot::Promise, IntrinsicRoot::GlobalObject],
+                    &[NativeIntrinsic::Promise, NativeIntrinsic::GlobalObject],
                 );
                 if !native_integrity_intact && native_input.is_none() {
                     return false;
@@ -1286,9 +1286,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.native_guard_intact(
                 NativeIntegrityGuard::ArrayIntrinsics,
                 &[
-                    IntrinsicRoot::GlobalObject,
-                    IntrinsicRoot::Array,
-                    IntrinsicRoot::Object,
+                    NativeIntrinsic::GlobalObject,
+                    NativeIntrinsic::Array,
+                    NativeIntrinsic::Object,
                 ],
             )
     }
@@ -1665,7 +1665,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .any(|root| {
                     matches!(
                         root,
-                        IntrinsicRoot::GlobalObject | IntrinsicRoot::Object | IntrinsicRoot::Array
+                        NativeIntrinsic::GlobalObject
+                            | NativeIntrinsic::Object
+                            | NativeIntrinsic::Array
                     )
                 })
         {
@@ -1985,7 +1987,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .any(|root| {
                     matches!(
                         root,
-                        IntrinsicRoot::GlobalObject | IntrinsicRoot::Object | IntrinsicRoot::Symbol
+                        NativeIntrinsic::GlobalObject
+                            | NativeIntrinsic::Object
+                            | NativeIntrinsic::Symbol
                     )
                 })
         {
@@ -4656,7 +4660,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
             if self.inputs.index.returned_record_summaries.contains_key(id)
-                && self.inputs.index.native_integrity_is_proven(IntrinsicRoot::Map))
+                && self.inputs.index.native_integrity_is_proven(NativeIntrinsic::Map))
     }
 
     /// A single-execution imported call may carry a fresh ordinary descriptor

@@ -105,7 +105,7 @@ fn contained_roots(
         ValueExpr::Member(base, property, _) => {
             roots.extend(contained_roots(base, aliases, index, declared));
             if property.as_deref().is_some_and(identity_property) {
-                roots.insert(IntrinsicRoot::Object);
+                roots.insert(NativeIntrinsic::Object);
             }
         }
         ValueExpr::ArrayIteratorPrototype(expression)
@@ -128,7 +128,7 @@ fn contained_roots(
     // Reflect does not have a family in the native-call catalogue, but is a
     // descriptor capability when it is passed or destructured.
     if matches!(value, ValueExpr::Binding(id) if id.0.as_ref() == "Reflect") {
-        roots.insert(IntrinsicRoot::Object);
+        roots.insert(NativeIntrinsic::Object);
     }
     roots
 }
