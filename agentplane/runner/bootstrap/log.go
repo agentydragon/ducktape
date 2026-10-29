@@ -91,15 +91,6 @@ func (l *Log) LastSequence() uint64 {
 	return l.events[len(l.events)-1].GetSequence()
 }
 
-func (l *Log) LastAttempt() uint32 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if len(l.events) == 0 {
-		return 0
-	}
-	return l.events[len(l.events)-1].GetAttempt()
-}
-
 func (l *Log) Ended() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()

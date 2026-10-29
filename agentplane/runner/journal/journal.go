@@ -245,14 +245,6 @@ func (j *Journal) SealedCursor() (uint64, bool) {
 	return seal.Cursor, true
 }
 
-func (j *Journal) SealedIncarnationUID() (string, bool) {
-	seal := j.publishedSeal.Load()
-	if seal == nil {
-		return "", false
-	}
-	return seal.IncarnationUID, true
-}
-
 func (j *Journal) SealState() *SealState {
 	seal := j.publishedSeal.Load()
 	if seal == nil {
@@ -880,24 +872,6 @@ func (j *Journal) PendingCommands(ctx context.Context) ([]*commandpb.Command, er
 		commands = append(commands, record.Command)
 	}
 	return commands, nil
-}
-
-func (j *Journal) AdmittedEntry(ctx context.Context, commandID string) (*eventlogpb.EventEntry, error) {
-	record, err := j.GetCommand(ctx, commandID)
-	if err != nil {
-		return nil, err
-	}
-	if record == nil {
-		return nil, fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
-	}
-	entries, err := j.Since(ctx, record.AdmittedCursor-1, 1)
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) != 1 {
-		return nil, errors.New("missing command admission EventEntry")
-	}
-	return entries[0], nil
 }
 
 func (j *Journal) HasStartedTurn(ctx context.Context) (bool, error) {
