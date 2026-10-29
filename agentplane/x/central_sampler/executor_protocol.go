@@ -58,15 +58,26 @@ type (
 		ProcessID string `json:"processId"`
 	}
 	executorStart struct {
-		ProcessID string            `json:"processId"`
-		Argv      []string          `json:"argv"`
-		Cwd       string            `json:"cwd"`
-		Env       map[string]string `json:"env"`
-		TTY       bool              `json:"tty"`
-		PipeStdin bool              `json:"pipeStdin"`
-		Arg0      *string           `json:"arg0"`
+		ProcessID string             `json:"processId"`
+		Argv      []string           `json:"argv"`
+		Cwd       string             `json:"cwd"`
+		EnvPolicy *executorEnvPolicy `json:"envPolicy"`
+		Env       map[string]string  `json:"env"`
+		TTY       bool               `json:"tty"`
+		PipeStdin bool               `json:"pipeStdin"`
+		Arg0      *string            `json:"arg0"`
 	}
 )
+
+// executorEnvPolicy builds a child environment on the executor; `env` is applied over it.
+// Codex rust-v0.162.1 exec-server-protocol/src/protocol.rs ExecEnvPolicy.
+type executorEnvPolicy struct {
+	Inherit               string            `json:"inherit"`
+	IgnoreDefaultExcludes bool              `json:"ignoreDefaultExcludes"`
+	Exclude               []string          `json:"exclude"`
+	Set                   map[string]string `json:"set"`
+	IncludeOnly           []string          `json:"includeOnly"`
+}
 
 type executorRead struct {
 	ProcessID string  `json:"processId"`

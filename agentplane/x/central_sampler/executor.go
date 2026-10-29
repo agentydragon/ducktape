@@ -473,7 +473,7 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 			return "", 0, nil, err
 		}
 	}
-	_, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), Env: environment, TTY: tty})
+	_, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty})
 	if err != nil {
 		var rejected *executorRejectedError
 		if errors.As(err, &rejected) {
@@ -490,6 +490,14 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 	return processID, sessionID, lock.Unlock, nil
 }
 
+// envPolicy makes processes inherit the executor's environment, as wrapped Codex's do: Codex's
+// default shell environment policy (inherit all, default excludes ignored) with the Session's
+// variables set. Without a policy the exec-server passes only `env`, so PATH and HOME are missing.
+// Codex rust-v0.162.1 config/src/shell_environment_policy.rs From<ShellEnvironmentPolicyToml>.
+func (e *Executor) envPolicy() *executorEnvPolicy {
+	return &executorEnvPolicy{Inherit: "all", IgnoreDefaultExcludes: true, Exclude: []string{}, Set: e.environment, IncludeOnly: []string{}}
+}
+
 // newChunkID is six random hex digits.
 // Codex rust-v0.162.1 core/src/unified_exec/mod.rs generate_chunk_id.
 func newChunkID() string {
@@ -501,7 +509,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	if err := e.store.RegisterProcess(ctx, e.owner, processID, false); err != nil {
 		return 0, err
 	}
-	if _, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), Env: e.environment}); err != nil {
+	if _, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), EnvPolicy: e.envPolicy(), Env: e.environment}); err != nil {
 		return 0, err
 	}
 	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, "running", nil, false); err != nil {

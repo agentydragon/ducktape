@@ -72,7 +72,9 @@ tokens from data URL size rather than decoded duration.
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
 `exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
-truncation and the unified exec environment overlay. Commands run in the executor-reported shell, as
+truncation and the unified exec environment overlay. Every executor process (nested tools and the
+setup script) inherits the executor's environment under Codex's default shell environment policy,
+with the Session's variables set over it, as wrapped Codex's commands do. Commands run in the executor-reported shell, as
 a login shell unless `login: false`; a requested `shell` must match it, and an executor that reports
 none falls back to `/bin/sh`. Processes have no stdin pipe without `tty`; there a sole Ctrl-C
 interrupts. Session numbers are random in upstream's range and unique among a conversation's

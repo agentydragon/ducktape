@@ -297,6 +297,42 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             await completed(stub, "continued")
 
 
+async def test_nested_command_inherits_executor_environment(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="env", text="Show the environment."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream(
+                        [CustomToolCall("env", "exec", 'text((await tools.exec_command({cmd: "env"})).output);')],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                text = "\n".join(part["text"] for part in outputs[-1]["output"] if part["type"] == "input_text")
+                variables = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+                await exchange.send(*response_stream([Message("done")], model="test-model").events)
+            assert (await completed(stub, "env", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+    # Inherited from the exec-server's own environment; the Session's variables are set over it.
+    assert variables.get("PATH")
+    assert variables.get("HOME")
+    assert variables.get("AGENTPLANE_DESTINATION")
+
+
 async def test_restart_never_replays_unresolved_provider_intent(
     database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
