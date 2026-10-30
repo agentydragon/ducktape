@@ -138,7 +138,14 @@ configMapGenerator:
             push:
               - gaffer
             destination:
-              storage: sops
+              secret:
+                namespace: nix-cache
+                name: attic-gaffer-ci-writer
+                key: attic_token
+              notification:
+                workspace: github-secrets-sync
+                annotation_key: gaffer.allegedly.works/attic-token-version
+              storage: mirrored
               sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
         attic_namespace: nix-cache
         attic_deployment: deploy/attic

@@ -1804,6 +1804,10 @@ spec:
       kind: ExternalSecret
       name: buildbuddy-api-key
       namespace: flux-system
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: gaffer-repo-fetch-pat
+      namespace: flux-system
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync-secrets
   prune: false

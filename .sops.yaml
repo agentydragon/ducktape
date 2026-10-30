@@ -133,6 +133,16 @@ creation_rules:
           - *agent-box-codex-user
           - *haku
 
+  # Gaffer's private-repository fetch PAT is read only by Flux and the
+  # github-secrets-sync Workspace; the GitHub Actions consumer receives it from
+  # OpenTofu instead of decrypting the source file.
+  - path_regex: cluster/k8s/external-creds/gaffer-repo-fetch-pat\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
   # Flux applies it only for the litellm-keys Terraform runner; admin and
   # personal machine user keys derived from ~/.ssh/id_ed25519 can also decrypt it.

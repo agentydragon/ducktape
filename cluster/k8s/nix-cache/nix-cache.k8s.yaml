@@ -355,6 +355,15 @@ metadata:
   namespace: nix-cache
 type: Opaque
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
+  name: attic-gaffer-ci-writer
+  namespace: nix-cache
+type: Opaque
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -444,6 +453,7 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
+      - attic-gaffer-ci-writer
       - attic-ducktape-ci-reader
       - attic-ducktape-ci-writer
     resources:

@@ -15,7 +15,7 @@ Required repository permissions:
 | Permission     | Access     | Why                                                                                                                                                                                                                                                                                                             |
 | -------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                                                         |
-| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for both repositories, the Attic CI reader and writer tokens, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI. |
+| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for both repositories, Forgejo registry credentials for both, and `DUCKTAPE_AUTOMATION_PRIVATE_KEY`, `BUILDBUDDY_API_KEY`, `REPO_TOKEN`, `ATTIC_TOKEN`, and the DriveFS reader pair for `gaffer-private`; it also manages Ducktape's Attic reader/writer tokens, BuildBuddy key, and PR visual S3 credentials. |
 | Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                                                            |
 | Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, GitHub returns `403 Resource not accessible by personal access token`.                                             |
 | Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                                                          |
@@ -59,18 +59,23 @@ curl -sS -D - -o /tmp/github-body \
 ```
 
 The Attic rotator publishes separate reader and writer Secrets:
-`nix-cache/attic-ducktape-ci-reader` and
-`nix-cache/attic-ducktape-ci-writer`. It patches the
-`github-secrets-sync` Workspace's reader and writer version annotations after
-each successful token check. The annotations carry Secret identities and
-versions, never token contents. Annotation changes enqueue the pinned provider's
-Workspace reconciler, which reads the corresponding Secret and updates
-`ATTIC_READ_TOKEN` or `ATTIC_TOKEN` in Ducktape's Actions secrets. Periodic
-reconciliation remains a recovery path.
+`nix-cache/attic-ducktape-ci-reader`, `nix-cache/attic-ducktape-ci-writer`,
+and `nix-cache/attic-gaffer-ci-writer`. It patches the
+`github-secrets-sync` Workspace's token-version annotations after each
+successful token check. The annotations carry Secret identities and versions,
+never token contents. Annotation changes enqueue the pinned provider's Workspace
+reconciler, which reads the corresponding Secret and updates Ducktape's reader
+and writer secrets or gaffer's `ATTIC_TOKEN`. Periodic reconciliation remains a
+recovery path.
 
-Both Secrets are declared without data so Flux owns their identities and the
-rotator owns their token data. Its RBAC names both Secrets and the shared
-Workspace; the sync Workspace has read access to both Secrets.
+All three Secrets are declared without data so Flux owns their identities and
+the rotator owns their token data. Its RBAC names those Secrets and the shared
+Workspace; the sync Workspace has read access to each Secret. Gaffer's writer
+token stays mirrored to its existing SOPS file during the consumer cutover.
+On first deployment, the gaffer Actions-secret data source is unavailable until
+the rotator has written `attic-gaffer-ci-writer`; the Workspace retries until
+that first rotation succeeds. Verify the mirrored Secret and Actions secret
+before removing any SOPS recipient or source.
 
 The reader token can pull from `main` and `gaffer` but cannot push. Workflows
 that only substitute from Attic use `ATTIC_READ_TOKEN`; upload jobs use

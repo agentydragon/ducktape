@@ -48,6 +48,13 @@ data "kubernetes_secret" "buildbuddy_api_key" {
   }
 }
 
+data "kubernetes_secret" "gaffer_repo_fetch_pat" {
+  metadata {
+    name      = "gaffer-repo-fetch-pat"
+    namespace = "flux-system"
+  }
+}
+
 data "kubernetes_secret" "forgejo_images_creds" {
   metadata {
     name      = "forgejo-images-creds"
@@ -58,6 +65,13 @@ data "kubernetes_secret" "forgejo_images_creds" {
 data "kubernetes_secret" "attic_ci_writer" {
   metadata {
     name      = "attic-ducktape-ci-writer"
+    namespace = "nix-cache"
+  }
+}
+
+data "kubernetes_secret" "attic_gaffer_ci_writer" {
+  metadata {
+    name      = "attic-gaffer-ci-writer"
     namespace = "nix-cache"
   }
 }
@@ -73,6 +87,13 @@ data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
     name      = "pr-visuals-s3-credentials"
     namespace = "flux-system"
+  }
+}
+
+data "kubernetes_secret" "drivefs_artifacts_s3_credentials" {
+  metadata {
+    name      = "drivefs-artifacts-s3-credentials"
+    namespace = "seaweedfs-credentials"
   }
 }
 
@@ -140,6 +161,42 @@ resource "github_actions_secret" "buildbuddy_api_key" {
   repository      = "ducktape"
   secret_name     = "BUILDBUDDY_API_KEY"
   plaintext_value = data.kubernetes_secret.buildbuddy_api_key.data["api-key"]
+}
+
+resource "github_actions_secret" "automation_app_private_key_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "DUCKTAPE_AUTOMATION_PRIVATE_KEY"
+  plaintext_value = data.kubernetes_secret.automation_app.data["githubAppPrivateKey"]
+}
+
+resource "github_actions_secret" "buildbuddy_api_key_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "BUILDBUDDY_API_KEY"
+  plaintext_value = data.kubernetes_secret.buildbuddy_api_key.data["api-key"]
+}
+
+resource "github_actions_secret" "repo_token_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "REPO_TOKEN"
+  plaintext_value = data.kubernetes_secret.gaffer_repo_fetch_pat.data["github_token"]
+}
+
+resource "github_actions_secret" "attic_token_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "ATTIC_TOKEN"
+  plaintext_value = data.kubernetes_secret.attic_gaffer_ci_writer.data["attic_token"]
+}
+
+resource "github_actions_secret" "drivefs_artifacts_access_key_id_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "DRIVEFS_ARTIFACTS_ACCESS_KEY_ID"
+  plaintext_value = data.kubernetes_secret.drivefs_artifacts_s3_credentials.data["readerAccessKey"]
+}
+
+resource "github_actions_secret" "drivefs_artifacts_secret_access_key_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "DRIVEFS_ARTIFACTS_SECRET_ACCESS_KEY"
+  plaintext_value = data.kubernetes_secret.drivefs_artifacts_s3_credentials.data["readerSecretKey"]
 }
 
 # Fork pull requests cannot receive repository Actions secrets, even after a
