@@ -88,16 +88,17 @@ it("sends the browser to log in when the login has expired, and connects no more
 it("reports why a request was refused, and retries after a backoff that doubles until a frame arrives", async () => {
   // The first four connections are refused, the fifth answered.
   for (let refused = 0; refused < 4; refused++)
-    fetchMock.fetch.mockImplementationOnce(async () => new Response("test refusal", { status: 503 }));
+    fetchMock.fetch.mockImplementationOnce(() => Promise.resolve(new Response("test refusal", { status: 503 })));
+  // The longest jitter, so each delay is its whole ceiling.
+  vi.spyOn(Math, "random").mockReturnValue(1);
   follow();
   await settle();
   expect(connections.at(-1)).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("503") });
-  // Each delay is between half and all of its ceiling.
   for (const ceiling of [1_000, 2_000, 4_000, 8_000]) {
     const made = fetchMock.fetch.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(ceiling / 2 - 1);
+    await vi.advanceTimersByTimeAsync(ceiling - 1);
     expect(fetchMock.fetch).toHaveBeenCalledTimes(made);
-    await vi.advanceTimersByTimeAsync(ceiling / 2 + 1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(fetchMock.fetch).toHaveBeenCalledTimes(made + 1);
   }
 

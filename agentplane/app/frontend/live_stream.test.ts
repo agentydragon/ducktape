@@ -39,8 +39,7 @@ async function stream(): Promise<ServedWatch> {
 
 it("asks for an event stream", async () => {
   await stream();
-  const [, init] = fetchMock.fetch.mock.calls[0] as [string, RequestInit];
-  expect(new Headers(init.headers).get("Accept")).toBe("text/event-stream");
+  expect(new Headers(fetchMock.fetch.mock.calls[0]?.[1].headers).get("Accept")).toBe("text/event-stream");
 });
 
 it("hands each event to the handler of its name, however the bytes are split", async () => {

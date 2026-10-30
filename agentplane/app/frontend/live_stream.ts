@@ -13,19 +13,20 @@ export interface StreamHandlers {
 
 /** Follows `url` until the returned function is called. */
 export function followStream(url: string, { events, onConnection }: StreamHandlers): () => void {
-  // An event without a name is a `message`, as for the browser's `EventSource`.
-  const handler = (message: EventSourceMessage) => events[message.event ?? "message"];
-  return followResponse(url, {
+  const handlers = new Map(Object.entries(events));
+  return followResponse<() => void>(url, {
     accept: "text/event-stream",
     frames: (body) =>
       body.pipeThrough(new EventSourceParserStream()).pipeThrough(
-        new TransformStream<EventSourceMessage, EventSourceMessage>({
+        new TransformStream<EventSourceMessage, () => void>({
           transform(message, controller) {
-            if (handler(message) !== undefined) controller.enqueue(message);
+            // An event without a name is a `message`, as for the browser's `EventSource`.
+            const handle = handlers.get(message.event ?? "message");
+            if (handle !== undefined) controller.enqueue(() => handle(message));
           },
         })
       ),
-    onFrame: (message) => handler(message)?.(message),
+    onFrame: (deliver) => deliver(),
     onConnection,
   });
 }

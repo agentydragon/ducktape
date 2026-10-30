@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { type Mock, vi } from "vitest";
 
 /** One streamed response, which a test writes into and ends. */
 export class ServedWatch {
@@ -70,7 +70,10 @@ export class ServedWatch {
 
 /** Stubs `fetch` so that each request is answered with an open watch, collected in `served` in the
  * order of the requests. */
-export function stubWatchFetch(): { served: ServedWatch[]; fetch: ReturnType<typeof vi.fn> } {
+export function stubWatchFetch(): {
+  served: ServedWatch[];
+  fetch: Mock<(url: string, init: RequestInit) => Promise<Response>>;
+} {
   const served: ServedWatch[] = [];
   const fetch = vi.fn((url: string, init: RequestInit) => {
     const watch = new ServedWatch(url, init.signal ?? undefined);
