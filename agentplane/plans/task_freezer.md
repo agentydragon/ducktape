@@ -422,3 +422,18 @@ Claude runs one process per Session; Codex runs one app-server per Runner for al
 Sessions, so reaping that process touches every one of them. Reaping must account for native children and
 background work ([child evidence](../native/docs/child_sessions.md),
 [background work](../docs/background_work.md)), which the current busy signal does not track.
+
+## Frontend
+
+### `FRONTEND_QUERY_CACHE` — a query cache for ad-hoc fetches
+
+**Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
+manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
+TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). See the
+[idiom audit](standard_idioms.md).
+
+### `FRONTEND_CONNECT_ES` — typed streaming clients
+
+**Frozen; operator, 2026-10-30: think about it later.** Backend watches are read as grpc-gateway NDJSON
+with hand-written ProtoJSON decoding; Connect-ES streaming clients generated from the same protos would
+replace that, at the cost of revisiting the app's deliberate gateway choice (`app/README.md`).

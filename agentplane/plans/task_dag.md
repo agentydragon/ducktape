@@ -1937,3 +1937,77 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 second implementation of `runner/vm.nix`'s guest boot contract (disks by serial, workspace format,
 harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.
+
+## 16. Standard idioms over hand-rolled mechanisms
+
+From the 2026-10-30 idiom audit; problems, targets and exits are in
+[standard idioms](standard_idioms.md). Operator selection, 2026-10-30 PDT: all nodes below are
+accepted; `SAMPLER_JOURNAL_DIET` and `CREDENTIAL_BINDING_LOCATION` await the operator's view.
+
+```mermaid
+flowchart LR
+    KUBERNETES_NATIVE_WATCH_HEALTH[In review: Kubernetes-native informer health, #13060]
+    EGRESS_SIDECAR_STDLIB_HTTP[Candidate: sidecar parses HTTP with the stdlib]
+    GRPC_AUTH_INTERCEPTORS[Candidate: one authorization interceptor per service]
+    LLM_INGRESS_REVERSE_PROXY[Candidate: LLM ingress on httputil.ReverseProxy]
+    APP_PROXY_REVERSE_PROXY[Candidate: app proxies on httputil.ReverseProxy]
+    SANDBOX_CONTROLLER_SECRET_CACHE[Candidate: label-filtered Secret cache]
+    APP_LIVE_FRAME_BROADCAST[Candidate: build live frames once and broadcast]
+    MCP_EDGE_TOKEN_CACHE[Candidate: cache minted ServiceAccount tokens]
+    CONDITION_REASONS_NOT_STATE[Candidate: no code branches on condition reasons]
+    SANDBOX_LEASE_PREDICATE[Candidate: Lease predicate instead of 5 s polls]
+    GATEWAY_OBSERVER_RECONCILER[Candidate: Gateway observers as a cached reconciler]
+    HISTORY_FOLD_DIRTY_QUEUE[Candidate: fold only changed Sessions]
+    SAMPLER_EXPORTER_WORKQUEUE[Candidate: sampler exporter on a rate-limited queue]
+    POSTGRES_LEASE_HELPER[Candidate: one PostgreSQL lease helper]
+    LEASE_OBSERVED_TIME[Candidate: Lease expiry by locally observed time]
+    SAMPLER_TYPED_STATE[Candidate: typed sampler states]
+    GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
+    RUNNERCLIENT_PER_RPC_CREDENTIALS[Candidate: runnerclient reuses bearer credentials]
+    RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
+    FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
+    SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
+    CREDENTIAL_BINDING_LOCATION[Decision: where the runner credential binding lives]
+    CREDENTIAL_BINDING_LOCATION --> CREDENTIAL_BINDING_STATUS[Blocked: move the binding out of annotations]
+    RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
+```
+
+### `KUBERNETES_NATIVE_WATCH_HEALTH` — informer health instead of watch-cycle freshness
+
+**In review: #13060, reported by the coordinating agent 2026-10-30.** Every service reading Kubernetes
+lets client-go own watch timeouts; readiness is `HasSynced` and health comes from watch errors. Exit:
+merged and observed on staging, including egress failing closed while a kind's watch errors (no system
+test covers that path).
+
+### Candidates
+
+Each candidate is one independently finishable PR; see the plan section of the same name:
+`EGRESS_SIDECAR_STDLIB_HTTP`, `GRPC_AUTH_INTERCEPTORS`, `LLM_INGRESS_REVERSE_PROXY`,
+`APP_PROXY_REVERSE_PROXY`, `SANDBOX_CONTROLLER_SECRET_CACHE`, `APP_LIVE_FRAME_BROADCAST`,
+`MCP_EDGE_TOKEN_CACHE`, `CONDITION_REASONS_NOT_STATE`, `SANDBOX_LEASE_PREDICATE`,
+`GATEWAY_OBSERVER_RECONCILER`, `HISTORY_FOLD_DIRTY_QUEUE`, `SAMPLER_EXPORTER_WORKQUEUE`,
+`POSTGRES_LEASE_HELPER`, `LEASE_OBSERVED_TIME`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
+`RUNNERCLIENT_PER_RPC_CREDENTIALS`, `RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`. The security-boundary ones
+(`EGRESS_SIDECAR_STDLIB_HTTP`, `GRPC_AUTH_INTERCEPTORS`) come first. `CONDITION_REASONS_NOT_STATE`
+needs the roll-safe order in its plan section; `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing
+tests unchanged.
+
+### `SAMPLER_JOURNAL_DIET` — what the sampler journals
+
+**Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
+raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
+
+### `CREDENTIAL_BINDING_LOCATION` — where the runner credential binding lives
+
+**Decision.** Annotations are writable by every Sandbox `patch` holder. Recommendation: a typed
+`status.runnerCredential` under the `/status` subresource; alternative: a separate controller-owned
+resource. CRDs have no custom subresource names. `CREDENTIAL_BINDING_STATUS` implements the choice with
+a one-release read fallback.
+
+### Blocked
+
+`RUNNER_MTLS_GO_SPIFFE` waits for `RUNNER_CONTROL_TRANSPORT_DESIGN` to land (same code).
+`DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` wait for the merge design, which changes who
+owns delivery.
