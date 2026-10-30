@@ -53,6 +53,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
+- [Remaining VM storage work](vm_block_storage.md) — the retained legacy VM's operator hold and the
+  deferred move of Pod and VM state to block storage
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
 - Notification follow-ups: [subscription authorization](task_dag.md#subscription-authorization-before-broader-sources),
