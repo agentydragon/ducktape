@@ -14,17 +14,20 @@
 //!
 //! A returned object literal whose properties are all methods or getters gets
 //! a foreign record identity: none of its code runs until the importer reads
-//! or calls a member.
+//! or calls a member. A returned closure literal is named by its source range, so
+//! the caller can bound what it reaches when invoked later.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use swc_ecma_ast::*;
 
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
 
-/// The exported declaration being summarized.
+/// The exported declaration or initializer being summarized.
 pub(crate) enum ForeignBody<'a> {
     Function(&'a Function),
+    Arrow(&'a ArrowExpr),
     Class(&'a Class),
 }
 
@@ -36,6 +39,9 @@ pub(crate) struct DerivedForeignCall {
     pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
     /// Set for a parameterless call that always returns one fresh record.
     pub(crate) record: Option<Vec<RecordMember>>,
+    /// The source range of the closure literal every call returns a fresh
+    /// instance of.
+    pub(crate) closure: Option<Range<u32>>,
 }
 
 /// A method or getter of a returned record literal.
@@ -57,6 +63,8 @@ struct Value {
     /// The value is exactly this fresh object literal of methods and getters,
     /// in source order with distinct names.
     record: Option<Vec<RecordMember>>,
+    /// The value is exactly a fresh closure of the literal at this range.
+    closure: Option<Range<u32>>,
 }
 
 impl Value {
@@ -113,6 +121,7 @@ pub(crate) fn derive_foreign_call(
 ) -> Option<DerivedForeignCall> {
     match body {
         ForeignBody::Function(function) => derive_function(function, shadowed, collection_intact),
+        ForeignBody::Arrow(arrow) => derive_arrow(arrow, shadowed, collection_intact),
         ForeignBody::Class(class) => derive_class(class, shadowed, collection_intact),
     }
 }
@@ -150,6 +159,45 @@ fn derive_function(
         collection_intact,
     );
     let returned = evaluator.block(&function.body.as_ref()?.stmts, false)?;
+    Some(call_summary(
+        &parameters,
+        returned,
+        evaluator.native_constructions,
+    ))
+}
+
+fn derive_arrow(
+    arrow: &ArrowExpr,
+    shadowed: &BTreeSet<&'static str>,
+    collection_intact: impl Fn(NativeIntrinsic) -> bool,
+) -> Option<DerivedForeignCall> {
+    if arrow.is_async || arrow.is_generator {
+        return None;
+    }
+    let parameters = simple_parameters(arrow.params.iter())?;
+    let mut evaluator = Evaluator::new(
+        &parameters,
+        None,
+        BTreeSet::new(),
+        shadowed,
+        collection_intact,
+    );
+    let returned = match arrow.body.as_ref() {
+        ArrowFunctionBody::FunctionBody(body) => evaluator.block(&body.stmts, false)?,
+        ArrowFunctionBody::Expr(expression) => evaluator.expr(expression)?,
+    };
+    Some(call_summary(
+        &parameters,
+        returned,
+        evaluator.native_constructions,
+    ))
+}
+
+fn call_summary(
+    parameters: &[Id],
+    returned: Value,
+    native_constructions: BTreeSet<NativeIntrinsic>,
+) -> DerivedForeignCall {
     let mut returns = BTreeSet::new();
     let mut retained_arguments = BTreeSet::new();
     returns.extend(
@@ -165,13 +213,14 @@ fn derive_function(
     if returned.primitive {
         returns.insert(ForeignReturn::Primitive);
     }
-    Some(DerivedForeignCall {
+    DerivedForeignCall {
         invocation: ForeignInvocation::Call,
         returns,
         retained_arguments,
-        native_constructions: evaluator.native_constructions,
+        native_constructions,
         record: returned.record.filter(|_| parameters.is_empty()),
-    })
+        closure: returned.closure,
+    }
 }
 
 fn derive_class(
@@ -272,6 +321,7 @@ fn derive_class(
         retained_arguments: evaluator.this.unwrap_or_default(),
         native_constructions: evaluator.native_constructions,
         record: None,
+        closure: None,
     })
 }
 
@@ -400,15 +450,19 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                 .this
                 .as_ref()
                 .map(|reaches| Value::fresh(reaches.clone())),
-            Expr::Arrow(arrow) if !arrow.is_async && !arrow.is_generator => {
-                Some(Value::fresh(all_parameters(self.parameter_count())))
-            }
+            Expr::Arrow(arrow) if !arrow.is_async && !arrow.is_generator => Some(Value {
+                closure: Some(arrow.span.lo.0..arrow.span.hi.0),
+                ..Value::fresh(all_parameters(self.parameter_count()))
+            }),
             Expr::Fn(function)
                 if !function.function.is_async
                     && !function.function.is_generator
                     && function.function.decorators.is_empty() =>
             {
-                Some(Value::fresh(all_parameters(self.parameter_count())))
+                Some(Value {
+                    closure: Some(function.function.span.lo.0..function.function.span.hi.0),
+                    ..Value::fresh(all_parameters(self.parameter_count()))
+                })
             }
             Expr::Array(array) => {
                 let mut reaches = BTreeSet::new();
@@ -543,6 +597,17 @@ mod tests {
             {
                 Some(ForeignBody::Class(&declaration.class))
             }
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => {
+                let [declarator] = declaration.decls.as_slice() else {
+                    return None;
+                };
+                match (&declarator.name, declarator.init.as_deref()?) {
+                    (Pat::Ident(binding), Expr::Arrow(arrow)) if binding.sym.as_ref() == export => {
+                        Some(ForeignBody::Arrow(arrow))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         })?;
         derive_foreign_call(body, &BTreeSet::new(), |_| true)
@@ -555,6 +620,7 @@ mod tests {
             retained_arguments: retained.iter().copied().collect(),
             native_constructions: BTreeSet::new(),
             record: None,
+            closure: None,
         })
     }
 
@@ -608,7 +674,37 @@ mod tests {
                     retained_arguments: BTreeSet::from([0]),
                     native_constructions: BTreeSet::from([NativeIntrinsic::WeakMap]),
                     record: None,
+                    closure: None,
                 })
+            );
+        });
+    }
+
+    #[test]
+    fn returned_closures_are_named_by_their_literal() {
+        js_ast::with_swc_globals(|| {
+            let derived = derive(
+                "var k = (a, b) => () => (b || a((b = { exports: {} }).exports, b), b.exports);",
+                "k",
+            )
+            .expect("allocation-only arrow");
+            assert_eq!(
+                derived.returns,
+                BTreeSet::from([ForeignReturn::FreshAllocation])
+            );
+            assert_eq!(derived.retained_arguments, BTreeSet::from([0, 1]));
+            assert!(derived.closure.is_some());
+            assert!(
+                derive(
+                    "function make(e) { const run = function () { return e; }; return run; }",
+                    "make"
+                )
+                .is_some_and(|derived| derived.closure.is_some())
+            );
+            assert!(
+                derive("function make(e) { return [() => e]; }", "make")
+                    .is_some_and(|derived| derived.closure.is_none()),
+                "an array holding a closure is not a closure"
             );
         });
     }

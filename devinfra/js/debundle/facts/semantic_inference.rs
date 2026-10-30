@@ -49,10 +49,6 @@ pub(crate) enum SemanticKey {
         parameter_index: usize,
         exact_arity: usize,
     },
-    CallbackFactory {
-        binding: Id,
-        function: u32,
-    },
     NamespaceWrapper {
         binding: Id,
         function: u32,
@@ -70,7 +66,6 @@ impl SemanticKey {
             Self::StableFunction { .. } => InferenceRule::StableFunction,
             Self::StableProvider { .. } => InferenceRule::StableProvider,
             Self::ArgumentNoEscape { .. } => InferenceRule::ArgumentNoEscape,
-            Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
             Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
             Self::DescriptorCopyProvider(_) => InferenceRule::DescriptorCopyProvider,
             Self::DescriptorCopyCall(_) => InferenceRule::DescriptorCopyFactory,
@@ -84,7 +79,6 @@ impl SemanticKey {
 pub(crate) enum SemanticFact {
     Certificate,
     Function(u32),
-    CallbackFactory(u32),
     NamespaceWrapper(u32),
 }
 
@@ -394,7 +388,7 @@ impl SemanticRules {
                     function: *function,
                 })?;
                 let source = self.callables.functions.get(binding)?;
-                if !source.hoisted || source.rebound {
+                if source.rebound {
                     return None;
                 }
                 context.assume(&ProofDependencies {
@@ -405,7 +399,6 @@ impl SemanticRules {
             }
             SemanticKey::StableFunction { .. }
             | SemanticKey::StableProvider { .. }
-            | SemanticKey::CallbackFactory { .. }
             | SemanticKey::NamespaceWrapper { .. } => {
                 if self.dynamic_scope {
                     return None;
@@ -632,15 +625,9 @@ impl ArgumentNoEscapeFacts {
                 statement.rebinds.eager.contains(binding)
                     || statement.rebinds.lazy.contains(binding)
             });
-            callables.functions.insert(
-                binding.clone(),
-                FunctionBindingFacts {
-                    values,
-                    hoisted: true,
-                    definite_initializer: true,
-                    rebound,
-                },
-            );
+            callables
+                .functions
+                .insert(binding.clone(), FunctionBindingFacts { values, rebound });
             let parameter_index = input.evidence.parameter_index;
             let exact_arity = input.evidence.exact_arity;
             selected.entry(binding.clone()).or_default().push((

@@ -74,9 +74,9 @@ a `set_empty_private_field` axiom can stand in at its site. Primitive Set
 iteration requires the Set and Array iterator slots and a checked source shape.
 The original restrictions on class identity, construction sites, arguments,
 primitive elements, mutation and escape remain in their structural analyses.
-Callback factories require the same stable-function judgment. Returned
-records are a projection of a derived foreign call summary
-(`facts/abstract_domain/foreign_call.rs`), not a certificate. Each certificate
+Returned records and inferred callback factories are projections of a
+derived foreign call summary (`facts/abstract_domain/foreign_call.rs`), not
+certificates. Each certificate
 records which native premises it consulted, so its report names
 `native_call_identity`, `native_integrity` and `empty_collection_construction`
 exactly when the census established them.
