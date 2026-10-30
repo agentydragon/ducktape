@@ -192,8 +192,7 @@ is insufficient to advertise an exhaustive live-native snapshot.
 ### Identity and declaration
 
 Use the same declaration model for roots and children. A root's Session ID is the UUID its client
-chooses for the current `OpenSession` request (formerly supplied through the Gateway's
-`CreateSession` wrapper); the runner mints a UUID for each child it discovers. Either way the ID is
+chooses for the current `OpenSession` request; the runner mints a UUID for each child it discovers. Either way the ID is
 the Session's public identity on the ingress, and the History Service's index learns it from the
 announcement. The proposed harness-minted-root flow below separates requesting creation from
 observing a native conversation. Persist an opaque Agentplane logical ID and its native binding before publication.

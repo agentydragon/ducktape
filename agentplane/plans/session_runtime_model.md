@@ -7,11 +7,11 @@ explicitly mediated, and colocation does not become an unavoidable lifetime cons
 still depends on actual tool routing and access; placement alone does not establish isolation.
 
 Agentplane has largely represented a harness and its Session state as living inside a Sandbox.
-The central sampler proposed in [PR #12225](https://github.com/agentydragon/ducktape/pull/12225)
-hosts them outside execution Sandboxes; its Session data should survive their deletion. In that
-mode a Sandbox supplies tools, rather than defining the conversation's lifetime. Its first version
-still requires an initial Sandbox and fixes the executor binding; those are v1 constraints, not a
-required ontology for every future harness.
+The experimental [central sampler](../x/central_sampler/README.md) hosts them outside execution
+Sandboxes; its Session data should survive their deletion. In that mode a Sandbox supplies tools,
+rather than defining the conversation's lifetime. It still requires a running executor for the first
+open and fixes the binding to one Sandbox incarnation; those are v1 constraints, not a required
+ontology for every future harness.
 
 ## Cases the model must represent
 
@@ -68,5 +68,4 @@ Use it as input; it does not establish arbitrary detach/rebind or environment-fr
 
 Exit: reviewed terms, ownership/lifetime rules, API examples for the cases above, and a
 transition proposal preserving existing identities, history and native state. Implementation work
-follows a reviewed choice. This design does not block PR #12225's fixed-binding experimental
-sampler or authorize a deployment or migration.
+follows a reviewed choice. This design authorizes no deployment or migration.
