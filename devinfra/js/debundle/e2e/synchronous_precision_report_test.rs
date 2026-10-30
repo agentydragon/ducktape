@@ -338,7 +338,55 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
     let result = execution(&fixture, "result");
     assert_reason(
         &result,
-        serde_json::json!({"code": "callback_pool_limit", "limit": 64}),
+        serde_json::json!({"code": "callback_pool_limit", "limit": 64, "pool_size": 65}),
+    );
+}
+
+/// Each fixture constructs `result` from a local class whose construction
+/// proof fails at one check; the loss names that check.
+fn assert_construction_rejection(source: &str, expected_output: &str, rejection: Value) {
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_entry_output(&fixture, expected_output);
+    let result = execution(&fixture, "result");
+    assert_reason(
+        &result,
+        serde_json::json!({"code": "unsupported_construction", "rejection": rejection}),
+    );
+}
+
+#[test]
+fn spread_construction_reports_spread_arguments() {
+    assert_construction_rejection(
+        "class Box { constructor(value) { this.value = value; } }\nconst inputs = [3];\nconst result = new Box(...inputs);\nconsole.log(result.value);",
+        "3\n",
+        serde_json::json!({"check": "spread_arguments"}),
+    );
+}
+
+#[test]
+fn aliased_class_reports_use_outside_construction() {
+    assert_construction_rejection(
+        "class Box { constructor(value) { this.value = value; } }\nconst alias = Box;\nconst result = new Box(3);\nconsole.log(result.value, alias === Box);",
+        "3 true\n",
+        serde_json::json!({"check": "class_used_outside_construction"}),
+    );
+}
+
+#[test]
+fn possible_object_prototype_field_reports_the_field() {
+    assert_construction_rejection(
+        "function define(name) { Object.defineProperty(Object.prototype, name, { value: 1 }); }\nclass Box { constructor(value) { this.value = value; } }\nconst result = new Box(3);\nconsole.log(result.value, typeof define);",
+        "3 function\n",
+        serde_json::json!({"check": "field_may_exist_on_object_prototype", "property": "value"}),
+    );
+}
+
+#[test]
+fn unknown_property_source_reports_its_parameter() {
+    assert_construction_rejection(
+        "class Box { constructor(config) { this.value = config.value; } }\nconst result = new Box(JSON.parse('{\"value\": 3}'));\nconsole.log(result.value);",
+        "3\n",
+        serde_json::json!({"check": "unchecked_property_source", "parameter": 0}),
     );
 }
 

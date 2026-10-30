@@ -40,7 +40,7 @@ use crate::facts::{
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
-    CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
+    CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrefixObservation, NativePrototypePropertyCheck,
 };
@@ -2669,7 +2669,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let Some(key) = self.stable_local_class_key(class) else {
             return false;
         };
-        let Some(constructor) = self.eligible_local_constructor(key, args.len()) else {
+        let Ok(constructor) = self.eligible_local_constructor(key, args.len()) else {
             return false;
         };
         if nested && !constructor.inert_allocation {
@@ -3682,9 +3682,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn eligible_local_constructor(&self, key: u32, arg_count: usize) -> Option<&LocalConstructor> {
-        let constructor = self.inputs.index.local_constructors.get(&key)?;
-        let binding = self.inputs.index.class_bindings.get(&key)?;
+    fn eligible_local_constructor(
+        &self,
+        key: u32,
+        arg_count: usize,
+    ) -> Result<&LocalConstructor, ConstructionRejection> {
+        let (Some(constructor), Some(binding)) = (
+            self.inputs.index.local_constructors.get(&key),
+            self.inputs.index.class_bindings.get(&key),
+        ) else {
+            return Err(ConstructionRejection::UncheckedConstructor);
+        };
         // A constructorless, fieldless class only allocates an instance for a
         // direct zero-argument `new`. Even if its class object escaped, a
         // modified prototype or deferred method cannot run during allocation.
@@ -3694,40 +3702,52 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let inert_allocation = constructor.inert_allocation && arg_count == 0;
         let checked_default_fields = constructor.checked_default_fields && arg_count == 0;
         if constructor.checked_default_fields && arg_count != 0 {
-            return None;
+            return Err(ConstructionRejection::ArgumentsToDefaultFields);
         }
-        if !inert_allocation
-            && !checked_default_fields
-            && (self.inputs.index.other_class_uses.contains(binding)
-                || (self.inputs.export_reentry_enabled
-                    && self.inputs.index.exported_bindings.contains(binding))
-                || self.state.tainted_classes.contains(&key)
-                || !constructor
-                    .own_fields
-                    .iter()
-                    .all(|property| self.constructor_field_prototype_absent(key, property))
-                || self
-                    .state
-                    .global_escaped_callbacks
-                    .contains(&AbstractValue::ClassMembers(key)))
-        {
-            return None;
+        if !inert_allocation && !checked_default_fields {
+            if self.inputs.index.other_class_uses.contains(binding) {
+                return Err(ConstructionRejection::ClassUsedOutsideConstruction);
+            }
+            if self.inputs.export_reentry_enabled
+                && self.inputs.index.exported_bindings.contains(binding)
+            {
+                return Err(ConstructionRejection::ExportedClass);
+            }
+            if self.state.tainted_classes.contains(&key) {
+                return Err(ConstructionRejection::ClassMutated);
+            }
+            if let Some(property) = constructor
+                .own_fields
+                .iter()
+                .find(|property| !self.constructor_field_prototype_absent(key, property))
+            {
+                return Err(ConstructionRejection::FieldMayExistOnObjectPrototype {
+                    property: property.clone(),
+                });
+            }
+            if self
+                .state
+                .global_escaped_callbacks
+                .contains(&AbstractValue::ClassMembers(key))
+            {
+                return Err(ConstructionRejection::ClassMembersEscaped);
+            }
         }
         if constructor
             .binding_reads
             .iter()
             .any(|id| !self.inputs.flow.is_declared(id))
         {
-            return None;
+            return Err(ConstructionRejection::UndeclaredConstructorRead);
         }
-        Some(constructor)
+        Ok(constructor)
     }
 
     fn construct_local_class(
         &mut self,
         key: u32,
         args: &[Values],
-    ) -> Option<(Outcome, AbstractValue)> {
+    ) -> Result<(Outcome, AbstractValue), ConstructionRejection> {
         let result = self.request(RuntimeOperation::Model(
             super::runtime_models::ModelOperation::ConstructLocalClass {
                 key,
@@ -3746,7 +3766,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         key: u32,
         args: &[Values],
-    ) -> Option<(Outcome, AbstractValue)> {
+    ) -> Result<(Outcome, AbstractValue), ConstructionRejection> {
         let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.inputs.export_reentry_enabled {
             let exported: Values = self
@@ -3766,7 +3786,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.taint_objects(&exported);
         }
         for (index, _) in &constructor.property_reads {
-            let values = args.get(*index)?;
+            let unchecked = ConstructionRejection::UncheckedPropertySource { parameter: *index };
+            let values = args.get(*index).ok_or_else(|| unchecked.clone())?;
             if values.is_empty()
                 || !values.iter().all(|value| {
                     matches!(value,
@@ -3775,7 +3796,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             && !self.state.tainted_objects.contains(object))
                 })
             {
-                return None;
+                return Err(unchecked);
             }
         }
         if let Some(proof) = self
@@ -3828,7 +3849,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
         let values: Values = args.iter().flatten().cloned().collect();
         let instance = AbstractValue::Instance(key, self.intern_callback_set(values));
-        Some((outcome, instance))
+        Ok((outcome, instance))
     }
 
     /// The foreign wrapper can invoke its captured callbacks and any values
@@ -4413,6 +4434,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 } else if callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL {
                     ExecutionPrecisionLossReason::CallbackPoolLimit {
                         limit: MAX_SYNCHRONOUS_CALLBACK_POOL,
+                        pool_size: callbacks.len(),
                     }
                 } else if self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS {
                     ExecutionPrecisionLossReason::InvocationExpansionLimit {
@@ -5396,7 +5418,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 for target in targets {
                     match target {
                         AbstractValue::Origin(ValueOrigin::Class(key)) => {
-                            if let Some((_, instance)) =
+                            if let Ok((_, instance)) =
                                 self.construct_local_class(key, &evaluated_args)
                             {
                                 results.insert(instance);
@@ -6461,37 +6483,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.widen_native_effects();
                 }
                 AbstractValue::Origin(ValueOrigin::Class(key)) if call.kind == CallKind::New => {
-                    if let Some((nested, _)) = (!call.has_spread)
-                        .then(|| self.construct_local_class(key, &args))
-                        .flatten()
-                    {
-                        self.apply_rebind_effects(&nested.effects.rebinds);
-                        outcome.effects.reads.extend(nested.effects.reads);
-                        outcome.effects.rebinds.extend(nested.effects.rebinds);
-                        outcome
-                            .effects
-                            .uninitialized_reads
-                            .extend(nested.effects.uninitialized_reads);
-                        outcome.executed_owners.extend(nested.executed_owners);
-                        outcome.unknown_call |= nested.unknown_call;
-                        outcome
-                            .inherit_completeness(nested.complete, nested.effects.precision_losses);
+                    let constructed = if call.has_spread {
+                        Err(ConstructionRejection::SpreadArguments)
                     } else {
-                        outcome.unsupported(
-                            ExecutionOperation::Construction,
-                            call.owner,
-                            call.span,
-                        );
-                        outcome.unknown_call = true;
-                        self.note_unknown_call(call);
-                        self.state.escaped_class_capabilities.insert(key);
-                        // Unsupported constructors still execute their
-                        // instance fields and body at `new`, even without a
-                        // callback argument to seed the opaque fallback.
-                        self.promote_class_members(key, outcome);
-                        if !invoked_unknown_callbacks {
-                            self.invoke_possible_callbacks(&args, false, outcome);
-                            invoked_unknown_callbacks = true;
+                        self.construct_local_class(key, &args)
+                    };
+                    match constructed {
+                        Ok((nested, _)) => {
+                            self.apply_rebind_effects(&nested.effects.rebinds);
+                            outcome.effects.reads.extend(nested.effects.reads);
+                            outcome.effects.rebinds.extend(nested.effects.rebinds);
+                            outcome
+                                .effects
+                                .uninitialized_reads
+                                .extend(nested.effects.uninitialized_reads);
+                            outcome.executed_owners.extend(nested.executed_owners);
+                            outcome.unknown_call |= nested.unknown_call;
+                            outcome.inherit_completeness(
+                                nested.complete,
+                                nested.effects.precision_losses,
+                            );
+                        }
+                        Err(rejection) => {
+                            outcome.lose_precision(
+                                ExecutionPrecisionLossReason::UnsupportedConstruction { rejection },
+                                call.owner,
+                                call.span,
+                            );
+                            outcome.unknown_call = true;
+                            self.note_unknown_call(call);
+                            self.state.escaped_class_capabilities.insert(key);
+                            // Unsupported constructors still execute their
+                            // instance fields and body at `new`, even without a
+                            // callback argument to seed the opaque fallback.
+                            self.promote_class_members(key, outcome);
+                            if !invoked_unknown_callbacks {
+                                self.invoke_possible_callbacks(&args, false, outcome);
+                                invoked_unknown_callbacks = true;
+                            }
                         }
                     }
                 }

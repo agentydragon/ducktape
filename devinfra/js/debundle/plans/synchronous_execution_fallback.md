@@ -5,80 +5,85 @@ is <../TODO.md>; this plan burns down as steps land.
 
 ## Problem
 
-`facts/sync_effects/interpreter.rs` bounds the synchronous interpreter with
-three cost budgets: invocation depth 64, invocation count 256, callback pool 64. A call site whose callback pool exceeds the budget, or a construction the
-interpreter does not model, takes `bounded_invocation_fallback` over the whole
-pool as one opaque batch and marks the statement incomplete. Graph build then
-applies the conservative fallback to the incomplete statement: promoted at-init
-edges to the read closure of everything the pool could reach
-(`graph/build.rs::promote_at_init_calls`, `SourceUnitReadClosure`) and a strict
-side-effect edge against every prior impure unit.
-
 Measured on the canonical Tana input, `devel` 4377a57bae versus the pinned
-engine ecb4a734 (<../perf/abstract_interpreter_step0_baseline.md>, the
-pin-vs-devel perf note): 331 statements went from complete to incomplete,
-`callback_pool_limit` on 297 and `unsupported_operation: construction` on
-192, each gaining 500–2,700 promoted eager edges to 30–50% of all prior
-declarations. Those edges form the 1,833-module SCC, add about 1 M edges, and
-account for most of the 4.4× wall increase (main-chunk analysis 29 s → 180 s).
-Two of the four Claude CLI eager-only pivots hit the same budget.
+engine ecb4a734 (<../perf/pin_vs_devel_tana_2026_10_29.md>): 331 statements
+went from complete to incomplete, each gaining 500–2,700 outgoing edges to
+30–50% of all prior declarations. Those edges form the 1,833-module SCC and
+add about 1 M edges.
 
-## Principle
+The edges are the statement's synchronous read set, not the S-chain. Of the
+growers' outgoing edges, 387,894 are `promoted_at_init` eager uses whose
+callee is the statement itself, and 379,206 are `Sequenced`. On a
+representative statement the two target sets overlap 490 of 506: each
+`Sequenced` edge orders a promoted read against the read binding's nearest
+preceding writer (`graph/build.rs::promote_at_init_calls`). The read set is
+what the interpreter's havoc paths promote for a construction or call it cannot
+model: class-member promotion of a rejected construction, the callback pool
+fallback (`bounded_invocation_fallback`), and the foreign-record promotion.
 
-The budgets stay as cost bounds. Raising one moves the cliff. The fix is what
-an overflow produces: a sound summary instead of a havoc.
+Every grower carries a loss other than `callback_pool_limit`:
+
+| Loss alongside the pool limit       | Statements | Site                                                   |
+| ----------------------------------- | ---------: | ------------------------------------------------------ |
+| `unsupported_construction`          |        192 | one local class, three factory wrappers (`new C(...)`) |
+| `unsupported_operation/member_read` |         71 | descriptor alias chains, Map/Set registries + freeze   |
+| `unknown_call_target`               |         31 | opaque calls                                           |
+| array spread, membership protocol   |          3 |                                                        |
+
+### Dropped: summarizing an overflowing pool
+
+The earlier steps 1–2 summarized a pool above `MAX_SYNCHRONOUS_CALLBACK_POOL`
+by invoking each body once with `Unknown` arguments, and narrowed unresolved
+callees to their own read closure. Both premised that the statement could stay
+complete. It cannot: every caller of `invoke_possible_callbacks` (opaque call,
+rejected construction, own-data read, implicit coercion, callable field write,
+protocol steps) records its own loss before the pool is consulted, so the pool
+is reached only on an already incomplete statement. Re-summarizing the escaped
+pool at each statement also replaces the fallback's incremental closure cache:
+the prototype timed out `opaque_callback_scale_test`.
 
 ## Steps
 
-### 1. Summarize an overflowing pool
+### 1. Unblock the rejected construction
 
-When `callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL`, invoke each callback
-whose body is known once with Top arguments and union the per-callback
-summaries (reads, rebinds, uninitialized reads, effects, executed owners).
-A summary over Top arguments covers invoking that callback with any argument
-drawn from the pool, so the union is sound for any subset and order, and it is
-linear in the pool instead of the capture cross product the budget guards
-against. The statement stays complete when every callback body is known. This
-is the abstract-interpreter plan's widening "argument shapes to Top after one
-distinct re-summary per body" (<abstract_interpreter.md> § 6.2), landed early.
+All 192 construction losses sit at the three wrapper sites of one local class,
+and all reject at `field_may_exist_on_object_prototype` (the first field
+checked; every field fails). The whole-program prototype census holds 63,067
+entries with no named property (49,124 escapes, 10,987 reflective writes, 2,785
+computed writes, 171 deletes; 61,877 of all 88,617 entries are in the vendor
+chunk), so no field name can be proved absent from `Object.prototype`. The
+pinned engine predates this check.
 
-- Tests: a pool of 65 callbacks where one writes a binding a later statement
-  reads at init keeps that edge; a pool of 65 pure callbacks produces no
-  promoted edge; the same fixture at 64 callbacks is unchanged.
-- SPEC: § Synchronous analysis limits describes the summary, not the limit.
+The engine cannot prove the premise. The audited author input that supplies
+exactly it already exists: `retained_record_factory: true` on each wrapper
+(SPEC § Synchronous analysis limits). This is a spec change in the private
+Tana spec, gated on that audit; measure its effect before landing it.
 
-### 2. Havoc only the unknown
+### 2. Classify the member-read losses
 
-A callback with no resolvable body still havocs, but the fallback's reach is
-that callback's own `SourceUnitReadClosure`, never the union over the pool. The
-precision loss names the unresolved callee.
+Group the 71 `member_read` growers by the operation the interpreter declined
+(descriptor alias, registry `Map`/`Set`, `Object.freeze` input) and decide per
+group between a builtin-table row (`facts/abstract_domain/builtins.rs`), an
+existing author input, or nothing.
 
-- Tests: one unresolved callback among 65 orders only its reach; an escaped
-  unknown callback still orders against every prior impure unit.
+### 3. Bound what an incomplete statement promotes
 
-### 3. Model the unsupported construction
-
-Classify the 192 construction statements from the perf note's list. If the
-shape is `new LocalClass(args)` with a known constructor body, interpret the
-constructor under the step 1 summary; this is <abstract_interpreter.md>
-§ 5 step 5b narrowed to one row and should land as a builtin-table row, not a
-bespoke certificate. If the constructor is unknown, step 2 applies.
-
-- Tests: a local class whose constructor writes a module binding keeps the
-  edge; one that only initializes own fields produces none.
+An incomplete statement promotes the whole havoc read set. The open soundness
+question is whether graph build may instead order the statement against only
+the reach the interpreter can name (the owners it actually could not model and
+their synchronous read closure), keeping the strict fallback for losses with no
+computable reach (`eval`, `with`, foreign records). This needs every loss path
+to carry its reach. Not implemented; decide before any code.
 
 ### 4. Measure
 
 Before and after each step, per <abstract_interpreter.md> § 6.1: public
-controls, and canonical Tana on `devel`. Expected: edges fall from 3,146,382
-toward the pinned 2,163,669; the 1,833-module SCC dissolves; main-chunk
-analysis wall falls toward 29 s. Report the Claude CLI class B pivots
-(`YC`, `Ujr`, `xe`, gaffer-private
-`claude/cli/re/2.1.292/debug/2026-10-29-conflict-inventory.md`) as the
-cross-check. A smaller graph is not a pass; the gate decision is reported as
-observed.
+controls, and canonical Tana on `devel`. Report edges, SCC sizes, atomic
+conflicts, wall and RSS, and the Claude CLI class B pivots (`YC`, `Ujr`, `xe`,
+gaffer-private `claude/cli/re/2.1.292/debug/2026-10-29-conflict-inventory.md`)
+as the cross-check. A smaller graph is not a pass; the gate decision is
+reported as observed.
 
 ## Not in scope
 
-Changing a budget constant; any new author premise; the export-reentry policy
-(<host_behavior.md>).
+Changing a budget constant; the export-reentry policy (<host_behavior.md>).

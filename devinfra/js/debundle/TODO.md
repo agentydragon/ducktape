@@ -19,8 +19,9 @@ plans and evidence live here:
   descriptor, alias, method-receiver and initialization proof obligations.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
-- <plans/synchronous_execution_fallback.md> — summarize an overflowing callback
-  pool instead of havocking every prior declaration.
+- <plans/synchronous_execution_fallback.md> — remove the losses that make
+  statements promote their whole havoc read set (rejected construction,
+  member reads), then bound what an incomplete statement promotes.
 - <plans/host_behavior.md> — declare runtime behavior as explicit keys and
   derive the export-reentry policy from them.
 - <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.

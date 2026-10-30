@@ -2208,9 +2208,13 @@ Dependency-graph source units carry `synchronous_execution` when synchronous
 analysis ran. `complete` is the analyzer's existing effect-completeness verdict,
 independent of `purity`. `precision_losses` retains the reasons observed when
 execution became conservative: unresolved call targets, unsupported operations,
-recursive invocations, and depth, expansion, or callback-pool limits. Limit
-records include the configured bound. These records do not change gate acceptance
-or emitted JavaScript.
+unsupported local-class constructions, recursive invocations, and depth,
+expansion, or callback-pool limits. Limit records include the configured bound;
+a callback-pool record also gives the pool size. An `unsupported_construction`
+record names the first construction check that failed as a typed `rejection`
+(for example `field_may_exist_on_object_prototype` with the field, whose census
+entries are in `native_prototype_property_checks`); later checks may fail too.
+These records do not change gate acceptance or emitted JavaScript.
 
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the

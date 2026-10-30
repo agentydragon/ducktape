@@ -622,11 +622,58 @@ impl ExecutionPrecisionLoss {
 #[serde(tag = "code", rename_all = "snake_case")]
 pub enum ExecutionPrecisionLossReason {
     UnknownCallTarget,
-    UnsupportedOperation { operation: ExecutionOperation },
+    UnsupportedOperation {
+        operation: ExecutionOperation,
+    },
+    /// `new` of a local class whose construction proof failed. The rejection
+    /// names the first failed check, not every check that would fail.
+    UnsupportedConstruction {
+        rejection: ConstructionRejection,
+    },
     RecursiveInvocation,
-    InvocationDepthLimit { limit: usize },
-    InvocationExpansionLimit { limit: usize },
-    CallbackPoolLimit { limit: usize },
+    InvocationDepthLimit {
+        limit: usize,
+    },
+    InvocationExpansionLimit {
+        limit: usize,
+    },
+    /// `pool_size` counts the callbacks the opaque call could invoke.
+    CallbackPoolLimit {
+        limit: usize,
+        pool_size: usize,
+    },
+}
+
+/// Why a local class construction kept the conservative path.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "check", rename_all = "snake_case")]
+pub enum ConstructionRejection {
+    SpreadArguments,
+    /// The class has no source-checked constructor summary.
+    UncheckedConstructor,
+    /// An implicit constructor with checked field initializers received arguments.
+    ArgumentsToDefaultFields,
+    /// The class binding is used other than as a `new` callee.
+    ClassUsedOutsideConstruction,
+    /// Export reentry can reach the class binding.
+    ExportedClass,
+    /// A write through an instance of this class was observed.
+    ClassMutated,
+    /// The class's members escaped to code that can modify its prototype.
+    ClassMembersEscaped,
+    /// An assigned instance field may name an `Object.prototype` accessor or
+    /// non-writable property; the census entries are in
+    /// `native_prototype_property_checks`.
+    FieldMayExistOnObjectPrototype {
+        property: String,
+    },
+    /// The constructor reads a binding not declared in the chunk.
+    UndeclaredConstructorRead,
+    /// An argument whose properties the constructor reads is not a fresh,
+    /// untainted plain-data object.
+    UncheckedPropertySource {
+        parameter: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -643,7 +690,6 @@ pub enum ExecutionOperation {
     ReturnedCallback,
     SuperclassConstruction,
     ObjectAssign,
-    Construction,
     OpaqueExecution,
     GeneratorParameters,
     CallableInputs,
