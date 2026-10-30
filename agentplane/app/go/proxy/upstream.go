@@ -246,11 +246,24 @@ func (p *UpstreamProxy) Relay(w http.ResponseWriter, r *http.Request, relay Rela
 			exposed.Set("Cache-Control", relay.CacheControl)
 			response.Header = exposed
 			response.Trailer = nil
+			// net/http repopulates Trailer when the body reaches EOF; ReverseProxy reads it after Close.
+			response.Body = &trailerDroppingBody{ReadCloser: response.Body, response: response}
 			return nil
 		},
 		ErrorHandler: relay.OnError,
 	}
 	proxy.ServeHTTP(relayWriter{w}, r)
+}
+
+type trailerDroppingBody struct {
+	io.ReadCloser
+	response *http.Response
+}
+
+func (b *trailerDroppingBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.response.Trailer = nil
+	return err
 }
 
 // relayWriter keeps ReverseProxy from leaking headers outside ModifyResponse and sends the headers
