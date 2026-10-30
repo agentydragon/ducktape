@@ -22,7 +22,6 @@ const (
 	sandboxVMIKind   = "VirtualMachineInstance"
 	phaseRunning     = "Running"
 	phaseQuiescing   = "Quiescing"
-	phaseDeleting    = "Deleting"
 	modeSuspended    = "Suspended"
 	phaseCreate      = "Creating"
 	phaseSuspend     = "Suspending"
@@ -76,17 +75,10 @@ func unavailable(err error) error {
 }
 
 func sandboxPhase(resource *sandboxapi.Sandbox) string {
-	runningReason := ""
-	sealed := false
-	if running := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionRunning); running != nil {
-		runningReason = running.Reason
-	}
-	if quiesced := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionQuiesced); quiesced != nil && quiesced.Status == metav1.ConditionTrue {
-		sealed = true
-	}
+	stage := resource.Status.StopStage
 	incarnated := resource.Status.Incarnation != nil
 	if resource.DeletionTimestamp != nil && !resource.DeletionTimestamp.IsZero() {
-		if sealed || runningReason == phaseDeleting {
+		if meta.IsStatusConditionTrue(resource.Status.Conditions, sandboxapi.ConditionQuiesced) || stage == sandboxapi.StopStageDeleting {
 			return phaseTearDown
 		}
 		return phaseQuiescing
@@ -106,7 +98,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	if !incarnated {
 		return modeSuspended
 	}
-	if runningReason == phaseQuiescing {
+	if stage == sandboxapi.StopStageQuiescing {
 		return phaseQuiescing
 	}
 	return phaseSuspend

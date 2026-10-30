@@ -289,7 +289,7 @@ func TestSuspendResumeAndPolicyUpdatesKeepUIDFenceAndWakeGeneration(t *testing.T
 
 func TestResumeRefusesQuiescingAndMutationsRefuseTeardown(t *testing.T) {
 	resource := testSandbox("paused", "uid", sandboxapi.OperatingModeSuspended)
-	resource.Status.Conditions = []metav1.Condition{{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionFalse, Reason: "Quiescing"}}
+	resource.Status.StopStage = sandboxapi.StopStageQuiescing
 	access, _ := newAccess(t, resource)
 	var quiescing *SandboxQuiescingError
 	if err := access.Resume(context.Background(), "paused"); !errors.As(err, &quiescing) {

@@ -112,14 +112,14 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 	if object.Status.Incarnation != nil {
 		view.Incarnation = object.Status.Incarnation.UID
 	}
-	ready, stopped := false, false
+	ready := false
 	if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
 		view.ReadyDetail = fmt.Sprintf("Ready=%s/%s: %s", condition.Status, condition.Reason, condition.Message)
-		ready, stopped = condition.Status == metav1.ConditionTrue, condition.Reason == "Stopped"
+		ready = condition.Status == metav1.ConditionTrue
 	}
 	if !ready {
 		view.Blocker = "sandbox_not_ready"
-		if object.Status.OperatingMode == sandboxapi.OperatingModeSuspended && stopped {
+		if object.Status.OperatingMode == sandboxapi.OperatingModeSuspended && object.Status.StopStage == sandboxapi.StopStageStopped {
 			view.Blocker = "sandbox_suspended"
 		}
 	}
@@ -147,7 +147,7 @@ func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string,
 		if !object.Spec.WakeOnSend {
 			return false, nil
 		}
-		if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionRunning); condition != nil && condition.Reason == "Quiescing" {
+		if object.Status.StopStage == sandboxapi.StopStageQuiescing {
 			return false, ErrWakeQuiescing
 		}
 		mode := object.Status.OperatingMode
