@@ -394,7 +394,12 @@ ReturnedRecord, NamespaceWrapper, ArgumentNoEscape, DescriptorCopy*}` → the
   summary as `Foreign(summary)` through `imported_callables`. Tests
   `imported_callback_timing`, `retained_callback_factory`,
   `retained_constructor_callback`, `namespace_wrapper`,
-  `descriptor_copy_factory`, `argument_input`.
+  `descriptor_copy_factory`, `argument_input`. Landed first:
+  `facts/abstract_domain/foreign_call.rs` evaluates exported bodies whose
+  whole effect set is allocation and publishes `foreign_call` through
+  `imported_callables` (`foreign_call_summary`). It fills in only where no
+  certificate above applies; folding those certificates into it, and giving
+  returned objects foreign identity so methods are summarized, remain.
 - 5d own-property projections: `property_inference.rs` → `props` of a `Clean`
   `Alloc(One)` in ECMAScript own-key order. Tests `own_property_names`,
   `own_descriptor_inspection`.

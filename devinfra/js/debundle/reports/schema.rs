@@ -359,6 +359,7 @@ pub enum NativeIntegrityGuard {
     NativeCallIdentity,
     SetIterable,
     LocalClassConstruction,
+    ForeignCallSummary,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -466,6 +467,7 @@ pub enum InferenceRule {
     OwnPropertyDescriptorProjection,
     DescriptorCopyProvider,
     DescriptorCopyFactory,
+    ForeignCallSummary,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.

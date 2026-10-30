@@ -5318,6 +5318,7 @@ struct ExecutionIndex {
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
     callback_factory_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
+    foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -5478,6 +5479,7 @@ impl Default for ExecutionIndex {
             dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
+            foreign_call_imports: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
             callback_factory_summaries: BTreeMap::new(),
             inline_callback_factory_imports: BTreeSet::new(),
@@ -7471,6 +7473,23 @@ impl ExecutionIndex {
                         index
                             .namespace_wrapper_summaries
                             .insert(local.to_id(), wrapper.clone());
+                    }
+                    // A narrower summary or an author contract keeps its own
+                    // consumer and use reports; the derived summary fills in
+                    // only where nothing else describes the call.
+                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
+                        && let Some(call) = summary.foreign_call.as_ref()
+                        && !summary.supports_callback_factory()
+                        && summary.returned_record.is_none()
+                        && summary.namespace_wrapper.is_none()
+                        && summary.descriptor_copy_factory.is_none()
+                        && !hints
+                            .assumptions
+                            .names_imported_callable(local.sym.as_ref())
+                    {
+                        index
+                            .foreign_call_imports
+                            .insert(local.to_id(), call.clone());
                     }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()
@@ -11387,10 +11406,22 @@ pub(crate) struct InferredCallbackFactory {
 
 pub(crate) struct InferredCallableCapabilities {
     pub map_integrity: bool,
+    /// Exported local → derived call summary
+    /// (`crate::facts::abstract_domain::foreign_call`).
+    pub foreign_calls: BTreeMap<String, InferredForeignCall>,
+    /// Keyed-collection families whose global constructor slot this module's
+    /// census leaves intact.
+    pub intact_collections: BTreeSet<NativeIntrinsic>,
     pub stable_providers: BTreeSet<String>,
     pub callback_factories: BTreeMap<String, InferredCallbackFactory>,
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
+}
+
+pub(crate) struct InferredForeignCall {
+    pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    pub declaration_start: u32,
+    pub dependencies: ProofDependencies,
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -11668,17 +11699,20 @@ pub(crate) fn infer_callable_capabilities(
     prepared: PreparedCallableCapabilities,
     integrity: &NativeIntegrity,
     required_stable_providers: &BTreeSet<String>,
+    derive_foreign_calls: bool,
 ) -> InferredCallableCapabilities {
     let PreparedCallableCapabilities {
         mut index,
         exported_locals,
-        flow: prepared_flow,
+        flow: mut prepared_flow,
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
         map_integrity: false,
+        foreign_calls: BTreeMap::new(),
+        intact_collections: BTreeSet::new(),
         stable_providers: BTreeSet::new(),
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
@@ -11698,7 +11732,9 @@ pub(crate) fn infer_callable_capabilities(
         matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
     });
     if has_candidate {
-        let flow = prepared_flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
+        let flow = prepared_flow
+            .take()
+            .unwrap_or_else(|| ChunkValueFlow::analyze(body));
         let shadowed = crate::facts::compute_shadowed_globals(body);
         let callables = callable_inference_inputs(&index, &flow, &exported_locals);
         index.semantic_facts = Some(index.prepare_semantic_facts(
@@ -11735,9 +11771,112 @@ pub(crate) fn infer_callable_capabilities(
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
+        prepared_flow = Some(flow);
+    }
+    if derive_foreign_calls {
+        result.foreign_calls = infer_foreign_calls(&index, body, &exported_locals, prepared_flow);
     }
     result.map_integrity = index.map_integrity();
+    result.intact_collections = [
+        NativeIntrinsic::Map,
+        NativeIntrinsic::Set,
+        NativeIntrinsic::WeakMap,
+        NativeIntrinsic::WeakSet,
+    ]
+    .into_iter()
+    .filter(|family| {
+        matches!(
+            index
+                .integrity
+                .require(&[IntrinsicSlot::Global(*family)], None),
+            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+        )
+    })
+    .collect();
     result
+}
+
+/// Exported top-level function and class declarations with one stable value,
+/// summarized by `foreign_call`. Dynamic scope can rebind any of them.
+fn infer_foreign_calls(
+    index: &ExecutionIndex,
+    body: &[TopLevelItemView<'_>],
+    exported_locals: &BTreeSet<String>,
+    flow: Option<ChunkValueFlow>,
+) -> BTreeMap<String, InferredForeignCall> {
+    use crate::facts::abstract_domain::foreign_call::{ForeignBody, derive_foreign_call};
+    if !index.dynamic_scope_owners.is_empty() {
+        return BTreeMap::new();
+    }
+    let declarations: Vec<_> = body
+        .iter()
+        .filter_map(|item| {
+            let declaration = match item.as_module_item() {
+                ModuleItem::Stmt(Stmt::Decl(declaration)) => declaration,
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
+                _ => return None,
+            };
+            let (binding, body, start) = match declaration {
+                Decl::Fn(function) => (
+                    &function.ident,
+                    ForeignBody::Function(&function.function),
+                    function.function.span.lo.0,
+                ),
+                Decl::Class(class) => (
+                    &class.ident,
+                    ForeignBody::Class(&class.class),
+                    class.class.span.lo.0,
+                ),
+                _ => return None,
+            };
+            exported_locals
+                .contains(binding.sym.as_ref())
+                .then_some((binding, body, start))
+        })
+        .collect();
+    if declarations.is_empty() {
+        return BTreeMap::new();
+    }
+    let flow = flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
+    let shadowed = crate::facts::compute_shadowed_globals(body);
+    let mut inferred = BTreeMap::new();
+    for (binding, declaration, declaration_start) in declarations {
+        let id = binding.to_id();
+        if index.reassigned_bindings.contains(&id)
+            || flow.values_of_binding(&id).iter().count() != 1
+        {
+            continue;
+        }
+        let Some(derived) = derive_foreign_call(declaration, &shadowed, |family| {
+            matches!(
+                index
+                    .integrity
+                    .require(&[IntrinsicSlot::Global(family)], None),
+                crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+            )
+        }) else {
+            continue;
+        };
+        let mut dependencies = ProofDependencies::default();
+        for family in &derived.native_constructions {
+            dependencies.extend(
+                &index
+                    .integrity
+                    .require(&[IntrinsicSlot::Global(*family)], None)
+                    .dependencies()
+                    .expect("derivation checked the census for every construction"),
+            );
+        }
+        inferred.insert(
+            binding.sym.to_string(),
+            InferredForeignCall {
+                derived,
+                declaration_start,
+                dependencies,
+            },
+        );
+    }
+    inferred
 }
 
 fn namespace_wrapper_inputs(
