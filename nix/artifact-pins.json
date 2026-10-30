@@ -21,8 +21,8 @@
       "sha256": "qbTCdcq3oiZQKP+ypuzFvfG5L3ux9XC6B7hBlUJivJA="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-33bcf877421f/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "M7z4d0IfJFiO/sZyVKsayb9L8s12RTD6eVLzE/1aZqM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-76b7c75869d3/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "drfHWGnTZ6OBjGeoqAyWSo0EyThNodSjTpISyuLxRJQ="
     },
     "difftree": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-b55aaeb9f200/difftree-0.1.0-py3-none-any.whl",
@@ -253,8 +253,8 @@
       "sha256": "xcA/mxVX0EX3Od3hUzazdednfRG1bUgcMiEXe1QWFk4="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-02a5db26656a/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "AqXbJmVq0JNEzzeBwd4ia2C0hG0zjK+j8HotrrdBjkU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-b9005af21dbb/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "uQBa8h27EtRAl3TwuWUdXO7z/GrTIkU3pyLvx76VKgk="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-1e5587a4a07a/ci_reliability.skill",
