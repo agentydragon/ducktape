@@ -97,13 +97,14 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
-A flat top-level `models` map allowlists model route IDs. Each entry allows reasoning efforts,
-declares `api: responses`, and sets independent `responses.dialect` (`lite` or `standard`) and
-`exec_encoding` (`freeform` or `json`) settings. A single top-level `llm_proxy_url` and credential
-source configure the connection;
-upstream routing belongs to the proxy. Unsupported APIs and missing or unknown
-protocol settings are rejected. Only Responses is implemented; future adapters own their native
-wire and continuation formats. JSON encoding exposes a single
+A flat top-level `models` map allowlists public route IDs and reasoning efforts. Each entry binds a
+named `connection`, explicit `provider_model`, `api` (`responses` or `anthropic_messages`) and
+`exec_encoding`. Connections declare a base URL and `auth.type` (`bearer` or `anthropic_api_key`),
+with exactly one inline credential or rotating credential file. URLs cannot contain credentials,
+query strings or fragments. Callers cannot select connections. Responses settings declare a
+`lite` or `standard` dialect; Anthropic settings declare native request features and require JSON
+exec. Unknown APIs, mixed API settings and invalid feature combinations are rejected.
+JSON encoding exposes a single
 function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
 is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
 variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
@@ -114,7 +115,8 @@ retained in provider history and answered with the matching function or custom t
 unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
 unsupported output items, duplicate call IDs, and configured names used with the wrong item type
 remain validation failures.
-Model changes cannot change API, dialect or exec encoding within a Session. Route contracts must remain fixed
+Model changes cannot change connection, API, dialect or exec encoding within a Session. Anthropic
+also requires the same provider model and request options to preserve signed continuation. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.
 Admission validates the projected model and effort after earlier queued commands under the
@@ -134,6 +136,38 @@ Streamed `response.output_item.done` items are authoritative for execution and
 continuation, matching Codex. `response.completed.output` is retained as evidence
 but does not replace or supplement them: Antigravity through LiteLLM can rewrite
 reasoning and add terminal-only messages.
+
+Anthropic Messages uses a native opaque message envelope plus function-call projections for the
+shared executor. Projections never enter the Anthropic wire transcript. The adapter preserves
+signed thinking, redacted thinking and compaction content without translating their fields.
+Native text/thinking/tool observations reference the original event evidence. `message_stop` with
+`end_turn` completes a turn; `tool_use` requires at least one complete object input. Eager JSON
+fragments are observed but never executed before terminal validation. Errors, unsupported blocks,
+inconsistent stop reasons and incomplete JSON cannot execute partial calls. A missing terminal
+event leaves the sampling intent outcome unknown.
+
+Anthropic's stable `system` contains base and standing instructions. Environment and active-handle
+changes append durable user context. Automatic prompt caching uses configured `5m` or `1h` TTL.
+Cache diagnostics reference the last ordinary provider message ID in append-only conversation,
+including after restart and compaction. Native usage preserves cache counters and compaction
+iterations. Context estimates include input, cache-creation, cache-read and output tokens.
+
+With `per_message_effort`, the launch `output_config.effort` stays fixed. Applying an effort command
+stores an inline `role: system`, empty-content output-config control, enabled with
+`mid-conversation-output-config-2026-07-01`. Binding validation uses
+`thinking-binding-controls-2026-08-01`. Strict `exec` schemas and `eager_input_streaming` are per-tool
+settings; host-side XOR, type and numeric validation remains authoritative before dispatch.
+
+Anthropic manual and automatic compaction use `compaction: {type: summarize}` and
+`compact-2026-09-04`. The request uses the same model, system and tools as ordinary sampling.
+The sampler compacts only a settled prefix, optionally retaining complete recent turns unchanged.
+It never inserts a control between the summary and kept turns. A result must contain exactly one
+nonempty signed compaction block and shrink serialized active context. A single transaction swaps
+context and settles the command under the original-context/lease fence; original conversation and
+History survive. Summarized effort stops applying at the provider, so restoration is deferred until
+the first new user message after kept turns. Native compaction puts the summary first and does not
+prepend the Responses environment reinjection. Background compaction and dynamic definitions are
+deferred.
 
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
@@ -280,16 +314,17 @@ same execution session and retry once with the same ID and cursor. The adapter r
 frames to the sampler's existing boundary journal without exposing native JSON as an execution API.
 For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
 image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
-request carries Codex's `gpt-6.1-sol` base instructions as
-`instructions`, whatever the model. Standing instructions are supported; remote
-AGENTS.md discovery, subagents, skills/MCP, approvals/hooks and a Claude sampler are deferred.
+request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
+`system`, whatever the model. Standing instructions are supported; remote
+AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
 
 The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
 the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
 although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
 precedes the first input; afterwards an update is recorded before a turn's input, or before a
 sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
-renders only the date), and compaction re-injects the full context before the compaction item. Timezone and
+renders only the date). Responses compaction re-injects the full context before the compaction item;
+Anthropic preserves its signed summary as the first message. Timezone and
 Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
 those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
 initial context renders an update; Codex resolves the shell before its first render.
@@ -297,7 +332,11 @@ initial context renders an update; Codex resolves the shell before its first ren
 ## Evidence and continuation
 
 Provider requests/responses, tool intents/results, commands and context checkpoints commit in the
-sampler DB. History is a separate retained evidence/read model. A transactional event outbox emits
+sampler DB. Each provider intent stores its final serialized request before dispatch. Transport
+bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
+usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
+at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
+A DB write failure prevents further effect dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
 raw `BoundaryRecord` observations plus source-linked normalized reasoning, text, tool and turn
 records. `ExecutionProgress` preserves code-cell visibility where upstream native APIs lack it.
 Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.

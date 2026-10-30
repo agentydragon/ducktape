@@ -62,7 +62,7 @@ from agentplane.system_tests import launch_preset, probe_credential, runtime_gra
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
+from agentplane.x.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
@@ -198,24 +198,32 @@ def environment(
         central_sampler_props = CentralSamplerProps(
             models={
                 GPT6_LUNA_RESPONSES.id: ModelConfig(
+                    connection="llm-ingress",
+                    provider_model=GPT6_LUNA_RESPONSES.id,
                     reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
                     api="responses",
                     responses=ResponsesConfig(dialect="lite"),
                     exec_encoding="freeform",
                 )
             },
-            llm_proxy_url=llm_ingress.proxied_url(NAMESPACE),
-            credential_file=Path("/var/run/secrets/central-sampler/llm"),
+            connections={
+                "llm-ingress": ConnectionConfig(
+                    base_url=llm_ingress.proxied_url(NAMESPACE),
+                    auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+                )
+            },
             max_live_sessions=2,
             turn_timeout_seconds=60,
             rpc_timeout_seconds=10,
             executor_initialize_timeout_seconds=120 if vm_sandboxes else 30,
             lease_seconds=60,
         )
+    if central_sampler:
+        routes = replace(routes, central_sampler=(GPT6_LUNA_RESPONSES,))
     catalog = app_settings.model_catalog(routes, central_sampler_enabled=central_sampler)
     if central_sampler:
         # This fixture exercises the pinned Lite host with its official model.
-        catalog.harnesses[Harness.CENTRAL_SAMPLER] = [GPT6_LUNA_RESPONSES.id]
+        assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [GPT6_LUNA_RESPONSES.id]
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",

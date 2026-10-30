@@ -13,7 +13,28 @@ import (
 	"strings"
 )
 
-const maxProviderErrorBytes = 1024 * 1024
+const (
+	maxProviderErrorBytes  = 1024 * 1024
+	maxProviderStreamBytes = 64 * 1024 * 1024
+)
+
+// Capture transport bytes before parsing, including a final incomplete SSE event. JSON encodes
+// []byte as base64, preserving UTF-8 codepoints split across network reads without replacement.
+type providerCaptureReader struct {
+	reader   io.Reader
+	ctx      context.Context
+	evidence *ResponseEvidence
+}
+
+func (r providerCaptureReader) Read(buffer []byte) (int, error) {
+	n, readErr := r.reader.Read(buffer)
+	if n > 0 && r.evidence != nil {
+		if err := r.evidence.Store.ProtocolEvent(r.ctx, r.evidence.Owner, r.evidence.IntentID, "provider_wire", "received", map[string]any{"bytes": buffer[:n]}); err != nil {
+			return 0, err
+		}
+	}
+	return n, readErr
+}
 
 // Codex rust-v0.162.1 codex-rs/models-manager/models.json: gpt-6.1-sol
 // model_messages.instructions_template, used for every model. Pre-commit trims trailing whitespace.
@@ -31,12 +52,20 @@ type ResponseEvidence struct {
 }
 
 type ProviderResponse struct {
-	Terminal *ResponsesTerminal
-	Output   []ResponsesItem
-	Events   []ResponsesEvent
+	Terminal               *ResponsesTerminal
+	Output                 []ResponsesItem
+	Events                 []ResponsesEvent
+	AnthropicMessage       json.RawMessage
+	AnthropicEvents        []json.RawMessage
+	AnthropicContextTokens *int
+	HTTPStatus             int
+	ProviderRequestID      string
 }
 
 func (r ProviderResponse) Audit() map[string]any {
+	if len(r.AnthropicMessage) > 0 {
+		return map[string]any{"response": r.AnthropicMessage, "events": r.AnthropicEvents, "http_status": r.HTTPStatus, "provider_request_id": r.ProviderRequestID}
+	}
 	return map[string]any{"response": r.Terminal, "events": r.Events}
 }
 
@@ -167,6 +196,9 @@ func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]Responses
 	answered := map[string]bool{}
 	adaptNotifications := config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON
 	for _, item := range items {
+		if item.Type == ResponsesItemEffort {
+			continue
+		}
 		if adaptNotifications && item.IsToolOutput() {
 			if answered[item.CallID] {
 				texts := make([]string, 0, len(item.Output))
@@ -258,8 +290,14 @@ func Sample(ctx context.Context, client *http.Client, proxyURL, credential strin
 		return nil, err
 	}
 	defer response.Body.Close()
+	reader := providerCaptureReader{reader: response.Body, ctx: ctx, evidence: evidence}
+	if evidence != nil {
+		if err := evidence.Store.ProtocolEvent(ctx, evidence.Owner, evidence.IntentID, "provider_http", "received", map[string]any{"http_status": response.StatusCode, "provider_request_id": response.Header.Get("x-request-id"), "content_type": response.Header.Get("content-type")}); err != nil {
+			return nil, err
+		}
+	}
 	if response.StatusCode >= http.StatusBadRequest {
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxProviderErrorBytes+1))
+		body, readErr := io.ReadAll(io.LimitReader(reader, maxProviderStreamBytes))
 		if readErr != nil {
 			return nil, readErr
 		}
@@ -268,7 +306,7 @@ func Sample(ctx context.Context, client *http.Client, proxyURL, credential strin
 		}
 		return nil, &KnownFailureError{Evidence: map[string]any{"http_status": response.StatusCode, "body": string(body)}}
 	}
-	return readProviderStream(ctx, response.Body, evidence)
+	return readProviderStream(ctx, io.LimitReader(reader, maxProviderStreamBytes), evidence)
 }
 
 func readProviderStream(ctx context.Context, reader io.Reader, evidence *ResponseEvidence) (*ProviderResponse, error) {
@@ -353,4 +391,29 @@ func equalJSON(left, right any) bool { return bytes.Equal(mustJSON(left), mustJS
 func mustJSON(value any) []byte {
 	data, _ := json.Marshal(value)
 	return data
+}
+
+// Authentication is deliberately absent. This record is committed in the same transaction as
+// the pending intent, before any upstream request can be sent.
+func providerRequestAudit(kind string, connection ConnectionConfig, config ModelConfig, body any, wire []byte) map[string]any {
+	headers := map[string]string{"content-type": "application/json"}
+	path := "/v1/responses"
+	if config.API == APIStyleAnthropicMessages {
+		path = "/v1/messages"
+		headers["anthropic-version"] = "2023-06-01"
+		if betas := anthropicBetas(config); betas != "" {
+			headers["anthropic-beta"] = betas
+		}
+	} else {
+		if config.Responses.Dialect == ResponsesDialectLite {
+			headers["x-openai-internal-codex-responses-lite"] = "true"
+		}
+		if kind == "compaction" {
+			headers["x-codex-beta-features"] = "remote_compaction_v2"
+		}
+	}
+	return map[string]any{
+		"kind": kind, "api": config.API, "connection": config.Connection, "provider_model": config.ProviderModel,
+		"method": "POST", "url": strings.TrimRight(connection.BaseURL, "/") + path, "headers": headers, "body": body, "wire_request": string(wire),
+	}
 }

@@ -140,14 +140,17 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
 				return ErrInvalid
 			}
-			if targetConfig.API != currentConfig.API || targetConfig.Responses != currentConfig.Responses || targetConfig.ExecEncoding != currentConfig.ExecEncoding {
+			if !currentConfig.Compatible(targetConfig) {
 				return ErrPrecondition
 			}
 		}
 		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
 			return ErrInvalid
 		}
-		if command.GetCompact() != nil && currentConfig.Responses.Dialect == ResponsesDialectStandard {
+		if effort := command.GetChangeReasoningEffort(); effort != nil && currentConfig.API == APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
+			return ErrPrecondition
+		}
+		if command.GetCompact() != nil && (currentConfig.Responses.Dialect == ResponsesDialectStandard || (currentConfig.API == APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
 			return ErrPrecondition
 		}
 		return nil

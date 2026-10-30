@@ -379,6 +379,34 @@ data:
           max_input_tokens: 200000
           max_output_tokens: 64000
           max_tokens: 64000
+      - model_name: anthropic-api/ant-messages/claude-opus-5-5
+        litellm_params:
+          model: anthropic/claude-opus-5-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-sonnet-5-5
+        litellm_params:
+          model: anthropic/claude-sonnet-5-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-haiku-5-5
+        litellm_params:
+          model: anthropic/claude-haiku-5-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-fable-5-1
+        litellm_params:
+          model: anthropic/claude-fable-5-1
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
       - model_name: antigravity/ant-messages/claude-opus-4-6-thinking
         litellm_params:
           model: anthropic/claude-opus-4-6-thinking

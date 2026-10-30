@@ -467,8 +467,11 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         settings = CentralSamplerSettings.model_validate_json(
             _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
         )
-        assert settings.llm_proxy_url == llm_ingress.proxied_url(NAMESPACE)
-        assert str(settings.credential_file) == "/var/run/secrets/central-sampler/llm"
+        ingress_connection = settings.connections["llm-ingress"]
+        assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
+        assert ingress_connection.auth.type == "bearer"
+        assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
+        assert set(settings.connections) == {"llm-ingress"}
         assert settings.rpc_timeout_seconds == 10
         assert settings.executor_initialize_timeout_seconds == (120 if vm else 30)
         without_initialize_timeout = CentralSamplerSettings.model_validate(
@@ -480,6 +483,10 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         with pytest.raises(ValidationError):
             CentralSamplerSettings.model_validate(invalid_timeout)
         assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+        model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
+        assert model.connection == "llm-ingress"
+        assert model.provider_model == fixture_chart.GPT6_LUNA_RESPONSES.id
+        assert model.api == "responses"
         assert any(
             mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
             for mount in container["volumeMounts"]

@@ -1444,7 +1444,11 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		conversation.ContextItems = append([]ResponsesItem{environmentItem}, replacement...)
+		if len(replacement) > 0 && replacement[0].Type == ResponsesItemAnthropicMessage {
+			conversation.ContextItems = replacement
+		} else {
+			conversation.ContextItems = append([]ResponsesItem{environmentItem}, replacement...)
+		}
 		conversation.EnvironmentContext = &environment
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
@@ -1902,6 +1906,11 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetChangeReasoningEffort() != nil:
 			previous := session.Effort
 			session.Effort = payload.GetChangeReasoningEffort().GetEffort()
+			marker := ResponsesItem{Type: ResponsesItemEffort, Input: session.Effort}
+			conversation.Items = append(conversation.Items, marker)
+			if conversation.ContextItems != nil {
+				conversation.ContextItems = append(conversation.ContextItems, marker)
+			}
 			next.Outcome = samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
 			if err := setCommandOutcome(ctx, tx, sessionID, next.ID, next.Outcome, nil); err != nil {
 				return err

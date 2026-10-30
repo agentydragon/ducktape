@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
+    ANTHROPIC_API_LATEST_ROUTES,
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
@@ -25,10 +26,13 @@ class HarnessRoutes:
     claude: tuple[Route, ...]
     # Responses routes shared by the Codex and central sampler pickers.
     codex: tuple[Route, ...]
+    # Routes offered by the service-side central sampler. This is independent of Codex so
+    # API-only models never become Codex models through the subscription-compatible wrapper.
+    central_sampler: tuple[Route, ...] = ()
 
     @property
     def all(self) -> tuple[Route, ...]:
-        return tuple(dict.fromkeys((*self.claude, *self.codex)))
+        return tuple(dict.fromkeys((*self.claude, *self.codex, *self.central_sampler)))
 
 
 # Agentplane's hosted Claude and Codex pickers share the supported Antigravity Claude
@@ -53,6 +57,12 @@ _AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUT
 STAGING_APP_MODELS = HarnessRoutes(
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
     codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
+    central_sampler=(
+        *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
+        *_AGENTPLANE_ANTIGRAVITY_ROUTES,
+        *_AGENTPLANE_OLLAMA_OPENAI_ROUTES,
+        *ANTHROPIC_API_LATEST_ROUTES,
+    ),
 )
 
 # Client context budgets, not inferred from Ollama num_ctx or provider limits. The ingress serves

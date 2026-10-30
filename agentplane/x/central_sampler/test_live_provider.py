@@ -19,7 +19,7 @@ from pydantic import SecretStr
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
+from agentplane.x.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.x.central_sampler.testing import METADATA, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import IntentSnapshot, Store
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -72,19 +72,27 @@ async def test_agent_runs_a_nested_command_and_continues(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     model = os.environ["OPENAI_MODEL"]
-    base = settings(database_url, "unused", execution_target, codex_binary, code_mode_host, undeclared_outputs_dir())
+    base = settings(
+        database_url, "https://unused.invalid", execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+    )
     config = base.model_copy(
         update={
             "models": {
                 model: ModelConfig(
+                    connection="provider",
+                    provider_model=model,
                     reasoning_efforts={EFFORT},
                     api="responses",
                     responses=ResponsesConfig(dialect="lite"),
                     exec_encoding="freeform",
                 )
             },
-            "llm_proxy_url": os.environ["OPENAI_BASE_URL"].rstrip("/").removesuffix("/v1"),
-            "credential": SecretStr(os.environ["OPENAI_API_KEY"]),
+            "connections": {
+                "provider": ConnectionConfig(
+                    base_url=os.environ["OPENAI_BASE_URL"].rstrip("/").removesuffix("/v1"),
+                    auth=AuthConfig(type="bearer", credential=SecretStr(os.environ["OPENAI_API_KEY"])),
+                )
+            },
             "turn_timeout_seconds": TURN_TIMEOUT_SECONDS,
         }
     )

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Self, override
 from uuid import uuid4
 
@@ -19,7 +20,7 @@ from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchang
 from agentplane.proto import runner_pb2, sandboxes_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig, Settings
+from agentplane.x.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
@@ -116,16 +117,23 @@ def settings(
     return Settings(
         database_url=database_url,
         listen="127.0.0.1:0",
-        llm_proxy_url=endpoint,
-        credential=SecretStr("test-key"),
+        connections={
+            "provider": ConnectionConfig(
+                base_url=endpoint, auth=AuthConfig(type="bearer", credential=SecretStr("test-key"))
+            )
+        },
         models={
             "test-model": ModelConfig(
+                connection="provider",
+                provider_model="test-model",
                 reasoning_efforts={"", "high"},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),
                 exec_encoding="freeform",
             ),
             "second-model": ModelConfig(
+                connection="provider",
+                provider_model="second-model",
                 reasoning_efforts={"", "high"},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),
@@ -170,7 +178,7 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
     binary = get_required_path(own_repo_rlocation("agentplane/x/central_sampler/cmd/main_bin_/main_bin"))
     if config.database_url is None:
         raise ValueError("system-test sampler settings require database_url")
-    with listen_tcp() as bound:
+    with listen_tcp() as bound, TemporaryDirectory(prefix="sampler-credentials-") as credentials_directory:
         fd = bound.socket.fileno()
         values = config.model_dump(mode="json", exclude_none=True)
         values["database_url"] = (
@@ -181,8 +189,16 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
         )
         values["listen"] = f"fd:{fd}"
         values["kubeconfig"] = str(kubeconfig)
-        if config.credential is not None:
-            values["credential"] = config.credential.get_secret_value()
+        for index, (connection, connection_config) in enumerate(config.connections.items()):
+            credential = connection_config.auth.credential
+            if credential is not None:
+                # Configs are undeclared test outputs; credential contents must never be uploaded.
+                token_path = Path(credentials_directory) / f"provider-{index}.token"
+                token_path.write_text(credential.get_secret_value())
+                token_path.chmod(0o600)
+                auth = values["connections"][connection]["auth"]
+                auth.pop("credential", None)
+                auth["credential_file"] = str(token_path)
         config_path = directory / "sampler-config.json"
         config_path.write_text(json.dumps(values))
         migration = await asyncio.to_thread(

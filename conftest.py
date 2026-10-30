@@ -28,7 +28,9 @@ def pytest_configure(config: pytest.Config) -> None:
     config.option.asyncio_mode = "auto"
 
     # External requirements - LLM APIs
-    config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
+    config.addinivalue_line(
+        "markers", "live_openai_api(credential_env='OPENAI_API_KEY'): tests requiring a live provider key"
+    )
     config.addinivalue_line(
         "markers", "httpx2(assert_all_called=False, assert_all_mocked=False, base_url=...): configure pytest-httpx2"
     )
@@ -52,5 +54,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     # the missing key. fail() ensures explicitly-run live targets fail loudly.
     # Wildcard runs (bazel test //...) exclude live targets via --test_tag_filters
     # in CI and Claude Code web bazelrc, so this only fires on explicit invocations.
-    if item.get_closest_marker("live_openai_api") is not None and not os.getenv("OPENAI_API_KEY"):
-        pytest.fail("OPENAI_API_KEY not set — cannot run live OpenAI test")
+    if marker := item.get_closest_marker("live_openai_api"):
+        credential_env = marker.kwargs.get("credential_env", "OPENAI_API_KEY")
+        if not os.getenv(credential_env):
+            pytest.fail(f"{credential_env} not set — cannot run live provider test")

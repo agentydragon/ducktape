@@ -203,18 +203,25 @@ def test_shared_coding_models_preserve_provider_protocols(staging_manifests: lis
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.codex]
-    assert catalog["harnesses"]["HARNESS_CODEX"] == catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
+    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.central_sampler]
+    assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
-    assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}
-    for route in STAGING_APP_MODELS.codex:
+    assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.central_sampler}
+    for route in STAGING_APP_MODELS.central_sampler:
         model = sampler["models"][route.id]
-        assert model["api"] == "responses"
-        if route.upstream.provider == Provider.CHATGPT:
+        if route.upstream.provider == Provider.ANTHROPIC_API:
+            assert model["api"] == "anthropic_messages"
+            assert model["connection"] == "anthropic-api"
+            assert model["exec_encoding"] == "json"
+        elif route.upstream.provider == Provider.CHATGPT:
+            assert model["api"] == "responses"
+            assert model["connection"] == "llm-ingress"
             assert model["responses"] == {"dialect": "lite"}
             assert model["exec_encoding"] == "freeform"
         else:
+            assert model["api"] == "responses"
+            assert model["connection"] == "llm-ingress"
             assert model["responses"] == {"dialect": "standard"}
             assert model["exec_encoding"] == "json"
 

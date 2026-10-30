@@ -362,7 +362,7 @@ sampler, and Gateway delegates
 remain scoped per Session. Pod CPU/memory limits bound the Go service and shared host in aggregate.
 Stronger kernel-enforced isolation for cells or Sessions is deferred for future evaluation.
 
-The selected provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
+The initial provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
 and executor. Compaction, wait, stdin and interrupts are required. Standing instructions are
 supported; remote AGENTS.md discovery is useful but deferred. Executor replacement is deferred:
 new Sessions bind one Sandbox UID/incarnation. See the [API](../x/central_sampler/sampler.proto),
@@ -373,6 +373,16 @@ tool and lifecycle Events plus underlying evidence through existing RunnerIngres
 ID is the inference identity, with Sandbox/incarnation identifying the executor. Central requests
 can carry a trusted Session metadata claim into Langfuse. Request/response evidence and normalized
 frontend projection are distinct; Thread remains a lossy view for display.
+
+### Anthropic extension
+
+Planning request, 2026-10-30: support organization-paid Anthropic Messages with server-side
+compaction. The selected direction is direct sampler-to-Anthropic calls with full
+request/response content in the sampler DB; optional Langfuse export can follow independently.
+The [component plan](../x/central_sampler/plans/anthropic.md) records the routing/credential decision,
+direct real-model acceptance and later background compaction. Status and dependencies are in
+[`CENTRAL_SAMPLER_ANTHROPIC_ROUTING`](task_dag.md#central_sampler_anthropic_routing--direct-provider-connections-and-credentials)
+and its downstream nodes. This is a planned extension, not a change to the deployed provider path.
 
 ### Coexistence and history across backends
 

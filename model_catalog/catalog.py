@@ -246,6 +246,7 @@ class RouteAlias:
 
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
+_ANTHROPIC_5_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # CLIProxyAPI's Codex model-registry snapshot declares these five API reasoning
 # levels for GPT-6 Astra, Luna, Sol, and 6.1 Sol:
 # https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
@@ -668,6 +669,38 @@ HAIKU_API = Route(
     publish_limits=True,
 )
 ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
+# Current public Anthropic API models, checked against Anthropic's model overview and
+# per-model API documentation on 2026-10-30. These use fixed unversioned API IDs, adaptive
+# thinking, all five effort levels, and explicit model-level function calling. Context and
+# output limits are Anthropic's published limits, not measured account capacity.
+# Sources: https://platform.claude.com/docs/en/models/overview and the model-specific pages.
+_ANTHROPIC_API_5_5_LIMITS = TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+OPUS_5_5_API = Route(
+    Model("claude-opus-5-5", "Opus 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+SONNET_5_5_API = Route(
+    Model("claude-sonnet-5-5", "Sonnet 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+HAIKU_5_5_API = Route(
+    Model("claude-haiku-5-5", "Haiku 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+FABLE_5_1_API = Route(
+    Model("claude-fable-5-1", "Fable 5.1", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+ANTHROPIC_API_LATEST_ROUTES = (OPUS_5_5_API, SONNET_5_5_API, HAIKU_5_5_API, FABLE_5_1_API)
+ANTHROPIC_API_ROUTES = (*ANTHROPIC_API_ROUTES, *ANTHROPIC_API_LATEST_ROUTES)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(
     _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
