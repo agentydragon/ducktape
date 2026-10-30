@@ -1,8 +1,9 @@
 package runner
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +16,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	runnertransporttesting "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
 	"github.com/coder/websocket"
@@ -58,7 +60,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.control.Listen(r.executorRelay)
+	listener, server, err := r.control.Listen(r.execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +144,25 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	if _, err := statusClient.GetStatus(callContext("pod-uid-2", second.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("successor watcher was deactivated by its predecessor: %v", err)
 	}
+	staleExecution, err := runner_execpb.NewRunnerExecClient(conn).OpenSession(
+		callContext("pod-uid-1", first.GetRunnerBootId(), 1),
+		&executionpb.OpenSessionRequest{
+			Scope: &executionpb.ExecutionScope{
+				Destination: &sandboxespb.SandboxDestination{
+					Sandbox: "sandbox", SandboxUid: "sandbox-uid",
+					Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
+				},
+				ExpectedIncarnationUid: "pod-uid-2", SessionId: "sampler-session",
+			},
+			RequestId: "stale-open-session",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := staleExecution.Recv(); status.Code(err) != codes.Unavailable {
+		t.Fatalf("OpenSession on a superseded epoch = %v, want Unavailable", err)
+	}
 }
 
 func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
@@ -176,7 +197,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.control.Listen(r.executorRelay)
+	listener, server, err := r.control.Listen(r.execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +316,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	}
 }
 
-func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
+func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	ca := runnertransporttesting.NewCA(t)
 	runnerURI, err := runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
 	if err != nil {
@@ -306,7 +327,7 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.control.Listen(r.executorRelay)
+	listener, server, err := r.control.Listen(r.execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,186 +365,130 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 		control.EpochMetadata, "1",
 	)
 	executorClient := runner_execpb.NewRunnerExecClient(conn)
-	refused, err := executorClient.Connect(callContext)
+	refused, err := executorClient.OpenSession(callContext, &executionpb.OpenSessionRequest{
+		Scope: &executionpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: "sandbox", SandboxUid: "sandbox-uid",
+				Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
+			},
+			ExpectedIncarnationUid: "pod-uid", SessionId: "session-1",
+		},
+		RequestId: "open-unconfigured-session",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := refused.Send(&executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
-	}); err != nil {
-		t.Fatalf("send direct executor open: %v", err)
-	}
-	ready, err := refused.Recv()
-	if err != nil || ready.GetReady() == nil || ready.GetReady().GetAccepted() {
-		t.Fatalf("unconfigured executor response = %v, %v; want rejected Ready", ready, err)
+	response, err := refused.Recv()
+	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED {
+		t.Fatalf("unconfigured execution session response = %v, %v; want rejected outcome", response, err)
 	}
 	if _, err := refused.Recv(); err != io.EOF {
-		t.Fatalf("rejected executor stream ended with %v, want EOF", err)
-	}
-
-	const maxExecutorStreams = 8
-	closeStreams := make([]func() error, 0, maxExecutorStreams)
-	defer func() {
-		for _, closeStream := range closeStreams {
-			_ = closeStream()
-		}
-	}()
-	for i := 0; i < maxExecutorStreams; i++ {
-		stream, err := executorClient.Connect(callContext)
-		if err != nil {
-			t.Fatalf("open direct executor stream %d: %v", i, err)
-		}
-		if _, err := stream.Header(); err != nil {
-			t.Fatalf("wait for pending direct executor stream %d: %v", i, err)
-		}
-		closeStreams = append(closeStreams, stream.CloseSend)
-	}
-	tooManyCtx, cancelTooMany := context.WithTimeout(callContext, time.Second)
-	defer cancelTooMany()
-	tooMany, err := executorClient.Connect(tooManyCtx)
-	if err != nil {
-		if status.Code(err) == codes.ResourceExhausted {
-			return
-		}
-		t.Fatalf("open excess direct executor stream: %v", err)
-	}
-	if _, err := tooMany.Header(); status.Code(err) != codes.ResourceExhausted {
-		// Header may be empty even when the server rejects a stream before sending metadata;
-		// Recv observes the final gRPC status in that case.
-		if _, recvErr := tooMany.Recv(); status.Code(recvErr) != codes.ResourceExhausted {
-			t.Fatalf("excess direct executor stream errors = header %v, receive %v; want ResourceExhausted", err, recvErr)
-		}
+		t.Fatalf("rejected execution session stream ended with %v, want EOF", err)
 	}
 }
 
 func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
-	const burst = 100
-	start := make(chan struct{})
-	secondStart := make(chan struct{})
-	finish := make(chan struct{})
-	sent := make(chan error, 2)
+	const burst = 12
+	const notificationData = 600_000
+	sent := make(chan error, 1)
 	execServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(w, request, nil)
 		if err != nil {
-			sent <- err
+			select {
+			case sent <- err:
+			default:
+			}
 			return
 		}
 		defer connection.CloseNow()
-		select {
-		case <-start:
-		case <-finish:
-			return
-		}
-		writeBurst := func() error {
-			for i := range burst {
-				if err := connection.Write(request.Context(), websocket.MessageBinary, bytes.Repeat([]byte{byte(i)}, 1024)); err != nil {
-					return err
-				}
+		_, payload, err := connection.Read(request.Context())
+		if err != nil {
+			select {
+			case sent <- err:
+			default:
 			}
-			return nil
-		}
-		if err := writeBurst(); err != nil {
-			sent <- err
 			return
+		}
+		var initialize struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(payload, &initialize); err != nil {
+			select {
+			case sent <- err:
+			default:
+			}
+			return
+		}
+		response := []byte(fmt.Sprintf(`{"id":%q,"result":{"sessionId":"native-session","environmentInfo":{"shell":{"name":"bash","path":"/bin/bash"}}}}`, initialize.ID))
+		if err := connection.Write(request.Context(), websocket.MessageText, response); err != nil {
+			select {
+			case sent <- err:
+			default:
+			}
+			return
+		}
+		if _, _, err := connection.Read(request.Context()); err != nil { // initialized notification
+			select {
+			case sent <- err:
+			default:
+			}
+			return
+		}
+		for i := range burst {
+			payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", notificationData)))
+			if err := connection.Write(request.Context(), websocket.MessageText, payload); err != nil {
+				select {
+				case sent <- err:
+				default:
+				}
+				return
+			}
 		}
 		sent <- nil
-		select {
-		case <-secondStart:
-		case <-finish:
-			return
-		}
-		sent <- writeBurst()
-		<-finish
+		<-request.Context().Done()
 	}))
 	defer execServer.Close()
-	defer close(finish)
 	r := newExecutorLifecycleRunnerWithURL(t, "ws"+strings.TrimPrefix(execServer.URL, "http"), func(context.Context) (*supervision.Instance, error) {
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, nil)
-	listener, server, err := r.control.Listen(r.executorRelay)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	credentials, err := r.config.Control.Security.ClientCredentials("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), codexExecServerTestTimeout)
-	defer cancel()
-	watch, err := runnerservicepb.NewRunnerClient(conn).WatchState(ctx, &runnerservicepb.WatchStateRequest{
-		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 1,
+	client := startDirectExecutionTestClient(t, r, "pod-uid")
+	stream, err := client.executor.OpenSession(client.callCtx, &executionpb.OpenSessionRequest{
+		Scope: client.scope("session-1"), RequestId: "open-notification-session",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := watch.Recv()
-	if err != nil {
-		t.Fatal(err)
+	opened, err := stream.Recv()
+	if err != nil || opened.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("execution session readiness = %v, %v", opened, err)
 	}
-	callContext := metadata.AppendToOutgoingContext(
-		ctx,
-		control.SandboxMetadata, "sandbox-uid", control.IncarnationMetadata, "pod-uid",
-		control.BootMetadata, first.GetRunnerBootId(), control.EpochMetadata, "1",
-	)
-	stream, err := runner_execpb.NewRunnerExecClient(conn).Connect(callContext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}}}); err != nil {
-		t.Fatal(err)
-	}
-	ready, err := stream.Recv()
-	if err != nil || !ready.GetReady().GetAccepted() {
-		t.Fatalf("executor readiness = %v, %v", ready, err)
-	}
-	close(start)
-	select {
-	case err := <-sent:
-		if err != nil {
-			t.Fatalf("executor produced burst: %v", err)
-		}
-	case <-ctx.Done():
-		t.Fatal("executor output burst did not reach Runner")
-	}
+	var transferred int
 	for i := range burst {
-		frame, err := stream.Recv()
+		response, err := stream.Recv()
 		if err != nil {
-			t.Fatalf("receive burst frame %d: %v", i, err)
+			t.Fatalf("receive notification %d: %v", i, err)
 		}
-		if message := frame.GetMessage(); message == nil || !bytes.Equal(message.GetPayload(), bytes.Repeat([]byte{byte(i)}, 1024)) {
-			t.Fatalf("burst frame %d = %v", i, frame)
+		if len(response.GetNativeFrames()) != 1 {
+			t.Fatalf("notification response %d = %v", i, response)
 		}
+		frame := response.GetNativeFrames()[0]
+		want := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", notificationData)))
+		if frame.GetDirection() != "notification" || string(frame.GetPayload()) != string(want) {
+			t.Fatalf("notification %d changed: direction=%q payload bytes=%d", i, frame.GetDirection(), len(frame.GetPayload()))
+		}
+		transferred += len(frame.GetPayload())
 	}
-	close(secondStart)
 	select {
 	case err := <-sent:
 		if err != nil {
-			t.Fatalf("executor produced second burst: %v", err)
+			t.Fatalf("executor produced notifications: %v", err)
 		}
-	case <-ctx.Done():
-		t.Fatal("second executor output burst did not reach Runner")
+	case <-client.ctx.Done():
+		t.Fatal("executor notification stream did not finish")
 	}
-	cancel()
-	stopped := make(chan struct{})
-	go func() {
-		server.GracefulStop()
-		close(stopped)
-	}()
-	select {
-	case <-stopped:
-	case <-time.After(codexExecServerTestTimeout):
-		server.Stop()
-		t.Fatal("Runner stream did not drain after cancellation during a blocked output burst")
+	const maxNativeFrameBytes = 1 << 20
+	if transferred <= 2*maxNativeFrameBytes {
+		t.Fatalf("native evidence transferred %d bytes, want more than %d", transferred, 2*maxNativeFrameBytes)
 	}
 }
 

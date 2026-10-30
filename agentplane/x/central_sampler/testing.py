@@ -100,7 +100,9 @@ async def authentication(directory: Path) -> AsyncIterator[Path]:
             await runner.cleanup()
 
 
-def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: str, host: str, logs: Path) -> Settings:
+def settings(
+    database_url: str, endpoint: str, executor_target: str, codex_binary: str, host: str, logs: Path
+) -> Settings:
     return Settings(
         database_url=database_url,
         listen="127.0.0.1:0",
@@ -125,7 +127,8 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
         code_mode_host=Path(host),
         executor_codex=codex_binary,
         logs=logs,
-        direct_executor_url=executor_url,
+        direct_executor_target=executor_target,
+        direct_executor_insecure_localtest=True,
         max_live_sessions=2,
         turn_timeout_seconds=40,
         rpc_timeout_seconds=10,

@@ -51,11 +51,11 @@ async def completed(
 
 
 async def test_flat_model_routes_enforce_effort_and_session_contract(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         config.models["restricted-model"] = config.models["test-model"].model_copy(
             update={"reasoning_efforts": {"high"}}
@@ -152,12 +152,12 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
 
 
 async def test_session_store_survives_idle_leases_and_is_separate_between_sessions(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             first = open_request(tmp_path)
@@ -203,12 +203,12 @@ async def test_session_store_survives_idle_leases_and_is_separate_between_sessio
 
 
 async def test_api_wait_stdin_queue_compaction_and_restart(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             opened = await stub.OpenSession(open_request(tmp_path), metadata=METADATA, timeout=10)
@@ -355,11 +355,11 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
 
 
 async def test_interrupt_streaming_evidence_and_uid_authorization(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             await stub.OpenSession(open_request(tmp_path), metadata=METADATA, timeout=10)
@@ -426,11 +426,11 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
 
 
 async def test_nested_command_inherits_executor_environment(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             request = open_request(tmp_path)
@@ -462,12 +462,12 @@ async def test_nested_command_inherits_executor_environment(
 
 
 async def test_reasoning_summaries_are_requested_and_reach_history(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         async with service(config) as stub:
@@ -505,12 +505,12 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
 
 
 async def test_restart_never_replays_unresolved_provider_intent(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with AsyncExitStack() as active:
             stub = await active.enter_async_context(service(config))
@@ -550,11 +550,16 @@ async def test_restart_never_replays_unresolved_provider_intent(
 
 
 async def test_interrupt_admission_survives_unavailable_executor(
-    database_url: str, executor_server: ExecutorServer, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str,
+    execution_target: str,
+    executor_server: ExecutorServer,
+    codex_binary: str,
+    code_mode_host: str,
+    tmp_path: Path,
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_server.url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             request = open_request(tmp_path)
@@ -601,12 +606,12 @@ async def test_interrupt_admission_survives_unavailable_executor(
 
 
 async def test_restart_cannot_reconstruct_live_javascript(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         async with service(config) as stub:
@@ -662,12 +667,12 @@ async def test_restart_cannot_reconstruct_live_javascript(
 
 
 async def test_unpolled_process_exit_releases_capacity_and_retains_output(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         config.max_live_sessions = 1
         release = tmp_path / "release-process"
@@ -774,7 +779,7 @@ def tool_outputs(body: dict[str, Any]) -> list[tuple[str, list[str]]]:
 @pytest.mark.parametrize("dialect", ["lite", "standard"])
 async def test_json_exec_runs_shell_resumes_and_recovers(
     database_url: str,
-    executor_url: str,
+    execution_target: str,
     codex_binary: str,
     code_mode_host: str,
     tmp_path: Path,
@@ -782,7 +787,7 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         config = config.model_copy(
             update={
@@ -984,11 +989,11 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
 
 
 async def test_notify_outputs_follow_the_step_that_emitted_them(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         async with service(config) as stub:
@@ -1044,12 +1049,12 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
 
 
 async def test_interrupt_discards_queued_notify_output(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         store = Store(engine)
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         async with service(config) as stub:
@@ -1098,7 +1103,7 @@ async def test_interrupt_discards_queued_notify_output(
 
 
 async def test_view_image_reads_executor_file_and_prepares_cell_image(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     oversized = io.BytesIO()
     Image.new("RGB", (3000, 1000), (255, 0, 0)).save(oversized, format="PNG")
@@ -1120,7 +1125,7 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
     )
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             request = open_request(tmp_path)
@@ -1158,11 +1163,11 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
 
 
 async def test_input_yields_a_running_cell_and_joins_the_turn(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         async with service(config) as stub:

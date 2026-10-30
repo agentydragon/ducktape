@@ -53,9 +53,10 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   commit routed frame batches and exit observations to its journal.
 - `control/`: the gRPC listener, explicit transport security, state observer epochs, RPC fencing,
   state watch and standard gRPC health service. Runner supplies domain RPCs and facts.
-- `executorrelay/`: executor stream admission limits, relay registry, bounded forwarding queues,
-  WebSocket channels and cancellation/join ownership. Runner supplies its admission barrier and
-  executor readiness; aggregate shutdown drains relays before fencing the exec-server.
+- `execution/`: typed process/file RPCs and the local Codex JSON-RPC adapter. An `OpenSession`
+  server stream owns each WebSocket connection; unary calls carry typed operations and return native
+  evidence. Runner supplies admission and readiness; shutdown drains adapter sessions before fencing
+  the exec-server. This adapter owns no persistent state or operation receipts.
 - `transport.go`: Runner-wide `Run` orchestration and component composition. It keeps ingress alive
   while Runner shutdown flushes final acknowledgements.
 - `ingress/`: History connection and authentication, each Session's push protocol (replay, durable

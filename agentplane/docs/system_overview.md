@@ -37,16 +37,16 @@ flowchart LR
     sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
     gateway[Gateway ExecutorGateway]
-    runner[Sandbox Runner]
+    runner[Sandbox Runner and execution adapter]
     executor[Loopback Codex exec-server]
     history[History ingress and Thread fold]
     llm[LLM ingress]
     provider[OpenAI-shaped Responses API]
     dispatcher -->|Sampler gRPC: open, input, controls| sampler
     sampler -->|continuation, commands, evidence outbox| db
-    sampler -->|authenticated exec-server frames| gateway
+    sampler -->|typed execution RPCs| gateway
     gateway -->|mTLS RunnerExec gRPC| runner
-    runner -->|WebSocket| executor
+    runner -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|acknowledged outbox: RunnerIngress.Push| history
     sampler -->|Session identity| llm --> provider
 ```
@@ -56,8 +56,11 @@ logical Sessions through it. The host retains per-Session `store()` / `load()` v
 and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
 Provider continuation stays in the sampler.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
-Gateway relays the pinned upstream exec-server protocol without interpreting tools. Dispatcher
-is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
+Gateway forwards typed process and file RPCs to the Runner, whose execution adapter owns the local
+Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
+connection; process and file operations use unary RPCs. Native frames return as evidence for the
+sampler's existing journal. No new persistence or operation receipts are introduced, and a lost
+reply can still leave an operation outcome unknown. Dispatcher is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history
 or prevent its control RPCs. Existing Dispatcher routing still requires the bound Sandbox object.
 

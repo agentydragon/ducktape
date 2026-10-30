@@ -6,7 +6,8 @@ logical Sessions. `store()` / `load()` values persist across cells and idle turn
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
 enter the conversation where Codex would place them ([SPEC.md](SPEC.md)). Shell, stdin, patch, `view_image` and
-filesystem operations go through Gateway to a Sandbox's loopback exec-server. Existing wrapped Codex and Claude
+filesystem operations use the typed Runner execution API through Gateway to a Sandbox's loopback
+exec-server. Existing wrapped Codex and Claude
 retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
 environment configures it; existing native Sessions are not migrated.
 
@@ -41,12 +42,17 @@ uses exactly one of `credential` or `credential_file`; the service reads the fil
 request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
-`gateway_token_file`. Configure
+`gateway_token_file`. The sampler keeps one typed `OpenSession` stream for the executor session and
+sends process and file operations as typed unary RPCs. Their request IDs correlate with the
+sampler's durable intent journal; they do not deduplicate or cache server results. Configure
 `gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
 it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
 fixtures. Templates accept DNS-label executor names and only these two placeholders. A fixed
-`direct_executor_url` supports standalone fixtures without Gateway; choose exactly one transport.
+`direct_executor_target` supports standalone fixtures without Gateway only when
+`direct_executor_insecure_localtest` is explicitly true and the target is a loopback IP address.
+Choose exactly one Gateway or direct execution target. Production execution uses Gateway bearer
+authentication.
 Optional `history_target` and `history_token_file` enable retained History export.
 
 `max_live_sessions` bounds concurrent active Session drivers; it does not cap the number of stored

@@ -86,8 +86,10 @@ startup completes, before a Gateway state watch connects. The Gateway starts
 `Runner.WatchState` with the Sandbox UID, current workload incarnation UID and Lease connection epoch.
 The Runner adopts that incarnation before sending facts, then sends changed state and a ten-second
 heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID, Runner boot ID
-and connection epoch; a stale epoch is rejected. `RunnerExec.Connect` carries one executor channel
-per stream and shares the Runner's existing executor relay and per-Runner channel limits.
+and connection epoch; a stale epoch is rejected. `RunnerExec.OpenSession` owns one local Codex
+connection per server stream. Typed unary process and file calls use the returned session ID.
+The adapter retains the existing per-Runner session and per-native-frame limits, without adding
+persistence, operation receipts or execution configuration.
 
 `environment` has exactly one discriminator, `kind`:
 

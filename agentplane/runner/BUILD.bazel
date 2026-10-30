@@ -506,7 +506,7 @@ proto_library(
     name = "runner_exec_proto",
     srcs = ["runner_exec.proto"],
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/runner_gateway:executor_gateway_proto"],
+    deps = ["//agentplane/proto:execution_proto"],
 )
 
 py_proto_library_with_mypy_stubs(
@@ -531,7 +531,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb",
     proto = ":runner_exec_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/runner_gateway:executor_gateway_go_proto"],
+    deps = ["//agentplane/proto:execution_go_proto"],
 )
 
 py_proto_library_with_mypy_stubs(
@@ -558,6 +558,7 @@ go_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
     ],
@@ -592,6 +593,7 @@ go_library(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
@@ -602,8 +604,8 @@ go_library(
         "//agentplane/runner/configuration",
         "//agentplane/runner/control",
         "//agentplane/runner/cosi",
+        "//agentplane/runner/execution",
         "//agentplane/runner/executor",
-        "//agentplane/runner/executorrelay",
         "//agentplane/runner/harness",
         "//agentplane/runner/ingress",
         "//agentplane/runner/journal",
@@ -649,6 +651,7 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
@@ -663,7 +666,6 @@ go_test(
         "//agentplane/runner/control",
         "//agentplane/runner/executor",
         "//agentplane/runner/executor/control",
-        "//agentplane/runner/executorrelay",
         "//agentplane/runner/harness",
         "//agentplane/runner/journal",
         "//agentplane/runner/lifecycle",
@@ -672,7 +674,6 @@ go_test(
         "//agentplane/runner/session",
         "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
-        "//agentplane/runner_gateway:executor_gateway_go_proto",
         "//agentplane/runner_transport",
         "//agentplane/runner_transport/testing",
         "//agentplane/sandboxes/lease",

@@ -69,10 +69,10 @@ async def submit(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, comma
 
 @pytest.mark.live_openai_api
 async def test_agent_runs_a_nested_command_and_continues(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     model = os.environ["OPENAI_MODEL"]
-    base = settings(database_url, "unused", executor_url, codex_binary, code_mode_host, undeclared_outputs_dir())
+    base = settings(database_url, "unused", execution_target, codex_binary, code_mode_host, undeclared_outputs_dir())
     config = base.model_copy(
         update={
             "models": {

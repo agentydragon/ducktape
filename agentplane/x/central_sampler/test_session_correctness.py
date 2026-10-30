@@ -3,24 +3,25 @@
 import asyncio
 import base64
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
+import grpc
 import pytest
 import pytest_bazel
-from aiohttp import ClientSession, WSMsgType, web
+from google.protobuf.json_format import MessageToDict
 
+from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
-from agentplane.proto import event_pb2
-from agentplane.runner import runner_service_pb2
+from agentplane.proto import event_pb2, execution_pb2
+from agentplane.runner import runner_exec_pb2_grpc, runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import Store
-from util.net import listen_tcp
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -48,7 +49,7 @@ class ExecutorProxy:
     url: str
     requests: list[dict[str, Any]] = field(default_factory=list)
     replies: list[dict[str, Any]] = field(default_factory=list)
-    initializations: list[tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=list)
+    sessions: list[tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=list)
     dropped: asyncio.Event = field(default_factory=asyncio.Event)
     effect_observed: asyncio.Event = field(default_factory=asyncio.Event)
     dropped_request: dict[str, Any] | None = None
@@ -56,143 +57,133 @@ class ExecutorProxy:
 
 
 @asynccontextmanager
-async def faulting_executor_proxy(executor_url: str, *, drop_method: str, marker: str) -> AsyncIterator[ExecutorProxy]:
-    """Forward to the real exec-server and drop one selected RPC reply."""
+async def faulting_executor_proxy(
+    execution_target: str, *, drop_method: str, marker: str
+) -> AsyncIterator[ExecutorProxy]:
+    """Forward typed RPCs to the real adapter and lose one completed gRPC reply."""
     observed = ExecutorProxy(url="")
 
+    def as_dict(value: Any) -> dict[str, Any]:
+        return MessageToDict(value, preserving_proto_field_name=True)
+
     def is_target_start(request: dict[str, Any]) -> bool:
-        params = request.get("params", {})
-        return request.get("method") == "process/start" and marker in json.dumps(params.get("argv", []))
+        return request.get("method") == "StartProcess" and marker in json.dumps(request.get("argv", []))
 
-    def is_target_read(request: dict[str, Any]) -> bool:
-        if request.get("method") != "process/read":
-            return False
-        process_id = request.get("params", {}).get("processId")
-        return any(
-            is_target_start(start) and start.get("params", {}).get("processId") == process_id
-            for start in observed.requests
-        )
-
-    def is_target(request: dict[str, Any]) -> bool:
+    def is_target(request: dict[str, Any], response: Any) -> bool:
         if drop_method == "process/start":
             return is_target_start(request)
         if drop_method == "process/read":
-            return is_target_read(request)
+            target_processes = {start.get("process_id") for start in observed.requests if is_target_start(start)}
+            return (
+                request.get("method") == "ReadProcess"
+                and request.get("process_id") in target_processes
+                and any(marker.encode() in chunk.data for chunk in response.chunks)
+            )
         raise AssertionError(f"unsupported fault injection method: {drop_method}")
 
-    async def proxy(request: web.Request) -> web.WebSocketResponse:
-        downstream = web.WebSocketResponse(max_msg_size=16 * 1024 * 1024)
-        await downstream.prepare(request)
-        async with ClientSession() as http, http.ws_connect(executor_url, max_msg_size=16 * 1024 * 1024) as upstream:
-            requests_by_id: dict[str, dict[str, Any]] = {}
-            pending_start_reply: tuple[dict[str, Any], dict[str, Any]] | None = None
-            effect_observed = False
+    server = grpc.aio.server()
 
-            async def drop_connection(target_request: dict[str, Any], target_reply: dict[str, Any]) -> None:
-                observed.dropped_request = target_request
-                observed.dropped_reply = target_reply
+    class Proxy(runner_exec_pb2_grpc.RunnerExecServicer):
+        @override
+        async def OpenSession(
+            self, request: execution_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[execution_pb2.OpenSessionResponse]:
+            request_value = as_dict(request)
+            async for response in upstream.OpenSession(request):
+                response_value = as_dict(response)
+                if response.HasField("status"):
+                    observed.sessions.append((request_value, response_value))
+                yield response
+
+        async def forward(
+            self,
+            name: str,
+            request: Any,
+            context: grpc.aio.ServicerContext,
+            upstream_call: Callable[..., Awaitable[Any]],
+        ) -> Any:
+            request_value = {"method": name, **as_dict(request)}
+            observed.requests.append(request_value)
+            response = await upstream_call(request)
+            response_value = {"method": name, **as_dict(response)}
+            observed.replies.append(response_value)
+            if is_target(request_value, response) and not observed.dropped.is_set():
+                observed.dropped_request = request_value
+                observed.dropped_reply = response_value
+                observed.effect_observed.set()
                 observed.dropped.set()
-                await upstream.close()
-                await downstream.close()
+                await context.abort(
+                    grpc.StatusCode.UNAVAILABLE, "injected lost typed gRPC reply after adapter completion"
+                )
+            return response
 
-            async def forward_requests() -> None:
-                async for message in downstream:
-                    if message.type is WSMsgType.TEXT:
-                        payload = json.loads(message.data)
-                        observed.requests.append(payload)
-                        if "id" in payload:
-                            requests_by_id[str(payload["id"])] = payload
-                        await upstream.send_str(message.data)
-                    elif message.type is WSMsgType.BINARY:
-                        await upstream.send_bytes(message.data)
-                    else:
-                        return
+        @override
+        async def StartProcess(
+            self, request: execution_pb2.StartProcessRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.StartProcessResponse:
+            return await self.forward("StartProcess", request, context, upstream.StartProcess)
 
-            async def forward_replies() -> None:
-                nonlocal effect_observed, pending_start_reply
-                async for message in upstream:
-                    if message.type is WSMsgType.TEXT:
-                        payload = json.loads(message.data)
-                        observed.replies.append(payload)
-                        request_id = payload.get("id")
-                        original = requests_by_id.get(str(request_id)) if request_id is not None else None
-                        if original is not None and original.get("method") == "initialize":
-                            observed.initializations.append((original, payload))
+        @override
+        async def ReadProcess(
+            self, request: execution_pb2.ReadProcessRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.ReadProcessResponse:
+            return await self.forward("ReadProcess", request, context, upstream.ReadProcess)
 
-                        if payload.get("method") in {"process/output", "process/exited"}:
-                            params = payload.get("params", {})
-                            target_process_ids = {
-                                start.get("params", {}).get("processId")
-                                for start in observed.requests
-                                if is_target_start(start)
-                            }
-                            output_observed = (
-                                payload.get("method") == "process/output"
-                                and params.get("processId") in target_process_ids
-                                and marker.encode() in base64.b64decode(params["chunk"])
-                            )
-                            effect_completed = (
-                                payload.get("method") == "process/exited"
-                                and params.get("processId") in target_process_ids
-                            )
-                            if output_observed or effect_completed:
-                                effect_observed = True
-                                observed.effect_observed.set()
-                                if drop_method == "process/start" and pending_start_reply is not None:
-                                    await drop_connection(*pending_start_reply)
-                                    return
+        @override
+        async def WriteProcess(
+            self, request: execution_pb2.WriteProcessRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.WriteProcessResponse:
+            return await self.forward("WriteProcess", request, context, upstream.WriteProcess)
 
-                        if original is not None and is_target(original) and not observed.dropped.is_set():
-                            if drop_method == "process/read":
-                                chunks = payload.get("result", {}).get("chunks", [])
-                                output = b"".join(base64.b64decode(chunk["chunk"]) for chunk in chunks)
-                                if marker.encode() in output:
-                                    effect_observed = True
-                                    observed.effect_observed.set()
-                                    await drop_connection(original, payload)
-                                    return
-                                await downstream.send_str(message.data)
-                                continue
-                            if effect_observed:
-                                await drop_connection(original, payload)
-                                return
-                            pending_start_reply = (original, payload)
-                            continue
-                        await downstream.send_str(message.data)
-                    elif message.type is WSMsgType.BINARY:
-                        await downstream.send_bytes(message.data)
-                    else:
-                        return
+        @override
+        async def SignalProcess(
+            self, request: execution_pb2.SignalProcessRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.SignalProcessResponse:
+            return await self.forward("SignalProcess", request, context, upstream.SignalProcess)
 
-            tasks = [asyncio.create_task(forward_requests()), asyncio.create_task(forward_replies())]
-            try:
-                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    await task
-            finally:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-        return downstream
+        @override
+        async def TerminateProcess(
+            self, request: execution_pb2.TerminateProcessRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.TerminateProcessResponse:
+            return await self.forward("TerminateProcess", request, context, upstream.TerminateProcess)
 
-    app = web.Application()
-    app.router.add_get("/", proxy)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    with listen_tcp() as listener:
-        try:
-            await web.SockSite(runner, listener.socket).start()
-            observed.url = f"ws://127.0.0.1:{listener.port}"
+        @override
+        async def GetFileMetadata(
+            self, request: execution_pb2.GetFileMetadataRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.GetFileMetadataResponse:
+            return await self.forward("GetFileMetadata", request, context, upstream.GetFileMetadata)
+
+        @override
+        async def OpenFile(
+            self, request: execution_pb2.OpenFileRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.OpenFileResponse:
+            return await self.forward("OpenFile", request, context, upstream.OpenFile)
+
+        @override
+        async def ReadFile(
+            self, request: execution_pb2.ReadFileRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.ReadFileResponse:
+            return await self.forward("ReadFile", request, context, upstream.ReadFile)
+
+        @override
+        async def CloseFile(
+            self, request: execution_pb2.CloseFileRequest, context: grpc.aio.ServicerContext
+        ) -> execution_pb2.CloseFileResponse:
+            return await self.forward("CloseFile", request, context, upstream.CloseFile)
+
+    async with grpc.aio.insecure_channel(execution_target) as upstream_channel:
+        upstream = runner_exec_pb2_grpc.RunnerExecStub(upstream_channel)
+        runner_exec_pb2_grpc.add_RunnerExecServicer_to_server(Proxy(), server)
+        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+            observed.url = f"127.0.0.1:{port}"
             yield observed
-        finally:
-            await runner.cleanup()
 
 
 @pytest.mark.parametrize("failure", ["failed", "429", "503", "unsupported", "invalid_wait", "partial"])
 async def test_failed_turn_preserves_safe_continuation(
     store: Store,
     database_url: str,
-    executor_url: str,
+    execution_target: str,
     codex_binary: str,
     code_mode_host: str,
     tmp_path: Path,
@@ -200,7 +191,7 @@ async def test_failed_turn_preserves_safe_continuation(
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
             request = open_request(tmp_path)
@@ -290,12 +281,12 @@ async def test_failed_turn_preserves_safe_continuation(
 
 
 async def test_lost_process_read_reply_resumes_same_process_and_cursor(
-    store: Store, database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     output = "RECOVERED_PROCESS_OUTPUT"
     async with (
         Endpoint() as endpoint,
-        faulting_executor_proxy(executor_url, drop_method="process/read", marker=output) as proxy,
+        faulting_executor_proxy(execution_target, drop_method="process/read", marker=output) as proxy,
     ):
         config = settings(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
@@ -331,39 +322,35 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
     starts = [
         call
         for call in proxy.requests
-        if call.get("method") == "process/start" and "fault-marker" in json.dumps(call.get("params", {}).get("argv"))
+        if call.get("method") == "StartProcess" and "fault-marker" in json.dumps(call.get("argv"))
     ]
     assert len(starts) == 1
-    process_id = starts[0]["params"]["processId"]
+    process_id = starts[0]["process_id"]
     reads = [
-        call
-        for call in proxy.requests
-        if call.get("method") == "process/read" and call.get("params", {}).get("processId") == process_id
+        call for call in proxy.requests if call.get("method") == "ReadProcess" and call.get("process_id") == process_id
     ]
     assert proxy.dropped_request is not None
-    retry = [call for call in reads if call == proxy.dropped_request]
-    assert len(retry) == 2
     first_read = reads.index(proxy.dropped_request)
     assert reads[first_read + 1] == proxy.dropped_request
+    assert len([call for call in reads if call["request_id"] == proxy.dropped_request["request_id"]]) == 2
     assert proxy.dropped_reply is not None
-    assert "error" not in proxy.dropped_reply
-    dropped_chunks = proxy.dropped_reply["result"]["chunks"]
-    assert output.encode() in b"".join(base64.b64decode(chunk["chunk"]) for chunk in dropped_chunks)
-    assert len(proxy.initializations) == 2
-    executor_session_id = proxy.initializations[0][1]["result"]["sessionId"]
-    assert proxy.initializations[0][0]["params"]["resumeSessionId"] is None
-    assert proxy.initializations[1][0]["params"]["resumeSessionId"] == executor_session_id
-    assert proxy.initializations[1][1]["result"]["sessionId"] == executor_session_id
+    dropped_chunks = proxy.dropped_reply["chunks"]
+    assert output.encode() in b"".join(base64.b64decode(chunk["data"]) for chunk in dropped_chunks)
+    assert len(proxy.sessions) == 2
+    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
+    assert "resume_session_id" not in proxy.sessions[0][0]
+    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
+    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
     assert all(intent.result is not None for intent in await store.intents())
 
 
 async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
-    store: Store, database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     output = "START_EFFECT_OBSERVED"
     async with (
         Endpoint() as endpoint,
-        faulting_executor_proxy(executor_url, drop_method="process/start", marker=output) as proxy,
+        faulting_executor_proxy(execution_target, drop_method="process/start", marker=output) as proxy,
     ):
         config = settings(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
@@ -406,19 +393,18 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
 
     assert proxy.dropped.is_set()
     assert proxy.effect_observed.is_set()
-    assert len(proxy.initializations) == 2
+    assert len(proxy.sessions) == 2
     assert (tmp_path / "fault-marker").read_text() == "x"
     starts = [
         call
         for call in proxy.requests
-        if call.get("method") == "process/start" and "fault-marker" in json.dumps(call.get("params", {}).get("argv"))
+        if call.get("method") == "StartProcess" and "fault-marker" in json.dumps(call.get("argv"))
     ]
     assert len(starts) == 1
-    process_id = starts[0]["params"]["processId"]
+    process_id = starts[0]["process_id"]
     assert (tmp_path / "continued-marker").read_text() == "y"
     assert not any(
-        call.get("method") == "process/read" and call.get("params", {}).get("processId") == process_id
-        for call in proxy.requests
+        call.get("method") == "ReadProcess" and call.get("process_id") == process_id for call in proxy.requests
     )
     start_intents = [
         intent
@@ -434,20 +420,20 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
     assert process is not None
     assert process.status == "abandoned"
     assert all(intent.result is not None for intent in await store.intents())
-    assert len(proxy.initializations) == 2
-    executor_session_id = proxy.initializations[0][1]["result"]["sessionId"]
-    assert proxy.initializations[1][0]["params"]["resumeSessionId"] == executor_session_id
-    assert proxy.initializations[1][1]["result"]["sessionId"] == executor_session_id
+    assert len(proxy.sessions) == 2
+    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
+    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
+    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
 
 
 async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
-    store: Store, database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     marker = "APPLY_PATCH_EFFECT_OBSERVED"
     patch = "*** Begin Patch\n*** Add File: applied.txt\n+" + marker + "\n*** End Patch"
     async with (
         Endpoint() as endpoint,
-        faulting_executor_proxy(executor_url, drop_method="process/start", marker=marker) as proxy,
+        faulting_executor_proxy(execution_target, drop_method="process/start", marker=marker) as proxy,
     ):
         config = settings(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
@@ -503,13 +489,12 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
     starts = [
         call
         for call in proxy.requests
-        if call.get("method") == "process/start" and marker in json.dumps(call.get("params", {}).get("argv"))
+        if call.get("method") == "StartProcess" and marker in json.dumps(call.get("argv"))
     ]
     assert len(starts) == 1
-    process_id = starts[0]["params"]["processId"]
+    process_id = starts[0]["process_id"]
     assert not any(
-        call.get("method") == "process/read" and call.get("params", {}).get("processId") == process_id
-        for call in proxy.requests
+        call.get("method") == "ReadProcess" and call.get("process_id") == process_id for call in proxy.requests
     )
     patch_intents = [
         intent
@@ -525,10 +510,10 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
     assert process is not None
     assert process.status == "abandoned"
     assert all(intent.result is not None for intent in await store.intents())
-    assert len(proxy.initializations) == 2
-    executor_session_id = proxy.initializations[0][1]["result"]["sessionId"]
-    assert proxy.initializations[1][0]["params"]["resumeSessionId"] == executor_session_id
-    assert proxy.initializations[1][1]["result"]["sessionId"] == executor_session_id
+    assert len(proxy.sessions) == 2
+    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
+    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
+    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
 
 
 if __name__ == "__main__":

@@ -122,7 +122,7 @@ flowchart LR
 
     gw -->|central Session commands: Sampler gRPC| sampler
     sampler --> samplerdb
-    sampler -->|exec-server relay: ExecutorGateway gRPC| gw
+    sampler -->|typed execution: ExecutorGateway gRPC| gw
     sampler -->|RunnerIngress.Push| hs
     sampler -->|Responses API, Session attribution| llm
     gw --> k8s
@@ -131,9 +131,9 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl --> gw
-    runner -->|local WebSocket, isolated mode| podexec
+    runner -->|local Codex JSON-RPC over WebSocket, isolated mode| podexec
     podexec --> sidecar
-    guest -->|local WebSocket, isolated mode| vmexec
+    guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
     vmexec --> relay
     runner --> sidecar --> egress
     guest --> relay --> egress

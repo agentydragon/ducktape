@@ -212,15 +212,24 @@ When a Session is blocked, `GetSession.blocked_reason` names the unresolved inte
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor
 effects automatically; see [blocked Session recovery](docs/blocked_session_recovery.md).
 
-The JS broker uses `ExecutorGateway.Connect` to send exec-server frames through the Runner's
-private mTLS `RunnerExec.Connect` stream. Its configured target template selects the per-Sandbox
-control Service and thus the Gateway replica holding that runner's observation Lease. Gateway authorizes the sampler account and checks
-Sandbox UID and incarnation; Runner only reaches its configured loopback executor. No caller-chosen
-executor URL crosses that API. The relay bounds each message to 1 MiB and each Runner to eight channels;
-oversized tool messages fail the channel rather than being silently truncated. An open relay
-blocks executor Sandbox autosuspend and publishes the Sandbox-wide `ExecutorRelay` blocker until
-its channel closes. Dispatcher does
-not relay tools. Every provider request carries Codex's `gpt-6.1-sol` base instructions as
+The sampler uses typed `ExecutorGateway` process and file RPCs, with a server-streaming
+`OpenSession` call bound to one execution session. The configured Gateway target selects the
+per-Sandbox control Service and thus the Gateway replica holding that Runner's observation Lease.
+Gateway authorizes the sampler account and checks Sandbox UID and incarnation; Runner checks the
+same scope against its current incarnation and only reaches its configured loopback executor. No
+caller-chosen executor URL crosses that API. The open session owns the local exec-server connection;
+closing the stream closes that connection without terminating processes. An active stream blocks
+executor Sandbox autosuspend until it closes. Dispatcher does not relay tools.
+
+Each unary operation carries the sampler's Sandbox scope, execution-session ID and durable nested
+intent ID as `request_id`. The ID correlates the typed call and its exact native-frame evidence; it
+does not provide deduplication or a cached receipt. A lost reply to a mutation remains unknown and
+the JavaScript promise is rejected without replay. Cursor-based `process/read` may reconnect to the
+same execution session and retry once with the same ID and cursor. The adapter returns exact native
+frames to the sampler's existing boundary journal without exposing native JSON as an execution API.
+For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
+image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
+request carries Codex's `gpt-6.1-sol` base instructions as
 `instructions`, whatever the model. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP, approvals/hooks and a Claude sampler are deferred.
 

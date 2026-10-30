@@ -99,10 +99,13 @@ to this target; wrapped native Sessions continue through ProxyRunner. Central co
 executor readiness/wake checks after open.
 The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
 
-The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted
-samplers. It relays pinned Codex exec-server frames over the Runner's authenticated
-`RunnerExec.Connect` stream to a configured loopback executor, with UID/incarnation fencing and
-bounded flow control. It does
-not interpret or replay tools. Active executor relays participate in Runner activity and quiesce.
+The separate, default-empty `executor_callers` policy enables typed `ExecutorGateway` RPCs for
+trusted samplers. The Gateway checks destination and incarnation, then forwards process and file
+operations to the Runner's authenticated `RunnerExec` service. The Runner alone translates the
+local Codex JSON-RPC protocol. A server-streaming `OpenSession` owns each adapter connection and
+returns native-frame evidence; execution operations use unary RPCs with that session ID. Closing
+the stream does not terminate remote processes. The Gateway adds no persistence or operation
+receipts and never replays mutations. Open execution sessions participate in Runner activity and
+quiesce.
 The Dispatcher is absent from this tool path. See the
 [central sampler contract](../x/central_sampler/SPEC.md).

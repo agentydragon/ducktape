@@ -36,12 +36,12 @@ publication and recovery run after releasing it. The Runner mutex remains the sy
 and quiesce barrier around accepting checks and durable reservation.
 
 `control.Server` owns the active state observer and connection epoch fencing.
-`executorrelay.Manager` owns executor stream slots, accepted relay registration, queues and worker
-joins. Relay registration and exec-server demand occur under the Runner admission barrier; relay
-change notifications run after releasing both the barrier and registry lock. The lock order is
-Runner admission mutex, then relay registry mutex. Aggregate shutdown closes admission and drains
-the Manager before permitting exec-server fencing. Each stream cancels forwarding before joining
-its workers, including a writer blocked by queue backpressure.
+`execution.Adapter` owns execution-session slots, local Codex connections and operation workers.
+The Runner supplies the admission barrier and controller-owned executor readiness. Each
+`OpenSession` stream retains an activity slot until its local connection closes; a unary call
+stopping its wait does not establish whether its remote effect happened. Aggregate shutdown closes
+admission and drains the adapter before permitting exec-server fencing. Session shutdown cancels
+local I/O before joining its workers. The adapter adds no journal or other persistent state.
 
 `RunnerInputs.Admissions` is the sole count of admission handlers in flight, not queued commands
 or active turns. Its increment commits under that barrier before durable

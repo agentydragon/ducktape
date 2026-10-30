@@ -1,8 +1,7 @@
-package centralsampler
+package execution
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +35,12 @@ type executorRejectedError struct {
 	message string
 }
 
+// executionAdmissionRejectedError is a local, pre-native rejection such as an
+// unconfigured or deliberately refused executor. It is known to have no effect.
+type executionAdmissionRejectedError struct{ message string }
+
+func (e *executionAdmissionRejectedError) Error() string { return e.message }
+
 func (e *executorRejectedError) Error() string {
 	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
 }
@@ -51,7 +56,10 @@ type (
 		EnvironmentInfo *executorEnvironmentInfo `json:"environmentInfo"`
 	}
 	executorEnvironmentInfo struct {
-		Shell execShell `json:"shell"`
+		Shell struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"shell"`
 	}
 	executorEmpty   struct{}
 	executorStarted struct {
@@ -118,20 +126,6 @@ func (r *executorReadResult) UnmarshalJSON(data []byte) error {
 	*r = executorReadResult(result)
 	return nil
 }
-
-func (r executorReadResult) output() []byte {
-	var output []byte
-	for _, chunk := range r.Chunks {
-		output = append(output, chunk.Chunk...)
-	}
-	return output
-}
-
-func (r executorReadResult) uncertain() bool { return r.Failure != nil || r.Closed && !r.Exited }
-
-// Process exit can arrive before the stdout/stderr readers finish. An empty page
-// is terminal only once those streams have closed and all retained chunks were read.
-func (r executorReadResult) drained() bool { return r.Exited && r.Closed && len(r.Chunks) == 0 }
 
 type executorWrite struct {
 	ProcessID string `json:"processId"`
@@ -207,33 +201,4 @@ func decodeProtocolObject(data []byte, value any) error {
 		return errors.New("protocol payload has trailing JSON")
 	}
 	return nil
-}
-
-// Evidence uses JSON objects, while transport and execution use concrete protocol types.
-func protocolObject(value any) (map[string]any, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var object map[string]any
-	if err := decodeProtocolObject(data, &object); err != nil {
-		return nil, err
-	}
-	return object, nil
-}
-
-func executorRPC[R any, P any](ctx context.Context, e *Executor, method string, params P) (*R, error) {
-	return executorRPCWithEvidence[R](ctx, e, method, params, nil)
-}
-
-func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, method string, params P, resultEvidence func(map[string]any) map[string]any) (*R, error) {
-	raw, err := e.rpc(ctx, method, params, resultEvidence)
-	if err != nil {
-		return nil, err
-	}
-	var result R
-	if err := decodeProtocolObject(raw, &result); err != nil {
-		return nil, fmt.Errorf("decode exec-server %s result: %w", method, err)
-	}
-	return &result, nil
 }

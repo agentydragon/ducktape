@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/executorrelay"
+	"github.com/agentydragon/ducktape/agentplane/runner/execution"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -44,7 +44,7 @@ type Runner struct {
 	bootID              string
 	mu                  sync.Mutex
 	control             *control.Server
-	executorRelay       *executorrelay.Manager
+	execution           *execution.Adapter
 	sessions            *session.Manager
 	createMu            sync.Mutex
 	bootstrapHost       *bootstrap.Host
@@ -166,12 +166,17 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		_ = owner.Close()
 		return nil, err
 	}
-	r.configureServing()
+	if err := r.configureServing(); err != nil {
+		cancel()
+		_ = r.sessions.Close()
+		_ = owner.Close()
+		return nil, err
+	}
 	go lifecycle.run()
 	return r, nil
 }
 
-func (r *Runner) configureServing() {
+func (r *Runner) configureServing() error {
 	r.control = control.New(control.Config{
 		SandboxUID:    r.config.Launch.Sandbox.UID,
 		BootID:        r.bootID,
@@ -187,25 +192,17 @@ func (r *Runner) configureServing() {
 		},
 		Changes: r.changesSince,
 	}, r)
-	r.executorRelay = executorrelay.New(executorrelay.Config{
-		Context:   r.ctx,
-		Authority: r.control,
-		Executor:  r.codexExecServer,
-		State:     r.lifecycle.state,
-		Admit: func(admit func() error) error {
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			if r.closing || !r.lifecycle.accepting() {
-				return status.Error(codes.FailedPrecondition, "Runner is quiescing")
-			}
-			return admit()
-		},
+	adapter, err := execution.New(execution.Config{
+		Context:  r.ctx,
+		Admit:    r.admitExecution,
+		Acquire:  r.acquireExecution,
 		OnChange: r.changed,
-		WaitFor:  r.lifecycle.waitFor,
-		IsRunning: func() bool {
-			return r.lifecycle.desiredState().Mode == runnerlifecycle.Running
-		},
 	})
+	if err != nil {
+		return err
+	}
+	r.execution = adapter
+	return nil
 }
 
 func (r *Runner) configureSessions() error {
@@ -434,7 +431,7 @@ func (r *Runner) finishClose() error {
 	r.cancel()
 	<-r.lifecycle.done.Done()
 	r.lifecycle.workers.Wait()
-	errs := []error{r.sessions.Close()}
+	errs := []error{r.execution.Close(), r.sessions.Close()}
 	if r.bootstrapHost != nil {
 		errs = append(errs, r.bootstrapHost.CloseLog())
 	}

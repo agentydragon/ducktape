@@ -1,0 +1,185 @@
+syntax = "proto3";
+package agentplane.proto;
+
+import "agentplane/proto/sandboxes.proto";
+
+// The Gateway authorizes and resolves this scope; Runner checks it against its current incarnation.
+message ExecutionScope {
+  SandboxDestination destination = 1;
+  string expected_incarnation_uid = 2;
+  // Sampler Session attribution, distinct from the local execution session.
+  string session_id = 3;
+}
+
+// Outcomes describe the observed local Codex reply, not process completion.
+// Transport loss can leave an effect unknown; request IDs do not provide deduplication.
+message ExecutionStatus {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_COMPLETED = 1;
+    OUTCOME_REJECTED = 2;
+    OUTCOME_UNKNOWN = 3;
+  }
+  Outcome outcome = 1;
+  string message = 2;
+  optional int32 upstream_code = 3;
+}
+message ExecutionShell {
+  string name = 1;
+  string path = 2;
+}
+message ExecutionEnvironmentPolicy {
+  string inherit = 1;
+  bool ignore_default_excludes = 2;
+  repeated string exclude = 3;
+  map<string, string> set = 4;
+  repeated string include_only = 5;
+}
+message OpenSessionRequest {
+  ExecutionScope scope = 1;
+  string request_id = 2;
+  optional string resume_session_id = 3;
+}
+message OpenSessionResponse {
+  // The first response has an outcome and session identity. Later responses carry
+  // asynchronous native notifications with no status.
+  ExecutionStatus status = 1;
+  string execution_session_id = 2;
+  ExecutionShell shell = 3;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+// Caller-selected IDs correlate requests and evidence; they are not retry or admission receipts.
+message StartProcessRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string process_id = 4;
+  repeated string argv = 5;
+  string cwd = 6;
+  ExecutionEnvironmentPolicy environment_policy = 7;
+  map<string, string> environment = 8;
+  bool tty = 9;
+  bool pipe_stdin = 10;
+  optional string arg0 = 11;
+}
+message StartProcessResponse {
+  ExecutionStatus status = 1;
+  string process_id = 2;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message ReadProcessRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string process_id = 4;
+  optional uint64 after_seq = 5;
+  uint32 max_bytes = 6;
+  uint32 wait_ms = 7;
+}
+message ExecutionOutputChunk {
+  uint64 seq = 1;
+  string stream = 2;
+  bytes data = 3;
+}
+message ReadProcessResponse {
+  ExecutionStatus status = 1;
+  repeated ExecutionOutputChunk chunks = 2;
+  uint64 next_seq = 3;
+  bool exited = 4;
+  optional int32 exit_code = 5;
+  bool closed = 6;
+  optional string failure = 7;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message WriteProcessRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string process_id = 4;
+  bytes data = 5;
+  string write_id = 6;
+}
+message WriteProcessResponse {
+  ExecutionStatus status = 1;
+  string write_status = 2;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message SignalProcessRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string process_id = 4;
+  string signal = 5;
+}
+message SignalProcessResponse {
+  ExecutionStatus status = 1;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message TerminateProcessRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string process_id = 4;
+}
+message TerminateProcessResponse {
+  ExecutionStatus status = 1;
+  bool running = 2;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message GetFileMetadataRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string path = 4;
+}
+message GetFileMetadataResponse {
+  ExecutionStatus status = 1;
+  bool is_directory = 2;
+  bool is_file = 3;
+  bool is_symlink = 4;
+  uint64 size = 5;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message OpenFileRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string handle_id = 4;
+  string path = 5;
+}
+message OpenFileResponse {
+  ExecutionStatus status = 1;
+  string handle_id = 2;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message ReadFileRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string handle_id = 4;
+  uint64 offset = 5;
+  uint32 length = 6;
+}
+message ReadFileResponse {
+  ExecutionStatus status = 1;
+  bytes data = 2;
+  bool eof = 3;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+message CloseFileRequest {
+  ExecutionScope scope = 1;
+  string execution_session_id = 2;
+  string request_id = 3;
+  string handle_id = 4;
+}
+message CloseFileResponse {
+  ExecutionStatus status = 1;
+  repeated ExecutionNativeFrame native_frames = 20;
+}
+// Evidence only: native payloads are never accepted as executable requests. The sampler retains
+// these in its existing boundary journal, applying its existing binary-data redaction.
+// No adapter persistence is introduced.
+message ExecutionNativeFrame {
+  string direction = 1;
+  bytes payload = 2;
+}

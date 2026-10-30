@@ -24,13 +24,17 @@ The owning Gateway retries a lost observation after one second, independently of
 Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
 periodic heartbeats still publish unchanged facts.
 
-Unary Runner calls and each `RunnerExec.Connect` stream carry the Sandbox UID, incarnation UID,
+Unary Runner calls and typed `RunnerExec` calls carry the Sandbox UID, incarnation UID,
 runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch
 before admission with `UNAVAILABLE`. This lets queued commands retry through the current observer;
 `ABORTED` remains the explicit refusal of new work for a workload incarnation.
-A superseded observer cannot clear its successor. Observation loss stops executor streams and new
-control calls; admitted journal work remains runner-owned and continues independently. Each
-executor connection uses an ordinary bidirectional gRPC stream.
+A superseded observer cannot clear its successor. Observation loss stops execution-session streams
+and new control calls; admitted journal work remains runner-owned and continues independently.
+`RunnerExec.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
+process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
+notifications stay in the Runner adapter. Closing the session stream closes the local WebSocket,
+without claiming that remote processes were terminated. Request IDs provide correlation, not
+deduplication or durable admission; uncertain mutations are never automatically replayed.
 
 A lost RPC response does not establish whether its command was admitted. Reconnect never replays
 RPCs automatically. Durable command retry retains the original command ID and reconciles the

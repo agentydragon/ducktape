@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,90 +16,76 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/executorrelay"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const codexExecServerTestTimeout = 10 * time.Second
 
 func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			return
-		}
-		defer connection.CloseNow()
-		for {
-			kind, data, err := connection.Read(request.Context())
-			if err != nil {
-				return
-			}
-			if err := connection.Write(request.Context(), kind, data); err != nil {
-				return
-			}
-		}
-	}))
-	defer server.Close()
-	r := newExecutorLifecycleRunnerWithURL(t, "ws"+strings.TrimPrefix(server.URL, "http"), func(context.Context) (*supervision.Instance, error) {
+	url, opened, closed := startNativeExecutionTestServer(t, true)
+	r := newExecutorLifecycleRunnerWithURL(t, url, func(context.Context) (*supervision.Instance, error) {
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, nil)
-	ctx, cancel := context.WithTimeout(t.Context(), codexExecServerTestTimeout)
-	defer cancel()
-	frames := []chan *executorpb.ExecutorFrame{make(chan *executorpb.ExecutorFrame, 8), make(chan *executorpb.ExecutorFrame, 8)}
-	connections := make([]*executorrelay.Connection, 0, 2)
-	for i, sessionID := range []string{"session-1", "session-2"} {
-		send := func(frame *executorpb.ExecutorFrame) error {
-			select {
-			case frames[i] <- frame:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		connection, err := r.executorRelay.Open(ctx, 7, send, send)
-		if err != nil {
-			t.Fatalf("open executor connection: %v", err)
-		}
-		defer connection.Close()
-		connections = append(connections, connection)
-		if err := connection.Route(&executorpb.ExecutorFrame{
-			Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: sessionID}},
-		}); err != nil {
-			t.Fatal(err)
-		}
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+
+	firstCtx, cancelFirst := context.WithCancel(client.callCtx)
+	first, err := client.open(firstCtx, "sampler-session-1", "open-native-1")
+	if err != nil {
+		t.Fatalf("open first execution session: %v", err)
+	}
+	firstResponse, err := first.Recv()
+	if err != nil || firstResponse.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("first OpenSession response = %v, err=%v", firstResponse, err)
+	}
+	second, err := client.open(client.callCtx, "sampler-session-2", "open-native-2")
+	if err != nil {
+		t.Fatalf("open sibling execution session: %v", err)
+	}
+	secondResponse, err := second.Recv()
+	if err != nil || secondResponse.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("sibling OpenSession response = %v, err=%v", secondResponse, err)
+	}
+	if firstResponse.GetExecutionSessionId() == secondResponse.GetExecutionSessionId() {
+		t.Fatalf("Runner reused execution session ID %q", firstResponse.GetExecutionSessionId())
+	}
+	for range 2 {
 		select {
-		case ready := <-frames[i]:
-			if !ready.GetReady().GetAccepted() {
-				t.Fatalf("executor %s readiness = %v", sessionID, ready)
-			}
-		case <-ctx.Done():
-			t.Fatal("executor did not become ready")
+		case <-opened:
+		case <-time.After(codexExecServerTestTimeout):
+			t.Fatal("local native sessions did not initialize")
 		}
 	}
-	connections[0].Close()
-	want := []byte{0, 1, 2, 255}
-	if err := connections[1].Route(&executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
-			Opcode: executorpb.ExecutorMessage_OPCODE_BINARY, Payload: want,
-		}},
-	}); err != nil {
-		t.Fatalf("sibling stream closed: %v", err)
+
+	cancelFirst()
+	select {
+	case closedID := <-closed:
+		if closedID != firstResponse.GetExecutionSessionId() {
+			t.Fatalf("closed native session %q, want first session %q", closedID, firstResponse.GetExecutionSessionId())
+		}
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("closing one OpenSession did not close its local WebSocket")
 	}
 	select {
-	case reply := <-frames[1]:
-		if message := reply.GetMessage(); message == nil || message.GetOpcode() != executorpb.ExecutorMessage_OPCODE_BINARY || string(message.GetPayload()) != string(want) {
-			t.Fatalf("sibling executor reply = %v, want binary echo %v", reply, want)
-		}
-	case <-ctx.Done():
-		t.Fatal("sibling executor stopped exchanging data after another stream closed")
+	case native := <-closed:
+		t.Fatalf("closing one OpenSession also closed sibling native session %q", native)
+	default:
+	}
+
+	evidence, err := second.Recv()
+	if err != nil {
+		t.Fatalf("sibling OpenSession stopped after another stream closed: %v", err)
+	}
+	if len(evidence.GetNativeFrames()) != 1 || !strings.Contains(string(evidence.GetNativeFrames()[0].GetPayload()), secondResponse.GetExecutionSessionId()) {
+		t.Fatalf("sibling native notification = %v, want its own session ID %q", evidence.GetNativeFrames(), secondResponse.GetExecutionSessionId())
 	}
 }
 
@@ -118,100 +102,78 @@ func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
 	}
 }
 
-func TestExecutorRelayReadinessReturnsTypedCompanionRefusal(t *testing.T) {
+func TestExecutionSessionReadinessReturnsTypedCompanionRefusal(t *testing.T) {
 	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
 		return nil, codexexecserver.Refusal{Reason: "Codex binary is unavailable"}
 	}, nil)
-	if err := requestExecutor(r); err != nil {
-		t.Fatal(err)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	stream, err := client.open(client.callCtx, "sampler-session", "open-refusal")
+	if err != nil {
+		t.Fatalf("OpenSession RPC: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
-	defer cancel()
-	_, err := r.executorRelay.WaitReady(ctx)
-	var refusal codexexecserver.Refusal
-	if !errors.As(err, &refusal) || refusal.Reason != "Codex binary is unavailable" {
-		t.Fatalf("relay readiness = %v (%T), want the typed companion refusal", err, err)
+	response, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("OpenSession rejection response: %v", err)
+	}
+	if response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.GetStatus().GetMessage(), "Codex binary is unavailable") {
+		t.Fatalf("OpenSession outcome = %v, want typed rejection with companion reason", response.GetStatus())
+	}
+	if response.GetStatus().UpstreamCode != nil {
+		t.Fatalf("companion refusal fabricated a native upstream code: %v", response.GetStatus())
 	}
 }
 
-func TestExecutorRelayReadinessSurvivesTransientStartupFailure(t *testing.T) {
+func TestExecutionSessionReadinessSurvivesTransientStartupFailure(t *testing.T) {
+	url, _, _ := startNativeExecutionTestServer(t, false)
 	var starts atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
+	r := newExecutorLifecycleRunnerWithURL(t, url, func(context.Context) (*supervision.Instance, error) {
 		if starts.Add(1) == 1 {
 			return nil, errors.New("transient native executor launch failure")
 		}
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, nil)
-	if err := requestExecutor(r); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
-	defer cancel()
-	last, err := r.executorRelay.WaitReady(ctx)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	stream, err := client.open(client.callCtx, "sampler-session", "open-after-retry")
 	if err != nil {
-		t.Fatalf("relay readiness after controller retry: %v", err)
+		t.Fatalf("OpenSession RPC: %v", err)
 	}
-	if starts.Load() < 2 || last.Runtime.Phase != codexexecserver.Ready {
-		t.Fatalf("startup attempts/runtime = %d/%+v, want a successful retry", starts.Load(), last.Runtime)
+	response, err := stream.Recv()
+	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("OpenSession after controller retry = %v, err=%v", response, err)
+	}
+	if starts.Load() < 2 || response.GetExecutionSessionId() == "" {
+		t.Fatalf("startup attempts/session ID = %d/%q, want successful retry", starts.Load(), response.GetExecutionSessionId())
 	}
 }
 
-func TestExecutorRelayGatewayCloseCancelsBlockedReadiness(t *testing.T) {
+func TestExecutionSessionCancellationStopsBlockedReadinessWait(t *testing.T) {
 	started := make(chan struct{})
 	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, nil)
-	frames := make(chan *executorpb.ExecutorFrame, 2)
-	send := func(frame *executorpb.ExecutorFrame) error {
-		frames <- frame
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
-	defer cancel()
-	connection, err := r.executorRelay.Open(ctx, 7, send, send)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	callCtx, cancel := context.WithCancel(client.callCtx)
+	stream, err := client.open(callCtx, "sampler-session", "open-blocked")
 	if err != nil {
-		t.Fatalf("open executor connection: %v", err)
-	}
-	defer connection.Close()
-	open := &executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
-	}
-	if err := connection.Route(open); err != nil {
-		t.Fatalf("open executor relay: %v", err)
+		t.Fatalf("OpenSession RPC: %v", err)
 	}
 	select {
 	case <-started:
 	case <-time.After(codexExecServerTestTimeout):
-		t.Fatal("executor start did not block as expected")
+		t.Fatal("executor startup did not block as expected")
 	}
-	closeFrame := &executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: 1001}},
+	cancel()
+	if _, err := stream.Recv(); err == nil {
+		t.Fatal("canceled OpenSession returned a response")
 	}
-	if err := connection.Route(closeFrame); err != nil {
-		t.Fatalf("close executor relay: %v", err)
+	deadline := time.Now().Add(codexExecServerTestTimeout)
+	for r.execution.Active() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
-	joined := make(chan struct{})
-	go func() {
-		connection.Close()
-		close(joined)
-	}()
-	select {
-	case <-joined:
-	case <-time.After(codexExecServerTestTimeout):
-		t.Fatal("Gateway close did not join the readiness wait")
-	}
-	if r.executorRelay.Active() {
-		t.Fatal("executor relay remained active after Gateway close")
-	}
-	select {
-	case frame := <-frames:
-		if frame.GetReady() == nil || frame.GetReady().GetAccepted() {
-			t.Fatalf("relay readiness response = %v, want rejected readiness after close", frame)
-		}
-	case <-ctx.Done():
-		t.Fatal("relay did not report readiness rejection")
+	if r.execution.Active() {
+		t.Fatal("execution admission remained active after the caller canceled")
 	}
 }
 
@@ -369,7 +331,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		}
 		readinessCtx, cancelReadiness := context.WithTimeout(context.Background(), time.Second)
 		defer cancelReadiness()
-		_, readinessErr := r.executorRelay.WaitReady(readinessCtx)
+		_, readinessErr := r.acquireExecution(readinessCtx)
 		if readinessErr == nil || !strings.Contains(readinessErr.Error(), fenceFailure.Error()) {
 			t.Fatalf("executor readiness after failed fence = %v, want terminal fence failure", readinessErr)
 		}
@@ -423,7 +385,7 @@ func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 	}
 }
 
-func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
+func TestExecutionSessionAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
 	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, func(context.Context) error { return nil })
@@ -433,59 +395,36 @@ func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
 	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("quiesce Runner: %v", err)
 	}
-
-	frames := make(chan *executorpb.ExecutorFrame, 1)
-	send := func(frame *executorpb.ExecutorFrame) error {
-		frames <- frame
-		return nil
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	stream, err := client.open(client.callCtx, "sampler-session", "open-after-quiesce")
+	if err == nil {
+		_, err = stream.Recv()
 	}
-	connection, err := r.executorRelay.Open(context.Background(), 1, send, send)
-	if err != nil {
-		t.Fatalf("open executor stream: %v", err)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("OpenSession after quiesce = %v, want FailedPrecondition", err)
 	}
-	defer connection.Close()
-	if err := connection.Route(&executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
-	}); err != nil {
-		t.Fatalf("route executor open after quiesce: %v", err)
-	}
-	select {
-	case frame := <-frames:
-		if frame.GetReady() == nil || frame.GetReady().GetAccepted() {
-			t.Fatalf("quiescing Runner executor readiness = %v, want rejected", frame)
-		}
-	case <-time.After(codexExecServerTestTimeout):
-		t.Fatal("quiescing Runner did not reject executor relay")
-	}
-	if r.executorRelay.Active() {
-		t.Fatal("quiescing Runner admitted an executor relay")
+	if r.execution.Active() {
+		t.Fatal("quiescing Runner admitted an execution session")
 	}
 }
 
-func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
+func TestExecutorShutdownDrainsSessionsBeforeFencing(t *testing.T) {
+	url, opened, closed := startNativeExecutionTestServer(t, false)
 	var stops atomic.Int32
 	var drained atomic.Bool
 	var r *Runner
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			return
-		}
-		defer connection.CloseNow()
-		for {
-			if _, _, err := connection.Read(request.Context()); err != nil {
-				return
-			}
-		}
-	}))
-	defer server.Close()
-	r = newExecutorLifecycleRunnerWithURL(t, "ws"+strings.TrimPrefix(server.URL, "http"), func(context.Context) (*supervision.Instance, error) {
+	r = newExecutorLifecycleRunnerWithURL(t, url, func(context.Context) (*supervision.Instance, error) {
 		done := make(chan error, 1)
 		return &supervision.Instance{
 			Done: done,
 			Stop: func(context.Context) error {
-				if r.executorRelay.Active() {
-					return errors.New("executor stopped before relay drained")
+				if r.execution.Active() {
+					return errors.New("executor stopped before execution sessions drained")
+				}
+				select {
+				case <-closed:
+				default:
+					return errors.New("executor stopped before the local WebSocket closed")
 				}
 				drained.Store(true)
 				stops.Add(1)
@@ -494,39 +433,23 @@ func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
 			},
 		}, nil
 	}, func(context.Context) error { return nil })
-	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
-	defer cancel()
-	if err := ensureExecutor(ctx, r); err != nil {
-		t.Fatalf("start executor: %v", err)
-	}
-
-	frames := make(chan *executorpb.ExecutorFrame, 1)
-	send := func(frame *executorpb.ExecutorFrame) error {
-		frames <- frame
-		return nil
-	}
-	connection, err := r.executorRelay.Open(ctx, 7, send, send)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	stream, err := client.open(client.callCtx, "sampler-session", "open-for-shutdown")
 	if err != nil {
-		t.Fatalf("open executor stream: %v", err)
+		t.Fatalf("OpenSession RPC: %v", err)
 	}
-	defer connection.Close()
-	if err := connection.Route(&executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
-	}); err != nil {
-		t.Fatalf("open executor relay: %v", err)
+	response, err := stream.Recv()
+	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("OpenSession before shutdown = %v, err=%v", response, err)
 	}
 	select {
-	case frame := <-frames:
-		if frame.GetReady() == nil || !frame.GetReady().GetAccepted() {
-			t.Fatalf("executor readiness = %v, want accepted", frame)
-		}
-	case <-ctx.Done():
-		t.Fatal("executor relay did not become ready")
+	case <-opened:
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("local execution session did not initialize")
 	}
-	if !r.executorRelay.Active() {
-		t.Fatal("executor relay is not active before Runner close")
+	if !r.execution.Active() {
+		t.Fatal("execution session is not active before Runner close")
 	}
-
 	if err := closeRunnerForTest(t, r); err != nil {
 		t.Fatalf("close Runner: %v", err)
 	}

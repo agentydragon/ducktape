@@ -56,14 +56,14 @@ async def recorded_events(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: s
 
 
 async def test_setup_runs_at_open_and_gates_queued_sampling(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     workspace = tmp_path / "new-workspace"
     gate = tmp_path / "release"
     os.mkfifo(gate)
     async with SetupEndpoint(workspace / "complete") as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(workspace)
         request.setup_script = dedent(f"""\
@@ -121,11 +121,11 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
 
 @pytest.mark.parametrize("failure", ["exit 23", "false", "printf '%s' \"$CENTRAL_SETUP_UNSET_TEST_VARIABLE\""])
 async def test_failed_setup_remains_terminal_after_reopen(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path, failure: str
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path, failure: str
 ) -> None:
     async with SetupEndpoint(tmp_path / "unreachable") as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         request.setup_script = f"printf x >> attempts\n{failure}\nprintf done > unreachable\n"
@@ -161,13 +161,13 @@ async def test_failed_setup_remains_terminal_after_reopen(
 
 
 async def test_restart_during_setup_interrupts_without_replaying_effects(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     gate = tmp_path / "never-release"
     os.mkfifo(gate)
     async with SetupEndpoint(tmp_path / "unreachable") as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         request.setup_script = dedent(f"""\
@@ -202,11 +202,11 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
 
 
 async def test_setup_script_limit_counts_utf8_bytes(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
-            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         request = open_request(tmp_path)
         request.setup_script = "#" + "λ" * 32768 + "\n"

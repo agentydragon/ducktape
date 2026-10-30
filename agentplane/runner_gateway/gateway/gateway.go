@@ -28,8 +28,8 @@ type Config struct {
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
-	// ExecutorCallers enables the opt-in raw executor WebSocket stream independently from the
-	// Runner proxy's caller allowlist. An empty set leaves the public RPC unregistered.
+	// ExecutorCallers enables the typed execution API independently from the Runner proxy's
+	// caller allowlist. An empty set leaves the public service unregistered.
 	ExecutorCallers []auth.Account
 }
 

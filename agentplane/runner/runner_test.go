@@ -34,7 +34,6 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -506,33 +505,22 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	}
 }
 
-func TestExecutorRelaysBlockAutosuspendUntilClosed(t *testing.T) {
+func TestExecutionSessionsBlockAutosuspendUntilClosed(t *testing.T) {
 	started := make(chan struct{})
 	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
-	defer cancel()
-	frames := make(chan *executorpb.ExecutorFrame, 1)
-	send := func(frame *executorpb.ExecutorFrame) error {
-		frames <- frame
-		return nil
-	}
-	connection, err := r.executorRelay.Open(ctx, 1, send, send)
+	client := startDirectExecutionTestClient(t, r, "test-incarnation")
+	callCtx, cancel := context.WithCancel(client.callCtx)
+	stream, err := client.open(callCtx, "sampler-session", "open-for-autosuspend")
 	if err != nil {
-		t.Fatalf("open executor stream: %v", err)
-	}
-	defer connection.Close()
-	if err := connection.Route(&executorpb.ExecutorFrame{
-		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
-	}); err != nil {
-		t.Fatalf("open executor relay: %v", err)
+		t.Fatalf("OpenSession RPC: %v", err)
 	}
 	select {
 	case <-started:
-	case <-ctx.Done():
+	case <-time.After(codexExecServerTestTimeout):
 		t.Fatal("executor readiness did not block as expected")
 	}
 
@@ -540,20 +528,28 @@ func TestExecutorRelaysBlockAutosuspendUntilClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(facts.AutosuspendBlockers) != 1 || facts.AutosuspendBlockers[0].Reason != autosuspendExecutorRelay || facts.IdleSince != nil {
-		t.Fatalf("executor relay alone must block idle: %v", facts)
+	if len(facts.AutosuspendBlockers) != 1 || facts.AutosuspendBlockers[0].Reason != autosuspendExecution || facts.IdleSince != nil {
+		t.Fatalf("execution session alone must block idle: %v", facts)
 	}
 	if _, err := sandboxlease.FromProto(facts); err != nil {
-		t.Fatalf("executor blocker cannot reach the connection Lease: %v", err)
+		t.Fatalf("execution blocker cannot reach the connection Lease: %v", err)
 	}
-	connection.Close()
 
+	cancel()
+	_, _ = stream.Recv()
+	deadline := time.Now().Add(codexExecServerTestTimeout)
+	for r.execution.Active() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if r.execution.Active() {
+		t.Fatal("canceled execution stream remained active")
+	}
 	facts, err = r.facts()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(facts.AutosuspendBlockers) != 0 || facts.IdleSince == nil {
-		t.Fatalf("closed executor relay must return to idle: %v", facts)
+		t.Fatalf("closed execution session must return to idle: %v", facts)
 	}
 }
 

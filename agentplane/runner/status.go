@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	autosuspendBootstrap     = "Bootstrap"
-	autosuspendAdmission     = "Admission"
-	autosuspendExecutorRelay = "ExecutorRelay"
+	autosuspendBootstrap = "Bootstrap"
+	autosuspendAdmission = "Admission"
+	// Keep the stable RunnerFacts enum value while execution is carried over typed gRPC.
+	autosuspendExecution = "ExecutorRelay"
 )
 
 func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
@@ -212,8 +213,8 @@ func (r *Runner) facts() (*runnerstatepb.RunnerFacts, error) {
 	if admissions > 0 {
 		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
 	}
-	if r.executorRelay.Active() {
-		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendExecutorRelay})
+	if r.execution.Active() {
+		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendExecution})
 	}
 	busy := len(blockers) > 0
 	if busy {

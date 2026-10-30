@@ -1,47 +1,18 @@
-// Runner Gateway's authenticated bridge to a Sandbox's configured Codex exec-server.
 syntax = "proto3";
-
 package agentplane.runner_gateway;
 
-import "agentplane/proto/sandboxes.proto";
+import "agentplane/proto/execution.proto";
 
-// Relays frames to the Sandbox's configured executor through its authenticated RunnerExec.Connect
-// stream. Callers choose only a Sandbox identity and Session.
+// Typed execution operations; no caller-owned transport tunnel.
 service ExecutorGateway {
-  rpc Connect(stream ExecutorFrame) returns (stream ExecutorFrame);
-}
-
-message ExecutorFrame {
-  oneof frame {
-    ExecutorOpen open = 1;  // first frame from the caller
-    ExecutorReady ready = 2;  // first response after the Runner opens its configured endpoint
-    ExecutorMessage message = 3;
-    ExecutorClose close = 4;
-  }
-}
-
-message ExecutorOpen {
-  agentplane.proto.SandboxDestination destination = 1;
-  string expected_incarnation_uid = 2;
-  string session_id = 3;  // attribution supplied by the authorized caller
-}
-
-message ExecutorReady {
-  bool accepted = 1;
-}
-
-// One message payload and its WebSocket opcode. Payload bytes are preserved verbatim.
-message ExecutorMessage {
-  enum Opcode {
-    OPCODE_TEXT = 0;
-    OPCODE_BINARY = 1;
-  }
-  Opcode opcode = 1;
-  bytes payload = 2;
-}
-
-// A WebSocket close frame. Leaving the public gRPC stream open until cancellation maps to normal close.
-message ExecutorClose {
-  uint32 code = 1;
-  string reason = 2;
+  rpc OpenSession(agentplane.proto.OpenSessionRequest) returns (stream agentplane.proto.OpenSessionResponse);
+  rpc StartProcess(agentplane.proto.StartProcessRequest) returns (agentplane.proto.StartProcessResponse);
+  rpc ReadProcess(agentplane.proto.ReadProcessRequest) returns (agentplane.proto.ReadProcessResponse);
+  rpc WriteProcess(agentplane.proto.WriteProcessRequest) returns (agentplane.proto.WriteProcessResponse);
+  rpc SignalProcess(agentplane.proto.SignalProcessRequest) returns (agentplane.proto.SignalProcessResponse);
+  rpc TerminateProcess(agentplane.proto.TerminateProcessRequest) returns (agentplane.proto.TerminateProcessResponse);
+  rpc GetFileMetadata(agentplane.proto.GetFileMetadataRequest) returns (agentplane.proto.GetFileMetadataResponse);
+  rpc OpenFile(agentplane.proto.OpenFileRequest) returns (agentplane.proto.OpenFileResponse);
+  rpc ReadFile(agentplane.proto.ReadFileRequest) returns (agentplane.proto.ReadFileResponse);
+  rpc CloseFile(agentplane.proto.CloseFileRequest) returns (agentplane.proto.CloseFileResponse);
 }

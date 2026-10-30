@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "execution",
+    srcs = [
+        "adapter.go",
+        "connection.go",
+        "methods.go",
+        "protocol.go",
+        "sessions.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/execution",
+    deps = [
+        "//agentplane/grpc/streaming",
+        "//agentplane/proto:execution_go_proto",
+        "//agentplane/runner:runner_exec_go_proto",
+        "@com_github_coder_websocket//:websocket",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "execution_test",
+    srcs = ["adapter_test.go"],
+    embed = [":execution"],
+    race = "on",
+    deps = [
+        "//agentplane/proto:execution_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_exec_go_proto",
+        "@com_github_coder_websocket//:websocket",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

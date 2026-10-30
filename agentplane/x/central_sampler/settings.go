@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"regexp"
 	"slices"
@@ -58,28 +59,29 @@ func (c ModelConfig) Validate() error {
 }
 
 type Settings struct {
-	Models             map[string]ModelConfig `json:"models"`
-	DatabaseURL        string                 `json:"database_url"`
-	Listen             string                 `json:"listen"`
-	LLMProxyURL        string                 `json:"llm_proxy_url"`
-	Credential         string                 `json:"credential"`
-	CredentialFile     string                 `json:"credential_file"`
-	Audience           string                 `json:"audience"`
-	AllowedAccounts    []string               `json:"allowed_accounts"`
-	CodeModeHost       string                 `json:"code_mode_host"`
-	ExecutorCodex      string                 `json:"executor_codex"`
-	Logs               string                 `json:"logs"`
-	HistoryTarget      string                 `json:"history_target"`
-	HistoryTokenFile   string                 `json:"history_token_file"`
-	GatewayTarget      string                 `json:"gateway_target"`
-	GatewayTokenFile   string                 `json:"gateway_token_file"`
-	DirectExecutorURL  string                 `json:"direct_executor_url"`
-	MaxLiveSessions    int                    `json:"max_live_sessions"`
-	TurnTimeoutSeconds int                    `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds  int                    `json:"rpc_timeout_seconds"`
-	LeaseSeconds       int                    `json:"lease_seconds"`
-	AutoCompactTokens  *int                   `json:"auto_compact_tokens"`
-	Kubeconfig         string                 `json:"kubeconfig"`
+	Models                          map[string]ModelConfig `json:"models"`
+	DatabaseURL                     string                 `json:"database_url"`
+	Listen                          string                 `json:"listen"`
+	LLMProxyURL                     string                 `json:"llm_proxy_url"`
+	Credential                      string                 `json:"credential"`
+	CredentialFile                  string                 `json:"credential_file"`
+	Audience                        string                 `json:"audience"`
+	AllowedAccounts                 []string               `json:"allowed_accounts"`
+	CodeModeHost                    string                 `json:"code_mode_host"`
+	ExecutorCodex                   string                 `json:"executor_codex"`
+	Logs                            string                 `json:"logs"`
+	HistoryTarget                   string                 `json:"history_target"`
+	HistoryTokenFile                string                 `json:"history_token_file"`
+	GatewayTarget                   string                 `json:"gateway_target"`
+	GatewayTokenFile                string                 `json:"gateway_token_file"`
+	DirectExecutorTarget            string                 `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest bool                   `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                 int                    `json:"max_live_sessions"`
+	TurnTimeoutSeconds              int                    `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds               int                    `json:"rpc_timeout_seconds"`
+	LeaseSeconds                    int                    `json:"lease_seconds"`
+	AutoCompactTokens               *int                   `json:"auto_compact_tokens"`
+	Kubeconfig                      string                 `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -154,8 +156,18 @@ func (s Settings) Validate() error {
 	if gateway != (s.GatewayTokenFile != "") {
 		return errors.New("gateway target and token file must be configured together")
 	}
-	if gateway == (s.DirectExecutorURL != "") {
-		return errors.New("configure exactly one gateway or direct executor transport")
+	direct := s.DirectExecutorTarget != ""
+	if gateway == direct {
+		return errors.New("configure exactly one gateway or direct executor target")
+	}
+	if direct != s.DirectExecutorInsecureLocaltest {
+		return errors.New("direct executor target and explicit insecure localtest mode must be configured together")
+	}
+	if direct {
+		address, err := netip.ParseAddrPort(s.DirectExecutorTarget)
+		if err != nil || !address.Addr().IsLoopback() {
+			return errors.New("insecure direct executor target must use a loopback IP address")
+		}
 	}
 	remaining := strings.ReplaceAll(strings.ReplaceAll(s.GatewayTarget, "{namespace}", ""), "{sandbox}", "")
 	if strings.ContainsAny(remaining, "{}") {

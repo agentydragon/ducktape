@@ -10,7 +10,7 @@ import (
 
 func fixtureSettings() Settings {
 	return Settings{
-		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }
 
@@ -36,12 +36,21 @@ func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 
 func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 	for name, edit := range map[string]func(*Settings){
-		"history token missing":   func(s *Settings) { s.HistoryTarget = "history.invalid:8080" },
-		"gateway token missing":   func(s *Settings) { s.DirectExecutorURL = ""; s.GatewayTarget = "gateway.invalid:8080" },
-		"two executor transports": func(s *Settings) { s.GatewayTarget = "gateway.invalid:8080"; s.GatewayTokenFile = "/fixture/token" },
-		"no executor transport":   func(s *Settings) { s.DirectExecutorURL = "" },
+		"history token missing": func(s *Settings) { s.HistoryTarget = "history.invalid:8080" },
+		"gateway token missing": func(s *Settings) {
+			s.DirectExecutorTarget = ""
+			s.DirectExecutorInsecureLocaltest = false
+			s.GatewayTarget = "gateway.invalid:8080"
+		},
+		"two executor transports":              func(s *Settings) { s.GatewayTarget = "gateway.invalid:8080"; s.GatewayTokenFile = "/fixture/token" },
+		"no executor transport":                func(s *Settings) { s.DirectExecutorTarget = ""; s.DirectExecutorInsecureLocaltest = false },
+		"insecure non-loopback direct target":  func(s *Settings) { s.DirectExecutorTarget = "executor.invalid:4501" },
+		"insecure direct target with hostname": func(s *Settings) { s.DirectExecutorTarget = "localhost:4501" },
+		"insecure direct target with bad port": func(s *Settings) { s.DirectExecutorTarget = "127.0.0.1:grpc" },
+		"direct target without localtest mode": func(s *Settings) { s.DirectExecutorInsecureLocaltest = false },
 		"unknown template": func(s *Settings) {
-			s.DirectExecutorURL = ""
+			s.DirectExecutorTarget = ""
+			s.DirectExecutorInsecureLocaltest = false
 			s.GatewayTarget = "{host}:8080"
 			s.GatewayTokenFile = "/fixture/token"
 		},
@@ -140,7 +149,8 @@ func TestSettingsReadRotatingCredentialFile(t *testing.T) {
 
 func TestGatewayTemplateCannotInjectAddress(t *testing.T) {
 	s := fixtureSettings()
-	s.DirectExecutorURL = ""
+	s.DirectExecutorTarget = ""
+	s.DirectExecutorInsecureLocaltest = false
 	s.GatewayTarget = "{sandbox}-control.{namespace}.svc.cluster.local:8080"
 	s.GatewayTokenFile = "/fixture/token"
 	address, err := s.GatewayAddress("test", "executor")

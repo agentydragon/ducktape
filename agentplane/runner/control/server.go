@@ -64,6 +64,10 @@ func (e *Epoch) Context() context.Context { return e.watch.ctx }
 
 func (e *Epoch) Number() uint64 { return e.watch.epoch }
 
+func (e *Epoch) SandboxUID() string { return e.watch.sandboxUID }
+
+func (e *Epoch) IncarnationUID() string { return e.watch.incarnationUID }
+
 type Server struct {
 	runnerservicepb.RunnerServer
 
@@ -203,11 +207,30 @@ func (s *Server) Authorize(ctx context.Context) (*Epoch, error) {
 
 // Validate rejects an authorization after its state watch has been superseded.
 func (s *Server) Validate(epoch *Epoch) error {
-	if epoch == nil || epoch.server != s || epoch.watch == nil {
-		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.validateLocked(epoch)
+}
+
+// Admit keeps the authorized epoch current until the short admission callback finishes. A newer
+// Gateway observer cannot replace the watch between validation and publication of admitted work.
+func (s *Server) Admit(ctx context.Context, admit func(*Epoch) error) error {
+	epoch, err := s.Authorize(ctx)
+	if err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := s.validateLocked(epoch); err != nil {
+		return status.Error(codes.Unavailable, "Runner control call is outside the current connection epoch")
+	}
+	return admit(epoch)
+}
+
+func (s *Server) validateLocked(epoch *Epoch) error {
+	if epoch == nil || epoch.server != s || epoch.watch == nil {
+		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
+	}
 	if s.watch != epoch.watch || !epoch.watch.ready || epoch.watch.ctx.Err() != nil {
 		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
 	}

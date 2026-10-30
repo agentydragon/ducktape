@@ -18,7 +18,7 @@ func (r *Runner) Run(ctx context.Context, ingressEndpoint configuration.Endpoint
 	serverCtx, cancelServer := context.WithCancel(context.WithoutCancel(ctx))
 	ingressCtx, cancelIngress := context.WithCancel(context.WithoutCancel(ctx))
 	var streams sync.WaitGroup
-	listener, server, err := r.control.Listen(r.executorRelay)
+	listener, server, err := r.control.Listen(r.execution)
 	if err != nil {
 		cancelServer()
 		cancelIngress()
