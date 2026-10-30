@@ -363,7 +363,7 @@ SourceUnit-based relational selectors inspect facts on each statement site; they
 not union those facts across all redeclarations. Binding selectors canonicalize
 to the first declaration site, so relations composed with them cannot inspect
 later sites' facts. A `source_match` used as a source-unit endpoint
-(§ Native-operation inputs, § Commuting statements) selects the declaration
+(§ Native integrity inputs, § Commuting statements) selects the declaration
 site its template matched, so every site is addressable there; a template
 matching several sites of one binding is an ambiguity error. Control-flow
 statements containing `var` move intact; all bindings they declare must be
@@ -1232,78 +1232,14 @@ carries no value-input use. The source digest
 binds the input to parsed bytes, but it does not establish the external runtime
 audit, code outside the analyzed prefix, or host behavior.
 
-## Exact-site native-call identity inputs
+## Native integrity inputs
 
-`chunk_analysis_options.<defining chunk>.native_call_identity_inputs` supplies
-an author-audited native **callee identity** at one exact call or constructor
-site:
-
-```yaml
-chunk_analysis_options:
-  static/peer:
-    native_call_identity_inputs:
-      - source_match:
-          match: "function makeRecord(name) { return Object.freeze({ name }); }"
-          bindings: [makeRecord]
-        callee: object_freeze
-        audited_source_sha256: "<64 hex characters for the parser input>"
-```
-
-The selector must resolve to exactly one direct top-level function declaration
-whose sole body statement directly returns an ordinary, nonoptional,
-uncomputed `Object.freeze(arg)` call with one nonspread argument. Async or
-generator functions, shadowed/imported `Object`, and other call/body shapes
-are rejected. The canonical call index identifies the exact call span; another
-`Object.freeze` call does not gain the premise.
-
-The author asserts that the ordinary global `Object` binding and its original
-own data `freeze` member retain their native identities at **every** synchronous
-at-init activation of the selected site in all emitted schedules, including
-reentry. This is an explicit assertion about opaque host and source behavior,
-not an inference from missing writes. Positively identified writes to either
-required slot anywhere in the analyzed program contradict the input, including
-alias, reflective, deferred, cross-chunk and restored writes. Opaque receiver
-or key writes remain visible witnesses covered by the author premise; a write
-to an apparently unrelated property can still invoke a setter or Proxy trap.
-
-The input only supplies the callee identity needed by the existing native-call
-model. When the selected call's sole argument is a fresh plain-data object
-literal, freezing that record has no opaque heap-content effect on existing
-arrays or Sets. The heap collector still visits the callee and every argument
-child, including property-value calls and their reads, writes, throws, and
-escapes. Later consumers of the returned result retain ordinary conservative
-heap barriers; this proof does not establish a value-flow origin for the
-`Object.freeze` return. Other argument shapes keep the opaque heap barrier.
-The existing fresh-record proof separately governs native return identity,
-purity and callback timing; no whole-family `Object` integrity, general call
-purity or exception-free result follows.
-
-`callee: set_empty_private_field` instead selects a stable, direct top-level
-class declaration with a non-derived implicit constructor and exactly one
-private instance field initialized by direct, unshadowed, zero-argument
-`new Set` (with or without empty parentheses). The selected class and field
-must have the existing checked local-class shape: no decorators, computed
-keys, explicit constructor, unsupported field expressions, class rebinding or
-dynamic-scope contamination. The canonical class/call index records the
-private field's exact constructor span. The author asserts that the original
-global `Set` data binding is the callee for **every** execution of that field
-site in every permitted emitted schedule. Positively identified global `Set`
-replacement, accessor installation, deletion or restoration anywhere in the
-analyzed program, including other chunks and aliases, contradicts the input.
-Opaque writes remain visible witnesses under the author obligation.
-
-This premise certifies only the selected zero-argument native construction's
-fresh allocation and lack of synchronous user callbacks. The shared
-empty-collection and local-class proofs carry the exact input reference into
-purity, synchronous timing and heap ordering. It does not certify `Set.add`,
-iteration, private-field methods, another `new Set` site, or whole-family Set
-integrity. Other field initializers, callee/argument evaluation, throws and
-later method calls retain their ordinary rules.
-
-## Native-operation inputs
-
-`chunk_analysis_options.<defining chunk>.native_operation_inputs` can certify
-the identity of one direct native operation initializer:
+A native premise is an integrity flag on an intrinsic slot: `%Set%`,
+`%Object.freeze%`, `%Array.prototype%`, `%ArrayIteratorPrototype%`. A slot is
+intact when the closed whole-program write census (§ Inferred native
+property-key domains) has no known or possible write to it, to its family or to
+the global object; it is unknown otherwise. Two author fields instead assert
+slots at one exact source site, as an `IntrinsicIntact(slots, site)` axiom:
 
 ```yaml
 chunk_analysis_options:
@@ -1315,148 +1251,55 @@ chunk_analysis_options:
         operation: symbol
         audited_source_sha256: "<64 hex characters for the parser input>"
         note: "The original Symbol data binding is stable during chunk initialization."
+    native_call_identity_inputs:
+      - source_match:
+          match: "function makeRecord(name) { return Object.freeze({ name }); }"
+          bindings: [makeRecord]
+        callee: object_freeze
+        audited_source_sha256: "<64 hex characters for the parser input>"
 ```
 
-An input must give exactly one selector: the existing `source_match`, or
-`resolved_member: { module: <logical module path>, name: <public member name> }`.
-The latter refers to an already resolved, unique logical member in the same
-provider chunk and must identify one original local declaration. It reuses the
-member's canonical selector result, including relational selectors; it does
-not resolve another source template. A `source_match` names one declared
-binding and selects the declaration site its template matched; for a binding
-declared at several `var` sites that is the matched site, not the binding's
-first (§ Repeated `var` declarations). Both forms retain their actual selector
-provenance, parser-input SHA-256, spec location, selected binding and original
-site in the report. The digest uses the same parser-input provenance as
-`value_inputs`. The operation set accepts `symbol`, `symbol_for`, `promise_resolve`,
-`set_from_primitive_array`, `set_from_set_spread`, `object_own_data_function_read`,
-and `array_spread_from_primitive_arrays`.
-The `symbol_for` operation selects `Symbol.for(...)` and asserts both original
-global `Symbol` identity and original direct `for` data-property identity.
-The selector must identify one direct top-level simple binding initializer
-whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` or
-`Symbol.for(...)` call matching the selected operation, with zero or one
-syntactically primitive argument and no spread. Shadowed
-`Symbol`, computed or optional calls, other expression shapes and known
-in-source writes to the global `Symbol` binding/property are rejected. A
-`symbol_for` input also rejects known writes to the `Symbol.for` property. The
-known-write check covers the analyzed initialization region, including
-deferred bodies, so replacement followed by restoration cannot be reordered
-around the selected call. It queries the shared native write census for the
-source-known global-object `Symbol` slot and, for `symbol_for`, the constructor's
-`for` slot. The census also reports typed
-constructor, prototype, descendant, and unknown receiver paths with string,
-`Symbol.iterator`, other-symbol, and unknown keys. These details retain the
-existing family-wide guard effects; an opaque path or key is a witness rather
-than a source-known contradiction of the input.
+A `native_operation_inputs` entry gives exactly one selector: `source_match`, or
+`resolved_member: { module: <logical module path>, name: <public member name> }`,
+which reuses an already resolved logical member's canonical selector result in
+the same provider chunk. A `source_match` names one declared binding and
+selects the declaration site its template matched (§ Repeated `var`
+declarations). A `native_call_identity_inputs` entry selects the declaration
+holding the call. `audited_source_sha256` must match the provider's parser input,
+as for `value_inputs`; the report retains the selector provenance, digest, spec
+location, selected binding and site.
 
-A `promise_resolve` selector must identify one direct top-level simple binding
-initialized by an ordinary, nonoptional, uncomputed, zero-argument
-`Promise.resolve()` call. Shadowed globals, aliases and detached callees are
-rejected. The shared native write census rejects known writes to the global
-`Promise` slot or the constructor's `resolve` property, including accessor
-installation, deletion and replacement later restored in any analyzed chunk.
+| Input                                | Selected source                                                                                                                                        | Asserted slots                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                  | `%Symbol%`                                                                  |
+| `symbol_for`                         | The same with `Symbol.for(...)`                                                                                                                        | `%Symbol%`, `%Symbol.for%`                                                  |
+| `promise_resolve`                    | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                            | `%Promise%`, `%Promise.resolve%`                                            |
+| `set_from_primitive_array`           | Top-level simple binding initialized by `new Set([primitive literals])` over a dense, nonspread array                                                  | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
+| `set_from_set_spread`                | `new Set([...seed, primitive literals])` in the same declaration and output as a selected `set_from_primitive_array` seed and every declarator between | Those slots and `%SetIteratorPrototype%`                                    |
+| `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, an own-data function of the shared `PURE_STATIC_FUNCTION_REFS` table                          | `%Object%`, `%Object.<name>%`                                               |
+| `array_spread_from_primitive_arrays` | Last declarator of a `const` whose earlier declarators are dense primitive arrays and whose initializer holds primitives and spreads of them           | `%Array.prototype%`, `%ArrayIteratorPrototype%`                             |
+| `callee: object_freeze`              | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                       | `%Object%`, `%Object.freeze%` at that call                                  |
+| `callee: set_empty_private_field`    | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                                       | `%Set%` at that constructor                                                 |
 
-This is explicit author input, not an inferred source fact or a point-in-time
-snapshot. For `symbol` and `symbol_for`, the author asserts that the direct
-callee remains the original native `Symbol` data binding and, for `symbol_for`,
-the original `for` data property throughout every synchronous initialization
-schedule allowed by emission. For `promise_resolve`, the author asserts that
-the global Promise data binding and its `resolve` data property retain the
-original native identity throughout those schedules. A Promise input is
-consumed only when the exact selected call also has the independent matching
-`host_behavior.reentry_free_operations: [promise_resolve]` assertion; it cannot by itself
-admit the host timing contract. A11's external native-identity obligation
-still applies. The input is consumed only at the exact selected call span;
-other native calls retain their ordinary native-integrity checks. Opaque
-possible receiver writes may be covered by this author premise, but their
-witnesses remain in the shared census and report. No whole-lifetime purity,
-no-reentry or receiver guarantee follows. One narrower consequence is proved
-separately: when the selected `symbol_for` initializer has exactly one literal
-string argument, the original native call has no observable write, callback,
-or throw under ECMAScript's agent-local registry semantics. That exact source
-unit is pure with a `native_operation_inputs` proof dependency, and its call
-adds no opaque array-content frontier. Other argument expressions, even if
-primitive-valued, retain their ordinary throw and purity analysis. Callee and
-argument evaluation, other writes, callbacks, publication, CommonJS behavior
-and all other calls keep their ordinary analysis.
+Every call is ordinary, nonoptional and uncomputed on an unshadowed global;
+other shapes, dynamic scope and positively identified writes to an asserted
+slot anywhere in the analyzed program (alias, reflective, deferred,
+cross-chunk, restored) reject the input. Opaque receiver or key writes remain
+census witnesses covered by the assertion: a write to an apparently unrelated
+property can still run a setter or Proxy trap.
 
-`set_from_primitive_array` selects one direct top-level simple binding whose
-entire initializer is `new Set([/* primitive literals */])`. The array must be
-dense and have no spread; the constructor must be the unshadowed direct `Set`
-identifier. The premise asserts that the global `Set` data binding, the
-original `Set.prototype.add`, the ordinary Array iterator method and that
-iterator's `next` protocol retain their native identities for this construction
-in every allowed initialization schedule. The source census rejects positively
-identified writes to those required slots, including aliases, reflective
-writes, restoration and other analyzed chunks. Opaque receiver/key witnesses
-remain reported and are covered only by the explicit author premise. The
-selected call gains a fresh native Set identity in canonical value flow and a
-Set-content allocation cell in the shared heap ordering graph. Other `new Set`
-sites remain unknown. The existing constructor-purity rule can consume this
-exact site's certified native protocol when the primitive array and surrounding
-expression checks pass. This premise certifies construction only: later Set
-mutators, accessors and iteration still need their own proof and keep their
-ordinary effect barriers.
-
-`set_from_set_spread` selects a direct unshadowed
-`new Set([...source, /* primitive literals */])` initializer, with one
-identifier spread first and no holes or other spreads. It separately asserts
-the native Set construction protocol above and the Set iterator method and
-iterator `next` identities at that exact operation. The spread is admitted
-only when `source` was initialized by a selected `set_from_primitive_array`
-operation earlier in the **same original top-level declaration**, every
-intervening declarator is independently selected as
-`set_from_primitive_array`, and all those bindings plus the spread binding
-have the same explicit output destination. The source interval therefore has
-no callback, alias write, own iterator override, or interposed module body;
-the emitted module retains the declarators' original order. This condition is
-checked from selected source spans, split-view ordinals and explicit
-assignment before value-flow solving. The selected spread then contributes a
-fresh Set origin to that one shared solve, a precise Set-content read to the
-heap ordering graph, and proof dependencies on all required selected native
-operations. A different output, uncertified intervening source unit, or
-unselected seed rejects the input. Calls and mutations outside the interval
-retain ordinary ordering; this premise does not certify later Set operations.
-
-`object_own_data_function_read` selects one simple top-level binding whose
-entire initializer is an uncomputed, nonoptional `Object.<name>` member read.
-`Object` must be the unshadowed global binding and `<name>` must occur in the
-shared `PURE_STATIC_FUNCTION_REFS` own-data table. The author asserts that the
-original `Object` constructor binding and that exact own-data property retain
-their native identities throughout every admitted initialization schedule.
-Known writes to either exact slot in any analyzed chunk contradict the input;
-unknown receiver/key effects remain an explicit audit obligation. A sibling
-property write does not contradict this premise. An intact whole-program native
-integrity proof can certify the read without author input. The shared semantic
-certificate is consumed by purity, synchronous timing, and heap ordering at
-the exact read span. Receiver evaluation remains; an invocation of the read
-function still follows ordinary call effect analysis. The input grants no
-function-call purity, argument contract, or return shape.
-
-`array_spread_from_primitive_arrays` selects the receiving binding in a
-top-level multi-declarator `const` whose preceding declarators are dense arrays
-of primitive literals and whose initializer contains only primitive literals
-and direct spreads of those preceding bindings. No intervening declarator may
-evaluate user code or expose a producer. For example:
-
-```yaml
-source_match:
-  match: "const first = ['a'], second = ['b'], scopes = ['base', ...first, ...second];"
-  bindings: [scopes]
-operation: array_spread_from_primitive_arrays
-audited_source_sha256: "<64 hex characters for the parser input>"
-```
-
-The author asserts that the original Array iterator and iterator-next data
-operations remain intact throughout every possible initialization schedule.
-The parser-bound input can cover opaque writes, but positively identified
-Array-family and iterator-next writes contradict it. Without this input, the
-engine needs completed `Array` native integrity. The source-derived shape
-proves fresh dense elements and a closed, inert interval; the graph co-locates
-the producer and consumer statements to retain that interval in the emitted
-module. Other effects and reads retain ordinary analysis, and the input grants
-no family-wide Array integrity. The external A11 obligation still applies.
+The author asserts that the slots keep their original native identities at
+**every** synchronous initialization execution of the site in every schedule
+emission allows, including reentry. It is not a snapshot: a later or deferred
+replacement could move before the site in an emitted schedule. At that site the
+slots' flags read author-asserted, and a consumer that would otherwise need the
+census takes the axiom instead, recording the input in
+`native_operation_input_uses` and its proof dependencies. A `promise_resolve`
+input applies only together with `host_behavior.reentry_free_operations:
+[promise_resolve]`. An asserted operation still evaluates its callee and
+arguments with their effects and throws; the input grants no family-wide
+integrity, purity, return shape or guarantee at another site, and A11 remains
+the external obligation for code outside the analyzed program.
 
 ## Commuting statements
 

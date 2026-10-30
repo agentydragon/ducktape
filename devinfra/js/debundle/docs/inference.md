@@ -8,43 +8,41 @@ candidates; candidates alone cannot certify an operation. Rules use typed
 `FactContext` access so an enclosing rule family can project their keys without
 copying a private summary or hiding a read from the worklist.
 
-The current rules compose as follows:
+Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
+answers `integrity(slot)` for an intrinsic slot (`%Set%`, `%Object.freeze%`,
+`%Array.prototype%`, `%ArrayIteratorPrototype%`) from the completed census and
+the `IntrinsicIntact` axioms resolved from validated author inputs; rules and
+builtin rows read those flags without a key of their own. The current rules
+compose as follows:
 
 ```mermaid
 flowchart LR
-    census[Completed native census] --> native[Native integrity]
-    inputs[Validated author inputs]
-    native --> identity[Native call identity]
-    native --> owndata[Native own-data read]
-    inputs --> owndata
+    census[Completed native census] --> flags[Slot integrity flags]
+    inputs[Validated author inputs] --> flags
+    flags --> calls[Guarded native call summaries]
+    flags --> owndata[Native own-data read]
     shape[Canonical source shapes] --> origin[Own-property source origin]
     origin --> ownshape[Own-property static shape]
     ownshape --> prefix[Own-property prefix state]
-    identity --> projection[Own-property projection]
+    calls --> projection[Own-property projection]
     prefix --> projection
     projection --> names[Own-name and descriptor results]
-    identity --> empty[Empty collection construction]
-    inputs --> empty
-    identity --> calls[Guarded native call summaries]
-    empty --> class[Local class construction]
-    native --> set[Primitive Set iteration]
-    native --> spread[Stable primitive array spread]
-    inputs --> spread
+    flags --> class[Local class construction]
+    flags --> set[Primitive Set iteration]
+    flags --> spread[Stable primitive array spread]
     shape --> stable[Stable source function]
     stable --> provider[Stable provider]
     stable --> noescape[Argument no-escape]
     inputs --> noescape
     stable --> callback[Returned callback factory]
     stable --> record[Returned record]
-    empty --> record
+    flags --> record
     stable --> wrapper[Namespace wrapper]
-    empty --> wrapper
-    native --> wrapper
+    flags --> wrapper
     census --> dcprovider[Descriptor-copy provider]
     inputs --> dcprovider
     dcprovider --> dcfactory[Descriptor-copy factory call]
     shape --> dcfactory
-    shape --> empty
     shape --> class
     shape --> set
     shape --> spread
@@ -57,38 +55,43 @@ flowchart LR
     dcfactory --> consumers
 ```
 
-Native integrity checks the completed census, including dynamic scope and
-global-object mutations. The `Function` family is included so source-visible
-changes to `Function.prototype.call` can invalidate only proofs that consume
-that capability. Native prototype crossings and `Object.getPrototypeOf` result
-aliases retain an opaque native root: a later write invalidates every
-potentially affected family rather than trusting the original receiver's family.
-Native call identity also checks the exact binding,
-shadowing, and `globalThis` qualification before requiring both the global
-object and operation roots. Empty collection construction uses that identity
-judgment with the native operation's fresh-allocation model. Local class
-construction requires every native field allocation. Primitive Set iteration
-requires both Set and Array integrity and a checked source shape. The original
-restrictions on class identity, construction sites, arguments, primitive
-elements, mutation and escape remain in their structural analyses. Callback
-factories and returned records require the same stable-function judgment;
-returned records additionally require their checked native allocation. Their
-member and capture data are carried by the resulting fact.
+A slot is intact only when the census is closed (every analyzed chunk
+contributed, no dynamic scope) and neither its family nor the global object is
+mutated. The `Function` family is included so source-visible changes to
+`Function.prototype.call` can invalidate only proofs that consume that
+capability. Native prototype crossings, `Object.getPrototypeOf` result aliases
+and global-slot read-backs retain an opaque native root: a later write through
+one invalidates every slot rather than trusting the original receiver's family.
+An axiom covering every requested slot at the queried site is consumed instead
+of the census and recorded as that input's proof dependency.
+
+A native callee's identity is its spelling (the unshadowed, undeclared global
+binding of the row's family, or an unshadowed `globalThis` qualifying it) plus
+the flags of the row's `requires` slots at the call. Empty collection
+construction is that identity for a zero-argument keyed-collection constructor;
+local class construction requires it for every native field allocation, where
+a `set_empty_private_field` axiom can stand in at its site. Primitive Set
+iteration requires the Set and Array iterator slots and a checked source shape.
+The original restrictions on class identity, construction sites, arguments,
+primitive elements, mutation and escape remain in their structural analyses.
+Callback factories and returned records require the same stable-function
+judgment; returned records additionally require their native allocation. Their
+member and capture data are carried by the resulting fact. Each certificate
+records which native premises it consulted, so its report names
+`native_call_identity`, `native_integrity` and `empty_collection_construction`
+exactly when the census established them.
 
 A native own-data read certifies one exact original `Object.<name>` own-data
-member read from either global-object and `Object` integrity or a validated
-`object_own_data_function_read` input. Stable primitive array spread requires
-the checked multi-declarator source shape and either `Array` integrity or an
-`array_spread_from_primitive_arrays` input. Stable provider and argument
-no-escape both require the stable-function judgment on a hoisted, never
-rebound binding; argument no-escape additionally requires a validated
-`argument_inputs` reference. A descriptor-copy provider requires the completed
-census, exactly one authored factory signature and that author reference; a
-descriptor-copy factory call requires its provider plus the candidate call's
-exact signature: one object argument, every eager own-data key present and no
-assigned data key backed by an accessor. Empty collection sites can also be
-certified by a `set_empty_private_field` input instead of the binding's
-native call identity.
+member read from the `%Object%` and `%Object.<name>%` flags. Stable primitive
+array spread requires the checked multi-declarator source shape and the Array
+iterator flags. Stable provider and argument no-escape both require the
+stable-function judgment on a hoisted, never rebound binding; argument
+no-escape additionally requires a validated `argument_inputs` reference. A
+descriptor-copy provider requires the closed census, exactly one authored
+factory signature and that author reference; a descriptor-copy factory call
+requires its provider plus the candidate call's exact signature: one object
+argument, every eager own-data key present and no assigned data key backed by
+an accessor.
 
 Own-property inspection is a direct producer in the shared runtime fact
 context, keyed by the query's program point. It reads completed semantic
@@ -104,14 +107,14 @@ fact without a native call key; the consumer composes that origin with its
 separately guarded provider proof.
 
 Native call identity feeds the builtin summary table,
-`facts/abstract_domain/builtins.rs`. Once the judgment holds for a call's
+`facts/abstract_domain/builtins.rs`. Once identity holds for a call's
 callee, the interpreter looks up the operation's row and admits the call only
 when the row's arity holds, it invokes nothing, every write it lists is proved
 on the call's operands, and every coercion it lists lands on a primitive or
 proven ordinary operand. The row's `returns` and `allocates` columns then give
 the value lane its result, and the keyed-collection rows give empty collection
 construction its allocation model. The table is the only place that states
-what a builtin does; the judgment establishes only which builtin it is.
+what a builtin does; identity establishes only which builtin it is.
 
 The namespace summary is conditional on an ordinary input and an exact literal
 `true` second argument. Its source shape preserves the private WeakMap cache,
@@ -151,9 +154,9 @@ only and are never decoded back into trusted judgments.
 An evaluator cannot publish a fact after requesting an unproved prerequisite,
 even if it accidentally returns a successful value.
 
-Native judgments require a completed write census. Earlier callback-argument
-analysis can derive source-only callable facts while native judgments remain
-unavailable; it cannot use an empty, unfinished mutation set as proof of
+Native flags require a closed write census. Earlier callback-argument
+analysis can derive source-only callable facts while every flag is still
+unknown; it cannot use an empty, unfinished mutation set as proof of
 integrity.
 
 The typed key names the judgment, rather than a universal "safe" boolean.

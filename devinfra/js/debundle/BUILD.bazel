@@ -484,6 +484,7 @@ rust_library(
         "facts/abstract_domain/builtins.rs",
         "facts/abstract_domain/effect.rs",
         "facts/abstract_domain/heap.rs",
+        "facts/abstract_domain/integrity.rs",
         "facts/abstract_domain/value.rs",
         "facts/analyze.rs",
         "facts/array_content_effects.rs",

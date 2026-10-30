@@ -3,7 +3,11 @@
 //! Syntax candidates are not certificates. The queue derives certificates only
 //! after their mandatory premises have been proved, and unions their captured
 //! input dependencies. Purity, timing and heap ordering share this same store.
+//! Native premises are not keys: a rule reads the callee's binding identity and
+//! the integrity flags of the slots it needs (`abstract_domain::integrity`).
 
+use super::abstract_domain::builtins::Row;
+use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use super::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordFacts,
 };
@@ -12,9 +16,8 @@ use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
 use super::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::analysis_inputs::{
-    ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeInputKind,
-    NativeIntrinsic, NativeOperationInputEvidence, NativeOperationInputRef, ProofDependencies,
-    ResolvedArgumentInput,
+    ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
+    ProofDependencies, ResolvedArgumentInput,
 };
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
@@ -22,26 +25,15 @@ use crate::inference::{
 };
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use spec::DescriptorCopyFactorySignature;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum SemanticKey {
-    NativeIntegrity(NativeIntrinsic),
-    NativeCallIdentity {
-        binding: Id,
-        intrinsic: NativeIntrinsic,
-        global_this_qualified: bool,
-    },
-    /// Exact original native own-data member read; the key is its source span.
-    NativeOwnDataRead(u32),
-    EmptyCollection(Id),
-    EmptyCollectionSite {
-        binding: Id,
-        site: u32,
-    },
     LocalClass(u32),
     PrimitiveSetIteration(u32),
     StablePrimitiveArraySpread(u32),
@@ -78,12 +70,6 @@ pub(crate) enum SemanticKey {
 impl SemanticKey {
     fn rule(&self) -> InferenceRule {
         match self {
-            Self::NativeIntegrity(_) => InferenceRule::NativeIntegrity,
-            Self::NativeCallIdentity { .. } => InferenceRule::NativeCallIdentity,
-            Self::NativeOwnDataRead(_) => InferenceRule::NativeOwnDataRead,
-            Self::EmptyCollection(_) | Self::EmptyCollectionSite { .. } => {
-                InferenceRule::EmptyCollectionConstruction
-            }
             Self::LocalClass(_) => InferenceRule::LocalClassConstruction,
             Self::PrimitiveSetIteration(_) => InferenceRule::PrimitiveSetIteration,
             Self::StablePrimitiveArraySpread(_) => InferenceRule::StablePrimitiveArraySpread,
@@ -104,7 +90,6 @@ impl SemanticKey {
 #[derive(Debug, Clone)]
 pub(crate) enum SemanticFact {
     Certificate,
-    NativeOwnDataRead(NativeOwnDataReadPremise),
     Function(u32),
     CallbackFactory(u32),
     ReturnedRecord(Arc<ReturnedRecordFacts>),
@@ -112,11 +97,158 @@ pub(crate) enum SemanticFact {
 }
 
 /// Binding-resolution facts captured alongside the canonical source analysis.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct NativeBindingContext {
     pub(crate) declared_bindings: BTreeSet<Id>,
     pub(crate) shadowed_globals: BTreeSet<&'static str>,
     pub(crate) global_object_names: BTreeSet<&'static str>,
+}
+
+/// The source spelling of a native callee: a global binding, or a member of an
+/// unshadowed `globalThis`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeCallee {
+    pub(crate) binding: Id,
+    pub(crate) global_this_qualified: bool,
+}
+
+/// `Env(binding) = Intrinsic(family)`: the binding is neither declared nor
+/// shadowed and names the family's global, or is the unshadowed `globalThis`
+/// qualifying it. Integrity of the slots it reads is a separate premise.
+pub(crate) fn names_intrinsic(
+    callee: &NativeCallee,
+    family: NativeIntrinsic,
+    declared: bool,
+    shadowed_globals: &BTreeSet<&'static str>,
+    global_object_names: &BTreeSet<&'static str>,
+) -> bool {
+    let name = callee.binding.0.as_ref();
+    !declared
+        && !shadowed_globals.contains(name)
+        && if callee.global_this_qualified {
+            name == "globalThis" && global_object_names.contains("globalThis")
+        } else {
+            NativeIntrinsic::for_global_binding(name) == Some(family)
+        }
+}
+
+/// A consumed native premise: its typed dependencies and report entry.
+#[derive(Debug, Clone)]
+pub(crate) struct NativePremise {
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) inference_use: InferenceUse,
+    /// The census, not an author axiom, established it.
+    pub(crate) census: bool,
+}
+
+/// Resolve `slots` at `site` into a premise reported as `conclusion`. A census
+/// proof derives it through native integrity; an author axiom names its input.
+pub(crate) fn native_premise(
+    integrity: &IntegrityFlags,
+    slots: &[IntrinsicSlot],
+    site: Option<u32>,
+    conclusion: InferenceRule,
+) -> Option<NativePremise> {
+    let resolved = integrity.require(slots, site);
+    let dependencies = resolved.dependencies()?;
+    let census = matches!(resolved, Integrity::Intact(_));
+    Some(NativePremise {
+        inference_use: InferenceUse {
+            conclusion,
+            derivation_rules: [conclusion]
+                .into_iter()
+                .chain(census.then_some(InferenceRule::NativeIntegrity))
+                .collect(),
+            value_input_refs: dependencies.value_inputs.clone(),
+            descriptor_copy_author_refs: BTreeSet::new(),
+            argument_input_refs: BTreeSet::new(),
+            argument_input_spec_locations: BTreeSet::new(),
+            native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+        },
+        census,
+        dependencies,
+    })
+}
+
+/// Native premises a semantic rule consults. Each records what it used in
+/// `consulted` so the derivation report names the same rules as the proof.
+#[derive(Debug, Default)]
+pub(crate) struct NativePremises {
+    pub(crate) integrity: IntegrityFlags,
+    pub(crate) bindings: NativeBindingContext,
+}
+
+impl NativePremises {
+    /// Every slot intact (or asserted at `site`).
+    pub(crate) fn require_slots(
+        &self,
+        slots: &[IntrinsicSlot],
+        site: Option<u32>,
+        context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
+        consulted: &mut BTreeSet<InferenceRule>,
+    ) -> Option<()> {
+        let resolved = self.integrity.require(slots, site);
+        context.assume(&resolved.dependencies()?);
+        if matches!(resolved, Integrity::Intact(_)) {
+            consulted.insert(InferenceRule::NativeIntegrity);
+        }
+        Some(())
+    }
+
+    /// `callee` names the original `family` global and `slots` are intact.
+    pub(crate) fn require_binding(
+        &self,
+        callee: &NativeCallee,
+        family: NativeIntrinsic,
+        slots: &[IntrinsicSlot],
+        site: Option<u32>,
+        context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
+        consulted: &mut BTreeSet<InferenceRule>,
+    ) -> Option<()> {
+        if !names_intrinsic(
+            callee,
+            family,
+            self.bindings.declared_bindings.contains(&callee.binding),
+            &self.bindings.shadowed_globals,
+            &self.bindings.global_object_names,
+        ) {
+            return None;
+        }
+        let resolved = self.integrity.require(slots, site);
+        context.assume(&resolved.dependencies()?);
+        if matches!(resolved, Integrity::Intact(_)) {
+            consulted.extend([
+                InferenceRule::NativeCallIdentity,
+                InferenceRule::NativeIntegrity,
+            ]);
+        }
+        Some(())
+    }
+
+    /// A zero-argument `new binding()` of a keyed collection: a fresh, empty
+    /// allocation that runs no user code.
+    pub(crate) fn require_empty_collection(
+        &self,
+        row: &Row,
+        binding: &Id,
+        site: Option<u32>,
+        context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
+        consulted: &mut BTreeSet<InferenceRule>,
+    ) -> Option<()> {
+        self.require_binding(
+            &NativeCallee {
+                binding: binding.clone(),
+                global_this_qualified: false,
+            },
+            row.family(),
+            row.requires,
+            site,
+            context,
+            consulted,
+        )?;
+        consulted.insert(InferenceRule::EmptyCollectionConstruction);
+        Some(())
+    }
 }
 
 /// Source-only candidate. The rule checks the authored provider, exact keys,
@@ -130,12 +262,8 @@ pub(crate) struct DescriptorCopyCallCandidate {
     pub(crate) accessor_keys: BTreeSet<String>,
 }
 
-/// Distinguishes a source proof from one exact reviewed author premise.
-#[derive(Debug, Clone)]
-pub(crate) enum NativeOwnDataReadPremise {
-    SourceIntegrity,
-    Author(NativeOperationInputRef),
-}
+/// Native-premise rules each certificate consulted, beyond its key premises.
+type Consulted = Rc<RefCell<BTreeMap<SemanticKey, BTreeSet<InferenceRule>>>>;
 
 /// Immutable inputs from the canonical structural analysis and completed native
 /// census. A new source, policy or author-input context needs a new instance.
@@ -143,25 +271,18 @@ pub(crate) enum NativeOwnDataReadPremise {
 pub(crate) struct SemanticRules {
     pub(crate) classes: LocalClassConstructionShapes,
     pub(crate) sets: SetIterableShapes,
-    /// Fresh-allocation candidates; `NativeCallIdentity` proves their binding.
-    pub(crate) collection_bindings: BTreeMap<Id, NativeIntrinsic>,
-    /// Exact author-certified zero-argument Set sites in private class fields.
-    pub(crate) author_empty_set_fields: BTreeMap<u32, NativeOperationInputEvidence>,
-    /// A census is complete only after all analyzed chunks contribute writes.
-    pub(crate) native_census_complete: bool,
-    pub(crate) mutated_intrinsics: BTreeSet<NativeIntrinsic>,
+    /// Fresh-allocation candidates: the empty keyed-collection row each binding
+    /// constructs when it is the original native.
+    pub(crate) collection_bindings: BTreeMap<Id, &'static Row>,
+    pub(crate) native: NativePremises,
     pub(crate) dynamic_scope: bool,
-    pub(crate) native_dependencies: ProofDependencies,
-    pub(crate) binding_context: NativeBindingContext,
-    /// Exact syntactic native-call candidates found by the canonical call index.
-    pub(crate) native_call_identity_candidates: BTreeSet<SemanticKey>,
-    pub(crate) native_own_data_reads: BTreeMap<u32, NativeOwnDataReadPremise>,
     pub(crate) callables: CallableInferenceInputs,
     pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
     pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
     pub(crate) argument_inputs: BTreeMap<(Id, u32, usize, usize), ArgumentInputRef>,
     pub(crate) array_spreads: BTreeSet<u32>,
-    pub(crate) array_spread_inputs: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    /// Filled while solving; a caller leaves it at its default.
+    pub(crate) consulted: Consulted,
 }
 
 impl SemanticRules {
@@ -169,106 +290,40 @@ impl SemanticRules {
         &self,
         key: &SemanticKey,
         context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
+        consulted: &mut BTreeSet<InferenceRule>,
     ) -> Option<SemanticFact> {
         match key {
-            SemanticKey::NativeIntegrity(root) => {
-                if !self.native_census_complete
-                    || self.dynamic_scope
-                    || self
-                        .mutated_intrinsics
-                        .contains(&NativeIntrinsic::GlobalObject)
-                    || self.mutated_intrinsics.contains(root)
-                {
-                    return None;
-                }
-                context.assume(&self.native_dependencies);
-            }
-            SemanticKey::NativeCallIdentity {
-                binding,
-                intrinsic,
-                global_this_qualified,
-            } => {
-                if !self.native_call_identity_candidates.contains(key)
-                    || (!*global_this_qualified
-                        && NativeIntrinsic::for_global_binding(binding.0.as_ref())
-                            != Some(*intrinsic))
-                    || self.binding_context.declared_bindings.contains(binding)
-                    || self
-                        .binding_context
-                        .shadowed_globals
-                        .contains(binding.0.as_ref())
-                    || (*global_this_qualified
-                        && (binding.0.as_ref() != "globalThis"
-                            || !self
-                                .binding_context
-                                .global_object_names
-                                .contains("globalThis")))
-                {
-                    return None;
-                }
-                context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::GlobalObject))?;
-                context.require(SemanticKey::NativeIntegrity(*intrinsic))?;
-            }
-            SemanticKey::NativeOwnDataRead(span) => {
-                let premise = self.native_own_data_reads.get(span)?;
-                match premise {
-                    NativeOwnDataReadPremise::SourceIntegrity => {
-                        context
-                            .require(SemanticKey::NativeIntegrity(NativeIntrinsic::GlobalObject))?;
-                        context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Object))?;
-                    }
-                    NativeOwnDataReadPremise::Author(reference) => {
-                        context.assume(&ProofDependencies {
-                            native_operation_inputs: BTreeSet::from([reference.clone()]),
-                            ..ProofDependencies::default()
-                        });
-                    }
-                }
-                return Some(SemanticFact::NativeOwnDataRead(premise.clone()));
-            }
-            SemanticKey::EmptyCollection(binding) => {
-                let root = self.collection_bindings.get(binding)?;
-                context.require(SemanticKey::NativeCallIdentity {
-                    binding: binding.clone(),
-                    intrinsic: *root,
-                    global_this_qualified: false,
-                })?;
-            }
-            SemanticKey::EmptyCollectionSite { binding, site } => {
-                if let Some(evidence) = self.author_empty_set_fields.get(site) {
-                    if binding.0.as_ref() != "Set"
-                        || evidence.operation
-                            != NativeInputKind::CallIdentity(
-                                spec::NativeCallIdentityKind::SetEmptyPrivateField,
-                            )
-                    {
-                        return None;
-                    }
-                    context.assume(&ProofDependencies {
-                        native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
-                        ..ProofDependencies::default()
-                    });
-                    return Some(SemanticFact::Certificate);
-                }
-                context.require(SemanticKey::EmptyCollection(binding.clone()))?;
-            }
             SemanticKey::LocalClass(class) => {
                 for (binding, site) in self.classes.classes.get(class)? {
-                    context.require(SemanticKey::EmptyCollectionSite {
-                        binding: binding.clone(),
-                        site: *site,
-                    })?;
+                    let row = self.collection_bindings.get(binding)?;
+                    self.native.require_empty_collection(
+                        row,
+                        binding,
+                        Some(*site),
+                        context,
+                        consulted,
+                    )?;
                 }
             }
             SemanticKey::PrimitiveSetIteration(span) => {
                 if !self.sets.constructor_starts.contains(span) {
                     return None;
                 }
-                context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Set))?;
-                context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Array))?;
+                self.native.require_slots(
+                    &[
+                        IntrinsicSlot::Global(NativeIntrinsic::Set),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Set),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::ArrayIteratorPrototype,
+                    ],
+                    None,
+                    context,
+                    consulted,
+                )?;
             }
             SemanticKey::DescriptorCopyProvider(binding) => {
-                if !self.native_census_complete || self.dynamic_scope {
+                let census = self.native.integrity.closed_census()?;
+                if self.dynamic_scope {
                     return None;
                 }
                 let provider = self.descriptor_copy_providers.get(binding)?;
@@ -277,7 +332,7 @@ impl SemanticRules {
                 }
                 // Exact-slot contradiction checks consume the completed raw
                 // census, including any authored captured-value refinements.
-                context.assume(&self.native_dependencies);
+                context.assume(census);
                 context.assume(&ProofDependencies {
                     descriptor_copy_authors: BTreeSet::from([DescriptorCopyAuthorRef {
                         defining_module: provider.defining_module.clone(),
@@ -317,14 +372,15 @@ impl SemanticRules {
                 if !self.array_spreads.contains(initializer) || self.dynamic_scope {
                     return None;
                 }
-                if let Some(reference) = self.array_spread_inputs.get(initializer) {
-                    context.assume(&ProofDependencies {
-                        native_operation_inputs: BTreeSet::from([reference.clone()]),
-                        ..ProofDependencies::default()
-                    });
-                } else {
-                    context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Array))?;
-                }
+                self.native.require_slots(
+                    &[
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::ArrayIteratorPrototype,
+                    ],
+                    Some(*initializer),
+                    context,
+                    consulted,
+                )?;
             }
             SemanticKey::ArgumentNoEscape {
                 binding,
@@ -363,7 +419,13 @@ impl SemanticRules {
                 if self.dynamic_scope {
                     return None;
                 }
-                return self.callables.evaluate(key, context);
+                return self.callables.evaluate(
+                    key,
+                    context,
+                    &self.native,
+                    &self.collection_bindings,
+                    consulted,
+                );
             }
         }
         Some(SemanticFact::Certificate)
@@ -377,8 +439,16 @@ impl IterativeRules for SemanticRules {
 
     fn evaluate(&self, key: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let mut guarded = GuardedContext::new(context);
-        let result = self.derive(key, &mut guarded);
+        let mut consulted = BTreeSet::new();
+        let result = self.derive(key, &mut guarded, &mut consulted);
         if let Some(fact) = guarded.finish(result) {
+            if !consulted.is_empty() {
+                self.consulted
+                    .borrow_mut()
+                    .entry(key.clone())
+                    .or_default()
+                    .extend(consulted);
+            }
             context.propose(key.clone(), fact);
         }
     }
@@ -394,13 +464,14 @@ impl IterativeRules for SemanticRules {
 #[derive(Debug)]
 pub(crate) struct SemanticFacts {
     inference: IterativeFacts<SemanticKey, SemanticFact>,
+    consulted: BTreeMap<SemanticKey, BTreeSet<InferenceRule>>,
     constructions: BTreeMap<u32, u32>,
 }
 
 impl Default for SemanticFacts {
     fn default() -> Self {
         let rules = SemanticRules {
-            // A context without a completed census cannot prove native roots.
+            // A context without a completed census cannot prove native slots.
             dynamic_scope: true,
             ..SemanticRules::default()
         };
@@ -413,50 +484,19 @@ impl SemanticFacts {
         Self::solve_with_source(rules, None)
     }
 
-    fn solve_source_only(rules: SemanticRules) -> Self {
-        Self::solve_internal(rules, None, false)
-    }
-
-    pub(crate) fn solve_with_source(rules: SemanticRules, source: Option<&SemanticFacts>) -> Self {
-        Self::solve_internal(rules, source, true)
-    }
-
-    fn solve_internal(
+    pub(crate) fn solve_with_source(
         mut rules: SemanticRules,
         source: Option<&SemanticFacts>,
-        include_native_roots: bool,
     ) -> Self {
         let constructions = std::mem::take(&mut rules.classes.constructions);
-        let native_roots = [
-            NativeIntrinsic::GlobalObject,
-            NativeIntrinsic::UnknownGlobalValue,
-            NativeIntrinsic::Error,
-            NativeIntrinsic::FinalizationRegistry,
-            NativeIntrinsic::Function,
-            NativeIntrinsic::Object,
-            NativeIntrinsic::Array,
-            NativeIntrinsic::Math,
-            NativeIntrinsic::RegExp,
-            NativeIntrinsic::Symbol,
-            NativeIntrinsic::Promise,
-            NativeIntrinsic::Map,
-            NativeIntrinsic::Set,
-            NativeIntrinsic::WeakMap,
-            NativeIntrinsic::WeakSet,
-        ]
-        .into_iter()
-        .map(SemanticKey::NativeIntegrity);
-        let roots: Vec<_> = native_roots
-            .filter(|_| include_native_roots)
-            .chain(rules.native_call_identity_candidates.iter().cloned())
-            .chain(
-                rules
-                    .native_own_data_reads
-                    .keys()
-                    .copied()
-                    .map(SemanticKey::NativeOwnDataRead),
-            )
-            .chain(rules.callables.keys())
+        if let Some(source) = source {
+            rules.consulted = Rc::new(RefCell::new(source.consulted.clone()));
+        }
+        let consulted = Rc::clone(&rules.consulted);
+        let roots: Vec<_> = rules
+            .callables
+            .keys()
+            .into_iter()
             .chain(rules.argument_inputs.keys().map(
                 |(binding, function, parameter_index, exact_arity)| SemanticKey::ArgumentNoEscape {
                     binding: binding.clone(),
@@ -478,22 +518,6 @@ impl SemanticFacts {
                     .keys()
                     .copied()
                     .map(SemanticKey::DescriptorCopyCall),
-            )
-            .chain(
-                rules
-                    .collection_bindings
-                    .keys()
-                    .cloned()
-                    .map(SemanticKey::EmptyCollection),
-            )
-            .chain(
-                rules
-                    .classes
-                    .classes
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .map(|(binding, site)| SemanticKey::EmptyCollectionSite { binding, site }),
             )
             .chain(
                 rules
@@ -525,18 +549,18 @@ impl SemanticFacts {
             }
             None => IterativeInference::new(rules).solve(roots),
         };
+        let consulted = Rc::try_unwrap(consulted)
+            .expect("the solved rules released the shared derivation record")
+            .into_inner();
         Self {
             inference,
+            consulted,
             constructions,
         }
     }
 
     pub(super) fn class_for_construction(&self, span: Span) -> Option<u32> {
         self.constructions.get(&span.lo.0).copied()
-    }
-
-    pub(crate) fn fact(&self, key: &SemanticKey) -> Option<&SemanticFact> {
-        self.inference.get(key).map(|judgment| judgment.value())
     }
 
     pub(crate) fn judgment(
@@ -563,6 +587,7 @@ impl SemanticFacts {
             }
             let judgment = self.inference.get(&key)?;
             derivation_rules.insert(key.rule());
+            derivation_rules.extend(self.consulted.get(&key).into_iter().flatten().copied());
             pending.extend(judgment.premises().iter().cloned());
         }
         Some(InferenceUse {
@@ -642,7 +667,7 @@ impl ArgumentNoEscapeFacts {
             );
         }
         Self {
-            facts: SemanticFacts::solve_source_only(SemanticRules {
+            facts: SemanticFacts::solve(SemanticRules {
                 dynamic_scope,
                 callables,
                 argument_inputs: rules,
