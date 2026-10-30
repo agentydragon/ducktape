@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 // Codex rust-v0.162.1 core/src/unified_exec/mod.rs yield and output constants.
@@ -46,16 +48,16 @@ type toolOutcomeError struct {
 
 func (e *toolOutcomeError) Unwrap() error { return e.toolError }
 
-func schemaString(description string) ResponsesJSONSchema {
-	return ResponsesJSONSchema{Type: "string", Description: description}
+func schemaString(description string) protocol.JSONSchema {
+	return protocol.JSONSchema{Type: "string", Description: description}
 }
 
-func schemaNumber(description string) ResponsesJSONSchema {
-	return ResponsesJSONSchema{Type: "number", Description: description}
+func schemaNumber(description string) protocol.JSONSchema {
+	return protocol.JSONSchema{Type: "number", Description: description}
 }
 
-func schemaBoolean(description string) ResponsesJSONSchema {
-	return ResponsesJSONSchema{Type: "boolean", Description: description}
+func schemaBoolean(description string) protocol.JSONSchema {
+	return protocol.JSONSchema{Type: "boolean", Description: description}
 }
 
 // execCommandToolDefinition is upstream's Linux exec_command for Agentplane's wrapped-Codex
@@ -65,14 +67,14 @@ func schemaBoolean(description string) ResponsesJSONSchema {
 // and `prefix_rule`; they are omitted because Agentplane's Sandbox, egress and Action Service own
 // those boundaries (SPEC.md).
 // Codex rust-v0.162.1 core/src/tools/handlers/shell_spec.rs create_exec_command_tool_with_environment_id.
-func execCommandToolDefinition() ResponsesCodeToolDefinition {
+func execCommandToolDefinition() protocol.CodeToolDefinition {
 	closed := false
-	return ResponsesCodeToolDefinition{
-		Name: "exec_command", ToolName: ResponsesToolName{Name: "exec_command"},
+	return protocol.CodeToolDefinition{
+		Name: "exec_command", ToolName: protocol.ToolName{Name: "exec_command"},
 		Description: execCommandToolDescription, Kind: "function",
-		InputSchema: &ResponsesJSONSchema{
+		InputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"cmd"}, AdditionalProperties: &closed,
-			Properties: map[string]ResponsesJSONSchema{
+			Properties: map[string]protocol.JSONSchema{
 				"cmd":               schemaString("Shell command to execute."),
 				"workdir":           schemaString("Working directory for the command. Defaults to the turn cwd."),
 				"tty":               schemaBoolean("True allocates a PTY for the command; false or omitted uses plain pipes."),
@@ -87,14 +89,14 @@ func execCommandToolDefinition() ResponsesCodeToolDefinition {
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/shell_spec.rs create_write_stdin_tool.
-func writeStdinToolDefinition() ResponsesCodeToolDefinition {
+func writeStdinToolDefinition() protocol.CodeToolDefinition {
 	closed := false
-	return ResponsesCodeToolDefinition{
-		Name: "write_stdin", ToolName: ResponsesToolName{Name: "write_stdin"},
+	return protocol.CodeToolDefinition{
+		Name: "write_stdin", ToolName: protocol.ToolName{Name: "write_stdin"},
 		Description: writeStdinToolDescription, Kind: "function",
-		InputSchema: &ResponsesJSONSchema{
+		InputSchema: &protocol.JSONSchema{
 			Type: "object", Required: []string{"session_id"}, AdditionalProperties: &closed,
-			Properties: map[string]ResponsesJSONSchema{
+			Properties: map[string]protocol.JSONSchema{
 				"session_id":        schemaNumber("Identifier of the running unified exec session."),
 				"chars":             schemaString("Bytes to write to stdin. Defaults to empty, which polls without writing."),
 				"yield_time_ms":     schemaNumber("Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default."),
@@ -106,11 +108,11 @@ func writeStdinToolDefinition() ResponsesCodeToolDefinition {
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/shell_spec.rs unified_exec_output_schema.
-func unifiedExecOutputSchema() *ResponsesJSONSchema {
+func unifiedExecOutputSchema() *protocol.JSONSchema {
 	closed := false
-	return &ResponsesJSONSchema{
+	return &protocol.JSONSchema{
 		Type: "object", Required: []string{"wall_time_seconds", "output"}, AdditionalProperties: &closed,
-		Properties: map[string]ResponsesJSONSchema{
+		Properties: map[string]protocol.JSONSchema{
 			"chunk_id":             schemaString("Chunk identifier included when the response reports one."),
 			"wall_time_seconds":    schemaNumber("Elapsed wall time spent waiting for output in seconds."),
 			"exit_code":            schemaNumber("Process exit code when the command finished during this call."),

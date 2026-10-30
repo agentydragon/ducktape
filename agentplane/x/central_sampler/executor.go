@@ -15,6 +15,7 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -117,7 +118,7 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 	if needsRemote {
 		if conversation.ExecutorSession == nil {
 			_ = connection.Close()
-			return nil, nil, &UnknownEffectError{Reason: "live execution handles have no retained execution session; session substitution is unsafe"}
+			return nil, nil, &protocol.UnknownEffectError{Reason: "live execution handles have no retained execution session; session substitution is unsafe"}
 		}
 		resume = conversation.ExecutorSession
 	}
@@ -370,7 +371,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 		return nil, err
 	}
 	process, err := e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
-	if errors.Is(err, ErrMissing) {
+	if errors.Is(err, protocol.ErrMissing) {
 		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
 	}
 	if err != nil {
@@ -381,7 +382,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	defer lock.Unlock()
 	// Revalidate under the lock: the number may have been released and reused meanwhile.
 	process, err = e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
-	if errors.Is(err, ErrMissing) {
+	if errors.Is(err, protocol.ErrMissing) {
 		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
 	}
 	if err != nil {

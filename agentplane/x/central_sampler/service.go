@@ -15,6 +15,8 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerpbservice "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -59,11 +61,11 @@ func samplerError(ctx context.Context, err error) error {
 		return status.Error(codes.PermissionDenied, "session access refused")
 	case errors.Is(err, ErrConflict):
 		return status.Error(codes.AlreadyExists, "identifier already has another payload")
-	case errors.Is(err, ErrMissing):
+	case errors.Is(err, protocol.ErrMissing):
 		return status.Error(codes.NotFound, "session or command not found")
-	case errors.Is(err, ErrPrecondition):
+	case errors.Is(err, protocol.ErrPrecondition):
 		return status.Error(codes.FailedPrecondition, "session cannot apply this operation")
-	case errors.Is(err, ErrInvalid):
+	case errors.Is(err, protocol.ErrInvalid):
 		return status.Error(codes.InvalidArgument, "invalid sampler request")
 	case ctx.Err() != nil:
 		return status.FromContextError(ctx.Err()).Err()
@@ -133,25 +135,25 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	validate := func(session *Session) error {
 		currentConfig, ok := s.Settings.Models[session.Model]
 		if !ok {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if model := command.GetChangeModel(); model != nil {
 			targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
 			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
-				return ErrInvalid
+				return protocol.ErrInvalid
 			}
 			if !currentConfig.Compatible(targetConfig) {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 		}
 		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
-			return ErrInvalid
+			return protocol.ErrInvalid
 		}
-		if effort := command.GetChangeReasoningEffort(); effort != nil && currentConfig.API == APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
-			return ErrPrecondition
+		if effort := command.GetChangeReasoningEffort(); effort != nil && currentConfig.API == protocol.APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
+			return protocol.ErrPrecondition
 		}
-		if command.GetCompact() != nil && (currentConfig.Responses.Dialect == ResponsesDialectStandard || (currentConfig.API == APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
-			return ErrPrecondition
+		if command.GetCompact() != nil && (currentConfig.Responses.Dialect == responses.DialectStandard || (currentConfig.API == protocol.APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
+			return protocol.ErrPrecondition
 		}
 		return nil
 	}

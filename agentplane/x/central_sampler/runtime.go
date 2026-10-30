@@ -13,6 +13,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/protobuf/proto"
 )
@@ -146,7 +147,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 	session, err := r.store.GetSession(loadCtx, sessionID, "")
 	cancelLoad()
 	if err != nil {
-		if !errors.Is(err, ErrMissing) {
+		if !errors.Is(err, protocol.ErrMissing) {
 			slog.Error("central sampler could not load Session", "session_id", sessionID, "error", err)
 		}
 		return
@@ -178,7 +179,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 	cancelExecution()
 	heartbeatErr := <-heartbeatDone
 	if executionErr != nil && runtimeCtx.Err() == nil && heartbeatErr == nil {
-		var known *KnownFailureError
+		var known *protocol.KnownFailureError
 		if errors.As(executionErr, &known) {
 			slog.Warn("central sampler rejected execution", "session_id", sessionID, "reason", known.Error())
 		} else {
@@ -255,7 +256,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			return activeCommand, ctx.Err()
 		}
 		command, err := r.store.NextCommand(ctx, owner, sessionID)
-		if errors.Is(err, ErrPrecondition) {
+		if errors.Is(err, protocol.ErrPrecondition) {
 			return nil, nil
 		}
 		if err != nil {
@@ -348,7 +349,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 						err = callErr
 						break
 					}
-					needsHost := len(state.Cells) > 0 || len(calls) > 0 && calls[0].IsModelTool(r.settings.Models[session.Model])
+					needsHost := len(state.Cells) > 0 || len(calls) > 0 && calls[0].IsModelTool(r.settings.Models[session.Model].ExecEncoding)
 					if needsHost {
 						interrupts, interruptErr := r.store.PendingInterrupts(turnCtx, owner)
 						if interruptErr != nil {
@@ -649,11 +650,11 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	config, configured := r.settings.Models[session.Model]
 	if !configured || conversation.API != config.API {
-		return "", ErrPrecondition
+		return "", protocol.ErrPrecondition
 	}
 
 	if conversation.Pending != nil {
-		return "", &UnknownEffectError{Reason: "unresolved provider or executor intent blocks continuation; automatic replay is unsafe"}
+		return "", &protocol.UnknownEffectError{Reason: "unresolved provider or executor intent blocks continuation; automatic replay is unsafe"}
 	}
 	if conversation.Stopped {
 		return "interrupted", nil
@@ -676,14 +677,14 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	if len(calls) > 0 {
 		call := &calls[0]
-		if !call.IsModelTool(r.settings.Models[session.Model]) {
+		if !call.IsModelTool(r.settings.Models[session.Model].ExecEncoding) {
 			if !call.HasValidShape() {
-				return "", &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "call": call}}
+				return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "call": call}}
 			}
-			if call.IsConfiguredToolName(r.settings.Models[session.Model]) {
-				return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "call": call}}
+			if call.IsConfiguredToolName(r.settings.Models[session.Model].ExecEncoding) {
+				return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "call": call}}
 			}
-			content := []ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
+			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call, "dispatched": false})
 			if err != nil {
 				return "", err
@@ -698,7 +699,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "cell", nil
 		}
 		if live == nil {
-			return "", &KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
+			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
 		intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call})
 		if err != nil {
@@ -708,7 +709,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if err != nil {
 			var hostError *codeModeHostResponseError
 			if errors.As(err, &hostError) && hostError.phase == codeOperationResponsePhase {
-				content = []ContentPart{{Type: "input_text", Text: hostError.message}}
+				content = []protocol.ContentPart{{Type: "input_text", Text: hostError.message}}
 				result := map[string]any{
 					"call_id": call.CallID, "output": content, "success": false,
 					"code_mode_host_response": hostError.evidence(),
@@ -718,7 +719,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 				}
 				return "cell", nil
 			}
-			var known *KnownFailureError
+			var known *protocol.KnownFailureError
 			if errors.As(err, &known) {
 				if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
 					return "", rejectErr
@@ -759,7 +760,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	if conversation.API != config.API {
-		return "", ErrPrecondition
+		return "", protocol.ErrPrecondition
 	}
 	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens)
 
@@ -795,9 +796,10 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
-	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence)
+	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
+	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, headers, false)
 	if err != nil {
-		var known *KnownFailureError
+		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
 			if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
 				return "", rejectErr
@@ -810,17 +812,17 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		err = candidate.AppendRecords(response.Records)
 	}
 	if err == nil {
-		var pending []ToolInvocation
+		var pending []protocol.ToolInvocation
 		pending, err = candidate.PendingCalls()
 		for _, call := range pending {
-			if !call.HasValidShape() || (call.IsConfiguredToolName(config) && !call.IsModelTool(config)) {
-				err = &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
+			if !call.HasValidShape() || (call.IsConfiguredToolName(config.ExecEncoding) && !call.IsModelTool(config.ExecEncoding)) {
+				err = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
 				break
 			}
 		}
 	}
 	if err != nil {
-		failure := &KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
+		failure := &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
 		if rejectErr := r.store.Reject(ctx, owner, intentID, failure); rejectErr != nil {
 			return "", rejectErr
 		}
@@ -839,7 +841,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	if len(state.Cells) != 0 {
-		return &UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
+		return &protocol.UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
 	}
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
@@ -860,9 +862,43 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	if adapter.API() != conversation.API {
-		return ErrPrecondition
+		return protocol.ErrPrecondition
 	}
-	return adapter.Compact(ctx, r, owner, model, conversation, metadata, state)
+	session, err := r.store.GetSessionForConversation(ctx, owner)
+	if err != nil {
+		return err
+	}
+	environment, err := r.store.environmentContext(conversation, session)
+	if err != nil {
+		return err
+	}
+	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, environmentContextUpdate(nil, environment))
+	if err != nil {
+		return err
+	}
+	wire, err := json.Marshal(plan.Body)
+	if err != nil {
+		return err
+	}
+	connection, err := r.settings.Connection(model)
+	if err != nil {
+		return err
+	}
+	original := conversation.Context()
+	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestAudit("compaction", connection, r.settings.Models[model], plan.Body, wire), original)
+	if err != nil {
+		return err
+	}
+	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
+	result, err := adapter.Sample(ctx, &http.Client{}, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
+	if err != nil {
+		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
+	}
+	replacement, err := plan.Apply(result)
+	if err != nil {
+		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
+	}
+	return r.store.FinishCompaction(ctx, owner, intentID, result.Audit, original, replacement)
 }
 
 func sortedKeys(values map[string]struct{}) []string {
@@ -878,4 +914,14 @@ func (e *Executor) stopDispatch() {
 	e.dispatchMu.Lock()
 	e.stopping = true
 	e.dispatchMu.Unlock()
+}
+
+func (r *Runtime) rejectKnownCompactionFailure(ctx context.Context, owner Owner, intentID string, err error) error {
+	var known *protocol.KnownFailureError
+	if errors.As(err, &known) {
+		if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
+			return rejectErr
+		}
+	}
+	return err
 }

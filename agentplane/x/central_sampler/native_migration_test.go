@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/google/uuid"
 )
 
@@ -100,7 +102,7 @@ func TestConvertLegacyAnthropicTranscriptChecksProjectionAndPreservesMessages(t 
 		migrationRaw(map[string]any{"type": "function_call_output", "call_id": "call-1", "output": []any{map[string]any{"type": "input_text", "text": "done"}}}),
 		migrationRaw(map[string]any{"type": "reasoning_effort_restore", "input": "high"}),
 	}
-	converted, err := convertLegacyRecords(APIStyleAnthropicMessages, records)
+	converted, err := convertLegacyRecords(protocol.APIStyleAnthropicMessages, records)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +110,7 @@ func TestConvertLegacyAnthropicTranscriptChecksProjectionAndPreservesMessages(t 
 		t.Fatalf("effort restore after user result should have become a control message: %q", converted.pendingEffort)
 	}
 	if len(converted.records) != 4 {
-		t.Fatalf("converted records=%d, want user, native assistant, tool result, and effort control: %s", len(converted.records), mustJSON(converted.records))
+		t.Fatalf("converted records=%d, want user, native assistant, tool result, and effort control: %s", len(converted.records), protocol.MustJSON(converted.records))
 	}
 	if !bytes.Equal(converted.records[1], native) {
 		t.Fatalf("native Anthropic message changed: got %s want %s", converted.records[1], native)
@@ -147,7 +149,7 @@ func TestConvertLegacyAnthropicTranscriptChecksProjectionAndPreservesMessages(t 
 func TestConvertLegacyAnthropicEffortRestoreCarriesPendingState(t *testing.T) {
 	compaction := json.RawMessage(`{"id":"msg-compact","role":"assistant","content":[{"type":"compaction","content":"summary","signature":"sig-compact"}],"stop_reason":"compaction"}`)
 	retainedUser := json.RawMessage(`{"id":"msg-user","role":"user","content":[{"type":"text","text":"retained suffix"}],"stop_reason":null}`)
-	converted, err := convertLegacyRecords(APIStyleAnthropicMessages, []json.RawMessage{
+	converted, err := convertLegacyRecords(protocol.APIStyleAnthropicMessages, []json.RawMessage{
 		anthropicEnvelope(compaction),
 		migrationRaw(map[string]any{"type": "reasoning_effort_restore", "input": "xhigh"}),
 		anthropicEnvelope(retainedUser),
@@ -159,9 +161,9 @@ func TestConvertLegacyAnthropicEffortRestoreCarriesPendingState(t *testing.T) {
 		t.Fatalf("pending effort=%q", converted.pendingEffort)
 	}
 	if len(converted.records) != 2 || !bytes.Equal(converted.records[0], compaction) || !bytes.Equal(converted.records[1], retainedUser) {
-		t.Fatalf("retained native suffix/signature changed: %s", mustJSON(converted.records))
+		t.Fatalf("retained native suffix/signature changed: %s", protocol.MustJSON(converted.records))
 	}
-	wire, err := nativeContextWire(APIStyleAnthropicMessages, converted)
+	wire, err := nativeContextWire(protocol.APIStyleAnthropicMessages, converted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +175,11 @@ func TestConvertLegacyAnthropicEffortRestoreCarriesPendingState(t *testing.T) {
 	if err := json.Unmarshal(state["pending_effort"], &pending); err != nil || pending != "xhigh" {
 		t.Fatalf("native pending effort=%q state=%s err=%v", pending, wire, err)
 	}
-	decoded, err := decodeNativeContext(APIStyleAnthropicMessages, wire)
+	decoded, err := decodeNativeContext(protocol.APIStyleAnthropicMessages, wire)
 	if err != nil {
 		t.Fatal(err)
 	}
-	active := decoded.(*AnthropicContext)
+	active := decoded.(*anthropic.Context)
 	if active.PendingEffort == nil || *active.PendingEffort != "xhigh" {
 		t.Fatalf("decoded Anthropic pending effort=%v", active.PendingEffort)
 	}
@@ -212,19 +214,19 @@ func TestLegacyAnthropicReplayMatchesPriorWireMessages(t *testing.T) {
 		migrationRaw(map[string]any{"type": "reasoning_effort_restore", "input": "xhigh"}),
 		migrationRaw(map[string]any{"type": "message", "role": "user", "content": "continue"}),
 	}
-	converted, err := convertLegacyRecords(APIStyleAnthropicMessages, records)
+	converted, err := convertLegacyRecords(protocol.APIStyleAnthropicMessages, records)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wire, err := nativeContextWire(APIStyleAnthropicMessages, converted)
+	wire, err := nativeContextWire(protocol.APIStyleAnthropicMessages, converted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := decodeNativeContext(APIStyleAnthropicMessages, wire)
+	state, err := decodeNativeContext(protocol.APIStyleAnthropicMessages, wire)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, err := state.(*AnthropicContext).WireMessages()
+	actual, err := state.(*anthropic.Context).WireMessages()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +245,7 @@ func TestLegacyAnthropicReplayMatchesPriorWireMessages(t *testing.T) {
 func assertJSONRecordSequence(t *testing.T, actual, expected []json.RawMessage) {
 	t.Helper()
 	if len(actual) != len(expected) {
-		t.Fatalf("wire record count=%d want=%d: %s", len(actual), len(expected), mustJSON(actual))
+		t.Fatalf("wire record count=%d want=%d: %s", len(actual), len(expected), protocol.MustJSON(actual))
 	}
 	for i := range actual {
 		got, err := canonicalLegacyJSON(actual[i])
@@ -262,7 +264,7 @@ func assertJSONRecordSequence(t *testing.T, actual, expected []json.RawMessage) 
 
 func TestConvertLegacyResponsesDropsEffortMarkersAndPreservesNativeJSON(t *testing.T) {
 	native := json.RawMessage(`{"type":"message","id":"resp-1","role":"assistant","content":[{"type":"output_text","text":"precise"}],"opaque_number":9007199254740993,"decimal":1.234567890123456789}`)
-	converted, err := convertLegacyRecords(APIStyleResponses, []json.RawMessage{
+	converted, err := convertLegacyRecords(protocol.APIStyleResponses, []json.RawMessage{
 		native,
 		migrationRaw(map[string]any{"type": "reasoning_effort", "input": "high"}),
 		migrationRaw(map[string]any{"type": "reasoning_effort_restore", "input": "xhigh"}),
@@ -271,9 +273,9 @@ func TestConvertLegacyResponsesDropsEffortMarkersAndPreservesNativeJSON(t *testi
 		t.Fatal(err)
 	}
 	if len(converted.records) != 1 || !bytes.Equal(converted.records[0], native) {
-		t.Fatalf("Responses native JSON changed or effort marker remained: %s", mustJSON(converted.records))
+		t.Fatalf("Responses native JSON changed or effort marker remained: %s", protocol.MustJSON(converted.records))
 	}
-	state, err := decodeNativeRecords(APIStyleResponses, converted.records)
+	state, err := decodeNativeRecords(protocol.APIStyleResponses, converted.records)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,13 +284,13 @@ func TestConvertLegacyResponsesDropsEffortMarkersAndPreservesNativeJSON(t *testi
 		t.Fatal(err)
 	}
 	if len(replayed) != 1 || !bytes.Equal(replayed[0], native) {
-		t.Fatalf("decoded Responses item did not preserve provider JSON and numeric precision: %s", mustJSON(replayed))
+		t.Fatalf("decoded Responses item did not preserve provider JSON and numeric precision: %s", protocol.MustJSON(replayed))
 	}
 }
 
 func TestConvertLegacyAnthropicRejectsMismatchedProjection(t *testing.T) {
 	native := json.RawMessage(`{"id":"msg-assistant","role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use"}`)
-	_, err := convertLegacyRecords(APIStyleAnthropicMessages, []json.RawMessage{
+	_, err := convertLegacyRecords(protocol.APIStyleAnthropicMessages, []json.RawMessage{
 		anthropicEnvelope(native),
 		migrationRaw(map[string]any{"type": "function_call", "call_id": "call-1", "name": "exec", "arguments": `{"code":"text(2)"}`}),
 	})
@@ -299,7 +301,7 @@ func TestConvertLegacyAnthropicRejectsMismatchedProjection(t *testing.T) {
 
 func TestConvertLegacyAnthropicRejectsMissingProjection(t *testing.T) {
 	native := json.RawMessage(`{"id":"msg-assistant","role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use"}`)
-	_, err := convertLegacyRecords(APIStyleAnthropicMessages, []json.RawMessage{anthropicEnvelope(native)})
+	_, err := convertLegacyRecords(protocol.APIStyleAnthropicMessages, []json.RawMessage{anthropicEnvelope(native)})
 	if err == nil || !strings.Contains(err.Error(), "0 of 1 matching function_call projections") {
 		t.Fatalf("missing projection error=%v", err)
 	}
@@ -323,9 +325,9 @@ func TestNativeMigrationUsesIntentAPIAndPreservesSessionEvidenceRepeatedly(t *te
 		anthropicEnvelope(nativeSuffix),
 	}
 	installLegacyConversation(t, store, session.ConversationID, archive, active)
-	intentID, _ := addMigrationIntent(t, store, session.ConversationID, string(APIStyleAnthropicMessages))
+	intentID, _ := addMigrationIntent(t, store, session.ConversationID, string(protocol.APIStyleAnthropicMessages))
 	unresolvedID := uuid.NewString()
-	unresolvedRequest := migrationRaw(map[string]any{"kind": "sampling", "api": string(APIStyleAnthropicMessages), "opaque": "unresolved effect"})
+	unresolvedRequest := migrationRaw(map[string]any{"kind": "sampling", "api": string(protocol.APIStyleAnthropicMessages), "opaque": "unresolved effect"})
 	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,0,$3::jsonb,NULL)`, unresolvedID, session.ConversationID, []byte(unresolvedRequest)); err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +359,7 @@ func TestNativeMigrationUsesIntentAPIAndPreservesSessionEvidenceRepeatedly(t *te
 
 	// The configured route says Responses, but durable provider request evidence consistently says
 	// Anthropic. Requests are authoritative once present.
-	modelAPIs := map[string]APIStyle{"fixture-model": APIStyleResponses}
+	modelAPIs := map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses}
 	if err := Migrate(t.Context(), store.DB(), modelAPIs); err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +367,7 @@ func TestNativeMigrationUsesIntentAPIAndPreservesSessionEvidenceRepeatedly(t *te
 		t.Fatalf("repeated startup migration: %v", err)
 	}
 	var api string
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&api); err != nil || api != string(APIStyleAnthropicMessages) {
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&api); err != nil || api != string(protocol.APIStyleAnthropicMessages) {
 		t.Fatalf("conversation API=%q err=%v", api, err)
 	}
 	var sessionID, conversationID string
@@ -436,11 +438,11 @@ func TestNativeMigrationUsesConfiguredModelAPIWithoutRequestEvidence(t *testing.
 	archive := []json.RawMessage{migrationRaw(map[string]any{"type": "message", "role": "user", "content": "hello"})}
 	installLegacyConversation(t, store, session.ConversationID, archive, nil)
 	addLegacyIntentWithoutAPI(t, store, session.ConversationID)
-	if err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleAnthropicMessages}); err != nil {
+	if err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleAnthropicMessages}); err != nil {
 		t.Fatal(err)
 	}
 	var api string
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&api); err != nil || api != string(APIStyleAnthropicMessages) {
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&api); err != nil || api != string(protocol.APIStyleAnthropicMessages) {
 		t.Fatalf("configured API=%q err=%v", api, err)
 	}
 }
@@ -461,7 +463,7 @@ func TestNativeMigrationRecognizesLegacyStandaloneConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var api string
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, conversationID).Scan(&api); err != nil || api != string(APIStyleResponses) {
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT api FROM sampler_conversation WHERE id=$1`, conversationID).Scan(&api); err != nil || api != string(protocol.APIStyleResponses) {
 		t.Fatalf("standalone API=%q err=%v", api, err)
 	}
 }
@@ -497,10 +499,10 @@ func TestNativeMigrationRejectsAmbiguousAndLiveConversationsBeforeChangingArchiv
 		session := openSessionForStore(t, store, "")
 		archive := []json.RawMessage{migrationRaw(map[string]any{"type": "message", "role": "user", "content": "preserve me"})}
 		installLegacyConversation(t, store, session.ConversationID, archive, nil)
-		addMigrationIntent(t, store, session.ConversationID, string(APIStyleResponses))
-		addMigrationIntent(t, store, session.ConversationID, string(APIStyleAnthropicMessages))
+		addMigrationIntent(t, store, session.ConversationID, string(protocol.APIStyleResponses))
+		addMigrationIntent(t, store, session.ConversationID, string(protocol.APIStyleAnthropicMessages))
 		before := legacyRecordSnapshot(t, store, session.ConversationID)
-		err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleResponses})
+		err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses})
 		if err == nil || !strings.Contains(err.Error(), "conflicting intent API evidence") {
 			t.Fatalf("conflicting intent migration error=%v", err)
 		}
@@ -519,7 +521,7 @@ func TestNativeMigrationRejectsAmbiguousAndLiveConversationsBeforeChangingArchiv
 		archive := []json.RawMessage{migrationRaw(map[string]any{"type": "message", "role": "user", "content": "live state"})}
 		installLegacyConversation(t, store, session.ConversationID, archive, nil)
 		before := legacyRecordSnapshot(t, store, session.ConversationID)
-		err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleResponses})
+		err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses})
 		if err == nil || !strings.Contains(err.Error(), "has a live lease") {
 			t.Fatalf("live lease migration error=%v", err)
 		}
@@ -539,13 +541,13 @@ func TestNativeMigrationRejectsProjectionMismatchAndRollsBackAllWrites(t *testin
 		migrationRaw(map[string]any{"type": "function_call", "call_id": "call-1", "name": "exec", "arguments": `{"code":"text(2)"}`}),
 	}
 	installLegacyConversation(t, store, session.ConversationID, archive, archive)
-	addMigrationIntent(t, store, session.ConversationID, string(APIStyleAnthropicMessages))
+	addMigrationIntent(t, store, session.ConversationID, string(protocol.APIStyleAnthropicMessages))
 	before := legacyRecordSnapshot(t, store, session.ConversationID)
 	var beforeContext []byte
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT context FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&beforeContext); err != nil {
 		t.Fatal(err)
 	}
-	err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleResponses})
+	err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses})
 	if err == nil || !strings.Contains(err.Error(), "does not match native tool_use") {
 		t.Fatalf("projection mismatch migration error=%v", err)
 	}

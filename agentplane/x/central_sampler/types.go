@@ -7,6 +7,7 @@ import (
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 )
 
@@ -23,12 +24,12 @@ type Conversation struct {
 	Generation      int
 	Owner           *string
 	LeaseUntil      *time.Time
-	API             APIStyle
-	Archive         NativeContext
+	API             protocol.APIStyle
+	Archive         protocol.Context
 	Pending         *PendingIntent
 	Stopped         bool
 	ExecutorSession *string
-	ActiveContext   NativeContext
+	ActiveContext   protocol.Context
 	Instructions    *string
 	ContextTokens   *int
 	// ExecutorShell is the shell name the bound exec-server last reported.
@@ -37,14 +38,14 @@ type Conversation struct {
 	EnvironmentContext *EnvironmentContext
 }
 
-func (c *Conversation) Context() NativeContext {
+func (c *Conversation) Context() protocol.Context {
 	if c.ActiveContext == nil {
 		return c.Archive
 	}
 	return c.ActiveContext
 }
 
-func (c *Conversation) apply(change func(NativeContext) error) error {
+func (c *Conversation) apply(change func(protocol.Context) error) error {
 	if err := change(c.Archive); err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func (c *Conversation) apply(change func(NativeContext) error) error {
 	return nil
 }
 
-func (c *Conversation) appendToolResult(call ToolInvocation, output []ContentPart) error {
+func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	// The archive ordinal is authoritative. Compacted active context has different local ordinals.
 	original, err := c.Archive.FindCall(call.CallID)
 	if err != nil {
@@ -62,15 +63,15 @@ func (c *Conversation) appendToolResult(call ToolInvocation, output []ContentPar
 	}
 	if original.Encoding != call.Encoding || original.Name != call.Name || original.Input != call.Input ||
 		(call.SourceRecord != 0 && original.SourceRecord != call.SourceRecord) {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
-	return c.apply(func(state NativeContext) error {
+	return c.apply(func(state protocol.Context) error {
 		local, err := state.FindCall(call.CallID)
 		if err != nil {
 			return err
 		}
 		if local.Encoding != call.Encoding || local.Name != call.Name || local.Input != call.Input {
-			return ErrInvalid
+			return protocol.ErrInvalid
 		}
 		return state.AppendToolResult(local, output)
 	})
@@ -117,12 +118,6 @@ func (pending PendingIntent) Validate() error {
 		return errors.New("pending intent requires a known kind and ID")
 	}
 	return nil
-}
-
-type SessionAttribution struct {
-	SessionID string
-	ThreadID  string
-	TurnID    string
 }
 
 // Session stores the immutable launch request plus the event and command cursors.
@@ -203,29 +198,11 @@ type InterruptRequest struct {
 	Result         map[string]any
 }
 
-// Errors are distinguished by callers at the service boundary.
-var (
-	ErrConflict     = errors.New("resource conflicts with an existing request")
-	ErrMissing      = errors.New("resource not found")
-	ErrForbidden    = errors.New("resource belongs to another account")
-	ErrPrecondition = errors.New("resource is not in a state that permits this operation")
-	ErrInvalid      = errors.New("request is invalid")
-)
-
 type LostOwnershipError struct{ Reason string }
 
 func (e *LostOwnershipError) Error() string {
 	if e.Reason == "" {
 		return "sampler generation is stale or expired"
-	}
-	return e.Reason
-}
-
-type UnknownEffectError struct{ Reason string }
-
-func (e *UnknownEffectError) Error() string {
-	if e.Reason == "" {
-		return "remote effect outcome is unknown; automatic replay is unsafe"
 	}
 	return e.Reason
 }
@@ -236,15 +213,21 @@ func (InterruptPendingError) Error() string {
 	return "an interrupt is pending; the next dispatch is blocked"
 }
 
-// KnownFailureError records a provider or pre-dispatch rejection whose effect is known.
-type KnownFailureError struct {
-	Evidence map[string]any
-	Message  string
+func (state *ExecutionState) protocolState() *protocol.ExecutionState {
+	if state == nil {
+		return nil
+	}
+	result := &protocol.ExecutionState{}
+	for _, cell := range state.Cells {
+		result.Cells = append(result.Cells, protocol.ActiveCell{ID: cell.ID, Status: cell.Status})
+	}
+	for _, process := range state.Processes {
+		result.Processes = append(result.Processes, protocol.ActiveProcess{ModelSessionID: process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode})
+	}
+	return result
 }
 
-func (e *KnownFailureError) Error() string {
-	if e.Message != "" {
-		return e.Message
-	}
-	return fmt.Sprint(e.Evidence)
-}
+var (
+	ErrConflict  = errors.New("resource conflicts with an existing request")
+	ErrForbidden = errors.New("resource belongs to another account")
+)

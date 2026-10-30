@@ -11,15 +11,16 @@ import (
 	"testing"
 	"time"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
@@ -31,7 +32,7 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		},
 		SetupScript: &setup,
 	}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses)
+	session, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,10 +84,10 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"}); !errors.As(err, new(*UnknownEffectError)) {
+	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"}); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
-	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
+	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
 	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Reject(t.Context(), owner, second, &KnownFailureError{Evidence: map[string]any{"code": "invalid_request"}}); err != nil {
+	if err := store.Reject(t.Context(), owner, second, &protocol.KnownFailureError{Evidence: map[string]any{"code": "invalid_request"}}); err != nil {
 		t.Fatal(err)
 	}
 	conversation, err := store.Read(t.Context(), owner)
@@ -105,7 +106,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 		t.Fatalf("rejection left conversation live or pending: stopped=%v pending=%v", conversation.Stopped, conversation.Pending)
 	}
 	items := responsesItems(t, conversation.Archive)
-	if len(items) != 2 || items[1].Type != ResponsesItemCustomToolOutput {
+	if len(items) != 2 || items[1].Type != responses.ItemCustomToolOutput {
 		t.Fatalf("unstarted call output was not durably settled: %#v", items)
 	}
 	result, err := intentResultForDB(t, store, second)
@@ -131,7 +132,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		},
 		Executor: executor, ExpectedIncarnationUid: previousIncarnationUID,
-	}, "fixture-account", APIStyleResponses)
+	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
+	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -197,10 +198,10 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if _, err := store.RecoverSession(t.Context(), session.ID, "other-account", cursor, "reviewed evidence", ""); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("wrong account recovered session: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor-1, "reviewed evidence", ""); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor-1, "reviewed evidence", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("stale cursor recovered session: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", ""); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("active owner lease was ignored: %v", err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
@@ -236,7 +237,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, cellIntent, map[string]any{"late": true}, nil, nil); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("old owner wrote after recovery: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", replacementIncarnationUID); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", replacementIncarnationUID); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("stale retry recovered twice: %v", err)
 	}
 
@@ -307,7 +308,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := responsesItems(t, retained.Archive)
-	if len(archive) != 3 || archive[1].Type != ResponsesItemCustomToolOutput || archive[1].CallID != call.CallID || archive[2].Role != "developer" {
+	if len(archive) != 3 || archive[1].Type != responses.ItemCustomToolOutput || archive[1].CallID != call.CallID || archive[2].Role != "developer" {
 		t.Fatalf("provider history was not completed with a matching aborted output: %#v", archive)
 	}
 	active := responsesItems(t, retained.Context())
@@ -327,7 +328,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	call := ResponsesItem{Type: ResponsesItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
+	call := responses.Item{Type: responses.ItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +342,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	const reason = "wait requires a known live cell_id"
 	// Reproduce the old failure path: Reject saves the known result but retains
 	// Pending because an unrelated process is still live.
-	if err := store.Reject(t.Context(), owner, cellIntent, &KnownFailureError{Evidence: map[string]any{"reason": reason, "dispatched": false}}); err != nil {
+	if err := store.Reject(t.Context(), owner, cellIntent, &protocol.KnownFailureError{Evidence: map[string]any{"reason": reason, "dispatched": false}}); err != nil {
 		t.Fatal(err)
 	}
 	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
@@ -476,7 +477,7 @@ func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
 			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable", ""); !errors.Is(err, ErrPrecondition) {
+			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable", ""); !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("unsupported %s boundary recovered: %v", kind, err)
 			}
 		})
@@ -612,7 +613,7 @@ func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
 	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", ptrInt(0), true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ProcessByModelSession(t.Context(), owner, 1234); !errors.Is(err, ErrMissing) {
+	if _, err := store.ProcessByModelSession(t.Context(), owner, 1234); !errors.Is(err, protocol.ErrMissing) {
 		t.Fatalf("exited session still resolves: %v", err)
 	}
 	if err := store.RegisterModelProcess(t.Context(), owner, "1234-second", 1234, false); err != nil {
@@ -641,7 +642,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &ResponsesContext{Items: []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "test-opaque"}}}
+	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}}}
 	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
@@ -803,7 +804,7 @@ func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
 	if conversation.Pending == nil || conversation.Pending.Kind != PendingIntentInterrupt {
 		t.Fatalf("incomplete interrupt did not persist a blocking intent: %v", conversation.Pending)
 	}
-	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"}); !errors.As(err, new(*UnknownEffectError)) {
+	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"}); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("incomplete interrupt allowed a new effect: %v", err)
 	}
 }
@@ -859,7 +860,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 				}
 				if failure {
 					commandID := "first"
-					err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &KnownFailureError{Evidence: map[string]any{"reason": "rejected before dispatch"}})
+					err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "rejected before dispatch"}})
 				} else {
 					err = store.FinishCommand(t.Context(), owner, session.ID, "first", "done")
 				}
@@ -887,7 +888,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 					CommandId: "too-late",
 					Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "first"}},
 				}, "fixture-account", nil)
-				if !errors.Is(err, ErrPrecondition) {
+				if !errors.Is(err, protocol.ErrPrecondition) {
 					t.Fatalf("ended turn accepted an interrupt: %v", err)
 				}
 			})
@@ -932,7 +933,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := store.Reject(t.Context(), owner, intentID, &KnownFailureError{Evidence: map[string]any{"http_status": 429}}); err != nil {
+			if err := store.Reject(t.Context(), owner, intentID, &protocol.KnownFailureError{Evidence: map[string]any{"http_status": 429}}); err != nil {
 				t.Fatal(err)
 			}
 			observed, err := store.GetSession(t.Context(), session.ID, "")
@@ -947,7 +948,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 				CommandId: "second",
 				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}},
 			}, "fixture-account", nil)
-			if !errors.Is(err, ErrPrecondition) {
+			if !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("blocked session accepted new input: %v", err)
 			}
 		})
@@ -1003,7 +1004,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleResponses}); err != nil {
+	if err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses}); err != nil {
 		t.Fatal(err)
 	}
 	afterSession, err := store.GetSession(t.Context(), session.ID, "")
@@ -1015,7 +1016,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 		t.Fatal(err)
 	}
 	afterItems := responsesItems(t, afterConversation.Archive)
-	retainedItem, err := decodeJSONValue(afterItems[0].Raw)
+	retainedItem, err := protocol.DecodeJSONValue(afterItems[0].Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1099,7 +1100,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	}
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
-	}, "fixture-account", APIStyleResponses)
+	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1153,7 +1154,7 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 	}{
 		{
 			name:       "known failure",
-			failure:    &KnownFailureError{Message: "provider rejected request"},
+			failure:    &protocol.KnownFailureError{Message: "provider rejected request"},
 			wantActive: samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
 			wantQueued: samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,
 		},
@@ -1325,14 +1326,14 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := newResponsesMessage("user", "steering text")
+	expected, err := responses.Message("user", "steering text")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Stored and freshly built items serialize their keys in different orders.
-	normalized := func(item ResponsesItem) string {
+	normalized := func(item responses.Item) string {
 		var fields map[string]any
-		if err := json.Unmarshal([]byte(canonicalJSON(item)), &fields); err != nil {
+		if err := json.Unmarshal([]byte(protocol.CanonicalJSON(item)), &fields); err != nil {
 			t.Fatal(err)
 		}
 		encoded, err := json.Marshal(fields)
@@ -1406,14 +1407,14 @@ func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", APIStyleResponses); err != nil {
+	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses); err != nil {
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatalf("reopening with retired metadata: %v", err)
 	}
 	request.Spec.Model = "different"
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses); !errors.Is(err, ErrConflict) {
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed session spec accepted: %v", err)
 	}
 }

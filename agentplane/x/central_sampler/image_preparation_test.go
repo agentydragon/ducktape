@@ -10,6 +10,8 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 func TestPromptImageOutputDimensions(t *testing.T) {
@@ -51,10 +53,10 @@ func encodePNG(buffer *bytes.Buffer, img image.Image) error { return png.Encode(
 
 func encodeJPEG(buffer *bytes.Buffer, img image.Image) error { return jpeg.Encode(buffer, img, nil) }
 
-func imagePart(t *testing.T, fields map[string]any) ContentPart {
+func imagePart(t *testing.T, fields map[string]any) protocol.ContentPart {
 	t.Helper()
-	var part ContentPart
-	if err := json.Unmarshal(mustJSON(fields), &part); err != nil {
+	var part protocol.ContentPart
+	if err := json.Unmarshal(protocol.MustJSON(fields), &part); err != nil {
 		t.Fatal(err)
 	}
 	return part
@@ -67,7 +69,7 @@ func dataURL(mime string, data []byte) string {
 func TestPrepareOutputImagesResizesAndRelabels(t *testing.T) {
 	oversized := encodedImage(t, 3000, 1000, encodePNG)
 	small := encodedImage(t, 64, 32, encodeJPEG)
-	parts, err := prepareOutputImages([]ContentPart{
+	parts, err := prepareOutputImages([]protocol.ContentPart{
 		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("application/octet-stream", oversized), "detail": "high"}),
 		imagePart(t, map[string]any{"type": "input_image", "image_url": dataURL("application/octet-stream", small)}),
 		imagePart(t, map[string]any{"type": "input_image", "file_id": "file-test"}),
@@ -106,7 +108,7 @@ func TestPrepareOutputImagesResizesAndRelabels(t *testing.T) {
 	if passed.ImageURL != dataURL("image/jpeg", small) {
 		t.Fatal("an image within bounds must keep its bytes and gain its real MIME type")
 	}
-	if !bytes.Equal(parts[2].Raw, mustJSON(map[string]any{"type": "input_image", "file_id": "file-test"})) {
+	if !bytes.Equal(parts[2].Raw, protocol.MustJSON(map[string]any{"type": "input_image", "file_id": "file-test"})) {
 		t.Fatalf("file reference changed: %s", parts[2].Raw)
 	}
 }
@@ -123,7 +125,7 @@ func TestPrepareOutputImagesReplacesUnpreparableImages(t *testing.T) {
 		{"not base64", map[string]any{"type": "input_image", "image_url": "data:image/png,raw"}, imageProcessingErrorPlaceholder},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			parts, err := prepareOutputImages([]ContentPart{imagePart(t, tc.part)})
+			parts, err := prepareOutputImages([]protocol.ContentPart{imagePart(t, tc.part)})
 			if err != nil {
 				t.Fatal(err)
 			}

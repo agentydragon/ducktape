@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 	_ "github.com/lib/pq"
 )
 
@@ -38,7 +40,7 @@ func newTestStore(t testing.TB) *Store {
 	return store
 }
 
-func nativeResponsesRecords(t testing.TB, items ...ResponsesItem) []json.RawMessage {
+func nativeResponsesRecords(t testing.TB, items ...responses.Item) []json.RawMessage {
 	t.Helper()
 	records := make([]json.RawMessage, len(items))
 	for index, item := range items {
@@ -51,14 +53,14 @@ func nativeResponsesRecords(t testing.TB, items ...ResponsesItem) []json.RawMess
 	return records
 }
 
-func responsesItems(t testing.TB, state NativeContext) []ResponsesItem {
+func responsesItems(t testing.TB, state protocol.Context) []responses.Item {
 	t.Helper()
-	responses, ok := state.(*ResponsesContext)
+	responses, ok := state.(*responses.Context)
 	if !ok {
 		if state == nil {
-			t.Fatal("native context is nil, want ResponsesContext")
+			t.Fatal("native context is nil, want responses.Context")
 		}
-		t.Fatalf("native context is %T, want ResponsesContext", state)
+		t.Fatalf("native context is %T, want responses.Context", state)
 	}
 	return responses.Items
 }

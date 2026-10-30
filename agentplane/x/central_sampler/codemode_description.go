@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/invopop/jsonschema"
 )
 
@@ -58,10 +59,10 @@ func templateText(text string) string { return strings.TrimSuffix(text, "\n") }
 // Mode Only with freeform exec, the default
 // `unified_image_budget = false` (legacy image helper) and no model message overrides.
 // The sampler-owned exec template adapts the upstream description to the selected contract.
-func execToolDescription(definitions []ResponsesCodeToolDefinition, config ModelConfig) (string, error) {
+func execToolDescription(definitions []protocol.CodeToolDefinition, encoding protocol.ExecEncoding) (string, error) {
 	inputContract := "- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n" +
 		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`."
-	if config.ExecEncoding == ExecEncodingJSON {
+	if encoding == protocol.ExecEncodingJSON {
 		inputContract = "- Pass JavaScript source in the JSON code field.\n" +
 			"- To resume a yielded cell, pass cell_id instead of code, with optional yield_time_ms (default 10000), max_output_tokens (default 10000), and terminate: true.\n" +
 			"- Resume only after exec reports Script running with cell ID. Each resume returns new output or completion.\n" +
@@ -79,7 +80,7 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition, config Model
 	sections := []string{description}
 	// Codex rust-v0.162.1 core/src/tools/spec_plan.rs compare_code_mode_tools without namespaces.
 	sorted := slices.Clone(definitions)
-	slices.SortFunc(sorted, func(left, right ResponsesCodeToolDefinition) int {
+	slices.SortFunc(sorted, func(left, right protocol.CodeToolDefinition) int {
 		return cmp.Or(strings.Compare(left.ToolName.Name, right.ToolName.Name), strings.Compare(left.Name, right.Name))
 	})
 	var nested []string
@@ -102,17 +103,9 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition, config Model
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func jsonExecToolDefinition(description string) (ResponsesAdditionalTool, error) {
+func jsonExecToolParameters() (json.RawMessage, error) {
 	reflector := &jsonschema.Reflector{Anonymous: true, ExpandedStruct: true}
-	parameters, err := json.Marshal(reflector.Reflect(jsonExecInput{}))
-	if err != nil {
-		return ResponsesAdditionalTool{}, err
-	}
-	strict := false
-	return ResponsesAdditionalTool{
-		Type: "function", Name: "exec", Description: description, Strict: &strict,
-		Parameters: parameters,
-	}, nil
+	return json.Marshal(reflector.Reflect(jsonExecInput{}))
 }
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_spec.rs create_wait_tool.
@@ -133,8 +126,8 @@ func waitToolParameters() json.RawMessage {
 // hostToolDefinitions mirrors Codex rust-v0.162.1 core/src/tools/code_mode/tool_definitions.rs
 // prepare_code_mode_tool_definitions: the host receives each description augmented with its
 // TypeScript declaration (exposed through ALL_TOOLS) and no schemas.
-func hostToolDefinitions(definitions []ResponsesCodeToolDefinition) ([]ResponsesCodeToolDefinition, error) {
-	result := make([]ResponsesCodeToolDefinition, 0, len(definitions))
+func hostToolDefinitions(definitions []protocol.CodeToolDefinition) ([]protocol.CodeToolDefinition, error) {
+	result := make([]protocol.CodeToolDefinition, 0, len(definitions))
 	for _, definition := range definitions {
 		sample, err := codeModeSample(definition)
 		if err != nil {
@@ -145,11 +138,11 @@ func hostToolDefinitions(definitions []ResponsesCodeToolDefinition) ([]Responses
 		definition.OutputSchema = nil
 		result = append(result, definition)
 	}
-	slices.SortStableFunc(result, func(left, right ResponsesCodeToolDefinition) int { return strings.Compare(left.Name, right.Name) })
+	slices.SortStableFunc(result, func(left, right protocol.CodeToolDefinition) int { return strings.Compare(left.Name, right.Name) })
 	return result, nil
 }
 
-func codeModeSample(definition ResponsesCodeToolDefinition) (string, error) {
+func codeModeSample(definition protocol.CodeToolDefinition) (string, error) {
 	var input, output any
 	if definition.InputSchema != nil {
 		var err error
