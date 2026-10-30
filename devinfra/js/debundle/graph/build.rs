@@ -24,7 +24,7 @@ use super::edge::{
     EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
 use crate::facts::DataflowOpacityCause;
-use crate::reports::schema::ExecutionPrecisionLossReason;
+use crate::reports::schema::AssumedEffectReason;
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -672,7 +672,7 @@ pub enum PremiseVerdict {
 /// - `SharedVarAccess`, `BindingTimeline` and `UninitializedObservation`
 ///   order two effects on a named binding: known when both effects are
 ///   `EffectProvenance::Observed`; inertable when either was only assumed by
-///   a synchronous fallback summary (an opaque effect, like a barrier).
+///   a conservative path (an opaque effect, like a barrier).
 ///   Derived order routed through an assumed effect is retained separately
 ///   (`promote_at_init_calls` offers the observed-only timeline too).
 /// - `CellOrder` with an explicit relation (`ReadAfterWrite`,
@@ -1639,16 +1639,15 @@ fn offer_binding_timeline(
 }
 
 /// Promote at-init call effects into the graph. Returns the raw-edge index
-/// of every promoted `EagerUse` whose read or rebind only a statement's
-/// fallback summary contributed, with that summary's reason (the
-/// shared-`var` access order reads it).
+/// of every promoted `EagerUse` whose read or rebind only a conservative path
+/// contributed, with that path (the shared-`var` access order reads it).
 fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-) -> BTreeMap<usize, ExecutionPrecisionLossReason> {
+) -> BTreeMap<usize, AssumedEffectReason> {
     // Index statement source units that can change a chunk binding's value or
     // observable object state when they execute. A callback read must see the
     // source-prefix value, so the callback-read and writer source units form one
@@ -2231,6 +2230,9 @@ fn promote_at_init_calls(
                 {
                     continue;
                 }
+                // The closure assumes the unresolved callee may run here.
+                fallback_eager_uses
+                    .insert(raw_edges.len(), AssumedEffectReason::UnresolvedCallClosure);
                 raw_edges.push((
                     caller,
                     *target_source_unit,

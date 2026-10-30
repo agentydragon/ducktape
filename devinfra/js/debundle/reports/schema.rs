@@ -663,6 +663,68 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
     }
 }
 
+/// The conservative path that assumed a binding effect instead of deriving
+/// it (SPEC.md § Commuting statements). Each path assumes some code may run
+/// (or reach the binding) at the statement; none follows an invocation the
+/// statement definitely makes.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "path", rename_all = "snake_case")]
+pub enum AssumedEffectReason {
+    /// The statement's bounded fallback summary: having stopped expanding
+    /// callbacks, or handed a returned callback to opaque code, the
+    /// interpreter assumes each may run. `loss` opened the summary.
+    FallbackSummary { loss: ExecutionPrecisionLossReason },
+    /// A callback opaque code may invoke (escaped earlier, exported, or
+    /// reachable from the opaque operation's inputs), executed as if it ran.
+    OpaqueCallbackInvocation,
+    /// The synchronous read/rebind closure of a callback, class or foreign
+    /// record exposed to opaque code, promoted without executing it.
+    EscapedCallbackClosure,
+    /// The lazy body of an accessor owner whose setter a property write or
+    /// `Object.assign` may trigger on a receiver of unknown shape.
+    PossibleSetter,
+    /// The whole lazy body of a callable the interpreter executed but could
+    /// not model (`callable_inputs`, `array_iteration`), beyond what that
+    /// execution reached.
+    WholeBodyPromotion { operation: ExecutionOperation },
+    /// The omitted callback effects restored when a private-constructor
+    /// result proof's execution failed.
+    PrivateConstructorRestore,
+    /// Graph build: the read closure of a callee at-init promotion could not
+    /// resolve, assumed to run at the calling statement.
+    UnresolvedCallClosure,
+}
+
+impl std::fmt::Display for AssumedEffectReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FallbackSummary { loss } => write!(f, "the {loss} fallback summary"),
+            Self::OpaqueCallbackInvocation => {
+                f.write_str("a callback opaque code may invoke (`opaque_callback_invocation`)")
+            }
+            Self::EscapedCallbackClosure => {
+                f.write_str("an escaped callback's closure (`escaped_callback_closure`)")
+            }
+            Self::PossibleSetter => f.write_str("a possible setter (`possible_setter`)"),
+            Self::WholeBodyPromotion { operation } => {
+                let operation = serde_json::to_value(operation)
+                    .expect("execution operations serialize as strings");
+                write!(
+                    f,
+                    "whole-body promotion (`whole_body_promotion`, {})",
+                    operation.as_str().expect("unit variant")
+                )
+            }
+            Self::PrivateConstructorRestore => f.write_str(
+                "the failed private-constructor proof's restore (`private_constructor_restore`)",
+            ),
+            Self::UnresolvedCallClosure => {
+                f.write_str("an unresolved at-init call's closure (`unresolved_call_closure`)")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionOperation {

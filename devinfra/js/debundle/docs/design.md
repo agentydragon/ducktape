@@ -183,14 +183,19 @@ endpoint's effects were not summarizable (barrier relations of `cell_order`, a
 `strict_chain` edge with an opaque endpoint, a binding-ordering edge with an
 assumed effect) and never `eager_use`, rebind or co-location edges.
 
-Binding-ordering causes carry each endpoint effect's `EffectProvenance`. The
-interpreter's per-statement fallback accumulator (`fallback_outcome`, filled by
-`bounded_invocation_fallback` and returned-callback promotion) is the only
-producer of assumed effects: at the statement's merge,
-`SynchronousCalls::fallback_only` keeps the bindings it alone contributed.
-Other conservative promotions (escaped callbacks invoked by opaque code,
-unsupported-input whole-body promotion) stay `Observed`; that only rejects
-more premises. `promote_at_init_calls` also offers each binding's
+Binding-ordering causes carry each endpoint effect's `EffectProvenance`. In
+the interpreter a conservative path runs under `ExecutionState::assumption`
+(`Executor::assuming`); effects inserted meanwhile are recorded in the
+outcome's `SynchronousCalls::fallback_only` with that path unless already
+held, and an observed insertion clears the entry. `invoke` clears the
+assumption, so an invocation's outcome and memo stay relative to it, and
+`absorb_binding_effects` re-tags a nested outcome under the merging path. The
+per-statement fallback accumulator (`fallback_outcome`) merges under
+`fallback_summary` at the statement's end. Graph build tags the
+`UnresolvedCallFallback` closure's eager uses for the shared-`var` order. A
+path whose code the statement definitely runs (an applied accessor, an
+unsupported construction's body, a named setter) stays `Observed`, which only
+rejects more premises. `promote_at_init_calls` also offers each binding's
 observed-only timeline, and a pair keeps a both-observed cause over an assumed
 one, because the timeline joins each effect only to its nearest neighbour: an
 assumed write between two observed ones would otherwise carry their order on

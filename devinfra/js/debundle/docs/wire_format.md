@@ -240,8 +240,9 @@ the emitted entry filename is chosen separately by the chunk configuration.
 and `shared_var_access` rules carries `source` and `target`, and
 `uninitialized_observation` carries `observation`: the provenance of that
 endpoint's binding effect, `{"kind": "observed"}` or
-`{"kind": "fallback", "reason": {"code": …}}` (the reason uses the
-`synchronous_execution.precision_losses[].reason` shape). The fields are
+`{"kind": "fallback", "reason": {"path": …}}`; `fallback_summary` carries
+`loss` in the `synchronous_execution.precision_losses[].reason` shape and
+`whole_body_promotion` carries `operation`. The fields are
 required: a graph written before them does not deserialize, so the
 commuting-statements gate never reads an unclassified effect as assumed.
 
