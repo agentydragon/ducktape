@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -111,12 +112,31 @@ func nullableString(value *string) any {
 	return *value
 }
 
-func parseOwnerToken(owner Owner) (uuid.UUID, error) {
-	token, err := uuid.Parse(owner.Token)
+// ownership is a conversation's sampler lease. Its generation also keys the owner's interrupts and processes.
+var ownership = lease.Table{
+	Name: "sampler_conversation", Key: []string{"id"}, Holder: "owner", Until: "lease_until", Generation: "generation",
+}
+
+func (o Owner) lease() (lease.Lease, error) {
+	token, err := uuid.Parse(o.Token)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("owner token must be a UUID: %w", err)
+		return lease.Lease{}, fmt.Errorf("owner token must be a UUID: %w", err)
 	}
-	return token, nil
+	return lease.Lease{Key: []any{o.ConversationID}, Holder: token, Generation: int64(o.Generation)}, nil
+}
+
+// fenceOwner fails with *LostOwnershipError unless owner holds the conversation's live lease, and otherwise holds
+// the conversation locked to the end of tx.
+func fenceOwner(ctx context.Context, tx *sql.Tx, owner Owner) error {
+	held, err := owner.lease()
+	if err != nil {
+		return err
+	}
+	err = ownership.Fence(ctx, tx, held)
+	if errors.Is(err, lease.ErrLost) {
+		return &LostOwnershipError{}
+	}
+	return err
 }
 
 func scanConversation(row rowScanner) (*Conversation, error) {
@@ -178,10 +198,6 @@ const conversationColumns = `id::text, generation, owner::text, lease_until, pen
 	executor_session, context, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
-	token, err := parseOwnerToken(owner)
-	if err != nil {
-		return nil, err
-	}
 	row, err := scanConversation(tx.QueryRowContext(ctx,
 		`SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -190,13 +206,8 @@ func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, err
 	if err != nil {
 		return nil, err
 	}
-	var leaseValid bool
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(generation=$2 AND lease_until > clock_timestamp(),FALSE)
-		FROM sampler_conversation WHERE id=$1`, owner.ConversationID, owner.Generation).Scan(&leaseValid); err != nil {
+	if err := fenceOwner(ctx, tx, owner); err != nil {
 		return nil, err
-	}
-	if row.Owner == nil || *row.Owner != token.String() || row.Generation != owner.Generation || !leaseValid {
-		return nil, &LostOwnershipError{}
 	}
 	if err := loadConversationItems(ctx, tx, row); err != nil {
 		return nil, err
@@ -207,21 +218,15 @@ func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, err
 // lockOwnerHeader validates an owner while locking only the small mutable header used by
 // evidence appenders. Provider and protocol stream events must not decode the retained transcript.
 func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
-	token, err := parseOwnerToken(owner)
-	if err != nil {
-		return nil, err
-	}
 	var (
 		conversation Conversation
 		currentOwner sql.NullString
-		lease        sql.NullTime
+		leaseUntil   sql.NullTime
 		pending      []byte
-		leaseValid   bool
 	)
-	err = tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,lease_until,pending,
-		COALESCE(generation=$2 AND lease_until > clock_timestamp(),FALSE)
-		FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID, owner.Generation).Scan(
-		&conversation.ID, &conversation.Generation, &currentOwner, &lease, &pending, &leaseValid,
+	err := tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,lease_until,pending
+		FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID).Scan(
+		&conversation.ID, &conversation.Generation, &currentOwner, &leaseUntil, &pending,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &LostOwnershipError{Reason: "conversation no longer exists"}
@@ -229,17 +234,17 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 	if err != nil {
 		return nil, err
 	}
+	if err := fenceOwner(ctx, tx, owner); err != nil {
+		return nil, err
+	}
 	if currentOwner.Valid {
 		conversation.Owner = &currentOwner.String
 	}
-	if lease.Valid {
-		conversation.LeaseUntil = &lease.Time
+	if leaseUntil.Valid {
+		conversation.LeaseUntil = &leaseUntil.Time
 	}
 	if conversation.Pending, err = decodePendingIntent(pending); err != nil {
 		return nil, err
-	}
-	if !currentOwner.Valid || currentOwner.String != token.String() || !leaseValid {
-		return nil, &LostOwnershipError{}
 	}
 	return &conversation, nil
 }
@@ -946,67 +951,55 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 	return ids, rows.Err()
 }
 
-func (s *Store) Claim(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
-	if lease <= 0 {
+func (s *Store) Claim(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
+	if duration <= 0 {
 		return Owner{}, protocol.ErrInvalid
 	}
 	var owner Owner
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		conversation, err := scanConversation(tx.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, conversationID))
+		held, err := ownership.Acquire(ctx, tx, []any{conversationID}, duration)
+		if errors.As(err, new(*lease.HeldError)) {
+			return &LostOwnershipError{Reason: "conversation already has a live sampler"}
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
 		}
-		var active bool
-		if err := tx.QueryRowContext(ctx, `SELECT owner IS NOT NULL AND lease_until IS NOT NULL AND lease_until>clock_timestamp()
-			FROM sampler_conversation WHERE id=$1`, conversationID).Scan(&active); err != nil {
-			return err
-		}
-		if active {
-			return &LostOwnershipError{Reason: "conversation already has a live sampler"}
-		}
-		token := uuid.New()
-		conversation.Generation++
-		micros := lease.Microseconds()
-		if micros < 1 {
-			micros = 1
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET generation=$2,owner=$3,
-			lease_until=clock_timestamp()+($4::bigint * interval '1 microsecond') WHERE id=$1`, conversationID, conversation.Generation, token, micros); err != nil {
-			return err
-		}
-		owner = Owner{ConversationID: conversationID, Generation: conversation.Generation, Token: token.String()}
+		owner = Owner{ConversationID: conversationID, Generation: int(held.Generation), Token: held.Holder.String()}
 		return nil
 	})
 	return owner, err
 }
 
-func (s *Store) Renew(ctx context.Context, owner Owner, lease time.Duration) error {
-	if lease <= 0 {
+func (s *Store) Renew(ctx context.Context, owner Owner, duration time.Duration) error {
+	if duration <= 0 {
 		return protocol.ErrInvalid
 	}
+	held, err := owner.lease()
+	if err != nil {
+		return err
+	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
-			return err
+		_, err := ownership.Renew(ctx, tx, held, duration)
+		if errors.Is(err, lease.ErrLost) {
+			return &LostOwnershipError{}
 		}
-		micros := lease.Microseconds()
-		if micros < 1 {
-			micros = 1
-		}
-		_, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET lease_until=clock_timestamp()+($4::bigint * interval '1 microsecond') WHERE id=$1 AND owner=$2 AND generation=$3`,
-			owner.ConversationID, owner.Token, owner.Generation, micros)
 		return err
 	})
 }
 
 func (s *Store) Release(ctx context.Context, owner Owner) error {
+	held, err := owner.lease()
+	if err != nil {
+		return err
+	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if err := fenceOwner(ctx, tx, owner); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET owner=NULL,lease_until=NULL WHERE id=$1`, owner.ConversationID); err != nil {
+		if err := ownership.Release(ctx, tx, held); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `UPDATE sampler_interrupt SET result=$3 WHERE conversation_id=$1 AND generation=$2 AND result IS NULL`,
