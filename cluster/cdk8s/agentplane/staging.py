@@ -94,6 +94,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
+from model_catalog.catalog import Provider
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -396,7 +397,7 @@ ENV = Environment(
     ),
     central_sampler=CentralSamplerProps(
         models={
-            route.id: (_LITE_FREEFORM if route in STAGING_APP_MODELS.wrapped_codex else _STANDARD_JSON).model_copy(
+            route.id: (_LITE_FREEFORM if route.upstream.provider == Provider.CHATGPT else _STANDARD_JSON).model_copy(
                 update={"reasoning_efforts": {"", *route.reasoning_efforts}}
             )
             for route in STAGING_APP_MODELS.codex

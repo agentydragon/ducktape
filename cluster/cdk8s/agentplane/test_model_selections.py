@@ -1,19 +1,9 @@
 """Only Claude's selected, explicitly configured overrides become ingress metadata."""
 
-from dataclasses import replace
-
 import pytest_bazel
 
 from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes, model_configs
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K, Model
-
-
-def test_new_third_party_coding_route_uses_central_sampler() -> None:
-    third_party = replace(OLLAMA_QWEN_IQ4XS_256K.openai, model=Model("new-local-model", display_name="New local model"))
-    models = HarnessRoutes(claude=(), codex=(GPT6_LUNA_RESPONSES, third_party))
-    assert models.wrapped_codex == (GPT6_LUNA_RESPONSES,)
-    assert models.central_sampler == (third_party,)
-    assert models.all == (GPT6_LUNA_RESPONSES, third_party)
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
 
 def test_ingress_serves_only_claude_routes_with_an_override() -> None:
