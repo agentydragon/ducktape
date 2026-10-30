@@ -7,14 +7,11 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-bazel/action.yml"
-      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
       - "devinfra/bazel/**"
       - "devinfra/buildbuddy/setup.sh"
       - "devinfra/nixos_bazel_test/**"
-      - "devinfra/secrets/_common.sh"
-      - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/attic-pubkeys.json"
@@ -26,14 +23,11 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-bazel/action.yml"
-      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
       - "devinfra/bazel/**"
       - "devinfra/buildbuddy/setup.sh"
       - "devinfra/nixos_bazel_test/**"
-      - "devinfra/secrets/_common.sh"
-      - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/attic-pubkeys.json"
