@@ -132,21 +132,26 @@ class KeyFile:
 
 @dataclass(frozen=True)
 class ServiceUrls:
-    """The base URLs of the services a Session calls, as the platform instructions list them."""
+    """The base URLs of the services a Session calls, as the platform instructions list them, and the
+    Action Service's gRPC origin the agent CLI dials."""
 
     egress: str
     actions: str
+    actions_grpc: str
     notifications: str
 
 
 def service_urls(env: Environment, *, egress_api_service: ServiceRef | None = None) -> ServiceUrls:
-    actions_service = actions.service(env.namespace)
+    actions_grpc = actions.service(env.namespace)
+    actions_http = actions.http_service(env.namespace)
+    notifications_http = notifications.http_service(env.namespace)
     egress_api = egress_api_service or egress.agent_api(env.namespace)
     egress_port = f":{egress_api.port.number}" if egress_api.port.number != 80 else ""
     return ServiceUrls(
         egress=f"http://{egress_api.fqdn}{egress_port}",
-        actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-        notifications=f"http://{notifications.service(env.namespace).fqdn}:8080",
+        actions=f"http://{actions_http.fqdn}:{actions_http.port.number}",
+        actions_grpc=f"http://{actions_grpc.fqdn}:{actions_grpc.port.number}",
+        notifications=f"http://{notifications_http.fqdn}:{notifications_http.port.number}",
     )
 
 
@@ -162,7 +167,7 @@ def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
     """What the `agentplane` command reads (agentplane/docs/agent_cli.md): each group's base URL and
     the placeholder bearer the egress proxy swaps for the real credential."""
     return {
-        "AGENTPLANE_ACTIONS_URL": urls.actions,
+        "AGENTPLANE_ACTIONS_URL": urls.actions_grpc,
         "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
         "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
         "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,

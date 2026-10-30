@@ -66,7 +66,12 @@ class Settings(YamlFileSettings):
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
     log_levels: LogLevels
     host: str = "127.0.0.1"
-    port: int = 8080
+    port: int = Field(default=8080, description="The gRPC listener's port.")
+    http_port: int = Field(
+        default=8081,
+        description="The HTTP listener's port: the gRPC services' HTTP facade, the MCP linkage callback and "
+        "Client ID Metadata Document, the agent documentation and metrics.",
+    )
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     policy_namespace: str = Field(

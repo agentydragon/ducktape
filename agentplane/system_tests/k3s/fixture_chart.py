@@ -134,6 +134,7 @@ APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
 MCP_EDGE_SERVICE = mcp_edge.service(NAMESPACE)
+MCP_EDGE_HTTP_SERVICE = mcp_edge.http_service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
 # The fixture's own Dex clients.
@@ -601,7 +602,8 @@ def build_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[egress.proxy(NAMESPACE).pods, app_component.service(NAMESPACE).pods],
+        callers=[app_component.service(NAMESPACE).pods],
+        http_callers=[egress.proxy(NAMESPACE).pods],
         placement=None,
         registry_secret_name=None,
         container_env=database_env,

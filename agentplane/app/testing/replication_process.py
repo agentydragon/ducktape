@@ -202,6 +202,7 @@ def fixture_config() -> dict[str, object]:
         "action_federation": {
             "mode": "direct",
             "service_url": unused,
+            "http_url": unused,
             "login_jwks_uri": unused + "/jwks",
             "login_token_profile": "dex",
             "target": {

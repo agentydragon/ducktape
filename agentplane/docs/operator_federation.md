@@ -137,7 +137,8 @@ deployable defaults:
 
 - `mode`: `exchange` for the staging Authentik provider boundary; `direct` only when the login token
   already has the target issuer, audience, and subject format.
-- `service_url`: canonical Action Service base URL; use a trusted internal route or HTTPS.
+- `service_url`: canonical Action Service gRPC origin; use a trusted internal route or HTTPS.
+- `http_url`: the Action Service's HTTP listener, which serves the MCP linkage callback the app forwards.
 - `token_endpoint`: Authentik's shared HTTPS token endpoint. Loopback HTTP is accepted for tests only.
 - `login_jwks_uri`: pinned JWKS URI for the configured `AGENTPLANE_OIDC_ISSUER` login provider.
 - `login_token_profile`: `authentik` (default) or `dex`; selected by reviewed configuration,
@@ -261,7 +262,7 @@ preserve this source contract or update and revalidate the subject mode.
    `operator_browser_session` and its expiry index; no separate DB, signing-secret rotation, or
    session-replica expansion is introduced.
 
-The BFF already reaches Action on the destination Pod port 8080, and Action admits it separately
+The BFF already reaches Action on the destination Pod ports 8080 (gRPC) and 8081 (HTTP), and Action admits it separately
 from the workload proxy. Both now reach the public Authentik origin on host/remote-node TCP 443,
 restricted by `serverNames: [auth.allegedly.works]`. This is end-to-end TLS SNI enforcement, not TLS
 termination or a new proxy credential. See [Cilium's SNI policy](https://docs.cilium.io/en/v1.18/security/policy/language/#limit-tls-server-name-indication-sni)

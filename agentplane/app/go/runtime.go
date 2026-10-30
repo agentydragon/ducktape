@@ -111,7 +111,7 @@ func run(ctx context.Context, config Config) error {
 	}
 
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
-	actionCallbackHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ActionFederation.ServiceURL)
+	actionCallbackHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ActionFederation.HTTPURL)
 	if err != nil {
 		return fmt.Errorf("configure Action Service callback HTTP client: %w", err)
 	}
@@ -308,14 +308,14 @@ func run(ctx context.Context, config Config) error {
 	}); err != nil {
 		return fmt.Errorf("register Thread command routes: %w", err)
 	}
-	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.HTTPURL)
 	RegisterStatusRoutes(server, serviceStatus)
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
-		ActionServiceURL: config.ActionFederation.ServiceURL,
+		ActionServiceURL: config.ActionFederation.HTTPURL,
 		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
@@ -454,7 +454,10 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 		}
 	}
 	for _, endpoint := range []struct{ name, raw string }{
-		{"Connection Service", config.ConnectionServiceURL}, {"Notification Service", config.NotificationsURL}, {"Egress proxy", config.EgressAdminURL},
+		{"Action Service", config.ActionFederation.ServiceURL},
+		{"Connection Service", config.ConnectionServiceURL},
+		{"Notification Service", config.NotificationsURL},
+		{"Egress proxy", config.EgressAdminURL},
 	} {
 		target, err := grpcTargetFromHTTPURL(endpoint.raw)
 		if err != nil {
@@ -466,7 +469,6 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 			return nil, nil, err
 		}
 	}
-	probes = append(probes, status.HTTPHealthProbe("Action Service", httpClient, healthURL(config.ActionFederation.ServiceURL, "/healthz")))
 	if config.ElectricURL != "" {
 		probes = append(probes, status.HTTPHealthProbe("Electric", httpClient, healthURL(config.ElectricURL, "/v1/health")))
 	}

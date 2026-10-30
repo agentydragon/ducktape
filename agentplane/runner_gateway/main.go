@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
@@ -313,20 +314,14 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	cancel()
+	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
+	defer release()
 	if facadeServer != nil {
-		closing, release := context.WithTimeout(context.Background(), 5*time.Second)
-		defer release()
 		if err := facadeServer.Shutdown(closing); err != nil {
 			slog.Warn("HTTP listener did not drain", "error", err)
 		}
 	}
-	stopped := make(chan struct{})
-	go func() { server.GracefulStop(); close(stopped) }()
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		server.Stop()
-	}
+	graceful.Stop(closing, server)
 	return result
 }
 

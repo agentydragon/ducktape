@@ -872,8 +872,11 @@ class Egress(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
+                # Sandboxes' agent CLI calls the Action Service over gRPC, and their HTTP reads both
+                # services' documentation and facades.
                 actions.service(namespace).egress(),
-                notifications.service(namespace).egress(),
+                actions.http_service(namespace).egress(),
+                notifications.http_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm_proxy.service(litellm_spec).egress(),

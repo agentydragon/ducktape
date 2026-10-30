@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,11 +20,7 @@ import (
 )
 
 func TestSendWithinTimesOutWithoutWaitingForSend(t *testing.T) {
-	var abortCalls atomic.Int32
-	ctx := streaming.WithAbortWrite(t.Context(), func() error {
-		abortCalls.Add(1)
-		return nil
-	})
+	ctx := t.Context()
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	releaseSend := func() { releaseOnce.Do(func() { close(release) }) }
@@ -41,9 +35,6 @@ func TestSendWithinTimesOutWithoutWaitingForSend(t *testing.T) {
 	}, new(int))
 	if !errors.Is(err, streaming.ErrSendTimeout) {
 		t.Fatalf("SendWithin() = %v, want ErrSendTimeout", err)
-	}
-	if got := abortCalls.Load(); got != 1 {
-		t.Fatalf("abort callback calls = %d, want 1 for an outstanding Send", got)
 	}
 	select {
 	case <-started:
@@ -65,12 +56,7 @@ func TestSendWithinTimesOutWithoutWaitingForSend(t *testing.T) {
 }
 
 func TestSendWithinReturnsOnContextCancellation(t *testing.T) {
-	baseCtx, cancel := context.WithCancel(t.Context())
-	var abortCalls atomic.Int32
-	ctx := streaming.WithAbortWrite(baseCtx, func() error {
-		abortCalls.Add(1)
-		return nil
-	})
+	ctx, cancel := context.WithCancel(t.Context())
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	releaseSend := func() { releaseOnce.Do(func() { close(release) }) }
@@ -97,9 +83,6 @@ func TestSendWithinReturnsOnContextCancellation(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("SendWithin() = %v, want context.Canceled", err)
 		}
-		if got := abortCalls.Load(); got != 1 {
-			t.Fatalf("abort callback calls = %d, want 1 for an outstanding Send", got)
-		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("context cancellation did not end SendWithin")
 	}
@@ -117,12 +100,8 @@ func TestSendWithinReturnsOnContextCancellation(t *testing.T) {
 	}
 }
 
-func TestSendWithinDoesNotAbortCompletedSend(t *testing.T) {
-	var abortCalls atomic.Int32
-	ctx := streaming.WithAbortWrite(t.Context(), func() error {
-		abortCalls.Add(1)
-		return nil
-	})
+func TestSendWithinReturnsTheCompletedSendsResult(t *testing.T) {
+	ctx := t.Context()
 	wantErr := errors.New("send failed")
 	for _, sendErr := range []error{nil, wantErr} {
 		err := streaming.SendWithin(ctx, time.Second, func(*int) error { return sendErr }, new(int))
@@ -130,32 +109,26 @@ func TestSendWithinDoesNotAbortCompletedSend(t *testing.T) {
 			t.Fatalf("SendWithin() = %v, want %v", err, sendErr)
 		}
 	}
-	if got := abortCalls.Load(); got != 0 {
-		t.Fatalf("abort callback calls = %d, want 0 for completed Sends", got)
-	}
 }
 
 func TestRealGRPCFlowControlReleasesBlockedSend(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
-		transport     string
 		cancelClient  bool
 		writeTimeout  time.Duration
 		expectTimeout bool
 	}{
-		{name: "native drain", transport: "native"},
-		{name: "facade drain", transport: "facade"},
-		{name: "facade client cancellation", transport: "facade", cancelClient: true},
-		{name: "native write timeout", transport: "native", writeTimeout: 250 * time.Millisecond, expectTimeout: true},
-		{name: "facade write timeout", transport: "facade", writeTimeout: 250 * time.Millisecond, expectTimeout: true},
+		{name: "drain"},
+		{name: "client cancellation", cancelClient: true},
+		{name: "write timeout", writeTimeout: 250 * time.Millisecond, expectTimeout: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testRealGRPCFlowControlReleasesBlockedSend(t, tc.transport, tc.cancelClient, tc.writeTimeout, tc.expectTimeout)
+			testRealGRPCFlowControlReleasesBlockedSend(t, tc.cancelClient, tc.writeTimeout, tc.expectTimeout)
 		})
 	}
 }
 
-func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, cancelClient bool, writeTimeout time.Duration, expectTimeout bool) {
+func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool, writeTimeout time.Duration, expectTimeout bool) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -172,14 +145,7 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 	}
 	server := grpc.NewServer()
 	server.RegisterService(&flowControlServiceDesc, service)
-	if transport == "facade" {
-		httpServer := &http.Server{Handler: http.NotFoundHandler()}
-		facade.MountGRPC(httpServer, server)
-		go func() { _ = httpServer.Serve(listener) }()
-		t.Cleanup(func() { _ = httpServer.Close() })
-	} else {
-		go func() { _ = server.Serve(listener) }()
-	}
+	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
 		_ = listener.Close()
@@ -275,18 +241,10 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 			t.Fatal("gRPC did not release every started SendMsg after the handler returned")
 		}
 	}
-	if transport == "facade" {
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-		if err := conn.Invoke(ctx, "/agentplane.grpc.streaming.FlowControl/Ping", &emptypb.Empty{}, &emptypb.Empty{}); err != nil {
-			t.Fatalf("unary RPC on the same client connection after aborting the stream: %v", err)
-		}
-	}
 }
 
 type flowControlServer interface {
 	Watch(grpc.ServerStream) error
-	Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 }
 
 type flowControlService struct {
@@ -338,23 +296,9 @@ func (s *flowControlService) Watch(stream grpc.ServerStream) (err error) {
 	}
 }
 
-func (*flowControlService) Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
-	return &emptypb.Empty{}, nil
-}
-
 var flowControlServiceDesc = grpc.ServiceDesc{
 	ServiceName: "agentplane.grpc.streaming.FlowControl",
 	HandlerType: (*flowControlServer)(nil),
-	Methods: []grpc.MethodDesc{{
-		MethodName: "Ping",
-		Handler: func(server any, ctx context.Context, decode func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
-			request := new(emptypb.Empty)
-			if err := decode(request); err != nil {
-				return nil, err
-			}
-			return server.(flowControlServer).Ping(ctx, request)
-		},
-	}},
 	Streams: []grpc.StreamDesc{{
 		StreamName:    "Watch",
 		Handler:       func(server any, stream grpc.ServerStream) error { return server.(flowControlServer).Watch(stream) },

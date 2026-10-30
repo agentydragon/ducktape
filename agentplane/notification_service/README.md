@@ -79,8 +79,8 @@ watch. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 
-One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`), the HTTP
-form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
+The gRPC listener (`host`, `port`) serves `Notifications`, `NotificationsOperator` and `grpc.health.v1`. The HTTP
+listener (`host`, `http_port`) serves the HTTP form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
 the agent documentation (`/llms.txt`, `/docs/agents/` and `/openapi.json`, the document generated from that proto,
 which answer without the database) and, when GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the

@@ -1,11 +1,11 @@
-// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
+// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. Its gRPC listener serves
 // `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions and MCP server linkages, and `WebPushService`, over gRPC and their HTTP
-// facade under /v1/, the MCP linkage's OAuth callback and Client ID Metadata Document, the agent documentation, the
-// standard gRPC health service and the process's Prometheus metrics at /metrics. It runs the dispatch worker, which
-// runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
-// awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
-// server's.
+// policy, `OperatorActionService`'s Decisions and MCP server linkages, `WebPushService` and the standard gRPC health
+// service. Its HTTP listener serves their HTTP facade under /v1/, the MCP linkage's OAuth callback and Client ID
+// Metadata Document, the agent documentation and the process's Prometheus metrics at /metrics. It runs the dispatch
+// worker, which runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes
+// requests awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to
+// the API server's.
 package main
 
 import (
@@ -42,6 +42,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -104,12 +105,17 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	grpcListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
 	if err != nil {
-		return err
+		return fmt.Errorf("gRPC listener: %w", err)
 	}
-	defer listener.Close()
-	return serve(ctx, c, cluster, listener)
+	defer grpcListener.Close()
+	httpListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.HTTPPort)))
+	if err != nil {
+		return fmt.Errorf("HTTP listener: %w", err)
+	}
+	defer httpListener.Close()
+	return serve(ctx, c, cluster, grpcListener, httpListener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -298,7 +304,7 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	return api.NewGate(options), nil
 }
 
-// newRoutes is the listener's HTTP routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
+// newRoutes is the HTTP listener's routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
 // httpFacade), the agent documentation, which needs neither the database nor a peer, and the metrics.
 func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 	docs, err := fs.Sub(agentDocs, "docs/agents")
@@ -312,11 +318,11 @@ func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 	return routes, nil
 }
 
-// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
-// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
-// share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
-// listener's shutdown, and serve returns once they have and the policy watches have stopped.
-func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
+// serve answers gRPC on grpcListener and HTTP on httpListener, runs the dispatch worker, supervises the MCP groups'
+// sessions, refreshes the linked tokens, delivers Web Push and keeps the policy index until ctx ends or a listener
+// fails. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listeners'
+// shutdown, and serve returns once they have and the policy watches have stopped.
+func serve(ctx context.Context, c config, d deps, grpcListener, httpListener net.Listener) error {
 	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
 	if err != nil {
@@ -436,9 +442,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
-	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
-	// while draining.
+	// The facade is the gRPC listener's own client, so the Gate admits every request. It outlives the termination
+	// signal, so that calls admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
 	registrations := []facade.Registration{
@@ -446,7 +451,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
 	}
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, registrations...)
+	httpFacade, err := facade.NewHandler(facadeContext, grpcListener.Addr().String(), 0, registrations...)
 	if err != nil {
 		return err
 	}
@@ -458,7 +463,6 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	// bearer, so they are plain HTTP beside the facade.
 	linkages.Mount(routes)
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	facade.MountGRPC(server, grpcServer)
 
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
@@ -506,8 +510,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer close(worked)
 		dispatcher.Run(working, wakeups)
 	}()
-	failed := make(chan error, 1)
-	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
+	failed := make(chan error, 2)
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
+	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
 	var result error
 	select {
 	case result = <-failed:
@@ -519,9 +524,11 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
+	// The facade's calls are gRPC calls, so the HTTP listener stops first.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}
+	graceful.Stop(stopped, grpcServer)
 	<-worked
 	supervising.Wait()
 	return result

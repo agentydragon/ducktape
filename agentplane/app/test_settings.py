@@ -42,6 +42,7 @@ APP_ENVIRONMENT = {
         {
             "mode": "direct",
             "service_url": "http://actions.test.invalid:8080",
+            "http_url": "http://actions.test.invalid:8081",
             "login_jwks_uri": "https://auth.test.invalid/jwks/",
             "target": {
                 "issuer": "https://auth.test.invalid/application/o/test-app/",

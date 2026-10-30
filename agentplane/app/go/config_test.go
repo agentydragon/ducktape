@@ -41,7 +41,8 @@ func validTestConfig() Config {
 		EgressAdminURL:                      "http://egress:8080",
 		ConnectionServiceURL:                "http://connection:8080",
 		ActionFederation: ActionFederationConfig{
-			Mode: "direct", ServiceURL: "https://actions.example.test", LoginJWKsURI: "https://login.example.test/jwks",
+			Mode: "direct", ServiceURL: "https://actions.example.test", HTTPURL: "https://actions.example.test:8081",
+			LoginJWKsURI:      "https://login.example.test/jwks",
 			LoginTokenProfile: "authentik", Target: OperatorOIDCConfig{
 				Issuer: "https://actions.example.test", Audience: "agentplane", JWKsURI: "https://actions.example.test/jwks", TokenProfile: "authentik",
 			}, Scope: "actions:operator",
@@ -139,6 +140,7 @@ connection_service_url: http://connection:8080
 action_federation:
   mode: direct
   service_url: https://actions.example.test
+  http_url: https://actions.example.test:8081
   login_jwks_uri: https://login.example.test/jwks
   target:
     issuer: https://actions.example.test
@@ -252,6 +254,7 @@ connection_service_url: http://connection:8080/
 action_federation:
   mode: direct
   service_url: https://actions.example.test
+  http_url: https://actions.example.test:8081
   login_jwks_uri: https://login.example.test/jwks
   target:
     issuer: https://actions.example.test

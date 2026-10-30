@@ -123,13 +123,17 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubscribe)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, cluster, listener) }()
+	go func() { served <- serve(ctx, c, cluster, grpcListener, httpListener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -144,7 +148,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +157,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
 		connections: connection_servicepb.NewConnectionServiceClient(connection),
-		url:         "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		url:         "http://" + httpListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -176,7 +180,7 @@ func waitReady(t *testing.T, service running) {
 	}
 }
 
-func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
+func TestTheServiceAnswersHealthAndMetricsAndStopsWhenTold(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	waitReady(t, service)
 	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {

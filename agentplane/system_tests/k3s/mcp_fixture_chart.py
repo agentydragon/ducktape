@@ -35,7 +35,7 @@ _OPERATOR_PASSWORD = "test-k3s-operator-password"
 _MCP_EDGE_LOGIN = dex.StaticClient(
     id="test-mcp-edge-oauth",
     name="Test MCP edge OAuth",
-    redirect_uri=f"{fixture_chart.MCP_EDGE_SERVICE.url}/auth/callback",
+    redirect_uri=f"{fixture_chart.MCP_EDGE_HTTP_SERVICE.url}/auth/callback",
 )
 
 

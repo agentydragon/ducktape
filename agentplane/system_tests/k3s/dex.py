@@ -84,6 +84,7 @@ def action_federation(target: OperatorOidcSettings) -> DirectFederationSettings:
     return DirectFederationSettings(
         mode="direct",
         service_url=AnyHttpUrl(actions.service(NAMESPACE).url),
+        http_url=AnyHttpUrl(actions.http_service(NAMESPACE).url),
         login_jwks_uri=target.jwks_uri,
         login_token_profile=OperatorTokenProfile.DEX,
         target=target,

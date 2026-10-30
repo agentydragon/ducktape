@@ -91,9 +91,17 @@ _DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
-    """The Action Service in one environment's namespace."""
+    """The Action Service's gRPC listener in one environment's namespace."""
     return ServiceRef(
-        name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def http_service(namespace: str) -> ServiceRef:
+    """The Action Service's HTTP listener: the gRPC services' HTTP facade, the MCP linkage callback and
+    Client ID Metadata Document, the agent documentation and metrics."""
+    return ServiceRef(
+        name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
 
 
@@ -300,12 +308,14 @@ class Actions(Construct):
         self.migrate_pull_policy = migrate_pull_policy
         self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
+        self.http = http_service(env.namespace)
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
         props = env.actions
         content: dict[str, Any] = {
             "host": "0.0.0.0",
             "port": self.service.pod_port,
+            "http_port": self.http.pod_port,
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
             # CLEANUP(added 2026-10-27): Keep false until the manifest key is removed after this image rolls out.
             "integrated_connection_service": False,
@@ -365,7 +375,7 @@ class Actions(Construct):
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             selector=ServiceMonitorSpecSelector(match_labels=self.service.labels),
-            endpoints=[Endpoint.plain(port=self.service.port.name)],
+            endpoints=[Endpoint.plain(port=self.http.port.name)],
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
@@ -488,7 +498,7 @@ class Actions(Construct):
         workload = add_service_workload(
             self,
             self.env,
-            serves=[self.service],
+            serves=[self.service, self.http],
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
@@ -583,7 +593,7 @@ class Actions(Construct):
             "httproute",
             metadata=ApiObjectMetadata(name=f"{NAME}-mcp", namespace=self.env.namespace),
             hostnames=[hostname],
-            backend=self.service,
+            backend=self.http,
             paths=paths,
             timeout="3600s",
         )
@@ -597,12 +607,18 @@ class Actions(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
-                *([IngressRule.from_gateway(self.service.pod_port)] if public else []),
-                cilium.SCRAPERS.admit(self.service.pod_port),
+                *([IngressRule.from_gateway(self.http.pod_port)] if public else []),
+                cilium.SCRAPERS.admit(self.http.pod_port),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
-                # egress.py and app.py import this module, so their Pods are named here.
-                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
-                IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
+                # egress.py and app.py import this module, so their Pods are named here. Sandboxes reach
+                # both listeners through the egress proxy: the agent CLI over gRPC, documentation and
+                # the facade over HTTP. The app calls the gRPC services and the MCP linkage callback.
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port, self.http.pod_port]
+                ),
+                IngressRule.from_endpoints(
+                    cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port, self.http.pod_port]
+                ),
                 # The staged edge has no Pods until the Connection/MCP traffic cutover.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]

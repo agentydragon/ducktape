@@ -22,7 +22,7 @@ def render(output: Path) -> None:
     mcp = MCP_PLACEHOLDERS
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     app_service = fixture_chart.APP_SERVICE
-    edge_service = fixture_chart.MCP_EDGE_SERVICE
+    edge_service = fixture_chart.MCP_EDGE_HTTP_SERVICE
     dex_service = dex.service()
     fixture = RenderedFixture(
         backend=Backend.LOCAL_MODEL,

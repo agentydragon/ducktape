@@ -96,7 +96,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "0.0.0.0" || c.Port != 8080 || c.TokenAudience != "agentplane-notifications" || c.OperatorReaderAccount != "" {
+	if c.Host != "0.0.0.0" || c.Port != 8080 || c.HTTPPort != 8081 || c.TokenAudience != "agentplane-notifications" || c.OperatorReaderAccount != "" {
 		t.Errorf("listener or admission defaults: %+v", c)
 	}
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {

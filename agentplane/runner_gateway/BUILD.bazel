@@ -150,6 +150,7 @@ go_library(
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/grpc/facade",
+        "//agentplane/grpc/graceful",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
         "//agentplane/runner_gateway/dispatcher",

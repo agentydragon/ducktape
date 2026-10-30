@@ -462,8 +462,8 @@ submission and owner-scoped reads use the service's `/v1/action-requests` API, n
 Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
 Git-owned `agentplane-action-federation` ConfigMap (built from the `action_federation`/
 `operator_oidc` dicts in `cluster/cdk8s/generate_manifests.py`), and the app's network
-policies admit Authentik by TLS SNI, the Action Service on 8080, and the MCP edge's Connection
-Service on 8080. The app composes a request-bound
+policies admit Authentik by TLS SNI, the Action Service on 8080 (gRPC) and 8081 (HTTP), and the MCP
+edge's Connection Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
@@ -511,7 +511,8 @@ surface.
 
 The app connects to the Connection Service through the separately configured `connection_service_url`
 and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP-linkage
-OAuth callback remains a narrow HTTP call to the Action Service. Staging points
+OAuth callback remains a narrow HTTP call to the Action Service's HTTP listener, `action_federation.http_url`.
+Staging points
 `connection_service_url` at the MCP edge and `action_federation.service_url` at the Action Service.
 Each service has its own gRPC health probe.
 

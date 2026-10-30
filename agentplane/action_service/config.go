@@ -34,7 +34,10 @@ const settingPrefix = "AGENTPLANE_ACTIONS_"
 type config struct {
 	DatabaseURL string `mapstructure:"database_url"`
 	Host        string `mapstructure:"host"`
-	Port        int    `mapstructure:"port"`
+	// Port is the gRPC listener's, and HTTPPort the HTTP listener's: the facade, the MCP linkage's callback and
+	// Client ID Metadata Document, the agent documentation and the metrics.
+	Port     int `mapstructure:"port"`
+	HTTPPort int `mapstructure:"http_port"`
 	// TokenAudience is the audience a workload's projected token must be issued for.
 	TokenAudience string `mapstructure:"token_audience"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
@@ -86,7 +89,7 @@ type gitHubVisibility struct {
 
 func defaultConfig() config {
 	return config{
-		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
+		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
@@ -175,8 +178,13 @@ func (c *config) validate() error {
 			return errors.New("reader_accounts requires namespace and name")
 		}
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
+	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
+		if port < 1 || port > 65535 {
+			return errors.New(name + " must be between 1 and 65535")
+		}
+	}
+	if c.Port == c.HTTPPort {
+		return errors.New("port and http_port must differ")
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
