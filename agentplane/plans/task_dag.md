@@ -1801,8 +1801,8 @@ Remaining work: confirm the current image is running, remove the compatibility k
 generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
 all database rows and schemas; any later migration needs a separate verified ownership and
 retention plan. Detailed sequence and constraints:
-[MCP edge extraction](mcp_edge_extraction.md#remaining-work). The current token audience is
-`agentplane-egress`; a dedicated audience is a separate change.
+[the edge's rollout sequence](../mcp_edge/README.md#configuration-rollout-sequencing). The current
+token audience is `agentplane-egress`; a dedicated audience is a separate change.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1887,7 +1887,7 @@ old paths.
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
 lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the compatibility
-settings and separately gated schema cleanup in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
+settings and separately gated schema cleanup in [the edge's rollout sequence](../mcp_edge/README.md#configuration-rollout-sequencing). The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 
