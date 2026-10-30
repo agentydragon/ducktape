@@ -14,9 +14,8 @@ import (
 	"testing"
 	"time"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -52,7 +51,7 @@ type blockingOpenSessionStream struct {
 	once    sync.Once
 }
 
-func (s *blockingOpenSessionStream) Send(*executionpb.OpenSessionResponse) error {
+func (s *blockingOpenSessionStream) Send(*executorpb.OpenSessionResponse) error {
 	s.once.Do(func() { close(s.started) })
 	<-s.release
 	return nil
@@ -128,11 +127,11 @@ func (p *peer) count(method string) int {
 	return count
 }
 
-func fixture(t *testing.T, p *peer) (*Adapter, runnerexecpb.RunnerExecClient) {
+func fixture(t *testing.T, p *peer) (*Adapter, executorpb.ExecutorClient) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(p.serve))
 	t.Cleanup(server.Close)
-	adapter, err := New(Config{Context: t.Context(), Admit: func(ctx context.Context, _ *executionpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+	adapter, err := New(Config{Context: t.Context(), Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -164,24 +163,24 @@ func fixture(t *testing.T, p *peer) (*Adapter, runnerexecpb.RunnerExecClient) {
 	}
 	listener := bufconn.Listen(4 << 20)
 	grpcServer := grpc.NewServer()
-	runnerexecpb.RegisterRunnerExecServer(grpcServer, adapter)
+	executorpb.RegisterExecutorServer(grpcServer, adapter)
 	go func() { _ = grpcServer.Serve(listener) }()
 	conn, err := grpc.NewClient("passthrough:///adapter", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithDisableRetry())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close(); grpcServer.Stop(); _ = adapter.Close() })
-	return adapter, runnerexecpb.NewRunnerExecClient(conn)
+	return adapter, executorpb.NewExecutorClient(conn)
 }
 
-func testScope() *executionpb.ExecutionScope {
-	return &executionpb.ExecutionScope{Destination: &sandboxespb.SandboxDestination{Sandbox: "sandbox", SandboxUid: "sandbox-uid", Owner: &sandboxespb.ServiceAccount{Namespace: "agents", Name: "sampler"}}, ExpectedIncarnationUid: "incarnation", SessionId: "sampler-session"}
+func testScope() *executorpb.ExecutionScope {
+	return &executorpb.ExecutionScope{Destination: &sandboxespb.SandboxDestination{Sandbox: "sandbox", SandboxUid: "sandbox-uid", Owner: &sandboxespb.ServiceAccount{Namespace: "agents", Name: "sampler"}}, ExpectedIncarnationUid: "incarnation", SessionId: "sampler-session"}
 }
 
-func open(t *testing.T, client runnerexecpb.RunnerExecClient, scope *executionpb.ExecutionScope, resume *string) (*executionpb.OpenSessionResponse, context.CancelFunc) {
+func open(t *testing.T, client executorpb.ExecutorClient, scope *executorpb.ExecutionScope, resume *string) (*executorpb.OpenSessionResponse, context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	stream, err := client.OpenSession(ctx, &executionpb.OpenSessionRequest{Scope: scope, RequestId: "open", ResumeSessionId: resume})
+	stream, err := client.OpenSession(ctx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: "open", ResumeSessionId: resume})
 	if err != nil {
 		cancel()
 		t.Fatal(err)
@@ -199,9 +198,9 @@ func nativeResult(ctx context.Context, ws *websocket.Conn, r nativeRequest, resu
 	return ws.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"id":%q,"result":%s}`, r.ID, result))) == nil
 }
 
-func completed(t *testing.T, status *executionpb.ExecutionStatus, frames []*executionpb.ExecutionNativeFrame, method string) {
+func completed(t *testing.T, status *executorpb.ExecutionStatus, frames []*executorpb.ExecutionNativeFrame, method string) {
 	t.Helper()
-	if status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("outcome=%v", status)
 	}
 	if len(frames) != 2 || frames[0].Direction != "request" || frames[1].Direction != "response" {
@@ -222,7 +221,7 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	_, client := fixture(t, p)
 	scope := testScope()
 	opened, _ := open(t, client, scope, nil)
-	if opened.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_COMPLETED || opened.ExecutionSessionId != "native-session" || opened.Shell.Path != "/bin/bash" {
+	if opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED || opened.ExecutionSessionId != "native-session" || opened.Shell.Path != "/bin/bash" {
 		t.Fatalf("open=%v", opened)
 	}
 	if len(opened.NativeFrames) != 3 || !bytes.Contains(opened.NativeFrames[1].Payload, []byte(`{ "id": "open"`)) {
@@ -231,7 +230,7 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	sid := opened.ExecutionSessionId
 	arg0 := "custom"
 	after := uint64(8)
-	started, err := client.StartProcess(t.Context(), &executionpb.StartProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh", "-c", "printf x"}, Cwd: "file:///work", EnvironmentPolicy: &executionpb.ExecutionEnvironmentPolicy{Inherit: "all", IgnoreDefaultExcludes: true, Set: map[string]string{"A": "B"}}, Environment: map[string]string{"C": "D"}, Tty: true, PipeStdin: true, Arg0: &arg0})
+	started, err := client.StartProcess(t.Context(), &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh", "-c", "printf x"}, Cwd: "file:///work", EnvironmentPolicy: &executorpb.ExecutionEnvironmentPolicy{Inherit: "all", IgnoreDefaultExcludes: true, Set: map[string]string{"A": "B"}}, Environment: map[string]string{"C": "D"}, Tty: true, PipeStdin: true, Arg0: &arg0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +244,7 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	if start.EnvPolicy.Set["A"] != "B" || start.Env["C"] != "D" || !start.TTY || !start.PipeStdin || *start.Arg0 != "custom" {
 		t.Fatalf("start mapping=%+v", start)
 	}
-	read, err := client.ReadProcess(t.Context(), &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "read", ProcessId: "p", AfterSeq: &after, MaxBytes: 65536, WaitMs: 10})
+	read, err := client.ReadProcess(t.Context(), &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "read", ProcessId: "p", AfterSeq: &after, MaxBytes: 65536, WaitMs: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +252,7 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	if len(read.Chunks) != 1 || !bytes.Equal(read.Chunks[0].Data, []byte{0, 255}) || read.NextSeq != 10 || read.GetExitCode() != 7 || !read.Closed {
 		t.Fatalf("read=%v", read)
 	}
-	written, err := client.WriteProcess(t.Context(), &executionpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "write", ProcessId: "p", Data: []byte{0, 255}, WriteId: "write-id"})
+	written, err := client.WriteProcess(t.Context(), &executorpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "write", ProcessId: "p", Data: []byte{0, 255}, WriteId: "write-id"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,17 +260,17 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	if written.WriteStatus != "accepted" {
 		t.Fatal(written)
 	}
-	signaled, err := client.SignalProcess(t.Context(), &executionpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "signal", ProcessId: "p", Signal: "interrupt"})
+	signaled, err := client.SignalProcess(t.Context(), &executorpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "signal", ProcessId: "p", Signal: "interrupt"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	completed(t, signaled.Status, signaled.NativeFrames, "process/signal")
-	terminated, err := client.TerminateProcess(t.Context(), &executionpb.TerminateProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "terminate", ProcessId: "p"})
+	terminated, err := client.TerminateProcess(t.Context(), &executorpb.TerminateProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "terminate", ProcessId: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	completed(t, terminated.Status, terminated.NativeFrames, "process/terminate")
-	metadata, err := client.GetFileMetadata(t.Context(), &executionpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "metadata", Path: "file:///work/image.png"})
+	metadata, err := client.GetFileMetadata(t.Context(), &executorpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "metadata", Path: "file:///work/image.png"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,12 +278,12 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	if metadata.Size != 22 || !metadata.IsFile {
 		t.Fatal(metadata)
 	}
-	file, err := client.OpenFile(t.Context(), &executionpb.OpenFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "open-file", HandleId: "h", Path: "file:///work/image.png"})
+	file, err := client.OpenFile(t.Context(), &executorpb.OpenFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "open-file", HandleId: "h", Path: "file:///work/image.png"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	completed(t, file.Status, file.NativeFrames, "fs/open")
-	block, err := client.ReadFile(t.Context(), &executionpb.ReadFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "read-file", HandleId: "h", Offset: 17, Length: 2})
+	block, err := client.ReadFile(t.Context(), &executorpb.ReadFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "read-file", HandleId: "h", Offset: 17, Length: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +291,7 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	if !bytes.Equal(block.Data, []byte{0, 255}) || !block.Eof {
 		t.Fatal(block)
 	}
-	closed, err := client.CloseFile(t.Context(), &executionpb.CloseFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "close-file", HandleId: "h"})
+	closed, err := client.CloseFile(t.Context(), &executorpb.CloseFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: "close-file", HandleId: "h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,8 +308,8 @@ func TestEmptyValuesUseNativeJSONShapes(t *testing.T) {
 	_, client := fixture(t, p)
 	scope := testScope()
 	opened, _ := open(t, client, scope, nil)
-	requests := []*executionpb.StartProcessRequest{
-		{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start-empty", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work", EnvironmentPolicy: &executionpb.ExecutionEnvironmentPolicy{}},
+	requests := []*executorpb.StartProcessRequest{
+		{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start-empty", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work", EnvironmentPolicy: &executorpb.ExecutionEnvironmentPolicy{}},
 		{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start-absent", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"},
 	}
 	want := [][]byte{
@@ -319,15 +318,15 @@ func TestEmptyValuesUseNativeJSONShapes(t *testing.T) {
 	}
 	for i, request := range requests {
 		response, err := client.StartProcess(t.Context(), request)
-		if err != nil || response.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		if err != nil || response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 			t.Fatalf("start %d response=%v err=%v", i, response, err)
 		}
 		if len(response.NativeFrames) != 2 || !bytes.Equal(response.NativeFrames[0].Payload, want[i]) {
 			t.Fatalf("start %d native request=%s, want %s", i, response.NativeFrames[0].Payload, want[i])
 		}
 	}
-	written, err := client.WriteProcess(t.Context(), &executionpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "write-empty", ProcessId: "p", WriteId: "w"})
-	if err != nil || written.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	written, err := client.WriteProcess(t.Context(), &executorpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "write-empty", ProcessId: "p", WriteId: "w"})
+	if err != nil || written.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("write response=%v err=%v", written, err)
 	}
 	wantWrite := []byte(`{"id":"write-empty","method":"process/write","params":{"processId":"p","chunk":"","writeId":"w"}}`)
@@ -360,15 +359,15 @@ func TestNotificationBurstUsesOpenSessionAndDoesNotPoisonUnaryRPCs(t *testing.T)
 	scope := testScope()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	stream, err := client.OpenSession(ctx, &executionpb.OpenSessionRequest{Scope: scope, RequestId: "open"})
+	stream, err := client.OpenSession(ctx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: "open"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	opened, err := stream.Recv()
-	if err != nil || opened.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || opened.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("open=%v err=%v", opened, err)
 	}
-	notifications := make(chan *executionpb.OpenSessionResponse, 6)
+	notifications := make(chan *executorpb.OpenSessionResponse, 6)
 	streamDone := make(chan error, 1)
 	go func() {
 		for range 6 {
@@ -381,8 +380,8 @@ func TestNotificationBurstUsesOpenSessionAndDoesNotPoisonUnaryRPCs(t *testing.T)
 		}
 		streamDone <- nil
 	}()
-	started, err := client.StartProcess(ctx, &executionpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
-	if err != nil || started.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	started, err := client.StartProcess(ctx, &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
+	if err != nil || started.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("start=%v err=%v", started, err)
 	}
 	if len(started.NativeFrames) != 2 {
@@ -390,7 +389,7 @@ func TestNotificationBurstUsesOpenSessionAndDoesNotPoisonUnaryRPCs(t *testing.T)
 	}
 	var transferred int
 	for i := range 6 {
-		var response *executionpb.OpenSessionResponse
+		var response *executorpb.OpenSessionResponse
 		select {
 		case response = <-notifications:
 		case <-ctx.Done():
@@ -415,8 +414,8 @@ func TestNotificationBurstUsesOpenSessionAndDoesNotPoisonUnaryRPCs(t *testing.T)
 	if transferred <= 2*maxNativeBytes {
 		t.Fatalf("notification burst size=%d, want more than %d", transferred, 2*maxNativeBytes)
 	}
-	read, err := client.ReadProcess(ctx, &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
-	if err != nil || read.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	read, err := client.ReadProcess(ctx, &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
+	if err != nil || read.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("healthy session read=%v err=%v", read, err)
 	}
 }
@@ -428,20 +427,20 @@ func TestRejectedCallAndValidation(t *testing.T) {
 	_, client := fixture(t, p)
 	scope := testScope()
 	opened, _ := open(t, client, scope, nil)
-	read, err := client.ReadProcess(t.Context(), &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
+	read, err := client.ReadProcess(t.Context(), &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_REJECTED || read.Status.GetUpstreamCode() != -32602 || len(read.NativeFrames) != 2 {
+	if read.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_REJECTED || read.Status.GetUpstreamCode() != -32602 || len(read.NativeFrames) != 2 {
 		t.Fatal(read)
 	}
-	_, err = client.SignalProcess(t.Context(), &executionpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "invalid-signal", ProcessId: "p", Signal: "terminate"})
+	_, err = client.SignalProcess(t.Context(), &executorpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "invalid-signal", ProcessId: "p", Signal: "terminate"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unsupported signal err=%v", err)
 	}
-	other := proto.Clone(scope).(*executionpb.ExecutionScope)
+	other := proto.Clone(scope).(*executorpb.ExecutionScope)
 	other.SessionId = "other-session"
-	_, err = client.TerminateProcess(t.Context(), &executionpb.TerminateProcessRequest{Scope: other, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "cross-scope", ProcessId: "p"})
+	_, err = client.TerminateProcess(t.Context(), &executorpb.TerminateProcessRequest{Scope: other, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "cross-scope", ProcessId: "p"})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("scope err=%v", err)
 	}
@@ -449,8 +448,8 @@ func TestRejectedCallAndValidation(t *testing.T) {
 		t.Fatal("rejected validation reached native executor")
 	}
 	largePath := "file://" + strings.Repeat("x", maxNativeBytes)
-	large, err := client.GetFileMetadata(t.Context(), &executionpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "large-metadata", Path: largePath})
-	if err != nil || large.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED || len(large.NativeFrames) != 0 {
+	large, err := client.GetFileMetadata(t.Context(), &executorpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "large-metadata", Path: largePath})
+	if err != nil || large.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED || len(large.NativeFrames) != 0 {
 		t.Fatalf("oversize encoded native request=%v err=%v", large, err)
 	}
 	if p.count("fs/getMetadata") != 0 {
@@ -482,7 +481,7 @@ func TestCanceledUnaryDoesNotCancelNativeCallOrReplay(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	go func() {
-		_, err := client.StartProcess(ctx, &executionpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
+		_, err := client.StartProcess(ctx, &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
 		result <- err
 	}()
 	select {
@@ -500,8 +499,8 @@ func TestCanceledUnaryDoesNotCancelNativeCallOrReplay(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("native call canceled with unary")
 	}
-	read, err := client.ReadProcess(t.Context(), &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
-	if err != nil || read.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	read, err := client.ReadProcess(t.Context(), &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
+	if err != nil || read.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("later read=%v err=%v", read, err)
 	}
 	if p.count("process/start") != 1 || p.count("process/terminate") != 0 {
@@ -514,11 +513,11 @@ func TestLostNativeReplyIsUnknownWithoutRetry(t *testing.T) {
 	_, client := fixture(t, p)
 	scope := testScope()
 	opened, _ := open(t, client, scope, nil)
-	result, err := client.StartProcess(t.Context(), &executionpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
+	result, err := client.StartProcess(t.Context(), &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_UNKNOWN || p.count("process/start") != 1 {
+	if result.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_UNKNOWN || p.count("process/start") != 1 {
 		t.Fatalf("lost reply=%v native start count=%d", result, p.count("process/start"))
 	}
 	if !strings.Contains(result.Status.Message, "read local exec-server WebSocket frame") {
@@ -535,7 +534,7 @@ func TestBinaryNativeFrameRejectsAndPreservesEvidence(t *testing.T) {
 	scope := testScope()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	stream, err := client.OpenSession(ctx, &executionpb.OpenSessionRequest{Scope: scope, RequestId: "open"})
+	stream, err := client.OpenSession(ctx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: "open"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,11 +542,11 @@ func TestBinaryNativeFrameRejectsAndPreservesEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := client.ReadProcess(t.Context(), &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
+	result, err := client.ReadProcess(t.Context(), &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "read", ProcessId: "p", MaxBytes: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_UNKNOWN || !strings.Contains(result.Status.Message, "non-text WebSocket frame") {
+	if result.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_UNKNOWN || !strings.Contains(result.Status.Message, "non-text WebSocket frame") {
 		t.Fatalf("binary native frame outcome=%v", result.Status)
 	}
 	if len(result.NativeFrames) != 1 || result.NativeFrames[0].Direction != "request" {
@@ -569,7 +568,7 @@ func TestResumeIdentityAndStreamLifetime(t *testing.T) {
 	opened, cancel := open(t, client, scope, nil)
 	cancel()
 	resumed, stop := open(t, client, scope, &opened.ExecutionSessionId)
-	if resumed.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_COMPLETED || resumed.ExecutionSessionId != opened.ExecutionSessionId {
+	if resumed.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED || resumed.ExecutionSessionId != opened.ExecutionSessionId {
 		t.Fatalf("resume=%v", resumed)
 	}
 	stop()
@@ -579,7 +578,7 @@ func TestResumeIdentityAndStreamLifetime(t *testing.T) {
 	}
 	p.sessionID = func(nativeRequest) string { return "substituted-session" }
 	substituted, _ := open(t, client, scope, &opened.ExecutionSessionId)
-	if substituted.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_UNKNOWN || substituted.ExecutionSessionId != "" {
+	if substituted.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_UNKNOWN || substituted.ExecutionSessionId != "" {
 		t.Fatalf("substituted session accepted: %v", substituted)
 	}
 	if p.count("process/terminate") != 0 {
@@ -601,16 +600,16 @@ func TestConcurrentResumeDoesNotExceedSessionAdmissionLimit(t *testing.T) {
 	}
 	_, client := fixture(t, p)
 	scope := testScope()
-	sessionIDs := make([]string, maxSessions)
-	for i := range maxSessions {
+	sessionIDs := make([]string, maxOpenConnections)
+	for i := range maxOpenConnections {
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
-		stream, err := client.OpenSession(ctx, &executionpb.OpenSessionRequest{Scope: scope, RequestId: fmt.Sprintf("open-%d", i)})
+		stream, err := client.OpenSession(ctx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: fmt.Sprintf("open-%d", i)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		response, err := stream.Recv()
-		if err != nil || response.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		if err != nil || response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 			t.Fatalf("open %d response=%v err=%v", i, response, err)
 		}
 		sessionIDs[i] = response.ExecutionSessionId
@@ -624,18 +623,18 @@ func TestConcurrentResumeDoesNotExceedSessionAdmissionLimit(t *testing.T) {
 	p.mu.Unlock()
 	firstCtx, firstCancel := context.WithCancel(t.Context())
 	defer firstCancel()
-	first, err := client.OpenSession(firstCtx, &executionpb.OpenSessionRequest{Scope: scope, RequestId: "resume-first", ResumeSessionId: &sessionIDs[0]})
+	first, err := client.OpenSession(firstCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: "resume-first", ResumeSessionId: &sessionIDs[0]})
 	if err != nil {
 		t.Fatal(err)
 	}
 	firstResult := make(chan struct {
-		response *executionpb.OpenSessionResponse
+		response *executorpb.OpenSessionResponse
 		err      error
 	}, 1)
 	go func() {
 		response, err := first.Recv()
 		firstResult <- struct {
-			response *executionpb.OpenSessionResponse
+			response *executorpb.OpenSessionResponse
 			err      error
 		}{response, err}
 	}()
@@ -645,7 +644,7 @@ func TestConcurrentResumeDoesNotExceedSessionAdmissionLimit(t *testing.T) {
 		t.Fatal("first resume did not reserve its admission slot")
 	}
 
-	second, err := client.OpenSession(t.Context(), &executionpb.OpenSessionRequest{Scope: scope, RequestId: "resume-second", ResumeSessionId: &sessionIDs[0]})
+	second, err := client.OpenSession(t.Context(), &executorpb.OpenSessionRequest{Scope: scope, RequestId: "resume-second", ResumeSessionId: &sessionIDs[0]})
 	if err != nil {
 		t.Fatalf("second resume stream open: %v", err)
 	}
@@ -656,7 +655,7 @@ func TestConcurrentResumeDoesNotExceedSessionAdmissionLimit(t *testing.T) {
 	close(gate)
 	select {
 	case result := <-firstResult:
-		if result.err != nil || result.response.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		if result.err != nil || result.response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 			t.Fatalf("first resume response=%v err=%v", result.response, result.err)
 		}
 	case <-time.After(5 * time.Second):
@@ -668,7 +667,7 @@ func TestExecutorAdmissionRefusalIsKnownRejection(t *testing.T) {
 	p := &peer{acquireErr: status.Error(codes.FailedPrecondition, "Runner has no configured Codex executor")}
 	adapter, client := fixture(t, p)
 	response, _ := open(t, client, testScope(), nil)
-	if response.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.Status.GetMessage(), "no configured Codex executor") {
+	if response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.Status.GetMessage(), "no configured Codex executor") {
 		t.Fatalf("executor refusal outcome=%v", response.Status)
 	}
 	if response.ExecutionSessionId != "" || len(response.NativeFrames) != 0 || adapter.Active() {
@@ -688,7 +687,7 @@ func TestDrainAndCloseReturnWhenOpenSessionSendStalls(t *testing.T) {
 			defer server.Close()
 			adapter, err := New(Config{
 				Context: context.Background(),
-				Admit: func(ctx context.Context, _ *executionpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+				Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 					return accept(ctx)
 				},
 				Acquire: func(context.Context) (string, error) { return "ws" + strings.TrimPrefix(server.URL, "http"), nil },
@@ -701,7 +700,7 @@ func TestDrainAndCloseReturnWhenOpenSessionSendStalls(t *testing.T) {
 			stream := &blockingOpenSessionStream{ctx: streamCtx, started: make(chan struct{}), release: make(chan struct{})}
 			openDone := make(chan error, 1)
 			go func() {
-				openDone <- adapter.OpenSession(&executionpb.OpenSessionRequest{Scope: testScope(), RequestId: "open"}, stream)
+				openDone <- adapter.OpenSession(&executorpb.OpenSessionRequest{Scope: testScope(), RequestId: "open"}, stream)
 			}()
 			select {
 			case <-stream.started:
@@ -758,7 +757,7 @@ func TestDrainIsReversibleAndClosesHeldExecutorConnection(t *testing.T) {
 		t.Fatal("drained execution session still active")
 	}
 	resumed, stop := open(t, client, scope, &opened.ExecutionSessionId)
-	if resumed.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED || resumed.ExecutionSessionId != opened.ExecutionSessionId {
+	if resumed.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || resumed.ExecutionSessionId != opened.ExecutionSessionId {
 		t.Fatalf("reopened execution session=%v", resumed)
 	}
 	stop()

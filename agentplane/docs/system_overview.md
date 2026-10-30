@@ -36,7 +36,7 @@ flowchart LR
     dispatcher[Gateway Dispatcher]
     sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
-    gateway[Gateway ExecutorGateway]
+    gateway[Gateway Executor]
     runner[Sandbox Runner and execution adapter]
     executor[Loopback Codex exec-server]
     history[History ingress and Thread fold]
@@ -45,7 +45,7 @@ flowchart LR
     dispatcher -->|Sampler gRPC: open, input, controls| sampler
     sampler -->|continuation, commands, evidence outbox| db
     sampler -->|typed execution RPCs| gateway
-    gateway -->|mTLS RunnerExec gRPC| runner
+    gateway -->|mTLS Executor gRPC| runner
     runner -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|acknowledged outbox: RunnerIngress.Push| history
     sampler -->|Session identity| llm --> provider
@@ -56,7 +56,8 @@ logical Sessions through it. The host retains per-Session `store()` / `load()` v
 and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
 Provider continuation stays in the sampler.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
-Gateway forwards typed process and file RPCs to the Runner, whose execution adapter owns the local
+Gateway proxies the sandbox-owned [Executor service](../executor/executor.proto) to the Runner,
+whose execution adapter owns the local
 Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
 connection; process and file operations use unary RPCs. Native frames return as evidence for the
 sampler's existing journal. No new persistence or operation receipts are introduced, and a lost
@@ -76,8 +77,8 @@ flowchart LR
     gateway[Runner Gateway]
     pod[Pod runner]
     guest[VM guest runner]
-    gateway -->|mTLS Runner + RunnerExec| pod
-    gateway -->|mTLS Runner + RunnerExec| guest
+    gateway -->|mTLS Runner + Executor| pod
+    gateway -->|mTLS Runner + Executor| guest
 ```
 
 The Gateway dials native gRPC and a state watch on each runner. Incarnation fencing, connection
@@ -277,6 +278,6 @@ external MCP bearers and forwards workload calls under the bound ServiceAccount'
 
 ## Service definitions
 
-- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Runner RPCs](../runner/runner_service.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Runner service over a direct mTLS connection to each runner.
+- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Runner RPCs](../runner/runner_service.proto), [Executor](../executor/executor.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Runner and Executor services over a direct mTLS connection to each runner.
 - HTTP and streaming APIs: [Integration app](../app/api.py), [Electric proxy](../app/electric.py), [Action Service generated facade](../action_service/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../sandbox_controller/controller.go), [Policy Controller](../policy_controller/controller.go), [central egress proxy](../egress/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).

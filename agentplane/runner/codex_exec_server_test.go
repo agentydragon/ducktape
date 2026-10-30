@@ -16,7 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
@@ -43,7 +43,7 @@ func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
 		t.Fatalf("open first execution session: %v", err)
 	}
 	firstResponse, err := first.Recv()
-	if err != nil || firstResponse.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || firstResponse.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("first OpenSession response = %v, err=%v", firstResponse, err)
 	}
 	second, err := client.open(client.callCtx, "sampler-session-2", "open-native-2")
@@ -51,7 +51,7 @@ func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
 		t.Fatalf("open sibling execution session: %v", err)
 	}
 	secondResponse, err := second.Recv()
-	if err != nil || secondResponse.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || secondResponse.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("sibling OpenSession response = %v, err=%v", secondResponse, err)
 	}
 	if firstResponse.GetExecutionSessionId() == secondResponse.GetExecutionSessionId() {
@@ -115,7 +115,7 @@ func TestExecutionSessionReadinessReturnsTypedCompanionRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSession rejection response: %v", err)
 	}
-	if response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.GetStatus().GetMessage(), "Codex binary is unavailable") {
+	if response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.GetStatus().GetMessage(), "Codex binary is unavailable") {
 		t.Fatalf("OpenSession outcome = %v, want typed rejection with companion reason", response.GetStatus())
 	}
 	if response.GetStatus().UpstreamCode != nil {
@@ -138,7 +138,7 @@ func TestExecutionSessionReadinessSurvivesTransientStartupFailure(t *testing.T) 
 		t.Fatalf("OpenSession RPC: %v", err)
 	}
 	response, err := stream.Recv()
-	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("OpenSession after controller retry = %v, err=%v", response, err)
 	}
 	if starts.Load() < 2 || response.GetExecutionSessionId() == "" {
@@ -439,7 +439,7 @@ func TestExecutorShutdownDrainsSessionsBeforeFencing(t *testing.T) {
 		t.Fatalf("OpenSession RPC: %v", err)
 	}
 	response, err := stream.Recv()
-	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("OpenSession before shutdown = %v, err=%v", response, err)
 	}
 	select {

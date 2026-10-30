@@ -80,7 +80,7 @@ class CentralSampler(Construct):
             audience=central_sampler.TOKEN_AUDIENCE,
             allowed_accounts={f"{namespace}/{runner_gateway.NAME}"},
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
-            # The ExecutorGateway resolves this path inside the Sandbox's normal PATH.
+            # The sandbox exec-server resolves this binary through its normal PATH.
             executor_codex="codex",
             logs=Path(_LOGS_PATH),
             history_target=f"{self.history_ingress.fqdn}:{self.history_ingress.pod_port}",

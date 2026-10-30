@@ -170,21 +170,3 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/sandboxes",
     proto = ":sandboxes_proto",
 )
-
-proto_library(
-    name = "execution_proto",
-    srcs = ["execution.proto"],
-    deps = [":sandboxes_proto"],
-)
-
-go_proto_library(
-    name = "execution_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/executionpb",
-    proto = ":execution_proto",
-    deps = [":sandboxes_go_proto"],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "execution_pb2",
-    deps = [":execution_proto"],
-)

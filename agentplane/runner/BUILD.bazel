@@ -502,39 +502,6 @@ proto_library(
     ],
 )
 
-proto_library(
-    name = "runner_exec_proto",
-    srcs = ["runner_exec.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/proto:execution_proto"],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "runner_exec_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":runner_exec_proto"],
-)
-
-py_grpc_service_library(
-    name = "runner_exec_pb2_grpc",
-    async_only = True,
-    proto = ":runner_exec_proto",
-    py_proto = ":runner_exec_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-go_proto_library(
-    name = "runner_exec_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb",
-    proto = ":runner_exec_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/proto:execution_go_proto"],
-)
-
 py_proto_library_with_mypy_stubs(
     name = "runner_service_pb2",
     visibility = ["//agentplane:__subpackages__"],
@@ -559,7 +526,6 @@ go_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
     ],
@@ -590,11 +556,11 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
+        "//agentplane/executor:executor_go_proto",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
@@ -648,15 +614,14 @@ go_test(
     exec_properties = {"test.dockerUser": "0:0"},
     race = "on",
     deps = [
+        "//agentplane/executor:executor_go_proto",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:execution_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/bootstrap",
         "//agentplane/runner/claude",

@@ -11,11 +11,10 @@ import (
 	"testing"
 	"time"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/coder/websocket"
@@ -28,7 +27,7 @@ type directExecutionTestClient struct {
 	cancel      context.CancelFunc
 	conn        *grpc.ClientConn
 	runner      runnerservicepb.RunnerClient
-	executor    runnerexecpb.RunnerExecClient
+	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	bootID      string
 	incarnation string
@@ -91,17 +90,17 @@ func startDirectExecutionTestClient(t *testing.T, r *Runner, incarnation string)
 	})
 	return &directExecutionTestClient{
 		ctx: ctx, cancel: cancel, conn: conn, runner: runnerClient,
-		executor: runnerexecpb.NewRunnerExecClient(conn), callCtx: callCtx,
+		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx,
 		bootID: first.GetRunnerBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
 	}
 }
 
-func (h *directExecutionTestClient) open(ctx context.Context, sessionID, requestID string) (runnerexecpb.RunnerExec_OpenSessionClient, error) {
-	return h.executor.OpenSession(ctx, &executionpb.OpenSessionRequest{Scope: h.scope(sessionID), RequestId: requestID})
+func (h *directExecutionTestClient) open(ctx context.Context, sessionID, requestID string) (executorpb.Executor_OpenSessionClient, error) {
+	return h.executor.OpenSession(ctx, &executorpb.OpenSessionRequest{Scope: h.scope(sessionID), RequestId: requestID})
 }
 
-func (h *directExecutionTestClient) scope(sessionID string) *executionpb.ExecutionScope {
-	return &executionpb.ExecutionScope{
+func (h *directExecutionTestClient) scope(sessionID string) *executorpb.ExecutionScope {
+	return &executorpb.ExecutionScope{
 		Destination: &sandboxespb.SandboxDestination{
 			Sandbox: h.identity.Name, SandboxUid: h.identity.UID,
 			Owner: &sandboxespb.ServiceAccount{Namespace: h.identity.Namespace, Name: h.identity.Name},
@@ -199,7 +198,7 @@ func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 		t.Fatalf("OpenSession RPC: %v", err)
 	}
 	response, err := stream.Recv()
-	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("OpenSession before supersession = %v, err=%v", response, err)
 	}
 	select {

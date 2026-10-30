@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"google.golang.org/grpc"
@@ -86,7 +86,7 @@ func New(config Config, backend runnerservicepb.RunnerServer) *Server {
 
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
-func (s *Server) Listen(executor runner_execpb.RunnerExecServer) (net.Listener, *grpc.Server, error) {
+func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
 	credentials, err := s.config.Security.ServerCredentials(runnertransport.GatewayURI)
 	if err != nil {
 		return nil, nil, err
@@ -110,10 +110,10 @@ func (s *Server) Listen(executor runner_execpb.RunnerExecServer) (net.Listener, 
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(runnerservicepb.Runner_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(runner_execpb.RunnerExec_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 	runnerservicepb.RegisterRunnerServer(server, s)
-	runner_execpb.RegisterRunnerExecServer(server, executor)
+	executorpb.RegisterExecutorServer(server, executor)
 	return listener, server, nil
 }
 

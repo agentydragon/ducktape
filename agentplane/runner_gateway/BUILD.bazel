@@ -1,8 +1,4 @@
-# gazelle:resolve py agentplane.runner_gateway.executor_gateway_pb2 //agentplane/runner_gateway:executor_gateway_pb2
-# gazelle:resolve py agentplane.runner_gateway.executor_gateway_pb2_grpc //agentplane/runner_gateway:executor_gateway_pb2_grpc
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
@@ -11,8 +7,6 @@ load(
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -216,35 +210,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
-)
-
-proto_library(
-    name = "executor_gateway_proto",
-    srcs = ["executor_gateway.proto"],
-    deps = ["//agentplane/proto:execution_proto"],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "executor_gateway_pb2",
-    deps = [":executor_gateway_proto"],
-)
-
-py_grpc_service_library(
-    name = "executor_gateway_pb2_grpc",
-    proto = ":executor_gateway_proto",
-    py_proto = ":executor_gateway_pb2",
-)
-
-go_proto_library(
-    name = "executor_gateway_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb",
-    proto = ":executor_gateway_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/proto:execution_go_proto"],
 )
 
 py_test(

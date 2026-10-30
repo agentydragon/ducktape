@@ -5,9 +5,8 @@ import (
 	"errors"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,13 +15,13 @@ import (
 
 const openSessionSendTimeout = 10 * time.Second
 
-func sendOpenSessionResponse(ctx context.Context, stream runnerexecpb.RunnerExec_OpenSessionServer, response *executionpb.OpenSessionResponse) error {
+func sendOpenSessionResponse(ctx context.Context, stream executorpb.Executor_OpenSessionServer, response *executorpb.OpenSessionResponse) error {
 	return streaming.SendWithin(ctx, openSessionSendTimeout, stream.Send, response)
 }
 
 // OpenSession holds one local WebSocket for the stream lifetime. Closing the
 // stream closes the connection; it never sends process/terminate.
-func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerexecpb.RunnerExec_OpenSessionServer) error {
+func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
 	if r.RequestId == "" || len(r.RequestId) > 256 {
 		return invalid("request ID is required and limited to 256 bytes")
 	}
@@ -52,8 +51,8 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 				delete(a.sessions, *r.ResumeSessionId)
 			}
 		}
-		if a.opening+len(a.sessions) >= maxSessions {
-			return status.Error(codes.ResourceExhausted, "Runner has too many open execution sessions")
+		if a.opening+len(a.sessions) >= maxOpenConnections {
+			return status.Error(codes.ResourceExhausted, "Runner has too many open execution connections")
 		}
 		ctx, cancel := context.WithCancel(admittedCtx)
 		stopRoot := context.AfterFunc(a.ctx, cancel)
@@ -106,8 +105,8 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 		}
 	}
 	a.changed()
-	response := new(executionpb.OpenSessionResponse)
-	var frames []*executionpb.ExecutionNativeFrame
+	response := new(executorpb.OpenSessionResponse)
+	var frames []*executorpb.ExecutionNativeFrame
 	endpoint, err := a.config.Acquire(sessionCtx)
 	if err == nil {
 		dialCtx, cancelDial := context.WithTimeout(sessionCtx, 20*time.Second)
@@ -118,7 +117,7 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 			ws.SetReadLimit(maxNativeBytes)
 			wsCtx, wsCancel := context.WithCancel(sessionCtx)
 			current := &connection{
-				scope: proto.Clone(r.Scope).(*executionpb.ExecutionScope), id: "", ws: ws,
+				scope: proto.Clone(r.Scope).(*executorpb.ExecutionScope), id: "", ws: ws,
 				slotID: slotID,
 				ctx:    wsCtx, cancel: wsCancel,
 				notifications: make(chan []byte, maxQueuedNotifications), calls: make(chan struct{}, 64),
@@ -133,7 +132,7 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 			initialized, err = rpcResult[executorInitialized](current, r.RequestId, "initialize", executorInitialize{ClientName: "agentplane-runner", ResumeSessionID: r.ResumeSessionId}, &frames)
 			if err != nil {
 				if _, raw := current.failure(); len(raw) != 0 {
-					frames = append(frames, &executionpb.ExecutionNativeFrame{Direction: "response", Payload: raw})
+					frames = append(frames, &executorpb.ExecutionNativeFrame{Direction: "response", Payload: raw})
 				}
 			}
 			if err == nil && (initialized.SessionID == "" || r.ResumeSessionId != nil && initialized.SessionID != *r.ResumeSessionId) {
@@ -160,7 +159,7 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 				if err == nil {
 					response.ExecutionSessionId = current.id
 					if initialized.EnvironmentInfo != nil {
-						response.Shell = &executionpb.ExecutionShell{Name: initialized.EnvironmentInfo.Shell.Name, Path: initialized.EnvironmentInfo.Shell.Path}
+						response.Shell = &executorpb.ExecutionShell{Name: initialized.EnvironmentInfo.Shell.Name, Path: initialized.EnvironmentInfo.Shell.Path}
 					}
 				}
 			}
@@ -181,9 +180,9 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 	for {
 		select {
 		case payload := <-c.notifications:
-			if err := sendOpenSessionResponse(sessionCtx, stream, &executionpb.OpenSessionResponse{
+			if err := sendOpenSessionResponse(sessionCtx, stream, &executorpb.OpenSessionResponse{
 				ExecutionSessionId: c.id,
-				NativeFrames:       []*executionpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}},
+				NativeFrames:       []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}},
 			}); err != nil {
 				return err
 			}
@@ -202,9 +201,9 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 			for {
 				select {
 				case payload := <-c.notifications:
-					if err := sendOpenSessionResponse(sessionCtx, stream, &executionpb.OpenSessionResponse{
+					if err := sendOpenSessionResponse(sessionCtx, stream, &executorpb.OpenSessionResponse{
 						ExecutionSessionId: c.id,
-						NativeFrames:       []*executionpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}},
+						NativeFrames:       []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}},
 					}); err != nil {
 						return err
 					}
@@ -215,9 +214,9 @@ func (a *Adapter) OpenSession(r *executionpb.OpenSessionRequest, stream runnerex
 		notificationsDrained:
 			cause, raw := c.failure()
 			if len(raw) != 0 {
-				if err := sendOpenSessionResponse(sessionCtx, stream, &executionpb.OpenSessionResponse{
+				if err := sendOpenSessionResponse(sessionCtx, stream, &executorpb.OpenSessionResponse{
 					ExecutionSessionId: c.id,
-					NativeFrames:       []*executionpb.ExecutionNativeFrame{{Direction: "notification", Payload: raw}},
+					NativeFrames:       []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: raw}},
 				}); err != nil {
 					return err
 				}

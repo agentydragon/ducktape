@@ -6,8 +6,9 @@ logical Sessions. `store()` / `load()` values persist across cells and idle turn
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
 enter the conversation where Codex would place them ([SPEC.md](SPEC.md)). Shell, stdin, patch, `view_image` and
-filesystem operations use the typed Runner execution API through Gateway to a Sandbox's loopback
-exec-server. Existing wrapped Codex and Claude
+filesystem operations use the typed `Executor` API. The service terminates at the Sandbox's Runner;
+Gateway proxies that same contract when production routing and caller authorization are needed.
+The Runner's sandbox-local adapter connects it to the loopback exec-server. Existing wrapped Codex and Claude
 retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
 environment configures it; existing native Sessions are not migrated.
 
@@ -42,8 +43,13 @@ uses exactly one of `credential` or `credential_file`; the service reads the fil
 request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
-`gateway_token_file`. The sampler keeps one typed `OpenSession` stream for the executor session and
-sends process and file operations as typed unary RPCs. Their request IDs correlate with the
+`gateway_token_file`. The sampler uses one generated `Executor` client for its Gateway and direct
+local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
+operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
+is not the Codex session itself. Closing the stream releases that adapter connection without
+sending a process-termination request. Pinned Codex 0.162.1 keeps a detached native session for up
+to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
+durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
 `gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
 it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
@@ -58,7 +64,9 @@ Optional `history_target` and `history_token_file` enable retained History expor
 `max_live_sessions` bounds concurrent active Session drivers; it does not cap the number of stored
 idle Sessions. The host starts lazily when code-mode work first needs it and multiplexes Sessions,
 while executor delegates and process-handle namespaces remain per Session. Interrupting a Session
-does not stop the shared host.
+does not stop the shared host. The Executor adapter separately limits each Runner to eight open
+or opening streams; that is a connection limit, not a limit on stored sampler Sessions or the
+sampler's `max_live_sessions`. See the [Executor API resource and lifecycle contract](../../executor/README.md).
 
 Host failure interrupts pending work for every attached Session; later code-mode work may start a
 fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU
@@ -72,7 +80,7 @@ container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
-- Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes sampler-to-executor access. Default
+- Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner serves inside the Sandbox. Default
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.

@@ -8,13 +8,11 @@ import (
 	"testing"
 	"time"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -90,7 +88,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	server := grpc.NewServer(grpc.Creds(creds))
 	runner := &observedRunner{bootID: "test-runner-boot"}
 	runnerservicepb.RegisterRunnerServer(server, runner)
-	runnerexecpb.RegisterRunnerExecServer(server, &echoForwardExecutor{})
+	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	destination.target = listener.Addr().String()
@@ -124,7 +122,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 		t.Fatal(err)
 	}
 	publicServer := grpc.NewServer()
-	g.RegisterExecutorGateway(publicServer)
+	g.RegisterExecutor(publicServer)
 	go func() { _ = publicServer.Serve(publicListener) }()
 	t.Cleanup(publicServer.Stop)
 	publicConn, err := grpc.NewClient(publicListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -134,8 +132,8 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	defer publicConn.Close()
 	execCtx, stopExec := context.WithTimeout(metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken)), 5*time.Second)
 	defer stopExec()
-	exec, err := executorpb.NewExecutorGatewayClient(publicConn).OpenSession(execCtx, &executionpb.OpenSessionRequest{
-		Scope: &executionpb.ExecutionScope{
+	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
+		Scope: &executorpb.ExecutionScope{
 			Destination: &sandboxespb.SandboxDestination{
 				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
 				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
@@ -148,7 +146,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 		t.Fatal(err)
 	}
 	opened, err := exec.Recv()
-	if err != nil || opened.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED || opened.GetExecutionSessionId() != "forwarded-session" {
+	if err != nil || opened.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || opened.GetExecutionSessionId() != "forwarded-session" {
 		t.Fatalf("Runner execution session was not forwarded: %v %v", opened, err)
 	}
 	if len(opened.GetNativeFrames()) != 1 || string(opened.GetNativeFrames()[0].GetPayload()) != `{"id":"1","result":{}}` {
@@ -162,8 +160,8 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	if err := f.objects.Status().Update(t.Context(), quiescing); err != nil {
 		t.Fatal(err)
 	}
-	started, err := executorpb.NewExecutorGatewayClient(publicConn).StartProcess(execCtx, &executionpb.StartProcessRequest{
-		Scope: &executionpb.ExecutionScope{
+	started, err := executorpb.NewExecutorClient(publicConn).StartProcess(execCtx, &executorpb.StartProcessRequest{
+		Scope: &executorpb.ExecutionScope{
 			Destination: &sandboxespb.SandboxDestination{
 				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
 				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
@@ -172,7 +170,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 		},
 		ExecutionSessionId: opened.GetExecutionSessionId(), RequestId: "start-after-quiesce", ProcessId: "proc-1",
 	})
-	if err != nil || started.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || started.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("existing-session unary call during quiescing = %v, %v", started, err)
 	}
 	stopExec()
@@ -199,19 +197,19 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 }
 
 type echoForwardExecutor struct {
-	runnerexecpb.UnimplementedRunnerExecServer
+	executorpb.UnimplementedExecutorServer
 }
 
-func (*echoForwardExecutor) OpenSession(_ *executionpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executionpb.OpenSessionResponse]) error {
+func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
 	}
-	if err := stream.Send(&executionpb.OpenSessionResponse{
-		Status:             &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_COMPLETED},
+	if err := stream.Send(&executorpb.OpenSessionResponse{
+		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
 		ExecutionSessionId: "forwarded-session",
-		NativeFrames:       []*executionpb.ExecutionNativeFrame{{Direction: "inbound", Payload: []byte(`{"id":"1","result":{}}`)}},
+		NativeFrames:       []*executorpb.ExecutionNativeFrame{{Direction: "inbound", Payload: []byte(`{"id":"1","result":{}}`)}},
 	}); err != nil {
 		return err
 	}
@@ -219,14 +217,14 @@ func (*echoForwardExecutor) OpenSession(_ *executionpb.OpenSessionRequest, strea
 	return stream.Context().Err()
 }
 
-func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
+func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return nil, status.Error(codes.PermissionDenied, "missing executor fence")
 	}
-	return &executionpb.StartProcessResponse{
-		Status:    &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_COMPLETED},
+	return &executorpb.StartProcessResponse{
+		Status:    &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
 		ProcessId: request.GetProcessId(),
 	}, nil
 }

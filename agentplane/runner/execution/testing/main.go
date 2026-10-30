@@ -11,9 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/runner/execution"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	"google.golang.org/grpc"
 )
 
@@ -31,7 +30,7 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	adapter, err := execution.New(execution.Config{Context: ctx, Admit: func(ctx context.Context, _ *executionpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+	adapter, err := execution.New(execution.Config{Context: ctx, Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -46,7 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runnerexecpb.RegisterRunnerExecServer(server, adapter)
+	executorpb.RegisterExecutorServer(server, adapter)
 	go func() { <-ctx.Done(); server.Stop() }()
 	fmt.Println(listener.Addr().String())
 	if err := server.Serve(listener); err != nil {

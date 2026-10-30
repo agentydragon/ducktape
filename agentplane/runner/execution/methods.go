@@ -3,22 +3,22 @@ package execution
 import (
 	"context"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 )
 
-func (a *Adapter) StartProcess(ctx context.Context, r *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
+func (a *Adapter) StartProcess(ctx context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 	if r.ProcessId == "" || len(r.Argv) == 0 || r.Argv[0] == "" || r.Cwd == "" {
 		return nil, invalid("process ID, argv and cwd are required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.StartProcessResponse)
+	response := new(executorpb.StartProcessResponse)
 	environment := r.Environment
 	if environment == nil {
 		environment = map[string]string{}
 	}
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorStarted](c, r.RequestId, "process/start", executorStart{ProcessID: r.ProcessId, Argv: r.Argv, Cwd: r.Cwd, EnvPolicy: environmentPolicy(r.EnvironmentPolicy), Env: environment, TTY: r.Tty, PipeStdin: r.PipeStdin, Arg0: r.Arg0}, frames)
 		if err != nil {
 			return err
@@ -34,15 +34,15 @@ func (a *Adapter) StartProcess(ctx context.Context, r *executionpb.StartProcessR
 	return response, nil
 }
 
-func (a *Adapter) ReadProcess(ctx context.Context, r *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
+func (a *Adapter) ReadProcess(ctx context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 	if r.ProcessId == "" {
 		return nil, invalid("process ID is required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.ReadProcessResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.ReadProcessResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorReadResult](c, r.RequestId, "process/read", executorRead{ProcessID: r.ProcessId, AfterSeq: r.AfterSeq, MaxBytes: int(r.MaxBytes), WaitMS: int(r.WaitMs)}, frames)
 		if err != nil {
 			return err
@@ -56,7 +56,7 @@ func (a *Adapter) ReadProcess(ctx context.Context, r *executionpb.ReadProcessReq
 			response.ExitCode = &code
 		}
 		for _, chunk := range native.Chunks {
-			response.Chunks = append(response.Chunks, &executionpb.ExecutionOutputChunk{Seq: chunk.Seq, Stream: chunk.Stream, Data: chunk.Chunk})
+			response.Chunks = append(response.Chunks, &executorpb.ExecutionOutputChunk{Seq: chunk.Seq, Stream: chunk.Stream, Data: chunk.Chunk})
 		}
 		return nil
 	})
@@ -68,15 +68,15 @@ func (a *Adapter) ReadProcess(ctx context.Context, r *executionpb.ReadProcessReq
 	return response, nil
 }
 
-func (a *Adapter) WriteProcess(ctx context.Context, r *executionpb.WriteProcessRequest) (*executionpb.WriteProcessResponse, error) {
+func (a *Adapter) WriteProcess(ctx context.Context, r *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
 	if r.ProcessId == "" || r.WriteId == "" {
 		return nil, invalid("process ID and write ID are required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.WriteProcessResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.WriteProcessResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		data := r.Data
 		if data == nil {
 			data = []byte{}
@@ -96,15 +96,15 @@ func (a *Adapter) WriteProcess(ctx context.Context, r *executionpb.WriteProcessR
 	return response, nil
 }
 
-func (a *Adapter) SignalProcess(ctx context.Context, r *executionpb.SignalProcessRequest) (*executionpb.SignalProcessResponse, error) {
+func (a *Adapter) SignalProcess(ctx context.Context, r *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error) {
 	if r.ProcessId == "" || r.Signal != "interrupt" {
 		return nil, invalid("process ID and a supported signal are required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.SignalProcessResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.SignalProcessResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		_, err := rpcResult[executorEmpty](c, r.RequestId, "process/signal", executorSignal{ProcessID: r.ProcessId, Signal: r.Signal}, frames)
 		if err != nil {
 			return err
@@ -119,15 +119,15 @@ func (a *Adapter) SignalProcess(ctx context.Context, r *executionpb.SignalProces
 	return response, nil
 }
 
-func (a *Adapter) TerminateProcess(ctx context.Context, r *executionpb.TerminateProcessRequest) (*executionpb.TerminateProcessResponse, error) {
+func (a *Adapter) TerminateProcess(ctx context.Context, r *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error) {
 	if r.ProcessId == "" {
 		return nil, invalid("process ID is required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.TerminateProcessResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.TerminateProcessResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorTerminateResult](c, r.RequestId, "process/terminate", executorTerminate{ProcessID: r.ProcessId}, frames)
 		if err != nil {
 			return err
@@ -143,15 +143,15 @@ func (a *Adapter) TerminateProcess(ctx context.Context, r *executionpb.Terminate
 	return response, nil
 }
 
-func (a *Adapter) GetFileMetadata(ctx context.Context, r *executionpb.GetFileMetadataRequest) (*executionpb.GetFileMetadataResponse, error) {
+func (a *Adapter) GetFileMetadata(ctx context.Context, r *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error) {
 	if r.Path == "" {
 		return nil, invalid("path is required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.GetFileMetadataResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.GetFileMetadataResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorFSMetadata](c, r.RequestId, "fs/getMetadata", executorFSGetMetadata{Path: r.Path}, frames)
 		if err != nil {
 			return err
@@ -170,15 +170,15 @@ func (a *Adapter) GetFileMetadata(ctx context.Context, r *executionpb.GetFileMet
 	return response, nil
 }
 
-func (a *Adapter) OpenFile(ctx context.Context, r *executionpb.OpenFileRequest) (*executionpb.OpenFileResponse, error) {
+func (a *Adapter) OpenFile(ctx context.Context, r *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error) {
 	if r.HandleId == "" || r.Path == "" {
 		return nil, invalid("handle ID and path are required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.OpenFileResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.OpenFileResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorFSOpened](c, r.RequestId, "fs/open", executorFSOpen{HandleID: r.HandleId, Path: r.Path, Mode: "read"}, frames)
 		if err != nil {
 			return err
@@ -194,15 +194,15 @@ func (a *Adapter) OpenFile(ctx context.Context, r *executionpb.OpenFileRequest) 
 	return response, nil
 }
 
-func (a *Adapter) ReadFile(ctx context.Context, r *executionpb.ReadFileRequest) (*executionpb.ReadFileResponse, error) {
+func (a *Adapter) ReadFile(ctx context.Context, r *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error) {
 	if r.HandleId == "" {
 		return nil, invalid("handle ID is required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.ReadFileResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.ReadFileResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		native, err := rpcResult[executorFSBlock](c, r.RequestId, "fs/readBlock", executorFSReadBlock{HandleID: r.HandleId, Offset: r.Offset, Len: int(r.Length)}, frames)
 		if err != nil {
 			return err
@@ -219,15 +219,15 @@ func (a *Adapter) ReadFile(ctx context.Context, r *executionpb.ReadFileRequest) 
 	return response, nil
 }
 
-func (a *Adapter) CloseFile(ctx context.Context, r *executionpb.CloseFileRequest) (*executionpb.CloseFileResponse, error) {
+func (a *Adapter) CloseFile(ctx context.Context, r *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error) {
 	if r.HandleId == "" {
 		return nil, invalid("handle ID is required")
 	}
 	if r.ExecutionSessionId == "" {
 		return nil, invalid("execution Session ID is required")
 	}
-	response := new(executionpb.CloseFileResponse)
-	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
+	response := new(executorpb.CloseFileResponse)
+	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executorpb.ExecutionNativeFrame) error {
 		_, err := rpcResult[executorEmpty](c, r.RequestId, "fs/close", executorFSClose{HandleID: r.HandleId}, frames)
 		if err != nil {
 			return err
@@ -242,7 +242,7 @@ func (a *Adapter) CloseFile(ctx context.Context, r *executionpb.CloseFileRequest
 	return response, nil
 }
 
-func environmentPolicy(policy *executionpb.ExecutionEnvironmentPolicy) *executorEnvPolicy {
+func environmentPolicy(policy *executorpb.ExecutionEnvironmentPolicy) *executorEnvPolicy {
 	if policy == nil {
 		return nil
 	}

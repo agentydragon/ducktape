@@ -343,7 +343,7 @@ Alternatives to compare:
 
 Operator agreement, 2026-10-27: implement an independent central code-mode sampler with its own
 database and standalone API. Dispatcher admits/routes central commands directly to it; tools use
-sampler → Gateway → mTLS RunnerExec → loopback exec-server. Wrapped Codex and Claude keep execution
+sampler → Gateway proxy → mTLS Executor in Runner → loopback exec-server. Wrapped Codex and Claude keep execution
 and sampling together on their existing paths. Experimental code lives under `x/`; existing native
 Session state is not migrated.
 

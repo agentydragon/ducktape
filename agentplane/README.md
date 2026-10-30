@@ -122,7 +122,7 @@ flowchart LR
 
     gw -->|central Session commands: Sampler gRPC| sampler
     sampler --> samplerdb
-    sampler -->|typed execution: ExecutorGateway gRPC| gw
+    sampler -->|typed execution: Executor gRPC| gw
     sampler -->|RunnerIngress.Push| hs
     sampler -->|Responses API, Session attribution| llm
     gw --> k8s
@@ -141,8 +141,8 @@ flowchart LR
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
-    gw -->|mTLS Runner and RunnerExec gRPC| runner
-    gw -->|mTLS Runner and RunnerExec gRPC| guest
+    gw -->|mTLS Runner and Executor gRPC| runner
+    gw -->|mTLS Runner and Executor gRPC| guest
     runner -.->|dials RunnerIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
     guest -.->|dials RunnerIngress.Push| relay

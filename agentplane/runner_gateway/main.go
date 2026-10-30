@@ -269,7 +269,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	defer server.Stop()
 	g.RegisterProxy(server)
 	if len(c.ExecutorCallers) > 0 {
-		g.RegisterExecutorGateway(server)
+		g.RegisterExecutor(server)
 	}
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)

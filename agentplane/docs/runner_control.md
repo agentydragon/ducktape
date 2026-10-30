@@ -1,6 +1,6 @@
 # Runner control
 
-The runner serves native gRPC on one private listener: `Runner`, `RunnerExec` and standard gRPC
+The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
 health. The Gateway derives its address from the current workload's Pod IP and the runner port;
 KubeVirt forwards that port into the guest. Only Gateway workloads may reach it. History Event
 ingress remains a separate outbound platform route.
@@ -9,7 +9,7 @@ Runner configuration requires `control.listen_address` and `control.security.mod
 requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
 requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths. `insecure` rejects a
 TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `runner/runner_service.proto` and `runner/runner_exec.proto`;
+The service definitions are `runner/runner_service.proto` and `executor/executor.proto`;
 `proto/runner_state.proto` defines the facts published by `Runner.WatchState`.
 
 ## State observation and fencing
@@ -24,16 +24,18 @@ The owning Gateway retries a lost observation after one second, independently of
 Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
 periodic heartbeats still publish unchanged facts.
 
-Unary Runner calls and typed `RunnerExec` calls carry the Sandbox UID, incarnation UID,
+Unary Runner calls and typed `Executor` calls carry the Sandbox UID, incarnation UID,
 runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch
 before admission with `UNAVAILABLE`. This lets queued commands retry through the current observer;
 `ABORTED` remains the explicit refusal of new work for a workload incarnation.
 A superseded observer cannot clear its successor. Observation loss stops execution-session streams
 and new control calls; admitted journal work remains runner-owned and continues independently.
-`RunnerExec.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
+`Executor.OpenSession` holds the Runner-side Codex connection with a server stream; typed unary
 process and file RPCs use its opaque session ID. JSON-RPC framing, initialization and native
-notifications stay in the Runner adapter. Closing the session stream closes the local WebSocket,
-without claiming that remote processes were terminated. Request IDs provide correlation, not
+notifications stay in the Runner adapter. Both hops use the same sandbox-owned
+[Executor contract](../executor/executor.proto). Closing the session stream releases the local
+WebSocket; Codex retains its detached session for 30 seconds before expiring it and terminating
+remaining processes. Request IDs provide correlation, not
 deduplication or durable admission; uncertain mutations are never automatically replayed.
 
 A lost RPC response does not establish whether its command was admitted. Reconnect never replays

@@ -3,7 +3,7 @@ package runner
 import (
 	"context"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -16,7 +16,7 @@ import (
 // so an RPC deadline only ends that caller's wait.
 func (r *Runner) admitExecution(
 	ctx context.Context,
-	scope *executionpb.ExecutionScope,
+	scope *executorpb.ExecutionScope,
 	opening bool,
 	accept func(context.Context) error,
 ) error {

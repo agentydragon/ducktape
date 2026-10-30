@@ -7,9 +7,9 @@ go_library(
     srcs = ["server.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/control",
     deps = [
+        "//agentplane/executor:executor_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/proto:runner_state_go_proto",
-        "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner_transport",
         "@org_golang_google_grpc//:grpc",

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -42,7 +42,7 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 }
 
 func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
-	response := &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}}
+	response := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}
 	value, err := responseObject("process/read", response)
 	if err != nil {
 		t.Fatal(err)
@@ -61,9 +61,9 @@ func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 }
 
 func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
-	readProcess, err := responseObject("process/read", &executionpb.ReadProcessResponse{
+	readProcess, err := responseObject("process/read", &executorpb.ReadProcessResponse{
 		Status: completedExecutionStatus(),
-		Chunks: []*executionpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout"}},
+		Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
 		t.Fatalf("empty process output chunk=%+v, want base64 empty string", readProcess["chunks"])
 	}
 
-	readFile, err := responseObject("fs/readBlock", &executionpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
+	readFile, err := responseObject("fs/readBlock", &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +85,8 @@ func TestReadFileReturnsBytesWhileJournalingOnlyDigest(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	chunk := []byte("opaque image block")
 	client := &fakeExecutionClient{}
-	client.readFile = func(context.Context, *executionpb.ReadFileRequest) (*executionpb.ReadFileResponse, error) {
-		return &executionpb.ReadFileResponse{Status: completedExecutionStatus(), Data: chunk, Eof: true}, nil
+	client.readFile = func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error) {
+		return &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Data: chunk, Eof: true}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	result, err := executorRPCWithEvidence[executorFSBlock](t.Context(), e, "fs/readBlock", executorFSReadBlock{HandleID: "image", Len: len(chunk)}, blockEvidence)
@@ -124,18 +124,18 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			reads := 0
 			client := &fakeExecutionClient{}
-			client.start = func(_ context.Context, request *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
-				return &executionpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
+			client.start = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+				return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
 			}
-			client.read = func(_ context.Context, request *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
+			client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 				if reads == 0 && request.AfterSeq != nil || reads > 0 && (request.AfterSeq == nil || *request.AfterSeq != uint64(reads)) {
 					t.Fatalf("read %d cursor=%v", reads, request.AfterSeq)
 				}
-				page := &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
+				page := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
 				switch reads {
 				case 0: // Exit arrived before stdout readers published their final bytes.
 				case 1:
-					page.Chunks = []*executionpb.ExecutionOutputChunk{{Seq: 2, Stream: "stdout", Data: []byte("late stdout\n")}}
+					page.Chunks = []*executorpb.ExecutionOutputChunk{{Seq: 2, Stream: "stdout", Data: []byte("late stdout\n")}}
 					page.Closed = true
 				case 2:
 					page.Closed = true
@@ -187,18 +187,18 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 func TestExecutorRetriesOnlyCursorReadWithSameIdentity(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
-	var reads []*executionpb.ReadProcessRequest
-	client.read = func(_ context.Context, request *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
-		reads = append(reads, proto.Clone(request).(*executionpb.ReadProcessRequest))
+	var reads []*executorpb.ReadProcessRequest
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads = append(reads, proto.Clone(request).(*executorpb.ReadProcessRequest))
 		if len(reads) == 1 {
 			return nil, status.Error(codes.Unavailable, "reply lost after dispatch")
 		}
-		return &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}, NextSeq: 8, Exited: true, ExitCode: ptrInt32(0), Closed: true}, nil
+		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, NextSeq: 8, Exited: true, ExitCode: ptrInt32(0), Closed: true}, nil
 	}
-	var resumed []*executionpb.OpenSessionRequest
-	client.open = func(ctx context.Context, request *executionpb.OpenSessionRequest) (executorSessionStream, error) {
-		resumed = append(resumed, proto.Clone(request).(*executionpb.OpenSessionRequest))
-		return &fakeExecutionStream{ctx: ctx, initial: &executionpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
+	var resumed []*executorpb.OpenSessionRequest
+	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		resumed = append(resumed, proto.Clone(request).(*executorpb.OpenSessionRequest))
+		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	e.reconnectRequired = false
@@ -222,20 +222,20 @@ func TestExecutorRetriesOnlyCursorReadWithSameIdentity(t *testing.T) {
 func TestExecutorRetriesUnknownCursorReadAtMostOnce(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
-	var reads []*executionpb.ReadProcessRequest
-	client.read = func(_ context.Context, request *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
-		reads = append(reads, proto.Clone(request).(*executionpb.ReadProcessRequest))
-		return &executionpb.ReadProcessResponse{
-			Status: &executionpb.ExecutionStatus{
-				Outcome: executionpb.ExecutionStatus_OUTCOME_UNKNOWN,
+	var reads []*executorpb.ReadProcessRequest
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads = append(reads, proto.Clone(request).(*executorpb.ReadProcessRequest))
+		return &executorpb.ReadProcessResponse{
+			Status: &executorpb.ExecutionStatus{
+				Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN,
 				Message: "adapter could not recover the read outcome",
 			},
 		}, nil
 	}
 	opens := 0
-	client.open = func(ctx context.Context, _ *executionpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 		opens++
-		return &fakeExecutionStream{ctx: ctx, initial: &executionpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
+		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	cursor := uint64(5)
@@ -258,11 +258,11 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			client := &fakeExecutionClient{}
 			starts, writes := 0, 0
-			client.start = func(context.Context, *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
+			client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 				starts++
 				return nil, status.Error(codes.Unavailable, "lost mutation reply")
 			}
-			client.write = func(context.Context, *executionpb.WriteProcessRequest) (*executionpb.WriteProcessResponse, error) {
+			client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
 				writes++
 				return nil, status.Error(codes.Unavailable, "lost mutation reply")
 			}
@@ -292,26 +292,26 @@ func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
 func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		response *executionpb.OpenSessionResponse
+		response *executorpb.OpenSessionResponse
 		openErr  error
 	}{
-		{name: "unknown retained session", response: &executionpb.OpenSessionResponse{Status: &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "unknown retained session"}}},
-		{name: "different session", response: &executionpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "new-executor"}},
+		{name: "unknown retained session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "unknown retained session"}}},
+		{name: "different session", response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "new-executor"}},
 		{name: "unavailable adapter", openErr: status.Error(codes.Unavailable, "adapter unavailable")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			client := &fakeExecutionClient{}
 			reads := 0
-			client.open = func(ctx context.Context, _ *executionpb.OpenSessionRequest) (executorSessionStream, error) {
+			client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 				if tc.openErr != nil {
 					return nil, tc.openErr
 				}
 				return &fakeExecutionStream{ctx: ctx, initial: tc.response}, nil
 			}
-			client.read = func(context.Context, *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
+			client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 				reads++
-				return &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}}, nil
+				return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
 			}
 			e := newFakeExecutor(t, store, owner, client)
 			e.reconnectRequired = true
@@ -334,20 +334,20 @@ func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testin
 	store, owner := claimedExecutorStore(t)
 	client := &fakeExecutionClient{}
 	starts, reads, opens := 0, 0, 0
-	client.start = func(context.Context, *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		return nil, status.Error(codes.Unavailable, "start reply lost")
 	}
-	client.read = func(context.Context, *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
+	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
-		return &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}}, nil
+		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
 	}
-	client.open = func(ctx context.Context, request *executionpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 		opens++
 		if request.GetResumeSessionId() != "retained-executor" {
 			t.Fatalf("resume=%q", request.GetResumeSessionId())
 		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executionpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
+		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	_, err := e.rpc(t.Context(), "process/start", executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}, nil)
@@ -381,10 +381,10 @@ func TestReconcileAbandonsProcessesAfterTransportLoss(t *testing.T) {
 		}
 	}
 	client := &fakeExecutionClient{}
-	client.read = func(context.Context, *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
+	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		return nil, status.Error(codes.Unavailable, "executor transport failed")
 	}
-	client.open = func(context.Context, *executionpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
 		return nil, status.Error(codes.Unavailable, "session resume failed")
 	}
 	e := newFakeExecutor(t, store, owner, client)
@@ -424,97 +424,97 @@ func TestReconcileAbandonsProcessesAfterTransportLoss(t *testing.T) {
 }
 
 type fakeExecutionClient struct {
-	open      func(context.Context, *executionpb.OpenSessionRequest) (executorSessionStream, error)
-	start     func(context.Context, *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error)
-	read      func(context.Context, *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error)
-	write     func(context.Context, *executionpb.WriteProcessRequest) (*executionpb.WriteProcessResponse, error)
-	signal    func(context.Context, *executionpb.SignalProcessRequest) (*executionpb.SignalProcessResponse, error)
-	terminate func(context.Context, *executionpb.TerminateProcessRequest) (*executionpb.TerminateProcessResponse, error)
-	metadata  func(context.Context, *executionpb.GetFileMetadataRequest) (*executionpb.GetFileMetadataResponse, error)
-	openFile  func(context.Context, *executionpb.OpenFileRequest) (*executionpb.OpenFileResponse, error)
-	readFile  func(context.Context, *executionpb.ReadFileRequest) (*executionpb.ReadFileResponse, error)
-	closeFile func(context.Context, *executionpb.CloseFileRequest) (*executionpb.CloseFileResponse, error)
+	open      func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error)
+	start     func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error)
+	read      func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error)
+	write     func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error)
+	signal    func(context.Context, *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error)
+	terminate func(context.Context, *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error)
+	metadata  func(context.Context, *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error)
+	openFile  func(context.Context, *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error)
+	readFile  func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error)
+	closeFile func(context.Context, *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error)
 }
 
-func (c *fakeExecutionClient) OpenSession(ctx context.Context, r *executionpb.OpenSessionRequest, _ ...grpc.CallOption) (executorSessionStream, error) {
+func (c *fakeExecutionClient) OpenSession(ctx context.Context, r *executorpb.OpenSessionRequest, _ ...grpc.CallOption) (executorSessionStream, error) {
 	if c.open != nil {
 		return c.open(ctx, r)
 	}
 	sid := r.GetResumeSessionId()
-	return &fakeExecutionStream{ctx: ctx, initial: &executionpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: sid}}, nil
+	return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: sid}}, nil
 }
 
-func (c *fakeExecutionClient) StartProcess(ctx context.Context, r *executionpb.StartProcessRequest, _ ...grpc.CallOption) (*executionpb.StartProcessResponse, error) {
+func (c *fakeExecutionClient) StartProcess(ctx context.Context, r *executorpb.StartProcessRequest, _ ...grpc.CallOption) (*executorpb.StartProcessResponse, error) {
 	if c.start != nil {
 		return c.start(ctx, r)
 	}
-	return &executionpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+	return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
 }
 
-func (c *fakeExecutionClient) ReadProcess(ctx context.Context, r *executionpb.ReadProcessRequest, _ ...grpc.CallOption) (*executionpb.ReadProcessResponse, error) {
+func (c *fakeExecutionClient) ReadProcess(ctx context.Context, r *executorpb.ReadProcessRequest, _ ...grpc.CallOption) (*executorpb.ReadProcessResponse, error) {
 	if c.read != nil {
 		return c.read(ctx, r)
 	}
-	return &executionpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executionpb.ExecutionOutputChunk{}}, nil
+	return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
 }
 
-func (c *fakeExecutionClient) WriteProcess(ctx context.Context, r *executionpb.WriteProcessRequest, _ ...grpc.CallOption) (*executionpb.WriteProcessResponse, error) {
+func (c *fakeExecutionClient) WriteProcess(ctx context.Context, r *executorpb.WriteProcessRequest, _ ...grpc.CallOption) (*executorpb.WriteProcessResponse, error) {
 	if c.write != nil {
 		return c.write(ctx, r)
 	}
-	return &executionpb.WriteProcessResponse{Status: completedExecutionStatus(), WriteStatus: "accepted"}, nil
+	return &executorpb.WriteProcessResponse{Status: completedExecutionStatus(), WriteStatus: "accepted"}, nil
 }
 
-func (c *fakeExecutionClient) SignalProcess(ctx context.Context, r *executionpb.SignalProcessRequest, _ ...grpc.CallOption) (*executionpb.SignalProcessResponse, error) {
+func (c *fakeExecutionClient) SignalProcess(ctx context.Context, r *executorpb.SignalProcessRequest, _ ...grpc.CallOption) (*executorpb.SignalProcessResponse, error) {
 	if c.signal != nil {
 		return c.signal(ctx, r)
 	}
-	return &executionpb.SignalProcessResponse{Status: completedExecutionStatus()}, nil
+	return &executorpb.SignalProcessResponse{Status: completedExecutionStatus()}, nil
 }
 
-func (c *fakeExecutionClient) TerminateProcess(ctx context.Context, r *executionpb.TerminateProcessRequest, _ ...grpc.CallOption) (*executionpb.TerminateProcessResponse, error) {
+func (c *fakeExecutionClient) TerminateProcess(ctx context.Context, r *executorpb.TerminateProcessRequest, _ ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error) {
 	if c.terminate != nil {
 		return c.terminate(ctx, r)
 	}
-	return &executionpb.TerminateProcessResponse{Status: completedExecutionStatus()}, nil
+	return &executorpb.TerminateProcessResponse{Status: completedExecutionStatus()}, nil
 }
 
-func (c *fakeExecutionClient) GetFileMetadata(ctx context.Context, r *executionpb.GetFileMetadataRequest, _ ...grpc.CallOption) (*executionpb.GetFileMetadataResponse, error) {
+func (c *fakeExecutionClient) GetFileMetadata(ctx context.Context, r *executorpb.GetFileMetadataRequest, _ ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error) {
 	if c.metadata != nil {
 		return c.metadata(ctx, r)
 	}
-	return &executionpb.GetFileMetadataResponse{Status: completedExecutionStatus()}, nil
+	return &executorpb.GetFileMetadataResponse{Status: completedExecutionStatus()}, nil
 }
 
-func (c *fakeExecutionClient) OpenFile(ctx context.Context, r *executionpb.OpenFileRequest, _ ...grpc.CallOption) (*executionpb.OpenFileResponse, error) {
+func (c *fakeExecutionClient) OpenFile(ctx context.Context, r *executorpb.OpenFileRequest, _ ...grpc.CallOption) (*executorpb.OpenFileResponse, error) {
 	if c.openFile != nil {
 		return c.openFile(ctx, r)
 	}
-	return &executionpb.OpenFileResponse{Status: completedExecutionStatus(), HandleId: r.HandleId}, nil
+	return &executorpb.OpenFileResponse{Status: completedExecutionStatus(), HandleId: r.HandleId}, nil
 }
 
-func (c *fakeExecutionClient) ReadFile(ctx context.Context, r *executionpb.ReadFileRequest, _ ...grpc.CallOption) (*executionpb.ReadFileResponse, error) {
+func (c *fakeExecutionClient) ReadFile(ctx context.Context, r *executorpb.ReadFileRequest, _ ...grpc.CallOption) (*executorpb.ReadFileResponse, error) {
 	if c.readFile != nil {
 		return c.readFile(ctx, r)
 	}
-	return &executionpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true}, nil
+	return &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true}, nil
 }
 
-func (c *fakeExecutionClient) CloseFile(ctx context.Context, r *executionpb.CloseFileRequest, _ ...grpc.CallOption) (*executionpb.CloseFileResponse, error) {
+func (c *fakeExecutionClient) CloseFile(ctx context.Context, r *executorpb.CloseFileRequest, _ ...grpc.CallOption) (*executorpb.CloseFileResponse, error) {
 	if c.closeFile != nil {
 		return c.closeFile(ctx, r)
 	}
-	return &executionpb.CloseFileResponse{Status: completedExecutionStatus()}, nil
+	return &executorpb.CloseFileResponse{Status: completedExecutionStatus()}, nil
 }
 
 type fakeExecutionStream struct {
 	ctx     context.Context
-	initial *executionpb.OpenSessionResponse
+	initial *executorpb.OpenSessionResponse
 	once    sync.Once
 }
 
-func (s *fakeExecutionStream) Recv() (*executionpb.OpenSessionResponse, error) {
-	var response *executionpb.OpenSessionResponse
+func (s *fakeExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) {
+	var response *executorpb.OpenSessionResponse
 	s.once.Do(func() { response = s.initial })
 	if response != nil {
 		return response, nil
@@ -539,11 +539,11 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 
 func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
 	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executionpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}}
+	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}}
 }
 
-func completedExecutionStatus() *executionpb.ExecutionStatus {
-	return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_COMPLETED}
+func completedExecutionStatus() *executorpb.ExecutionStatus {
+	return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}
 }
 func ptrInt32(value int32) *int32 { return &value }
 func boolInt(value bool) int {

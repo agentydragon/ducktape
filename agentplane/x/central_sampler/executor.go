@@ -13,10 +13,8 @@ import (
 	"sync"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
-	executorgatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -29,7 +27,7 @@ type Executor struct {
 	owner             Owner
 	client            executorClient
 	connection        *grpc.ClientConn
-	scope             *executionpb.ExecutionScope
+	scope             *executorpb.ExecutionScope
 	cwd               string
 	codexPath         string
 	environment       map[string]string
@@ -59,7 +57,6 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 	}
 	var (
 		connection *grpc.ClientConn
-		client     executorClient
 		err        error
 	)
 	if settings.GatewayTarget != "" {
@@ -71,7 +68,6 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		if err != nil {
 			return nil, nil, err
 		}
-		client = gatewayExecutionClient{ExecutorGatewayClient: executorgatewaypb.NewExecutorGatewayClient(connection)}
 	} else {
 		connection, err = grpc.NewClient(
 			settings.DirectExecutorTarget,
@@ -81,8 +77,8 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		if err != nil {
 			return nil, nil, err
 		}
-		client = runnerExecutionClient{RunnerExecClient: runnerexecpb.NewRunnerExecClient(connection)}
 	}
+	client := typedExecutorClient{ExecutorClient: executorpb.NewExecutorClient(connection)}
 	env, err := json.Marshal(map[string]any{"destination_ref": map[string]any{
 		"namespace": request.GetExecutor().GetOwner().GetNamespace(), "name": request.GetExecutor().GetSandbox(), "uid": request.GetExecutor().GetSandboxUid(),
 	}, "session_id": session.ID})
@@ -92,7 +88,7 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 	}
 	executor := &Executor{
 		store: store, owner: owner, client: client, connection: connection,
-		scope: &executionpb.ExecutionScope{
+		scope: &executorpb.ExecutionScope{
 			Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
 		},
 		lifetime: ctx, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
@@ -177,15 +173,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 	}
-	var transport *executorTransportError
-	if errors.As(err, &transport) {
-		if transport.processID != "" {
-			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, "unknown", transport.retainedSession); abandonErr != nil {
-				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
-			}
-		}
-		return &toolOutcomeError{toolError: &toolError{transport.Error()}, evidence: transport.evidence(transport.retainedSession)}
-	}
+	// Resume failure wraps a transport error, but settlement belongs to this operation and its process.
 	var notDispatched *executorNotDispatchedError
 	if errors.As(err, &notDispatched) {
 		outcome := "unknown"
@@ -202,6 +190,15 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			}
 		}
 		return &toolOutcomeError{toolError: &toolError{notDispatched.Error()}, evidence: notDispatched.evidence()}
+	}
+	var transport *executorTransportError
+	if errors.As(err, &transport) {
+		if transport.processID != "" {
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, "unknown", transport.retainedSession); abandonErr != nil {
+				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
+			}
+		}
+		return &toolOutcomeError{toolError: &toolError{transport.Error()}, evidence: transport.evidence(transport.retainedSession)}
 	}
 	return err
 }

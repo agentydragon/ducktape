@@ -16,11 +16,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
-	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
@@ -144,10 +143,10 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	if _, err := statusClient.GetStatus(callContext("pod-uid-2", second.GetRunnerBootId(), 2), &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("successor watcher was deactivated by its predecessor: %v", err)
 	}
-	staleExecution, err := runner_execpb.NewRunnerExecClient(conn).OpenSession(
+	staleExecution, err := executorpb.NewExecutorClient(conn).OpenSession(
 		callContext("pod-uid-1", first.GetRunnerBootId(), 1),
-		&executionpb.OpenSessionRequest{
-			Scope: &executionpb.ExecutionScope{
+		&executorpb.OpenSessionRequest{
+			Scope: &executorpb.ExecutionScope{
 				Destination: &sandboxespb.SandboxDestination{
 					Sandbox: "sandbox", SandboxUid: "sandbox-uid",
 					Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
@@ -364,9 +363,9 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 		control.BootMetadata, first.GetRunnerBootId(),
 		control.EpochMetadata, "1",
 	)
-	executorClient := runner_execpb.NewRunnerExecClient(conn)
-	refused, err := executorClient.OpenSession(callContext, &executionpb.OpenSessionRequest{
-		Scope: &executionpb.ExecutionScope{
+	executorClient := executorpb.NewExecutorClient(conn)
+	refused, err := executorClient.OpenSession(callContext, &executorpb.OpenSessionRequest{
+		Scope: &executorpb.ExecutionScope{
 			Destination: &sandboxespb.SandboxDestination{
 				Sandbox: "sandbox", SandboxUid: "sandbox-uid",
 				Owner: &sandboxespb.ServiceAccount{Namespace: "test", Name: "sandbox"},
@@ -379,7 +378,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, err := refused.Recv()
-	if err != nil || response.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_REJECTED {
+	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED {
 		t.Fatalf("unconfigured execution session response = %v, %v; want rejected outcome", response, err)
 	}
 	if _, err := refused.Recv(); err != io.EOF {
@@ -452,14 +451,14 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, nil)
 	client := startDirectExecutionTestClient(t, r, "pod-uid")
-	stream, err := client.executor.OpenSession(client.callCtx, &executionpb.OpenSessionRequest{
+	stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{
 		Scope: client.scope("session-1"), RequestId: "open-notification-session",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	opened, err := stream.Recv()
-	if err != nil || opened.GetStatus().GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if err != nil || opened.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("execution session readiness = %v, %v", opened, err)
 	}
 	var transferred int

@@ -65,8 +65,12 @@ continuation are checkpointed in PostgreSQL. Lost live cells and unresolved effe
 continuation; executor operations whose transport outcome is unknown are settled as abandoned and
 remain inspectable without blocking the JavaScript cell, model step, or Session. Model-facing `exec`
 and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream protocol.
-Process handles inherit
-upstream's detached retention limits.
+Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
+disconnected native session for 30 seconds, then expires it and terminates processes still running
+in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
+`OpenSession` stream owns its local WebSocket connection to that Codex session; stream lifetime and
+native-session lifetime are distinct. Closing the stream closes the WebSocket without issuing a
+process-termination request.
 
 `notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
 the text is durably queued for the active turn; without one it is rejected as "no active turn", and
@@ -212,14 +216,23 @@ When a Session is blocked, `GetSession.blocked_reason` names the unresolved inte
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor
 effects automatically; see [blocked Session recovery](docs/blocked_session_recovery.md).
 
-The sampler uses typed `ExecutorGateway` process and file RPCs, with a server-streaming
-`OpenSession` call bound to one execution session. The configured Gateway target selects the
-per-Sandbox control Service and thus the Gateway replica holding that Runner's observation Lease.
-Gateway authorizes the sampler account and checks Sandbox UID and incarnation; Runner checks the
-same scope against its current incarnation and only reaches its configured loopback executor. No
-caller-chosen executor URL crosses that API. The open session owns the local exec-server connection;
-closing the stream closes that connection without terminating processes. An active stream blocks
-executor Sandbox autosuspend until it closes. Dispatcher does not relay tools.
+The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
+The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured
+loopback adapter; Gateway proxies the same service after authorizing the sampler and checking the
+Sandbox UID and incarnation. The configured Gateway target selects the per-Sandbox control Service
+and thus the Gateway replica holding that Runner's observation Lease. No caller-chosen executor URL
+crosses the API. The Runner's adapter holds its local WebSocket on the server-streaming
+`OpenSession` connection. An active stream blocks executor Sandbox autosuspend until it closes.
+Dispatcher does not relay tools.
+
+The adapter permits at most eight open or opening `OpenSession` streams per Runner. This is a limit
+on live adapter connections, not Codex native sessions, sampler conversations, or the sampler's
+`max_live_sessions` setting. The sampler releases its connection when no live cells or processes
+require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
+session persistence or process policy. A stream loss leaves the native Codex session detached for up
+to 30 seconds, after which pinned Codex 0.162.1 expires it and terminates remaining processes. See
+the [Executor API resource and lifecycle contract](../../executor/README.md) for connection budgets
+and ownership.
 
 Each unary operation carries the sampler's Sandbox scope, execution-session ID and durable nested
 intent ID as `request_id`. The ID correlates the typed call and its exact native-frame evidence; it

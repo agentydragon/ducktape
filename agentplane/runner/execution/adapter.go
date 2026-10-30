@@ -6,29 +6,28 @@ import (
 	"errors"
 	"sync"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	maxNativeBytes = 1 << 20
-	maxSessions    = 8
-)
+const maxNativeBytes = 1 << 20
+
+// maxOpenConnections is an inherited Runner resource guard, not a Codex protocol limit.
+const maxOpenConnections = 8
 
 type Config struct {
 	Context context.Context
 	// Admit authorizes the scope and fences lifecycle changes while accepting a call.
 	// opening distinguishes a new local executor session from work on an open session.
-	Admit func(ctx context.Context, scope *executionpb.ExecutionScope, opening bool, accept func(context.Context) error) error
+	Admit func(ctx context.Context, scope *executorpb.ExecutionScope, opening bool, accept func(context.Context) error) error
 	// Acquire requests the controller-owned executor and waits for its ready local endpoint.
 	Acquire  func(context.Context) (string, error)
 	OnChange func()
 }
 type Adapter struct {
-	runnerexecpb.UnimplementedRunnerExecServer
+	executorpb.UnimplementedExecutorServer
 	config   Config
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -52,7 +51,7 @@ func New(config Config) (*Adapter, error) {
 	return &Adapter{config: config, ctx: ctx, cancel: cancel, sessions: map[string]*connection{}, slots: map[uint64]context.CancelFunc{}, slotDone: map[uint64]chan struct{}{}}, nil
 }
 
-func validateScope(scope *executionpb.ExecutionScope) error {
+func validateScope(scope *executorpb.ExecutionScope) error {
 	if scope == nil || scope.Destination == nil || scope.ExpectedIncarnationUid == "" || scope.SessionId == "" {
 		return status.Error(codes.InvalidArgument, "execution destination, incarnation and Session are required")
 	}
@@ -121,7 +120,7 @@ func (a *Adapter) Close() error {
 	return a.wait(context.Background())
 }
 
-func (a *Adapter) authorize(ctx context.Context, scope *executionpb.ExecutionScope, opening bool, f func(context.Context) error) error {
+func (a *Adapter) authorize(ctx context.Context, scope *executorpb.ExecutionScope, opening bool, f func(context.Context) error) error {
 	if err := validateScope(scope); err != nil {
 		return err
 	}
@@ -130,13 +129,13 @@ func (a *Adapter) authorize(ctx context.Context, scope *executionpb.ExecutionSco
 
 // Once accepted, the native call belongs to the open session. A canceled unary RPC
 // stops waiting without replaying the call or claiming that its process was stopped.
-func (a *Adapter) execute(ctx context.Context, scope *executionpb.ExecutionScope, requestID, sid string, work func(*connection, *[]*executionpb.ExecutionNativeFrame) error) (*executionpb.ExecutionStatus, []*executionpb.ExecutionNativeFrame, error) {
+func (a *Adapter) execute(ctx context.Context, scope *executorpb.ExecutionScope, requestID, sid string, work func(*connection, *[]*executorpb.ExecutionNativeFrame) error) (*executorpb.ExecutionStatus, []*executorpb.ExecutionNativeFrame, error) {
 	if requestID == "" || len(requestID) > 256 {
 		return nil, nil, invalid("request ID is required and limited to 256 bytes")
 	}
 	type result struct {
-		status *executionpb.ExecutionStatus
-		frames []*executionpb.ExecutionNativeFrame
+		status *executorpb.ExecutionStatus
+		frames []*executorpb.ExecutionNativeFrame
 	}
 	done := make(chan result, 1)
 	err := a.authorize(ctx, scope, false, func(context.Context) error {
@@ -164,7 +163,7 @@ func (a *Adapter) execute(ctx context.Context, scope *executionpb.ExecutionScope
 		go func() {
 			defer a.workers.Done()
 			defer func() { <-c.calls }()
-			frames := []*executionpb.ExecutionNativeFrame{}
+			frames := []*executorpb.ExecutionNativeFrame{}
 			outcome := executionOutcome(work(c, &frames))
 			done <- result{status: outcome, frames: frames}
 		}()
@@ -181,23 +180,23 @@ func (a *Adapter) execute(ctx context.Context, scope *executionpb.ExecutionScope
 	}
 }
 
-func executionOutcome(err error) *executionpb.ExecutionStatus {
+func executionOutcome(err error) *executorpb.ExecutionStatus {
 	if err == nil {
-		return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_COMPLETED}
+		return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}
 	}
 	var rejected *executorRejectedError
 	if errors.As(err, &rejected) {
 		code := int32(rejected.code)
-		return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_REJECTED, Message: rejected.message, UpstreamCode: &code}
+		return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: rejected.message, UpstreamCode: &code}
 	}
 	var limited *nativeRequestLimitError
 	if errors.As(err, &limited) {
-		return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_REJECTED, Message: limited.Error()}
+		return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: limited.Error()}
 	}
 	var admissionRejected *executionAdmissionRejectedError
 	if errors.As(err, &admissionRejected) {
-		return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_REJECTED, Message: admissionRejected.message}
+		return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: admissionRejected.message}
 	}
-	return &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "The native call outcome is unknown; no automatic retry was attempted: " + err.Error()}
+	return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "The native call outcome is unknown; no automatic retry was attempted: " + err.Error()}
 }
 func invalid(message string) error { return status.Error(codes.InvalidArgument, message) }

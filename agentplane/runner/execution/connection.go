@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/coder/websocket"
 )
 
@@ -25,7 +25,7 @@ type nativeFrame struct {
 }
 
 type connection struct {
-	scope         *executionpb.ExecutionScope
+	scope         *executorpb.ExecutionScope
 	id            string
 	slotID        uint64
 	ws            *websocket.Conn
@@ -124,7 +124,7 @@ func (c *connection) queueNotification(payload []byte) bool {
 	}
 }
 
-func (c *connection) rpc(requestID, method string, params any, frames *[]*executionpb.ExecutionNativeFrame) (json.RawMessage, error) {
+func (c *connection) rpc(requestID, method string, params any, frames *[]*executorpb.ExecutionNativeFrame) (json.RawMessage, error) {
 	c.rpcMu.Lock()
 	defer c.rpcMu.Unlock()
 	if err := c.ctx.Err(); err != nil {
@@ -137,7 +137,7 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	if len(payload) > maxNativeBytes {
 		return nil, &nativeRequestLimitError{}
 	}
-	*frames = append(*frames, &executionpb.ExecutionNativeFrame{Direction: "request", Payload: payload})
+	*frames = append(*frames, &executorpb.ExecutionNativeFrame{Direction: "request", Payload: payload})
 	reply := make(chan nativeFrame, 1)
 	c.pendingMu.Lock()
 	if c.pending != nil {
@@ -160,7 +160,7 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	}
 	select {
 	case native := <-reply:
-		*frames = append(*frames, &executionpb.ExecutionNativeFrame{Direction: "response", Payload: native.payload})
+		*frames = append(*frames, &executorpb.ExecutionNativeFrame{Direction: "response", Payload: native.payload})
 		var response executorReply
 		if err := decodeProtocolObject(native.payload, &response); err != nil {
 			wrapped := fmt.Errorf("decode local exec-server RPC reply: %w", err)
@@ -184,7 +184,7 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	case <-c.ctx.Done():
 		select {
 		case native := <-reply:
-			*frames = append(*frames, &executionpb.ExecutionNativeFrame{Direction: "response", Payload: native.payload})
+			*frames = append(*frames, &executorpb.ExecutionNativeFrame{Direction: "response", Payload: native.payload})
 		default:
 		}
 		err, _ := c.failure()
@@ -195,16 +195,16 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	}
 }
 
-func (c *connection) initialized(frames *[]*executionpb.ExecutionNativeFrame) error {
+func (c *connection) initialized(frames *[]*executorpb.ExecutionNativeFrame) error {
 	payload, err := json.Marshal(executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}})
 	if err != nil {
 		return err
 	}
-	*frames = append(*frames, &executionpb.ExecutionNativeFrame{Direction: "request", Payload: payload})
+	*frames = append(*frames, &executorpb.ExecutionNativeFrame{Direction: "request", Payload: payload})
 	return c.ws.Write(c.ctx, websocket.MessageText, payload)
 }
 
-func rpcResult[T any](c *connection, requestID, method string, params any, frames *[]*executionpb.ExecutionNativeFrame) (*T, error) {
+func rpcResult[T any](c *connection, requestID, method string, params any, frames *[]*executorpb.ExecutionNativeFrame) (*T, error) {
 	raw, err := c.rpc(requestID, method, params, frames)
 	if err != nil {
 		return nil, err

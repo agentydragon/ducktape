@@ -1,11 +1,11 @@
 syntax = "proto3";
-package agentplane.proto;
+package agentplane.executor;
 
 import "agentplane/proto/sandboxes.proto";
 
 // The Gateway authorizes and resolves this scope; Runner checks it against its current incarnation.
 message ExecutionScope {
-  SandboxDestination destination = 1;
+  agentplane.proto.SandboxDestination destination = 1;
   string expected_incarnation_uid = 2;
   // Sampler Session attribution, distinct from the local execution session.
   string session_id = 3;
@@ -182,4 +182,18 @@ message CloseFileResponse {
 message ExecutionNativeFrame {
   string direction = 1;
   bytes payload = 2;
+}
+
+// Typed execution operations; no caller-owned transport tunnel.
+service Executor {
+  rpc OpenSession(OpenSessionRequest) returns (stream OpenSessionResponse);
+  rpc StartProcess(StartProcessRequest) returns (StartProcessResponse);
+  rpc ReadProcess(ReadProcessRequest) returns (ReadProcessResponse);
+  rpc WriteProcess(WriteProcessRequest) returns (WriteProcessResponse);
+  rpc SignalProcess(SignalProcessRequest) returns (SignalProcessResponse);
+  rpc TerminateProcess(TerminateProcessRequest) returns (TerminateProcessResponse);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+  rpc OpenFile(OpenFileRequest) returns (OpenFileResponse);
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  rpc CloseFile(CloseFileRequest) returns (CloseFileResponse);
 }

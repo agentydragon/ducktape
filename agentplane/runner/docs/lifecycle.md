@@ -36,7 +36,7 @@ publication and recovery run after releasing it. The Runner mutex remains the sy
 and quiesce barrier around accepting checks and durable reservation.
 
 `control.Server` owns the active state observer and connection epoch fencing.
-`execution.Adapter` owns execution-session slots, local Codex connections and operation workers.
+`execution.Adapter` owns open-connection slots, local Codex connections and operation workers.
 The Runner supplies the admission barrier and controller-owned executor readiness. Each
 `OpenSession` stream retains an activity slot until its local connection closes; a unary call
 stopping its wait does not establish whether its remote effect happened. Aggregate shutdown closes

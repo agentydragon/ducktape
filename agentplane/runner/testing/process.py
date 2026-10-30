@@ -48,8 +48,13 @@ class RunningRunner:
         await self.start()
         return self
 
-    async def __aexit__(self, *_exc: object) -> None:
-        await self.stop()
+    async def __aexit__(self, _exc_type: object, exc: BaseException | None, _tb: object) -> None:
+        try:
+            await self.stop()
+        except BaseException as cleanup_error:
+            if exc is not None:
+                raise BaseExceptionGroup("Go runner body and shutdown failed", [exc, cleanup_error]) from None
+            raise
 
     async def start(self) -> None:
         if self.observe_control:

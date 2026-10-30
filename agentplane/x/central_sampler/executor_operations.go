@@ -11,9 +11,7 @@ import (
 	"io"
 	"time"
 
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
-	executorgatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -123,32 +121,27 @@ type executorFSClose struct {
 }
 
 type executorSessionStream interface {
-	Recv() (*executionpb.OpenSessionResponse, error)
+	Recv() (*executorpb.OpenSessionResponse, error)
 }
 type executorClient interface {
-	OpenSession(context.Context, *executionpb.OpenSessionRequest, ...grpc.CallOption) (executorSessionStream, error)
-	StartProcess(context.Context, *executionpb.StartProcessRequest, ...grpc.CallOption) (*executionpb.StartProcessResponse, error)
-	ReadProcess(context.Context, *executionpb.ReadProcessRequest, ...grpc.CallOption) (*executionpb.ReadProcessResponse, error)
-	WriteProcess(context.Context, *executionpb.WriteProcessRequest, ...grpc.CallOption) (*executionpb.WriteProcessResponse, error)
-	SignalProcess(context.Context, *executionpb.SignalProcessRequest, ...grpc.CallOption) (*executionpb.SignalProcessResponse, error)
-	TerminateProcess(context.Context, *executionpb.TerminateProcessRequest, ...grpc.CallOption) (*executionpb.TerminateProcessResponse, error)
-	GetFileMetadata(context.Context, *executionpb.GetFileMetadataRequest, ...grpc.CallOption) (*executionpb.GetFileMetadataResponse, error)
-	OpenFile(context.Context, *executionpb.OpenFileRequest, ...grpc.CallOption) (*executionpb.OpenFileResponse, error)
-	ReadFile(context.Context, *executionpb.ReadFileRequest, ...grpc.CallOption) (*executionpb.ReadFileResponse, error)
-	CloseFile(context.Context, *executionpb.CloseFileRequest, ...grpc.CallOption) (*executionpb.CloseFileResponse, error)
-}
-type runnerExecutionClient struct{ runnerexecpb.RunnerExecClient }
-
-func (c runnerExecutionClient) OpenSession(ctx context.Context, req *executionpb.OpenSessionRequest, opts ...grpc.CallOption) (executorSessionStream, error) {
-	return c.RunnerExecClient.OpenSession(ctx, req, opts...)
+	OpenSession(context.Context, *executorpb.OpenSessionRequest, ...grpc.CallOption) (executorSessionStream, error)
+	StartProcess(context.Context, *executorpb.StartProcessRequest, ...grpc.CallOption) (*executorpb.StartProcessResponse, error)
+	ReadProcess(context.Context, *executorpb.ReadProcessRequest, ...grpc.CallOption) (*executorpb.ReadProcessResponse, error)
+	WriteProcess(context.Context, *executorpb.WriteProcessRequest, ...grpc.CallOption) (*executorpb.WriteProcessResponse, error)
+	SignalProcess(context.Context, *executorpb.SignalProcessRequest, ...grpc.CallOption) (*executorpb.SignalProcessResponse, error)
+	TerminateProcess(context.Context, *executorpb.TerminateProcessRequest, ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error)
+	GetFileMetadata(context.Context, *executorpb.GetFileMetadataRequest, ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error)
+	OpenFile(context.Context, *executorpb.OpenFileRequest, ...grpc.CallOption) (*executorpb.OpenFileResponse, error)
+	ReadFile(context.Context, *executorpb.ReadFileRequest, ...grpc.CallOption) (*executorpb.ReadFileResponse, error)
+	CloseFile(context.Context, *executorpb.CloseFileRequest, ...grpc.CallOption) (*executorpb.CloseFileResponse, error)
 }
 
-type gatewayExecutionClient struct {
-	executorgatewaypb.ExecutorGatewayClient
-}
+// typedExecutorClient keeps the sampler's narrow stream interface injectable in tests while
+// using the same generated Executor client for direct Runner and Gateway targets.
+type typedExecutorClient struct{ executorpb.ExecutorClient }
 
-func (c gatewayExecutionClient) OpenSession(ctx context.Context, req *executionpb.OpenSessionRequest, opts ...grpc.CallOption) (executorSessionStream, error) {
-	return c.ExecutorGatewayClient.OpenSession(ctx, req, opts...)
+func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.OpenSessionRequest, opts ...grpc.CallOption) (executorSessionStream, error) {
+	return c.ExecutorClient.OpenSession(ctx, req, opts...)
 }
 
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
@@ -166,7 +159,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 		return err
 	}
 	streamCtx, cancel := context.WithCancel(e.lifetime)
-	stream, err := e.client.OpenSession(streamCtx, &executionpb.OpenSessionRequest{Scope: e.scope, RequestId: intent, ResumeSessionId: resume})
+	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: e.scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
 		transport := &executorTransportError{method: "initialize", phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
@@ -176,17 +169,17 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 		return transport
 	}
 	first := make(chan struct {
-		response *executionpb.OpenSessionResponse
+		response *executorpb.OpenSessionResponse
 		err      error
 	}, 1)
 	go func() {
 		response, recvErr := stream.Recv()
 		first <- struct {
-			response *executionpb.OpenSessionResponse
+			response *executorpb.OpenSessionResponse
 			err      error
 		}{response, recvErr}
 	}()
-	var opened *executionpb.OpenSessionResponse
+	var opened *executorpb.OpenSessionResponse
 	select {
 	case result := <-first:
 		opened, err = result.response, result.err
@@ -214,7 +207,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 		return errors.Join(err, finishErr)
 	}
 	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, "initialize", opened.NativeFrames)
-	if opened.Status == nil || opened.Status.Outcome != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if opened.Status == nil || opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		cancel()
 		return errors.Join(frameErr, e.finishOpenFailure(ctx, intent, opened))
 	}
@@ -259,8 +252,8 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	return nil
 }
 
-func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executionpb.OpenSessionResponse) error {
-	if response.Status != nil && response.Status.Outcome == executionpb.ExecutionStatus_OUTCOME_REJECTED {
+func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse) error {
+	if response.Status != nil && response.Status.Outcome == executorpb.ExecutionStatus_OUTCOME_REJECTED {
 		message := response.Status.Message
 		if message == "" {
 			message = "session open rejected"
@@ -324,7 +317,7 @@ func (e *Executor) watchSession(streamCtx context.Context, stream executorSessio
 	}
 }
 
-func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID, method string, frames []*executionpb.ExecutionNativeFrame) error {
+func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID, method string, frames []*executorpb.ExecutionNativeFrame) error {
 	if ctx.Err() != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -415,9 +408,9 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		e.setReconnectRequired(true)
 	}
 	if statusValue == nil {
-		statusValue = &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "typed execution response omitted its status"}
+		statusValue = &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "typed execution response omitted its status"}
 	}
-	if statusValue.Outcome == executionpb.ExecutionStatus_OUTCOME_UNKNOWN {
+	if statusValue.Outcome == executorpb.ExecutionStatus_OUTCOME_UNKNOWN {
 		if method == "process/read" && !readRetried && ctx.Err() == nil && frameErr == nil {
 			e.setReconnectRequired(true)
 			if reconnectErr := e.reconnectLocked(ctx); reconnectErr == nil {
@@ -441,9 +434,9 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		}
 	}
 	if statusValue == nil {
-		statusValue = &executionpb.ExecutionStatus{Outcome: executionpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "typed execution response omitted its status"}
+		statusValue = &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "typed execution response omitted its status"}
 	}
-	if statusValue.Outcome == executionpb.ExecutionStatus_OUTCOME_REJECTED {
+	if statusValue.Outcome == executorpb.ExecutionStatus_OUTCOME_REJECTED {
 		message := statusValue.Message
 		if message == "" {
 			message = "request rejected"
@@ -455,7 +448,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		rejection := &executorRejectedError{method: method, code: int(statusValue.GetUpstreamCode()), message: message}
 		return nil, errors.Join(rejection, frameJournalErr)
 	}
-	if statusValue.Outcome != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+	if statusValue.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		message := statusValue.Message
 		if message == "" {
 			message = "remote execution outcome is unknown; operation was not replayed"
@@ -665,41 +658,41 @@ func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evide
 }
 
 func (e *Executor) typedRequest(method string, params any, id string) (proto.Message, error) {
-	base := func() (*executionpb.ExecutionScope, string, string) { return e.scope, e.sessionID, id }
+	base := func() (*executorpb.ExecutionScope, string, string) { return e.scope, e.sessionID, id }
 	scope, sid, rid := base()
 	switch method {
 	case "process/start":
 		p := params.(executorStart)
 		policy := p.EnvPolicy
-		var env *executionpb.ExecutionEnvironmentPolicy
+		var env *executorpb.ExecutionEnvironmentPolicy
 		if policy != nil {
-			env = &executionpb.ExecutionEnvironmentPolicy{Inherit: policy.Inherit, IgnoreDefaultExcludes: policy.IgnoreDefaultExcludes, Exclude: policy.Exclude, Set: policy.Set, IncludeOnly: policy.IncludeOnly}
+			env = &executorpb.ExecutionEnvironmentPolicy{Inherit: policy.Inherit, IgnoreDefaultExcludes: policy.IgnoreDefaultExcludes, Exclude: policy.Exclude, Set: policy.Set, IncludeOnly: policy.IncludeOnly}
 		}
-		return &executionpb.StartProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Argv: p.Argv, Cwd: p.Cwd, EnvironmentPolicy: env, Environment: p.Env, Tty: p.TTY, PipeStdin: p.PipeStdin, Arg0: p.Arg0}, nil
+		return &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Argv: p.Argv, Cwd: p.Cwd, EnvironmentPolicy: env, Environment: p.Env, Tty: p.TTY, PipeStdin: p.PipeStdin, Arg0: p.Arg0}, nil
 	case "process/read":
 		p := params.(executorRead)
-		return &executionpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, AfterSeq: p.AfterSeq, MaxBytes: uint32(p.MaxBytes), WaitMs: uint32(p.WaitMS)}, nil
+		return &executorpb.ReadProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, AfterSeq: p.AfterSeq, MaxBytes: uint32(p.MaxBytes), WaitMs: uint32(p.WaitMS)}, nil
 	case "process/write":
 		p := params.(executorWrite)
-		return &executionpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Data: p.Chunk, WriteId: p.WriteID}, nil
+		return &executorpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Data: p.Chunk, WriteId: p.WriteID}, nil
 	case "process/signal":
 		p := params.(executorSignal)
-		return &executionpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Signal: p.Signal}, nil
+		return &executorpb.SignalProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID, Signal: p.Signal}, nil
 	case "process/terminate":
 		p := params.(executorTerminate)
-		return &executionpb.TerminateProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID}, nil
+		return &executorpb.TerminateProcessRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, ProcessId: p.ProcessID}, nil
 	case "fs/getMetadata":
 		p := params.(executorFSGetMetadata)
-		return &executionpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, Path: p.Path}, nil
+		return &executorpb.GetFileMetadataRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, Path: p.Path}, nil
 	case "fs/open":
 		p := params.(executorFSOpen)
-		return &executionpb.OpenFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Path: p.Path}, nil
+		return &executorpb.OpenFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Path: p.Path}, nil
 	case "fs/readBlock":
 		p := params.(executorFSReadBlock)
-		return &executionpb.ReadFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Offset: p.Offset, Length: uint32(p.Len)}, nil
+		return &executorpb.ReadFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID, Offset: p.Offset, Length: uint32(p.Len)}, nil
 	case "fs/close":
 		p := params.(executorFSClose)
-		return &executionpb.CloseFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID}, nil
+		return &executorpb.CloseFileRequest{Scope: scope, ExecutionSessionId: sid, RequestId: rid, HandleId: p.HandleID}, nil
 	default:
 		return nil, fmt.Errorf("unsupported typed execution method %q", method)
 	}
@@ -710,23 +703,23 @@ func (e *Executor) call(ctx context.Context, method string, request proto.Messag
 	var err error
 	switch method {
 	case "process/start":
-		response, err = e.client.StartProcess(ctx, request.(*executionpb.StartProcessRequest))
+		response, err = e.client.StartProcess(ctx, request.(*executorpb.StartProcessRequest))
 	case "process/read":
-		response, err = e.client.ReadProcess(ctx, request.(*executionpb.ReadProcessRequest))
+		response, err = e.client.ReadProcess(ctx, request.(*executorpb.ReadProcessRequest))
 	case "process/write":
-		response, err = e.client.WriteProcess(ctx, request.(*executionpb.WriteProcessRequest))
+		response, err = e.client.WriteProcess(ctx, request.(*executorpb.WriteProcessRequest))
 	case "process/signal":
-		response, err = e.client.SignalProcess(ctx, request.(*executionpb.SignalProcessRequest))
+		response, err = e.client.SignalProcess(ctx, request.(*executorpb.SignalProcessRequest))
 	case "process/terminate":
-		response, err = e.client.TerminateProcess(ctx, request.(*executionpb.TerminateProcessRequest))
+		response, err = e.client.TerminateProcess(ctx, request.(*executorpb.TerminateProcessRequest))
 	case "fs/getMetadata":
-		response, err = e.client.GetFileMetadata(ctx, request.(*executionpb.GetFileMetadataRequest))
+		response, err = e.client.GetFileMetadata(ctx, request.(*executorpb.GetFileMetadataRequest))
 	case "fs/open":
-		response, err = e.client.OpenFile(ctx, request.(*executionpb.OpenFileRequest))
+		response, err = e.client.OpenFile(ctx, request.(*executorpb.OpenFileRequest))
 	case "fs/readBlock":
-		response, err = e.client.ReadFile(ctx, request.(*executionpb.ReadFileRequest))
+		response, err = e.client.ReadFile(ctx, request.(*executorpb.ReadFileRequest))
 	case "fs/close":
-		response, err = e.client.CloseFile(ctx, request.(*executionpb.CloseFileRequest))
+		response, err = e.client.CloseFile(ctx, request.(*executorpb.CloseFileRequest))
 	default:
 		return nil, fmt.Errorf("unsupported typed execution method %q", method)
 	}
@@ -739,49 +732,49 @@ func (e *Executor) call(ctx context.Context, method string, request proto.Messag
 	return response, nil
 }
 
-func executionStatus(response proto.Message) *executionpb.ExecutionStatus {
+func executionStatus(response proto.Message) *executorpb.ExecutionStatus {
 	switch r := response.(type) {
-	case *executionpb.StartProcessResponse:
+	case *executorpb.StartProcessResponse:
 		return r.Status
-	case *executionpb.ReadProcessResponse:
+	case *executorpb.ReadProcessResponse:
 		return r.Status
-	case *executionpb.WriteProcessResponse:
+	case *executorpb.WriteProcessResponse:
 		return r.Status
-	case *executionpb.SignalProcessResponse:
+	case *executorpb.SignalProcessResponse:
 		return r.Status
-	case *executionpb.TerminateProcessResponse:
+	case *executorpb.TerminateProcessResponse:
 		return r.Status
-	case *executionpb.GetFileMetadataResponse:
+	case *executorpb.GetFileMetadataResponse:
 		return r.Status
-	case *executionpb.OpenFileResponse:
+	case *executorpb.OpenFileResponse:
 		return r.Status
-	case *executionpb.ReadFileResponse:
+	case *executorpb.ReadFileResponse:
 		return r.Status
-	case *executionpb.CloseFileResponse:
+	case *executorpb.CloseFileResponse:
 		return r.Status
 	}
 	return nil
 }
 
-func executionFrames(response proto.Message) []*executionpb.ExecutionNativeFrame {
+func executionFrames(response proto.Message) []*executorpb.ExecutionNativeFrame {
 	switch r := response.(type) {
-	case *executionpb.StartProcessResponse:
+	case *executorpb.StartProcessResponse:
 		return r.NativeFrames
-	case *executionpb.ReadProcessResponse:
+	case *executorpb.ReadProcessResponse:
 		return r.NativeFrames
-	case *executionpb.WriteProcessResponse:
+	case *executorpb.WriteProcessResponse:
 		return r.NativeFrames
-	case *executionpb.SignalProcessResponse:
+	case *executorpb.SignalProcessResponse:
 		return r.NativeFrames
-	case *executionpb.TerminateProcessResponse:
+	case *executorpb.TerminateProcessResponse:
 		return r.NativeFrames
-	case *executionpb.GetFileMetadataResponse:
+	case *executorpb.GetFileMetadataResponse:
 		return r.NativeFrames
-	case *executionpb.OpenFileResponse:
+	case *executorpb.OpenFileResponse:
 		return r.NativeFrames
-	case *executionpb.ReadFileResponse:
+	case *executorpb.ReadFileResponse:
 		return r.NativeFrames
-	case *executionpb.CloseFileResponse:
+	case *executorpb.CloseFileResponse:
 		return r.NativeFrames
 	}
 	return nil
@@ -789,9 +782,9 @@ func executionFrames(response proto.Message) []*executionpb.ExecutionNativeFrame
 
 func responseObject(method string, response proto.Message) (map[string]any, error) {
 	switch r := response.(type) {
-	case *executionpb.StartProcessResponse:
+	case *executorpb.StartProcessResponse:
 		return map[string]any{"processId": r.ProcessId}, nil
-	case *executionpb.ReadProcessResponse:
+	case *executorpb.ReadProcessResponse:
 		chunks := make([]executorChunk, 0, len(r.Chunks))
 		for _, c := range r.Chunks {
 			chunks = append(chunks, executorChunk{Seq: c.Seq, Stream: c.Stream, Chunk: append([]byte{}, c.Data...)})
@@ -802,19 +795,19 @@ func responseObject(method string, response proto.Message) (map[string]any, erro
 			code = &x
 		}
 		return protocolObject(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
-	case *executionpb.WriteProcessResponse:
+	case *executorpb.WriteProcessResponse:
 		return map[string]any{"status": r.WriteStatus}, nil
-	case *executionpb.SignalProcessResponse:
+	case *executorpb.SignalProcessResponse:
 		return map[string]any{}, nil
-	case *executionpb.TerminateProcessResponse:
+	case *executorpb.TerminateProcessResponse:
 		return map[string]any{"running": r.Running}, nil
-	case *executionpb.GetFileMetadataResponse:
+	case *executorpb.GetFileMetadataResponse:
 		return protocolObject(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
-	case *executionpb.OpenFileResponse:
+	case *executorpb.OpenFileResponse:
 		return map[string]any{"handleId": r.HandleId}, nil
-	case *executionpb.ReadFileResponse:
+	case *executorpb.ReadFileResponse:
 		return protocolObject(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
-	case *executionpb.CloseFileResponse:
+	case *executorpb.CloseFileResponse:
 		return map[string]any{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported typed execution response for %s", method)

@@ -14,16 +14,16 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
+from agentplane.executor import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
-from agentplane.proto import event_pb2, execution_pb2, runner_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner import configuration, runner_service_pb2
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.codex_exec_server_container import CodexExecServerContainer
 from agentplane.runner.testing.gateway import serve_gateway
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner_gateway import executor_gateway_pb2_grpc
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.runner_transport.configuration import MTLS
 from agentplane.sandboxes.testing.kubernetes import sandbox_cluster
@@ -31,7 +31,6 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.x.central_sampler import sampler_pb2
-from agentplane.x.central_sampler.settings import Settings
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import Store
 from util.testing.postgres import create_temporary_database
@@ -115,23 +114,18 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 observe_control=False,
             ) as running_runner:
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
-                values = settings(
+                sampler_settings = settings(
                     database_url,
                     endpoint.origin,
-                    codex_exec_server_container.url,
+                    None,
                     "/opt/codex/bin/codex",
                     code_mode_host,
                     undeclared_outputs_dir(),
-                ).model_dump()
-                values.update(
-                    direct_executor_target=None,
-                    direct_executor_insecure_localtest=False,
                     gateway_target=gateway.target,
                     gateway_token_file=sampler_token,
                     history_target=history.ingress_target,
                     history_token_file=history_token,
                 )
-                sampler_settings = Settings.model_validate(values)
                 request = open_request(tmp_path / "workspace")
                 request.executor.CopyFrom(sandbox.destination)
                 request.expected_incarnation_uid = sandbox.pod_uid
@@ -199,11 +193,11 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     finally:
                         stream.cancel()
                     async with dial(gateway.target) as channel:
-                        stream = executor_gateway_pb2_grpc.ExecutorGatewayStub(channel).OpenSession(
-                            execution_pb2.OpenSessionRequest(
-                                scope=execution_pb2.ExecutionScope(
+                        stream = executor_pb2_grpc.ExecutorStub(channel).OpenSession(
+                            executor_pb2.OpenSessionRequest(
+                                scope=executor_pb2.ExecutionScope(
                                     destination=sandbox.destination,
-                                    expected_incarnation_uid=sandbox.pod_uid,
+                                    expected_incarnation_uid="stale-" + sandbox.pod_uid,
                                     session_id=session_id,
                                 ),
                                 request_id=str(uuid4()),

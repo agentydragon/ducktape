@@ -4,24 +4,22 @@ import (
 	"context"
 	"io"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	executionpb "github.com/agentydragon/ducktape/agentplane/proto/executionpb"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type executorGatewayServer struct {
-	executorpb.UnimplementedExecutorGatewayServer
+type executorServer struct {
+	executorpb.UnimplementedExecutorServer
 	gateway *Gateway
 }
 
 // Resolve each request through the current Sandbox and its elected Gateway-to-Runner connection.
-func (s *executorGatewayServer) executionConnection(
+func (s *executorServer) executionConnection(
 	ctx context.Context,
-	scope *executionpb.ExecutionScope,
+	scope *executorpb.ExecutionScope,
 	newSession bool,
 ) (context.Context, *runnerConnection, context.CancelFunc, error) {
 	g := s.gateway
@@ -62,9 +60,9 @@ func (s *executorGatewayServer) executionConnection(
 }
 
 func forwardExecution[Response any](
-	s *executorGatewayServer,
+	s *executorServer,
 	ctx context.Context,
-	scope *executionpb.ExecutionScope,
+	scope *executorpb.ExecutionScope,
 	call func(context.Context, *runnerConnection) (*Response, error),
 ) (*Response, error) {
 	callCtx, connection, stop, err := s.executionConnection(ctx, scope, false)
@@ -78,16 +76,16 @@ func forwardExecution[Response any](
 // OpenSession is the lifetime of one local Codex WebSocket. The Gateway streams every
 // initialization/notification response unchanged and closes its Runner stream when the caller
 // cancels or the elected Runner connection ends.
-func (s *executorGatewayServer) OpenSession(
-	request *executionpb.OpenSessionRequest,
-	stream grpc.ServerStreamingServer[executionpb.OpenSessionResponse],
+func (s *executorServer) OpenSession(
+	request *executorpb.OpenSessionRequest,
+	stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse],
 ) error {
 	ctx, connection, stop, err := s.executionConnection(stream.Context(), request.GetScope(), true)
 	if err != nil {
 		return err
 	}
 	defer stop()
-	private, err := runnerexecpb.NewRunnerExecClient(connection.direct).OpenSession(ctx, request)
+	private, err := executorpb.NewExecutorClient(connection.direct).OpenSession(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -105,58 +103,58 @@ func (s *executorGatewayServer) OpenSession(
 	}
 }
 
-func (s *executorGatewayServer) StartProcess(ctx context.Context, request *executionpb.StartProcessRequest) (*executionpb.StartProcessResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.StartProcessResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).StartProcess(ctx, request)
+func (s *executorServer) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.StartProcessResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).StartProcess(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) ReadProcess(ctx context.Context, request *executionpb.ReadProcessRequest) (*executionpb.ReadProcessResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.ReadProcessResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).ReadProcess(ctx, request)
+func (s *executorServer) ReadProcess(ctx context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.ReadProcessResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).ReadProcess(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) WriteProcess(ctx context.Context, request *executionpb.WriteProcessRequest) (*executionpb.WriteProcessResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.WriteProcessResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).WriteProcess(ctx, request)
+func (s *executorServer) WriteProcess(ctx context.Context, request *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.WriteProcessResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).WriteProcess(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) SignalProcess(ctx context.Context, request *executionpb.SignalProcessRequest) (*executionpb.SignalProcessResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.SignalProcessResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).SignalProcess(ctx, request)
+func (s *executorServer) SignalProcess(ctx context.Context, request *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.SignalProcessResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).SignalProcess(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) TerminateProcess(ctx context.Context, request *executionpb.TerminateProcessRequest) (*executionpb.TerminateProcessResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.TerminateProcessResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).TerminateProcess(ctx, request)
+func (s *executorServer) TerminateProcess(ctx context.Context, request *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.TerminateProcessResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).TerminateProcess(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) GetFileMetadata(ctx context.Context, request *executionpb.GetFileMetadataRequest) (*executionpb.GetFileMetadataResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.GetFileMetadataResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).GetFileMetadata(ctx, request)
+func (s *executorServer) GetFileMetadata(ctx context.Context, request *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.GetFileMetadataResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).GetFileMetadata(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) OpenFile(ctx context.Context, request *executionpb.OpenFileRequest) (*executionpb.OpenFileResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.OpenFileResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).OpenFile(ctx, request)
+func (s *executorServer) OpenFile(ctx context.Context, request *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.OpenFileResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).OpenFile(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) ReadFile(ctx context.Context, request *executionpb.ReadFileRequest) (*executionpb.ReadFileResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.ReadFileResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).ReadFile(ctx, request)
+func (s *executorServer) ReadFile(ctx context.Context, request *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.ReadFileResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).ReadFile(ctx, request)
 	})
 }
 
-func (s *executorGatewayServer) CloseFile(ctx context.Context, request *executionpb.CloseFileRequest) (*executionpb.CloseFileResponse, error) {
-	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executionpb.CloseFileResponse, error) {
-		return runnerexecpb.NewRunnerExecClient(connection.direct).CloseFile(ctx, request)
+func (s *executorServer) CloseFile(ctx context.Context, request *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error) {
+	return forwardExecution(s, ctx, request.GetScope(), func(ctx context.Context, connection *runnerConnection) (*executorpb.CloseFileResponse, error) {
+		return executorpb.NewExecutorClient(connection.direct).CloseFile(ctx, request)
 	})
 }
 
-var _ executorpb.ExecutorGatewayServer = (*executorGatewayServer)(nil)
+var _ executorpb.ExecutorServer = (*executorServer)(nil)

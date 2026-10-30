@@ -13,9 +13,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/execution",
     deps = [
+        "//agentplane/executor:executor_go_proto",
         "//agentplane/grpc/streaming",
-        "//agentplane/proto:execution_go_proto",
-        "//agentplane/runner:runner_exec_go_proto",
         "@com_github_coder_websocket//:websocket",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -29,9 +28,8 @@ go_test(
     embed = [":execution"],
     race = "on",
     deps = [
-        "//agentplane/proto:execution_go_proto",
+        "//agentplane/executor:executor_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
-        "//agentplane/runner:runner_exec_go_proto",
         "@com_github_coder_websocket//:websocket",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

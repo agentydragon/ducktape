@@ -14,11 +14,12 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
+from agentplane.executor import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
-from agentplane.proto import event_pb2, execution_pb2
-from agentplane.runner import runner_exec_pb2_grpc, runner_service_pb2
+from agentplane.proto import event_pb2
+from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import Store
@@ -85,11 +86,11 @@ async def faulting_executor_proxy(
 
     server = grpc.aio.server()
 
-    class Proxy(runner_exec_pb2_grpc.RunnerExecServicer):
+    class Proxy(executor_pb2_grpc.ExecutorServicer):
         @override
         async def OpenSession(
-            self, request: execution_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
-        ) -> AsyncIterator[execution_pb2.OpenSessionResponse]:
+            self, request: executor_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[executor_pb2.OpenSessionResponse]:
             request_value = as_dict(request)
             async for response in upstream.OpenSession(request):
                 response_value = as_dict(response)
@@ -121,61 +122,61 @@ async def faulting_executor_proxy(
 
         @override
         async def StartProcess(
-            self, request: execution_pb2.StartProcessRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.StartProcessResponse:
+            self, request: executor_pb2.StartProcessRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.StartProcessResponse:
             return await self.forward("StartProcess", request, context, upstream.StartProcess)
 
         @override
         async def ReadProcess(
-            self, request: execution_pb2.ReadProcessRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.ReadProcessResponse:
+            self, request: executor_pb2.ReadProcessRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.ReadProcessResponse:
             return await self.forward("ReadProcess", request, context, upstream.ReadProcess)
 
         @override
         async def WriteProcess(
-            self, request: execution_pb2.WriteProcessRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.WriteProcessResponse:
+            self, request: executor_pb2.WriteProcessRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.WriteProcessResponse:
             return await self.forward("WriteProcess", request, context, upstream.WriteProcess)
 
         @override
         async def SignalProcess(
-            self, request: execution_pb2.SignalProcessRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.SignalProcessResponse:
+            self, request: executor_pb2.SignalProcessRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.SignalProcessResponse:
             return await self.forward("SignalProcess", request, context, upstream.SignalProcess)
 
         @override
         async def TerminateProcess(
-            self, request: execution_pb2.TerminateProcessRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.TerminateProcessResponse:
+            self, request: executor_pb2.TerminateProcessRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.TerminateProcessResponse:
             return await self.forward("TerminateProcess", request, context, upstream.TerminateProcess)
 
         @override
         async def GetFileMetadata(
-            self, request: execution_pb2.GetFileMetadataRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.GetFileMetadataResponse:
+            self, request: executor_pb2.GetFileMetadataRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.GetFileMetadataResponse:
             return await self.forward("GetFileMetadata", request, context, upstream.GetFileMetadata)
 
         @override
         async def OpenFile(
-            self, request: execution_pb2.OpenFileRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.OpenFileResponse:
+            self, request: executor_pb2.OpenFileRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.OpenFileResponse:
             return await self.forward("OpenFile", request, context, upstream.OpenFile)
 
         @override
         async def ReadFile(
-            self, request: execution_pb2.ReadFileRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.ReadFileResponse:
+            self, request: executor_pb2.ReadFileRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.ReadFileResponse:
             return await self.forward("ReadFile", request, context, upstream.ReadFile)
 
         @override
         async def CloseFile(
-            self, request: execution_pb2.CloseFileRequest, context: grpc.aio.ServicerContext
-        ) -> execution_pb2.CloseFileResponse:
+            self, request: executor_pb2.CloseFileRequest, context: grpc.aio.ServicerContext
+        ) -> executor_pb2.CloseFileResponse:
             return await self.forward("CloseFile", request, context, upstream.CloseFile)
 
     async with grpc.aio.insecure_channel(execution_target) as upstream_channel:
-        upstream = runner_exec_pb2_grpc.RunnerExecStub(upstream_channel)
-        runner_exec_pb2_grpc.add_RunnerExecServicer_to_server(Proxy(), server)
+        upstream = executor_pb2_grpc.ExecutorStub(upstream_channel)
+        executor_pb2_grpc.add_ExecutorServicer_to_server(Proxy(), server)
         async with serving(server, "127.0.0.1:0", grace_s=0) as port:
             observed.url = f"127.0.0.1:{port}"
             yield observed
