@@ -303,16 +303,8 @@ func readProviderStream(ctx context.Context, reader io.Reader, evidence *Respons
 			if status, present := event.Response.StatusValue(); present && status != "completed" {
 				return &KnownFailureError{Evidence: map[string]any{"reason": "unexpected terminal status", "response": event.Response, "events": result.Events}}
 			}
-			terminalOutput, present, parseErr := event.Response.OutputItems()
-			if parseErr != nil {
-				return &KnownFailureError{Evidence: map[string]any{"reason": "terminal output is not an array of items", "events": result.Events}}
-			}
-			if present {
-				if len(result.Output) > 0 && !equalResponsesItems(result.Output, terminalOutput) {
-					return &KnownFailureError{Evidence: map[string]any{"reason": "terminal output disagrees with streamed completed items", "events": result.Events}}
-				}
-				result.Output = terminalOutput
-			}
+			// Like Codex, consume output_item.done items. Antigravity through
+			// LiteLLM can rewrite reasoning and add items only in terminal output.
 			result.Terminal = event.Response
 			return errProviderComplete
 		}

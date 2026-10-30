@@ -114,6 +114,11 @@ durable Codex transcript. Standard mode has no compaction
 implementation: explicit compaction is rejected at admission, and automatic compaction fails the
 turn before sending a private provider request.
 
+Streamed `response.output_item.done` items are authoritative for execution and
+continuation, matching Codex. `response.completed.output` is retained as evidence
+but does not replace or supplement them: Antigravity through LiteLLM can rewrite
+reasoning and add terminal-only messages.
+
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
 `exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`

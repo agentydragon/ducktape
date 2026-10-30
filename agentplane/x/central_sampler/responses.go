@@ -363,20 +363,6 @@ func (terminal ResponsesTerminal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire(terminal))
 }
 
-func (terminal ResponsesTerminal) OutputItems() ([]ResponsesItem, bool, error) {
-	if len(terminal.Output) == 0 {
-		return nil, false, nil
-	}
-	if !bytes.HasPrefix(bytes.TrimSpace(terminal.Output), []byte("[")) {
-		return nil, true, errors.New("terminal output is not an array")
-	}
-	var items []ResponsesItem
-	if err := json.Unmarshal(terminal.Output, &items); err != nil {
-		return nil, true, err
-	}
-	return items, true, nil
-}
-
 func (terminal ResponsesTerminal) TotalTokens() *int {
 	if len(terminal.Usage) == 0 || !bytes.HasPrefix(bytes.TrimSpace(terminal.Usage), []byte("{")) {
 		return nil

@@ -52,6 +52,45 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	}
 }
 
+func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T) {
+	// Observed through Antigravity behind LiteLLM's Responses API: item.done carries
+	// a reasoning summary, while completed rewrites it and adds an unstreamed message.
+	stream := strings.Join([]string{
+		`data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_fixture","type":"reasoning","summary":[{"type":"summary_text","text":"Inspect the workspace."}]}}`,
+		"",
+		`data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc_fixture","call_id":"call_fixture","name":"exec","status":"completed","arguments":"{\"code\":\"text(1)\"}"}}`,
+		"",
+		`data: {"type":"response.completed","response":{"id":"resp_fixture","status":"completed","output":[{"type":"reasoning","id":"rs_fixture","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Inspect the workspace."}],"encrypted_content":"fixture-opaque-reasoning"},{"type":"message","id":"msg_fixture","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Terminal-only message."}]},{"type":"function_call","id":"fc_fixture","call_id":"call_fixture","name":"exec","status":"completed","arguments":"{\"code\":\"text(1)\"}"}]}}`,
+		"",
+		"",
+	}, "\n")
+	response, err := readProviderStream(context.Background(), strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Output) != 2 {
+		t.Fatalf("expected only streamed completed items, got %s", canonicalJSON(response.Output))
+	}
+	reasoning, call := response.Output[0], response.Output[1]
+	text, err := responsesText(reasoning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reasoning.Type != ResponsesItemReasoning || text != "Inspect the workspace." || reasoning.EncryptedContent != "" || len(reasoning.Content) != 0 {
+		t.Fatalf("streamed reasoning was replaced: %s", canonicalJSON(reasoning))
+	}
+	if call.Type != ResponsesItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
+		t.Fatalf("streamed tool call changed: %s", canonicalJSON(call))
+	}
+	var terminal []ResponsesItem
+	if err := json.Unmarshal(response.Terminal.Output, &terminal); err != nil {
+		t.Fatal(err)
+	}
+	if len(terminal) != 3 || terminal[0].EncryptedContent != "fixture-opaque-reasoning" {
+		t.Fatalf("terminal evidence was not retained: %s", canonicalJSON(response.Terminal))
+	}
+}
+
 func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	var item ResponsesItem
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
