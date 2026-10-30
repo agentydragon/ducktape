@@ -45,10 +45,14 @@ host_behavior:
 
 Landed through step 2: the keys, their validation, and the loader-closed
 derivation (SPEC.md § Loader-closed derivation). That derivation counts every
-loader site in every analyzed chunk, so one opaque site anywhere (the Claude
-CLI's exported loader alias, its dynamic `import()` calls) still keeps every
-chunk conservative; steps 3 and 4 narrow the sites to those that can run while
-the target evaluates.
+loader site in every analyzed chunk. On the canonical Claude CLI input with
+hypothetical audited keys it keeps all 76 graphs conservative and leaves the
+ten conflicts unchanged: 1,204 dynamic `import()` sites, the exported loader
+alias and two `module` imports keep every target open; all 476 literal
+`import.meta.require` calls target application chunks, and their closures
+reach back into 46 of the 76 targets (9 of the 10 conflict chunks); `ws`
+remains an unresolved static request in 7 of them. Steps 3 and 4 narrow the
+sites to those that can run while the target evaluates.
 
 ## Steps
 
