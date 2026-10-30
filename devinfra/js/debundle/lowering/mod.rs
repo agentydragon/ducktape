@@ -27,6 +27,7 @@ mod export_policies;
 mod exports;
 mod imports;
 mod io;
+mod loader_surface;
 mod lower;
 mod materialize;
 mod module_output;
@@ -43,6 +44,10 @@ mod util;
 mod visitors;
 
 pub use imports::naturalize_cross_chunk_imports;
+pub use loader_surface::{
+    ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
+    LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
+};
 
 use imports::VendorReimportOracle;
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
@@ -130,12 +135,14 @@ pub struct RequestedLogicalModule {
 }
 
 /// Why the unknown-call fallback includes the chunk's export surface.
-/// The policy remains conservative whenever either blocker list is non-empty.
+/// The policy remains conservative whenever either blocker list is non-empty
+/// or the loader derivation does not permit the proof.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportReentryReport {
     /// The declared host behavior the policy was derived under, echoed as read.
     pub host_behavior: spec::HostBehavior,
     pub policy: ExportReentryPolicy,
+    pub loader: ExportReentryLoaderDerivation,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
     pub closure_blockers: Vec<ExportReentryClosureBlocker>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -163,9 +170,6 @@ pub enum ExportReentryGlobalBlocker {
         present_chunks: usize,
         expected_chunks: usize,
     },
-    CommonJsInterop {
-        source_chunk: String,
-    },
     NonOrdinaryStaticRequest {
         source_chunk: String,
         specifier: String,
@@ -180,9 +184,6 @@ pub enum ExportReentryClosureBlocker {
         source_chunk: String,
     },
     TopLevelAwait {
-        source_chunk: String,
-    },
-    CommonJsInterop {
         source_chunk: String,
     },
     VendorAffectedChunk {
@@ -213,7 +214,7 @@ pub enum ExportReentryClosureBlocker {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct ExportReentryTarget {
     pub chunk: String,
     pub file: String,
@@ -519,11 +520,6 @@ fn export_reentry_reports(
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
-    // A synchronous host loader can hand CommonJS interop the namespace of a
-    // module that is still evaluating; without one, interop alone exposes
-    // nothing.
-    let loader_present =
-        host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::Present;
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
     let mut global_blockers = Vec::new();
@@ -536,11 +532,6 @@ fn export_reentry_reports(
     for chunk in &artifact.chunks {
         let source_chunk = artifact.chunk_table.name(chunk.chunk_id).to_string();
         let runtime = &chunk.analysis.runtime_facts;
-        if runtime.has_cjs_interop && loader_present {
-            global_blockers.push(ExportReentryGlobalBlocker::CommonJsInterop {
-                source_chunk: source_chunk.clone(),
-            });
-        }
         for request in &runtime.static_requests {
             if request.mode != StaticModuleRequestMode::OrdinaryEsm {
                 global_blockers.push(ExportReentryGlobalBlocker::NonOrdinaryStaticRequest {
@@ -559,6 +550,17 @@ fn export_reentry_reports(
     }
 
     let global_proof_is_blocked = !global_blockers.is_empty();
+    let targets: BTreeSet<ChunkId> = selected_chunk_names
+        .iter()
+        .filter_map(|name| artifact.chunk_table.get(name))
+        .collect();
+    let mut loader_derivations = loader_derivations(
+        artifact,
+        indexes,
+        host_behavior,
+        vendor_affected_chunk_ids,
+        &targets,
+    )?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -578,7 +580,13 @@ fn export_reentry_reports(
         } else {
             ExportReentryClosureInspection::default()
         };
-        let policy = if !global_proof_is_blocked && closure.blockers.is_empty() {
+        let loader = loader_derivations
+            .remove(&target)
+            .expect("every selected target has a loader derivation");
+        let policy = if !global_proof_is_blocked
+            && closure.blockers.is_empty()
+            && loader.permits_export_reentry_proof()
+        {
             ExportReentryPolicy::NoStaticImporterReentry
         } else {
             ExportReentryPolicy::Conservative
@@ -588,6 +596,7 @@ fn export_reentry_reports(
             ExportReentryReport {
                 host_behavior: host_behavior.clone(),
                 policy,
+                loader,
                 global_blockers: global_blockers.clone(),
                 closure_blockers: closure.blockers,
                 host_builtin_leaves: closure.host_builtin_leaves,
@@ -595,6 +604,49 @@ fn export_reentry_reports(
         );
     }
     Ok(reports)
+}
+
+/// Derive the loader premise for each target (SPEC.md § Host behavior).
+fn loader_derivations(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    host_behavior: &spec::HostBehavior,
+    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
+    targets: &BTreeSet<ChunkId>,
+) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
+    let uniform = |derivation: ExportReentryLoaderDerivation| {
+        targets
+            .iter()
+            .map(|target| (*target, derivation.clone()))
+            .collect()
+    };
+    if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
+        return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
+    }
+    let surfaces = loader_surface::loader_surfaces(
+        artifact,
+        indexes,
+        host_behavior,
+        vendor_affected_chunk_ids,
+    )?;
+    if !surfaces.has_loader_sites() {
+        return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
+    }
+    Ok(
+        analysis::loader_closure::solve_loader_closure(&surfaces.chunks, host_behavior, targets)
+            .into_iter()
+            .map(|(target, closure)| {
+                (
+                    target,
+                    ExportReentryLoaderDerivation::from_closure(
+                        &closure,
+                        &surfaces.requests,
+                        artifact,
+                    ),
+                )
+            })
+            .collect(),
+    )
 }
 
 fn collect_closure_blockers(
@@ -626,11 +678,6 @@ fn collect_closure_blockers(
         }
         if runtime.has_top_level_await {
             blockers.push(ExportReentryClosureBlocker::TopLevelAwait {
-                source_chunk: source_name.clone(),
-            });
-        }
-        if runtime.has_cjs_interop && loader_present {
-            blockers.push(ExportReentryClosureBlocker::CommonJsInterop {
                 source_chunk: source_name.clone(),
             });
         }

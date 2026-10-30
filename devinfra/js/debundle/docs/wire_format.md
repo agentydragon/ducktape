@@ -66,9 +66,20 @@ joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
 `export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
 Its `host_behavior` echoes the spec's typed block as read (SPEC.md § Host
 behavior; omitted keys absent, `synchronous_module_loader` always present),
-and `policy` is `conservative` or `no_static_importer_reentry`.
+and `policy` is `conservative` or `no_static_importer_reentry`. `loader` is
+the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
+`no_synchronous_loader`, `no_host_loader_sites`, or `loader_closure` with
+`closed`, `host_keys` (keys a closed certificate consumed), `requests`
+(resolved literal requests per source chunk, specifier and `target`
+`{"builtin": id}` or `{"chunk": {"chunk", "file"}}`, with `request_count`),
+`loaded_chunks`, and `failures`. Each failure has a `reason`, its
+`occurrences`, and the `first` witness in chunk-name then site order: either
+`{"host_behavior": key}` or `{"site": {...}}`, a site naming its
+`source_chunk` and `form` (`interop` with the census `kind`, `item`, `line`,
+`specifier` and `resolved_target`; `static_request` with `specifier` and
+`resolved_target`; `top_level_await`; `vendor_chunk`).
 `host_builtin_leaves`, when nonempty, lists each consumed
-`reentry_free_builtin_modules` request. The typed
+`reentry_free_builtin_modules` static request. The typed
 `global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
 references are canonical chunk IDs; static-request entries carry the source
 chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
@@ -81,7 +92,31 @@ never relaxes the proof.
 {
   "host_behavior": { "synchronous_module_loader": "present" },
   "policy": "conservative",
-  "global_blockers": [{ "reason": "common_js_interop", "source_chunk": "static/provider" }],
+  "loader": {
+    "rule": "loader_closure",
+    "closed": false,
+    "failures": [
+      {
+        "reason": "undeclared_host_behavior",
+        "occurrences": 2,
+        "first": { "host_behavior": "loader_result_for_evaluating_module" }
+      },
+      {
+        "reason": "opaque_loader_site",
+        "occurrences": 1,
+        "first": {
+          "site": {
+            "source_chunk": "static/provider",
+            "form": "interop",
+            "kind": "global_this_require",
+            "item": 0,
+            "line": 1
+          }
+        }
+      }
+    ]
+  },
+  "global_blockers": [],
   "closure_blockers": [
     { "reason": "vendor_affected_chunk", "source_chunk": "static/provider" },
     { "reason": "target_cycle", "target_chunk": "static/provider" }

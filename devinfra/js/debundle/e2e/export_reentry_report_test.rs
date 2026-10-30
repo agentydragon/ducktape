@@ -11,6 +11,17 @@ fn report_path(report_root: &std::path::Path, chunk_id: &str) -> PathBuf {
     report_root.join(chunk_id).join(REPORT_NAME)
 }
 
+fn has_loader_failure(report: &Value, reason: &str, source_chunk: &str) -> bool {
+    report["loader"]["failures"]
+        .as_array()
+        .is_some_and(|failures| {
+            failures.iter().any(|failure| {
+                failure["reason"] == reason
+                    && failure["first"]["site"]["source_chunk"] == source_chunk
+            })
+        })
+}
+
 fn has_reason(report: &Value, group: &str, reason: &str, source_chunk: Option<&str>) -> bool {
     report[group].as_array().is_some_and(|blockers| {
         blockers.iter().any(|blocker| {
@@ -152,11 +163,10 @@ fn builtin_leaf_does_not_remove_application_require_or_static_cycle_blockers() {
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
     assert_eq!(report["host_builtin_leaves"][0]["specifier"], "path");
-    assert!(has_reason(
+    assert!(has_loader_failure(
         &report,
-        "global_blockers",
-        "common_js_interop",
-        Some(CHUNK_ID)
+        "loader_request_reaches_target",
+        CHUNK_ID
     ));
     assert!(has_reason(
         &report,
@@ -182,6 +192,7 @@ fn supported_case_reports_no_static_importer_reentry() {
         report["host_behavior"]["synchronous_module_loader"],
         "present"
     );
+    assert_eq!(report["loader"]["rule"], "no_host_loader_sites");
     assert_eq!(report["global_blockers"], Value::Array(vec![]));
     assert_eq!(report["closure_blockers"], Value::Array(vec![]));
 }
@@ -250,12 +261,7 @@ export const value = 1;
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
     assert_eq!(report["policy"], "conservative");
-    assert!(has_reason(
-        &report,
-        "global_blockers",
-        "common_js_interop",
-        Some(CHUNK_ID),
-    ));
+    assert!(has_loader_failure(&report, "opaque_loader_site", CHUNK_ID));
     assert!(has_reason(
         &report,
         "global_blockers",

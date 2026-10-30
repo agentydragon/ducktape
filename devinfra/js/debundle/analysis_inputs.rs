@@ -281,6 +281,19 @@ pub struct ProofDependencies {
     pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub argument_inputs: BTreeSet<ArgumentInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub host_behavior: BTreeSet<HostBehaviorKey>,
+}
+
+/// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
+/// The value is not repeated: a key enters a proof only with the one value its
+/// reader accepts, which the spec echo in the same report shows.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostBehaviorKey {
+    LoaderResultForEvaluatingModule,
+    SynchronousLoadRunsAppCallbacks,
+    ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
 }
 
 impl ProofDependencies {
@@ -289,6 +302,7 @@ impl ProofDependencies {
             && self.native_operation_inputs.is_empty()
             && self.descriptor_copy_authors.is_empty()
             && self.argument_inputs.is_empty()
+            && self.host_behavior.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -299,6 +313,8 @@ impl ProofDependencies {
             .extend(other.descriptor_copy_authors.iter().cloned());
         self.argument_inputs
             .extend(other.argument_inputs.iter().cloned());
+        self.host_behavior
+            .extend(other.host_behavior.iter().copied());
     }
 }
 
