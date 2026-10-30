@@ -235,7 +235,7 @@ pub(crate) struct SynchronousCalls {
         std::sync::Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
-    pub author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
+    pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
 }
 
 /// Source- and execution-checked evidence that one exact factory call only

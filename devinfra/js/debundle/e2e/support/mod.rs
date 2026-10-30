@@ -35,11 +35,12 @@ use serde_json::Value;
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
     ArgumentInputContract, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    CommutingStatementsContract, ExecutionRuntime, HostNoReentry, HostNoReentryOperation,
-    HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
-    NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
-    NativeOperationKind, NodeBuiltinModule, ResolvedMemberSelector, SourceUnitSelector,
-    ValueInputContract, VendorLevel, VendorMark,
+    CommutingStatementsContract, HostBehavior, InitializerPurity, LoaderResultForEvaluatingModule,
+    MemberEffect, MemberPurity, NativeCallIdentityInputContract, NativeCallIdentityKind,
+    NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule, ReentryFreeOperation,
+    ResolvedMemberSelector, SourceUnitSelector, SynchronousLoadDrainsMicrotasks,
+    SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader, ValueInputContract, VendorLevel,
+    VendorMark,
 };
 
 use std::collections::BTreeSet;
@@ -958,7 +959,11 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         js_list_path,
         browser_harness,
     };
-    write_yaml_file(&setup.spec_path, &build_spec(opts, &setup));
+    let mut spec = serde_json::to_value(build_spec(opts, &setup)).expect("serialize spec");
+    for (key, value) in &opts.raw_spec_keys {
+        spec[*key] = value.clone();
+    }
+    write_yaml_file(&setup.spec_path, &spec);
     setup
 }
 

@@ -3087,7 +3087,7 @@ fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
     }
 }
 
-fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> VendorSwapFixture {
+fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
     const PACKAGE: &str = "factory-kit";
     let (ws, bundle_path) = setup_bundled_partial_swap(
         "browser-vendor-reentry-",
@@ -3121,7 +3121,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> Vendor
             &[("factory", swap_symbol(PACKAGE, PartialSwapKind::Default, None, None))],
         )}),
         Some(json!({
-            "execution_runtime": runtime,
+            "host_behavior": {"synchronous_module_loader": loader},
             "logical_modules": {"static/app": {
                 "startup": {"members": [member("prefix")]},
                 "values": {"members": [member("value"), member("read")]},
@@ -3148,10 +3148,8 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> Vendor
 
 #[test]
 fn closed_bundled_replacement_preserves_browser_export_proof() {
-    let fixture = browser_bundled_reentry_fixture(
-        "export const factory = () => 'ready';\n",
-        "native_browser_esm",
-    );
+    let fixture =
+        browser_bundled_reentry_fixture("export const factory = () => 'ready';\n", "none");
     let report: Value = read_json(
         &fixture
             ._root
@@ -3169,19 +3167,19 @@ fn closed_bundled_replacement_preserves_browser_export_proof() {
 }
 
 #[test]
-fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
-    for (bundle, runtime) in [
-        ("export const factory = () => 'ready';\n", "generic"),
+fn bundled_reentry_proof_requires_no_synchronous_loader_and_closed_bundle() {
+    for (bundle, loader) in [
+        ("export const factory = () => 'ready';\n", "present"),
         (
             "import './app.js'; export const factory = () => 'ready';\n",
-            "native_browser_esm",
+            "none",
         ),
         (
             "await Promise.resolve(); export const factory = () => 'ready';\n",
-            "native_browser_esm",
+            "none",
         ),
     ] {
-        let fixture = browser_bundled_reentry_fixture(bundle, runtime);
+        let fixture = browser_bundled_reentry_fixture(bundle, loader);
         assert!(!fixture.result.status.success());
         assert!(
             fixture.result.stderr.contains("atomic-group conflict"),

@@ -196,7 +196,12 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "host_no_reentry_test",
+    name = "host_behavior_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "reentry_free_operations_test",
     data = ["@debundle_bun_1_3_10//:bun"],
     env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
     deps = [

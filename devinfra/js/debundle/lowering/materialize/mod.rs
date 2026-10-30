@@ -109,7 +109,7 @@ pub(super) struct ChunkSpec<'a> {
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
-    pub(super) host_no_reentry: Option<&'a spec::HostNoReentry>,
+    pub(super) host_behavior: &'a spec::HostBehavior,
 }
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
@@ -453,7 +453,7 @@ pub(super) fn finish_logical_chunk(
     let ChunkSpec {
         chunk_renames,
         chunk_analysis_options,
-        host_no_reentry,
+        host_behavior,
         ..
     } = spec;
     let ChunkAstAnalysis {
@@ -520,7 +520,7 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.assumptions.host_no_reentry = host_no_reentry.cloned();
+        inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
         inputs.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)

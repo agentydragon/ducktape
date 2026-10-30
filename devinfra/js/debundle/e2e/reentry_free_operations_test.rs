@@ -1,28 +1,14 @@
-//! Exact Bun host timing assertions stay opt-in and shape-specific.
+//! Audited `host_behavior.reentry_free_operations` stay opt-in and shape-specific.
 
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 
-fn policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
-    HostNoReentry {
-        runtime: HostNoReentryRuntime::BunStandalone1_3_10,
-        operations: operations.iter().copied().collect::<BTreeSet<_>>(),
-        node_builtin_module_leaves: BTreeSet::new(),
+fn policy(operations: &[ReentryFreeOperation]) -> HostBehavior {
+    HostBehavior {
+        reentry_free_operations: operations.iter().copied().collect(),
+        ..HostBehavior::default()
     }
-}
-
-fn build_policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
-    let mut policy = policy(operations);
-    // Synthetic identity exercises assertion transport, not host authentication.
-    // The test's actual Bun runtime is supplied independently by Bazel.
-    policy.runtime = HostNoReentryRuntime::BunStandaloneBuild {
-        version: "1.3.10".to_string(),
-        revision: "a".repeat(40),
-        executable_sha256: "b".repeat(64),
-    };
-    policy
 }
 
 fn split<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
@@ -182,9 +168,10 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "store"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture(split(source, "store").with_host_no_reentry(policy(&[
-        HostNoReentryOperation::AsyncLocalStorageConstruct,
-    ])));
+    let fixture = run_fixture(
+        split(source, "store")
+            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
+    );
     assert_host_call_remains_impure(&fixture, "store");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
 }
@@ -198,8 +185,7 @@ console.log(Boolean(gate), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "gate"), &["host/value", "host/later"], &[]);
     let fixture = run_fixture(
-        split(source, "gate")
-            .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+        split(source, "gate").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert_host_call_remains_impure(&fixture, "gate");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
@@ -215,7 +201,7 @@ const value = new Storage();
 const later = 42;
 console.log(Boolean(value), later);
 "#,
-            HostNoReentryOperation::AsyncLocalStorageConstruct,
+            ReentryFreeOperation::AsyncLocalStorageConstruct,
         ),
         (
             r#"globalThis.saved = () => later;
@@ -223,7 +209,7 @@ const value = Promise.resolve();
 const later = 42;
 console.log(Boolean(value), later);
 "#,
-            HostNoReentryOperation::PromiseResolve,
+            ReentryFreeOperation::PromiseResolve,
         ),
     ] {
         expect_atomic_conflict_rejection(
@@ -231,8 +217,7 @@ console.log(Boolean(value), later);
             &["host/value", "host/later"],
             &[],
         );
-        let policy = build_policy(&[operation]);
-        let fixture = run_fixture(split(source, "value").with_host_no_reentry(policy.clone()));
+        let fixture = run_fixture(split(source, "value").with_host_behavior(policy(&[operation])));
         assert_host_call_remains_impure(&fixture, "value");
         assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
         let graph = fixture.dependency_graph();
@@ -243,7 +228,6 @@ console.log(Boolean(value), later);
             .flat_map(|report| &report.author_host_contract_uses)
             .collect();
         assert_eq!(uses.len(), 1, "only the consumed operation is evidence");
-        assert_eq!(uses[0].runtime, policy.runtime);
         assert_eq!(uses[0].operation, operation);
         assert!(uses[0].source_location.is_some());
     }
@@ -271,9 +255,9 @@ console.log(Boolean(value), later);
 "#,
     ] {
         expect_atomic_conflict_rejection(
-            split(source, "value").with_host_no_reentry(build_policy(&[
-                HostNoReentryOperation::AsyncLocalStorageConstruct,
-                HostNoReentryOperation::PromiseResolve,
+            split(source, "value").with_host_behavior(policy(&[
+                ReentryFreeOperation::AsyncLocalStorageConstruct,
+                ReentryFreeOperation::PromiseResolve,
             ])),
             &["host/value", "host/later"],
             &[],
@@ -282,19 +266,10 @@ console.log(Boolean(value), later);
 }
 
 #[test]
-fn invalid_build_identity_is_rejected_and_unused_policy_is_not_evidence() {
-    let source = "const value = 42; console.log(value);";
-    let mut policy = build_policy(&[HostNoReentryOperation::PromiseResolve]);
-    if let HostNoReentryRuntime::BunStandaloneBuild { revision, .. } = &mut policy.runtime {
-        *revision = "not-a-revision".to_string();
-    }
-    expect_rejection_containing_all(
-        FixtureOpts::new(source, vec![]).with_host_no_reentry(policy),
-        &["bun_standalone_build.revision", "40 hexadecimal characters"],
-    );
+fn unused_operation_assertion_is_not_evidence() {
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_host_no_reentry(build_policy(&[HostNoReentryOperation::PromiseResolve])),
+        FixtureOpts::new("const value = 42; console.log(value);", vec![])
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert!(
         fixture
@@ -333,7 +308,7 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(
-        split(als, "store").with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+        split(als, "store").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
         &["host/value", "host/later"],
         &[],
     );
@@ -343,9 +318,8 @@ const later = 42;
 console.log(Boolean(gate), later);
 "#;
     expect_atomic_conflict_rejection(
-        split(promise, "gate").with_host_no_reentry(policy(&[
-            HostNoReentryOperation::AsyncLocalStorageConstruct,
-        ])),
+        split(promise, "gate")
+            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
         &["host/value", "host/later"],
         &[],
     );
@@ -361,9 +335,8 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(
-        split(source, "store").with_host_no_reentry(policy(&[
-            HostNoReentryOperation::AsyncLocalStorageConstruct,
-        ])),
+        split(source, "store")
+            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
         &["host/value", "host/later"],
         &[],
     );
@@ -412,8 +385,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
     );
 
     expect_atomic_conflict_rejection(
-        promise_reentry_split()
-            .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+        promise_reentry_split().with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
         &["gate", "later"],
         &[],
     );
@@ -424,7 +396,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
                 "static/app",
                 vec![promise_input(PROMISE_REENTRY_SOURCE, "gate")],
             )
-            .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert_host_call_remains_impure(&fixture, "gate");
     assert_preserved_entry_output_with_bun(&fixture, "true LaterError LaterError safe\n");
@@ -496,7 +468,7 @@ fn unselected_promise_resolve_keeps_its_own_reentry_fallback() {
     .with_extra_chunks(REFLECT_CHUNKS)
     .with_extra_files(REFLECT_FILES)
     .with_native_operation_inputs("static/app", vec![promise_input(source, "gate")])
-    .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve]));
+    .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve]));
     let rejected = run_rejection_fixture(opts);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     assert!(
@@ -650,7 +622,7 @@ console.log(Boolean(gate), later);
     ] {
         expect_atomic_conflict_rejection(
             split(source, "gate")
-                .with_host_no_reentry(policy(&[HostNoReentryOperation::PromiseResolve])),
+                .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
             &["host/value", "host/later"],
             &[],
         );

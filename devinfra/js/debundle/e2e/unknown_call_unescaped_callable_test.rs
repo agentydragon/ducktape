@@ -1174,7 +1174,7 @@ export { Reader, reader, Cache, cache, marker, later };
     )
     .with_extra_chunks(&peers)
     .with_unassigned_mode(unassigned_mode_inline());
-    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    fixture.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(fixture);
     assert_module_exports(
         &fixture.out_root,
@@ -1222,7 +1222,7 @@ export { Reader, reader, Cache, cache, marker, later };
     )
     .with_extra_chunks(&peers)
     .with_unassigned_mode(unassigned_mode_inline());
-    fixture.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    fixture.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(fixture), "0 42 42\n");
 }
 
@@ -1246,7 +1246,7 @@ export { Cache, cache, marker, later, observed };
     let mut colocated = FixtureOpts::new(source, vec![])
         .with_extra_chunks(&peers)
         .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -1274,7 +1274,7 @@ export { Cache, cache, marker, later, observed };
     )
     .with_extra_chunks(&peers)
     .with_unassigned_mode(unassigned_mode_inline());
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
 }
 
@@ -1299,7 +1299,7 @@ export { Cache, cache, marker, later, observed };
     let mut colocated = FixtureOpts::new(source, vec![])
         .with_extra_chunks(&peers)
         .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -1328,6 +1328,6 @@ export { Cache, cache, marker, later, observed };
     )
     .with_extra_chunks(&peers)
     .with_unassigned_mode(unassigned_mode_inline());
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
 }

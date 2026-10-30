@@ -143,10 +143,13 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   collects it in a catchall file, or decomposes it into one module per atomic
   group. Policies and generated paths: <SPEC.md#unassigned-source>.
 
-- **Runtime loading:** `execution_runtime: native_browser_esm` declares native
-  browser module loading independently of harness emission; omitted or `generic`
-  retains host-loader fallback. Checked closure and replacement prerequisites:
-  <SPEC.md#runtime-loading-contract>.
+- **Host behavior:** `host_behavior` declares audited host behaviors as
+  explicit keys, never a runtime name: `synchronous_module_loader: none` for
+  native browser module loading (independent of harness emission),
+  `reentry_free_operations` and `reentry_free_builtin_modules` for audited
+  host calls and builtin leaves. Omitted keys stay conservative; the audited
+  executable's identity goes in `note:`. Keys, readers and prerequisites:
+  <SPEC.md#host-behavior>.
 
 - **`comment:`** emits into generated JS; **`note:`** is YAML-only authoring
   metadata: <docs/spec_editing.md> § Comments and notes.

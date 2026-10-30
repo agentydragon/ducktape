@@ -660,8 +660,10 @@ pub fn logical_module_with_anon_comment(
 }
 
 pub struct FixtureOpts<'a> {
-    pub execution_runtime: spec::ExecutionRuntime,
-    pub host_no_reentry: Option<spec::HostNoReentry>,
+    pub host_behavior: spec::HostBehavior,
+    /// Top-level spec keys written verbatim beside the typed spec, for text the
+    /// typed builder cannot express (keys the schema must reject).
+    pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
@@ -743,8 +745,8 @@ impl<'a> FixtureOpts<'a> {
         // [`unassigned_mode_inline`]; tests that exercise per-group modules
         // override with [`unassigned_mode_per_atomic_group`].
         Self {
-            execution_runtime: spec::ExecutionRuntime::default(),
-            host_no_reentry: None,
+            host_behavior: spec::HostBehavior::default(),
+            raw_spec_keys: Vec::new(),
             source,
             logical_modules,
             chunk_renames: None,
@@ -855,8 +857,14 @@ impl<'a> FixtureOpts<'a> {
         self
     }
 
-    pub fn with_host_no_reentry(mut self, policy: spec::HostNoReentry) -> Self {
-        self.host_no_reentry = Some(policy);
+    pub fn with_host_behavior(mut self, host_behavior: spec::HostBehavior) -> Self {
+        self.host_behavior = host_behavior;
+        self
+    }
+
+    /// See [`Self::raw_spec_keys`].
+    pub fn with_raw_spec_key(mut self, key: &'a str, value: serde_json::Value) -> Self {
+        self.raw_spec_keys.push((key, value));
         self
     }
 
@@ -1310,8 +1318,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         .collect();
 
     TransformSpec {
-        execution_runtime: opts.execution_runtime,
-        host_no_reentry: opts.host_no_reentry.clone(),
+        host_behavior: opts.host_behavior.clone(),
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),

@@ -36,7 +36,7 @@ fn split_opts(source: &str) -> FixtureOpts<'_> {
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.dataflow_aware_s_chain = true;
     opts.trusted_dataflow_summaries = true;
     opts.local_property_effects = true;

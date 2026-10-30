@@ -50,7 +50,7 @@ use crate::reports::schema::{
     NativeReceiverPath, NativeWriteSlot, SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
-use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
+use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -7299,15 +7299,7 @@ impl ExecutionIndex {
         construction_proof: &LocalClassConstructionShapes,
         array_spreads: &StableArraySpreadShapes,
     ) -> Self {
-        let host_operations =
-            hints
-                .assumptions
-                .host_no_reentry
-                .as_ref()
-                .map(|policy| match &policy.runtime {
-                    HostNoReentryRuntime::BunStandalone1_3_10
-                    | HostNoReentryRuntime::BunStandaloneBuild { .. } => &policy.operations,
-                });
+        let host_operations = &hints.assumptions.reentry_free_operations;
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
@@ -7341,9 +7333,7 @@ impl ExecutionIndex {
             no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
             retained_record_factories: hints.assumptions.retained_record_factories.clone(),
             no_reentry_statement_calls: hints.assumptions.no_reentry_statement_calls.clone(),
-            host_promise_resolve: host_operations.is_some_and(|operations| {
-                operations.contains(&HostNoReentryOperation::PromiseResolve)
-            }),
+            host_promise_resolve: host_operations.contains(&ReentryFreeOperation::PromiseResolve),
             native_integrity_value_input_refs: hints
                 .native_integrity
                 .as_ref()
@@ -7443,9 +7433,9 @@ impl ExecutionIndex {
             index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
-                let host_async_local_storage = host_operations.is_some_and(|operations| {
-                    operations.contains(&HostNoReentryOperation::AsyncLocalStorageConstruct)
-                }) && !import.type_only
+                let host_async_local_storage = host_operations
+                    .contains(&ReentryFreeOperation::AsyncLocalStorageConstruct)
+                    && !import.type_only
                     && matches!(&import.phase, ImportPhase::Evaluation)
                     && import.with.is_none()
                     && matches!(

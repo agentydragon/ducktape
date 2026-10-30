@@ -571,7 +571,7 @@ unprocessed importer leaves the old import form unchanged. Dynamic imports and
 namespace imports continue to use the original minified export names. Bindings
 without a spec-assigned name are not changed by this cross-chunk pass.
 
-## Runtime loading contract
+## Static-import and host-loader queries
 
 `static-imports` is a read-only query over the original parsed source chunks.
 It reads the authored input list and prepares each chunk once, then follows only
@@ -601,16 +601,70 @@ bounds detailed sites with `--max-interop-sites`. An absent path in the union
 graph excludes only paths through resolved ordinary static requests and these
 direct literal candidates; it does not clear any export-reentry blocker.
 
-Flat and tree specs accept `execution_runtime: generic` (the default) or
-`execution_runtime: native_browser_esm`. The latter declares execution through
-the browser's native ESM loader, with no synchronous host API that can obtain
-the namespace of a module while that module is evaluating. It is independent
-of browser-harness output configuration.
+## Host behavior
 
-The native-browser proof still checks a complete ordinary-ESM static closure,
-absence of top-level await and absence of a cycle back to the selected chunk.
-CommonJS compatibility references alone do not expose that chunk's exports
-through the native loader. Callbacks actually passed or published remain
+`host_behavior` declares what the embedding host does, one assertion per key.
+Flat and tree specs accept it at the top level. An omitted key takes its
+conservative value, so an absent block is a generic host with no audited
+behavior. The spec never names a runtime or version: the identity of the
+executable a behavior was audited against is provenance in `note` and in the
+project's pinning doc, never an engine input.
+
+```yaml
+host_behavior:
+  synchronous_module_loader: present # or none
+  loader_result_for_evaluating_module: unknown # throws | returns_partial_namespace
+  synchronous_load_runs_app_callbacks: unknown # never
+  synchronous_load_drains_microtasks: unknown # never
+  reentry_free_builtin_modules: [path, fs/promises]
+  reentry_free_operations: [async_local_storage_construct, promise_resolve]
+  note: "Audited against <executable identity, revision, digest>"
+```
+
+| Key                                   | Omitted   | Reader                                          |
+| ------------------------------------- | --------- | ----------------------------------------------- |
+| `synchronous_module_loader`           | `present` | Export-reentry proof (below)                    |
+| `loader_result_for_evaluating_module` | `unknown` | None yet; validated and echoed                  |
+| `synchronous_load_runs_app_callbacks` | `unknown` | None yet; validated and echoed                  |
+| `synchronous_load_drains_microtasks`  | `unknown` | None yet; validated and echoed                  |
+| `reentry_free_builtin_modules`        | empty     | Export-reentry static closure (below)           |
+| `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
+| `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
+
+The three loader keys describe a loader, so each requires
+`synchronous_module_loader: present`; giving one with `none` is rejected.
+`unknown` is accepted and asserts nothing. `export_reentry.json` echoes the
+block as read.
+
+CLEANUP(added 2026-10-29): the three loader keys have no analysis reader until
+step 2 of `plans/host_behavior.md` derives the export-reentry policy from
+`loader_result_for_evaluating_module` and `synchronous_load_runs_app_callbacks`.
+Remove a key that step does not read.
+
+Every non-default value is an author assertion about the host. The author
+verifies it against the exact executable recorded in `note`, re-audits on every
+executable change, and checks that the analyzed program runs under that
+executable with its original builtin loader, exports, Promise constructor and
+descriptors. Earlier loaded modules, preloads, plugins, patched binaries and
+host instrumentation must not replace those capabilities or introduce
+synchronous hooks before the affected initializers. The analyzer's local
+mutation guard does not establish that full-program premise, and it neither
+runs nor authenticates the executable. Debugger-initiated evaluation and state
+changes are outside the behavior-equivalence contract; ordinary
+program-accessible hooks and getters remain in scope.
+
+### Synchronous module loader
+
+`synchronous_module_loader: none` declares that no host API can synchronously
+obtain the namespace of a module while that module is evaluating, as under the
+browser's native ESM loader. It is independent of browser-harness output
+configuration. A browser worker can satisfy it while having a custom `window`
+property, so it implies no Window realm.
+
+Without a synchronous loader the export-reentry proof still checks a complete
+ordinary-ESM static closure, absence of top-level await and absence of a cycle
+back to the selected chunk. CommonJS compatibility references alone do not
+expose that chunk's exports. Callbacks actually passed or published remain
 tracked, including callbacks that escape through global or unknown objects.
 
 Vendor replacement may preserve the proof when the original residual edges
@@ -619,7 +673,58 @@ qualifies only when its prepared bundle is an ESM leaf with no static requests
 or top-level await: generated facades lead only to that leaf, while residual
 pruning can delete original edges. Bundles with external requests, raw package
 swaps and full package swaps retain conservative export reentry. Boundary
-renames and suppressed chunks add no dependency edges.
+renames and suppressed chunks add no dependency edges. With a synchronous
+loader present, every CommonJS-interop chunk and every vendor-affected chunk
+blocks the proof.
+
+### Reentry-free operations
+
+`reentry_free_operations` admits two exact zero-argument operations: a direct
+`new` of a named `AsyncLocalStorage` import from the builtin `async_hooks` or
+`node:async_hooks`, and a direct ordinary `Promise.resolve()` call on the
+unshadowed global constructor. The former allows a named import alias (`as M`)
+but not a subsequent local alias; the latter rejects a shadowed, aliased,
+replaced, computed, detached, or optional callee. Both reject arguments and
+spreads. Visible global/`Promise` mutation and dynamic scope disable the
+Promise contract. When opaque in-source receiver effects defeat the
+Promise/global integrity guard, `promise_resolve` must be paired with a
+source-selected `native_operation_inputs` `promise_resolve` assertion for that
+same initializer. This pair admits only the exact call's native identity and
+host timing; it does not repair global integrity or affect other calls. The
+assertions only suppress the opaque synchronous callback-reentry fallback after
+the callee and arguments have evaluated. Purity, ordering, possible throws,
+return shape, later method calls, and module-loader reentry retain their
+ordinary analysis.
+
+The tagged Bun 1.3.10
+[`async_hooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/async_hooks.ts)
+and [`v8.promiseHooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/v8.ts)
+stubs support these operations; [Node's `async_hooks`](https://nodejs.org/api/async_hooks.html)
+can synchronously invoke registered callbacks during Promise creation, so the
+assertion must not migrate to Node or another build without a new audit.
+
+Each successful use appears in the source unit's synchronous report under
+`author_host_contract_uses`, with the exact operation and source location. An
+unused assertion produces no use record. These are static proof uses, not a
+runtime invocation trace. Failed Promise/global integrity guards remain visible
+under `native_integrity_checks` as `host_promise_resolve`. Host assertions
+establish timing only; their provenance must not be presented as an
+unconditional inferred native guarantee.
+
+### Reentry-free builtin modules
+
+`reentry_free_builtin_modules` is independent of `reentry_free_operations`. The
+author asserts that each selected builtin ID's explicitly recognized bare and
+`node:` static-import spellings resolve to the host builtin and cannot
+synchronously reenter an application chunk during module evaluation. Only
+ordinary static ESM requests that the artifact resolver did not resolve may use
+the closed Node builtin list. The export-reentry report records each consumed
+source chunk, specifier, builtin ID, and request count. Unselected names,
+unknown bare packages, and package replacements such as `ws` stay unresolved.
+This leaf rule grants no purity, call safety, return shape, or later callback
+fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and
+cycle blockers retain their normal rules. The closed set is specific to the
+audited host, not a promise about future runtimes or all Node modules.
 
 ## Hoisted function imports
 
@@ -1209,7 +1314,7 @@ schedule allowed by emission. For `promise_resolve`, the author asserts that
 the global Promise data binding and its `resolve` data property retain the
 original native identity throughout those schedules. A Promise input is
 consumed only when the exact selected call also has the independent matching
-`host_no_reentry.operations: [promise_resolve]` assertion; it cannot by itself
+`host_behavior.reentry_free_operations: [promise_resolve]` assertion; it cannot by itself
 admit the host timing contract. A11's external native-identity obligation
 still applies. The input is consumed only at the exact selected call span;
 other native calls retain their ordinary native-integrity checks. Opaque
@@ -1991,98 +2096,6 @@ global root does not publish that root as a value; its possible host or proxy
 effects remain in synchronous effect analysis unless the independent audited
 membership contract below applies. Dynamic keys, aliases, ordinary
 calls, and visible root replacement retain the conservative publication guard.
-
-## Version-scoped host call timing
-
-`host_no_reentry` holds independent author assertions for two exact
-zero-argument operations and, with an exact audited Bun standalone build,
-selected Node builtin static-module leaves. The existing Bun 1.3.10 profile
-certifies only the operations:
-
-```yaml
-host_no_reentry:
-  runtime: bun_standalone_1_3_10
-  operations: [async_local_storage_construct, promise_resolve]
-```
-
-For a separately audited build, record its exact identity instead of reusing a
-different release's profile:
-
-```yaml
-host_no_reentry:
-  runtime:
-    bun_standalone_build:
-      version: "1.4.3"
-      revision: "<40 hexadecimal characters from Bun.revision>"
-      executable_sha256: "<64 hexadecimal characters for the audited executable>"
-  operations: [async_local_storage_construct, promise_resolve]
-  node_builtin_module_leaves: [path, fs/promises]
-```
-
-Replace the identity placeholders with measured values. All three identity
-fields are required; the version must be nonempty and contain no whitespace,
-and the revision and executable digest must have the specified hexadecimal
-lengths. These fields identify the author's audit. The analyzer validates their
-format and retains them as evidence; it does not run or authenticate the host
-executable, infer compatibility from a version, or transfer an audit between
-builds. Keep the runtime/builtin provenance and audit with the spec.
-
-The accepted operations are a direct `new` of a named `AsyncLocalStorage` import
-from Bun's builtin `async_hooks` or `node:async_hooks`, and a direct ordinary
-`Promise.resolve()` call on the unshadowed global constructor. The former
-allows a named import alias (`as M`) but not a subsequent local alias; the
-latter rejects a shadowed, aliased, replaced, computed, detached, or optional
-callee. Both reject arguments and spreads. Visible global/`Promise` mutation
-and dynamic scope disable the Promise contract. When opaque in-source receiver
-effects defeat the Promise/global integrity guard, the Promise timing assertion
-must be paired with a source-selected `native_operation_inputs`
-`promise_resolve` assertion for that same initializer. This pair admits only
-the exact call's native identity and Bun timing; it does not repair global
-integrity or affect other calls. The assertions only suppress the opaque
-synchronous callback-reentry fallback after the callee and arguments have
-evaluated. Purity, ordering, possible throws, return shape, later method calls,
-and module-loader reentry retain their ordinary analysis.
-
-`node_builtin_module_leaves` is separate from `operations` and requires the
-`bun_standalone_build` identity above; the legacy `bun_standalone_1_3_10`
-identity rejects a nonempty leaf set. The author asserts that, for that exact
-Bun executable, each selected builtin ID's explicitly recognized bare and
-`node:` static-import spellings resolve to the host builtin and cannot
-synchronously reenter an application chunk during module evaluation. The
-analyzer does not authenticate the executable or infer this from a version.
-Only ordinary static ESM requests that the artifact resolver did not resolve
-may use the closed Node builtin list. The export-reentry report records the
-exact author runtime identity once, plus each consumed source chunk,
-specifier, builtin ID, and request count. Unselected names, unknown bare
-packages, and Bun package replacements such as `ws` stay unresolved. This
-leaf rule grants no purity, call safety, return shape, or later callback fact;
-CommonJS/application loader, non-ESM, vendor, unsupported-request, and cycle
-blockers retain their normal rules. The closed set is specific to the audited
-host assertion, not a promise about future runtimes or all Node modules.
-Omitting this field keeps generic/Node behavior conservative.
-
-The author must verify that the analyzed program actually runs under the
-specified Bun build with its original builtin loader, exports, Promise
-constructor and descriptors. Earlier loaded modules, preloads, plugins,
-patched binaries, and host instrumentation must not replace those capabilities
-or introduce synchronous hooks before these initializers. The analyzer's
-local mutation guard does not establish that full-program/runtime premise.
-The version string alone is not a binary identity proof. The tagged Bun 1.3.10
-[`async_hooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/async_hooks.ts)
-and [`v8.promiseHooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/v8.ts)
-stubs support this bounded assertion; [Node's `async_hooks`](https://nodejs.org/api/async_hooks.html)
-can synchronously invoke registered callbacks during Promise creation, so the
-assertion must not migrate to Node or another Bun build without a new audit.
-Debugger-initiated evaluation and state changes are outside the behavior-equivalence
-contract; ordinary program-accessible hooks and getters remain in scope.
-
-Each successful use appears in the source unit's synchronous report under
-`author_host_contract_uses`, with the selected runtime, exact operation and
-source location. An unused policy produces no use record. These are static proof
-uses, not a runtime invocation trace. Failed Promise/global integrity guards
-remain visible under `native_integrity_checks` as `host_promise_resolve`. Host
-assertions establish timing only; their provenance must not be presented as an
-unconditional inferred native guarantee.
 
 ## Audited builtin-global membership probes
 

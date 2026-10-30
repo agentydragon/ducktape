@@ -417,7 +417,9 @@ imports only (`lowering/imports/imports_runtime.rs`).
 ## Comments and notes
 
 Module YAMLs, binding annotations, and `anonymous_statements:` entries accept
-optional `comment:` and `note:` strings. `comment:` survives rebuilds and emits
+optional `comment:` and `note:` strings; the config's `host_behavior` block
+accepts `note:` only, for the audited executable's identity (<SPEC.md> § Host
+behavior). `comment:` survives rebuilds and emits
 into generated JS: a module comment at the top of its file, a binding comment
 above its declaring statement, and an anonymous-statement comment above its matched
 statement. An empty comment emits nothing. Claimed declarators of one

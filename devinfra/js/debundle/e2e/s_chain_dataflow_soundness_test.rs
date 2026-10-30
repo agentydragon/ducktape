@@ -76,7 +76,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
@@ -98,7 +98,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
@@ -119,7 +119,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
@@ -141,7 +141,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
@@ -162,7 +162,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "true 42\n");
     let graph = fixture.dependency_graph();
@@ -179,7 +179,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 

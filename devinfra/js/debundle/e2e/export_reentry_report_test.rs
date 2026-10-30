@@ -2,7 +2,6 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 const CHUNK_ID: &str = "static/provider";
@@ -21,44 +20,29 @@ fn has_reason(report: &Value, group: &str, reason: &str, source_chunk: Option<&s
     })
 }
 
-fn builtin_policy(leaves: &[NodeBuiltinModule]) -> HostNoReentry {
-    HostNoReentry {
-        runtime: HostNoReentryRuntime::BunStandaloneBuild {
-            version: "1.3.10".to_string(),
-            revision: "a".repeat(40),
-            executable_sha256: "b".repeat(64),
-        },
-        operations: BTreeSet::new(),
-        node_builtin_module_leaves: leaves.iter().copied().collect(),
+fn builtin_policy(leaves: &[NodeBuiltinModule]) -> HostBehavior {
+    HostBehavior {
+        reentry_free_builtin_modules: leaves.iter().copied().collect(),
+        ..HostBehavior::default()
     }
 }
 
 #[test]
-fn selected_builtin_leaves_are_reported_with_exact_identity_and_source_uses() {
-    let policy = builtin_policy(&[NodeBuiltinModule::Path, NodeBuiltinModule::FsPromises]);
+fn selected_builtin_leaves_are_reported_with_source_uses() {
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { join } from 'path';\nimport { readFile } from 'node:fs/promises';\nexport const value = join('a', 'b');\n",
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
-        .with_host_no_reentry(policy.clone()),
+        .with_host_behavior(builtin_policy(&[
+            NodeBuiltinModule::Path,
+            NodeBuiltinModule::FsPromises,
+        ])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "no_static_importer_reentry");
     assert_eq!(report["closure_blockers"], Value::Array(vec![]));
-    assert_eq!(
-        report["host_builtin_runtime"]["bun_standalone_build"]["version"],
-        "1.3.10"
-    );
-    assert_eq!(
-        report["host_builtin_runtime"]["bun_standalone_build"]["revision"],
-        "a".repeat(40)
-    );
-    assert_eq!(
-        report["host_builtin_runtime"]["bun_standalone_build"]["executable_sha256"],
-        "b".repeat(64)
-    );
     assert_eq!(report["host_builtin_leaves"].as_array().unwrap().len(), 2);
     assert_eq!(report["host_builtin_leaves"][0]["source_chunk"], CHUNK_ID);
     assert_eq!(
@@ -70,7 +54,6 @@ fn selected_builtin_leaves_are_reported_with_exact_identity_and_source_uses() {
     assert_eq!(report["host_builtin_leaves"][1]["specifier"], "path");
     assert_eq!(report["host_builtin_leaves"][1]["builtin"], "path");
     assert_eq!(report["host_builtin_leaves"][1]["request_count"], 1);
-    assert_eq!(policy.operations.len(), 0);
     let graph = fixture.dependency_graph();
     let value = graph
         .nodes
@@ -95,7 +78,7 @@ fn unselected_bare_and_replacement_packages_remain_unresolved() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
-        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+        .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
@@ -118,7 +101,7 @@ fn attributed_builtin_request_remains_unsupported() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
-        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+        .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
@@ -138,30 +121,15 @@ fn attributed_builtin_request_remains_unsupported() {
 }
 
 #[test]
-fn builtin_leaf_requires_exact_identity_and_unused_assertion_is_not_evidence() {
+fn builtin_leaf_set_is_closed_and_unused_assertion_is_not_evidence() {
     assert!(serde_json::from_str::<NodeBuiltinModule>("\"ws\"").is_err());
     assert!(serde_json::from_str::<NodeBuiltinModule>("\"unknown_package\"").is_err());
-    let mut legacy = builtin_policy(&[NodeBuiltinModule::Path]);
-    legacy.runtime = HostNoReentryRuntime::BunStandalone1_3_10;
-    expect_rejection_containing_all(
-        FixtureOpts::new("export const value = 1;", vec![]).with_host_no_reentry(legacy),
-        &["node_builtin_module_leaves", "bun_standalone_build"],
-    );
-    let mut malformed = builtin_policy(&[NodeBuiltinModule::Path]);
-    if let HostNoReentryRuntime::BunStandaloneBuild { revision, .. } = &mut malformed.runtime {
-        *revision = "bad".to_string();
-    }
-    expect_rejection_containing_all(
-        FixtureOpts::new("export const value = 1;", vec![]).with_host_no_reentry(malformed),
-        &["bun_standalone_build.revision", "40 hexadecimal characters"],
-    );
     let fixture = run_fixture(
         FixtureOpts::new("export const value = 1;", vec![])
             .with_chunk_id(CHUNK_ID)
-            .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+            .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
-    assert!(report.get("host_builtin_runtime").is_none());
     assert!(report.get("host_builtin_leaves").is_none());
 }
 
@@ -179,7 +147,7 @@ fn builtin_leaf_does_not_remove_application_require_or_static_cycle_blockers() {
         .with_chunk_id(CHUNK_ID)
         .with_extra_chunks(&extra_chunks)
         .with_admission_overrides(&["a5_import_meta"])
-        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+        .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
     assert_eq!(report["policy"], "conservative");
@@ -210,7 +178,10 @@ fn supported_case_reports_no_static_importer_reentry() {
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
     assert_eq!(report["policy"], "no_static_importer_reentry");
-    assert_eq!(report["execution_runtime"], "generic");
+    assert_eq!(
+        report["host_behavior"]["synchronous_module_loader"],
+        "present"
+    );
     assert_eq!(report["global_blockers"], Value::Array(vec![]));
     assert_eq!(report["closure_blockers"], Value::Array(vec![]));
 }

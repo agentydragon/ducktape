@@ -24,7 +24,7 @@ export { Derived, later };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -35,7 +35,7 @@ export { Derived, later };
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/core", "values/later"], &[]);
 }
 
@@ -78,7 +78,7 @@ export { box, later };
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_extra_chunks(&peer);
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -100,7 +100,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
 }
 
@@ -141,7 +141,7 @@ export { box, later };
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_extra_chunks(&peer);
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -157,7 +157,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
 }
 
@@ -196,7 +196,7 @@ export { box, later };
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_extra_chunks(&peer);
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -213,7 +213,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
 }
 
@@ -252,7 +252,7 @@ export { value, later };
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_extra_chunks(&peer);
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -271,7 +271,7 @@ export { value, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/construct", "values/later"], &[]);
 }
 
@@ -304,7 +304,7 @@ export { box, later };
     )
     .with_extra_chunks(&peer)
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
 
     let mut split = FixtureOpts::new(
@@ -318,7 +318,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(split);
     assert_preserved_entry_output(&fixture, "1 42\n");
     assert_all_emitted_js_checks(&fixture);
@@ -351,7 +351,7 @@ export { later };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -366,7 +366,7 @@ export { later };
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/derived", "values/later"], &[]);
 }
 
@@ -395,7 +395,7 @@ export { box, later };
     )
     .with_extra_chunks(&peer)
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
 
     let mut split = FixtureOpts::new(
@@ -407,7 +407,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(split);
     assert_preserved_entry_output(&fixture, "1 42\n");
     assert_all_emitted_js_checks(&fixture);
@@ -451,7 +451,7 @@ export { box, later };
     )
     .with_extra_chunks(&peer)
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -467,7 +467,7 @@ export { box, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
 }
 
@@ -508,7 +508,7 @@ export { box, command, later };
     )
     .with_extra_chunks(&peer)
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
 
     let mut split = FixtureOpts::new(
@@ -531,7 +531,7 @@ export { box, command, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(split);
     assert_preserved_entry_output(&fixture, "1 42\n");
     assert_all_emitted_js_checks(&fixture);
@@ -576,7 +576,7 @@ export { box, command, later };
     )
     .with_extra_chunks(&peer)
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -599,7 +599,7 @@ export { box, command, later };
         ],
     )
     .with_extra_chunks(&peer);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["runtime/call", "values/late"], &[]);
 }
 

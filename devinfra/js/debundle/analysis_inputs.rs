@@ -520,8 +520,9 @@ pub struct AnalysisAssumptions {
     /// `Sequenced` edges between each pair and rejects a pair the facts
     /// contradict (SPEC.md § Commuting statements).
     pub commuting_statements: Vec<ResolvedCommutingStatements>,
-    /// Version-scoped author assertion for exact host operations.
-    pub host_no_reentry: Option<spec::HostNoReentry>,
+    /// Host operations the author audited as unable to run application code
+    /// synchronously (`host_behavior.reentry_free_operations`).
+    pub reentry_free_operations: BTreeSet<spec::ReentryFreeOperation>,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,

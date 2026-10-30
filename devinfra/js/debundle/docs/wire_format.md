@@ -64,9 +64,11 @@ joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
 ### Export-reentry diagnostics
 
 `export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
-Its `execution_runtime` records the declared loading contract (`generic` or
-`native_browser_esm`), and `policy` is `conservative` or
-`no_static_importer_reentry`. The typed
+Its `host_behavior` echoes the spec's typed block as read (SPEC.md § Host
+behavior; omitted keys absent, `synchronous_module_loader` always present),
+and `policy` is `conservative` or `no_static_importer_reentry`.
+`host_builtin_leaves`, when nonempty, lists each consumed
+`reentry_free_builtin_modules` request. The typed
 `global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
 references are canonical chunk IDs; static-request entries carry the source
 chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
@@ -77,7 +79,7 @@ never relaxes the proof.
 
 ```json
 {
-  "execution_runtime": "generic",
+  "host_behavior": { "synchronous_module_loader": "present" },
   "policy": "conservative",
   "global_blockers": [{ "reason": "common_js_interop", "source_chunk": "static/provider" }],
   "closure_blockers": [

@@ -38,7 +38,7 @@ struct AuthoringConfig {
     module_roots: BTreeMap<PathBuf, String>,
     inputs: AuthoringInputs,
     #[serde(default)]
-    execution_runtime: spec::ExecutionRuntime,
+    host_behavior: spec::HostBehavior,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
     /// browser-harness emit step entirely.
@@ -67,8 +67,6 @@ struct AuthoringConfig {
     /// `TransformSpec::chunk_export_purity`.
     #[serde(default)]
     chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
-    #[serde(default)]
-    host_no_reentry: Option<spec::HostNoReentry>,
 }
 
 /// The authored YAML subtrees that belong to one graph chunk. A graph-backed
@@ -248,7 +246,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         .collect();
 
     Ok(TransformSpec {
-        execution_runtime: config.execution_runtime,
+        host_behavior: config.host_behavior,
         inputs: LoadJsChunksArgs {
             input_root: input_root.clone(),
             js_list_path,
@@ -262,7 +260,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         unassigned_mode: config.unassigned_mode,
         chunk_analysis_options: config.chunk_analysis_options,
         chunk_export_purity: config.chunk_export_purity,
-        host_no_reentry: config.host_no_reentry,
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_swaps_report()),
             output_wrapper_dir: Some(layout.app_root().join("vendors/generated")),

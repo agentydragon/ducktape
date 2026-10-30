@@ -15,7 +15,7 @@ fn probe_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
             logical_module("state/value", &[Member::new("read"), Member::new("later")]),
         ],
     );
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.extra_files = &[
         (
             "static/app/prelude.js",
@@ -163,7 +163,7 @@ fn descendant_write_calls_keep_ordinary_callback_reads() {
         source,
         vec![logical_module_with_anon("all", &members, &statements)],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     colocated.non_reentrant_global_membership = &[("globalThis", "feature")];
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
@@ -186,7 +186,7 @@ fn descendant_write_calls_keep_ordinary_callback_reads() {
             ),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.non_reentrant_global_membership = &[("globalThis", "feature")];
     expect_atomic_conflict_rejection(split, &["startup/probe", "state/value"], &[]);
 }
@@ -229,7 +229,7 @@ fn assert_conservative_probe(
             &all_statements,
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     colocated.non_reentrant_global_membership = &assertions;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, expected);
@@ -243,7 +243,7 @@ fn assert_conservative_probe(
             logical_module_with_anon("state/value", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.non_reentrant_global_membership = &assertions;
     expect_atomic_conflict_rejection(split, &["startup/probe", "state/value"], &[]);
 }

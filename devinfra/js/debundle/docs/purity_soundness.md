@@ -385,7 +385,7 @@ This input does not mint `NativeCallIdentity` or native-integrity facts. It
 consumes the existing exact native model only at the selected call span, and
 its report records the author provenance at that site. A `promise_resolve`
 input is effective only together with the matching independent
-`host_no_reentry` operation; the pair satisfies the exact Promise timing check
+`host_behavior.reentry_free_operations` entry; the pair satisfies the exact Promise timing check
 without changing other native guards or Promise call sites. Other calls still
 require the ordinary shared integrity proof. For `symbol` and `symbol_for`,
 primitive argument evaluation and conversion may throw; a Symbol-valued or

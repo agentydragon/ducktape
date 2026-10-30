@@ -220,7 +220,6 @@ impl RecordFactoryPrototypePremises {
 }
 
 pub(super) struct ExecutionInputs<'source> {
-    host_runtime: Option<&'source spec::HostNoReentryRuntime>,
     index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
     facts: &'source [StatementFacts],
@@ -275,7 +274,7 @@ pub(super) struct ExecutionState {
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
     uncertain_native_execution: bool,
-    author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
+    author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
     native_operation_input_uses:
         RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
@@ -1105,9 +1104,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let Some(runtime) = self.inputs.host_runtime else {
-            return false;
-        };
+        // Both arms below hold only when the index saw the matching
+        // `reentry_free_operations` entry; an unaudited host selects neither.
         let operation = match (call.kind, &call.callee) {
             (CallKind::New, ValueExpr::Binding(binding))
                 if self
@@ -1116,7 +1114,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .host_async_local_storage_imports
                     .contains(binding) =>
             {
-                spec::HostNoReentryOperation::AsyncLocalStorageConstruct
+                spec::ReentryFreeOperation::AsyncLocalStorageConstruct
             }
             (CallKind::Call, ValueExpr::Member(receiver, Some(member), true))
                 if call.no_reentry_candidate && member == "resolve" =>
@@ -1158,12 +1156,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         },
                     );
                 }
-                spec::HostNoReentryOperation::PromiseResolve
+                spec::ReentryFreeOperation::PromiseResolve
             }
             _ => return false,
         };
-        let proof_use = crate::reports::schema::HostNoReentryUse {
-            runtime: runtime.clone(),
+        let proof_use = crate::reports::schema::ReentryFreeOperationUse {
             operation,
             source_location: None,
             span: call.span,
@@ -7125,11 +7122,6 @@ pub(crate) fn annotate_synchronous_calls(
     }
     let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let inputs = ExecutionInputs {
-        host_runtime: hints
-            .assumptions
-            .host_no_reentry
-            .as_ref()
-            .map(|policy| &policy.runtime),
         index: &index,
         graph: proofs.graph,
         facts,

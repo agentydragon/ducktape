@@ -53,17 +53,6 @@ policy derivation reads `synchronous_load_runs_app_callbacks`;
 
 ## Steps
 
-### 1. Schema and migration, no behavior change
-
-Add `host_behavior` to flat and tree specs. Migrate `execution_runtime` and
-`host_no_reentry` into it: `native_browser_esm` → `synchronous_module_loader:
-none`; `host_no_reentry.operations` → `reentry_free_operations`;
-`host_no_reentry.node_builtin_module_leaves` → `reentry_free_builtin_modules`;
-the `runtime` identity block → `note`. Update both private specs in the same
-coordinated change; a tombstone keeps the old keys readable only while an older
-pin must still load them. SPEC.md § Runtime loading contract and § Version-
-scoped host call timing become one § Host behavior.
-
 ### 2. Derive the policy
 
 `ExportReentryPolicy` becomes a derived per-chunk fact: `NoStaticImporterReentry`

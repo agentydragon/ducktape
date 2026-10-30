@@ -30,11 +30,11 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct TransformSpec {
     pub inputs: LoadJsChunksArgs,
-    /// Loading contract used by the export-reentry proof. Native browser ESM
-    /// has no synchronous host API for obtaining an evaluating module namespace.
-    /// This is independent of whether a browser harness is emitted.
+    /// Declared behaviors of the embedding host (SPEC.md § Host behavior).
+    /// Omitted keys take their conservative value, so an absent block is the
+    /// generic host with no audited behavior.
     #[serde(default)]
-    pub execution_runtime: ExecutionRuntime,
+    pub host_behavior: HostBehavior,
 
     // --- declarative data sections ---
     #[serde(default)]
@@ -83,10 +83,6 @@ pub struct TransformSpec {
     /// can produce a buggy debundle; soundness shifts to the spec author.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
-    /// Version-scoped author assertions about exact host call timing and
-    /// separately selected builtin static-module leaves. Neither grants purity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host_no_reentry: Option<HostNoReentry>,
 
     // --- per-stage configuration ---
     /// Output configuration for vendor swap emission outputs (wrappers,
@@ -112,45 +108,82 @@ pub struct TransformSpec {
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Author-declared behaviors of the embedding host. Each key is one assertion
+/// with one engine reader; an omitted key takes its conservative value. The
+/// identity of the executable a behavior was audited against is provenance in
+/// `note` and the project's pinning doc, never an engine input.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct HostNoReentry {
-    #[serde(with = "serde_yaml::with::singleton_map")]
-    pub runtime: HostNoReentryRuntime,
+pub struct HostBehavior {
     #[serde(default)]
-    pub operations: BTreeSet<HostNoReentryOperation>,
+    pub synchronous_module_loader: SynchronousModuleLoader,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loader_result_for_evaluating_module: Option<LoaderResultForEvaluatingModule>,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_load_runs_app_callbacks: Option<SynchronousLoadRunsAppCallbacks>,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_load_drains_microtasks: Option<SynchronousLoadDrainsMicrotasks>,
     /// Closed Node builtin IDs whose bare and `node:` static import spellings
-    /// the author audited for resolver identity and no synchronous app reentry
-    /// in this exact Bun executable. Independent of `operations`.
+    /// the author audited for resolver identity and no synchronous application
+    /// reentry during module evaluation. Independent of `reentry_free_operations`.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub node_builtin_module_leaves: BTreeSet<NodeBuiltinModule>,
+    pub reentry_free_builtin_modules: BTreeSet<NodeBuiltinModule>,
+    /// Exact zero-argument host operations the author audited as unable to run
+    /// application code synchronously. Grants timing only, never purity.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_operations: BTreeSet<ReentryFreeOperation>,
+    /// Audit provenance (executable identity, revision, digest). YAML-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum HostNoReentryRuntime {
-    #[serde(rename = "bun_standalone_1_3_10")]
-    BunStandalone1_3_10,
-    /// Author-audited identity of the executable that supplies the host APIs.
-    /// The analyzer records this identity; it does not execute or authenticate it.
-    BunStandaloneBuild {
-        version: String,
-        revision: String,
-        executable_sha256: String,
-    },
+/// Whether any host API can synchronously obtain a module namespace while that
+/// module is evaluating. `none` is what native browser ESM provides.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousModuleLoader {
+    None,
+    #[default]
+    Present,
 }
 
-/// Exact zero-argument operations audited for the versioned host above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoaderResultForEvaluatingModule {
+    Throws,
+    ReturnsPartialNamespace,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousLoadRunsAppCallbacks {
+    Never,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousLoadDrainsMicrotasks {
+    Never,
+    Unknown,
+}
+
+/// Exact zero-argument host operations recognized by the synchronous-effect
+/// interpreter (SPEC.md § Host behavior).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HostNoReentryOperation {
+pub enum ReentryFreeOperation {
     AsyncLocalStorageConstruct,
     PromiseResolve,
 }
 
-/// Exact Node builtin module identities admitted by the host-leaf assertion.
-/// Unknown bare packages and Bun package replacements (including `ws`) are
-/// intentionally absent.
+/// Exact Node builtin module identities admissible in
+/// `reentry_free_builtin_modules`. Unknown bare packages and Bun package
+/// replacements (including `ws`) are intentionally absent.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeBuiltinModule {
@@ -252,17 +285,6 @@ impl TransformSpec {
             .cloned()
             .collect()
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionRuntime {
-    /// The embedding host may expose a synchronous module loader.
-    #[default]
-    Generic,
-    /// Modules execute through the browser's native ESM loader. Host code
-    /// cannot synchronously load the namespace of an evaluating module.
-    NativeBrowserEsm,
 }
 
 /// Author-asserted contracts for one defining chunk's exports. See

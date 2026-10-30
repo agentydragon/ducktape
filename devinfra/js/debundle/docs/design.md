@@ -159,7 +159,7 @@ iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.
 The exact `Promise.resolve()` initializer premise requires stable global
 `Promise` and constructor `resolve` slots in the shared source census. Its
-independent `host_no_reentry` assertion supplies timing; neither assertion
+independent `host_behavior.reentry_free_operations` assertion supplies timing; neither assertion
 supplies purity or return shape.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
@@ -229,9 +229,9 @@ check lives, and the fallback path.
 
 ### Native browser loading and vendor replacement
 
-`execution_runtime: native_browser_esm` declares native browser ESM loading;
-the default `generic` contract permits synchronous host loaders. In the native
-browser contract, a static importer outside a cycle cannot execute before its
+`host_behavior.synchronous_module_loader: none` declares native browser ESM
+loading; the default `present` permits synchronous host loaders. Without a
+synchronous loader, a static importer outside a cycle cannot execute before its
 provider completes, and dynamic import resolves asynchronously. An opaque
 startup call therefore cannot obtain the provider's namespace merely because
 the provider exports a hoisted callback. This does not suppress callbacks

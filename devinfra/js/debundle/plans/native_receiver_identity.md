@@ -57,7 +57,8 @@ alias, receiver and lifetime audit plus recognized-contradiction checks.
 
 ## Separate host capability
 
-`native_browser_esm` promises loader namespace timing. A browser worker can
+`host_behavior.synchronous_module_loader: none` promises loader namespace
+timing. A browser worker can
 satisfy it while having a custom `window` property, so it cannot silently imply
 a Window realm.
 

@@ -561,7 +561,7 @@ pub struct SynchronousExecutionReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub author_host_contract_uses: Vec<HostNoReentryUse>,
+    pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
 }
 
 /// One exact call site that consumed a native-operation author premise.
@@ -585,11 +585,11 @@ pub struct LocalRecordFactoryUse {
     pub(crate) span: swc_common::Span,
 }
 
-/// A successful timing refinement that depends on an author host assertion.
+/// A successful timing refinement that consumed a `reentry_free_operations`
+/// entry (SPEC.md § Host behavior).
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HostNoReentryUse {
-    pub runtime: spec::HostNoReentryRuntime,
-    pub operation: spec::HostNoReentryOperation,
+pub struct ReentryFreeOperationUse {
+    pub operation: spec::ReentryFreeOperation,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
     pub(crate) span: swc_common::Span,

@@ -426,13 +426,12 @@ fn run_prepared_transform(
         let materialize_result = materialize_logical_modules(
             source_program.into_artifact(),
             MaterializeSpecInputs {
-                execution_runtime: spec.execution_runtime,
+                host_behavior: &spec.host_behavior,
                 logical_modules: &spec.logical_modules,
                 chunk_renames: &spec.chunk_renames,
                 unassigned_mode: &spec.unassigned_mode,
                 chunk_analysis_options: &spec.chunk_analysis_options,
                 chunk_export_purity: &spec.chunk_export_purity,
-                host_no_reentry: spec.host_no_reentry.as_ref(),
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
@@ -746,38 +745,27 @@ pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<Transf
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
-    if let Some(spec::HostNoReentry {
-        runtime: spec::HostNoReentryRuntime::BunStandalone1_3_10,
-        node_builtin_module_leaves,
-        ..
-    }) = &spec.host_no_reentry
-    {
-        anyhow::ensure!(
-            node_builtin_module_leaves.is_empty(),
-            "host_no_reentry.node_builtin_module_leaves requires an exact bun_standalone_build identity"
-        );
-    }
-    if let Some(spec::HostNoReentry {
-        runtime:
-            spec::HostNoReentryRuntime::BunStandaloneBuild {
-                version,
-                revision,
-                executable_sha256,
-            },
-        ..
-    }) = &spec.host_no_reentry
-    {
-        anyhow::ensure!(
-            !version.is_empty() && !version.chars().any(char::is_whitespace),
-            "host_no_reentry.runtime.bun_standalone_build.version must name the audited Bun version"
-        );
-        for (field, digest, length) in [
-            ("revision", revision, 40),
-            ("executable_sha256", executable_sha256, 64),
+    // A loader behavior is a claim about a loader; without one it is a
+    // contradiction, not a no-op (STYLE.md § Configuration consistency).
+    if spec.host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
+        let host_behavior = &spec.host_behavior;
+        for (key, given) in [
+            (
+                "loader_result_for_evaluating_module",
+                host_behavior.loader_result_for_evaluating_module.is_some(),
+            ),
+            (
+                "synchronous_load_runs_app_callbacks",
+                host_behavior.synchronous_load_runs_app_callbacks.is_some(),
+            ),
+            (
+                "synchronous_load_drains_microtasks",
+                host_behavior.synchronous_load_drains_microtasks.is_some(),
+            ),
         ] {
             anyhow::ensure!(
-                digest.len() == length && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
-                "host_no_reentry.runtime.bun_standalone_build.{field} must contain {length} hexadecimal characters"
+                !given,
+                "host_behavior.{key} requires host_behavior.synchronous_module_loader: present"
             );
         }
     }
@@ -1258,7 +1246,7 @@ mod tests {
 
     fn empty_transform_spec() -> TransformSpec {
         TransformSpec {
-            execution_runtime: spec::ExecutionRuntime::default(),
+            host_behavior: spec::HostBehavior::default(),
             inputs: spec::LoadJsChunksArgs {
                 input_root: PathBuf::from("."),
                 js_list_path: PathBuf::from("js-files.txt"),
@@ -1269,7 +1257,6 @@ mod tests {
             unassigned_mode: BTreeMap::new(),
             chunk_analysis_options: BTreeMap::new(),
             chunk_export_purity: BTreeMap::new(),
-            host_no_reentry: None,
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: spec::MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,

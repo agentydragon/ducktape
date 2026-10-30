@@ -133,14 +133,11 @@ pub struct RequestedLogicalModule {
 /// The policy remains conservative whenever either blocker list is non-empty.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportReentryReport {
-    pub execution_runtime: spec::ExecutionRuntime,
+    /// The declared host behavior the policy was derived under, echoed as read.
+    pub host_behavior: spec::HostBehavior,
     pub policy: ExportReentryPolicy,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
     pub closure_blockers: Vec<ExportReentryClosureBlocker>,
-    /// Exact author-audited executable identity, present only when a selected
-    /// host builtin leaf was consumed in this target's static closure.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub host_builtin_runtime: Option<spec::HostNoReentryRuntime>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
 }
@@ -157,12 +154,6 @@ pub struct ExportReentryHostBuiltinLeaf {
 struct ExportReentryClosureInspection {
     blockers: Vec<ExportReentryClosureBlocker>,
     host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
-}
-
-#[derive(Clone, Copy)]
-struct ExportReentryRuntimeContext<'a> {
-    execution_runtime: spec::ExecutionRuntime,
-    host_no_reentry: Option<&'a spec::HostNoReentry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -291,13 +282,12 @@ pub struct MaterializeLogicalModulesOptions {
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
 /// chunk id.
 pub struct MaterializeSpecInputs<'a> {
-    pub execution_runtime: spec::ExecutionRuntime,
+    pub host_behavior: &'a spec::HostBehavior,
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
-    pub host_no_reentry: Option<&'a spec::HostNoReentry>,
 }
 
 pub fn materialize_logical_modules(
@@ -307,13 +297,12 @@ pub fn materialize_logical_modules(
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     let MaterializeSpecInputs {
-        execution_runtime,
+        host_behavior,
         logical_modules,
         chunk_renames,
         unassigned_mode,
         chunk_analysis_options,
         chunk_export_purity,
-        host_no_reentry,
     } = spec_inputs;
     if options.chunk_ids.is_empty() {
         bail!("materialize_logical_modules requires at least one chunk_id");
@@ -344,10 +333,7 @@ pub fn materialize_logical_modules(
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
-        ExportReentryRuntimeContext {
-            execution_runtime,
-            host_no_reentry,
-        },
+        host_behavior,
         vendor_plan,
         &vendor_affected_chunk_ids,
         &selected_chunk_ids,
@@ -416,7 +402,7 @@ pub fn materialize_logical_modules(
                                 chunk_renames,
                                 unassigned_mode,
                                 chunk_analysis_options,
-                                host_no_reentry,
+                                host_behavior,
                             },
                         })
                     })
@@ -527,16 +513,17 @@ pub fn materialize_logical_modules(
 fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    runtime_context: ExportReentryRuntimeContext<'_>,
+    host_behavior: &spec::HostBehavior,
     vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
-    let ExportReentryRuntimeContext {
-        execution_runtime,
-        host_no_reentry,
-    } = runtime_context;
+    // A synchronous host loader can hand CommonJS interop the namespace of a
+    // module that is still evaluating; without one, interop alone exposes
+    // nothing.
+    let loader_present =
+        host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::Present;
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
     let mut global_blockers = Vec::new();
@@ -549,7 +536,7 @@ fn export_reentry_reports(
     for chunk in &artifact.chunks {
         let source_chunk = artifact.chunk_table.name(chunk.chunk_id).to_string();
         let runtime = &chunk.analysis.runtime_facts;
-        if runtime.has_cjs_interop && execution_runtime == spec::ExecutionRuntime::Generic {
+        if runtime.has_cjs_interop && loader_present {
             global_blockers.push(ExportReentryGlobalBlocker::CommonJsInterop {
                 source_chunk: source_chunk.clone(),
             });
@@ -584,7 +571,7 @@ fn export_reentry_reports(
                 target,
                 artifact,
                 indexes,
-                runtime_context,
+                host_behavior,
                 vendor_plan,
                 vendor_affected_chunk_ids,
             )?
@@ -596,24 +583,13 @@ fn export_reentry_reports(
         } else {
             ExportReentryPolicy::Conservative
         };
-        let host_builtin_runtime = if closure.host_builtin_leaves.is_empty() {
-            None
-        } else {
-            Some(
-                host_no_reentry
-                    .expect("consumed builtin leaves require an author host assertion")
-                    .runtime
-                    .clone(),
-            )
-        };
         reports.insert(
             target,
             ExportReentryReport {
-                execution_runtime,
+                host_behavior: host_behavior.clone(),
                 policy,
                 global_blockers: global_blockers.clone(),
                 closure_blockers: closure.blockers,
-                host_builtin_runtime,
                 host_builtin_leaves: closure.host_builtin_leaves,
             },
         );
@@ -625,14 +601,12 @@ fn collect_closure_blockers(
     target: ChunkId,
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    runtime_context: ExportReentryRuntimeContext<'_>,
+    host_behavior: &spec::HostBehavior,
     vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<ExportReentryClosureInspection> {
-    let ExportReentryRuntimeContext {
-        execution_runtime,
-        host_no_reentry,
-    } = runtime_context;
+    let loader_present =
+        host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::Present;
     // Follow resolved static requests even when another blocker is present,
     // so the report exposes independent predicates and structural cycles.
     let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
@@ -655,14 +629,13 @@ fn collect_closure_blockers(
                 source_chunk: source_name.clone(),
             });
         }
-        if runtime.has_cjs_interop && execution_runtime == spec::ExecutionRuntime::Generic {
+        if runtime.has_cjs_interop && loader_present {
             blockers.push(ExportReentryClosureBlocker::CommonJsInterop {
                 source_chunk: source_name.clone(),
             });
         }
         if vendor_affected_chunk_ids.contains(&source)
-            && (execution_runtime == spec::ExecutionRuntime::Generic
-                || !vendor_plan.preserves_static_import_closure(source))
+            && (loader_present || !vendor_plan.preserves_static_import_closure(source))
         {
             blockers.push(ExportReentryClosureBlocker::VendorAffectedChunk {
                 source_chunk: source_name.clone(),
@@ -690,7 +663,7 @@ fn collect_closure_blockers(
             ) else {
                 if request.mode == StaticModuleRequestMode::OrdinaryEsm
                     && let Some(builtin) =
-                        selected_host_builtin_leaf(&request.specifier, host_no_reentry)
+                        selected_host_builtin_leaf(&request.specifier, host_behavior)
                 {
                     *host_builtin_leaf_counts
                         .entry((source_name.clone(), request.specifier.clone(), builtin))
@@ -786,18 +759,11 @@ fn collect_closure_blockers(
 
 fn selected_host_builtin_leaf(
     specifier: &str,
-    host_no_reentry: Option<&spec::HostNoReentry>,
+    host_behavior: &spec::HostBehavior,
 ) -> Option<spec::NodeBuiltinModule> {
-    let assertion = host_no_reentry?;
-    if !matches!(
-        &assertion.runtime,
-        spec::HostNoReentryRuntime::BunStandaloneBuild { .. }
-    ) {
-        return None;
-    }
     let builtin = spec::NodeBuiltinModule::from_static_specifier(specifier)?;
-    assertion
-        .node_builtin_module_leaves
+    host_behavior
+        .reentry_free_builtin_modules
         .contains(&builtin)
         .then_some(builtin)
 }
