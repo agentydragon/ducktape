@@ -19,7 +19,9 @@ incarnation Pod UID and claimed epoch. For a VM, the incarnation UID is the virt
 The runner adopts that incarnation before publishing its boot ID and facts, then sends snapshots
 on changes and periodically. The Gateway publishes validated facts and the boot ID to the Lease
 and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
-not a connected runner. Other replicas wait for the owner's Lease to expire before taking over.
+not a connected runner. Other replicas wait for the owner's Lease to expire before taking over:
+one Lease duration after they first saw its latest renewal, on their own clock, as client-go
+`leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait.
 The owning Gateway retries a lost observation after one second, independently of Sandbox discovery.
 Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
 periodic heartbeats still publish unchanged facts.
