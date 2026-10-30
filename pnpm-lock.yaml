@@ -101,6 +101,9 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      dockview-react:
+        specifier: ^8.3.1
+        version: 8.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       dompurify:
         specifier: ^3.4.15
         version: 3.4.15
@@ -2117,6 +2120,18 @@ packages:
   diff@9.0.0:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
     engines: {node: '>=0.3.1'}
+
+  dockview-core@8.5.1:
+    resolution: {integrity: sha512-lUNJj4uvE36ks59pMeLeinzvVr0EVkGiA/c1kuUdR2V49CAIGx+bhiu0FuZNh8iqcggu/5h1v1U0KC0JrUuPSw==}
+
+  dockview-react@8.5.1:
+    resolution: {integrity: sha512-xWDfQ+yOvkBwDhpJCsSVs+PBQh5+CZRN4lWD6VL9xV1Syi2LPM8cy/u2qnmvhEEvDmg0kx1NLpi/bq3lKV5lKQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  dockview@8.5.1:
+    resolution: {integrity: sha512-ThlNLXBHP1TBMlsAXTWvoJl17nPYVO8WTtUMyoGf15K6DBCRnoKPzIcISlWben9XBx99txUfSjkVBZ9szGA9iQ==}
 
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
@@ -6031,6 +6046,18 @@ snapshots:
   detect-node-es@1.1.0: {}
 
   diff@9.0.0: {}
+
+  dockview-core@8.5.1: {}
+
+  dockview-react@8.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+    dependencies:
+      dockview: 8.5.1
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+
+  dockview@8.5.1:
+    dependencies:
+      dockview-core: 8.5.1
 
   doctrine@2.1.0:
     dependencies:
