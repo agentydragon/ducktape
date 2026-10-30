@@ -6,11 +6,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/observability",
+        "//agentplane/grpc/bearer",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/sandboxes/api",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
     ],
 )
@@ -20,8 +18,10 @@ go_test(
     srcs = ["client_test.go"],
     embed = [":runnerclient"],
     deps = [
+        "//agentplane/proto:runner_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/sandboxes/api",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],
 )

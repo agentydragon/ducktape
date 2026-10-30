@@ -1934,7 +1934,6 @@ flowchart LR
     LEASE_OBSERVED_TIME[Candidate: Lease expiry by locally observed time]
     SAMPLER_TYPED_STATE[Candidate: typed sampler states]
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
-    RUNNERCLIENT_PER_RPC_CREDENTIALS[Candidate: runnerclient reuses bearer credentials]
     RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
@@ -1959,7 +1958,7 @@ Each candidate is one independently finishable PR; see the plan section of the s
 `APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `CONDITION_REASONS_NOT_STATE`,
 `GATEWAY_OBSERVER_RECONCILER`, `HISTORY_FOLD_DIRTY_QUEUE`, `SAMPLER_EXPORTER_WORKQUEUE`,
 `POSTGRES_LEASE_HELPER`, `LEASE_OBSERVED_TIME`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
-`RUNNERCLIENT_PER_RPC_CREDENTIALS`, `RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`.
+`RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`.
 `CONDITION_REASONS_NOT_STATE` needs the roll-safe order in its plan section;
 `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
 
