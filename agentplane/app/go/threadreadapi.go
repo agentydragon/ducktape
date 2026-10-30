@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
+	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -786,6 +787,10 @@ func parseHistoryCursor(value *string) (*uint64, error) {
 }
 
 func threadReadHTTPError(err error) error {
+	return httperror.LogServerError(classifyThreadReadError(err), err)
+}
+
+func classifyThreadReadError(err error) error {
 	switch {
 	case errors.Is(err, historydata.ErrScopeChanged):
 		return huma.Error410Gone("the thread fold projection epoch has changed")

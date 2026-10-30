@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "httperror",
+    srcs = ["httperror.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/httperror",
+    visibility = ["//agentplane/app/go:__subpackages__"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
+)
+
+go_test(
+    name = "httperror_test",
+    srcs = ["httperror_test.go"],
+    embed = [":httperror"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
+)

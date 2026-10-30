@@ -33,6 +33,7 @@ go_library(
         "//agentplane/app/go/historyclient",
         "//agentplane/app/go/historydata",
         "//agentplane/app/go/historywatch",
+        "//agentplane/app/go/httperror",
         "//agentplane/app/go/liveinventory",
         "//agentplane/app/go/policyaccess",
         "//agentplane/app/go/proxy",

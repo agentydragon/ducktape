@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -90,7 +91,7 @@ func RegisterSessionRoutes(
 		}
 		spec.Cwd = replaceSessionID(spec.GetCwd(), body.SessionID.String())
 		if err := store.OpenThread(ctx, body.SessionID); err != nil {
-			return nil, huma.Error503ServiceUnavailable("Thread metadata is unavailable")
+			return nil, httperror.LogServerError(huma.Error503ServiceUnavailable("Thread metadata is unavailable"), err)
 		}
 		opening, err := bridge.OpenSession(ctx, input.Name, body.SessionID, spec, setupScript)
 		if err != nil {
