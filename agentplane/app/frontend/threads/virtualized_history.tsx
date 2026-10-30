@@ -8,6 +8,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -18,6 +19,7 @@ import { HistoryRowView } from "./history_row_views";
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { LayoutSettle, markThreadViewEvent, type FollowReason } from "./thread_view_timing";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
+import { scrollCapture, type ScrollLayout } from "./scroll_diagnostics";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 
 type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
@@ -72,6 +74,15 @@ export function VirtualizedHistory({
       rowCount: rows.length,
     });
   }, [history.loadingOlder, history.olderAvailable, rows.length]);
+  const viewId = useId();
+  const writeScroll = useCallback(
+    (reason: string, write: () => void) => {
+      scrollCapture.snapshotView("scroll-before", viewId, reason);
+      write();
+      scrollCapture.snapshotView("scroll-after", viewId, reason);
+    },
+    [viewId]
+  );
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const tailContent = useRef<HTMLDivElement>(null);
@@ -183,10 +194,12 @@ export function VirtualizedHistory({
       if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
       setFollowing(true, "returned-to-previous-bottom");
       cancelRestoration();
-      element.scrollTop = element.scrollHeight;
+      writeScroll("previous-bottom", () => {
+        element.scrollTop = element.scrollHeight;
+      });
       return true;
     },
-    [cancelRestoration, setFollowing]
+    [cancelRestoration, setFollowing, writeScroll]
   );
   function correctRestoration(): number | null {
     const anchor = readingAnchor.current;
@@ -200,9 +213,60 @@ export function VirtualizedHistory({
     }
     const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
     const correction = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
-    element.scrollTop += correction;
+    writeScroll("correct-restoration", () => {
+      element.scrollTop += correction;
+    });
     return correction;
   }
+  const snapshotLayout = (): ScrollLayout | null => {
+    const element = viewport.current;
+    const content = contents.current;
+    if (!element || !content) return null;
+    const top = element.getBoundingClientRect().top;
+    return {
+      threadId,
+      viewId,
+      following: atBottom.current,
+      restoring: restoringAnchor.current !== null,
+      capturing: captureNextScroll.current,
+      rowCount: rows.length,
+      virtualTotal: virtualizer.measurementsCache.at(-1)?.end ?? 0,
+      viewport: {
+        top,
+        height: element.clientHeight,
+        width: element.clientWidth,
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+      },
+      content: { height: content.getBoundingClientRect().height, scrollHeight: content.scrollHeight },
+      plannedRows: rows
+        .slice(0, 128)
+        .map((row) => ({ key: rowKey(row), kind: row.kind, entityCount: row.entities.length })),
+      virtualRows: virtualizer.measurementsCache.slice(0, 128).map((item) => {
+        const key = String(item.key);
+        return {
+          index: item.index,
+          key,
+          start: item.start,
+          size: item.size,
+          measured: measuredHeights.current.get(key) ?? null,
+          estimate: estimatedHeights.current.get(key)?.height ?? null,
+          remembered: estimatedHeights.current.get(key)?.remembered ?? false,
+        };
+      }),
+      mountedRows: [...content.querySelectorAll<HTMLElement>("[data-history-row-key]")].slice(0, 128).map((row) => {
+        const rect = row.getBoundingClientRect();
+        return {
+          index: Number(row.dataset.index),
+          key: row.dataset.historyRowKey!,
+          top: rect.top - top,
+          height: rect.height,
+          width: rect.width,
+          busy: row.querySelector('[aria-busy="true"]') !== null,
+        };
+      }),
+    };
+  };
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewport.current,
@@ -247,6 +311,7 @@ export function VirtualizedHistory({
           sync,
           following: atBottom.current,
         });
+        scrollCapture.snapshot("virtual-change", snapshotLayout);
         lastTotalSize.current = total;
         layoutChanged();
       }
@@ -269,6 +334,11 @@ export function VirtualizedHistory({
         }
       });
     },
+  });
+  const readCommittedLayout = useEffectEvent(snapshotLayout);
+  useLayoutEffect(() => scrollCapture.register(viewId, () => readCommittedLayout()), [viewId]);
+  useLayoutEffect(() => {
+    scrollCapture.snapshot("commit", snapshotLayout);
   });
   // During a gesture, preserve movement relative to the rows rather than a stale resting
   // anchor. Apply the adjustment after the new height commits: scrolling before it can clamp
@@ -347,7 +417,9 @@ export function VirtualizedHistory({
     pendingScrollAdjustment.current = 0;
     const element = viewport.current;
     if (!element || correction === 0) return;
-    element.scrollTop += correction;
+    writeScroll("gesture-adjustment", () => {
+      element.scrollTop += correction;
+    });
     previousScrollTop.current = element.scrollTop;
     if (readingAnchor.current) markThreadViewEvent({ kind: "restore", key: readingAnchor.current.key, correction });
   });
@@ -366,14 +438,16 @@ export function VirtualizedHistory({
     cancelRestoration();
     restoringAnchor.current = anchor.key;
     const correction = target.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
-    element.scrollTop += correction;
+    writeScroll("sticky-anchor", () => {
+      element.scrollTop += correction;
+    });
     restorationFrame.current = requestAnimationFrame(() => {
       if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
       restorationFrame.current = null;
       publishMode();
     });
     publishMode();
-  }, [cancelRestoration, captureReadingAnchor, publishMode, stickyAnchorKey, stickyAnchorRevision]);
+  }, [cancelRestoration, captureReadingAnchor, publishMode, stickyAnchorKey, stickyAnchorRevision, writeScroll]);
   const restoreAnchor = useEffectEvent((anchor: ReadingAnchor, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
@@ -391,12 +465,14 @@ export function VirtualizedHistory({
       const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
       const currentOffset = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
-      element.scrollTop += correction;
+      writeScroll("restore-anchor", () => {
+        element.scrollTop += correction;
+      });
       return correction;
     };
     const correction = correctFromDom();
     markThreadViewEvent({ kind: "restore", key: anchor.key, correction });
-    if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
+    if (correction === null) writeScroll("restore-index", () => virtualizer.scrollToIndex(index, { align: "start" }));
     // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
     // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
     if (awaitMeasurement && correction !== null && Math.abs(correction) <= 2) {
@@ -437,7 +513,10 @@ export function VirtualizedHistory({
     const element = viewport.current;
     const firstKey = rows[0] ? rowKey(rows[0]) : null;
     if (rows.length !== previousCount.current) layoutChanged();
-    if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
+    if (element && atBottom.current && rows.length > previousCount.current)
+      writeScroll("rows-appended", () => {
+        element.scrollTop = element.scrollHeight;
+      });
     if (
       element &&
       !atBottom.current &&
@@ -460,7 +539,7 @@ export function VirtualizedHistory({
     }
     previousCount.current = rows.length;
     previousFirstKey.current = firstKey;
-  }, [rows, virtualizer]);
+  }, [rows, virtualizer, writeScroll]);
   // pagePrepended is a monotonic counter, not derived from pageOverscan's value, so a second page
   // landing while the first's widened mount hasn't narrowed back yet still triggers this.
   useLayoutEffect(() => {
@@ -492,7 +571,9 @@ export function VirtualizedHistory({
       const pinned = followPreviousBottom(element) || atBottom.current;
       markThreadViewEvent({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
       if (pinned) {
-        element.scrollTop = element.scrollHeight;
+        writeScroll("resize-follow", () => {
+          element.scrollTop = element.scrollHeight;
+        });
         // This component-owned bottom correction may dispatch its scroll event after another
         // row measurement changes the bottom. Compare that event with the corrected position,
         // not the stale position from the last scroll event.
@@ -517,7 +598,7 @@ export function VirtualizedHistory({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [followPreviousBottom, rows, tail, virtualizer]);
+  }, [followPreviousBottom, rows, tail, virtualizer, writeScroll]);
   useEffect(() => {
     const element = viewport.current;
     const end = endOfHistory.current;
@@ -537,7 +618,9 @@ export function VirtualizedHistory({
     setStickyAnchorKey(null);
     clickedAt.current = null;
     cancelRestoration();
-    element.scrollTop = element.scrollHeight;
+    writeScroll("jump-to-latest", () => {
+      element.scrollTop = element.scrollHeight;
+    });
   };
   // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
   useLayoutEffect(() => cancelRestoration, [cancelRestoration]);
@@ -743,6 +826,7 @@ export function VirtualizedHistory({
           return row ? (
             <div
               key={item.key}
+              data-history-row-key={String(item.key)}
               data-index={item.index}
               data-thread-anchor={row.entities[0].cursor.toString()}
               ref={virtualizer.measureElement}

@@ -1,5 +1,6 @@
 """Agentplane navigation visual behavior tests."""
 
+import json
 import re
 
 import pytest
@@ -140,6 +141,39 @@ async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFi
     await debug.click()
     await expect(page.get_by_role("menuitem", name="Start recording")).to_be_visible()
     await view.capture(target=page.locator("#app"))
+
+
+async def test_scroll_recording_contains_thread_layouts(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.get_by_role("button", name="Debug tools", exact=True).click()
+    await page.get_by_role("menuitem", name="Start recording", exact=True).click()
+    await page.locator(".agentplane-thread-list-row-name", has_text="Running thread").click()
+    await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Running thread")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.get_by_role("button", name="Debug tools (recording)", exact=True).click()
+    async with page.expect_download() as downloaded:
+        await page.get_by_role("menuitem", name="Stop and download recording", exact=True).click()
+    download = await downloaded.value
+    path = await download.path()
+    assert path is not None
+    recording = json.loads(path.read_text())
+    assert recording["version"] == 3
+    layouts = recording["layouts"]
+    assert {entry["layout"]["threadId"] for entry in layouts} == {IDLE_THREAD, RUNNING_THREAD}
+    assert len({entry["layout"]["viewId"] for entry in layouts}) == 2
+    assert any(entry["phase"] == "frame" for entry in layouts)
+    assert any(entry["phase"] == "virtual-change" for entry in layouts)
+    assert any(entry["phase"] == "scroll-after" and entry["reason"] == "rows-appended" for entry in layouts)
+    populated = [entry["layout"] for entry in layouts if entry["layout"]["mountedRows"]]
+    assert populated
+    assert all(layout["viewport"]["height"] > 0 for layout in populated)
+    assert any(layout["virtualRows"] and layout["plannedRows"] for layout in populated)
+    assert "List the repository files." not in json.dumps(recording)
+    await expect(page.get_by_role("button", name="Debug tools", exact=True)).to_be_visible()
+    await view.capture()
 
 
 @DESKTOP_AND_MOBILE

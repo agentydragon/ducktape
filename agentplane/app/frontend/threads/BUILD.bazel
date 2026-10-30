@@ -209,6 +209,7 @@ ts_library(
         ":history_row_views",
         ":history_rows",
         ":history_sizes",
+        ":scroll_diagnostics",
         ":thread_evidence",
         ":thread_sync",
         ":thread_view_timing",
