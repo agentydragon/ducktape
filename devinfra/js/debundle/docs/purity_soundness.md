@@ -1139,7 +1139,11 @@ fromEntries}` single argument with `Object` unshadowed, the vetted
   (`argument_inputs`), a tracked alias declaration, a tracked alias
   return from a body only analyzed code can call (below), or
   `export { X }`. A call argument or stored member value also publishes
-  every allocation value flow says it can reach.
+  every allocation value flow says it can reach. A method call `X.k(...)`
+  binds `this` to the receiver, so it publishes the allocation unless the
+  literal's own `k` is an arrow, a function that never uses `this`, or a
+  non-function literal, or `k` is not an own key (an inherited intrinsic
+  under A11); an object spread makes every key unknown.
 
 - **Rebinding is a binding fact.** Assigning a tracked binding anything but
   a plain literal, a nested `var` initializer, or a `for-in`/`for-of`
