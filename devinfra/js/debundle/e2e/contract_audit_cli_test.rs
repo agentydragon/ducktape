@@ -14,7 +14,9 @@ const SOURCE: &str = "import { makeSlot as localMakeSlot } from './peer.js';\n\
     console.log(slot.kind, globalThis.saved());\n";
 const PEER: &[(&str, &str)] = &[(
     "static/peer",
-    "// neutral-provider-marker\nexport function makeSlot() { return { kind: 'slot' }; }\nexport function spare() { return 1; }\n",
+    // `makeSlot` reads a provider binding, so only the authored contract
+    // (no derived foreign call summary) can certify its call timing.
+    "// neutral-provider-marker\nconst kind = 'slot';\nexport function makeSlot() { return { kind }; }\nexport function spare() { return 1; }\n",
 )];
 
 fn split_modules() -> Vec<LogicalModuleEntry> {

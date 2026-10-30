@@ -72,6 +72,10 @@ pub struct ModulePurityFacts<'a> {
     /// Origin of direct function-body reasons, if the caller retained the
     /// source line index. Imports reuse these locations unchanged.
     pub source: Option<(String, SourceLineIndex)>,
+    /// The emitted program may run replacement code instead of this body for
+    /// some exports (a vendor mark), so no derived foreign call summary is
+    /// published for it.
+    pub vendor_affected: bool,
 }
 
 struct PreparedModulePurityFacts<'a> {
@@ -572,7 +576,6 @@ pub fn resolve_imported_callable_summaries(
     selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
     explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
     argument_inputs: &BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
-    foreign_call_excluded: &BTreeSet<ModuleKey>,
 ) -> Result<ResolvedCallableSummaries> {
     let required: BTreeSet<_> = modules
         .values()
@@ -1037,7 +1040,7 @@ pub fn resolve_imported_callable_summaries(
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
-                    !foreign_call_excluded.contains(module.as_str())
+                    !modules[module].vendor_affected
                         && modules[module].exports.keys().any(|export| {
                             required.contains(&CallableExportKey {
                                 module: module.clone(),
@@ -1554,6 +1557,7 @@ mod tests {
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
             source: None,
+            vendor_affected: false,
         }
     }
 
@@ -1947,7 +1951,6 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
-            &BTreeSet::new(),
         )
         .unwrap()
         .imported_callables;
