@@ -6,11 +6,13 @@ See devinfra/buildbuddy/docs/remote.md for how bb remote works under the hood.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pygit2
 
@@ -60,6 +62,31 @@ def _config_get(repo: pygit2.Repository, key: str) -> str | None:
         return repo.config[key]
     except KeyError:
         return None
+
+
+def check_remote_fetch_url(repo: pygit2.Repository) -> str | None:
+    """Reject local clone sources that a hosted runner cannot fetch."""
+    remote = _config_get(repo, "buildbuddy.remote-bazel-remote-name") or "origin"
+    if _config_get(repo, f"remote.{remote}.url") is None:
+        return None
+    try:
+        # Match bb's effective URL, including Git's insteadOf rewrites.
+        url = subprocess.check_output(
+            ["git", "remote", "get-url", remote], cwd=repo.workdir, stderr=subprocess.PIPE, text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        return None  # Let bb explain an invalid/missing remote.
+    parsed = urlsplit(url)
+    # Git also accepts [user@]host:path (including bracketed IPv6 hosts).
+    # A slash before the colon makes it a local path instead. See git-clone(1).
+    scp_remote = re.fullmatch(r"(?:[^/@:\s]+@)?(?:\[[^\]]+\]|[^/:\s]+):.+", url)
+    if parsed.scheme == "file" or (not parsed.netloc and not scp_remote):
+        return (
+            f"bbr: selected remote {remote!r} resolves to a local filesystem path, "
+            "which the hosted runner cannot fetch. Configure an externally reachable "
+            "Git remote and select it with git config buildbuddy.remote-bazel-remote-name <name>."
+        )
+    return None
 
 
 def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
@@ -271,6 +298,9 @@ def main() -> None:
     args, invocation_id_file = _extract_invocation_id_file(args)
 
     repo = pygit2.Repository(".")
+    if message := check_remote_fetch_url(repo):
+        print(message, file=sys.stderr)
+        raise SystemExit(1)
     if message := check_base_branch_freshness(repo):
         print(message, file=sys.stderr)
         if not os.environ.get("BBR_ALLOW_STALE_BASE"):

@@ -24,6 +24,7 @@ from devinfra.buildbuddy.bbr import (
     _extract_invocation_id_file,
     build_command,
     check_base_branch_freshness,
+    check_remote_fetch_url,
     main,
 )
 
@@ -40,6 +41,67 @@ def _make_repo(tmp_path: Path) -> pygit2.Repository:
     repo.create_reference_symbolic("refs/remotes/origin/HEAD", "refs/remotes/origin/devel", False)
     repo.set_head("refs/heads/devel")
     return repo
+
+
+@pytest.mark.parametrize(
+    "url", ["file:///tmp/repo", "FILE:///tmp/repo", "/tmp/repo", "../repo", "repo", "./repo:copy", "/tmp/repo:copy"]
+)
+def test_local_remote_is_rejected(tmp_path: Path, url: str) -> None:
+    repo = _make_repo(tmp_path)
+    repo.remotes.create("origin", url)
+    error = check_remote_fetch_url(repo)
+    assert error is not None
+    assert "hosted runner cannot fetch" in error
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/repo.git",
+        "ssh://git@example.com:2222/owner/repo.git",
+        "git://example.com/repo.git",
+        "git@example.com:owner/repo.git",
+        "example.com:repo.git",
+        "git@[2001:db8::1]:owner/repo.git",
+        "ssh://git@[2001:db8::1]:2222/owner/repo.git",
+    ],
+)
+def test_network_remote_is_accepted(tmp_path: Path, url: str) -> None:
+    repo = _make_repo(tmp_path)
+    repo.remotes.create("origin", url)
+    assert check_remote_fetch_url(repo) is None
+
+
+def test_selected_remote_overrides_local_origin(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path)
+    repo.remotes.create("origin", "file:///tmp/repo")
+    repo.remotes.create("network", "https://example.com/repo.git")
+    repo.config["buildbuddy.remote-bazel-remote-name"] = "network"
+    assert check_remote_fetch_url(repo) is None
+
+
+def test_local_instead_of_rewrite_is_rejected(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path)
+    repo.remotes.create("origin", "https://example.com/repo.git")
+    repo.config["url.file:///tmp/mirror/.insteadOf"] = "https://example.com/"
+    assert check_remote_fetch_url(repo) is not None
+
+
+def test_local_remote_fails_before_invocation_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _make_repo(tmp_path)
+    repo.remotes.create("origin", "file:///tmp/repo")
+    monkeypatch.chdir(Path(repo.workdir))
+    monkeypatch.setattr(sys, "argv", ["bbr", "test", "//foo"])
+
+    def fail_find_bb() -> str:
+        raise AssertionError("must reject the remote before preparing a BuildBuddy invocation")
+
+    monkeypatch.setattr("devinfra.buildbuddy.bbr._find_bb", fail_find_bb)
+    with pytest.raises(SystemExit, match="1"):
+        main()
+    assert "bbr: invocation" not in capsys.readouterr().err
 
 
 class TestBazelrcArgs:
