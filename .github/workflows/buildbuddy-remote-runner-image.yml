@@ -99,7 +99,7 @@ jobs:
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         id: app
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
 
       # update_image_pin.py formats the pins file with prettier when it finds it on PATH and
       # writes json.dumps output when it does not. This pin runs in its own job, whose only other
