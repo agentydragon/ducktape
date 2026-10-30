@@ -19,8 +19,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   Dispatcher and the Runner Gateway's proxy into one gRPC service with an optional PostgreSQL queue: the command
   states in both modes, ownership by the replica holding the runner connection, and the order of work; awaiting
   operator review
-- [Sandbox tags and History's Sandbox records](sandbox_tags.md) — agreed design for inbox and
-  history tags on the Sandbox and History's own record of each Sandbox, which outlives it
+- [History tags and History's Sandbox records](sandbox_tags.md) — agreed design for history tags
+  on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
