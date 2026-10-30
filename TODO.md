@@ -49,8 +49,8 @@
     (<devinfra/claude/claude_hook>) via `$CLAUDE_ENV_FILE`. Today all sessions share
     `/tmp/claude-<uid>`.
   - <AGENTS.md> § Environment: state the one-dir-per-task convention above, with that dir under
-    `$TMPDIR` where the harness sets one. First pick one home for large outputs and worktrees
-    (`/tmp/...` vs `/var/cache/agentydragon/...`).
+    `$TMPDIR` (falling back to `/tmp`). Large outputs and worktrees live there too, not under
+    `/var/cache/agentydragon`.
   - Once the roots exist, give them their own short tmpfiles age (e.g. `bcmBM:3d`).
 
 ## Build System
