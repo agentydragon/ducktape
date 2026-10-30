@@ -2,12 +2,14 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
@@ -164,22 +166,6 @@ func (p *UpstreamProxy) OpenRequest(
 	headers http.Header,
 	body io.Reader,
 ) (*http.Response, error) {
-	return p.openRequest(ctx, method, path, query, bearer, headers, body, representationHeaders)
-}
-
-var representationHeaders = map[string]struct{}{
-	"accept":       {},
-	"content-type": {},
-	"user-agent":   {},
-}
-
-func (p *UpstreamProxy) openRequest(
-	ctx context.Context,
-	method, path, query, bearer string,
-	headers http.Header,
-	body io.Reader,
-	allowedHeaders map[string]struct{},
-) (*http.Response, error) {
 	target := *p.baseURL
 	target.Path = "/" + strings.TrimLeft(path, "/")
 	target.RawPath = ""
@@ -188,79 +174,102 @@ func (p *UpstreamProxy) openRequest(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
-	for name, values := range headers {
-		if _, ok := allowedHeaders[strings.ToLower(name)]; !ok || len(values) == 0 {
-			continue
-		}
-		value := values[0]
-		if strings.EqualFold(name, "User-Agent") {
+	for _, name := range []string{"Accept", "Content-Type", "User-Agent"} {
+		value := headers.Get(name)
+		if name == "User-Agent" {
 			value = truncateRunes(value, 300)
 		}
-		request.Header.Set(name, value)
+		if value != "" {
+			request.Header.Set(name, value)
+		}
 	}
 	if bearer != "" {
 		request.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	// Match the Python client: avoid decompression so an upstream content-encoding and its bytes
-	// remain a pair, and let the request context bound the stream rather than a total timeout.
+	// Avoid decompression so an upstream content-encoding and its bytes remain a pair; the request
+	// context, not a total timeout, bounds the stream.
 	request.Header.Set("Accept-Encoding", "identity")
-	response, err := p.client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	return response, nil
+	return p.client.Do(request)
 }
 
-// relayResponse writes an upstream response while exposing only the selected headers.
-func relayResponse(w http.ResponseWriter, response *http.Response, allowedHeaders map[string]struct{}, overrides http.Header) error {
-	if response == nil {
-		return errors.New("nil upstream response")
+// RelayRequest is the complete outbound request of UpstreamProxy.Relay; nothing from the inbound
+// request except its context is forwarded implicitly.
+type RelayRequest struct {
+	Method string
+	Path   string
+	Query  string
+	// Header is the exact outbound header set (Accept-Encoding is forced to identity).
+	Header http.Header
+	// Body is nil for no request body.
+	Body []byte
+	// ResponseHeaders lists the lower-case upstream response headers exposed to the caller, first
+	// value only. Every other header, trailer and informational response is dropped.
+	ResponseHeaders map[string]struct{}
+	// CacheControl replaces any upstream Cache-Control.
+	CacheControl string
+	// OnError handles a failure before any response byte was written.
+	OnError func(http.ResponseWriter, *http.Request, error)
+}
+
+// Relay streams the upstream response to w with an httputil.ReverseProxy. Redirects are returned
+// as-is, each read is flushed, and r's context cancels the upstream request.
+func (p *UpstreamProxy) Relay(w http.ResponseWriter, r *http.Request, relay RelayRequest) {
+	proxy := &httputil.ReverseProxy{
+		Transport:     p.client.Transport,
+		FlushInterval: -1,
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			target := *p.baseURL
+			target.Path = "/" + strings.TrimLeft(relay.Path, "/")
+			target.RawQuery = relay.Query
+			out := pr.Out
+			out.URL = &target
+			out.Host = ""
+			out.Method = relay.Method
+			out.Header = relay.Header.Clone()
+			out.Header.Set("Accept-Encoding", "identity")
+			out.Trailer = nil
+			out.TransferEncoding = nil
+			out.Body = nil
+			out.ContentLength = 0
+			if relay.Body != nil {
+				out.Body = io.NopCloser(bytes.NewReader(relay.Body))
+				out.ContentLength = int64(len(relay.Body))
+			}
+		},
+		ModifyResponse: func(response *http.Response) error {
+			exposed := make(http.Header)
+			for name, values := range response.Header {
+				if _, ok := relay.ResponseHeaders[strings.ToLower(name)]; ok && len(values) > 0 {
+					exposed[name] = values[:1]
+				}
+			}
+			exposed.Set("Cache-Control", relay.CacheControl)
+			response.Header = exposed
+			response.Trailer = nil
+			return nil
+		},
+		ErrorHandler: relay.OnError,
 	}
-	if response.Body != nil {
-		defer response.Body.Close()
+	proxy.ServeHTTP(relayWriter{w}, r)
+}
+
+// relayWriter keeps ReverseProxy from leaking headers outside ModifyResponse and sends the headers
+// of live streams before the first event.
+type relayWriter struct{ http.ResponseWriter }
+
+func (w relayWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w relayWriter) WriteHeader(statusCode int) {
+	if statusCode < 200 {
+		// ReverseProxy copies unfiltered 1xx headers here; the 1xx response itself is dropped.
+		clear(w.Header())
+		return
 	}
-	for name, values := range response.Header {
-		if _, ok := allowedHeaders[strings.ToLower(name)]; !ok || len(values) == 0 {
-			continue
-		}
-		w.Header().Set(name, values[0])
-	}
-	for name, values := range overrides {
-		w.Header().Del(name)
-		for _, value := range values {
-			w.Header().Add(name, value)
-		}
-	}
-	w.WriteHeader(response.StatusCode)
-	if response.Body == nil {
-		return nil
-	}
-	contentType := response.Header.Get("Content-Type")
+	contentType := w.Header().Get("Content-Type")
+	w.ResponseWriter.WriteHeader(statusCode)
 	if strings.HasPrefix(contentType, "text/event-stream") || strings.HasPrefix(contentType, "application/x-ndjson") {
-		controller := http.NewResponseController(w)
-		if err := controller.Flush(); err != nil {
-			return err
-		}
-		_, err := io.Copy(flushingStreamWriter{writer: w, controller: controller}, response.Body)
-		return err
+		_ = http.NewResponseController(w.ResponseWriter).Flush()
 	}
-	_, err := io.Copy(w, response.Body)
-	return err
-}
-
-// Flush each upstream read before waiting for another: small live updates must not sit in
-// net/http's output buffer until a later event arrives. Synchronous writes retain backpressure.
-type flushingStreamWriter struct {
-	writer     io.Writer
-	controller *http.ResponseController
-}
-
-func (w flushingStreamWriter) Write(data []byte) (int, error) {
-	n, err := w.writer.Write(data)
-	if err != nil {
-		return n, err
-	}
-	return n, w.controller.Flush()
 }
 
 // GeneratedFacadeRouteAllowed keeps operator proxy calls within a versioned, read/write facade.
