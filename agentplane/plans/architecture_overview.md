@@ -71,7 +71,7 @@ D1 and D2 differ only in lifetime; D3 and D4 change the store.
 | Finish with a Sandbox                                                                                                            | Retire it and drop its workspace                                                                                                        | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
 | Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired                                                                      | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
 | A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                                                                                    | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
-| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987), or tags on them                                               | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
+| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is tags on Sandboxes (`spec.inboxTags` today)                                                     | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
 | Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both                                                                       | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
 | Inspect records with `kubectl`                                                                                                   | Yes                                                                                                                                     | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
 | 100 Sandboxes a day for a year (the operator, 09:50)                                                                             | 36,500 retired ones stay in the cluster's etcd, about 365 MB, each with its state PVC ([below](#keeping-finished-sandboxes-as-records)) | Only live ones stay                                                      | Off the cluster's etcd, still in every watcher's cache                                                                | Off the cluster's etcd                                                                       |
@@ -144,7 +144,7 @@ D1 and D2 keep all of it as it is. D4's costs are a relative judgment.
 | Leases: `<sandbox>-runner` fences by `leaseTransitions`, names the holding Gateway replica and carries runner facts the controller reads; `dispatcher-<sandbox UID>` beside a Postgres fence; leader election for both controllers                                                                                                                                   | Move with the Sandbox family                                                                                                                                                    | Compare-and-set epoch with TTL and holder routing; medium. The Dispatcher's Postgres fence has no expiry, so it stops stale writers but cannot pick a live owner; the [proposed merge](dispatcher_gateway_merge.md#one-owner-per-sandbox) makes the runner connection holder the owner |
 | Ownership and deletion: the Sandbox owns every child, a finalizer holds deletion until the runner has quiesced, garbage collection removes the rest; the Gateway (`runner_gateway/gateway/sandboxes.go`) and the relay policy identify a Pod by its owner chain                                                                                                      | Ownership does not cross apiservers (general Kubernetes behavior, not tried): the controller deletes each child kind itself, and the Pod-to-Sandbox check needs another binding | A sweeper per child kind and a held deletion; medium to high                                                                                                                                                                                                                           |
 | Provenance: the Flux label `kustomize.toolkit.fluxcd.io/name` marks git-owned `PolicyBinding`s and a Sandbox owner marks Sandbox-owned ones (`app/go/policyaccess/views.go`); `managedFields` records writers                                                                                                                                                        | Same                                                                                                                                                                            | A writer column; low to medium                                                                                                                                                                                                                                                         |
-| Clients: `kubectl`, Flux, `kubernetes_asyncio` in about 28 non-test Python files, client-go and controller-runtime in the Go services                                                                                                                                                                                                                                | Kept, with a second kubeconfig                                                                                                                                                  | Lost                                                                                                                                                                                                                                                                                   |
+| Clients: `kubectl`, Flux, `kubernetes_asyncio` in four remaining non-test Python modules, client-go and controller-runtime in the Go services                                                                                                                                                                                                                        | Kept, with a second kubeconfig                                                                                                                                                  | Lost                                                                                                                                                                                                                                                                                   |
 
 D3's apiserver would be [kine](https://github.com/k3s-io/kine) on the CNPG cluster, which per its
 README implements the etcd API subset the apiserver needs over SQLite, MySQL, Postgres, NATS or T4,
@@ -272,8 +272,8 @@ Deleting a Sandbox today is an archive without History's record of the Sandbox. 
 (23:24): "history's record of a Sandbox would be an entity in History Service, and Sandbox CR could
 stop existing without the History Service records disappearing", but "I'm not sure if sandbox
 controller should be involved". It need not be: History already records each Session's writer
-namespace and name on the first push ([History
-README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks only the UID and
+namespace, name and UID on the first push ([History
+README](../history_service/README.md#session-writer-and-execution-sandbox)) and lacks only the
 tags, and a purge can be a History call the app makes after removing the CR; the operator deferred
 purging (23:33). The operator keeps two kinds of tag apart (2026-10-20 00:21): "recipient tags" and
 "history reader tags" are "permission gates for different services", since renamed inbox tags and
@@ -307,28 +307,11 @@ Candidates; each still needs the operator's go.
   the global Session ID kept as the key. D1 deletes by it, D2 keys grants by it, and D3 and D4 still
   identify a Sandbox by it. History's record of the Sandbox and the history-tag watch remain
   (`HISTORY_SANDBOX_RECORD`).
-- **Inbox tags on the Sandbox.** The operator (09:58): a collection as "something like a tag
-  on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing it,
-  no Membership objects"; inbox tags and history tags are separate (2026-10-20 00:21). An
-  inbox tag lives and dies with its Sandbox, and a rule matches it the same way in every
-  direction, as it does direct and `allSandboxes` targets; membership then picks no direction, and a
-  recreated Sandbox has only the tags its manifest or preset gives it. History tags, also on the CR
-  (2026-10-20 00:32), follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
-  created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
-  it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
-  can each own different tags, since server-side apply tracks each entry of a set-typed list separately and Flux
-  takes back only fields edited with `kubectl` (kustomize-controller's field-manager cleanup); a tag
-  git declares is reverted if changed live. Setting a tag is a grant, and RBAC on Sandbox writes is
-  its only gate, with no admission rule (2026-10-20 01:29): whoever can patch a Sandbox can already
-  set its `spec.policySets`, which grants at least as much. Flux and the app are the writers
-  (01:17), as the
-  [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment)
-  now records.
-  Both tag kinds are spec lists declared `x-kubernetes-list-type: set`, like `spec.policySets`
-  (2026-10-20 00:36): the CRD validates them and requesters keep writing spec, and a set keeps the
-  split ownership that a plain list, owned whole, would lose. Labels would let `kubectl` and watchers
-  select on a tag, which nothing needs while History watches every Sandbox. This takes the
-  membership CR out of #10987 ([design](sandbox_tags.md)).
+- **Tags on the Sandbox instead of membership objects.** Inbox tags landed as `spec.inboxTags`,
+  matched by `session_inbox_access` rules
+  ([Notification API](../notification_service/docs/api.md#messages)); an inbox tag lives and dies
+  with its Sandbox and picks no direction. History tags remain (`HISTORY_SANDBOX_RECORD`); both
+  follow the [design](sandbox_tags.md).
 - **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
   for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
   start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
@@ -340,9 +323,13 @@ Candidates; each still needs the operator's go.
   under the workspace (`/state/workspaces/{session_id}/...` in the presets), and its one-time setup
   script, which creates it, does not rerun under the same Session ID ([app
   README](../app/README.md)). D1 and D3 finish a Sandbox this way; D2 and D4 can keep one without
-  its storage. ## Configurable within sane options The operator: "one way to make things no-regret
-  might also be to make the 'what lives where' configurable, or configurable within sane options"
-  (02:19).
+  its storage.
+
+## Configurable within sane options
+
+The operator: "one way to make things no-regret might also be to make the 'what lives where'
+configurable, or configurable within sane options" (02:19).
+
 - **Which apiserver holds the records.** The outer cluster and an Agentplane-owned apiserver speak the
   same protocol, so each service could take a records connection apart from its cluster connection,
   both pointing at the cluster by default. Two things must first stop assuming one apiserver: the
@@ -414,19 +401,18 @@ Held until one is chosen:
 - **Which Sandbox wrote a Session.** History records the namespace, name, and controller-owned Sandbox UID
   from the Sandbox's own ServiceAccount, which its runner authenticates as; it checks that UID on every
   push and keeps the globally unique Session ID
-  key ([History README](../history_service/README.md#which-sandbox-wrote-a-session)).
+  key ([History README](../history_service/README.md#session-writer-and-execution-sandbox)).
 - **Thread** (the app's link and metadata for a Session). The app database, keyed by Session ID with
   no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
   UID, and passes it to the Dispatcher for live actions.
-- **Commands and Session openings.** The Dispatcher database (`dispatch`, `session_opening`,
-  `wake_attempt`, `sandbox_ownership`), every row carrying the Sandbox UID and ended when the Sandbox
-  is gone. Proposed: `DISPATCHER_PERSISTENCE_MODEL_DESIGN` compares the durable queue with direct
-  admission. Operator: the Dispatcher keeps no Session-to-Sandbox registry (2026-10-17 03:53, 04:12).
-- **Inbox entries, notices, subscriptions.** The Notification database; entries survive their
-  inbox's retirement when the Sandbox is gone. Proposed: peer messages and sender receipts join this
-  store, and the service split stays unscheduled. Operator: wants receipts that tell "was this acked"
-  from "did a notice cover this" (2026-10-17 03:30), and may revisit the service with later
-  "refactors/splits/reshuffles" (04:18).
+- **Commands and Session openings.** The `session_dispatcher` database, served by the Runner
+  Gateway (`dispatch`, `session_opening`, `wake_attempt`, `sandbox_ownership`), every row carrying
+  the Sandbox UID and ended when the Sandbox is gone. Proposed: `DISPATCHER_PERSISTENCE_MODEL_DESIGN`
+  ([merge plan](dispatcher_gateway_merge.md)). Operator: the Dispatcher keeps no Session-to-Sandbox
+  registry (2026-10-17 03:53, 04:12).
+- **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
+  survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
+  the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).
 - **Action requests, Decisions, connections** (Actions database), **egress admission decisions**
   (egress database), **launch presets** (app configuration, with a label and a compact annotation on
   the Sandbox). Nothing proposed.
@@ -435,19 +421,17 @@ Held until one is chosen:
 
 ### Not stored yet
 
-- **Sandbox tags** (which Sandboxes a grant's collection covers). Agreed, not implemented: inbox
-  and history tags as set-typed lists on the Sandbox, with History keeping the history tags in its own
-  record of each Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). They replace #10987's
-  `SandboxCollectionMembership` CRs and #10990's membership rows.
-- **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
-  configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
-  Notification to authorize their users. Proposed: `session_inbox_access` rules for sends and a rule
-  type of their own for reads, in `PolicySet`s, assigned by
-  `PolicyBinding`s and enforced by the owning service
-  ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: sending and
-  reading transcripts are "really separate capabilities" (2026-10-18 22:46); archive permissions maybe
-  "in a possibly separate universe" from live objects (22:31, tentative); read decisions held
-  (2026-10-17 10:56).
+- **History tags** (which Sandboxes a history-read grant's collection covers). Agreed, not
+  implemented: a second set-typed list on the Sandbox, kept by History in its own record of each
+  Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). Inbox tags are stored as
+  `spec.inboxTags`.
+- **History-read grants** (who may read which Sandbox's Sessions). History's configured
+  `reader_accounts` are the only gate on reads. Sends are granted by `session_inbox_access` rules
+  that the Notification service enforces. Proposed: a rule type of their own for reads, in
+  `PolicySet`s, enforced by History
+  ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: archive
+  permissions maybe "in a possibly separate universe" from live objects (2026-10-18 22:31,
+  tentative); read decisions held (2026-10-17 10:56).
 
 ## What the operator has said
 
