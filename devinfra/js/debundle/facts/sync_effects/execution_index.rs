@@ -11572,22 +11572,25 @@ impl PreparedCallableCapabilities {
     ) -> BTreeMap<String, (u32, BTreeSet<usize>)> {
         // Only source identity is complete here: callback argument coverage
         // helps resolve native writes, so no native construction is admitted.
-        infer_foreign_calls(&self.index, body, &self.exported_locals, None, |_| false)
-            .into_iter()
-            .filter_map(|(local, call)| {
-                let closure = call
-                    .derived
-                    .closure
-                    .as_ref()
-                    .filter(|_| call.callback_factory)?;
-                callback_arguments::ordinary_callback_arguments(
-                    &self.index,
-                    call.declaration_start,
-                    closure,
-                )
-                .map(|objects| (local, (call.declaration_start, objects)))
-            })
-            .collect()
+        let arguments = |call: &InferredForeignCall| {
+            callback_arguments::ordinary_callback_arguments(
+                &self.index,
+                call.declaration_start,
+                call.derived.closure.as_ref()?,
+            )
+            .filter(|_| call.callback_factory)
+        };
+        infer_foreign_calls(
+            &self.index,
+            body,
+            &self.exported_locals,
+            None,
+            |_| false,
+            |call| arguments(call).is_some(),
+        )
+        .into_iter()
+        .filter_map(|(local, call)| Some((local, (call.declaration_start, arguments(&call)?))))
+        .collect()
     }
 }
 
@@ -11681,15 +11684,21 @@ pub(crate) fn infer_callable_capabilities(
         prepared_flow = Some(flow);
     }
     if derive_foreign_calls {
-        result.foreign_calls =
-            infer_foreign_calls(&index, body, &exported_locals, prepared_flow, |family| {
+        result.foreign_calls = infer_foreign_calls(
+            &index,
+            body,
+            &exported_locals,
+            prepared_flow,
+            |family| {
                 matches!(
                     index
                         .integrity
                         .require(&[IntrinsicSlot::Global(family)], None),
                     crate::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
-            });
+            },
+            |_| true,
+        );
     }
     result.intact_collections = [
         NativeIntrinsic::Map,
@@ -11713,13 +11722,15 @@ pub(crate) fn infer_callable_capabilities(
 /// Exported top-level function and class declarations, and single-declarator
 /// top-level function or arrow initializers, with one stable value, summarized
 /// by `foreign_call`. Dynamic scope can rebind any of them. `collection_intact`
-/// answers the census for an empty keyed collection's constructor.
+/// answers the census for an empty keyed collection's constructor; `wanted`
+/// selects summaries before value flow checks their binding's stability.
 fn infer_foreign_calls(
     index: &ExecutionIndex,
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
     flow: Option<ChunkValueFlow>,
     collection_intact: impl Fn(NativeIntrinsic) -> bool,
+    wanted: impl Fn(&InferredForeignCall) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
     use crate::facts::abstract_domain::foreign_call::{ForeignBody, derive_foreign_call};
     if !index.dynamic_scope_owners.is_empty() {
@@ -11774,62 +11785,73 @@ fn infer_foreign_calls(
         return BTreeMap::new();
     }
     let shadowed = crate::facts::compute_shadowed_globals(body);
-    let derived: Vec<_> = declarations
+    let candidates: Vec<_> = declarations
         .into_iter()
         .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
         .filter_map(|(binding, declaration, declaration_start, hoisted)| {
-            derive_foreign_call(declaration, &shadowed, &collection_intact)
-                .map(|derived| (binding, derived, declaration_start, hoisted))
+            let derived = derive_foreign_call(declaration, &shadowed, &collection_intact)?;
+            Some((
+                binding,
+                foreign_call(index, derived, declaration_start, hoisted),
+            ))
         })
+        .filter(|(_, call)| wanted(call))
         .collect();
-    if derived.is_empty() {
+    if candidates.is_empty() {
         return BTreeMap::new();
     }
     let flow = flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
-    let mut inferred = BTreeMap::new();
-    for (binding, derived, declaration_start, hoisted) in derived {
-        let values = flow.values_of_binding(&binding.to_id());
-        // An initializer's binding holds `undefined` (or is in its TDZ) until
-        // its statement runs; afterwards it must hold only that function.
-        if if hoisted {
-            values.iter().count() != 1
-        } else {
-            !values.iter().eq([Value::Alloc(Kind::Function, declaration_start)])
-        } {
-            continue;
-        }
-        let mut dependencies = ProofDependencies::default();
-        for family in &derived.native_constructions {
-            dependencies.extend(
-                &index
-                    .integrity
-                    .require(&[IntrinsicSlot::Global(*family)], None)
-                    .dependencies()
-                    .expect("derivation checked the census for every construction"),
-            );
-        }
-        let record = derived
-            .record
-            .as_ref()
-            .map(|members| returned_record(index, members, &derived, &dependencies));
-        let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
-            derived.returns
-                == BTreeSet::from([crate::analysis_inputs::ForeignReturn::FreshAllocation])
-                && deferred_callback_closure(index, declaration_start, closure)
-        });
-        inferred.insert(
-            binding.sym.to_string(),
-            InferredForeignCall {
-                derived,
-                declaration_start,
-                hoisted,
-                dependencies,
-                record,
-                callback_factory,
-            },
+    candidates
+        .into_iter()
+        .filter(|(binding, call)| {
+            let values = flow.values_of_binding(&binding.to_id());
+            // An initializer's binding holds `undefined` (or is in its TDZ)
+            // until its statement runs; afterwards it must hold only that
+            // function.
+            if call.hoisted {
+                values.iter().count() == 1
+            } else {
+                values
+                    .iter()
+                    .eq([Value::Alloc(Kind::Function, call.declaration_start)])
+            }
+        })
+        .map(|(binding, call)| (binding.sym.to_string(), call))
+        .collect()
+}
+
+fn foreign_call(
+    index: &ExecutionIndex,
+    derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    declaration_start: u32,
+    hoisted: bool,
+) -> InferredForeignCall {
+    let mut dependencies = ProofDependencies::default();
+    for family in &derived.native_constructions {
+        dependencies.extend(
+            &index
+                .integrity
+                .require(&[IntrinsicSlot::Global(*family)], None)
+                .dependencies()
+                .expect("derivation checked the census for every construction"),
         );
     }
-    inferred
+    let record = derived
+        .record
+        .as_ref()
+        .map(|members| returned_record(index, members, &derived, &dependencies));
+    let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
+        derived.returns == BTreeSet::from([crate::analysis_inputs::ForeignReturn::FreshAllocation])
+            && deferred_callback_closure(index, declaration_start, closure)
+    });
+    InferredForeignCall {
+        derived,
+        declaration_start,
+        hoisted,
+        dependencies,
+        record,
+        callback_factory,
+    }
 }
 
 /// Report projection of a derived record: each member's free provider
