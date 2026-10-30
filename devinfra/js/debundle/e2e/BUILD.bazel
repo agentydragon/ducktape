@@ -911,3 +911,5 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
+
+debundle_e2e_test(name = "callback_pool_order_test")

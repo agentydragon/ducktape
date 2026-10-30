@@ -237,7 +237,7 @@ pub(super) struct ArrayElement {
 
 /// Slot values are an ordered overapproximation. The ordinary Object origin
 /// remains the identity used by every mutation, publication and taint lane.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct DenseArray {
     pub(super) slots: Vec<Values>,
 }

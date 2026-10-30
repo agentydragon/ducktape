@@ -158,6 +158,41 @@ struct InvocationSignature {
     top_owner: Option<SourceUnitOrdinal>,
 }
 
+/// See [`Executor::callback_pool_observation`].
+struct CallbackPoolObservation {
+    prefix_revision: u64,
+    reachability_revision: u64,
+    prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    dense_arrays: OrdMap<u32, DenseArray>,
+    applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
+    class_superclasses: OrdMap<u32, Values>,
+    set_sizes: [usize; 10],
+    array_intrinsic_mutated: bool,
+    uncertain_native_execution: bool,
+}
+
+impl PartialEq for CallbackPoolObservation {
+    fn eq(&self, other: &Self) -> bool {
+        // Untouched persistent maps share their root; compare contents only
+        // when a pass rebuilt one.
+        fn same<K: Ord, V: PartialEq>(left: &OrdMap<K, V>, right: &OrdMap<K, V>) -> bool {
+            left.ptr_eq(right) || left == right
+        }
+        self.prefix_revision == other.prefix_revision
+            && self.reachability_revision == other.reachability_revision
+            && self.set_sizes == other.set_sizes
+            && self.array_intrinsic_mutated == other.array_intrinsic_mutated
+            && self.uncertain_native_execution == other.uncertain_native_execution
+            && same(
+                &self.prefix_object_properties,
+                &other.prefix_object_properties,
+            )
+            && same(&self.dense_arrays, &other.dense_arrays)
+            && same(&self.applied_accessors, &other.applied_accessors)
+            && same(&self.class_superclasses, &other.class_superclasses)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ActiveInvocation {
     callable: u32,
@@ -191,7 +226,7 @@ pub(super) struct NativeCallResolution {
     own_property_projection: Option<OwnPropertyProof>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct AppliedAccessor {
     getter: Values,
     setter: Values,
@@ -4355,16 +4390,62 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         no_sync_arguments: bool,
         outcome: &mut Outcome,
     ) {
+        // Opaque code may run each available callback any number of times and
+        // in any order. One fixed-order pass would let a member run before a
+        // later member's write and miss the value it publishes. Repeat the
+        // pass over the joined state until nothing a member can observe
+        // changes. Each extra pass spends the shared invocation budget, whose
+        // exhaustion takes the order-insensitive fallback summary.
+        let mut foreign_promoted = false;
+        loop {
+            let callbacks = self.possible_callback_pool(
+                args,
+                no_sync_arguments,
+                &mut foreign_promoted,
+                outcome,
+            );
+            let before = self.callback_pool_observation();
+            if self.invoke_callback_pool_once(&callbacks, outcome)
+                || self.callback_pool_observation() == before
+            {
+                break;
+            }
+            // Invocation memos keyed by the pre-pass revision describe the
+            // smaller state; changes outside prefix values do not bump it.
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            self.state.invocation_count += 1;
+        }
+        // An opaque callee can retain any callback passed to it and invoke it
+        // during a later prefix event.
+        let before = self.state.global_escaped_callbacks.len();
+        let values = args.iter().flatten().cloned().collect();
+        self.taint_objects(&values);
+        let callbacks = self.callback_values(&values);
+        self.state.global_escaped_callbacks.extend(callbacks);
+        if self.state.global_escaped_callbacks.len() != before {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    fn possible_callback_pool(
+        &mut self,
+        args: &[Values],
+        no_sync_arguments: bool,
+        foreign_promoted: &mut bool,
+        outcome: &mut Outcome,
+    ) -> Values {
         let mut callbacks = self.state.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
         // A callback-argument exemption does not certify foreign getters or
         // direct live-cell captures reachable through a returned record.
         let supplied: Values = args.iter().flatten().cloned().collect();
         let supplied_callbacks = self.callback_values(&supplied);
-        if callbacks.contains(&AbstractValue::ForeignDeferredRecord)
-            || supplied_callbacks.contains(&AbstractValue::ForeignDeferredRecord)
+        if !*foreign_promoted
+            && (callbacks.contains(&AbstractValue::ForeignDeferredRecord)
+                || supplied_callbacks.contains(&AbstractValue::ForeignDeferredRecord))
         {
             self.promote_foreign_record(outcome);
+            *foreign_promoted = true;
         }
         if !no_sync_arguments {
             callbacks.extend(supplied_callbacks);
@@ -4372,6 +4453,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Activate the foreign pool before any callback-size fallback, which
         // otherwise only expands callables with local source owners.
         callbacks.remove(&AbstractValue::ForeignDeferredRecord);
+        callbacks
+    }
+
+    /// Everything a pool member's invocation can depend on. The prefix
+    /// revision covers binding values; heap maps, taints, escapes and native
+    /// capability state can change without bumping it.
+    fn callback_pool_observation(&self) -> CallbackPoolObservation {
+        let state = &*self.state;
+        CallbackPoolObservation {
+            prefix_revision: state.prefix_revision,
+            reachability_revision: state.reachability.revision,
+            prefix_object_properties: state.prefix_object_properties.clone(),
+            dense_arrays: state.dense_arrays.clone(),
+            applied_accessors: state.applied_accessors.clone(),
+            class_superclasses: state.class_superclasses.clone(),
+            set_sizes: [
+                state.global_escaped_callbacks.len(),
+                state.exported_runtime_values.len(),
+                state.tainted_objects.len(),
+                state.tainted_native_sets.len(),
+                state.tainted_functions.len(),
+                state.tainted_classes.len(),
+                state.escaped_class_capabilities.len(),
+                state.ordinary_spread_copies.len(),
+                state.descriptor_copy_results.len(),
+                state
+                    .own_descriptor_maps
+                    .values()
+                    .filter(|map| map.valid)
+                    .count(),
+            ],
+            array_intrinsic_mutated: state.array_intrinsic_mutated,
+            uncertain_native_execution: state.uncertain_native_execution,
+        }
+    }
+
+    /// Runs every pool member once against the evolving state. Returns whether
+    /// the bounded fallback summarized the pool instead.
+    fn invoke_callback_pool_once(&mut self, callbacks: &Values, outcome: &mut Outcome) -> bool {
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
         // callback set plus a non-callable/unknown possibility.
@@ -4395,7 +4515,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 top_owner: self.state.current_top_owner,
             })
         });
-        for callback in callbacks.clone() {
+        for callback in callbacks.iter().cloned() {
             if reentrant_pool
                 || callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL
                 || self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
@@ -4424,7 +4544,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.state
                         .current_top_owner
                         .expect("callback call has a top owner"),
-                    std::slice::from_ref(&callbacks),
+                    std::slice::from_ref(callbacks),
                     &Context::new(),
                     reason,
                 );
@@ -4438,7 +4558,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.executed_owners.extend(nested.executed_owners);
                 outcome.unknown_call |= nested.unknown_call;
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
-                break;
+                return true;
             }
             let nested = match callback {
                 AbstractValue::ClassMembers(key) => {
@@ -4474,16 +4594,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.unknown_call |= nested.unknown_call;
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
         }
-        // An opaque callee can retain any callback passed to it and invoke it
-        // during a later prefix event.
-        let before = self.state.global_escaped_callbacks.len();
-        let values = args.iter().flatten().cloned().collect();
-        self.taint_objects(&values);
-        let callbacks = self.callback_values(&values);
-        self.state.global_escaped_callbacks.extend(callbacks);
-        if self.state.global_escaped_callbacks.len() != before {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
+        false
     }
 
     fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
@@ -5618,6 +5729,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
+            // A chunk binding read later in this prefix must see the assigned
+            // callable, not only the opaque value `apply_rebind_effects` adds:
+            // calling that opaque value cannot reach an unescaped closure.
+            // Like a top-level owner, publish possible values before the body's
+            // calls; a lexical binding still in TDZ throws instead of storing.
+            if self.inputs.top_bindings.contains(id)
+                && (self.inputs.var_bindings.contains(id)
+                    || self.state.initialized_bindings.contains(id))
+            {
+                let possible = self.state.prefix_values.entry(id.clone()).or_default();
+                let before = possible.len();
+                possible.extend(values.iter().cloned());
+                if possible.len() != before {
+                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                }
+            }
             env.entry(id.clone()).or_default().extend(values);
         }
         let mut outcome = Outcome {
