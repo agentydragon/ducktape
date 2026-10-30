@@ -228,6 +228,7 @@ py_library(
         ":guest_logs",
         ":iptables_rule",
         ":rendered_fixture",
+        ":trace_receiver",
         ":vm_sandboxes",
         "//agentplane/system_tests:cluster",
         "//agentplane/testing:tls",
@@ -611,5 +612,16 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "trace_receiver",
+    testonly = True,
+    srcs = ["trace_receiver.py"],
+    deps = [
+        "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_proto",
+        "@pypi//protobuf",
     ],
 )

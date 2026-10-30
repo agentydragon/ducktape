@@ -12,6 +12,7 @@ their plain HTTP URLs satisfy the OAuth endpoint contract.
 """
 
 import contextlib
+import copy
 import io
 import json
 import logging
@@ -39,6 +40,7 @@ from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Clu
 from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
+from agentplane.system_tests.k3s.trace_receiver import route_service_traces, trace_receiver
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -164,7 +166,11 @@ class Timeline:
 
 
 def write_deployment_logs(kubectl: Callable[..., str], namespace: str, deployments: list[str]) -> None:
-    """Each fixture Deployment's whole timestamped log, to line its work up with the trace."""
+    """Each fixture Deployment's whole timestamped log, to line its work up with the trace.
+
+    A container that restarted also gets `<pod>.<container>.previous.log`: the log of the instance
+    that exited, which holds why it did.
+    """
     output = undeclared_outputs_dir() / "deployments"
     output.mkdir(exist_ok=True)
     for name in deployments:
@@ -172,6 +178,67 @@ def write_deployment_logs(kubectl: Callable[..., str], namespace: str, deploymen
             "-n", namespace, "logs", f"deployment/{name}", "--all-containers", "--all-pods=true",
             "--timestamps", "--tail=-1", check=False,
         ))  # fmt: skip
+    pods = json.loads(kubectl("-n", namespace, "get", "pods", "-o", "json", check=False) or "{}").get("items", [])
+    for pod in pods:
+        for container in pod.get("status", {}).get("containerStatuses", []):
+            if container.get("restartCount", 0) > 0:
+                pod_name, container_name = pod["metadata"]["name"], container["name"]
+                (output / f"{pod_name}.{container_name}.previous.log").write_text(kubectl(
+                    "-n", namespace, "logs", f"pod/{pod_name}", "-c", container_name, "--previous",
+                    "--timestamps", check=False,
+                ))  # fmt: skip
+
+
+class EndpointRecorder:
+    """When each Service endpoint in `namespace` became ready or not, as one `k8s.endpoints` span per
+    Service. A connection to a Service with no ready endpoint is refused, which a caller reports as
+    the dependency being unavailable; this shows when and for which Pod that happened. Polled every
+    second, so a transition is placed within a second.
+    """
+
+    def __init__(self, k3s: K3s, namespace: str) -> None:
+        self._kubectl = k3s.kubectl
+        self._namespace = namespace
+        self._state: dict[tuple[str, str], bool] = {}
+        self._changes: list[tuple[int, str, str, str, bool]] = []
+        self._stopped = threading.Event()
+        self._reader = threading.Thread(target=self._poll, daemon=True)
+        self._reader.start()
+
+    def _poll(self) -> None:
+        while not self._stopped.wait(1.0):
+            listed = self._kubectl("-n", self._namespace, "get", "endpointslices", "-o", "json", check=False)
+            at = time.time_ns()
+            try:
+                slices = json.loads(listed).get("items", [])
+            except json.JSONDecodeError:
+                logger.warning("EndpointSlice list was not JSON: %s", listed[:200])
+                continue
+            seen: dict[tuple[str, str], tuple[bool, str]] = {}
+            for endpoints in slices:
+                service = endpoints["metadata"].get("labels", {}).get("kubernetes.io/service-name", "")
+                for endpoint in endpoints.get("endpoints") or []:
+                    pod = (endpoint.get("targetRef") or {}).get("name", "")
+                    for address in endpoint.get("addresses", []):
+                        seen[(service, address)] = (endpoint.get("conditions", {}).get("ready", False), pod)
+            for key in self._state.keys() - seen.keys():
+                seen[key] = (False, "")
+            for key, (ready, pod) in seen.items():
+                if self._state.get(key) != ready:
+                    self._state[key] = ready
+                    self._changes.append((at, key[0], key[1], pod, ready))
+
+    def stop(self) -> None:
+        self._stopped.set()
+        self._reader.join()
+        by_service: dict[str, list[tuple[int, str, str, bool]]] = {}
+        for at, service, address, pod, ready in self._changes:
+            by_service.setdefault(service, []).append((at, address, pod, ready))
+        for service, changes in by_service.items():
+            span = tracer.start_span("k8s.endpoints", attributes={"service": service}, start_time=changes[0][0])
+            for at, address, pod, ready in changes:
+                span.add_event("ready" if ready else "not ready", {"address": address, "pod": pod}, timestamp=at)
+            span.end(end_time=changes[-1][0])
 
 
 class EventRecorder:
@@ -613,6 +680,7 @@ def running_stack(
         cleanup.enter_context(raw_block)
         cleanup.callback(k3s.stop, process)
         cleanup.callback(EventRecorder(k3s).stop)
+        cleanup.callback(EndpointRecorder(k3s, fixture.namespace).stop)
         cleanup.callback(timeline.finish)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
@@ -653,7 +721,8 @@ def running_stack(
         timeline.mark("CRDs applied")
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
-        rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
+        rest = copy.deepcopy([d for d in fixture.objects if d["kind"] != "Namespace"])
+        route_service_traces(rest, cleanup.enter_context(trace_receiver(node_ip())))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
         if fixture.vm_sandboxes:
             cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))

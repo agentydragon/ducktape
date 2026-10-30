@@ -149,6 +149,12 @@ observed effective suspension, delete acknowledgement, and observed deletion. Ne
 do not add a scenario's duration to its child turn/command durations. Use `test.xml` for the final
 pytest verdict; a case span includes fixture lifetime and is not itself a pass verdict.
 
+The services' own spans go to `test.outputs/service-spans.jsonl`: the fixture points every OTLP
+exporter at a receiver in the test process (`k3s/trace_receiver.py`), and trace context propagates
+from the test's calls. `k8s.endpoints` records when each Service endpoint became ready or not. Each
+Deployment's log, and the previous instance's log of any restarted container, are under
+`test.outputs/deployments/`.
+
 Completed spans flush immediately, including exception status, so earlier phases survive a later
 failure or process kill. An unfinished span is not exported if the process is killed. Attributes
 contain test/Sandbox identities and phase names; command bodies and model transcripts are not
