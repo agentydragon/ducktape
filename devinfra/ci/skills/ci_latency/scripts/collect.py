@@ -48,8 +48,7 @@ class GhApi:
                     raise RuntimeError(f"gh api returned invalid JSON for {endpoint}") from error
             last_error = result.stderr.strip()
             transient = any(
-                marker in last_error.lower()
-                for marker in ("timeout", "502", "503", "stream error", "unexpected eof")
+                marker in last_error.lower() for marker in ("timeout", "502", "503", "stream error", "unexpected eof")
             )
             if not transient or attempt == 2:
                 break
@@ -84,12 +83,7 @@ def _unique_by_id(items: Iterable[Mapping[str, Any]], label: str) -> list[dict[s
     return list(unique.values())
 
 
-def _run_pages(
-    api: Api,
-    endpoint: str,
-    params: Mapping[str, str],
-    expected_count: int,
-) -> list[dict[str, Any]]:
+def _run_pages(api: Api, endpoint: str, params: Mapping[str, str], expected_count: int) -> list[dict[str, Any]]:
     pages = api.request(endpoint, params, paginate=True)
     if not isinstance(pages, list) or not pages:
         if expected_count == 0 and pages == []:
@@ -105,12 +99,7 @@ def _run_pages(
 
 
 def collect_runs(
-    api: Api,
-    repo: str,
-    first: str,
-    last: str,
-    *,
-    filters: Mapping[str, str] | None = None,
+    api: Api, repo: str, first: str, last: str, *, filters: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
     """Fetch all runs in an inclusive time window, partitioning at the API cap."""
     start, end = _parse_time(first), _parse_time(last)
@@ -143,13 +132,7 @@ def collect_runs(
     return _unique_by_id(result, "workflow run across time partitions")
 
 
-def _paginated_collection(
-    api: Api,
-    endpoint: str,
-    params: Mapping[str, str],
-    *,
-    rows_key: str,
-) -> list[dict[str, Any]]:
+def _paginated_collection(api: Api, endpoint: str, params: Mapping[str, str], *, rows_key: str) -> list[dict[str, Any]]:
     pages = api.request(endpoint, params, paginate=True)
     if not isinstance(pages, list):
         raise ValueError(f"{endpoint} pagination did not return a page list")
@@ -173,8 +156,7 @@ def _paginated_collection(
 
 
 def combine_runs(
-    window_runs: Iterable[Mapping[str, Any]],
-    active_runs: Mapping[str, Iterable[Mapping[str, Any]]],
+    window_runs: Iterable[Mapping[str, Any]], active_runs: Mapping[str, Iterable[Mapping[str, Any]]]
 ) -> list[dict[str, Any]]:
     """Merge old unfinished runs into the window, preferring their active state."""
     runs = {run["id"]: dict(run) for run in window_runs}
@@ -217,13 +199,7 @@ def collect(repo: str, since: str, until: str, out: Path, workflow_ids: set[int]
     now = _format_time(dt.datetime.now(dt.UTC))
     active: dict[str, list[dict[str, Any]]] = {}
     for status in ACTIVE_STATUSES:
-        active[status] = collect_runs(
-            api,
-            repo,
-            EARLIEST_GITHUB_RUN,
-            now,
-            filters={"status": status},
-        )
+        active[status] = collect_runs(api, repo, EARLIEST_GITHUB_RUN, now, filters={"status": status})
         _write_json(out / f"active-{status}.json", active[status])
     runs = combine_runs(window_runs, active)
     _write_json(out / "all_runs.json", runs)
@@ -233,10 +209,7 @@ def collect(repo: str, since: str, until: str, out: Path, workflow_ids: set[int]
     def fetch_jobs(run: Mapping[str, Any]) -> tuple[int, list[dict[str, Any]]]:
         run_id = run["id"]
         jobs = _paginated_collection(
-            api,
-            f"repos/{repo}/actions/runs/{run_id}/jobs",
-            {"filter": "all", "per_page": "100"},
-            rows_key="jobs",
+            api, f"repos/{repo}/actions/runs/{run_id}/jobs", {"filter": "all", "per_page": "100"}, rows_key="jobs"
         )
         _write_json(out / "jobs" / f"{run_id}.json", [{"jobs": jobs}])
         return run_id, jobs
