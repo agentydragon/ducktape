@@ -147,6 +147,7 @@ def _watch(args: argparse.Namespace) -> None:
     api_key, token, repo = _credentials()
     target_url = _target_url(args.invocation_id, args.buildbuddy_url)
     print(f"::notice::Watching BuildBuddy ordinary test invocation {args.invocation_id}: {target_url}", flush=True)
+    announced_disconnect = False
     while not STOP.is_set():
         try:
             invocation = _invocation(api_key, args.invocation_id, args.buildbuddy_url)
@@ -182,19 +183,22 @@ def _watch(args: argparse.Namespace) -> None:
                         buildbuddy_url=args.buildbuddy_url,
                     )
                     return
-                if status == "DISCONNECTED_INVOCATION_STATUS":
+                # BuildBuddy reports DISCONNECTED transiently when the build event
+                # stream drops (bb remote retries and the build continues), so it is
+                # not terminal; `finish` resolves it from the Bazel step outcome.
+                if status == "DISCONNECTED_INVOCATION_STATUS" and not announced_disconnect:
                     _publish_status(
                         repo=repo,
                         sha=args.sha,
                         token=token,
                         invocation_id=args.invocation_id,
-                        state="error",
-                        description="BuildBuddy ordinary test invocation disconnected",
+                        state="pending",
+                        description="Invocation disconnected; waiting for Bazel job result",
                         state_path=args.state_file,
                         github_api_url=args.github_api_url,
                         buildbuddy_url=args.buildbuddy_url,
                     )
-                    return
+                    announced_disconnect = True
         except APIError as error:
             print(f"::warning::Live BuildBuddy test watcher will retry: {error}", file=sys.stderr, flush=True)
         STOP.wait(args.poll_interval)
@@ -254,7 +258,16 @@ def _finish(args: argparse.Namespace) -> None:
         if not success and previous and previous.get("state") == "failure":
             description = previous.get("description", description)
     elif invocation is not None and invocation.get("invocationStatus") == "DISCONNECTED_INVOCATION_STATUS":
-        state, description = "error", "BuildBuddy ordinary test invocation disconnected"
+        # A disconnect is transient; the Bazel step outcome is authoritative.
+        if previous and previous.get("state") == "failure":
+            state, description = "failure", previous.get("description", "Bazel ordinary test invocation failed")
+        elif args.remote_outcome == "success":
+            state, description = "success", "Bazel CI passed (BuildBuddy invocation had disconnected)"
+        elif args.remote_outcome == "failure":
+            state, description = "failure", "Bazel CI failed (BuildBuddy invocation had disconnected)"
+        else:
+            state = "error"
+            description = f"Bazel CI ended ({args.remote_outcome}) after BuildBuddy invocation disconnected"
     elif previous and previous.get("state") == "failure":
         state, description = "failure", previous.get("description", "Bazel ordinary test invocation failed")
     elif invocation is None and not api_failed and args.remote_outcome == "success":
