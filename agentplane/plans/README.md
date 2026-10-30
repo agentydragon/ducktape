@@ -45,8 +45,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   cheaper route
 - [Orchestrating agents from an MCP client](mcp_orchestration.md) — P1 `orchestration_v1` is shipped; remaining
   design covers backend grants per operation and bounds on launcher delegation
-- [History read and follow consumers](history_read_follow.md) — `orchestration_v1` turn reads and waits now use
-  `FollowSession`; remaining consumers include Notification outcomes and app reads
+- [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
+  moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
