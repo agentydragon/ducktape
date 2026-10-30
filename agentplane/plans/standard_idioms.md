@@ -68,14 +68,6 @@ objects feeds only the catalog and wake handlers. Drive observers from a Reconci
 them (the Lease resourceVersion compare-and-swap already fences). Exit: API reads per runner no longer
 scale with the 10 s tick; fencing tests unchanged.
 
-### `HISTORY_FOLD_DIRTY_QUEUE`
-
-The History projection (`history_service/projection/runner.go`) selects every retained Session,
-including those of deleted Sandboxes, on every history commit notification or every 2 s, upserts each
-summary and runs a lease transaction and checkpoint read per Session. Fold only Sessions whose
-checkpoint is behind their last cursor (an indexed condition or a pending table maintained by
-`Append`), claimed with `SKIP LOCKED`. Exit: work per wake is proportional to changed Sessions.
-
 ### `DISPATCHER_KEYED_DELIVERY`
 
 Blocked on the [merge design](dispatcher_gateway_merge.md). The Dispatcher turns any Sandbox event into
