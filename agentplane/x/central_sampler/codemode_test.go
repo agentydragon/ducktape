@@ -233,7 +233,7 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "abandon the detached runtime"); err != nil {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "abandon the detached runtime", ""); err != nil {
 		t.Fatal(err)
 	}
 	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)

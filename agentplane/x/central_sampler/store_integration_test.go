@@ -118,9 +118,31 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 
 func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	executor := &sandboxespb.SandboxDestination{
+		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+	}
+	const previousIncarnationUID = "fixture-previous-incarnation"
+	const replacementIncarnationUID = "fixture-replacement-incarnation"
+	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &runnerpb.SessionSpec{
+			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+		},
+		Executor: executor, ExpectedIncarnationUid: previousIncarnationUID,
+	}, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
+		t.Fatal(err)
+	}
+	shell := "bash"
+	if err := store.SetExecutorSession(t.Context(), owner, "fixture-old-executor-session", &shell); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "fixture-old-process", false); err != nil {
 		t.Fatal(err)
 	}
 	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "input": "first"})
@@ -171,30 +193,49 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 
 	cursor := blocked.Cursor
-	if _, err := store.RecoverSession(t.Context(), session.ID, "other-account", cursor, "reviewed evidence"); !errors.Is(err, ErrForbidden) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "other-account", cursor, "reviewed evidence", ""); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("wrong account recovered session: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor-1, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor-1, "reviewed evidence", ""); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("stale cursor recovered session: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", ""); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("active owner lease was ignored: %v", err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
 		t.Fatal(err)
 	}
 
-	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence")
+	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", replacementIncarnationUID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if recovered.Blocked || recovered.BlockedReason != nil || recovered.Cursor <= cursor {
 		t.Fatalf("recovered session state=%+v", recovered)
 	}
+	persisted, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := &samplerpb.OpenSessionRequest{}
+	if err := proto.Unmarshal(persisted.Configuration, configuration); err != nil {
+		t.Fatal(err)
+	}
+	if configuration.GetExpectedIncarnationUid() != replacementIncarnationUID || !proto.Equal(configuration.GetExecutor(), executor) {
+		t.Fatalf("recovered configuration changed binding unexpectedly: %v", configuration)
+	}
+	described, err := Describe(recovered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if described.GetExpectedIncarnationUid() != replacementIncarnationUID || described.GetAttached().GetIncarnationUid() != replacementIncarnationUID ||
+		!proto.Equal(described.GetExecutor(), executor) {
+		t.Fatalf("recovered description lost replacement binding: %v", described)
+	}
 	if err := store.Finish(t.Context(), owner, cellIntent, map[string]any{"late": true}, nil, nil); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("old owner wrote after recovery: %v", err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", replacementIncarnationUID); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("stale retry recovered twice: %v", err)
 	}
 
@@ -209,12 +250,14 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	var generation, epoch int
 	var ownerToken sql.NullString
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT generation,code_session_epoch,owner::text FROM sampler_conversation WHERE id=$1`,
-		session.ConversationID).Scan(&generation, &epoch, &ownerToken); err != nil {
+	var executorSession, executorShell sql.NullString
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT generation,code_session_epoch,owner::text,executor_session,executor_shell FROM sampler_conversation WHERE id=$1`,
+		session.ConversationID).Scan(&generation, &epoch, &ownerToken, &executorSession, &executorShell); err != nil {
 		t.Fatal(err)
 	}
-	if generation != owner.Generation+1 || epoch != 1 || ownerToken.Valid {
-		t.Fatalf("recovery fence generation=%d epoch=%d owner=%v", generation, epoch, ownerToken)
+	if generation != owner.Generation+1 || epoch != 1 || ownerToken.Valid || executorSession.Valid || executorShell.Valid {
+		t.Fatalf("recovery fence generation=%d epoch=%d owner=%v executor_session=%v executor_shell=%v",
+			generation, epoch, ownerToken, executorSession, executorShell)
 	}
 	var cellStatus string
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_cell WHERE id=$1 AND conversation_id=$2`,
@@ -223,6 +266,35 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	if cellStatus != "abandoned" {
 		t.Fatalf("cell status=%q", cellStatus)
+	}
+	var processStatus string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE id='fixture-old-process'`).Scan(&processStatus); err != nil {
+		t.Fatal(err)
+	}
+	if processStatus != "abandoned" {
+		t.Fatalf("process status=%q", processStatus)
+	}
+	events, err := store.Events(t.Context(), session.ID, cursor, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRecoveryEvidence := false
+	for _, entry := range events {
+		boundary := entry.GetEvent().GetBoundaryRecord()
+		if boundary == nil || boundary.GetBoundary() != "recovery" || boundary.GetDirection() != "committed" {
+			continue
+		}
+		var evidence map[string]any
+		if err := json.Unmarshal(boundary.GetPayload(), &evidence); err != nil {
+			t.Fatal(err)
+		}
+		if evidence["previous_incarnation_uid"] != previousIncarnationUID || evidence["replacement_incarnation_uid"] != replacementIncarnationUID {
+			t.Fatalf("recovery incarnation evidence=%v", evidence)
+		}
+		foundRecoveryEvidence = true
+	}
+	if !foundRecoveryEvidence {
+		t.Fatal("recovery emitted no incarnation evidence")
 	}
 
 	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
@@ -270,7 +342,7 @@ func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T
 			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
 				t.Fatal(err)
 			}
-			if recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "runtime was lost"); err != nil {
+			if recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "runtime was lost", ""); err != nil {
 				t.Fatal(err)
 			} else if recovered.Blocked {
 				t.Fatal("recovered session remains blocked")
@@ -321,7 +393,7 @@ func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
 			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable"); !errors.Is(err, ErrPrecondition) {
+			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable", ""); !errors.Is(err, ErrPrecondition) {
 				t.Fatalf("unsupported %s boundary recovered: %v", kind, err)
 			}
 		})

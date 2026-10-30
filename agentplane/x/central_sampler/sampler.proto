@@ -63,4 +63,8 @@ message RecoverSessionRequest {
   // unknown; recovery opens a new logical JavaScript session, so prior cell handles and
   // store/load values are unavailable to the continuation.
   string operator_note = 3;
+  // Explicitly rebind to a reviewed replacement Pod of the same Sandbox after abandoning
+  // old execution handles. Omitted keeps the current incarnation fence. The next execution
+  // connection must authenticate this exact UID; no old operation is replayed.
+  string replacement_incarnation_uid = 4;
 }

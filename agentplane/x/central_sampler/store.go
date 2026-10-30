@@ -454,9 +454,9 @@ func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) 
 
 // RecoverSession abandons one blocked cell/runtime boundary after an operator has inspected the
 // recorded evidence. It never retries the provider request or any executor operation.
-func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote string) (*Session, error) {
+func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {
 	note := strings.TrimSpace(operatorNote)
-	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 {
+	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 || len(replacementIncarnationUID) > 128 || strings.TrimSpace(replacementIncarnationUID) != replacementIncarnationUID {
 		return nil, ErrInvalid
 	}
 	var recovered *Session
@@ -616,6 +616,25 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			return err
 		}
 
+		previousIncarnationUID := ""
+		if replacementIncarnationUID != "" {
+			configuration := new(samplerpb.OpenSessionRequest)
+			if err := unmarshalProto(session.Configuration, configuration); err != nil {
+				return err
+			}
+			previousIncarnationUID = configuration.GetExpectedIncarnationUid()
+			configuration.ExpectedIncarnationUid = replacementIncarnationUID
+			wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(configuration)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_session SET configuration=$2 WHERE id=$1`, session.ID, wire); err != nil {
+				return err
+			}
+			session.Configuration = wire
+			conversation.ExecutorSession = nil
+			conversation.ExecutorShell = nil
+		}
 		conversation.Pending = nil
 		conversation.Stopped = false
 		if err := updateConversation(ctx, tx, conversation); err != nil {
@@ -629,6 +648,10 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			"status": "recovered", "operator_note": note, "javascript_state_reset": true,
 			"remote_outcome": "unknown", "automatic_replay": false,
 			"abandoned_intent_ids": abandonedIntentIDs,
+		}
+		if replacementIncarnationUID != "" {
+			recoveryEvidence["previous_incarnation_uid"] = previousIncarnationUID
+			recoveryEvidence["replacement_incarnation_uid"] = replacementIncarnationUID
 		}
 		if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID}, conversation, session,
 			uuid.NewString(), "recovery", "committed", recoveryEvidence); err != nil {

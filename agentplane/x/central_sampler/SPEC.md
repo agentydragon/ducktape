@@ -226,7 +226,9 @@ reporting them exited. It advances the owner generation and durable JavaScript s
 same transaction, fencing late writes and forcing a new logical JavaScript session on any replica.
 The continuation cannot access prior `store()` / `load()` values or live-cell handles; old shared-host
 memory may remain inaccessible until that host exits. Recovery never retries an uncertain provider
-or executor operation; see [blocked Session recovery](docs/blocked_session_recovery.md).
+or executor operation. An optional operator-supplied `replacement_incarnation_uid` rebinds only the
+incarnation of the same Sandbox, clears retained native-session identity, and records old/new UIDs
+after old handles are abandoned. Future calls still authenticate that exact incarnation; see [blocked Session recovery](docs/blocked_session_recovery.md).
 
 The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
 The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured

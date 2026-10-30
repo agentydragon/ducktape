@@ -576,6 +576,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                 session_id=request.session_id,
                 expected_cursor=blocked.attached.last_cursor,
                 operator_note="Inspected the live cell and boundary evidence; recreate in-memory state before continuing.",
+                replacement_incarnation_uid="reviewed-replacement-incarnation",
             )
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
                 await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
@@ -584,6 +585,8 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             recovered = await stub.RecoverSession(recovery, metadata=METADATA)
             assert not recovered.blocked
             assert recovered.attached.last_cursor > blocked.attached.last_cursor
+            assert recovered.expected_incarnation_uid == "reviewed-replacement-incarnation"
+            assert recovered.executor == blocked.executor
             assert await store.idle_generation(request.session_id) is not None
             abandoned = [
                 intent

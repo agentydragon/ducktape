@@ -40,6 +40,13 @@ It supports unresolved cell, nested tool, and executor intents, and lost live ce
 handles. Pending provider sampling, compaction, and setup failures remain blocked and require a new
 Session.
 
+If the Sandbox's Pod was replaced, the operator may also provide
+`replacement_incarnation_uid` after verifying the new Pod belongs to the same Sandbox and retains
+its workspace. This changes only the stored incarnation fence, never the Sandbox destination.
+Recovery abandons the old execution handles, clears the retained native session, and records both
+UIDs. Subsequent calls must authenticate the supplied incarnation; a stale or wrong UID is refused.
+Omitting the field preserves the existing fence. This is explicit rebinding, not automatic failover.
+
 Recovery preserves every request and boundary record, writes an `abandoned` result with
 `remote_outcome: unknown` and `automatic_replay: false`, and completes unanswered model calls with
 an aborted output matching each call ID. It retains provider history and adds a model-visible note

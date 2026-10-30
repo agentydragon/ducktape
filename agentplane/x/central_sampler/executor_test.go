@@ -141,7 +141,7 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "remote process outcome reviewed"); err != nil {
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "remote process outcome reviewed", ""); err != nil {
 		t.Fatal(err)
 	}
 	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)

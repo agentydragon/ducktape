@@ -191,7 +191,7 @@ func (s *Sampler) RecoverSession(ctx context.Context, r *samplerpb.RecoverSessio
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetExpectedCursor(), r.GetOperatorNote())
+	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetExpectedCursor(), r.GetOperatorNote(), r.GetReplacementIncarnationUid())
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
