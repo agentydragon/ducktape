@@ -3,13 +3,16 @@ package projection
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -54,8 +57,12 @@ func TestCycleFoldsRetainedSessionsAPageAtATimeUntilCaughtUp(t *testing.T) {
 	if got, want := f.cycle(t, runner), (Backlog{Sessions: 2, Behind: 1, EventsBehind: total - testPageSize}); got != want {
 		t.Fatalf("first cycle = %+v, want %+v", got, want)
 	}
-	if got, want := f.cycle(t, runner), (Backlog{Sessions: 2}); got != want {
+	// The empty Session caught up in the first cycle and left the queue.
+	if got, want := f.cycle(t, runner), (Backlog{Sessions: 1}); got != want {
 		t.Fatalf("second cycle = %+v, want %+v", got, want)
+	}
+	if got, want := f.cycle(t, runner), (Backlog{}); got != want {
+		t.Fatalf("third cycle = %+v, want %+v", got, want)
 	}
 
 	if sourceID, through := checkpointOf(t, f.db, folded); through != total || sourceID == nil {
@@ -88,14 +95,108 @@ func TestReplicasSplitSessionsByLease(t *testing.T) {
 	}
 }
 
+func leases(t *testing.T, db *sql.DB, sessionID uuid.UUID) int {
+	t.Helper()
+	return count(t, db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID)
+}
+
+func TestCycleFoldsOnlySessionsWhoseHistoryChanged(t *testing.T) {
+	for name, scenario := range map[string]struct {
+		change func(t *testing.T, f projectorFixture, sessionID uuid.UUID)
+		folded func(t *testing.T, f projectorFixture, sessionID uuid.UUID) bool
+	}{
+		"appended": {
+			change: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) {
+				f.appendTo(t, f.history, sessionID, harnessStarted(2))
+			},
+			folded: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) bool {
+				_, through := checkpointOf(t, f.db, sessionID)
+				return through == 2
+			},
+		},
+		"feed state": {
+			change: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) {
+				f.recordFeed(t, sessionID, &runnerpb.Attached{LastCursor: 1})
+			},
+			folded: func(t *testing.T, f projectorFixture, sessionID uuid.UUID) bool {
+				return f.summary(t, sessionID).attached != nil
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newProjectorFixture(t)
+			emptyDatabase(t, f.db)
+			const idle = 5
+			var sessionIDs []uuid.UUID
+			for range idle + 1 {
+				sessionIDs = append(sessionIDs, f.discoverable(t, f.history, harnessStarted(1)))
+			}
+			runner := NewFoldRunner(f.db, f.history, 2, testPageSize)
+			if got, want := f.cycle(t, runner), (Backlog{Sessions: idle + 1}); got != want {
+				t.Fatalf("first cycle = %+v, want %+v", got, want)
+			}
+			if got := f.cycle(t, runner); got != (Backlog{}) {
+				t.Fatalf("cycle with nothing changed = %+v, want none", got)
+			}
+			if got := leases(t, f.db, sessionIDs[0]); got != 0 {
+				t.Fatalf("a caught-up Session has %d leases, want them handed back", got)
+			}
+
+			changed := sessionIDs[0]
+			scenario.change(t, f, changed)
+			if got, want := f.cycle(t, runner), (Backlog{Sessions: 1}); got != want {
+				t.Fatalf("cycle after one Session changed = %+v, want %+v", got, want)
+			}
+			if !scenario.folded(t, f, changed) {
+				t.Fatal("the fold did not carry the change into the Session's view")
+			}
+		})
+	}
+}
+
+func TestConcurrentReplicasFoldEachChangedSessionOnce(t *testing.T) {
+	f := newProjectorFixture(t)
+	emptyDatabase(t, f.db)
+	const sessions, replicas = 24, 4
+	for range sessions {
+		f.discoverable(t, f.history, harnessStarted(1))
+	}
+	runners := make([]*FoldRunner, replicas)
+	for index := range runners {
+		runners[index] = NewFoldRunner(f.db, f.history, 2, testPageSize)
+	}
+	// Each Session takes one page, so a claim of a Session another replica folded would show as an extra one.
+	var claimed atomic.Int64
+	for count(t, f.db, "SELECT count(*) FROM session_fold_pending") > 0 {
+		var group errgroup.Group
+		for _, runner := range runners {
+			group.Go(func() error {
+				backlog, err := runner.Cycle(t.Context())
+				claimed.Add(int64(backlog.Sessions))
+				return err
+			})
+		}
+		if err := group.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := claimed.Load(); got != sessions {
+		t.Fatalf("replicas folded %d Sessions, want each of %d once", got, sessions)
+	}
+	if got := count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE through_cursor = 1"); got != sessions {
+		t.Fatalf("%d Sessions folded through their history, want %d", got, sessions)
+	}
+}
+
 func TestCycleHandsBackTheLeaseOfASessionNoLongerRetained(t *testing.T) {
 	f := newProjectorFixture(t)
 	emptyDatabase(t, f.db)
-	sessionID := f.discoverable(t, f.history, harnessStarted(1))
+	// More than a page, so the first cycle leaves it behind and leased.
+	sessionID := f.discoverable(t, f.history, completedTurn(1)...)
 	runner := NewFoldRunner(f.db, f.history, 1, testPageSize)
 	f.cycle(t, runner)
-	if count(t, f.db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID) != 1 {
-		t.Fatal("the fold holds no lease on the Session it folded")
+	if leases(t, f.db, sessionID) != 1 {
+		t.Fatal("the fold holds no lease on the Session it is behind on")
 	}
 
 	if _, err := f.db.Exec("TRUNCATE session_history CASCADE"); err != nil {
