@@ -31,7 +31,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
   independently persistent harnesses, optional execution attachments and backend-specific constraints
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
-  where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; no direction chosen
+  where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
