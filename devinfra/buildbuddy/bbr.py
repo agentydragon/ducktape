@@ -80,7 +80,7 @@ def check_remote_fetch_url(repo: pygit2.Repository) -> str | None:
     # Git also accepts [user@]host:path (including bracketed IPv6 hosts).
     # A slash before the colon makes it a local path instead. See git-clone(1).
     scp_remote = re.fullmatch(r"(?:[^/@:\s]+@)?(?:\[[^\]]+\]|[^/:\s]+):.+", url)
-    if parsed.scheme == "file" or (not parsed.netloc and not scp_remote):
+    if parsed.scheme == "file" or (not (parsed.scheme and parsed.netloc) and not scp_remote):
         return (
             f"bbr: selected remote {remote!r} resolves to a local filesystem path, "
             "which the hosted runner cannot fetch. Configure an externally reachable "
