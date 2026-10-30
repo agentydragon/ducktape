@@ -12,6 +12,7 @@ skill_package(
                 "scripts/analyze_executions.py",
                 "scripts/attribution.py",
                 "scripts/checks.jq",
+                "scripts/collect.py",
                 "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
@@ -90,6 +91,11 @@ py_library(
     srcs = ["scripts/snapshot_analysis.py"],
 )
 
+py_library(
+    name = "collect",
+    srcs = ["scripts/collect.py"],
+)
+
 py_test(
     name = "test_analyze_executions",
     srcs = ["test_analyze_executions.py"],
@@ -128,6 +134,17 @@ py_test(
     srcs = ["test_snapshot_analysis.py"],
     deps = [
         ":snapshot_analysis",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect",
+    srcs = ["test_collect.py"],
+    deps = [
+        ":collect",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
