@@ -31,7 +31,7 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		},
 		SetupScript: &setup,
 	}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account")
+	session, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
 	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
-	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, []ResponsesItem{call}, nil); err != nil {
+	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	second, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-2"})
@@ -104,8 +104,9 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if !conversation.Stopped || conversation.Pending != nil {
 		t.Fatalf("rejection left conversation live or pending: stopped=%v pending=%v", conversation.Stopped, conversation.Pending)
 	}
-	if len(conversation.Items) != 2 || conversation.Items[1].Type != ResponsesItemCustomToolOutput {
-		t.Fatalf("unstarted call output was not durably settled: %#v", conversation.Items)
+	items := responsesItems(t, conversation.Archive)
+	if len(items) != 2 || items[1].Type != ResponsesItemCustomToolOutput {
+		t.Fatalf("unstarted call output was not durably settled: %#v", items)
 	}
 	result, err := intentResultForDB(t, store, second)
 	if err != nil {
@@ -130,7 +131,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		},
 		Executor: executor, ExpectedIncarnationUid: previousIncarnationUID,
-	}, "fixture-account")
+	}, "fixture-account", APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, []ResponsesItem{call}, nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	cellIntent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell", "call": call})
@@ -183,11 +184,11 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextItems, err := encodeItems(conversation.Items)
+	contextItems, err := json.Marshal(conversation.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET context_items=$2::jsonb WHERE id=$1`,
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET context=$2::jsonb WHERE id=$1`,
 		session.ConversationID, contextItems); err != nil {
 		t.Fatal(err)
 	}
@@ -305,11 +306,13 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(retained.Items) != 3 || retained.Items[1].Type != ResponsesItemCustomToolOutput || retained.Items[1].CallID != call.CallID || retained.Items[2].Role != "developer" {
-		t.Fatalf("provider history was not completed with a matching aborted output: %#v", retained.Items)
+	archive := responsesItems(t, retained.Archive)
+	if len(archive) != 3 || archive[1].Type != ResponsesItemCustomToolOutput || archive[1].CallID != call.CallID || archive[2].Role != "developer" {
+		t.Fatalf("provider history was not completed with a matching aborted output: %#v", archive)
 	}
-	if len(retained.ContextItems) != 3 || retained.ContextItems[1].CallID != call.CallID || retained.ContextItems[2].Role != "developer" {
-		t.Fatalf("model context did not retain the aborted output: %#v", retained.ContextItems)
+	active := responsesItems(t, retained.Context())
+	if len(active) != 3 || active[1].CallID != call.CallID || active[2].Role != "developer" {
+		t.Fatalf("model context did not retain the aborted output: %#v", active)
 	}
 }
 
@@ -325,7 +328,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := ResponsesItem{Type: ResponsesItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, []ResponsesItem{call}, nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
@@ -373,10 +376,11 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conversation.Pending != nil || len(conversation.Items) != 3 || conversation.Items[1].CallID != call.CallID {
+	items := responsesItems(t, conversation.Archive)
+	if conversation.Pending != nil || len(items) != 3 || items[1].CallID != call.CallID {
 		t.Fatalf("unsettled call: %+v", conversation)
 	}
-	output, err := json.Marshal(conversation.Items[1].Output)
+	output, err := json.Marshal(items[1].Output)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,7 +641,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "test-opaque"}}
+	replacement := &ResponsesContext{Items: []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "test-opaque"}}}
 	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
@@ -981,8 +985,8 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,item) VALUES($1,1,$2::jsonb)`, session.ConversationID,
-		`{"type":"opaque","provider_id":9007199254740993}`); err != nil {
+	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,1,$2::jsonb)`, session.ConversationID,
+		`{"type":"reasoning","provider_id":9007199254740993}`); err != nil {
 		t.Fatal(err)
 	}
 	intentID, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})
@@ -999,7 +1003,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(t.Context(), store.DB()); err != nil {
+	if err := Migrate(t.Context(), store.DB(), map[string]APIStyle{"fixture-model": APIStyleResponses}); err != nil {
 		t.Fatal(err)
 	}
 	afterSession, err := store.GetSession(t.Context(), session.ID, "")
@@ -1010,7 +1014,8 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	retainedItem, err := decodeJSONValue(afterConversation.Items[0].Raw)
+	afterItems := responsesItems(t, afterConversation.Archive)
+	retainedItem, err := decodeJSONValue(afterItems[0].Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1094,7 +1099,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	}
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
-	}, "fixture-account")
+	}, "fixture-account", APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1336,7 +1341,8 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		}
 		return string(encoded)
 	}
-	if got, want := normalized(conversation.Items[len(conversation.Items)-1]), normalized(expected); got != want {
+	items := responsesItems(t, conversation.Archive)
+	if got, want := normalized(items[len(items)-1]), normalized(expected); got != want {
 		t.Fatalf("last conversation item=%s, want %s", got, want)
 	}
 	for id, want := range map[string]samplerpb.CommandOutcome{
@@ -1400,14 +1406,14 @@ func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account"); err != nil {
+	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", APIStyleResponses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account"); err != nil {
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses); err != nil {
 		t.Fatalf("reopening with retired metadata: %v", err)
 	}
 	request.Spec.Model = "different"
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account"); !errors.Is(err, ErrConflict) {
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account", APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed session spec accepted: %v", err)
 	}
 }

@@ -137,7 +137,7 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
 		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
-	}, "test-account-uid")
+	}, "test-account-uid", APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}

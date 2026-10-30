@@ -223,9 +223,9 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 assert not any(intent.request.get("kind") == "tool" for intent in intents), (
                     "partial tool arguments crossed the terminal provider-message boundary"
                 )
-                assert not any(
-                    item.get("type") == "anthropic_message" for item in await store.archive_items(SESSION_ID)
-                ), "an incomplete provider response was appended to canonical context"
+                assert not any(item.get("role") == "assistant" for item in await store.archive_items(SESSION_ID)), (
+                    "an incomplete provider response was appended to canonical context"
+                )
 
 
 # gazelle:include_dep @pypi//grpcio

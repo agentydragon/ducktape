@@ -1,8 +1,10 @@
 package centralsampler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -250,12 +252,13 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 				} else if len(tools) != 2 || tools[0].Type != "custom" || tools[1].Name != "wait" {
 					t.Fatalf("freeform tools: %+v", tools)
 				}
-				for _, call := range []ResponsesToolCall{
-					{Type: ResponsesItemFunctionCall, Name: "exec"},
-					{Type: ResponsesItemCustomToolCall, Name: "exec"},
-					{Type: ResponsesItemFunctionCall, Name: "wait"},
+				for _, call := range []ToolInvocation{
+					{Encoding: ExecEncodingJSON, Name: "exec"},
+					{Encoding: ExecEncodingFreeform, Name: "exec"},
+					{Encoding: ExecEncodingJSON, Name: "wait"},
 				} {
-					want := encoding == ExecEncodingJSON && call.Name == "exec" && call.Type == ResponsesItemFunctionCall || encoding == ExecEncodingFreeform && (call.Name == "wait" || call.Type == ResponsesItemCustomToolCall)
+					want := encoding == ExecEncodingJSON && call.Name == "exec" && call.Encoding == ExecEncodingJSON ||
+						encoding == ExecEncodingFreeform && (call.Name == "exec" && call.Encoding == ExecEncodingFreeform || call.Name == "wait" && call.Encoding == ExecEncodingJSON)
 					if call.IsModelTool(config) != want {
 						t.Fatalf("wrong tool validation: %+v", call)
 					}
@@ -283,12 +286,21 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 }
 
 func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
-	call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call"}
-	output := call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "result"}})
-	notification := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call", Output: []ResponsesContentPart{{Type: "input_text", Text: "later"}}}
-	items := []ResponsesItem{
-		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
+	state := &ResponsesContext{}
+	if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"function_call","name":"exec","call_id":"call","arguments":"{\"code\":\"text(1)\"}"}`)}); err != nil {
+		t.Fatal(err)
 	}
+	call, err := state.FindCall("call")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+		t.Fatal(err)
+	}
+	items := state.Items
 	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}, Items: items}, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
@@ -306,29 +318,29 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if strings.Contains(encoded, "custom_tool_call_output") {
 		t.Fatal("standard notification became a duplicate tool output")
 	}
-	if items[2].Type != ResponsesItemCustomToolOutput {
-		t.Fatal("request encoding mutated durable context")
+	if items[1].Type != ResponsesItemFunctionOutput || items[2].Type != ResponsesItemFunctionOutput {
+		t.Fatal("async outputs did not retain the function-call encoding")
 	}
 }
 
-func TestResponsesToolCallShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T) {
+func TestToolInvocationShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		item      string
-		wantValid bool
-		wantType  ResponsesItemType
+		name         string
+		item         string
+		wantValid    bool
+		wantEncoding ExecEncoding
 	}{
 		{
-			name:      "unknown custom tool has an answerable shape",
-			item:      `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom","input":"{}"}`,
-			wantValid: true,
-			wantType:  ResponsesItemCustomToolCall,
+			name:         "unknown custom tool has an answerable shape",
+			item:         `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom","input":"{}"}`,
+			wantValid:    true,
+			wantEncoding: ExecEncodingFreeform,
 		},
 		{
-			name:      "unknown function has an answerable shape",
-			item:      `{"type":"function_call","call_id":"function-1","name":"missing_function","arguments":"{}"}`,
-			wantValid: true,
-			wantType:  ResponsesItemFunctionCall,
+			name:         "unknown function has an answerable shape",
+			item:         `{"type":"function_call","call_id":"function-1","name":"missing_function","arguments":"{}"}`,
+			wantValid:    true,
+			wantEncoding: ExecEncodingJSON,
 		},
 		{
 			name: "custom call without input is malformed",
@@ -355,16 +367,185 @@ func TestResponsesToolCallShapeSeparatesUnknownNamesFromMalformedItems(t *testin
 			if got := item.HasValidToolCallShape(); got != test.wantValid {
 				t.Fatalf("HasValidToolCallShape()=%t, want %t", got, test.wantValid)
 			}
-			if test.wantValid && item.Type != test.wantType {
-				t.Fatalf("item type=%s, want %s", item.Type, test.wantType)
+			if test.wantValid {
+				call, ok := item.ToolCall()
+				if !ok || call.Encoding != test.wantEncoding {
+					t.Fatalf("tool call=%+v, want encoding %s", call, test.wantEncoding)
+				}
 			}
 		})
 	}
 }
 
+func TestResponsesContextRetainsNativeRawRecordsAndNumericPrecision(t *testing.T) {
+	state := &ResponsesContext{}
+	input := json.RawMessage(` {"type":"reasoning","provider_data":{"large":9007199254740993}} `)
+	if err := state.AppendRecords([]json.RawMessage{input}); err != nil {
+		t.Fatal(err)
+	}
+	records, err := state.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || !strings.Contains(string(records[0]), `9007199254740993`) || !strings.Contains(string(records[0]), `"provider_data"`) {
+		t.Fatalf("raw provider fields or number precision lost: %s", records)
+	}
+	if !bytes.Contains(records[0], []byte(`"type":"reasoning"`)) {
+		t.Fatalf("native Responses item not retained: %s", records[0])
+	}
+}
+
+func TestResponsesContextRejectsMarkersAndUnknownRecordsAtomically(t *testing.T) {
+	for _, typeName := range []string{
+		"anthropic_message", "reasoning_effort", "reasoning_effort_restore", "execution_state",
+		"additional_tools", "compaction_trigger", "unknown_record",
+	} {
+		t.Run(typeName, func(t *testing.T) {
+			state := &ResponsesContext{}
+			if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"message","role":"user","content":[]}`)}); err != nil {
+				t.Fatal(err)
+			}
+			err := state.AppendRecords([]json.RawMessage{
+				[]byte(`{"type":"message","role":"assistant","content":[]}`),
+				[]byte(`{"type":"` + typeName + `"}`),
+			})
+			if err == nil {
+				t.Fatalf("accepted non-native type %q", typeName)
+			}
+			if len(state.Items) != 1 {
+				t.Fatalf("failed append partially mutated context: %+v", state.Items)
+			}
+		})
+	}
+}
+
+func TestResponsesContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
+	state := &ResponsesContext{}
+	if err := state.AppendRecords([]json.RawMessage{
+		[]byte(`{"type":"message","role":"user","content":[]}`),
+		[]byte(`{"type":"function_call","call_id":"call-1","name":"exec","arguments":"{}"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := state.PendingCalls()
+	if err != nil || len(pending) != 1 || pending[0].SourceRecord != 2 || pending[0].Encoding != ExecEncodingJSON {
+		t.Fatalf("pending calls=%+v, error=%v", pending, err)
+	}
+	call, err := state.FindCall("call-1")
+	if err != nil || call.SourceRecord != 2 {
+		t.Fatalf("found call=%+v, error=%v", call, err)
+	}
+	if _, err := state.FindCall("missing"); !errors.Is(err, ErrMissing) {
+		t.Fatalf("unknown call error=%v, want ErrMissing", err)
+	}
+	parts := []ContentPart{{Type: "input_text", Text: "first"}}
+	if err := state.AppendToolResult(call, parts); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
+		t.Fatal(err)
+	}
+	if state.Items[2].Type != ResponsesItemFunctionOutput || state.Items[3].Type != ResponsesItemFunctionOutput {
+		t.Fatalf("tool outputs=%+v", state.Items[2:])
+	}
+	if err := state.CheckSettled(); err != nil {
+		t.Fatalf("repeated async output left call unsettled: %v", err)
+	}
+}
+
+func TestResponsesContextUsesCustomOutputForFreeformCalls(t *testing.T) {
+	state := &ResponsesContext{}
+	if err := state.AppendRecords([]json.RawMessage{
+		[]byte(`{"type":"custom_tool_call","call_id":"exec-1","name":"exec","input":"text(1)"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	call, err := state.FindCall("exec-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.Items[1].Type; got != ResponsesItemCustomToolOutput {
+		t.Fatalf("freeform result type=%s, want %s", got, ResponsesItemCustomToolOutput)
+	}
+}
+
+func TestResponsesContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
+	call := []byte(`{"type":"function_call","call_id":"call-1","name":"exec","arguments":"{}"}`)
+	functionOutput := []byte(`{"type":"function_call_output","call_id":"call-1","output":[]}`)
+	for _, test := range []struct {
+		name    string
+		records [][]byte
+	}{
+		{name: "duplicate call", records: [][]byte{call, call}},
+		{name: "orphan output", records: [][]byte{functionOutput}},
+		{name: "wrong output encoding", records: [][]byte{call, []byte(`{"type":"custom_tool_call_output","call_id":"call-1","output":[]}`)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := &ResponsesContext{}
+			records := make([]json.RawMessage, len(test.records))
+			for index, record := range test.records {
+				records[index] = record
+			}
+			if err := state.AppendRecords(records); err == nil {
+				t.Fatalf("accepted invalid call/output pairing: %s", test.name)
+			}
+			if len(state.Items) != 0 {
+				t.Fatalf("failed pairing check partially mutated context: %+v", state.Items)
+			}
+		})
+	}
+	state := &ResponsesContext{}
+	if err := state.AppendRecords([]json.RawMessage{call}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CheckSettled(); err == nil {
+		t.Fatal("unanswered call was considered settled")
+	}
+}
+
+func TestResponsesContextTerminalAndAdapterOnlyState(t *testing.T) {
+	state := &ResponsesContext{}
+	if err := state.AppendUser([]ContentPart{{Type: "input_text", Text: "question"}}); err != nil {
+		t.Fatal(err)
+	}
+	if state.TurnComplete() {
+		t.Fatal("user message completed a turn")
+	}
+	if err := state.AppendNotice([]ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
+		t.Fatal(err)
+	}
+	if state.Items[1].Type != ResponsesItemMessage || state.Items[1].Role != "developer" || state.TurnComplete() {
+		t.Fatalf("notice did not become a non-terminal developer message: %+v", state.Items[1])
+	}
+	if err := state.ChangeEffort("high"); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendExecutionState(&ExecutionState{Cells: []LiveCell{{ID: "live"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"message","role":"assistant","content":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if !state.TurnComplete() {
+		t.Fatal("terminal assistant message did not complete the settled turn")
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"anthropic_message", "reasoning_effort", "execution_state", "additional_tools", "compaction_trigger"} {
+		if strings.Contains(string(encoded), marker) {
+			t.Fatalf("Responses context replayed adapter marker %q: %s", marker, encoded)
+		}
+	}
+}
+
 func TestResponsesItemRetainsImageAndAudioContent(t *testing.T) {
 	input := []byte(`[{"type":"input_image","image_url":"data:image/png;base64,opaque","detail":"high"},{"type":"input_audio","data":"opaque-audio","format":"wav"}]`)
-	var content []ResponsesContentPart
+	var content []ContentPart
 	if err := json.Unmarshal(input, &content); err != nil {
 		t.Fatal(err)
 	}

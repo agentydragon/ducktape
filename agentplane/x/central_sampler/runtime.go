@@ -343,8 +343,12 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 						err = stateErr
 						break
 					}
-					call := pendingCall(conversation.Items)
-					needsHost := len(state.Cells) > 0 || call != nil && call.IsModelTool(r.settings.Models[session.Model])
+					calls, callErr := conversation.Archive.PendingCalls()
+					if callErr != nil {
+						err = callErr
+						break
+					}
+					needsHost := len(state.Cells) > 0 || len(calls) > 0 && calls[0].IsModelTool(r.settings.Models[session.Model])
 					if needsHost {
 						interrupts, interruptErr := r.store.PendingInterrupts(turnCtx, owner)
 						if interruptErr != nil {
@@ -643,6 +647,11 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
+	config, configured := r.settings.Models[session.Model]
+	if !configured || conversation.API != config.API {
+		return "", ErrPrecondition
+	}
+
 	if conversation.Pending != nil {
 		return "", &UnknownEffectError{Reason: "unresolved provider or executor intent blocks continuation; automatic replay is unsafe"}
 	}
@@ -661,7 +670,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "", err
 		}
 	}
-	if call := pendingCall(conversation.Items); call != nil {
+	calls, err := conversation.Archive.PendingCalls()
+	if err != nil {
+		return "", err
+	}
+	if len(calls) > 0 {
+		call := &calls[0]
 		if !call.IsModelTool(r.settings.Models[session.Model]) {
 			if !call.HasValidShape() {
 				return "", &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "call": call}}
@@ -669,17 +683,16 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			if call.IsConfiguredToolName(r.settings.Models[session.Model]) {
 				return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "call": call}}
 			}
-			content := []ResponsesContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
-			item := call.OutputItem(content)
+			content := []ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call, "dispatched": false})
 			if err != nil {
 				return "", err
 			}
 			result := map[string]any{
-				"type": string(item.Type), "call_id": call.CallID, "output": content,
+				"call_id": call.CallID, "output": content,
 				"success": false, "dispatched": false,
 			}
-			if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
+			if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 				return "", err
 			}
 			return "cell", nil
@@ -695,13 +708,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if err != nil {
 			var hostError *codeModeHostResponseError
 			if errors.As(err, &hostError) && hostError.phase == codeOperationResponsePhase {
-				content = []ResponsesContentPart{{Type: "input_text", Text: hostError.message}}
-				item := call.OutputItem(content)
+				content = []ContentPart{{Type: "input_text", Text: hostError.message}}
 				result := map[string]any{
-					"type": string(item.Type), "call_id": call.CallID, "output": content, "success": false,
+					"call_id": call.CallID, "output": content, "success": false,
 					"code_mode_host_response": hostError.evidence(),
 				}
-				if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
+				if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 					return "", err
 				}
 				return "cell", nil
@@ -714,9 +726,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", err
 		}
-		item := call.OutputItem(content)
-		result := map[string]any{"type": string(item.Type), "call_id": call.CallID, "output": content}
-		if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
+		result := map[string]any{"call_id": call.CallID, "output": content}
+		if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 			return "", err
 		}
 		return "cell", nil
@@ -740,60 +751,38 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if steered {
 		return "steer", nil
 	}
-	if len(conversation.Items) > 0 {
-		last := conversation.Items[len(conversation.Items)-1]
-		if (last.Type == ResponsesItemMessage && last.Role == "assistant") || anthropicEndTurn(last) {
-			return "done", nil
-		}
+	if conversation.Archive.TurnComplete() {
+		return "done", nil
 	}
-	threshold := r.settings.AutoCompactTokens
-	config := r.settings.Models[session.Model]
-	if config.API == APIStyleAnthropicMessages {
-		threshold = nil
-		if config.AnthropicMessages.Compaction != nil {
-			threshold = config.AnthropicMessages.Compaction.AutoCompactTokens
-		}
+	adapter, err := adapterFor(config)
+	if err != nil {
+		return "", err
 	}
+	if conversation.API != config.API {
+		return "", ErrPrecondition
+	}
+	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens)
+
 	if threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
 		return "compact", nil
 	}
-	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
-		return "", err
-	}
-	if config.API == APIStyleAnthropicMessages {
-		conversation, err = r.store.RecordAnthropicExecutionState(ctx, owner, state)
-		if err != nil {
-			return "", err
-		}
-	}
-	metadata, err := r.store.ProviderMetadata(ctx, owner)
+	conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
 	if err != nil {
 		return "", err
 	}
-	params := ResponsesRequestParams{
-		Model: config.ProviderModel, Effort: session.Effort, Attribution: metadata,
-		Items: conversation.Context(), Instructions: conversation.Instructions, ExecutionState: state,
+
+	metadata, err := r.store.ProviderMetadata(ctx, owner)
+	if err != nil {
+		return "", err
 	}
 	connection, err := r.settings.Connection(session.Model)
 	if err != nil {
 		return "", err
 	}
-	var body any
-	if config.API == APIStyleAnthropicMessages {
-		if config.AnthropicMessages.PerMessageEffort {
-			launch := &samplerpb.OpenSessionRequest{}
-			if err := proto.Unmarshal(session.Configuration, launch); err != nil {
-				return "", err
-			}
-			params.Effort = launch.GetSpec().GetReasoningEffort()
-		}
-		body, err = BuildAnthropicRequest(params, config, anthropicPreviousMessageID(conversation.Items))
-	} else {
-		body, err = BuildResponsesRequest(params, config)
-	}
+	body, err := adapter.Prepare(conversation, session, state, metadata)
 	if err != nil {
 		return "", err
 	}
@@ -801,26 +790,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	// Persist the exact outgoing content before dispatch; credentials never enter this record.
 	intentID, err := r.store.Begin(ctx, owner, providerRequestAudit("sampling", connection, config, body, wire))
 	if err != nil {
 		return "", err
 	}
-	var response *ProviderResponse
 	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
-	if config.API == APIStyleAnthropicMessages {
-		response, err = SampleAnthropic(ctx, client, connection, config, wire, evidence, false)
-	} else {
-		var credential string
-		credential, err = connection.Auth.ReadCredential()
-		if err == nil {
-			var headers map[string]string
-			headers, err = r.store.ProviderHeaders(ctx, owner)
-			if err == nil {
-				response, err = Sample(ctx, client, connection.BaseURL, credential, body.(ResponsesRequest), config.Responses, evidence, headers, false)
-			}
-		}
-	}
+	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence)
 	if err != nil {
 		var known *KnownFailureError
 		if errors.As(err, &known) {
@@ -830,55 +805,31 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "", err
 	}
-	seenCallIDs := make(map[string]struct{})
-	if config.API == APIStyleAnthropicMessages {
-		for _, prior := range conversation.Items {
-			if call, ok := prior.ToolCall(); ok {
-				seenCallIDs[call.CallID] = struct{}{}
+	candidate, err := cloneNativeContext(conversation.Archive)
+	if err == nil {
+		err = candidate.AppendRecords(response.Records)
+	}
+	if err == nil {
+		var pending []ToolInvocation
+		pending, err = candidate.PendingCalls()
+		for _, call := range pending {
+			if !call.HasValidShape() || (call.IsConfiguredToolName(config) && !call.IsModelTool(config)) {
+				err = &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
+				break
 			}
 		}
 	}
-	for _, item := range response.Output {
-		call, isCall := item.ToolCall()
-		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && item.Type != ResponsesItemAnthropicMessage && !isCall {
-			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported provider output type", "response": response.Audit(), "item": item}}
-			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-				return "", err
-			}
-			return "", failure
+	if err != nil {
+		failure := &KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
+		if rejectErr := r.store.Reject(ctx, owner, intentID, failure); rejectErr != nil {
+			return "", rejectErr
 		}
-		if isCall {
-			if !item.HasValidToolCallShape() {
-				failure := &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "response": response.Audit(), "item": item}}
-				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-					return "", err
-				}
-				return "", failure
-			}
-			if _, exists := seenCallIDs[call.CallID]; exists {
-				failure := &KnownFailureError{Evidence: map[string]any{"reason": "duplicate model tool call ID", "response": response.Audit(), "item": item}}
-				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-					return "", err
-				}
-				return "", failure
-			}
-			seenCallIDs[call.CallID] = struct{}{}
-			if call.IsConfiguredToolName(r.settings.Models[session.Model]) && !call.IsModelTool(r.settings.Models[session.Model]) {
-				failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "response": response.Audit(), "item": item}}
-				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-					return "", err
-				}
-				return "", failure
-			}
-		}
+		return "", failure
 	}
-	contextTokens := response.AnthropicContextTokens
-	if response.Terminal != nil {
-		contextTokens = response.Terminal.TotalTokens()
-	}
-	if err := r.store.Finish(ctx, owner, intentID, response.Audit(), response.Output, contextTokens); err != nil {
+	if err := r.store.Finish(ctx, owner, intentID, response.Audit, response.Records, response.ContextTokens); err != nil {
 		return "", err
 	}
+
 	return "sample", nil
 }
 
@@ -894,116 +845,24 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	if err := checkPairs(conversation.Items); err != nil {
+	if err := conversation.Archive.CheckSettled(); err != nil {
 		return err
 	}
-	original := conversation.Context()
-	if err := checkPairs(original); err != nil {
+	if err := conversation.Context().CheckSettled(); err != nil {
 		return err
 	}
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return err
 	}
-	if r.settings.Models[model].API == APIStyleAnthropicMessages {
-		return r.compactAnthropic(ctx, owner, model, conversation, metadata, state)
-	}
-	body, err := BuildResponsesCompactionRequest(ResponsesRequestParams{
-		Model: r.settings.Models[model].ProviderModel, Attribution: metadata,
-		Items: original, Instructions: conversation.Instructions, ExecutionState: state,
-	}, r.settings.Models[model])
+	adapter, err := adapterFor(r.settings.Models[model])
 	if err != nil {
 		return err
 	}
-	connection, err := r.settings.Connection(model)
-	if err != nil {
-		return err
+	if adapter.API() != conversation.API {
+		return ErrPrecondition
 	}
-	credential, err := connection.Auth.ReadCredential()
-	if err != nil {
-		return err
-	}
-	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestAudit("compaction", connection, r.settings.Models[model], body, mustJSON(body)), original)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	headers, err := r.store.ProviderHeaders(ctx, owner)
-	if err != nil {
-		return err
-	}
-	response, err := Sample(ctx, client, connection.BaseURL, credential, body, r.settings.Models[model].Responses,
-		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
-	if err != nil {
-		var known *KnownFailureError
-		if errors.As(err, &known) {
-			if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {
-				return rejectErr
-			}
-		}
-		return err
-	}
-	if len(response.Output) != 1 || response.Output[0].Type != ResponsesItemCompaction {
-		failure := &KnownFailureError{Evidence: map[string]any{"reason": "compaction must produce exactly one compaction item and no tools", "response": response.Audit()}}
-		if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-			return err
-		}
-		return failure
-	}
-	if response.Output[0].EncryptedContent == "" {
-		failure := &KnownFailureError{Evidence: map[string]any{"reason": "compaction must include opaque encrypted_content", "response": response.Audit()}}
-		if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-			return err
-		}
-		return failure
-	}
-	if contextBytes(response.Output) >= contextBytes(original) {
-		failure := &KnownFailureError{Evidence: map[string]any{"reason": "compaction did not reduce serialized model context", "response": response.Audit()}}
-		if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-			return err
-		}
-		return failure
-	}
-	return r.store.FinishCompaction(ctx, owner, intentID, response.Audit(), original, response.Output)
-}
-
-func pendingCall(items []ResponsesItem) *ResponsesToolCall {
-	calls := unansweredCalls(items)
-	if len(calls) == 0 {
-		return nil
-	}
-	return &calls[0]
-}
-
-func checkPairs(items []ResponsesItem) error {
-	pending, seen := map[string]struct{}{}, map[string]struct{}{}
-	for _, item := range items {
-		switch item.Type {
-		case ResponsesItemCustomToolCall, ResponsesItemFunctionCall:
-			callID := item.CallID
-			if _, exists := seen[callID]; exists {
-				return &UnknownEffectError{Reason: "duplicate tool call " + callID}
-			}
-			seen[callID] = struct{}{}
-			pending[callID] = struct{}{}
-		case ResponsesItemCustomToolOutput, ResponsesItemFunctionOutput:
-			// notify() adds outputs for an exec call that may already have its own.
-			callID := item.CallID
-			if _, exists := seen[callID]; !exists {
-				return &UnknownEffectError{Reason: "orphan tool output " + callID}
-			}
-			delete(pending, callID)
-		}
-	}
-	if len(pending) != 0 {
-		return &UnknownEffectError{Reason: fmt.Sprintf("unresolved tool calls %v", sortedKeys(pending))}
-	}
-	return nil
-}
-
-func contextBytes(items []ResponsesItem) int {
-	data, _ := json.Marshal(items)
-	return len(data)
+	return adapter.Compact(ctx, r, owner, model, conversation, metadata, state)
 }
 
 func sortedKeys(values map[string]struct{}) []string {

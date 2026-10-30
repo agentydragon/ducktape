@@ -36,7 +36,11 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize bool)
 	}
 	defer db.Close()
 	if initialize {
-		return centralsampler.Migrate(ctx, db)
+		modelAPIs := make(map[string]centralsampler.APIStyle, len(settings.Models))
+		for model, config := range settings.Models {
+			modelAPIs[model] = config.API
+		}
+		return centralsampler.Migrate(ctx, db, modelAPIs)
 	}
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return err

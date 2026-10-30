@@ -51,21 +51,15 @@ type ResponseEvidence struct {
 	IntentID string
 }
 
-type ProviderResponse struct {
-	Terminal               *ResponsesTerminal
-	Output                 []ResponsesItem
-	Events                 []ResponsesEvent
-	AnthropicMessage       json.RawMessage
-	AnthropicEvents        []json.RawMessage
-	AnthropicContextTokens *int
-	HTTPStatus             int
-	ProviderRequestID      string
+type ResponsesResponse struct {
+	Terminal          *ResponsesTerminal
+	Output            []ResponsesItem
+	Events            []ResponsesEvent
+	HTTPStatus        int
+	ProviderRequestID string
 }
 
-func (r ProviderResponse) Audit() map[string]any {
-	if len(r.AnthropicMessage) > 0 {
-		return map[string]any{"response": r.AnthropicMessage, "events": r.AnthropicEvents, "http_status": r.HTTPStatus, "provider_request_id": r.ProviderRequestID}
-	}
+func (r ResponsesResponse) Audit() map[string]any {
 	return map[string]any{"response": r.Terminal, "events": r.Events}
 }
 
@@ -196,9 +190,6 @@ func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]Responses
 	answered := map[string]bool{}
 	adaptNotifications := config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON
 	for _, item := range items {
-		if item.Type == ResponsesItemEffort {
-			continue
-		}
 		if adaptNotifications && item.IsToolOutput() {
 			if answered[item.CallID] {
 				texts := make([]string, 0, len(item.Output))
@@ -265,7 +256,7 @@ func canonicalJSON(value any) string {
 	return string(data)
 }
 
-func Sample(ctx context.Context, client *http.Client, proxyURL, credential string, body ResponsesRequest, responses ResponsesConfig, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ProviderResponse, error) {
+func Sample(ctx context.Context, client *http.Client, proxyURL, credential string, body ResponsesRequest, responses ResponsesConfig, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ResponsesResponse, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -309,8 +300,8 @@ func Sample(ctx context.Context, client *http.Client, proxyURL, credential strin
 	return readProviderStream(ctx, io.LimitReader(reader, maxProviderStreamBytes), evidence)
 }
 
-func readProviderStream(ctx context.Context, reader io.Reader, evidence *ResponseEvidence) (*ProviderResponse, error) {
-	result := &ProviderResponse{}
+func readProviderStream(ctx context.Context, reader io.Reader, evidence *ResponseEvidence) (*ResponsesResponse, error) {
+	result := &ResponsesResponse{}
 	lineReader := bufio.NewReader(reader)
 	var dataLines []string
 	dispatch := func() error {

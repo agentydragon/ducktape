@@ -105,18 +105,19 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 			}
 			continue
 		}
-		item := ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: notification.callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}},
-		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
-			map[string]any{"cell_id": notification.cellID, "item": item}); err != nil {
+		call, err := conversation.Archive.FindCall(notification.callID)
+		if err != nil {
 			return false, err
 		}
-		conversation.Items = append(conversation.Items, item)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, item)
+		output := []ContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}}
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, "notification", "recorded",
+			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
+			return false, err
 		}
+		if err := conversation.appendToolResult(call, output); err != nil {
+			return false, err
+		}
+
 	}
 	return record && len(notifications) > 0, nil
 }

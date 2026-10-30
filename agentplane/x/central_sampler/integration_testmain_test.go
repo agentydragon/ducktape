@@ -1,7 +1,9 @@
 package centralsampler
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -12,7 +14,8 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(Migrate, func(database *postgres.Database) int {
+	migrate := func(ctx context.Context, db *sql.DB) error { return Migrate(ctx, db, nil) }
+	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
 		integrationDatabase = database
 		return m.Run()
 	}))
@@ -33,4 +36,29 @@ func newTestStore(t testing.TB) *Store {
 	t.Helper()
 	store, _ := newTestStoreWithDSN(t)
 	return store
+}
+
+func nativeResponsesRecords(t testing.TB, items ...ResponsesItem) []json.RawMessage {
+	t.Helper()
+	records := make([]json.RawMessage, len(items))
+	for index, item := range items {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			t.Fatalf("marshal native Responses record %d: %v", index+1, err)
+		}
+		records[index] = encoded
+	}
+	return records
+}
+
+func responsesItems(t testing.TB, state NativeContext) []ResponsesItem {
+	t.Helper()
+	responses, ok := state.(*ResponsesContext)
+	if !ok {
+		if state == nil {
+			t.Fatal("native context is nil, want ResponsesContext")
+		}
+		t.Fatalf("native context is %T, want ResponsesContext", state)
+	}
+	return responses.Items
 }

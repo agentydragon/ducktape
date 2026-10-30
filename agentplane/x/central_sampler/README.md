@@ -165,6 +165,12 @@ nested tools, executor, effect journal and History export.
 }
 ```
 
+Conversations record their API explicitly. Responses stores native Responses items; Anthropic
+stores native Messages API messages. Typed protocol contexts own rendering, tool pairing, effort,
+and compaction. Generic tool invocations carry native source-record links and are execution
+projections, not additional conversation history. Both APIs share the durable effect journal and
+History export.
+
 Anthropic preserves complete native messages, signed thinking/redacted thinking and signed
 compaction blocks. Eager argument deltas are logged as they arrive; no tool is executed until
 `message_stop` validates a complete `tool_use` response. Truncation before that terminal event

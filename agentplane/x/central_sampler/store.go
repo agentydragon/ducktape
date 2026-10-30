@@ -69,25 +69,6 @@ func decodeMap(raw []byte) (map[string]any, error) {
 	return value, nil
 }
 
-func decodeItems(raw []byte) ([]ResponsesItem, error) {
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return nil, nil
-	}
-	var value []ResponsesItem
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
-func encodeItems(value []ResponsesItem) (string, error) {
-	if value == nil {
-		value = []ResponsesItem{}
-	}
-	encoded, err := json.Marshal(value)
-	return string(encoded), err
-}
-
 func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return nil, nil
@@ -103,38 +84,24 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 }
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	rows, err := tx.QueryContext(ctx, `SELECT item FROM sampler_conversation_item WHERE conversation_id=$1 ORDER BY ordinal`, conversation.ID)
+	rows, err := tx.QueryContext(ctx, `SELECT record FROM sampler_conversation_item WHERE conversation_id=$1 ORDER BY ordinal`, conversation.ID)
 	if err != nil {
 		return err
 	}
-	items := make([]ResponsesItem, 0)
+	defer rows.Close()
+	var records []json.RawMessage
 	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			rows.Close()
+		var record json.RawMessage
+		if err := rows.Scan(&record); err != nil {
 			return err
 		}
-		var decoded ResponsesItem
-		err := json.Unmarshal(raw, &decoded)
-		if err != nil {
-			rows.Close()
-			return err
-		}
-		if decoded.Type == "" {
-			rows.Close()
-			return fmt.Errorf("conversation item %d is not an object", len(items)+1)
-		}
-		items = append(items, decoded)
+		records = append(records, record)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return err
 	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	conversation.Items = items
-	return nil
+	conversation.Archive, err = decodeNativeRecords(conversation.API, records)
+	return err
 }
 
 func nullableString(value *string) any {
@@ -166,7 +133,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		environment   []byte
 	)
 	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
-		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment); err != nil {
+		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
 		return nil, err
 	}
 	if shell.Valid {
@@ -199,7 +166,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		return nil, err
 	}
 	if len(contextItems) != 0 && !bytes.Equal(contextItems, []byte("null")) {
-		conversation.ContextItems, err = decodeItems(contextItems)
+		conversation.ActiveContext, err = decodeNativeContext(conversation.API, contextItems)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +175,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 }
 
 const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
-	executor_session, context_items, instructions, context_tokens, executor_shell, environment_context`
+	executor_session, context, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	token, err := parseOwnerToken(owner)
@@ -352,9 +319,12 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	return entry, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string) (*Session, error) {
+func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api APIStyle) (*Session, error) {
 	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" {
 		return nil, ErrInvalid
+	}
+	if _, err := newNativeContext(api); err != nil {
+		return nil, err
 	}
 	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
 	if err != nil {
@@ -379,6 +349,13 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if !proto.Equal(previous, request) {
 				return ErrConflict
 			}
+			var existingAPI APIStyle
+			if err := tx.QueryRowContext(ctx, `SELECT api FROM sampler_conversation WHERE id=$1`, existing.ConversationID).Scan(&existingAPI); err != nil {
+				return err
+			}
+			if existingAPI != api {
+				return ErrPrecondition
+			}
 			opened = existing
 			return nil
 		}
@@ -391,8 +368,8 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			instructions = request.GetSpec().GetInstructions()
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-			executor_session,context_items,instructions,context_tokens) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL)`,
-			conversationID, instructions); err != nil {
+			executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`,
+			conversationID, instructions, api); err != nil {
 			return err
 		}
 		setupState := runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
@@ -591,42 +568,33 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
 		}
 
-		abortedOutputs := make([]ResponsesItem, 0)
-		for _, call := range unansweredCalls(conversation.Items) {
+		calls, err := conversation.Archive.PendingCalls()
+		if err != nil {
+			return err
+		}
+		for _, call := range calls {
 			message := "Aborted by operator recovery; remote effects may have occurred and were not replayed. The continuation uses a new JavaScript session, so prior store() and load() values are unavailable."
 			if call.CallID == rejectedCallID {
 				message = "Tool call rejected before dispatch: " + rejectionReason + ". No runtime or executor operation was dispatched for this call."
 			}
-			abortedOutputs = append(abortedOutputs, call.OutputItem([]ResponsesContentPart{{
-				Type: "input_text", Text: message,
-			}}))
-		}
-		if len(abortedOutputs) > 0 {
-			conversation.Items = append(conversation.Items, abortedOutputs...)
-			if conversation.ContextItems != nil {
-				conversation.ContextItems = append(conversation.ContextItems, abortedOutputs...)
+			output := []ContentPart{{Type: "input_text", Text: message}}
+			if err := conversation.appendToolResult(call, output); err != nil {
+				return err
 			}
-			for _, output := range abortedOutputs {
-				encoded, err := json.Marshal(output.Output)
-				if err != nil {
-					return err
-				}
-				if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
-					ItemCompleted: &eventpb.ItemCompleted{ItemId: output.CallID, Outcome: &eventpb.ItemCompleted_Tool{
-						Tool: &eventpb.ToolResult{Output: DisplayText(string(encoded)), Succeeded: false},
-					}},
-				}}); err != nil {
-					return err
-				}
+			encoded, err := json.Marshal(output)
+			if err != nil {
+				return err
+			}
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: DisplayText(string(encoded)), Succeeded: false}},
+			}}}); err != nil {
+				return err
 			}
 		}
-		resetNotice, err := newResponsesMessage("developer", "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing.")
-		if err != nil {
+		if err := conversation.apply(func(state NativeContext) error {
+			return state.AppendNotice([]ContentPart{{Type: "input_text", Text: "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."}})
+		}); err != nil {
 			return err
-		}
-		conversation.Items = append(conversation.Items, resetNotice)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, resetNotice)
 		}
 
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_cell SET status='abandoned' WHERE conversation_id=$1 AND status='live'`, conversation.ID); err != nil {
@@ -1060,22 +1028,24 @@ func (s *Store) Read(ctx context.Context, owner Owner) (*Conversation, error) {
 	return result, err
 }
 
-func (s *Store) Create(ctx context.Context, prompt string, instructions *string) (string, error) {
+func (s *Store) Create(ctx context.Context, api APIStyle, prompt string, instructions *string) (string, error) {
 	if prompt == "" {
 		return "", ErrInvalid
 	}
 	id := uuid.NewString()
-	item, err := newResponsesMessage("user", prompt)
+	archive, err := newNativeContext(api)
 	if err != nil {
 		return "", err
 	}
-	items := []ResponsesItem{item}
+	if err := archive.AppendUser([]ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+		return "", err
+	}
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
-			executor_session,context_items,instructions,context_tokens) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL)`, id, nullableString(instructions)); err != nil {
+   executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
 		}
-		return appendConversationItems(ctx, tx, &Conversation{ID: id, Items: items})
+		return appendConversationItems(ctx, tx, &Conversation{ID: id, API: api, Archive: archive})
 	})
 	return id, err
 }
@@ -1133,8 +1103,8 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	}
 	var contextItems any
 	var err error
-	if conversation.ContextItems != nil {
-		contextItems, err = encodeItems(conversation.ContextItems)
+	if conversation.ActiveContext != nil {
+		contextItems, err = json.Marshal(conversation.ActiveContext)
 		if err != nil {
 			return err
 		}
@@ -1152,27 +1122,26 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
-		context_items=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
+		context=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
 		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), contextItems, contextTokens,
 		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
 }
 
 func appendConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+	records, err := conversation.Archive.Records()
+	if err != nil {
+		return err
+	}
 	var stored int
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(ordinal),0) FROM sampler_conversation_item WHERE conversation_id=$1`, conversation.ID).Scan(&stored); err != nil {
 		return err
 	}
-	if stored > len(conversation.Items) {
-		return fmt.Errorf("conversation item store has %d items, memory has %d", stored, len(conversation.Items))
+	if stored > len(records) {
+		return fmt.Errorf("conversation record store has %d records, memory has %d", stored, len(records))
 	}
-	for index := stored; index < len(conversation.Items); index++ {
-		item, err := json.Marshal(conversation.Items[index])
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation_item(conversation_id,ordinal,item) VALUES($1,$2,$3)`,
-			conversation.ID, index+1, item); err != nil {
+	for index := stored; index < len(records); index++ {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record) VALUES($1,$2,$3)`, conversation.ID, index+1, []byte(records[index])); err != nil {
 			return err
 		}
 	}
@@ -1226,7 +1195,19 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request map[string]any) 
 	return id, err
 }
 
-func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result map[string]any, items []ResponsesItem, contextTokens *int) error {
+func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result map[string]any, records []json.RawMessage, contextTokens *int) error {
+	return s.finish(ctx, owner, intentID, result, contextTokens, func(c *Conversation) error {
+		return c.apply(func(state NativeContext) error { return state.AppendRecords(records) })
+	})
+}
+
+func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call ToolInvocation, output []ContentPart) error {
+	return s.finish(ctx, owner, intentID, result, nil, func(c *Conversation) error {
+		return c.appendToolResult(call, output)
+	})
+}
+
+func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result map[string]any, contextTokens *int, appendResult func(*Conversation) error) error {
 	resultWire, err := marshal(result)
 	if err != nil {
 		return err
@@ -1256,9 +1237,8 @@ func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result
 		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "result", result); err != nil {
 			return err
 		}
-		conversation.Items = append(conversation.Items, items...)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, items...)
+		if err := appendResult(conversation); err != nil {
+			return err
 		}
 		if intent.Request["kind"] == "sampling" {
 			conversation.ContextTokens = contextTokens
@@ -1321,7 +1301,10 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			}
 			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 		}
-		outputs := notDispatchedOutputs(conversation.Items)
+		outputs, err := settlePendingCalls(conversation, func(call ToolInvocation) string { return "Not dispatched because the turn failed." })
+		if err != nil {
+			return err
+		}
 		result := map[string]any{"status": "rejected", "not_dispatched": outputs}
 		for key, value := range failure.Evidence {
 			result[key] = value
@@ -1333,10 +1316,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, intentID, wire); err != nil {
 			return err
 		}
-		conversation.Items = append(conversation.Items, outputs...)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, outputs...)
-		}
+
 		conversation.Stopped = true
 		conversation.Pending = nil
 		if err := updateConversation(ctx, tx, conversation); err != nil {
@@ -1353,7 +1333,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[string]any, original []ResponsesItem) (string, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[string]any, original NativeContext) (string, error) {
 	id := uuid.NewString()
 	requestWire, err := marshal(request)
 	if err != nil {
@@ -1370,7 +1350,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[st
 		if err := checkInterrupt(ctx, tx, owner); err != nil {
 			return err
 		}
-		if !sameItems(conversation.Context(), original) {
+		if !sameNativeContext(conversation.Context(), original) {
 			return ErrPrecondition
 		}
 		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
@@ -1403,7 +1383,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[st
 	return id, err
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit map[string]any, original, replacement []ResponsesItem) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit map[string]any, original, replacement NativeContext) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -1416,7 +1396,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentCompaction) {
 			return ErrPrecondition
 		}
-		if !sameItems(conversation.Context(), original) {
+		if !sameNativeContext(conversation.Context(), original) {
 			return ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
@@ -1434,22 +1414,19 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		// Codex rust-v0.162.1 core/src/compact.rs insert_initial_context_before_last_real_user_or_summary:
-		// with no retained user message, the full context goes before the compaction item.
+		if replacement.API() != conversation.API {
+			return ErrInvalid
+		}
+		if err := replacement.CheckSettled(); err != nil {
+			return err
+		}
 		environment, err := s.environmentContext(conversation, session)
 		if err != nil {
 			return err
 		}
-		environmentItem, err := newResponsesMessage("user", environmentContextUpdate(nil, environment))
-		if err != nil {
-			return err
-		}
-		if len(replacement) > 0 && replacement[0].Type == ResponsesItemAnthropicMessage {
-			conversation.ContextItems = replacement
-		} else {
-			conversation.ContextItems = append([]ResponsesItem{environmentItem}, replacement...)
-		}
 		conversation.EnvironmentContext = &environment
+		conversation.ActiveContext = replacement
+
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
 		if err := updateConversation(ctx, tx, conversation); err != nil {
@@ -1615,35 +1592,6 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 	})
 }
 
-// RecordEnvironmentContext appends an environment update before a sampling step, as Codex does
-// before each step, and returns the updated conversation.
-func (s *Store) RecordEnvironmentContext(ctx context.Context, owner Owner) (*Conversation, error) {
-	var conversation *Conversation
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		var err error
-		conversation, err = lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		if conversation.Pending != nil {
-			return &UnknownEffectError{Reason: "unresolved intent blocks an environment update; automatic replay is unsafe"}
-		}
-		session, err := sessionForConversation(ctx, tx, conversation.ID)
-		if err != nil {
-			return err
-		}
-		previous := conversation.EnvironmentContext
-		if err := s.recordEnvironmentContext(conversation, session); err != nil {
-			return err
-		}
-		if previous != nil && previous.equal(*conversation.EnvironmentContext) {
-			return nil
-		}
-		return updateConversation(ctx, tx, conversation)
-	})
-	return conversation, err
-}
-
 func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
 	request := &samplerpb.OpenSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
@@ -1660,13 +1608,10 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 		return err
 	}
 	if update := environmentContextUpdate(conversation.EnvironmentContext, current); update != "" {
-		item, err := newResponsesMessage("user", update)
-		if err != nil {
+		if err := conversation.apply(func(state NativeContext) error {
+			return state.AppendUser([]ContentPart{{Type: "input_text", Text: update}})
+		}); err != nil {
 			return err
-		}
-		conversation.Items = append(conversation.Items, item)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, item)
 		}
 	}
 	conversation.EnvironmentContext = &current
@@ -1867,13 +1812,10 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 				return err
 			}
 			text := payload.GetSubmitInput().GetText()
-			item, err := newResponsesMessage("user", text)
-			if err != nil {
+			if err := conversation.apply(func(state NativeContext) error {
+				return state.AppendUser([]ContentPart{{Type: "input_text", Text: text}})
+			}); err != nil {
 				return err
-			}
-			conversation.Items = append(conversation.Items, item)
-			if conversation.ContextItems != nil {
-				conversation.ContextItems = append(conversation.ContextItems, item)
 			}
 			conversation.Stopped = false
 			session.ActiveTurn = &next.ID
@@ -1906,10 +1848,8 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetChangeReasoningEffort() != nil:
 			previous := session.Effort
 			session.Effort = payload.GetChangeReasoningEffort().GetEffort()
-			marker := ResponsesItem{Type: ResponsesItemEffort, Input: session.Effort}
-			conversation.Items = append(conversation.Items, marker)
-			if conversation.ContextItems != nil {
-				conversation.ContextItems = append(conversation.ContextItems, marker)
+			if err := conversation.apply(func(state NativeContext) error { return state.ChangeEffort(session.Effort) }); err != nil {
+				return err
 			}
 			next.Outcome = samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
 			if err := setCommandOutcome(ctx, tx, sessionID, next.ID, next.Outcome, nil); err != nil {
@@ -2034,13 +1974,10 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 		}
 		for index, command := range commands {
 			text := inputs[index].GetText()
-			item, err := newResponsesMessage("user", text)
-			if err != nil {
+			if err := conversation.apply(func(state NativeContext) error {
+				return state.AppendUser([]ContentPart{{Type: "input_text", Text: text}})
+			}); err != nil {
 				return err
-			}
-			conversation.Items = append(conversation.Items, item)
-			if conversation.ContextItems != nil {
-				conversation.ContextItems = append(conversation.ContextItems, item)
 			}
 			if err := setCommandOutcome(ctx, tx, sessionID, command.ID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
 				return err
@@ -2891,10 +2828,13 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentInterrupt}
 		}
 		if cleanupComplete {
-			outputs := interruptedOutputs(conversation.Items, activeCall)
-			conversation.Items = append(conversation.Items, outputs...)
-			if conversation.ContextItems != nil {
-				conversation.ContextItems = append(conversation.ContextItems, outputs...)
+			if _, err := settlePendingCalls(conversation, func(call ToolInvocation) string {
+				if call.CallID == activeCall {
+					return "Interrupted by user. Partial effects may have occurred."
+				}
+				return "Not started because user interrupted the turn."
+			}); err != nil {
+				return err
 			}
 			rows, err := tx.QueryContext(ctx, `SELECT id::text FROM sampler_intent WHERE conversation_id=$1 AND generation=$2 AND result IS NULL`, conversation.ID, owner.Generation)
 			if err != nil {
@@ -2940,13 +2880,10 @@ func (s *Store) AppendInput(ctx context.Context, owner Owner, prompt string) err
 		if conversation.Pending != nil {
 			return &UnknownEffectError{Reason: "unresolved intent blocks new input; automatic replay is unsafe"}
 		}
-		item, err := newResponsesMessage("user", prompt)
-		if err != nil {
+		if err := conversation.apply(func(state NativeContext) error {
+			return state.AppendUser([]ContentPart{{Type: "input_text", Text: prompt}})
+		}); err != nil {
 			return err
-		}
-		conversation.Items = append(conversation.Items, item)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, item)
 		}
 		conversation.Stopped = false
 		return updateConversation(ctx, tx, conversation)
@@ -3000,8 +2937,32 @@ func pendingMatches(pending *PendingIntent, id string, kind PendingIntentKind) b
 	return kind == "" || pending.Kind == kind
 }
 
-func sameItems(left, right []ResponsesItem) bool {
-	return equalResponsesItems(left, right)
+func sameNativeContext(left, right NativeContext) bool {
+	if left.API() != right.API() {
+		return false
+	}
+	l, err := json.Marshal(left)
+	if err != nil {
+		return false
+	}
+	r, err := json.Marshal(right)
+	if err != nil {
+		return false
+	}
+	lv, err := decodeJSONValue(l)
+	if err != nil {
+		return false
+	}
+	rv, err := decodeJSONValue(r)
+	if err != nil {
+		return false
+	}
+	lc, err := json.Marshal(lv)
+	if err != nil {
+		return false
+	}
+	rc, err := json.Marshal(rv)
+	return err == nil && bytes.Equal(lc, rc)
 }
 
 func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
@@ -3068,44 +3029,20 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 	return err
 }
 
-func unansweredCalls(items []ResponsesItem) []ResponsesToolCall {
-	completed := map[string]struct{}{}
-	for _, item := range items {
-		if item.IsToolOutput() {
-			completed[item.CallID] = struct{}{}
-		}
+func settlePendingCalls(conversation *Conversation, message func(ToolInvocation) string) ([]map[string]any, error) {
+	calls, err := conversation.Archive.PendingCalls()
+	if err != nil {
+		return nil, err
 	}
-	var calls []ResponsesToolCall
-	for _, item := range items {
-		call, ok := item.ToolCall()
-		if !ok {
-			continue
+	outputs := make([]map[string]any, 0, len(calls))
+	for _, call := range calls {
+		content := []ContentPart{{Type: "input_text", Text: message(call)}}
+		if err := conversation.appendToolResult(call, content); err != nil {
+			return nil, err
 		}
-		if _, ok := completed[call.CallID]; !ok {
-			calls = append(calls, call)
-		}
+		outputs = append(outputs, map[string]any{"call_id": call.CallID, "output": content})
 	}
-	return calls
-}
-
-func notDispatchedOutputs(items []ResponsesItem) []ResponsesItem {
-	var outputs []ResponsesItem
-	for _, call := range unansweredCalls(items) {
-		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "Not dispatched because the turn failed."}}))
-	}
-	return outputs
-}
-
-func interruptedOutputs(items []ResponsesItem, activeCall string) []ResponsesItem {
-	var outputs []ResponsesItem
-	for _, call := range unansweredCalls(items) {
-		text := "Not started because user interrupted the turn."
-		if call.CallID == activeCall {
-			text = "Interrupted by user. Partial effects may have occurred."
-		}
-		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: text}}))
-	}
-	return outputs
+	return outputs, nil
 }
 
 func (s *Store) interrupts(ctx context.Context, query string, args ...any) ([]map[string]any, error) {

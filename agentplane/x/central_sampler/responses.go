@@ -45,7 +45,7 @@ type ResponsesItem struct {
 	Arguments        string                    `json:"arguments,omitempty"`
 	Content          json.RawMessage           `json:"content,omitempty"`
 	Summary          json.RawMessage           `json:"summary,omitempty"`
-	Output           []ResponsesContentPart    `json:"output,omitempty"`
+	Output           []ContentPart             `json:"output,omitempty"`
 	EncryptedContent string                    `json:"encrypted_content,omitempty"`
 	Tools            []ResponsesAdditionalTool `json:"tools,omitempty"`
 	Raw              json.RawMessage           `json:"-"`
@@ -65,7 +65,7 @@ func (item *ResponsesItem) UnmarshalJSON(data []byte) error {
 		Arguments        string                    `json:"arguments"`
 		Content          json.RawMessage           `json:"content"`
 		Summary          json.RawMessage           `json:"summary"`
-		Output           []ResponsesContentPart    `json:"output"`
+		Output           []ContentPart             `json:"output"`
 		EncryptedContent string                    `json:"encrypted_content"`
 		Tools            []ResponsesAdditionalTool `json:"tools"`
 	}
@@ -90,14 +90,14 @@ func (item ResponsesItem) MarshalJSON() ([]byte, error) {
 
 // ToolCall returns a model tool call. Input holds a custom call's raw input or a function
 // call's JSON arguments.
-func (item ResponsesItem) ToolCall() (ResponsesToolCall, bool) {
+func (item ResponsesItem) ToolCall() (ToolInvocation, bool) {
 	switch item.Type {
 	case ResponsesItemCustomToolCall:
-		return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Input}, true
+		return ToolInvocation{Encoding: ExecEncodingFreeform, CallID: item.CallID, Name: item.Name, Input: item.Input}, true
 	case ResponsesItemFunctionCall:
-		return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Arguments}, true
+		return ToolInvocation{Encoding: ExecEncodingJSON, CallID: item.CallID, Name: item.Name, Input: item.Arguments}, true
 	default:
-		return ResponsesToolCall{}, false
+		return ToolInvocation{}, false
 	}
 }
 
@@ -116,7 +116,7 @@ func (item ResponsesItem) HasValidToolCallShape() bool {
 		return false
 	}
 	inputField := "input"
-	if item.Type == ResponsesItemFunctionCall {
+	if call.Encoding == ExecEncodingJSON {
 		inputField = "arguments"
 	}
 	for _, field := range []string{"call_id", "name", inputField} {
@@ -137,7 +137,7 @@ func (item ResponsesItem) IsToolOutput() bool {
 	return item.Type == ResponsesItemCustomToolOutput || item.Type == ResponsesItemFunctionOutput
 }
 
-func (item ResponsesItem) TextParts() ([]ResponsesContentPart, error) {
+func (item ResponsesItem) TextParts() ([]ContentPart, error) {
 	raw := item.Content
 	if item.Type == ResponsesItemReasoning {
 		raw = item.Summary
@@ -145,84 +145,11 @@ func (item ResponsesItem) TextParts() ([]ResponsesContentPart, error) {
 	if len(raw) == 0 || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
 		return nil, ErrInvalid
 	}
-	var parts []ResponsesContentPart
+	var parts []ContentPart
 	if err := json.Unmarshal(raw, &parts); err != nil {
 		return nil, err
 	}
 	return parts, nil
-}
-
-type ResponsesToolCall struct {
-	Type   ResponsesItemType `json:"type"`
-	CallID string            `json:"call_id"`
-	Name   string            `json:"name"`
-	Input  string            `json:"input"`
-}
-
-func (call ResponsesToolCall) HasValidShape() bool {
-	return (call.Type == ResponsesItemCustomToolCall || call.Type == ResponsesItemFunctionCall) &&
-		strings.TrimSpace(call.CallID) != "" && strings.TrimSpace(call.Name) != ""
-}
-
-func (call ResponsesToolCall) IsConfiguredToolName(config ModelConfig) bool {
-	if config.ExecEncoding == ExecEncodingJSON {
-		return call.Name == "exec"
-	}
-	return call.Name == "exec" || call.Name == "wait"
-}
-
-// IsModelTool checks the exact tool surface declared for this model route.
-func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
-	if config.ExecEncoding == ExecEncodingJSON {
-		return call.Name == "exec" && call.Type == ResponsesItemFunctionCall
-	}
-	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||
-		call.Name == "wait" && call.Type == ResponsesItemFunctionCall
-}
-
-// OutputItem answers the call with the output item type its call type requires.
-func (call ResponsesToolCall) OutputItem(content []ResponsesContentPart) ResponsesItem {
-	outputType := ResponsesItemCustomToolOutput
-	if call.Type == ResponsesItemFunctionCall {
-		outputType = ResponsesItemFunctionOutput
-	}
-	return ResponsesItem{Type: outputType, CallID: call.CallID, Output: content}
-}
-
-func unsupportedToolCallMessage(call ResponsesToolCall) string {
-	if call.Type == ResponsesItemCustomToolCall {
-		return "unsupported custom tool call: " + call.Name
-	}
-	return "unsupported call: " + call.Name
-}
-
-type ResponsesContentPart struct {
-	Type string          `json:"type"`
-	Text string          `json:"text"`
-	Raw  json.RawMessage `json:"-"`
-}
-
-func (part *ResponsesContentPart) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 || data[0] != '{' {
-		return errors.New("Responses content part must be an object")
-	}
-	var wire struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	*part = ResponsesContentPart{Type: wire.Type, Text: wire.Text, Raw: cloneJSON(data)}
-	return nil
-}
-
-func (part ResponsesContentPart) MarshalJSON() ([]byte, error) {
-	if len(part.Raw) != 0 {
-		return cloneJSON(part.Raw), nil
-	}
-	type wire ResponsesContentPart
-	return json.Marshal(wire(part))
 }
 
 // ResponsesAdditionalTool is a `custom` tool (Format) or a `function` tool (Strict, Parameters).
