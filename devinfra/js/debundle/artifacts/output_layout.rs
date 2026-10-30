@@ -24,6 +24,9 @@ pub const DEPENDENCY_GRAPH_REPORT: &str = "dependency_graph.json";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_GROUP_CONFLICTS_REPORT: &str = "atomic_group_conflicts.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
+/// Written beside `selector_diagnostics.json` when the graph build rejects a
+/// `commuting_statements` entry: one `CommutingStatementsDiagnostic` per entry.
+pub const COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT: &str = "commuting_statements_diagnostics.json";
 pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
 pub const INDEX_REPORT: &str = "index.json";
 

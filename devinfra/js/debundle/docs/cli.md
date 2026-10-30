@@ -1137,7 +1137,11 @@ gate treats it as constraining — the at-init read position for `eager_use`, or
 the retained emission rule (`strict_chain`, `cell_order` with both endpoints'
 effect classes and the conflicting cells, …) and the target side's impure
 initializer for `sequenced`; the bail summary prints it under each binding-pair
-row ([SPEC](../SPEC.md#realizability-cut-explanations)).
+row ([SPEC](../SPEC.md#realizability-cut-explanations)). When a
+`commuting_statements` premise made `sequenced` edges between the SCC's members
+inert, the summary adds an `Inert:` count line and up to three of those edges
+with both endpoints, the premise's spec location and the retained cause; they
+are never in the cut ([SPEC](../SPEC.md#commuting-statements)).
 Unknown calls point to the member-level `purity` annotation;
 imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
 Unknown imported constructors point to
@@ -1167,6 +1171,16 @@ clears the stale artifacts. `debundle run` (and `run --dry-run`) writes the
 same files under `reports/tree/<chunk>/`, which is the same
 sibling-of-`dependency_graph.json` layout.
 
+A `commuting_statements` entry the graph build rejects (contradicted by a
+source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
+fails `run` with its diagnostic on stderr. `spec validate` reports it as a
+typed entry beside the selector outcomes: `commuting_statements_diagnostics[]`
+(`kind` ∈ `contradicted` with `conflicts[]`, `unused` with `reason`; each with
+`spec_location`, `a`, `b` and their bindings), read from the chunk's
+`commuting_statements_diagnostics.json`, and `validation.rejected_premises`
+counts them into `validation.success`. The ndjson stream emits each as a
+`commuting_statements_diagnostic` section.
+
 ## Gate queries
 
 The `gate` namespace names what is rejecting: the realizability gate. It
@@ -1188,7 +1202,11 @@ unit and its purity reasons, and every cut and evidence edge carries the same
 `--modules` and `--source-root` together to get `sequenced_source_inspections`,
 a runnable `inspect-source` command keyed by each stored source unit (source
 and target sides alike). The text view prints the same commands and a `why:`
-line per edge. The graph and source snapshot must still match.
+line per edge. Both `describe` and `cut` carry the SCC's
+`inert_commuting_edges` (the `cycles.json` field: `sequenced` edges a
+`commuting_statements` premise made inert, never in the cut and excluded from
+`evidence`); the text view lists them after the cut, each with an `inert:`
+line naming the premise. The graph and source snapshot must still match.
 
 `gate diagnose <binding>` traces constraining promoted-at-initialization edges
 to a matched callback-factory contract rejected by a supported static member

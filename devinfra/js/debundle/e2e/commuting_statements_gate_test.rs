@@ -58,23 +58,31 @@ fn premise(input_index: usize) -> CommutingStatementsRef {
     }
 }
 
-/// Both `spec validate` and `run` reject the spec with a diagnostic carrying
-/// every token.
-fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, tokens: &[&str]) {
+/// `spec validate` reports the rejected premise as one typed
+/// `commuting_statements_diagnostics` entry of `kind` naming the entry and
+/// fails validation; `run` rejects the spec with a diagnostic carrying every
+/// token.
+fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: &[&str]) {
     let fixture = write_validate_fixture_spec(build());
     let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&validate.stdout)
+        .unwrap_or_else(|error| panic!("{error}: spec validate stdout={}", validate.stdout));
+    assert_eq!(report["validation"]["success"], false, "{report:#}");
+    assert_eq!(report["validation"]["rejected_premises"], 1, "{report:#}");
+    let [diagnostic] = report["commuting_statements_diagnostics"]
+        .as_array()
+        .expect("commuting_statements_diagnostics")
+        .as_slice()
+    else {
+        panic!("{report:#}");
+    };
+    assert_eq!(diagnostic["kind"], kind, "{report:#}");
     assert!(
-        !validate.status.success(),
-        "spec validate accepted the spec; stdout={}",
-        validate.stdout
+        diagnostic["spec_location"]
+            .as_str()
+            .is_some_and(|location| location.contains(ENTRY)),
+        "{report:#}"
     );
-    for token in tokens {
-        assert!(
-            validate.stderr.contains(token),
-            "spec validate stderr missing {token:?}:\n{}",
-            validate.stderr
-        );
-    }
     expect_rejection_containing_all(build(), tokens);
 }
 
@@ -167,6 +175,7 @@ fn summarized_disjoint_endpoints_under_strict_chain_are_unused() {
                 member_source_unit("slots/outer", "gamma"),
             )])
         },
+        "unused",
         &[ENTRY, "inerts no sequenced edge", "dataflow_aware_s_chain"],
     );
 }
@@ -204,14 +213,15 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
             .collect()
     };
 
-    let without = expect_cycle_rejection(split(vec![]), &modules);
-    let with = expect_cycle_rejection(
-        split(vec![commuting_pair(
+    let pair = || {
+        commuting_pair(
             member_source_unit("probes/outer", "alpha"),
             member_source_unit("probes/inner", "beta"),
-        )]),
-        &modules,
-    );
+        )
+    };
+
+    let without = expect_cycle_rejection(split(vec![]), &modules);
+    let with = expect_cycle_rejection(split(vec![pair()]), &modules);
     // The premise inerted `beta -> alpha`, and only that; the at-init reads
     // `gamma -> beta` / `delta -> gamma` still close the SCC.
     assert_eq!(with["modules"], without["modules"]);
@@ -241,6 +251,46 @@ fn eager_use_cycle_is_not_cleared_by_an_accepted_pair() {
         serde_json::to_value(premise(0)).unwrap()
     );
     assert!(without["inert_commuting_edges"].is_null(), "{without:#}");
+
+    // The bail summary and the gate text views name the inert edge (both
+    // endpoints) as inert; `describe` lists it apart from the constraining
+    // evidence.
+    let rejected = run_rejection_fixture(split(vec![pair()]));
+    let graph_path = rejected
+        .report_root
+        .join("static/app/dependency_graph.json");
+    let graph_path = graph_path.to_str().expect("utf-8 path");
+    let gate_text = |verb: &str| {
+        let out = run_debundle(&["gate", verb, "0", "--graph", graph_path, "--format", "text"]);
+        assert!(out.status.success(), "gate {verb}: {:?}", out.stderr);
+        String::from_utf8(out.stdout).expect("utf-8 output")
+    };
+    for (view, text) in [
+        ("bail summary", rejected.stderr.clone()),
+        ("gate describe", gate_text("describe")),
+        ("gate cut", gate_text("cut")),
+    ] {
+        for token in ["inert", "beta (probes/inner)"] {
+            assert!(text.contains(token), "{view} lacks {token:?}:\n{text}");
+        }
+    }
+    let described = run_debundle(&[
+        "gate", "describe", "0", "--graph", graph_path, "--format", "json",
+    ]);
+    let described: serde_json::Value =
+        serde_json::from_slice(&described.stdout).expect("gate describe JSON");
+    assert_eq!(
+        described["inert_commuting_edges"], with["inert_commuting_edges"],
+        "{described:#}"
+    );
+    assert!(
+        described["evidence"]
+            .as_array()
+            .expect("evidence")
+            .iter()
+            .all(|edge| edge["commuting_premise"].is_null()),
+        "an inert edge appears in the evidence: {described:#}"
+    );
 }
 
 /// A known write and read of one `globalThis` property under the
@@ -267,6 +317,7 @@ fn known_global_property_conflict_rejects_the_pair() {
                 )],
             )
         },
+        "contradicted",
         &[ENTRY, CONTRADICTION, "`snapshot`", "global property `flag`"],
     );
 }
@@ -295,6 +346,7 @@ fn known_binding_write_after_read_rejects_the_pair() {
                 )],
             )
         },
+        "contradicted",
         &[ENTRY, CONTRADICTION, "`snap`", "timeline of `count`"],
     );
 }
@@ -325,6 +377,7 @@ fn shared_var_access_order_is_not_inertable() {
                 )],
             )
         },
+        "contradicted",
         &[ENTRY, CONTRADICTION, "`snap`", "`shared`"],
     );
 }
@@ -340,6 +393,7 @@ fn pair_without_a_sequenced_edge_is_unused() {
                 member_source_unit("probes/outer", "gamma"),
             )])
         },
+        "unused",
         &[ENTRY, "inerts no sequenced edge", "`alpha`", "`gamma`"],
     );
 }

@@ -225,8 +225,12 @@ pub struct GateDescribeReport {
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
     /// recomputed from `dependency_graph.json` + `modules` (the wire
-    /// entry carries only `modules` + `cut`).
+    /// entry carries only `modules` + `cut`). Edges a `commuting_statements`
+    /// premise made inert are listed in `inert_commuting_edges` instead.
     pub evidence: Vec<CycleEdge>,
+    /// The stored [`BlockingSccEntry::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
     /// Commands keyed by the exact impure source unit stored on sequencing edges.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sequenced_source_inspections: BTreeMap<String, String>,
@@ -236,6 +240,9 @@ pub struct GateDescribeReport {
 pub struct GateCutReport {
     pub id: usize,
     pub cut: Vec<CycleEdge>,
+    /// The stored [`BlockingSccEntry::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -952,6 +959,8 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Re
     )?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
+    // Inert edges never constrain; the stored entry lists them apart.
+    evidence.retain(|e| e.commuting_premise.is_none());
     if let Some(binding) = &args.binding {
         evidence.retain(|e| edge_touches_binding(e, binding));
     }
@@ -982,6 +991,7 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Re
         modules: entry.modules.clone(),
         cut: entry.cut.clone(),
         evidence,
+        inert_commuting_edges: entry.inert_commuting_edges.clone(),
         sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
@@ -1011,6 +1021,7 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
             render_edge(edge, out);
         }
     }
+    render_inert_edges(&report.inert_commuting_edges, out);
 
     for (source_unit, command) in &report.sequenced_source_inspections {
         out.push_str(&format!(
@@ -1052,6 +1063,7 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
     let report = GateCutReport {
         id: entry.id,
         cut: entry.cut.clone(),
+        inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
     let format = peel::OutputFormat::resolve(args.format);
     if peel::print_ndjson_list(&report.cut, format)? {
@@ -1067,6 +1079,23 @@ fn render_cut_text(report: &GateCutReport, out: &mut String) {
         report.cut.len(),
     ));
     for edge in &report.cut {
+        render_edge(edge, out);
+    }
+    render_inert_edges(&report.inert_commuting_edges, out);
+}
+
+/// The SCC's inert `sequenced` edges (a `commuting_statements` premise made
+/// them inert; never in the cut), each as a [`render_edge`] row whose
+/// `inert:` line names the premise.
+fn render_inert_edges(edges: &[CycleEdge], out: &mut String) {
+    if edges.is_empty() {
+        return;
+    }
+    out.push_str(&format!(
+        "  inert ({} sequenced edge(s) a commuting_statements premise made inert; never in the cut):\n",
+        edges.len(),
+    ));
+    for edge in edges {
         render_edge(edge, out);
     }
 }
@@ -1089,6 +1118,9 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
     ));
     if let Some(explanation) = &edge.explanation {
         out.push_str(&format!("      why: {explanation}\n"));
+    }
+    if let Some(premise) = &edge.commuting_premise {
+        out.push_str(&format!("      inert: made inert by premise {premise}\n"));
     }
     let target_cause = match &edge.explanation {
         Some(CutEdgeExplanation::Sequenced {

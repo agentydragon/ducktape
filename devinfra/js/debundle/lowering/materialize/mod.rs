@@ -47,8 +47,9 @@ use gate::{
 };
 use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
 use output_layout::{
-    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT,
-    GATE_REJECTED_MARKER, SELECTOR_DIAGNOSTICS_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT,
+    DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
+    SELECTOR_DIAGNOSTICS_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
@@ -679,7 +680,7 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or(&BTreeMap::new()),
         &analysis_inputs.assumptions.argument_inputs,
     );
-    let chunk_analysis = compute_chunk_analysis(
+    let chunk_analysis = match compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,
@@ -692,7 +693,29 @@ pub(super) fn finish_logical_chunk(
             .copied()
             .unwrap_or_default(),
         &resolve_dynamic_import,
-    )?;
+    ) {
+        Ok(chunk_analysis) => chunk_analysis,
+        Err(error) => {
+            // A rejected `commuting_statements` entry is an author-premise
+            // diagnostic, not a pipeline fault: record it, with the selector
+            // outcomes gathered so far, where `spec validate` collects the
+            // chunk's reports; the chunk still fails.
+            if let Some(diagnostic) = error
+                .downcast_ref::<analysis::DependencyGraphBuildError>()
+                .and_then(analysis::DependencyGraphBuildError::commuting_statements_diagnostic)
+                && let Some(report_out_dir) = report_emission.rejection_dir()
+            {
+                write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
+                write_chunk_report_json(
+                    report_out_dir,
+                    chunk_id,
+                    COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+                    &[diagnostic],
+                )?;
+            }
+            return Err(error);
+        }
+    };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     let ChunkAnalysisOutput {
         fact_analysis: analysis,
@@ -706,15 +729,8 @@ pub(super) fn finish_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
         builder.route_unclaimed_anonymous_to_catchall(&precomputed, &runtime_ast.module.body);
     }
-    if let Some(report) = builder.selector_outcome_report()
-        && let Some(report_out_dir) = report_emission.rejection_dir()
-    {
-        write_chunk_report_json(
-            report_out_dir,
-            chunk_id,
-            SELECTOR_DIAGNOSTICS_REPORT,
-            &report,
-        )?;
+    if let Some(report_out_dir) = report_emission.rejection_dir() {
+        write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
     }
     // Plan construction is finished — consume the builder and use
     // owned state from here on.
@@ -1295,6 +1311,24 @@ enum GateOutcome<'a> {
 /// --dry-run` mode) the accept path writes nothing, but a rejection
 /// still writes `dependency_graph.json` plus the rejection evidence so
 /// the documented `debundle gate list/describe` follow-up works.
+/// The chunk's `selector_diagnostics.json`, where `spec validate` collects
+/// per-chunk reports; nothing to write while no outcome was recorded.
+fn write_selector_diagnostics(
+    builder: &ChunkPlanBuilder,
+    report_out_dir: &std::path::Path,
+    chunk_id: &str,
+) -> Result<()> {
+    if let Some(report) = builder.selector_outcome_report() {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SELECTOR_DIAGNOSTICS_REPORT,
+            &report,
+        )?;
+    }
+    Ok(())
+}
+
 fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,

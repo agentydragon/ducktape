@@ -450,6 +450,17 @@ pub struct CommutingStatementsRef {
     pub input_index: usize,
 }
 
+impl std::fmt::Display for CommutingStatementsRef {
+    /// The entry's path inside its spec, as resolution diagnostics name it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "chunk_analysis_options.{}.commuting_statements[{}]",
+            self.defining_chunk, self.input_index
+        )
+    }
+}
+
 /// One resolved endpoint of a commuting pair: the selector the author wrote
 /// and the single post-split source unit it selected.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

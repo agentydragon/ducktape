@@ -16,12 +16,14 @@
 //! does not declare is `no_match` here; `run` fails it as an unmatched claim.
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::print_section;
+use analysis::CommutingStatementsDiagnostic;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
-use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
+use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::{OutputFormat, print_report};
 use pipeline::{
     RunOutput, TransformArgs, TransformRunOptions, TransformSpecSource, run_transform_cli,
@@ -32,6 +34,7 @@ use selector_outcome::{
     SelectorValidationCounts, Severity,
 };
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use source_match::source_match_claim_member_selectors;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::read_flat_transform_spec;
@@ -79,22 +82,46 @@ pub struct ValidateArgs {
     pub chunk: Option<std::path::PathBuf>,
 }
 
+/// What `spec validate` reports: the selector outcomes, plus the author
+/// premises the graph build rejected, which no selector entity carries
+/// (`validation.rejected_premises` counts them into `success`).
+#[derive(Debug, Default, Serialize)]
+struct ValidateReport {
+    #[serde(flatten)]
+    selectors: SelectorOutcomeReport,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    commuting_statements_diagnostics: Vec<CommutingStatementsDiagnostic>,
+}
+
+impl ValidateReport {
+    fn render_text(&self, out: &mut String) {
+        self.selectors.render_text(out, None);
+        for diagnostic in &self.commuting_statements_diagnostics {
+            let _ = writeln!(out, "  - {diagnostic}");
+        }
+    }
+}
+
 pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     let report_only = args.report_only;
     let report = if args.source_only_requested() {
-        js_ast::with_swc_globals(|| run_source_only_validate(&args))?
+        ValidateReport {
+            selectors: js_ast::with_swc_globals(|| run_source_only_validate(&args))?,
+            commuting_statements_diagnostics: Vec::new(),
+        }
     } else {
         run_spec_validate(args)?
     };
     if format == OutputFormat::Ndjson {
         emit_validate_ndjson(&report)?;
     } else {
-        print_report(&report, format, |report, buf| report.render_text(buf, None))
+        print_report(&report, format, |report, buf| report.render_text(buf))
             .context("writing validate output")?;
     }
     if !report_only
         && report
+            .selectors
             .validation_summary()
             .is_some_and(|summary| !summary.success)
     {
@@ -103,7 +130,7 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
+fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
     let keep_going = !args.transform.fail_fast;
     let cli = args.transform.resolve()?;
     let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
@@ -128,8 +155,20 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
         },
     );
 
-    let mut chunks = Vec::new();
-    collect_chunk_reports(capture.path(), capture.path(), &mut chunks)?;
+    let mut chunks = Vec::<(String, SelectorOutcomeReport)>::new();
+    collect_chunk_reports(
+        capture.path(),
+        capture.path(),
+        SELECTOR_DIAGNOSTICS_REPORT,
+        &mut chunks,
+    )?;
+    let mut premise_diagnostics = Vec::<(String, Vec<CommutingStatementsDiagnostic>)>::new();
+    collect_chunk_reports(
+        capture.path(),
+        capture.path(),
+        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+        &mut premise_diagnostics,
+    )?;
     let mut pass_error = pass.err();
     let present_chunks: BTreeSet<_> = chunks.iter().map(|(chunk, _)| chunk.clone()).collect();
     let missing_chunks: Vec<_> = expected_chunks
@@ -173,6 +212,15 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     }
     report.outcomes.sort();
     report.templates.sort();
+    let commuting_statements_diagnostics = premise_diagnostics
+        .into_iter()
+        .flat_map(|(_, diagnostics)| diagnostics)
+        .collect::<Vec<_>>();
+    report
+        .validation
+        .as_mut()
+        .expect("validation counts initialized")
+        .rejected_premises = commuting_statements_diagnostics.len();
     if pass_error.is_some()
         && (!keep_going
             || report
@@ -182,7 +230,10 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
         return Err(pass_error.take().expect("pass error is present"))
             .context("running selector validation pass");
     }
-    Ok(report)
+    Ok(ValidateReport {
+        selectors: report,
+        commuting_statements_diagnostics,
+    })
 }
 
 fn expected_validation_chunks(source: &TransformSpecSource) -> Result<BTreeSet<String>> {
@@ -400,13 +451,14 @@ fn validate_modules_against_source(
     })
 }
 
-/// Recursively gather every `selector_diagnostics.json` under the capture
+/// Recursively gather every per-chunk `filename` report under the capture
 /// directory. The materialize pass nests each report at
-/// `<capture>/<chunk_id parts>/selector_diagnostics.json`.
-fn collect_chunk_reports(
+/// `<capture>/<chunk_id parts>/<filename>`.
+fn collect_chunk_reports<T: DeserializeOwned>(
     root: &Path,
     dir: &Path,
-    reports: &mut Vec<(String, SelectorOutcomeReport)>,
+    filename: &str,
+    reports: &mut Vec<(String, T)>,
 ) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
@@ -419,17 +471,15 @@ fn collect_chunk_reports(
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
-            collect_chunk_reports(root, &path, reports)?;
-        } else if path.file_name().and_then(|name| name.to_str())
-            == Some(SELECTOR_DIAGNOSTICS_REPORT)
-        {
+            collect_chunk_reports(root, &path, filename, reports)?;
+        } else if path.file_name().and_then(|name| name.to_str()) == Some(filename) {
             let chunk = report_chunk_id(root, &path)?;
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
             reports.push((
                 chunk,
                 serde_json::from_str(&text)
-                    .with_context(|| format!("parsing selector outcomes {}", path.display()))?,
+                    .with_context(|| format!("parsing {}", path.display()))?,
             ));
         }
     }
@@ -456,24 +506,27 @@ fn report_chunk_id(root: &Path, report_path: &Path) -> Result<String> {
 /// One JSON object per outcome, one per listed template, then a final
 /// `summary` line with the counts — the streaming shape `jq -c` consumers
 /// dispatch on.
-fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
+fn emit_validate_ndjson(report: &ValidateReport) -> Result<()> {
     #[derive(Serialize)]
     struct Summary<T> {
         counts: T,
         #[serde(skip_serializing_if = "Option::is_none")]
         validation: Option<selector_outcome::SelectorValidationSummary>,
     }
-    for outcome in &report.outcomes {
+    for outcome in &report.selectors.outcomes {
         print_section("outcome", outcome)?;
     }
-    for template in &report.templates {
+    for template in &report.selectors.templates {
         print_section("template", template)?;
+    }
+    for diagnostic in &report.commuting_statements_diagnostics {
+        print_section("commuting_statements_diagnostic", diagnostic)?;
     }
     print_section(
         "summary",
         &Summary {
-            counts: report.counts(),
-            validation: report.validation_summary(),
+            counts: report.selectors.counts(),
+            validation: report.selectors.validation_summary(),
         },
     )
 }

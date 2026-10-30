@@ -2291,8 +2291,9 @@ rules would emit the same source-unit pair, the first emitted cause is kept.
 `explanation` is absent for the other edge kinds, whose `kind` and `binding`
 already state the constraint, and for `sequenced` edges of graphs written
 before the cause was retained. The bail summary and `gate describe`/`gate cut`
-text views render the same data under each binding-pair row. The explanation
-changes no gate verdict.
+text views render the same data under each binding-pair row, and list the
+SCC's `inert_commuting_edges` (§ Commuting statements) with their premise and
+cause after the cut. The explanation changes no gate verdict.
 
 ## Vendor split-brain evidence
 

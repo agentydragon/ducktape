@@ -86,6 +86,9 @@ pub struct CycleReport {
     /// an author can see what the premise bought while the SCC still
     /// blocks.
     pub inert_commuting_edges: Vec<CycleEdge>,
+    /// Spec location of each applied premise, so the bail summary can point
+    /// at an inert edge's entry without the dependency graph.
+    pub commuting_premise_locations: BTreeMap<CommutingStatementsRef, String>,
 }
 
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
@@ -418,6 +421,12 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             }
         }
 
+        render_inert_commuting_edges(
+            &cycle.inert_commuting_edges,
+            &cycle.commuting_premise_locations,
+            &mut out,
+        );
+
         out.push_str(
             "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
         );
@@ -470,6 +479,51 @@ pub fn render_explanations(edges: &[&CycleEdge], out: &mut String) {
         out.push_str(&format!(
             "           - … +{} more distinct reason(s)\n",
             distinct.len() - WHY_K,
+        ));
+    }
+}
+
+/// The `sequenced` edges between SCC members an author `commuting_statements`
+/// premise made inert: a count line, then up to `INERT_K` rows naming both
+/// endpoints, the premise (with its spec location where `premise_locations`
+/// has it) and the retained cause. Nothing when there is no inert edge.
+pub fn render_inert_commuting_edges(
+    edges: &[CycleEdge],
+    premise_locations: &BTreeMap<CommutingStatementsRef, String>,
+    out: &mut String,
+) {
+    const INERT_K: usize = 3;
+    if edges.is_empty() {
+        return;
+    }
+    out.push_str(&format!(
+        "  Inert: {} sequenced edge(s) between SCC members made inert by commuting_statements premise(s); never in the cut:\n",
+        edges.len(),
+    ));
+    for edge in edges.iter().take(INERT_K) {
+        let key = BindingPairKey::of(edge);
+        out.push_str(&format!(
+            "    {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})  [stmt #{ord}]\n",
+            from_b = key.from_label,
+            from_m = key.from,
+            kind = edge.kind.diagnostic_label(),
+            to_b = key.to_label,
+            to_m = key.to,
+            ord = edge.statement_ordinal.0,
+        ));
+        if let Some(premise) = &edge.commuting_premise {
+            let location = premise_locations
+                .get(premise)
+                .map(|location| format!(" at {location}"))
+                .unwrap_or_default();
+            out.push_str(&format!("           inert: premise {premise}{location}\n"));
+        }
+        render_explanations(&[edge], out);
+    }
+    if edges.len() > INERT_K {
+        out.push_str(&format!(
+            "    … +{} more inert edge(s)\n",
+            edges.len() - INERT_K,
         ));
     }
 }
@@ -575,6 +629,11 @@ pub fn validate_assignment(
                     module_path,
                     &from_binding_by_ordinal,
                 ),
+                commuting_premise_locations: dependency_graph
+                    .commuting_premises()
+                    .iter()
+                    .map(|premise| (premise.reference.clone(), premise.spec_location.clone()))
+                    .collect(),
             }
         })
         .collect();

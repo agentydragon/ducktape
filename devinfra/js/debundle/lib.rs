@@ -48,12 +48,12 @@ pub use facts::{
     local_namespace_iife_target,
 };
 pub use graph::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet, DepKind,
-    DependencyEdge, DependencyEdgeId, DependencyGraph, DependencyGraphBuildError,
-    DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, EffectCellReport,
-    HeapBarrierCause, ModuleQuotient, SequencedCause, SourceUnit, SourceUnitClass, SourceUnitId,
-    UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with, build_module_quotient,
-    chunk_constraining_module_edges, position_lookup,
+    BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet,
+    CommutingStatementsDiagnostic, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
+    DependencyGraphBuildError, DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason,
+    EdgeRole, EffectCellReport, HeapBarrierCause, ModuleQuotient, SequencedCause, SourceUnit,
+    SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with,
+    build_module_quotient, chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,

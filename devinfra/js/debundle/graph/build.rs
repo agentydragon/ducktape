@@ -4,6 +4,7 @@ use std::fmt;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
@@ -47,7 +48,8 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
 /// A derived source fact an author `commuting_statements` premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum KnownConflict {
     /// The retained cause of a `Sequenced` edge derived from both
     /// endpoints' recorded effects (a cell relation, a binding timeline, a
@@ -78,7 +80,7 @@ impl fmt::Display for KnownConflict {
 
 /// One dependency edge `from -> to` between the premise's endpoints whose
 /// cause the premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContradictingEdge {
     pub from: SourceUnitOrdinal,
     pub to: SourceUnitOrdinal,
@@ -87,7 +89,7 @@ pub struct ContradictingEdge {
 
 /// A `commuting_statements` entry whose endpoints the analysis derived to
 /// definitely conflict (SPEC.md § Commuting statements).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommutingStatementsContradiction {
     pub spec_location: String,
     pub a: SourceUnitOrdinal,
@@ -126,7 +128,8 @@ impl fmt::Display for CommutingStatementsContradiction {
 impl std::error::Error for CommutingStatementsContradiction {}
 
 /// Why a `commuting_statements` entry inerts nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UnusedPremiseReason {
     /// No `sequenced` edge joins the two source units.
     NoSequencedEdge,
@@ -140,7 +143,7 @@ pub enum UnusedPremiseReason {
 /// A `commuting_statements` entry whose endpoints resolve but which inerts
 /// no edge: the premise buys nothing and the spec carries a stale trust
 /// assertion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommutingStatementsUnused {
     pub spec_location: String,
     pub a: SourceUnitOrdinal,
@@ -170,6 +173,24 @@ impl fmt::Display for CommutingStatementsUnused {
 
 impl std::error::Error for CommutingStatementsUnused {}
 
+/// The typed diagnostic of a `commuting_statements` entry the graph build
+/// rejected, as `spec validate` reports it beside the selector outcomes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CommutingStatementsDiagnostic {
+    Contradicted(CommutingStatementsContradiction),
+    Unused(CommutingStatementsUnused),
+}
+
+impl fmt::Display for CommutingStatementsDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Contradicted(diagnostic) => diagnostic.fmt(f),
+            Self::Unused(diagnostic) => diagnostic.fmt(f),
+        }
+    }
+}
+
 /// Graph construction is intentionally source-free. Captured value and native
 /// author inputs must be resolved by the prepared whole-program AST/index
 /// pipeline before callers extract StatementFacts and build this graph.
@@ -181,6 +202,25 @@ pub enum DependencyGraphBuildError {
     UnresolvedArgumentInputs { count: usize },
     CommutingStatementsContradicted(CommutingStatementsContradiction),
     CommutingStatementsUnused(CommutingStatementsUnused),
+}
+
+impl DependencyGraphBuildError {
+    /// The rejected `commuting_statements` entry, for the two variants that
+    /// are author-premise diagnostics rather than pipeline faults.
+    pub fn commuting_statements_diagnostic(&self) -> Option<CommutingStatementsDiagnostic> {
+        match self {
+            Self::CommutingStatementsContradicted(error) => {
+                Some(CommutingStatementsDiagnostic::Contradicted(error.clone()))
+            }
+            Self::CommutingStatementsUnused(error) => {
+                Some(CommutingStatementsDiagnostic::Unused(error.clone()))
+            }
+            Self::DuplicateTopLevelDeclaration(_)
+            | Self::UnresolvedValueInputs { .. }
+            | Self::UnresolvedNativeInputs { .. }
+            | Self::UnresolvedArgumentInputs { .. } => None,
+        }
+    }
 }
 
 impl fmt::Display for DependencyGraphBuildError {
