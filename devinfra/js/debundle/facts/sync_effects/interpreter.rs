@@ -1941,7 +1941,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.inputs.index.integrity.require(
                     &[
                         IntrinsicSlot::Global(NativeIntrinsic::Object),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "fromEntries"),
                         IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::ArrayIteratorPrototype,
                     ],
                     None,
                 ),
@@ -2252,7 +2254,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.inputs.index.integrity.require(
                     &[
                         IntrinsicSlot::Global(NativeIntrinsic::Object),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
                         IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                        IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
                     ],
                     None,
                 ),

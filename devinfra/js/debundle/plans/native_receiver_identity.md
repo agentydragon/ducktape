@@ -7,7 +7,8 @@ and its conservative fallback while adding evidence upstream of its consumers.
 ## Established boundary
 
 The census retains unknown global values through descendant reads. Mutating one
-can invalidate native families, disabling array and local-constructor models.
+invalidates its key on every native object and every prototype slot, disabling
+array and local-constructor models.
 The resulting opaque-call fallback can add eager dependencies and atomic groups.
 An accepted older engine is not evidence that an unknown receiver is disjoint
 from natives: that engine may have dropped the alias uncertainty.

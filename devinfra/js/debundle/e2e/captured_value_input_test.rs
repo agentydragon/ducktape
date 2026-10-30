@@ -73,7 +73,7 @@ fn input_refs(value: &Value) -> bool {
     })
 }
 
-fn reject_array_descendant_mutation(flow_source: &str) -> RejectedFixture {
+fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
     let provider = format!(
         "import {{ readLater }} from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nfunction get(key) {{ return captured[key]; }}\n{flow_source}\nreceiver[Symbol.iterator] = function evil() {{ return 0; }};\nexport function factory() {{ const state = new Map(); return {{ get size() {{ return state.size; }}, label() {{ return readLater().name; }} }}; }}\n"
     );
@@ -82,7 +82,7 @@ fn reject_array_descendant_mutation(flow_source: &str) -> RejectedFixture {
         ("static/opaque.js", OPAQUE_ARRAY_CHILD),
         ("static/app/opaque.js", OPAQUE_ARRAY_CHILD),
     ];
-    run_rejection_fixture(
+    run_fixture(
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), copied.length);\nexport { queue, Later };\n",
             vec![
@@ -572,20 +572,10 @@ fn returned_descendant_alias_wrapper_and_container_keep_array_iterator_barriers(
         "function wrap() { return { child: get('child') }; }\nconst receiver = wrap().child;",
         "function makeReader() { return function readChild() { return captured.child; }; }\nconst reader = makeReader();\nconst receiver = reader();",
     ] {
-        let rejected = reject_array_descendant_mutation(flow_source);
-        assert!(
-            rejected.atomic_group_conflicts().iter().any(|conflict| {
-                let claims = conflict["claims"].as_array().expect("conflict claims");
-                ["queue", "later"].iter().all(|module| {
-                    claims
-                        .iter()
-                        .any(|claim| claim["module"].as_str() == Some(*module))
-                })
-            }),
-            "the possible Array.prototype write must retain the split conflict for: {flow_source}"
-        );
-
-        let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+        // A `[Symbol.iterator]` write cannot reach the `%Map%` slot, so
+        // `queue` still splits from `later`; the barrier lands on the spread.
+        let fixture = run_array_descendant_mutation(flow_source);
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
         assert!(
             graph["native_integrity_witnesses"]
                 .as_array()
@@ -778,7 +768,7 @@ fn native_constructor_instance_does_not_inherit_constructor_root() {
 
 #[test]
 fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
-    let mutation = "Map.prototype.set = function () {};\n";
+    let mutation = "Map = class extends Map {};\n";
     let chunks = [
         ("static/peer", PROVIDER),
         ("static/native-mutation", mutation),
@@ -815,7 +805,7 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
                         .as_array()
                         .is_some_and(|roots| roots.iter().any(|root| root == "map"))
             }),
-        "an actual Map prototype write must retain its global census barrier: {graph}"
+        "an actual Map binding write must retain its census barrier: {graph}"
     );
 }
 

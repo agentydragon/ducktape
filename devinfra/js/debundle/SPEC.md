@@ -1186,8 +1186,8 @@ keys and unknown keys. Stable aliases of unshadowed `Symbol.for(literal)` and
 lexical `[key, value]` loops over closed data-object `Object.entries` inputs
 can preserve unrelated named global bindings. The latter requires intact
 Object operations and Array iterators for both the result and pair
-destructuring. Mutation directly on a native object remains a mutation of that
-family, regardless of key domain.
+destructuring. Mutation directly on a native object still invalidates that
+family's prototype slots, regardless of key domain.
 
 A11 supplies initial native identity. All analyzed chunks contribute their
 canonical mutation facts, including deferred writes, before resolving a closed
@@ -1196,9 +1196,10 @@ point. Providers and consumers share this inferred integrity input; it is not
 a spec assumption or configurable override. Unknown keys, unstable bindings,
 shadowing, unsupported patterns and visible native replacement fall back
 conservatively. Global-slot value reads retain unresolved native identity
-through aliases and descendants; only proved global-object receivers receive
-key disjointness. A11 remains an author obligation for hidden native-alias
-paths. Key precision grants no call, purity, throw or return summary.
+through aliases and descendants, so a write through one may reach any native
+object, under its key. A11 remains an author obligation for hidden
+native-alias paths, including a descriptor method called through an alias.
+Key precision grants no call, purity, throw or return summary.
 
 ## Captured ordinary-object values
 
@@ -1280,10 +1281,36 @@ audit, code outside the analyzed prefix, or host behavior.
 
 A native premise is an integrity flag on an intrinsic slot: `%Set%`,
 `%Object.freeze%`, `%Array.prototype%`, `%ArrayIteratorPrototype%`. A slot is
-intact when the closed whole-program write census (§ Inferred native
-property-key domains) has no known or possible write to it, to its family or to
-the global object; it is unknown otherwise. Two author fields instead assert
-slots at one exact source site, as an `IntrinsicIntact(slots, site)` axiom:
+intact when no write in the closed whole-program write census (§ Inferred
+native property-key domains) can reach it; it is unknown otherwise.
+
+A `%Set%` or `%Object.freeze%` slot is an own data property of the global
+object or of a census constructor or namespace. A property write, update,
+delete or reflective definition changes only its receiver's own property under
+its key: a setter or Proxy trap it runs is analyzed source with census writes
+of its own, and A11 excludes host code changing intrinsics. So:
+
+- A string key reaches only same-named slots, on every object its receiver may
+  be; a Symbol key reaches none. `Error.prepareStackTrace = f` leaves `%Error%`
+  intact, and `location.href = url` leaves every own slot not named `href`
+  intact.
+- A global-object receiver reaches only global slots. A constructor or
+  namespace receiver reached through its intact global binding reaches only
+  its own slots; through a replaced one it may be any object.
+  `%Object.prototype%` writes reach no `%Object.<name>%` slot.
+- An unknown key reaches every slot of its receiver. A computed key or
+  iterator-prototype path is exact only while every slot it was derived
+  through is intact.
+- Assigning a census name replaces its global slot. Rebinding a global-object
+  alias (`globalThis = other`) leaves every slot unknown.
+
+A prototype slot covers every property on the object, including inherited
+lookups, so it is unknown after any write to its family or the global object.
+Each consumer names every slot its operation reads: the callee's binding and
+member, and any constructor static or prototype method the algorithm looks up.
+
+Two author fields instead assert slots at one exact source site, as an
+`IntrinsicIntact(slots, site)` axiom:
 
 ```yaml
 chunk_analysis_options:

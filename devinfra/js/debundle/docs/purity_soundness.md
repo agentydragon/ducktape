@@ -107,11 +107,12 @@ Array iterator.
 ## Property-key domains in native writes
 
 The canonical execution index retains a separate key domain for native-write
-facts: a finite set of strings, definitely Symbol, or unknown. This refines only
-which named global bindings a write can replace. A symbol-key write on `Map`,
-`Object`, or another intrinsic still invalidates that intrinsic family.
-Key evaluation, callbacks, effects, throws and returned values retain their
-ordinary analysis.
+facts: a finite set of strings, definitely Symbol, or unknown. This refines
+which own data properties of the global object and of each census constructor
+or namespace a write can replace (SPEC.md § Native integrity inputs). A write
+on `Map`, `Object`, or another intrinsic, under any key, still invalidates that
+family's prototype slots. Key evaluation, callbacks, effects, throws and
+returned values retain their ordinary analysis.
 
 A stable alias of an unshadowed `Symbol.for` call with one literal string
 argument has a Symbol domain only while the Symbol family remains intact.
@@ -127,17 +128,18 @@ all writes, including deferred bodies, and establishes a closed-write
 invariant: each refined write preserves named native global bindings provided
 its operation dependencies remain intact. Start with unconditional native
 writes and unknown global writes, then propagate dependency invalidation to a
-fixed point. A recognized visible Symbol, Object or Array mutation in any analyzed chunk
-invalidates dependent key evidence; unknown global mutation invalidates every
-native premise. A collection provider and its consumers use the same resolved
+fixed point. A recognized visible mutation of a slot a key was derived through
+(`Symbol.for`, `Object.entries`, Array iteration) in any analyzed chunk
+invalidates dependent key evidence; an unknown-key write through an unknown
+receiver invalidates every native premise. A collection provider and its consumers use the same resolved
 source-derived integrity input, separate from author assumptions. Code outside
 the analyzed source remains covered by A11. No whole-program purity or
 nonreentry conclusion follows from this census.
 
-Key disjointness applies only to a receiver proved to be the actual global
-object. A value read from a computed or unrelated static global slot can hold
-an intrinsic; its unresolved native identity survives aliases and descendant
-property accesses. Mutation through that value invalidates native premises.
+A value read from a computed or unrelated static global slot can hold an
+intrinsic; its unresolved native identity survives aliases and descendant
+property accesses. Mutation through that value reaches its key on every
+intrinsic, and every prototype slot.
 The census does not prove the absence of every hidden native-alias path:
 A11's author obligation still covers native integrity outside the recognized
 source facts.

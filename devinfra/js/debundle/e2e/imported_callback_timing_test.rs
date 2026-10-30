@@ -3905,7 +3905,7 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
         "export function factory() { readLater(); const state = new Map(); return { read() { return state.size; } }; }",
         "const Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
         "export function factory() { const state = new Map(); return { read() { return state.size; } }; } factory = function () { return readLater(); };",
-        "Map.prototype.extra = readLater; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+        "Object.defineProperty(globalThis, 'Map', { value: function () { readLater(); } }); export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
         "globalThis.Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
         "export function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }",
     ] {
@@ -4061,7 +4061,6 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "export function publish() { for (const [key, value] of Object.entries({ ['safe']: 1 })) globalThis[key] = value; }",
         "export function publish() { for (const [key, value] of Object.entries({ get safe() { return 1; } })) globalThis[key] = value; }",
         "export function publish() { for (const [key = 'Map', value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
-        "const key = Symbol.for('example.registry'); export function mutate() { Map[key] = 1; }",
         "export function mutate() { Map++; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; globalThis.box.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
         "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; const alias = globalThis.box; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
