@@ -112,7 +112,7 @@ _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 
 
-# Retain Lite/freeform support for existing central sessions on official OpenAI routes.
+# Official OpenAI routes use Responses Lite and freeform Code mode.
 # New third-party coding routes use standard Responses with JSON exec.
 _LITE_FREEFORM = ModelConfig(
     reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"

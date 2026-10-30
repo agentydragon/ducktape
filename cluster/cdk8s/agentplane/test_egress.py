@@ -205,8 +205,8 @@ def test_third_party_coding_models_use_standard_responses_and_json_exec(
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.wrapped_codex]
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.central_sampler]
-    assert set(catalog["harnesses"]["HARNESS_CODEX"]).isdisjoint(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
+    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.codex]
+    assert set(catalog["harnesses"]["HARNESS_CODEX"]) <= set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}

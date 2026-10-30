@@ -3358,6 +3358,9 @@ data:
           - chatgpt-sub/oai-responses/gpt-6-luna
           - chatgpt-sub/oai-responses/gpt-6.1-sol
         HARNESS_CENTRAL_SAMPLER:
+          - chatgpt-sub/oai-responses/gpt-6-astra
+          - chatgpt-sub/oai-responses/gpt-6-luna
+          - chatgpt-sub/oai-responses/gpt-6.1-sol
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
           - antigravity/ant-messages/gemini-3-flash

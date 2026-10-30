@@ -24,8 +24,8 @@ class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""
 
     claude: tuple[Route, ...]
-    # Coding-model offerings. Agentplane partitions these between wrapped Codex and the
-    # central sampler; new third-party routes take the standard Responses/JSON path.
+    # Coding-model offerings. The central sampler offers all routes; wrapped Codex
+    # offers only hosted ChatGPT routes. Third-party routes use standard Responses/JSON.
     codex: tuple[Route, ...]
 
     @property
