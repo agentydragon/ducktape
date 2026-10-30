@@ -1,4 +1,7 @@
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py crossplane_function_crds //cluster/cdk8s/providers/crossplane:function
+# gazelle:resolve py crossplane_composition_crds //cluster/cdk8s/providers/crossplane:composition
+# gazelle:resolve py crossplane_xrd_crds //cluster/cdk8s/providers/crossplane:xrd
 # gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
 # gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 
@@ -9,6 +12,46 @@ cdk8s_import(
     crd = "@crossplane_pkg_provider_crd//file",
     module_name = "crossplane_pkg_provider_crds",
     module_path = "io/crossplane/pkg",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "function",
+    crd = "@crossplane_pkg_functions_crd//file",
+    module_name = "crossplane_function_crds",
+    module_path = "io/crossplane/pkg",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "composition",
+    crd = "@crossplane_compositions_crd//file",
+    crd_name = "compositions.apiextensions.crossplane.io",
+    # Preserve Crossplane's case-sensitive enum values instead of cdk8s_import's uppercase names.
+    crd_remove_paths = [
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.mode.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.pipeline.items.properties.credentials.items.properties.source.enum",
+    ],
+    module_name = "crossplane_composition_crds",
+    module_path = "io/crossplane/apiextensions",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "xrd",
+    crd = "@crossplane_xrds_crd//file",
+    crd_name = "compositeresourcedefinitions.apiextensions.crossplane.io",
+    # Preserve Crossplane's case-sensitive enum values instead of cdk8s_import's uppercase names.
+    crd_remove_paths = [
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.defaultCompositeDeletePolicy.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.defaultCompositionUpdatePolicy.enum",
+        "spec.versions.0.schema.openAPIV3Schema.properties.spec.properties.scope.enum",
+        "spec.versions.1.schema.openAPIV3Schema.properties.spec.properties.defaultCompositeDeletePolicy.enum",
+        "spec.versions.1.schema.openAPIV3Schema.properties.spec.properties.defaultCompositionUpdatePolicy.enum",
+        "spec.versions.1.schema.openAPIV3Schema.properties.spec.properties.scope.enum",
+    ],
+    module_name = "crossplane_xrd_crds",
+    module_path = "io/crossplane/apiextensions",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 

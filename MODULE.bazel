@@ -1266,6 +1266,28 @@ http_file(
     urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_providers.yaml"],
 )
 
+# Crossplane v2.4.2 CRDs used by the native required-resource watch composition.
+http_file(
+    name = "crossplane_pkg_functions_crd",
+    downloaded_file_path = "pkg.crossplane.io_functions.yaml",
+    sha256 = "bde90f9ed498123e63d0ce21123a625cf1eceb50b1a86887f835b129f4fbba77",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_functions.yaml"],
+)
+
+http_file(
+    name = "crossplane_compositions_crd",
+    downloaded_file_path = "apiextensions.crossplane.io_compositions.yaml",
+    sha256 = "12abd3a61381d1fba495776de5250424e5f0b9d3a7dad99cc52c60d7602a5276",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/apiextensions.crossplane.io_compositions.yaml"],
+)
+
+http_file(
+    name = "crossplane_xrds_crd",
+    downloaded_file_path = "apiextensions.crossplane.io_compositeresourcedefinitions.yaml",
+    sha256 = "9888f2d756a2ce62b4fabdca885020b7b102eaea49991a910c389abd21001633",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/apiextensions.crossplane.io_compositeresourcedefinitions.yaml"],
+)
+
 # Match Crossplane core; runtime configuration supplies scoped Kubernetes clients.
 http_file(
     name = "crossplane_deploymentruntimeconfig_crd",
