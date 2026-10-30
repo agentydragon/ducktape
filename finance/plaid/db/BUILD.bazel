@@ -252,3 +252,19 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_transaction_queries",
+    size = "medium",
+    srcs = ["test_transaction_queries.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "//:conftest",
+        "//finance/plaid:transaction_queries",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

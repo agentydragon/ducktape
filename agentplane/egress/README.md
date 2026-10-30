@@ -321,3 +321,15 @@ Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-aff
 spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.
 Testing runs one replica with `Recreate`. Both use a 60-second
 termination grace and gRPC health probes on the admin listener: readiness on the empty service, liveness on `livez`.
+
+## Python workload client
+
+`agentplane.egress.rule_client.load_rules()` reads the redacted rules using
+`AGENTPLANE_EGRESS_URL` and `AGENTPLANE_EGRESS_CREDENTIAL`.
+`Rules.find_credential()` selects a placeholder by host, HTTP method, path, and
+credential presentation target; missing or ambiguous credentials raise `LookupError`.
+The snapshot is informational; the proxy admits each request independently.
+
+The client imports HTTPX and Pydantic without server or Kubernetes dependencies.
+It uses the configured proxy and CA trust (`SSL_CERT_FILE`, then
+`REQUESTS_CA_BUNDLE`, then `CURL_CA_BUNDLE`).

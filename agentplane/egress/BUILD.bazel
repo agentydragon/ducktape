@@ -217,3 +217,26 @@ go_proto_library(
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
+
+py_library(
+    name = "rule_client",
+    srcs = ["rule_client.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_rule_client",
+    srcs = ["test_rule_client.py"],
+    deps = [
+        ":conftest",
+        ":rule_client",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

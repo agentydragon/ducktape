@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "models",
@@ -12,4 +12,40 @@ py_library(
     srcs = ["payloads.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "pgweb",
+    srcs = ["pgweb.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agentplane/egress:rule_client",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_pgweb",
+    srcs = ["test_pgweb.py"],
+    deps = [
+        ":pgweb",
+        "//:conftest",
+        "//agentplane/egress:rule_client",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "transaction_queries",
+    srcs = ["transaction_queries.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
+    ],
 )
