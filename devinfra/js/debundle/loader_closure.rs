@@ -35,7 +35,7 @@ pub enum LoaderClosureFailureKind {
     UndeclaredHostBehavior,
     /// A loader value or call whose target the source does not fix: non-literal
     /// or aliased `import.meta.require`, global `require`, `module`,
-    /// `import.meta` as a value, dynamic `import()`.
+    /// `import.meta` as a value.
     OpaqueLoaderSite,
     /// A request for the `module` builtin, whose `createRequire` makes loaders.
     LoaderFactoryRequest,

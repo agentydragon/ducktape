@@ -238,3 +238,72 @@ fn unknown_or_omitted_loader_keys_keep_the_target_open() {
         assert_eq!(undeclared["occurrences"], 1);
     }
 }
+
+/// Provider without a host loader site; `import()` alone must not open it.
+const DYNAMIC_PROVIDER: &str = r#"const pending = import("./lazy.js");
+const prefix = new globalThis.Error();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return "ready";
+})({});
+const later = dynamic;
+class Registry { static current = later; }
+export function readLater() { return Registry.current; }
+"#;
+
+fn dynamic_provider_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module(
+            "values/dynamic",
+            &[
+                Member::new("pending"),
+                Member::new("prefix"),
+                Member::new("dynamic"),
+            ],
+        ),
+        logical_module(
+            "values/later",
+            &[
+                Member::new("later"),
+                Member::new("Registry"),
+                Member::new("readLater"),
+            ],
+        ),
+    ]
+}
+
+/// The dynamically imported module reads the requester at its top level. That
+/// happens in a later job, after the requester finished evaluating, so the
+/// split preserves the original output. `lazy.js` is a runtime-only sibling:
+/// the source copy reads the original provider, the emitted copy (where the
+/// rebased specifier lands) reads the emitted provider entry.
+#[test]
+fn dynamic_import_is_not_a_synchronous_loader_site() {
+    let consumer = r#"import { readLater } from "./provider.js";
+console.log("consumer", readLater());
+"#;
+    let extra_chunks = [("static/provider", DYNAMIC_PROVIDER)];
+    let extra_files = [
+        (
+            "static/lazy.js",
+            "import { readLater } from \"./provider.js\";\nconsole.log(\"lazy\", readLater());\n",
+        ),
+        (
+            "static/provider/lazy.js",
+            "import { readLater } from \"./entry.js\";\nconsole.log(\"lazy\", readLater());\n",
+        ),
+    ];
+    let provider_modules = [(PROVIDER_CHUNK, dynamic_provider_modules())];
+    let fixture = run_fixture(
+        FixtureOpts::new(consumer, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_files(&extra_files)
+            .with_extra_chunk_logical_modules(&provider_modules),
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(report["policy"], "no_static_importer_reentry");
+    assert_eq!(report["loader"], json!({ "rule": "no_host_loader_sites" }));
+    assert_preserved_entry_output(&fixture, "consumer ready\nlazy ready\n");
+    assert_all_emitted_js_checks(&fixture);
+}

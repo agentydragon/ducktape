@@ -310,11 +310,15 @@ pub(super) fn loader_surfaces(
                 | InteropUseKind::UnboundModule
                 | InteropUseKind::ImportMetaDynamicProperty
                 | InteropUseKind::ImportMetaValue
-                | InteropUseKind::TsImportEquals
-                | InteropUseKind::DynamicImport => Some(LoaderClosureFailureKind::OpaqueLoaderSite),
+                | InteropUseKind::TsImportEquals => {
+                    Some(LoaderClosureFailureKind::OpaqueLoaderSite)
+                }
                 // Export surfaces and fixed non-loader `import.meta` members
-                // cannot load a module.
-                InteropUseKind::UnboundModuleExports
+                // cannot load a module. `import()` evaluates its target in a
+                // later job (ECMA-262 ContinueDynamicImport), never on the
+                // requester's stack; A3 admission owns internal targets.
+                InteropUseKind::DynamicImport
+                | InteropUseKind::UnboundModuleExports
                 | InteropUseKind::UnboundExports
                 | InteropUseKind::ImportMetaOtherProperty
                 | InteropUseKind::TsExportAssignment => None,

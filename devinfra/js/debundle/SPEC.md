@@ -699,8 +699,13 @@ all of the following hold:
   host-loader queries). A non-literal call, an `import.meta.require` reference
   (an alias, including an exported loader value), `globalThis.require`, an
   unbound `require` or `module` (other than `module.exports`), `import.meta` as
-  a value or with a computed key, a TypeScript `import =`, a dynamic `import()`,
-  and any request for the `module` builtin keep every target open.
+  a value or with a computed key, a TypeScript `import =`, and any request for
+  the `module` builtin keep every target open. A dynamic `import()` is not a
+  synchronous loader site: ECMA-262 evaluates its target in a later job
+  (`ContinueDynamicImport`), never on the requester's stack. Whether it names
+  a debundled internal module stays the A3 admission check
+  (<docs/design.md> § Conditions on the input chunk), which resolves every
+  string-literal specifier, parenthesized or not, at any depth.
 - Each literal request names a `reentry_free_builtin_modules` entry or resolves
   to an analyzed chunk's entry file. A request for any other builtin or an
   unresolved specifier keeps every target open.

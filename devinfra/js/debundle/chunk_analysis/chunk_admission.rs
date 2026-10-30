@@ -229,7 +229,7 @@ impl AdmissionScan<'_> {
             if arg.spread.is_some() {
                 return None;
             }
-            match &*arg.expr {
+            match arg.expr.unwrap_parens() {
                 Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().to_string()),
                 _ => None,
             }
@@ -491,10 +491,15 @@ mod tests {
             "./route.js" => DynamicImportTarget::OtherChunk,
             _ => DynamicImportTarget::External,
         };
-        assert_eq!(
-            scan_with_resolver("const f = () => import(\"./self.js\");\n", &resolver),
-            vec![(AdmissionCheck::A3DynamicImport, 0)]
-        );
+        for source in [
+            "const f = () => import(\"./self.js\");\n",
+            "const f = () => import((\"./self.js\"));\n",
+        ] {
+            assert_eq!(
+                scan_with_resolver(source, &resolver),
+                vec![(AdmissionCheck::A3DynamicImport, 0)]
+            );
+        }
         assert_eq!(
             scan_with_resolver(
                 "import(\"./route.js\");\nimport(\"https://cdn/x.js\");\n",
