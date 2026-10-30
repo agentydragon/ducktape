@@ -93,9 +93,8 @@ def _without(body: Body, path: Path) -> Body:
 
 
 async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Chart) -> None:
-    chart = scratch_chart
-    actions.add_launcher_admission(chart, NAMESPACE)
-    policy, binding = cdk8s.Testing.synth(chart)
+    actions.add_launcher_admission(scratch_chart, NAMESPACE)
+    policy, binding = cdk8s.Testing.synth(scratch_chart)
     async with kubernetes_apiserver() as server:
         await k8s_client.CoreV1Api(server.api).create_namespace(
             k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE))

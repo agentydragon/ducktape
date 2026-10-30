@@ -17,9 +17,8 @@ def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Cha
             "cp-c": Host(nebula_ip="10.42.255.3", role="control-plane", managed_by="tofu-ovh"),
         }
     )
-    chart = scratch_chart
-    TalosEtcdMetrics(chart, "etcd", mesh)
-    endpoint_slice = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "EndpointSlice")
+    TalosEtcdMetrics(scratch_chart, "etcd", mesh)
+    endpoint_slice = one(doc for doc in Cdk8sTesting.synth(scratch_chart) if doc["kind"] == "EndpointSlice")
     assert endpoint_slice["endpoints"] == [
         {"addresses": ["10.42.255.1"], "conditions": {"ready": True}, "hostname": "cp-a", "nodeName": "cp-a"},
         {"addresses": ["10.42.255.3"], "conditions": {"ready": True}, "hostname": "cp-c", "nodeName": "cp-c"},

@@ -20,11 +20,14 @@ from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy
 def test_validation_failure_action_passes_through(
     scratch_chart: Chart, action: ClusterPolicySpecValidationFailureAction, expected: str
 ) -> None:
-    chart = scratch_chart
     ClusterPolicy(
-        chart, "test", metadata=ApiObjectMetadata(name="test-policy"), rules=[], validation_failure_action=action
+        scratch_chart,
+        "test",
+        metadata=ApiObjectMetadata(name="test-policy"),
+        rules=[],
+        validation_failure_action=action,
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     assert manifest["spec"]["validationFailureAction"] == expected
 
 

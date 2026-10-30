@@ -19,9 +19,8 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 
 
 def test_suffixed_class_renders_v1alpha2(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     TerraformV1Alpha2(
-        chart,
+        scratch_chart,
         "terraform",
         spec=TerraformV1Alpha2Spec(
             interval="15m",
@@ -30,7 +29,7 @@ def test_suffixed_class_renders_v1alpha2(scratch_chart: Chart) -> None:
             ),
         ),
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     assert manifest["apiVersion"] == "infra.contrib.fluxcd.io/v1alpha2"
 
 

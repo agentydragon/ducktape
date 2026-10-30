@@ -5,22 +5,20 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Promethe
 
 
 def test_multiple_groups_wire_shape(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     rule = Rule.alert("Example", "up == 0", for_="5m")
     PrometheusRule(
-        chart,
+        scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-rule"),
         groups=[group("group-a", [rule]), group("group-b", [rule])],
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     assert [g["name"] for g in manifest["spec"]["groups"]] == ["group-a", "group-b"]
 
 
 def test_alert_merges_summary_and_description_into_annotations(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     PrometheusRule(
-        chart,
+        scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-rule"),
         groups=[
@@ -38,7 +36,7 @@ def test_alert_merges_summary_and_description_into_annotations(scratch_chart: Ch
             )
         ],
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (rule,) = manifest["spec"]["groups"][0]["rules"]
     assert rule["annotations"] == {
         "summary": "it's down",
@@ -48,14 +46,13 @@ def test_alert_merges_summary_and_description_into_annotations(scratch_chart: Ch
 
 
 def test_record_has_no_for_or_annotations(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     PrometheusRule(
-        chart,
+        scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-rule"),
         groups=[group("group", [Rule.record("my:recording:rule", "up == 0", labels={"severity": "info"})])],
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (rule,) = manifest["spec"]["groups"][0]["rules"]
     assert rule == {"record": "my:recording:rule", "expr": "up == 0", "labels": {"severity": "info"}}
 

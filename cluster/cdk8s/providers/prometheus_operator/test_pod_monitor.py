@@ -6,15 +6,14 @@ from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, Po
 
 
 def test_plain_endpoint_wire_shape(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     PodMonitor(
-        chart,
+        scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-monitor"),
         selector=PodMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "test"}),
         pod_metrics_endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (endpoint,) = manifest["spec"]["podMetricsEndpoints"]
     assert endpoint == {"port": "metrics", "path": "/metrics", "scrapeTimeout": "10s"}
 

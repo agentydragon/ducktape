@@ -6,9 +6,8 @@ from cluster.cdk8s.providers.seaweedfs.bucket import Bucket
 
 
 def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_unset(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     Bucket(
-        chart,
+        scratch_chart,
         "bucket",
         metadata=ApiObjectMetadata(name="test-bucket", namespace="test-tenant"),
         cluster_ref=BucketSpecClusterRef(name="test-seaweed"),
@@ -16,7 +15,7 @@ def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_u
         adopt_existing=False,
         reclaim_policy=None,
     )
-    (bucket,) = Cdk8sTesting.synth(chart)
+    (bucket,) = Cdk8sTesting.synth(scratch_chart)
     assert bucket["spec"] == {"name": "test-bucket", "clusterRef": {"name": "test-seaweed"}}
 
 

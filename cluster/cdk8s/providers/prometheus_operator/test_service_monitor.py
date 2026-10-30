@@ -6,15 +6,14 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 
 def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Chart) -> None:
-    chart = scratch_chart
     ServiceMonitor(
-        chart,
+        scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-monitor"),
         selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "test"}),
         endpoints=[Endpoint.bearer_token_secret(port="http", secret_name="metrics-token", key="token")],
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     (endpoint,) = manifest["spec"]["endpoints"]
     assert endpoint["bearerTokenSecret"] == {"name": "metrics-token", "key": "token"}
     assert endpoint["port"] == "http"

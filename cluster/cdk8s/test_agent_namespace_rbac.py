@@ -40,9 +40,8 @@ def test_reader_reconciliation_depends_only_on_shared_roles(scratch_app: App) ->
 def test_unapproved_namespaces_fail_closed(scratch_chart: Chart, scratch_app: App) -> None:
     with pytest.raises(KeyError):
         agent_namespace_rbac.chart(scratch_app, "private-unreviewed")
-    scope = scratch_chart
-    namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
-    labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
+    namespace(scratch_chart, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
+    labels = Cdk8sTesting.synth(scratch_chart)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)
 
 

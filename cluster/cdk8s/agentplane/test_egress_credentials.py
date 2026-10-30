@@ -11,9 +11,8 @@ _PROXY_NAMESPACE = "test-proxy"
 
 
 def test_only_the_proxy_reads_and_nothing_is_copied(scratch_chart: Chart) -> None:
-    chart = scratch_chart
-    EgressCredentials(chart, "credentials", namespace=_CREDENTIALS_NAMESPACE, proxy_namespace=_PROXY_NAMESPACE)
-    objects = Cdk8sTesting.synth(chart)
+    EgressCredentials(scratch_chart, "credentials", namespace=_CREDENTIALS_NAMESPACE, proxy_namespace=_PROXY_NAMESPACE)
+    objects = Cdk8sTesting.synth(scratch_chart)
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]
     assert len(bindings) == 1
