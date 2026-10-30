@@ -3267,7 +3267,6 @@ class HarnessEventSource extends EventTarget {
       const listed = matching.slice(0, limit);
       const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
       const snapshot: ThreadsSnapshot = {
-        sandboxes: SANDBOXES,
         threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
         more: matching.length > limit,
         archived_count: all.filter((thread) => thread.archived).length,

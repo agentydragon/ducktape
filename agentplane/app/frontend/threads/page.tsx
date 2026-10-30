@@ -7,7 +7,7 @@ import { getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
-import { useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
@@ -67,18 +67,15 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
-  const topbarStatus = threadStatusFromSnapshot(
-    snapshotThread,
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
-    snapshotFresh(threadsLive)
-  );
+  const environment = useRequiredSandboxesLive();
+  const inventoryFresh = sandboxInventoryFresh(environment);
+  // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
+  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.trace_search ?? null;
   const langfuseSearch = frontendConfig?.langfuse_search ?? null;
-  const environment = useRequiredSandboxesLive();
-  const inventoryFresh = environment.stream.standing === "current" && environment.health?.healthy === true;
-  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const { commandsRequireReadySandbox } = harnessBehavior(thread?.harness);
   const notice =
     !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)

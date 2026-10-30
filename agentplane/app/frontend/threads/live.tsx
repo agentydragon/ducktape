@@ -3,10 +3,10 @@ import { useMatch } from "react-router";
 
 import { useLive, type Live, type WatchHealth } from "../live";
 
-import type { SandboxView, ThreadView } from "../schema";
+import type { ThreadView } from "../schema";
 
+/** The Thread window. Sandboxes come from `/live/sandboxes` (`SandboxesLiveProvider`), their one source. */
 export type ThreadsSnapshot = {
-  sandboxes: SandboxView[];
   threads: ThreadView[];
   more: boolean;
   archived_count: number;

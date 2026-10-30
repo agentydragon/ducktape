@@ -31,10 +31,16 @@ export function liveEgressDecisionsUrl(name: string): string {
 
 const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);
 
-/** One /live/sandboxes connection for thread routes that need current runner availability. */
+/** The app's one /live/sandboxes connection: every view of the Sandbox inventory reads it, so two views of one
+ * Sandbox cannot disagree. */
 export function SandboxesLiveProvider({ children }: { children: ReactNode }): JSX.Element {
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   return <SandboxesLiveContext.Provider value={live}>{children}</SandboxesLiveContext.Provider>;
+}
+
+/** Whether the inventory stream is current and the server's watch behind it healthy, so its Sandboxes are live. */
+export function sandboxInventoryFresh(live: Live<SandboxesSnapshot>): boolean {
+  return live.stream.standing === "current" && live.health?.healthy === true;
 }
 
 export function useRequiredSandboxesLive(): Live<SandboxesSnapshot> {

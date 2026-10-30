@@ -12,6 +12,7 @@ import { archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
@@ -213,16 +214,17 @@ export function ThreadList({
   const threadRoute = useMatch("/threads/:threadId");
   const sandboxRoute = useMatch("/sandboxes/:name");
   const live = useRequiredThreadsLive();
+  const sandboxesLive = useRequiredSandboxesLive();
   const { listing, setListing, searchInput, setSearchInput } = useThreadListing();
   const data = live.snapshot;
-  const fresh = snapshotFresh(live);
+  const fresh = snapshotFresh(live) && sandboxInventoryFresh(sandboxesLive);
   const [error, setError] = useState<string | null>(null);
 
   const threads = data?.threads ?? [];
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    Object.fromEntries((sandboxesLive.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
     listing.includeArchived,
     current
   );

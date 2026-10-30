@@ -13,6 +13,7 @@ import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
@@ -234,14 +235,16 @@ function ConversationBody({
   const canSend = threadCanAcceptInput && (available || canQueueCommands);
   const activeTurn = controls?.active_turn_id ?? null;
   const threadsLive = useRequiredThreadsLive();
+  const sandboxesLive = useRequiredSandboxesLive();
+  const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
+  const currentSandbox = sandboxesLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
   const status = threadStatusFromSnapshot(
     threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
-    snapshotFresh(threadsLive)
+    currentSandbox,
+    snapshotFresh(threadsLive) && inventoryFresh
   );
   const { llmTraceScope } = harnessBehavior(thread.harness);
-  const currentSandbox = threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
-  const sandboxAutosuspend = autosuspendHint(currentSandbox, snapshotFresh(threadsLive), Math.max(clock, Date.now()));
+  const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, Math.max(clock, Date.now()));
   useEffect(
     () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
     [onStatusChange, status.kind, status.tabLabel]
