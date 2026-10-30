@@ -1623,10 +1623,11 @@ result. Optional calls do not acquire assertions scoped to ordinary direct-call
 syntax.
 
 Without an author assertion, a direct named import may receive an inferred
-callback-factory summary from its defining entry file. The export must have one
-stable identity: a hoisted function declaration or a definite top-level
-function initializer. Its synchronous body only returns a fresh ordinary
-zero-argument function. The admitted importer call supplies exactly one inline
+callback-factory summary from its defining entry file. The export must have a
+derived call summary (§ Derived foreign call summaries; a single-declarator
+top-level function or arrow initializer that is never reassigned also
+qualifies) whose body directly returns a fresh zero-argument function literal.
+The admitted importer call supplies exactly one inline
 callback; any other ordinary identifier parameters are omitted. The returned
 function may capture only those parameters and its own locals; indexed calls,
 writes and property reads must not introduce an additional callback capability.
@@ -2225,8 +2226,8 @@ Guarded native call summaries also report `native_call_identity`, whose
 derivation includes `native_integrity` for the global object and operation
 family. The completed census also tracks `Function` so consumers that invoke
 through `Function.prototype.call` can require its integrity explicitly.
-Stable callable, callback-factory and returned-record certificates use
-their corresponding rule names when consumed.
+Stable callable and returned-record conclusions use their corresponding rule
+names when consumed.
 The local-class chain includes `native_integrity`, `native_call_identity`,
 `empty_collection_construction` and `local_class_construction` when native
 fields are present; a source-only class has no unrelated native premises.

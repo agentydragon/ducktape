@@ -1160,44 +1160,6 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    for (module, facts) in modules {
-        let Some(capabilities) = inferred.get(module) else {
-            continue;
-        };
-        let callback_factories = &capabilities.callback_factories;
-        for (export, local) in &facts.exports {
-            let key = CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            };
-            if !required.contains(&key) || export_summaries.contains_key(&key) {
-                continue;
-            }
-            let Some(factory) = callback_factories.get(local) else {
-                continue;
-            };
-            export_summaries.entry(key).or_default().add(
-                CallableSummary::callback_factory(
-                    CallbackFactoryEvidence::InferredImmutableWrapper {
-                        defining_module: module.clone(),
-                        export: export.clone(),
-                        local: local.clone(),
-                        source_location: facts.source.as_ref().and_then(|(path, index)| {
-                            let (line, column) =
-                                index.line_and_column_for_pos(BytePos(factory.function_start))?;
-                            Some(SourceLocation {
-                                source_path: path.clone(),
-                                start_line: line,
-                                end_line: line,
-                                start_column: Some(column),
-                            })
-                        }),
-                    },
-                ),
-                factory.dependencies.clone(),
-            );
-        }
-    }
     // A construction premise must hold in every analyzed chunk's census,
     // including the importer's.
     let intact_collections = inferred
@@ -1219,7 +1181,55 @@ pub fn resolve_imported_callable_summaries(
                 module: module.clone(),
                 export: export.clone(),
             };
-            let Some(call) = capabilities.foreign_calls.get(local) else {
+            if !required.contains(&key) || export_summaries.contains_key(&key) {
+                continue;
+            }
+            let Some(factory) = capabilities.foreign_calls.get(local).filter(|call| {
+                call.callback_factory
+                    && call
+                        .derived
+                        .native_constructions
+                        .is_subset(&intact_collections)
+            }) else {
+                continue;
+            };
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::callback_factory(
+                    CallbackFactoryEvidence::InferredImmutableWrapper {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                        local: local.clone(),
+                        source_location: facts.source.as_ref().and_then(|(path, index)| {
+                            let (line, column) = index
+                                .line_and_column_for_pos(BytePos(factory.declaration_start))?;
+                            Some(SourceLocation {
+                                source_path: path.clone(),
+                                start_line: line,
+                                end_line: line,
+                                start_column: Some(column),
+                            })
+                        }),
+                    },
+                ),
+                factory.dependencies.clone(),
+            );
+        }
+    }
+    for (module, facts) in modules {
+        let Some(capabilities) = inferred.get(module) else {
+            continue;
+        };
+        for (export, local) in &facts.exports {
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
+            // An initializer may not have run when the importer calls it.
+            let Some(call) = capabilities
+                .foreign_calls
+                .get(local)
+                .filter(|call| call.hoisted)
+            else {
                 continue;
             };
             if !required.contains(&key)

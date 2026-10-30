@@ -55,6 +55,7 @@ use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::*;
@@ -1495,21 +1496,6 @@ impl Default for Callable {
 fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
     match body.stmts.as_slice() {
         [Stmt::Return(ret)] => ret.arg.as_deref(),
-        _ => None,
-    }
-}
-
-fn returned_function_span(expr: &Expr) -> Option<Span> {
-    match expr.unwrap_parens() {
-        Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => Some(arrow.span),
-        Expr::Fn(function)
-            if !function.function.is_async
-                && !function.function.is_generator
-                && function.function.params.is_empty()
-                && function.function.decorators.is_empty() =>
-        {
-            Some(function.function.span)
-        }
         _ => None,
     }
 }
@@ -5366,7 +5352,6 @@ struct ExecutionIndex {
     host_promise_resolve: bool,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
-    returned_factory_candidates: BTreeMap<u32, Span>,
     returned_record_summaries: BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
     namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
@@ -5522,7 +5507,6 @@ impl Default for ExecutionIndex {
             host_promise_resolve: false,
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
-            returned_factory_candidates: BTreeMap::new(),
             returned_record_summaries: BTreeMap::new(),
             namespace_wrapper_summaries: BTreeMap::new(),
         }
@@ -10021,23 +10005,6 @@ impl Visit for ExecutionIndex {
         if function.is_async {
             self.async_callables.insert(function.span.lo.0);
         }
-        if !function.params.is_empty()
-            && function
-                .params
-                .iter()
-                .all(|param| matches!(param.pat, Pat::Ident(_)) && param.decorators.is_empty())
-            && !function.is_async
-            && !function.is_generator
-            && function.decorators.is_empty()
-            && let Some(returned) = function
-                .body
-                .as_ref()
-                .and_then(sole_return_expression)
-                .and_then(returned_function_span)
-        {
-            self.returned_factory_candidates
-                .insert(function.span.lo.0, returned);
-        }
         // Decorator expressions run when the method is defined. Defaults in
         // parameter patterns and the body run only when it is called.
         function.decorators.visit_with(self);
@@ -10076,23 +10043,6 @@ impl Visit for ExecutionIndex {
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
         if arrow.is_async {
             self.async_callables.insert(arrow.span.lo.0);
-        }
-        let returned = match arrow.body.as_ref() {
-            ArrowFunctionBody::Expr(expr) => returned_function_span(expr),
-            ArrowFunctionBody::FunctionBody(body) => {
-                sole_return_expression(body).and_then(returned_function_span)
-            }
-        };
-        if !arrow.is_async
-            && !arrow.params.is_empty()
-            && arrow
-                .params
-                .iter()
-                .all(|param| matches!(param, Pat::Ident(_)))
-            && let Some(returned) = returned
-        {
-            self.returned_factory_candidates
-                .insert(arrow.span.lo.0, returned);
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
@@ -11282,17 +11232,15 @@ impl Visit for ExecutionIndex {
         }
     }
 }
-/// An imported one-argument call supplies only the first parameter. A returned
-/// function can therefore retain that callback and omitted parameters, but it
-/// must not capture another source/host capability that the abstract returned
-/// callback graph would omit when the result is invoked later.
-fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
-    let Some(returned) = index.returned_factory_candidates.get(&key) else {
-        return false;
-    };
+/// An imported one-argument call supplies only the first parameter. The
+/// returned closure can therefore retain that callback and omitted parameters,
+/// but it must not capture another source/host capability that the abstract
+/// returned callback graph would omit when the result is invoked later. The
+/// factory call itself is a derived foreign call: it runs no other code.
+fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range<u32>) -> bool {
     let (Some(outer), Some(inner)) = (
-        index.callables.get(&key),
-        index.callables.get(&returned.lo.0),
+        index.callables.get(&outer),
+        index.callables.get(&closure.start),
     ) else {
         return false;
     };
@@ -11303,28 +11251,14 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
     else {
         return false;
     };
-    if outer.opaque
-        || outer.generator
-        || outer.implicit_capture
-        || index.async_callables.contains(&key)
-        || outer.may_fall_through
-        || outer
-            .params
-            .iter()
-            .any(|param| param.binding.is_none() || param.default.is_some())
-        || !outer.calls.is_empty()
-        || !outer.reads.is_empty()
-        || !outer.rebinds.is_empty()
-        || !outer.local_assignments.is_empty()
-        || !outer.member_writes.is_empty()
-        || !outer.member_value_writes.is_empty()
-        || outer.dynamic_property_effect
-        || outer.returns.len() != 1
-        || !matches!(outer.returns[0], ValueExpr::Alloc(Kind::Function, inner_key) if inner_key == returned.lo.0)
+    // The factory must return the closure literal directly. A body that binds
+    // it first keeps opaque timing; author source policies
+    // (`source_export_policy` fixtures) are tested against such a provider.
+    if !outer.declared_locals.is_empty()
         || inner.opaque
         || inner.generator
         || inner.implicit_capture
-        || index.async_callables.contains(&returned.lo.0)
+        || index.async_callables.contains(&closure.start)
         || !inner.params.is_empty()
         || inner.dynamic_property_effect
         || !inner.member_writes.is_empty()
@@ -11332,7 +11266,7 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
         || !inner.callback_result_writes.is_empty()
         || index
             .callables
-            .range((returned.lo.0 + 1)..returned.hi.0)
+            .range((closure.start + 1)..closure.end)
             .next()
             .is_some()
     {
@@ -11401,11 +11335,6 @@ pub(crate) struct InferredNamespaceWrapper {
     pub dependencies: ProofDependencies,
 }
 
-pub(crate) struct InferredCallbackFactory {
-    pub function_start: u32,
-    pub dependencies: ProofDependencies,
-}
-
 pub(crate) struct InferredCallableCapabilities {
     /// Exported local → derived call summary
     /// (`crate::facts::abstract_domain::foreign_call`).
@@ -11414,15 +11343,19 @@ pub(crate) struct InferredCallableCapabilities {
     /// census leaves intact.
     pub intact_collections: BTreeSet<NativeIntrinsic>,
     pub stable_providers: BTreeSet<String>,
-    pub callback_factories: BTreeMap<String, InferredCallbackFactory>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
 
 pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
+    /// Initialized at module instantiation (a function or class declaration),
+    /// so an importer's call never finds it uninitialized.
+    pub hoisted: bool,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
+    /// The returned closure defers its first argument (`deferred_callback_closure`).
+    pub callback_factory: bool,
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -11637,32 +11570,22 @@ impl PreparedCallableCapabilities {
         &self,
         body: &[TopLevelItemView<'_>],
     ) -> BTreeMap<String, (u32, BTreeSet<usize>)> {
-        let candidates: BTreeMap<_, _> = self
-            .index
-            .returned_factory_candidates
-            .keys()
-            .filter_map(|key| {
-                callback_arguments::ordinary_callback_arguments(&self.index, *key)
-                    .map(|objects| (*key, objects))
-            })
-            .collect();
-        if candidates.is_empty() {
-            return BTreeMap::new();
-        }
-        let flow = ChunkValueFlow::analyze(body);
         // Only source identity is complete here: callback argument coverage
-        // helps resolve native writes, so no native certificate is available.
-        let source_facts = SemanticFacts::solve(SemanticRules {
-            dynamic_scope: !self.index.dynamic_scope_owners.is_empty(),
-            callables: callable_inference_inputs(&self.index, &flow, &self.exported_locals),
-            ..SemanticRules::default()
-        });
-        infer_returned_callback_factories(&self.index, &self.exported_locals, &source_facts)
+        // helps resolve native writes, so no native construction is admitted.
+        infer_foreign_calls(&self.index, body, &self.exported_locals, None, |_| false)
             .into_iter()
-            .filter_map(|(local, key)| {
-                candidates
-                    .get(&key.function_start)
-                    .map(|arguments| (local, (key.function_start, arguments.clone())))
+            .filter_map(|(local, call)| {
+                let closure = call
+                    .derived
+                    .closure
+                    .as_ref()
+                    .filter(|_| call.callback_factory)?;
+                callback_arguments::ordinary_callback_arguments(
+                    &self.index,
+                    call.declaration_start,
+                    closure,
+                )
+                .map(|objects| (local, (call.declaration_start, objects)))
             })
             .collect()
     }
@@ -11714,20 +11637,12 @@ pub(crate) fn infer_callable_capabilities(
         foreign_calls: BTreeMap::new(),
         intact_collections: BTreeSet::new(),
         stable_providers: BTreeSet::new(),
-        callback_factories: BTreeMap::new(),
         namespace_wrappers: BTreeMap::new(),
-    };
-    let callback_candidate = |id: &Id, key: u32| {
-        exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
     };
     let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
         required_stable_providers.contains(id.0.as_ref())
-            ||
-        callback_candidate(id, *key)
             || (exported_locals.contains(id.0.as_ref())
                 && index.namespace_wrapper_candidates.contains_key(key))
-    }) || index.top_assignments.iter().flatten().any(|(id, value)| {
-        matches!(value, ValueExpr::Alloc(Kind::Function, key) if callback_candidate(id, *key))
     });
     if has_candidate {
         let flow = prepared_flow
@@ -11762,16 +11677,19 @@ pub(crate) fn infer_callable_capabilities(
             })
             .map(|(binding, _)| binding.0.to_string())
             .collect();
-        result.callback_factories = infer_returned_callback_factories(
-            &index,
-            &exported_locals,
-            index.semantic_facts.as_deref().unwrap(),
-        );
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
         prepared_flow = Some(flow);
     }
     if derive_foreign_calls {
-        result.foreign_calls = infer_foreign_calls(&index, body, &exported_locals, prepared_flow);
+        result.foreign_calls =
+            infer_foreign_calls(&index, body, &exported_locals, prepared_flow, |family| {
+                matches!(
+                    index
+                        .integrity
+                        .require(&[IntrinsicSlot::Global(family)], None),
+                    crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+                )
+            });
     }
     result.intact_collections = [
         NativeIntrinsic::Map,
@@ -11792,13 +11710,16 @@ pub(crate) fn infer_callable_capabilities(
     result
 }
 
-/// Exported top-level function and class declarations with one stable value,
-/// summarized by `foreign_call`. Dynamic scope can rebind any of them.
+/// Exported top-level function and class declarations, and single-declarator
+/// top-level function or arrow initializers, with one stable value, summarized
+/// by `foreign_call`. Dynamic scope can rebind any of them. `collection_intact`
+/// answers the census for an empty keyed collection's constructor.
 fn infer_foreign_calls(
     index: &ExecutionIndex,
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
     flow: Option<ChunkValueFlow>,
+    collection_intact: impl Fn(NativeIntrinsic) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
     use crate::facts::abstract_domain::foreign_call::{ForeignBody, derive_foreign_call};
     if !index.dynamic_scope_owners.is_empty() {
@@ -11812,47 +11733,71 @@ fn infer_foreign_calls(
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
                 _ => return None,
             };
-            let (binding, body, start) = match declaration {
+            let (binding, body, start, hoisted) = match declaration {
                 Decl::Fn(function) => (
                     &function.ident,
                     ForeignBody::Function(&function.function),
                     function.function.span.lo.0,
+                    true,
                 ),
                 Decl::Class(class) => (
                     &class.ident,
                     ForeignBody::Class(&class.class),
                     class.class.span.lo.0,
+                    true,
                 ),
+                Decl::Var(declaration) => {
+                    let [declarator] = declaration.decls.as_slice() else {
+                        return None;
+                    };
+                    let Pat::Ident(binding) = &declarator.name else {
+                        return None;
+                    };
+                    let (body, start) = match declarator.init.as_deref()?.unwrap_parens() {
+                        Expr::Fn(function) => (
+                            ForeignBody::Function(&function.function),
+                            function.function.span.lo.0,
+                        ),
+                        Expr::Arrow(arrow) => (ForeignBody::Arrow(arrow), arrow.span.lo.0),
+                        _ => return None,
+                    };
+                    (&binding.id, body, start, false)
+                }
                 _ => return None,
             };
             exported_locals
                 .contains(binding.sym.as_ref())
-                .then_some((binding, body, start))
+                .then_some((binding, body, start, hoisted))
         })
         .collect();
     if declarations.is_empty() {
         return BTreeMap::new();
     }
-    let flow = flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
     let shadowed = crate::facts::compute_shadowed_globals(body);
+    let derived: Vec<_> = declarations
+        .into_iter()
+        .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
+        .filter_map(|(binding, declaration, declaration_start, hoisted)| {
+            derive_foreign_call(declaration, &shadowed, &collection_intact)
+                .map(|derived| (binding, derived, declaration_start, hoisted))
+        })
+        .collect();
+    if derived.is_empty() {
+        return BTreeMap::new();
+    }
+    let flow = flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
     let mut inferred = BTreeMap::new();
-    for (binding, declaration, declaration_start) in declarations {
-        let id = binding.to_id();
-        if index.reassigned_bindings.contains(&id)
-            || flow.values_of_binding(&id).iter().count() != 1
-        {
+    for (binding, derived, declaration_start, hoisted) in derived {
+        let values = flow.values_of_binding(&binding.to_id());
+        // An initializer's binding holds `undefined` (or is in its TDZ) until
+        // its statement runs; afterwards it must hold only that function.
+        if if hoisted {
+            values.iter().count() != 1
+        } else {
+            !values.iter().eq([Value::Alloc(Kind::Function, declaration_start)])
+        } {
             continue;
         }
-        let Some(derived) = derive_foreign_call(declaration, &shadowed, |family| {
-            matches!(
-                index
-                    .integrity
-                    .require(&[IntrinsicSlot::Global(family)], None),
-                crate::facts::abstract_domain::integrity::Integrity::Intact(_)
-            )
-        }) else {
-            continue;
-        };
         let mut dependencies = ProofDependencies::default();
         for family in &derived.native_constructions {
             dependencies.extend(
@@ -11867,13 +11812,20 @@ fn infer_foreign_calls(
             .record
             .as_ref()
             .map(|members| returned_record(index, members, &derived, &dependencies));
+        let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
+            derived.returns
+                == BTreeSet::from([crate::analysis_inputs::ForeignReturn::FreshAllocation])
+                && deferred_callback_closure(index, declaration_start, closure)
+        });
         inferred.insert(
             binding.sym.to_string(),
             InferredForeignCall {
                 derived,
                 declaration_start,
+                hoisted,
                 dependencies,
                 record,
+                callback_factory,
             },
         );
     }
@@ -12013,94 +11965,11 @@ fn callable_inference_inputs(
             binding.clone(),
             FunctionBindingFacts {
                 values: flow.values_of_binding(binding),
-                hoisted: true,
-                definite_initializer: false,
                 rebound: rebound.contains(binding),
             },
         );
     }
-    let mut assignments: BTreeMap<Id, Vec<(SourceUnitOrdinal, &ValueExpr)>> = BTreeMap::new();
-    for (ordinal, writes) in index.top_assignments.iter().enumerate() {
-        for (binding, value) in writes {
-            assignments
-                .entry(binding.clone())
-                .or_default()
-                .push((SourceUnitOrdinal(ordinal), value));
-        }
-    }
-    for (binding, writes) in assignments {
-        if !exported_locals.contains(binding.0.as_ref()) || inputs.functions.contains_key(&binding)
-        {
-            continue;
-        }
-        let definite_initializer = matches!(writes.as_slice(),
-            [(owner, ValueExpr::Alloc(Kind::Function, _))]
-                if index.top_definite_initializers[owner.0].contains(&binding));
-        inputs.functions.insert(
-            binding.clone(),
-            FunctionBindingFacts {
-                values: flow.values_of_binding(&binding),
-                hoisted: false,
-                definite_initializer,
-                rebound: rebound.contains(&binding),
-            },
-        );
-    }
-    inputs.callback_factories = inputs
-        .functions
-        .values()
-        .flat_map(|facts| facts.values.iter())
-        .filter_map(|origin| match origin {
-            Value::Alloc(Kind::Function, function) => Some(function),
-            _ => None,
-        })
-        .filter(|function| returned_callback_factory(index, *function))
-        .collect();
     inputs
-}
-
-fn infer_returned_callback_factories(
-    index: &ExecutionIndex,
-    exported_locals: &BTreeSet<String>,
-    semantic_facts: &SemanticFacts,
-) -> BTreeMap<String, InferredCallbackFactory> {
-    index
-        .hoisted_bindings
-        .iter()
-        .map(|(binding, &function)| (binding, function))
-        .chain(
-            index
-                .top_assignments
-                .iter()
-                .flatten()
-                .filter_map(|(binding, value)| {
-                    let ValueExpr::Alloc(Kind::Function, function) = value else {
-                        return None;
-                    };
-                    Some((binding, *function))
-                }),
-        )
-        .filter_map(|(binding, function)| {
-            if !exported_locals.contains(binding.0.as_ref()) {
-                return None;
-            }
-            let key = SemanticKey::CallbackFactory {
-                binding: binding.clone(),
-                function,
-            };
-            let judgment = semantic_facts.judgment(&key)?;
-            let SemanticFact::CallbackFactory(function) = judgment.value() else {
-                return None;
-            };
-            Some((
-                binding.0.to_string(),
-                InferredCallbackFactory {
-                    function_start: *function,
-                    dependencies: judgment.dependencies().clone(),
-                },
-            ))
-        })
-        .collect()
 }
 
 fn infer_namespace_wrappers(

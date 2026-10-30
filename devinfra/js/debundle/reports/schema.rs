@@ -457,7 +457,6 @@ pub enum InferenceRule {
     StableFunction,
     StableProvider,
     ArgumentNoEscape,
-    CallbackFactory,
     ReturnedRecord,
     NamespaceWrapper,
     OwnPropertySourceOrigin,
