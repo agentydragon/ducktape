@@ -26,6 +26,7 @@ go_library(
     deps = [
         ":dispatcher_notification_go_proto",
         ":session_dispatcher_go_proto",
+        "//agentplane/grpc/bearer",
         "//agentplane/grpc/streaming",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
@@ -55,7 +56,6 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",

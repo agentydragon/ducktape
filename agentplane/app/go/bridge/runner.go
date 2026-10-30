@@ -34,7 +34,7 @@ func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *sandboxesp
 	err := runnerclient.WithClient(ctx, runnerclient.Config{
 		Target: target, TokenFile: r.config.TokenFile, Timeout: r.config.Timeout,
 		SandboxName: sandbox.GetName(), SandboxUID: sandbox.GetUid(), SandboxNamespace: sandbox.GetNamespace(),
-		DisableRetry: true, ReplaceOutgoingMetadata: true,
+		ReplaceOutgoingMetadata: true,
 	}, call)
 	return translatedRPCError(err)
 }

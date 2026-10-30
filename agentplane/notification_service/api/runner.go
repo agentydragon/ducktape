@@ -30,7 +30,6 @@ func (r *ProxyRunner) ListSessions(ctx context.Context, sandbox sandboxreader.Id
 	err := runnerclient.WithClient(ctx, runnerclient.Config{
 		Target: runnerclient.ExpandTarget(template, sandbox.Name, sandbox.Namespace), TokenFile: r.TokenFile, Timeout: r.Timeout,
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
-		DisableRetry: true,
 	}, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
 		response, err := client.ListSessions(ctx, &runnerpb.ListSessionsRequest{})
 		for _, summary := range response.GetSessions() {

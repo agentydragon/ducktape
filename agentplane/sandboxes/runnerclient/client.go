@@ -4,20 +4,17 @@ package runnerclient
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
-// Config describes one call through the Runner Gateway proxy. Every call reads the projected token
-// again and owns a fresh connection so DNS can resolve a new connection holder after a handoff.
+// Config describes one call through the Runner Gateway proxy. Every call owns a fresh connection so
+// DNS can resolve a new connection holder after a handoff.
 type Config struct {
 	Target                  string
 	TokenFile               string
@@ -25,7 +22,6 @@ type Config struct {
 	SandboxName             string
 	SandboxUID              string
 	SandboxNamespace        string
-	DisableRetry            bool
 	ReplaceOutgoingMetadata bool
 }
 
@@ -34,33 +30,17 @@ func ExpandTarget(template, sandbox, namespace string) string {
 	return strings.NewReplacer("{sandbox}", sandbox, "{namespace}", namespace).Replace(template)
 }
 
-// WithClient reads the current token, creates a per-call gRPC connection and deadline, and supplies
-// the authenticated connection to call. ReplaceOutgoingMetadata preserves the dispatcher's existing
-// behavior; callers that append metadata leave it false.
+// WithClient supplies call with a per-call bearer.Dial connection, which never retries and reads the
+// projected token again for each RPC, under a deadline of config.Timeout. ReplaceOutgoingMetadata
+// preserves the dispatcher's existing behavior; callers that append metadata leave it false.
 func WithClient(ctx context.Context, config Config, call func(context.Context, runnerservicepb.RunnerClient) error) error {
-	if config.Timeout <= 0 {
-		return errors.New("runner request timeout must be positive")
-	}
-	if config.Target == "" || config.TokenFile == "" || config.SandboxName == "" ||
-		config.SandboxUID == "" || config.SandboxNamespace == "" {
-		return errors.New("runner proxy target, token file, and Sandbox identity are required")
+	if config.SandboxName == "" || config.SandboxUID == "" || config.SandboxNamespace == "" {
+		return errors.New("runner proxy Sandbox identity is required")
 	}
 	if call == nil {
 		return errors.New("runner proxy call is required")
 	}
-	data, err := os.ReadFile(config.TokenFile)
-	if err != nil {
-		return err
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return errors.New("runner proxy token is empty")
-	}
-	dialOptions := []grpc.DialOption{observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if config.DisableRetry {
-		dialOptions = append(dialOptions, grpc.WithDisableRetry())
-	}
-	conn, err := grpc.NewClient(config.Target, dialOptions...)
+	conn, err := bearer.Dial(config.Target, config.TokenFile, config.Timeout)
 	if err != nil {
 		return err
 	}
@@ -68,7 +48,6 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, r
 	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
 	metadataPairs := []string{
-		"authorization", "Bearer " + token,
 		sandboxapi.RunnerProxySandboxMetadataKey, config.SandboxName,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, config.SandboxUID,
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
