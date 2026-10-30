@@ -37,6 +37,7 @@ py_test(
         "//:conftest",
         "@pypi//certifi",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

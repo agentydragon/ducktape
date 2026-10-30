@@ -1,19 +1,25 @@
 # Attic JWT rotator
 
-`rotators.yaml` may give a token a Kubernetes destination containing a pre-existing
-Secret and an OpenTofu Workspace notification. The Secret is the canonical token
-state: its JWT expiry claim and the rotator's scope annotations decide whether to
-mint. The Secret must exist before the rotator runs; an empty Secret is valid and
-forces the first mint.
+Every token has one `storage` variant. `sops` stores its JWT in the configured
+SOPS file, `kubernetes` stores it in the configured Secret and notifies the
+configured OpenTofu Workspace, and `mirrored` does both while consumers migrate.
+The variant determines which destinations exist; mismatched or missing fields
+fail config validation.
 
-The rotator patches the JWT and expiry, pull, and push annotations through stdin,
-then reads the Secret's `metadata.uid` and `metadata.resourceVersion`. It patches
-the Workspace notification annotation to `<uid>/<resourceVersion>` before writing
-those identifiers with the same JWT to the configured `sops_file`. The notification
-is sent on every run so a failed patch is retried even when the Secret remains
-fresh. Secret values never go in process arguments or logs.
+For Kubernetes-backed variants, the Secret is canonical. The rotator checks the
+JWT subject and expiry claim plus pull and push scope annotations. The Secret
+must be provisioned first; an empty Secret forces minting. It patches Secret
+data and metadata through stdin, then reads `metadata.uid` and
+`metadata.resourceVersion` and patches the Workspace annotation to
+`<uid>/<resourceVersion>`. It retries this notification on every run. Secret
+values do not go in process arguments or logs.
 
-The `sops_file` output remains required during provisioning because current CI
-consumers still read it. Its UID and resourceVersion stamps let a later run repair
-it from the canonical Secret after a failed git push. SOPS publication is a
-transition output and can be removed only after those consumers migrate.
+Only `sops` and `mirrored` tokens write `sops_file` and enter git commit
+bookkeeping. Kubernetes-only tokens publish and notify, then return without a
+SOPS write or git commit.
+
+The Config parser temporarily tags only the previous SOPS and mirrored shapes,
+which both required `sops_file`. TODO: remove that adapter after all deployed
+rotators ConfigMaps carry `storage` tags. The current CI writer remains
+`mirrored` until the union-capable runtime is deployed; a follow-up can then
+remove its SOPS output.

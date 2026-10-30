@@ -1,8 +1,9 @@
 """Shared schema for the generated Attic JWT roster and its runtime rotator."""
 
 from pathlib import Path
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class KubernetesSecretDestination(BaseModel):
@@ -21,9 +22,10 @@ class KubernetesDestination(BaseModel):
     notification: WorkspaceNotification
 
 
-class Token(BaseModel):
+class TokenFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(description="Human-readable name for logs and the commit message")
-    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
     sub: str = Field(description="JWT subject claim passed to atticadm --sub")
     validity: str = Field(description="Token lifetime passed to atticadm --validity (e.g. '1 year')")
     pull: list[str] = Field(description="Caches the token may pull from (atticadm --pull, repeated)")
@@ -31,9 +33,25 @@ class Token(BaseModel):
         default_factory=list,
         description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens",
     )
-    kubernetes: KubernetesDestination | None = Field(
-        default=None, description="Optional Kubernetes Secret destination and Workspace notification for publication"
-    )
+
+
+class SopsToken(TokenFields):
+    storage: Literal["sops"]
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+
+
+class KubernetesToken(TokenFields):
+    storage: Literal["kubernetes"]
+    kubernetes: KubernetesDestination
+
+
+class MirroredToken(TokenFields):
+    storage: Literal["mirrored"]
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+    kubernetes: KubernetesDestination
+
+
+Token = Annotated[SopsToken | KubernetesToken | MirroredToken, Field(discriminator="storage")]
 
 
 class Config(BaseModel):
@@ -65,3 +83,34 @@ class Config(BaseModel):
     sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "attic-jwt-rotation"
     git_author_email: str = "noreply@allegedly.works"
+
+    @model_validator(mode="before")
+    @classmethod
+    def tag_legacy_tokens(cls, value: Any) -> Any:
+        """Tag the deployed pre-union ConfigMap shape until its replacement rolls out.
+
+        TODO: remove this adapter after the tagged rotators ConfigMap is deployed.
+        """
+        if not isinstance(value, dict):
+            return value
+        raw_tokens = value.get("tokens")
+        if not isinstance(raw_tokens, list):
+            return value
+        tokens = []
+        for raw_token in raw_tokens:
+            if not isinstance(raw_token, dict) or "storage" in raw_token:
+                tokens.append(raw_token)
+                continue
+            has_sops = "sops_file" in raw_token
+            has_kubernetes = "kubernetes" in raw_token
+            if has_sops and has_kubernetes:
+                storage = "mirrored"
+            elif has_sops:
+                storage = "sops"
+            else:
+                # The deployed pre-union schema required sops_file. Do not
+                # reinterpret a new untagged Kubernetes-only entry as legacy.
+                tokens.append(raw_token)
+                continue
+            tokens.append({**raw_token, "storage": storage})
+        return {**value, "tokens": tokens}

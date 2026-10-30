@@ -38,7 +38,8 @@ from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
     KubernetesSecretDestination,
-    Token,
+    MirroredToken,
+    SopsToken,
     WorkspaceNotification,
 )
 
@@ -62,7 +63,8 @@ _SERVER_CONFIG_MAP = "attic-config"
 ROTATOR_CONFIG = Config(
     tokens=[
         *[
-            Token(
+            SopsToken(
+                storage="sops",
                 name=f"{sub} attic reader",
                 sops_file=Path(secret_file),
                 sub=sub,
@@ -82,7 +84,8 @@ ROTATOR_CONFIG = Config(
         ],
         # CI reads main and gaffer for Nix substituter access. Public is an
         # anonymous-readable bootstrap cache required before CI credentials exist.
-        Token(
+        MirroredToken(
+            storage="mirrored",
             name="ducktape CI attic writer (main)",
             sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
             kubernetes=KubernetesDestination(
@@ -98,7 +101,8 @@ ROTATOR_CONFIG = Config(
             pull=["main", "gaffer"],
             push=["main", "public"],
         ),
-        Token(
+        SopsToken(
+            storage="sops",
             name="gaffer CI attic writer",
             sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml"),
             sub="gaffer-ci",
