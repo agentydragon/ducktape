@@ -14,6 +14,8 @@ from typing import cast
 
 import pytest
 from opentelemetry import trace
+from opentelemetry.instrumentation.grpc import GrpcAioInstrumentorClient, GrpcInstrumentorClient
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
@@ -45,8 +47,22 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "scripted_model: the scenario plays the model (`scripted` fixture)")
 
 
+_SESSION_SPAN = pytest.StashKey[trace.Span]()
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
     configure_tracing(filename="vm-phases.jsonl")
+    # Every HTTP and gRPC call the test process makes, nested under the span that made it.
+    HTTPXClientInstrumentor().instrument()
+    GrpcInstrumentorClient().instrument()
+    GrpcAioInstrumentorClient().instrument()
+    # Session fixtures (stack startup, scripted model, teardown) run inside no case span.
+    session.config.stash[_SESSION_SPAN] = tracer.start_span("pytest.session")
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    if (span := session.config.stash.get(_SESSION_SPAN, None)) is not None:
+        span.end()
 
 
 @pytest.fixture

@@ -233,6 +233,7 @@ py_library(
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
         "@pypi//pyyaml",
         "@pypi//tenacity",
     ],

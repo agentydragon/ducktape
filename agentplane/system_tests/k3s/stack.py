@@ -26,11 +26,13 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import yaml
+from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
@@ -42,6 +44,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 DEPLOY_TIMEOUT_SECONDS = 480
 BOOTSTRAP_TIMEOUT_SECONDS = 180
@@ -130,17 +133,25 @@ class Timeline:
     started: float = field(default_factory=time.monotonic)
     steps: list[tuple[str, float]] = field(default_factory=list)
     imports: list[tuple[str, float]] = field(default_factory=list)
+    # The same steps on the run's trace, ended when the stack is ready or its setup fails.
+    span: trace.Span = field(default_factory=lambda: tracer.start_span("k3s.stack"))
 
     def mark(self, step: str) -> None:
         at = round(time.monotonic() - self.started, 1)
         self.steps.append((step, at))
+        self.span.add_event(step)
         self._record({"step": step, "at": at})
 
     def image_imported(self, image: str, seconds: float) -> None:
         # `git.allegedly.works/ducktape-ci/agentplane-app:unset` or `quay.io/kubevirt/virt-api@sha256:…`
         name = image.rsplit("/", 1)[-1].partition("@")[0].partition(":")[0]
         self.imports.append((name, round(seconds, 1)))
+        self.span.add_event("image imported", {"image": name, "seconds": round(seconds, 1)})
         self._record({"image": name, "seconds": round(seconds, 1), "at": round(time.monotonic() - self.started, 1)})
+
+    def finish(self) -> None:
+        if self.span.is_recording():
+            self.span.end()
 
     def summary(self) -> str:
         steps = ", ".join(f"{step} {at}" for step, at in self.steps)
@@ -150,6 +161,78 @@ class Timeline:
     def _record(self, entry: dict[str, str | float]) -> None:
         with (undeclared_outputs_dir() / "k3s-timeline.jsonl").open("a") as out:
             out.write(json.dumps(entry) + "\n")
+
+
+class EventRecorder:
+    """Every Kubernetes Event of the run, put on the trace as one `k8s.object` span per involved object.
+
+    The cluster does not keep a whole run's Events, so a thread lists them every few seconds and
+    keeps each by UID. Each becomes a span event at the time the cluster recorded it, so Pod
+    scheduling, image pulls, volume provisioning, probe failures and kills line up with the test's
+    own spans.
+    """
+
+    POLL_SECONDS = 5.0
+
+    def __init__(self, k3s: K3s) -> None:
+        self._kubectl = k3s.kubectl
+        self._events: dict[str, dict[str, Any]] = {}
+        self._stopped = threading.Event()
+        self._reader = threading.Thread(target=self._poll, daemon=True)
+        self._reader.start()
+
+    def _poll(self) -> None:
+        while True:
+            self._collect()
+            if self._stopped.wait(self.POLL_SECONDS):
+                return
+
+    def _collect(self) -> None:
+        listed = self._kubectl("get", "events", "-A", "-o", "json", check=False)
+        try:
+            items = json.loads(listed).get("items", [])
+        except json.JSONDecodeError:
+            logger.warning("Event list was not JSON: %s", listed[:200])
+            return
+        for event in items:
+            # A repeated Event is the same object with a higher count; keep its latest form.
+            self._events[event["metadata"]["uid"]] = event
+
+    def stop(self) -> None:
+        self._stopped.set()
+        self._reader.join()
+        self._collect()
+        stamped = sorted(
+            [
+                (int(datetime.fromisoformat(at).timestamp() * 1e9), event)
+                for event in self._events.values()
+                if (
+                    at := event.get("eventTime")
+                    or event.get("firstTimestamp")
+                    or event["metadata"]["creationTimestamp"]
+                )
+            ],
+            key=lambda pair: pair[0],
+        )
+        # One span per involved object: a span keeps at most 128 events, far fewer than a run's Events.
+        by_object: dict[tuple[str, str, str], list[tuple[int, dict[str, Any]]]] = {}
+        for at, event in stamped:
+            involved = event.get("involvedObject", {})
+            key = (involved.get("namespace", ""), involved.get("kind", ""), involved.get("name", ""))
+            by_object.setdefault(key, []).append((at, event))
+        for (namespace, kind, name), events in by_object.items():
+            span = tracer.start_span(
+                "k8s.object",
+                attributes={"namespace": namespace, "kind": kind, "name": name, "events": len(events)},
+                start_time=events[0][0],
+            )
+            for at, event in events:
+                span.add_event(
+                    event.get("reason", ""),
+                    {"count": event.get("count") or 1, "message": (event.get("message") or "")[:300]},
+                    timestamp=at,
+                )
+            span.end(end_time=events[-1][0])
 
 
 def node_ip() -> str:
@@ -503,7 +586,10 @@ def running_stack(
     cluster = Cluster(
         kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
     )
+    # Ended by the first callback registered, which the ExitStack runs last.
+    teardown: list[trace.Span] = []
     with contextlib.ExitStack() as cleanup:
+        cleanup.callback(lambda: [span.end() for span in teardown])
         raw_block = block_storage.BlockStorage(work)
 
         def remove_work() -> None:
@@ -515,6 +601,8 @@ def running_stack(
         cleanup.callback(remove_work)
         cleanup.enter_context(raw_block)
         cleanup.callback(k3s.stop, process)
+        cleanup.callback(EventRecorder(k3s).stop)
+        cleanup.callback(timeline.finish)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
@@ -580,6 +668,8 @@ def running_stack(
             )  # fmt: skip
             if "condition met" not in out:
                 failed.append(name)
+            else:
+                timeline.mark(f"deployment/{name} Available")
         if failed:
             print(k3s.report(fixture.namespace))
             raise RuntimeError(f"Deployments not Available: {failed}")
@@ -620,6 +710,7 @@ def running_stack(
         ).strip()
         print("memory:", run("free", "-m"))
         timeline.mark("stack ready")
+        timeline.finish()
         if fixture.vm_sandboxes:
             cleanup.enter_context(
                 guest_logs.capture(
@@ -631,6 +722,7 @@ def running_stack(
                 )
             )
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
+        teardown.append(tracer.start_span("k3s.teardown"))
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
             (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(

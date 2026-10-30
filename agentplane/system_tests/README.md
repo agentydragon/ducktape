@@ -137,6 +137,10 @@ k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these 
 
 `vm.sandbox.ready` carries an event at each Sandbox and Pod condition's transition time and each
 container start, so a slow launch splits into controller, kubelet, runner-connection and polling
+time; it covers Sandboxes an Action launched as well as the test's own. `vm.sandbox.cleanup` marks
+the Pod deleting and gone between `delete.accepted` and `deleted`. Each test-client call and wait is
+an `app.<method>` span. The same file holds `k3s.stack`, with an event per startup step, image import
+and Deployment becoming Available, and one `k8s.object` span per Kubernetes object carrying each of its Events at its own
 time. The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
 scenario execution. `test_vm` also separates the scripted turn and each OOM command
 (`memory-before`, `tool-oom`, `memory-after`); each grouped Sandbox scenario has its own `vm.scenario`

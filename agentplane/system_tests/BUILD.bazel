@@ -41,6 +41,8 @@ py_library(
         "//util:net",
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_instrumentation_grpc",
+        "@pypi//opentelemetry_instrumentation_httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
     ],

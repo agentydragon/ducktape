@@ -8,17 +8,19 @@ dispatch on `entry.event.WhichOneof("observation")`.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from http import HTTPStatus
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Concatenate, Self
 from uuid import UUID
 
 import httpx
 from google.protobuf.json_format import ParseDict, ParseError
+from opentelemetry import trace
 
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.models import (
@@ -41,6 +43,7 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 REQUEST_SECONDS = 30.0
 
@@ -61,6 +64,43 @@ def _no_app_answered(response: httpx.Response) -> bool:
         response.status_code == HTTPStatus.FORBIDDEN
         and response.headers.get("content-type", "").startswith("text/plain")
     )
+
+
+def _traced[**P, R](
+    method: Callable[Concatenate[Client, P], Coroutine[Any, Any, R]],
+) -> Callable[Concatenate[Client, P], Coroutine[Any, Any, R]]:
+    """One `app.<method>` span per call, so a system test's time between its own spans is attributed."""
+
+    @functools.wraps(method)
+    async def call(self: Client, *args: P.args, **kwargs: P.kwargs) -> R:
+        with tracer.start_as_current_span(f"app.{method.__name__}"):
+            return await method(self, *args, **kwargs)
+
+    return call
+
+
+def _traced_stream[**P, T](
+    method: Callable[Concatenate[Client, P], AsyncGenerator[T]],
+) -> Callable[Concatenate[Client, P], AsyncGenerator[T]]:
+    """One `app.<method>` span from the first read until the stream closes.
+
+    The span is not made current: an async generator resumes in its consumer's context, so a current
+    span would be detached from a different context than it was attached in.
+    """
+
+    @functools.wraps(method)
+    async def stream(self: Client, *args: P.args, **kwargs: P.kwargs) -> AsyncGenerator[T]:
+        span = tracer.start_span(f"app.{method.__name__}")
+        items = 0
+        try:
+            async for item in method(self, *args, **kwargs):
+                items += 1
+                yield item
+        finally:
+            span.set_attribute("items", items)
+            span.end()
+
+    return stream
 
 
 class SessionStreamError(Exception):
@@ -104,6 +144,7 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
+    @_traced
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
         return SandboxView.model_validate(
             await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
@@ -112,9 +153,11 @@ class Client:
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
 
+    @_traced
     async def runner_status(self, name: str) -> RunnerStatusView:
         return RunnerStatusView.model_validate(await self._json("GET", f"/sandboxes/{name}/runner-status"))
 
+    @_traced_stream
     async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
         """Initial inventory and watch-triggered changes; the caller bounds the subscription.
 
@@ -141,18 +184,22 @@ class Client:
                         yield SandboxesSnapshot.model_validate_json(payload)
         raise RuntimeError("the Sandbox inventory stream ended")
 
+    @_traced
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")
 
+    @_traced
     async def resume_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/resume")
 
+    @_traced
     async def delete_sandbox(self, name: str) -> None:
         await self._json("DELETE", f"/sandboxes/{name}")
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]
 
+    @_traced
     async def decisions(self, name: str) -> list[Decision]:
         """The first frame of the sandbox's egress decision stream, oldest first."""
         async with self._http.stream(
@@ -170,6 +217,7 @@ class Client:
                     return snapshot.decisions
         raise RuntimeError(f"the egress decision stream of {name} ended without a snapshot")
 
+    @_traced
     async def create_session(
         self,
         name: str,
@@ -185,6 +233,7 @@ class Client:
         opening = await self.open_session(name, session_id, overrides=overrides, setup_script=setup_script)
         return await self.wait_for_session_admission(name, session_id, opening=opening)
 
+    @_traced
     async def open_session(
         self,
         name: str,
@@ -207,6 +256,7 @@ class Client:
         answered = await self._json("GET", f"/sandboxes/{name}/sessions/{session_id}/opening")
         return ParseDict(answered, session_dispatcher_pb2.SessionOpening())
 
+    @_traced
     async def wait_for_session_admission(
         self,
         name: str,
@@ -230,6 +280,7 @@ class Client:
             await asyncio.sleep(0.2)
             opening = await self.session_opening(name, session_id)
 
+    @_traced
     async def wait_for_thread_feed(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait until History has folded the runner's first feed announcement into the Thread."""
         deadline = time.monotonic() + timeout_s
@@ -248,6 +299,7 @@ class Client:
                     raise TimeoutError(f"Thread {thread_id} received no runner feed within {timeout_s:g}s")
             await asyncio.sleep(0.2)
 
+    @_traced
     async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
         """Wait for History's projection after runner admission; only a missing row is retried."""
         deadline = time.monotonic() + timeout_s
@@ -261,6 +313,7 @@ class Client:
                     raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
                 await asyncio.sleep(0.2)
 
+    @_traced_stream
     async def threads(self, *, sandbox_uid: UUID) -> AsyncGenerator[ThreadView]:
         """Every retained Thread of this Sandbox incarnation, including archived Threads."""
         params = {"sandbox_uid": str(sandbox_uid), "include_archived": "true"}
@@ -276,6 +329,7 @@ class Client:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""
         return ThreadView.model_validate(await self._json("GET", f"/threads/{thread_id}"))
 
+    @_traced
     async def submit_input(
         self, thread_id: UUID, command_id: str, text: str
     ) -> session_dispatcher_pb2.Dispatch | event_log_pb2.EventEntry:
@@ -291,6 +345,7 @@ class Client:
             case kind:
                 raise ValueError(f"unrecognized command submission kind: {kind!r}")
 
+    @_traced_stream
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float, awaiting_command_id: str | None = None
     ) -> AsyncGenerator[event_log_pb2.EventEntry]:

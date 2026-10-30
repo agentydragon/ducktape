@@ -60,12 +60,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             # Register before readiness so failed boots are released too. ExitStack also drains
             # the other owners if one deletion fails.
             cleanup.push_async_callback(suspend_and_delete, cluster, client, view.name, view.uid)
-            with phase_tracer.start_as_current_span(
-                "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
-            ) as ready_span:
-                ready = await wait_until_running(client, view.name)
-                record_launch_transitions(ready_span, ready)
-                return ready
+            return await wait_until_running(client, view.name)
 
         yield create
 
@@ -93,6 +88,18 @@ def record_launch_transitions(span: trace.Span, view: SandboxView) -> None:
             )
 
 
+def record_deletion_progress(span: trace.Span, view: SandboxView, seen: set[str]) -> None:
+    """Mark the first snapshot showing the incarnation's Pod deleting and then gone.
+
+    These are snapshot times, not cluster times, and split `delete.accepted` → `deleted` into Pod
+    shutdown and what remains after it (volume and credential release).
+    """
+    event = "pod.gone" if view.pod is None else ("pod.deleting" if view.pod.deleting else None)
+    if event is not None and event not in seen:
+        seen.add(event)
+        span.add_event(event)
+
+
 def _dicts(value: object) -> list[dict[str, object]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
@@ -106,13 +113,22 @@ class SandboxNotReadyError(Exception):
 
 
 async def wait_until_running(client: Client, name: str) -> SandboxView:
-    """Wait for the Sandbox's own `Ready` condition — the condition, not a delay."""
-    async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
-        with attempt:
-            view = await client.sandbox(name)
-            if not sandbox_is_ready(view):
-                raise SandboxNotReadyError(f"{name} is not Ready: {view.status}")
-            return view
+    """Wait for the Sandbox's own `Ready` condition — the condition, not a delay.
+
+    Covers Sandboxes the test created and ones an Action launched; either way the `vm.sandbox.ready`
+    span records the launch steps.
+    """
+    with tracer.start_as_current_span("vm.sandbox.ready", attributes={"sandbox.name": name}) as ready_span:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True
+        ):
+            with attempt:
+                view = await client.sandbox(name)
+                if not sandbox_is_ready(view):
+                    raise SandboxNotReadyError(f"{name} is not Ready: {view.status}")
+                ready_span.set_attribute("sandbox.uid", str(view.uid))
+                record_launch_transitions(ready_span, view)
+                return view
     raise AssertionError("unreachable: reraise=True either returns the view or raises")
 
 
@@ -124,6 +140,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
         cleanup.add_event("suspend.accepted")
         # Deletion admission reads effective mode, which the controller publishes after the spec write.
         delete_requested = False
+        seen: set[str] = set()
         last_snapshot = None
         try:
             async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
@@ -139,6 +156,8 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
                         continue
                     if view.uid != uid:
                         raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
+                    if delete_requested:
+                        record_deletion_progress(cleanup, view, seen)
                     if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
                         cleanup.add_event("suspended")
                         await client.delete_sandbox(name)
