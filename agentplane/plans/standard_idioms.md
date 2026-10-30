@@ -40,17 +40,6 @@ pass unchanged.
 
 ## Kubernetes
 
-### `CONDITION_REASONS_NOT_STATE`
-
-Code branches on condition `reason` strings: the Sandbox controller reads its own `Running` reason
-`Quiescing` (`sandbox_controller/behavior.go`), the Gateway derives a lifecycle phase from `Deleting`
-and `Quiescing` (`runner_gateway/gateway/sandboxes.go`), and the Dispatcher wakes on `Quiescing` and
-`Ready=Stopped` (`runner_gateway/dispatcher/sandbox_kubernetes.go`). Reasons are informational under
-the API conventions. Expose the state as a typed status field (the CRD already has `operatingMode`,
-`suspendedBy`, `quiesceAttempt`) or a dedicated condition type, move every reader to it, then stop
-depending on reasons. Roll-safe: write the new field before any reader requires it. Exit: no code
-compares a condition reason; renaming a reason changes only display.
-
 ## Work queues
 
 Hand-rolled full-scan loops where a keyed, rate-limited work queue (client-go `workqueue`, or a

@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -154,9 +153,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	}
 	quiescing := f.sandbox.DeepCopy()
 	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
-	meta.SetStatusCondition(&quiescing.Status.Conditions, metav1.Condition{
-		Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: phaseQuiescing,
-	})
+	quiescing.Status.StopStage = sandboxapi.StopStageQuiescing
 	if err := f.objects.Status().Update(t.Context(), quiescing); err != nil {
 		t.Fatal(err)
 	}

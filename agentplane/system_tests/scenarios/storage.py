@@ -137,10 +137,7 @@ async def _delete(
 async def _suspend(cluster: Cluster, name: str, uid: str) -> None:
     await _running(cluster, name, uid, False)
     await cluster.kubectl(
-        "wait",
-        f"sandboxes.{GROUP}/{name}",
-        '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
-        f"--timeout={BOUND_SECONDS}s",
+        "wait", f"sandboxes.{GROUP}/{name}", "--for=jsonpath={.status.stopStage}=Stopped", f"--timeout={BOUND_SECONDS}s"
     )
 
 

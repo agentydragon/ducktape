@@ -111,7 +111,7 @@ func sandboxPodView(pod *corev1.Pod) (*sandboxespb.SandboxPod, error) {
 
 func sandboxPhase(resource *sandboxapi.Sandbox) sandboxespb.SandboxPhase {
 	if resource.DeletionTimestamp != nil {
-		sealed := runningReason(resource) == "Deleting"
+		sealed := resource.Status.StopStage == sandboxapi.StopStageDeleting
 		for _, condition := range resource.Status.Conditions {
 			if condition.Type == sandboxapi.ConditionQuiesced && condition.Status == metav1.ConditionTrue {
 				sealed = true
@@ -133,7 +133,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) sandboxespb.SandboxPhase {
 		if !incarnated {
 			return sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDED
 		}
-		if runningReason(resource) == "Quiescing" {
+		if resource.Status.StopStage == sandboxapi.StopStageQuiescing {
 			return sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING
 		}
 		return sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDING

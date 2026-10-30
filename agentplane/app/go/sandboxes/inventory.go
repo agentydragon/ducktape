@@ -267,7 +267,7 @@ func (a *Access) setRunning(ctx context.Context, name, uid string, running bool)
 		if resource.DeletionTimestamp != nil {
 			return &SandboxTearingDownError{Name: name}
 		}
-		if running && runningReason(resource) == "Quiescing" {
+		if running && resource.Status.StopStage == sandboxapi.StopStageQuiescing {
 			return &SandboxQuiescingError{Name: name}
 		}
 		if running {
@@ -283,7 +283,7 @@ func (a *Access) setRunning(ctx context.Context, name, uid string, running bool)
 }
 
 func (a *Access) requestResume(ctx context.Context, resource *sandboxapi.Sandbox, name, uid string) error {
-	if runningReason(resource) == "Quiescing" {
+	if resource.Status.StopStage == sandboxapi.StopStageQuiescing {
 		return &SandboxQuiescingError{Name: name}
 	}
 	idleStillSuspended := resource.Status.SuspendedBy != nil &&
@@ -574,15 +574,6 @@ func sameDuration(first, second *metav1.Duration) bool {
 		return first == nil && second == nil
 	}
 	return first.Duration == second.Duration
-}
-
-func runningReason(resource *sandboxapi.Sandbox) string {
-	for _, condition := range resource.Status.Conditions {
-		if condition.Type == sandboxapi.ConditionRunning {
-			return condition.Reason
-		}
-	}
-	return ""
 }
 
 type (

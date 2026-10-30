@@ -29,14 +29,10 @@ SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
 # Set by the Runner Gateway on a deleting Sandbox once its runner sealed every Session and the
 # ingress acknowledged each seal; the controller deletes nothing of the Sandbox before.
 QUIESCED = "Quiesced"
-# The Sandbox Controller's workload condition; its reasons say what the Sandbox is waiting on.
-RUNNING = "Running"
 # True while the Sandbox's workload runs and its runner is connected; its reason says why not.
 READY = "Ready"
 # On a Sandbox: the app preset it was made from. Only the app reads it.
 PRESET_LABEL = f"{GROUP}/preset"
-# The reason a Sandbox's `Ready` and `Running` conditions carry while no Pod or VM runs.
-STOPPED = "Stopped"
 
 
 class OperatingMode(StrEnum):
@@ -51,6 +47,14 @@ class SuspendedBy(StrEnum):
 
     IDLE = "Idle"
     REQUESTED = "Requested"
+
+
+class StopStage(StrEnum):
+    """How far the Sandbox Controller has taken stopping the workload; absent while it runs or starts."""
+
+    QUIESCING = "Quiescing"
+    DELETING = "Deleting"
+    STOPPED = "Stopped"
 
 
 class AutosuspendBlockerReason(StrEnum):
@@ -114,6 +118,7 @@ class Status(_Wire):
     idle_suspend_blockers: list[AutosuspendBlocker] = Field(default_factory=list)
     suspended_by: SuspendedBy | None = None
     suspended_at_wake_generation: int | None = None
+    stop_stage: StopStage | None = None
     conditions: list[Condition] = Field(default_factory=list)
 
 
@@ -130,25 +135,6 @@ class Sandbox(_Wire):
     @property
     def sessions_sealed(self) -> bool:
         return any(c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
-
-    @property
-    def ready_condition(self) -> Condition | None:
-        """The controller's reason for Ready or its current scheduling/start blocker."""
-        return next((c for c in self.status.conditions if c.type == READY), None)
-
-    @property
-    def ready(self) -> bool:
-        condition = self.ready_condition
-        return condition is not None and condition.status is ConditionStatus.TRUE
-
-    @property
-    def suspended(self) -> bool:
-        """Asked to stop and stopped: no Pod or VM runs, and the state volume is kept."""
-        condition = self.ready_condition
-        return self.operating_mode is OperatingMode.SUSPENDED and condition is not None and condition.reason == STOPPED
-
-    def running_reason(self) -> str | None:
-        return next((c.reason for c in self.status.conditions if c.type == RUNNING), None)
 
     def runs_in(self, pod: k8s_client.V1Pod) -> bool:
         """Whether `pod` is the incarnation the Sandbox Controller reports, the same object and not

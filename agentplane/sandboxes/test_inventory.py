@@ -8,7 +8,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase
-from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
+from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode, StopStage
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -115,21 +115,17 @@ SEALED = [
 ]
 
 
-def running_because(reason: str) -> list[dict[str, str]]:
-    return [{**SEALED[0], "type": "Running", "status": "False", "reason": reason}]
-
-
 @pytest.mark.parametrize(
-    ("running", "incarnated", "deletion", "conditions", "phase"),
+    ("running", "incarnated", "deletion", "conditions", "stop_stage", "phase"),
     [
-        (True, False, False, [], SandboxPhase.SANDBOX_PHASE_CREATING),
-        (True, True, False, [], SandboxPhase.SANDBOX_PHASE_RUNNING),
-        (False, True, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDING),
-        (False, False, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDED),
-        (False, True, True, [], SandboxPhase.SANDBOX_PHASE_QUIESCING),
-        (False, False, True, SEALED, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
-        (False, True, False, running_because("Quiescing"), SandboxPhase.SANDBOX_PHASE_QUIESCING),
-        (False, True, True, running_because("Deleting"), SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
+        (True, False, False, [], None, SandboxPhase.SANDBOX_PHASE_CREATING),
+        (True, True, False, [], None, SandboxPhase.SANDBOX_PHASE_RUNNING),
+        (False, True, False, [], None, SandboxPhase.SANDBOX_PHASE_SUSPENDING),
+        (False, False, False, [], StopStage.STOPPED, SandboxPhase.SANDBOX_PHASE_SUSPENDED),
+        (False, True, True, [], None, SandboxPhase.SANDBOX_PHASE_QUIESCING),
+        (False, False, True, SEALED, None, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
+        (False, True, False, [], StopStage.QUIESCING, SandboxPhase.SANDBOX_PHASE_QUIESCING),
+        (False, True, True, [], StopStage.DELETING, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
     ],
 )
 async def test_phase_follows_what_the_controller_records(
@@ -138,6 +134,7 @@ async def test_phase_follows_what_the_controller_records(
     incarnated: bool,
     deletion: bool,
     conditions: list[dict[str, str]],
+    stop_stage: StopStage | None,
     phase: SandboxPhase,
 ) -> None:
     """While it seals before deletion it takes no new work but its Sessions stay readable; once sealed it is going."""
@@ -147,6 +144,7 @@ async def test_phase_follows_what_the_controller_records(
             "status": {
                 "operatingMode": (OperatingMode.RUNNING if running else OperatingMode.SUSPENDED).value,
                 "conditions": conditions,
+                "stopStage": None if stop_stage is None else stop_stage.value,
                 **({} if incarnated else {"incarnation": None}),
             }
         }
