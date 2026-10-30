@@ -370,6 +370,7 @@ def _rotate_kubernetes_token(token: Token, config: Config) -> bool:
             "is missing; provision it before rotating"
         )
 
+    expires: datetime | None
     reason = _secret_rotation_reason(token, secret, config.rotate_below_hours)
     if reason is not None:
         logger.info("%s: rotating (%s)", token.name, reason)
