@@ -40,6 +40,20 @@ Expose independent positive millisecond settings in Runner configuration for
 executor readiness, probe timeout/interval, dependency wait, and app-server
 startup/initialization. Preserve existing defaults and lifecycle/fencing semantics.
 The emulated-VM fixture selects 60-second executor readiness, 5-second probes and
-120-second dependency wait explicitly. Staging configuration remains unchanged.
+120-second dependency wait explicitly. Staging Runner defaults remain unchanged.
 This removes hardcoded budgets; acceptance testing is still needed to assess the
 fixture profile. One successful retry alone cannot establish the flake rate.
+
+## Separate sampler initialization deadline
+
+The controlled retry of #13033 ([9295b241](https://app.buildbuddy.io/invocation/9295b241-9477-5b19-ae46-0fc154bb7ef2))
+instead interrupted central sampler setup. Its retained sampler log records an
+Executor initialize receive deadline for Session 0238373b-d87a-415a-b78b-d8cdc8baee00.
+The first readiness configuration CI run ([ad81e760](https://app.buildbuddy.io/invocation/ad81e760-3063-53b0-ba01-6ff66c1923fa))
+hit the same error for Session 7e9fb7ff-45dd-42fe-9b60-a6564c2a44b1.
+
+The sampler currently shares its ordinary RPC timeout with the initial Executor
+OpenSession response wait; the VM fixture sets that timeout to 10 seconds.
+Runner readiness configuration cannot extend that independent caller deadline.
+Give initialization its own setting and set the VM profile explicitly, preserving
+the unknown remote outcome and no-replay behavior when an initialization reply is lost.
