@@ -72,11 +72,17 @@ bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
 # Show pass/fail/flake history for targets (auto-detects group_id)
 bbapi target history [--repo URL] [--label LABEL] [--failures-only] [--since DURATION|DATE] [--count N]
 
-# Show flake statistics for targets (last 7 days)
-bbapi target stats [--repo URL]
+# Show flake statistics for targets (server default: last 7 days)
+bbapi target stats [--repo URL] [--branch NAME] [--since DURATION|DATE] [--until DURATION|DATE]
 
-# Show flake samples for a specific target
-bbapi target flakes <target-label> [--repo URL]
+# Show all flake sample pages for a target, in API order
+bbapi target flakes <target-label> [--repo URL] [--branch NAME] [--since DURATION|DATE] [--until DURATION|DATE]
+
+# Durations are ages relative to now (for example, --since 168h --until 24h).
+# Leaving both time flags unset preserves the server's default time window.
+# For hosted CI data, use the canonical repository URL if auto-detection yields
+# a local file:// URL. Some CI invocations have no stored branch name, so a
+# --branch filter can legitimately return no matches.
 
 # With --json, artifact entries contain native BES id and file messages (file.name,
 # file.uri, file.pathPrefix, file.digest, file.length); result IDs retain configuration.
