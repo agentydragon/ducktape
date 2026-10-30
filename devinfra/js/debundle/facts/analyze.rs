@@ -245,6 +245,22 @@ pub fn complete_chunk_structural_with_argument_inputs<'a>(
     complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), argument_inputs)
 }
 
+/// The canonical value flow `complete_chunk_structural_with_inputs` solves for
+/// `body` under these native-operation and Set-spread inputs.
+pub(crate) fn structural_value_flow(
+    body: &[TopLevelItemView<'_>],
+    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+) -> ChunkValueFlow {
+    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
+    candidate_roots.extend(super::array_content_effects::array_candidate_roots(body));
+    ChunkValueFlow::analyze_with_native_set_allocations(
+        body,
+        &candidate_roots,
+        &super::value_flow::native_set_allocation_roots(native_operation_inputs, stable_spreads),
+    )
+}
+
 /// Complete the source census with selected native-operation, Set-spread, and
 /// argument inputs before deriving plain-data, Set, and synchronous-call facts.
 /// The argument analysis and native allocation roots share one canonical flow.
@@ -254,6 +270,17 @@ pub fn complete_chunk_structural_with_inputs<'a>(
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
+    let value_flow = structural_value_flow(&source.body, native_operation_inputs, stable_spreads);
+    complete_chunk_structural_with_flow(source, argument_inputs, value_flow)
+}
+
+/// `complete_chunk_structural_with_inputs` reusing a flow that
+/// `structural_value_flow` already solved for the same body and inputs.
+pub(crate) fn complete_chunk_structural_with_flow<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+    value_flow: ChunkValueFlow,
+) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
         stable_array_spread_shapes,
@@ -262,15 +289,6 @@ pub fn complete_chunk_structural_with_inputs<'a>(
         per_statement,
         top_level_await,
     } = source;
-    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(&body);
-    candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
-    let native_set_allocations =
-        super::value_flow::native_set_allocation_roots(native_operation_inputs, stable_spreads);
-    let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
-        &body,
-        &candidate_roots,
-        &native_set_allocations,
-    );
     let dynamic_scope = DynamicScopeFact::analyze(&body);
     let stable_var_number_candidates =
         stable_top_level_var_candidates(&per_statement, dynamic_scope);

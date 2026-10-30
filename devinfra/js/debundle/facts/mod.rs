@@ -110,6 +110,7 @@ pub use analyze::{
     complete_chunk_structural_with_inputs, complete_chunk_structural_with_native_allocations,
     module_has_top_level_await,
 };
+pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
