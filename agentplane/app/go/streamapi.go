@@ -159,7 +159,6 @@ type sandboxListFrame struct {
 }
 
 type liveThreadsFrame struct {
-	Sandboxes        []SandboxView   `json:"sandboxes"`
 	Threads          []threadView    `json:"threads"`
 	More             bool            `json:"more"`
 	ArchivedCount    int             `json:"archived_count"`
@@ -308,42 +307,32 @@ func (r *streamingRoutes) liveThreads(w http.ResponseWriter, request *http.Reque
 	streamLiveFrames(r, w, ctx, frames, encodedFrame)
 }
 
-// produceThreadList reads the thread window only when a thread update arrives; a Kubernetes change reuses it and
-// re-projects only the Sandboxes.
+// produceThreadList re-reads the thread window on each thread notification, which History summary changes and a
+// listener reconnect also send. Kubernetes inventory changes do not touch it: Sandboxes come from /live/sandboxes.
 func (r *streamingRoutes) produceThreadList(ctx context.Context, key threadListKey, publish func([]byte)) error {
-	liveChanges, stopLive := r.deps.Live.Subscribe()
-	defer stopLive()
 	updates, stopUpdates, err := r.subscribeThreadUpdates()
 	if err != nil {
 		return err
 	}
 	defer stopUpdates()
-	var page threadPage
-	var archived int
-	threadsStale := true
 	for {
-		if threadsStale {
-			if page, err = r.threadWindow(ctx, key); err != nil {
-				return err
-			}
-			if archived, err = r.deps.Threads.ArchivedCount(ctx); err != nil {
-				return err
-			}
+		page, err := r.threadWindow(ctx, key)
+		if err != nil {
+			return err
 		}
-		views, health, err := r.sandboxViews(ctx)
+		archived, err := r.deps.Threads.ArchivedCount(ctx)
 		if err != nil {
 			return err
 		}
 		data, err := json.Marshal(liveThreadsFrame{
-			Sandboxes: views, Threads: page.Threads, More: page.NextPageToken != nil, ArchivedCount: archived,
-			UpdatesConnected: r.updatesConnected(), Watch: health,
+			Threads: page.Threads, More: page.NextPageToken != nil, ArchivedCount: archived,
+			UpdatesConnected: r.updatesConnected(), Watch: healthView(r.deps.Live.Health()),
 		})
 		if err != nil {
 			return err
 		}
 		publish(data)
-		var ended bool
-		if threadsStale, ended = waitLiveChange(ctx, liveChanges, updates); ended {
+		if _, ended := waitLiveChange(ctx, nil, updates); ended {
 			return nil
 		}
 	}

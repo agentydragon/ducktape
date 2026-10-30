@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable, SandboxView, ThreadView, WatchHealth
+from agentplane.app.testing.models import DecisionsSnapshot, DecisionsUnavailable, ThreadView, WatchHealth
 from agentplane.app.testing.replication_process import AppProcess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.egress import egress_admin_pb2_grpc
@@ -25,7 +25,6 @@ from agentplane.egress.decisions import Outcome
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
-from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
@@ -33,7 +32,6 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 
 class ThreadsSnapshot(BaseModel):
-    sandboxes: list[SandboxView]
     threads: list[ThreadView]
     more: bool
     archived_count: int
@@ -141,7 +139,7 @@ async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
         assert snapshot["threads"] == {"kind": "unavailable", "code": "UNAVAILABLE"}
 
 
-async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
+async def test_global_thread_stream_follows_replica_commits(
     http: httpx.AsyncClient,
     namespace: SandboxNamespace,
     event_logs: SessionHistory,
@@ -167,7 +165,6 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
         ):
             stream = _snapshots(response)
             initial = await _next_threads(stream)
-            assert {sandbox.name for sandbox in initial.sandboxes} == {"runner-1", "shelved"}
             assert initial.threads == []
             assert initial.updates_connected
             thread_id = await event_logs.seed("runner-1", "test-global-thread")
@@ -175,20 +172,6 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             assert [thread.id for thread in seeded.threads] == [thread_id]
             await store.rename(thread_id, "Renamed in another app replica")
             await _next_threads(stream, lambda frame: frame.threads[0].name == "Renamed in another app replica")
-            await namespace.patch(SANDBOXES_PLURAL, "runner-1", {"spec": {"running": False}})
-            await namespace.patch_status(
-                SANDBOXES_PLURAL, "runner-1", {"operatingMode": OperatingMode.SUSPENDED.value, "incarnation": None}
-            )
-            await _next_threads(
-                stream,
-                lambda frame: (
-                    next(view for view in frame.sandboxes if view.name == "runner-1").operating_mode
-                    == OperatingMode.SUSPENDED
-                ),
-            )
-            await namespace.delete(SANDBOXES_PLURAL, "runner-1")
-            deleted = await _next_threads(stream, lambda frame: [view.name for view in frame.sandboxes] == ["shelved"])
-            assert [thread.id for thread in deleted.threads] == [thread_id]
             await store.archive(thread_id)
             archived = await _next_threads(stream, lambda frame: frame.threads[0].archived)
             assert archived.archived_count == 1
