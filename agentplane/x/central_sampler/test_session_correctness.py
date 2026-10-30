@@ -198,7 +198,7 @@ async def faulting_executor_proxy(
 
 
 @pytest.mark.parametrize("failure", ["failed", "429", "503", "unsupported", "invalid_wait", "partial"])
-async def test_failed_turn_preserves_safe_continuation(
+async def test_turn_outcomes_preserve_safe_continuation(
     store: Store,
     database_url: str,
     execution_target: str,
@@ -239,7 +239,7 @@ async def test_failed_turn_preserves_safe_continuation(
                             [
                                 FunctionCall("bad-wait", "wait", {"cell_id": "missing"}),
                                 CustomToolCall(
-                                    "sibling", "exec", 'text(await tools.exec_command({cmd:"touch unwanted"}));'
+                                    "sibling", "exec", 'text(await tools.exec_command({cmd:"touch sibling-ran"}));'
                                 ),
                             ],
                             model="test-model",
@@ -250,6 +250,27 @@ async def test_failed_turn_preserves_safe_continuation(
                         "response.output_text.delta"
                     )
                     await exchange.send(*events.events)
+            if failure == "invalid_wait":
+                async with await endpoint.next() as exchange:
+                    outputs = [
+                        item
+                        for item in exchange.request.body["input"]
+                        if item["type"] in {"custom_tool_call_output", "function_call_output"}
+                    ]
+                    assert {item["call_id"] for item in outputs} == {"bad-wait", "sibling"}
+                    bad_wait = next(item for item in outputs if item["call_id"] == "bad-wait")
+                    assert "known live cell_id" in json.dumps(bad_wait["output"])
+                    assert (tmp_path / "sibling-ran").exists()
+                    await exchange.send(
+                        *response_stream([Message("Continued after tool error")], model="test-model").events
+                    )
+                assert (await wait_turn(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_COMPLETED
+                observed = await stub.GetSession(
+                    sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                )
+                assert not observed.blocked
+                assert not any(intent.result is None for intent in await store.intents())
+                return
             assert (await wait_turn(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
             observed = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -286,14 +307,6 @@ async def test_failed_turn_preserves_safe_continuation(
                 metadata=METADATA,
             )
             async with await endpoint.next() as exchange:
-                if failure == "invalid_wait":
-                    outputs = [
-                        item
-                        for item in exchange.request.body["input"]
-                        if item["type"] in {"custom_tool_call_output", "function_call_output"}
-                    ]
-                    assert {item["call_id"] for item in outputs} == {"bad-wait", "sibling"}
-                    assert not (tmp_path / "unwanted").exists()
                 await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
             assert (await wait_turn(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
 
