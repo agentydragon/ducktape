@@ -226,6 +226,10 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		return
 	}
 
+	// The contract is plain HTTP request/response streaming: without an Upgrade value,
+	// ReverseProxy forwards no protocol switch to LiteLLM.
+	incoming.Header.Del("Upgrade")
+
 	requestID := rand.Text()
 	var requestBody *boundedCapture
 	proxy := &httputil.ReverseProxy{
