@@ -24,16 +24,6 @@ models; reject incompatible duplicate names instead of silently keeping or repla
 Done: emitted refs resolve, conflicting-name fixtures fail clearly, and existing consumer typechecks
 and representative wire payloads pass. No collision in current production models was demonstrated.
 
-## Lightweight OpenAPI extraction (schema audit E)
-
-Separate route/model registration from acquiring runtime resources in the Augur app factory. Its
-exporter currently constructs placeholder clients or materializes temporary configuration/catalogs
-just to call `app.openapi()`. Keep the actual production route graph as the source; do not add a
-parallel schema-only app or a universal fake-dependency exporter (model: `haku/console/app.py`
-`build_app`, `agentplane/app/go/schema_export.go`). Done: the exporter uses the real routes without
-constructing unrelated runtime resources, and its operation/model contracts and frontend consumers
-remain unchanged.
-
 ## Generated Python import indexing (schema audit F)
 
 Derive Gazelle import-to-target mappings from `cdk8s_import` declarations instead of maintaining a

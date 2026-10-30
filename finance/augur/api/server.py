@@ -9,14 +9,15 @@ from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import uvicorn
 import yaml
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import ValidationError
+from starlette.types import Lifespan
 
 from finance.augur.api.calibration_wire import (
     CALIBRATION_FAN_PERCENTILES,
@@ -28,7 +29,7 @@ from finance.augur.api.casing import plain_json
 from finance.augur.api.catalog import build_calibration_info, build_catalog, build_settings
 from finance.augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
-from finance.augur.api.portfolio_sources import resolve_portfolio_sources
+from finance.augur.api.portfolio_sources import ResolvedPortfolioSources, resolve_portfolio_sources
 from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
 from finance.augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
@@ -40,6 +41,7 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler, lev
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from finance.augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
+from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     MetricFanResponse,
     ProductProjectionRequest,
@@ -107,27 +109,63 @@ class ApiServerConfig:
     budget_service: BudgetService | None = None
 
 
-def create_app(config: ApiServerConfig) -> FastAPI:
+@dataclass(frozen=True)
+class AppServices:
+    """The deployment state route handlers read, resolved once from an `ApiServerConfig` by `build_services`
+    (price clients are separate: the `create_app` lifespan enters them on the serving loop).
+
+    `create_app` binds it to the app as `app.state.services`; handlers resolve it per request via
+    `Services`, so `build_app` registers the production route graph without a deployment behind it
+    (how `export_schema` reaches `app.openapi()` without acquiring any runtime resource)."""
+
+    config: ApiServerConfig
+    portfolio: ResolvedPortfolioSources
+    catalog: CatalogResponse
+    settings: SettingsResponse
+    calibration_info: CalibrationInfo
+    deployment_info: DeploymentInfo
+    product_service: ProductService
+
+
+def build_services(config: ApiServerConfig) -> AppServices:
+    """Acquire the deployment's runtime resources: the property catalog, the portfolio sources
+    (Plaid is read here, at startup) and the product service over the realized models."""
     augur_config = config.augur_config
-    resolved_portfolio = resolve_portfolio_sources(augur_config)
     catalog = build_catalog(augur_config)
-    settings = build_settings(augur_config)
     loaded_calibration = config.calibration_catalog
-    calibration_info = build_calibration_info(
-        loaded_calibration.catalog if loaded_calibration is not None else None, augur_config.calibration_catalog
+    return AppServices(
+        config=config,
+        portfolio=resolve_portfolio_sources(augur_config),
+        catalog=catalog,
+        settings=build_settings(augur_config),
+        calibration_info=build_calibration_info(
+            loaded_calibration.catalog if loaded_calibration is not None else None, augur_config.calibration_catalog
+        ),
+        deployment_info=build_deployment_info(),
+        product_service=build_product_service(augur_config, config.models, catalog=catalog),
     )
-    deployment_info = build_deployment_info()
-    product_service = build_product_service(augur_config, config.models, catalog=catalog)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Enter the price-client provider once for the process so any provider-owned resources are
-        # bound to the serving loop and closed on shutdown. `/api/calibration/run` reads them off
-        # `app.state`.
-        async with config.price_clients as price_clients:
-            app.state.price_clients = price_clients
-            yield
 
+def _services(request: Request) -> AppServices:
+    return cast(AppServices, request.app.state.services)
+
+
+def _price_clients(request: Request) -> dict[Platform, PriceClient]:
+    # Entered by the `create_app` lifespan: present inside the serving loop or an entered TestClient.
+    return cast(dict[Platform, PriceClient], request.app.state.price_clients)
+
+
+Services = Annotated[AppServices, Depends(_services)]
+PriceClients = Annotated[dict[Platform, PriceClient], Depends(_price_clients)]
+
+
+def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
+    """The production route graph and error handling, unbound to any deployment.
+
+    Handlers read `AppServices` off `app.state.services` at request time, so registering every
+    route (which fixes the OpenAPI document) acquires no runtime resource. `create_app` binds a
+    deployment and the lifespan entering its price clients; `export_schema` passes `lifespan=None`
+    and only calls `.openapi()`."""
     app = FastAPI(title="Augur scenario API", lifespan=lifespan)
     no_store = {"cache-control": "no-store"}
 
@@ -147,50 +185,55 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     # `augur.api.export_schema` dumps to drive the frontend's Zod/TS codegen.
 
     @app.get("/api/catalog", response_model=CatalogResponse)
-    def catalog_route() -> JSONResponse:
-        return payload(catalog)
+    def catalog_route(services: Services) -> JSONResponse:
+        return payload(services.catalog)
 
     @app.get("/api/settings", response_model=SettingsResponse)
-    def settings_route() -> JSONResponse:
-        return payload(settings)
+    def settings_route(services: Services) -> JSONResponse:
+        return payload(services.settings)
 
     @app.get("/api/calibration", response_model=CalibrationInfo)
-    def calibration_info_route() -> JSONResponse:
-        return payload(calibration_info)
+    def calibration_info_route(services: Services) -> JSONResponse:
+        return payload(services.calibration_info)
 
     @app.get("/api/deployment", response_model=DeploymentInfo)
-    def deployment() -> JSONResponse:
-        return payload(deployment_info)
+    def deployment(services: Services) -> JSONResponse:
+        return payload(services.deployment_info)
 
     @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
-    def product_portfolio_snapshot() -> JSONResponse:
+    def product_portfolio_snapshot(services: Services) -> JSONResponse:
         return payload(
             product_portfolio_response(
-                snapshot=resolved_portfolio.snapshot,
-                portfolio=resolved_portfolio.portfolio,
-                tlh_portfolios=resolved_portfolio.tlh_portfolios,
+                snapshot=services.portfolio.snapshot,
+                portfolio=services.portfolio.portfolio,
+                tlh_portfolios=services.portfolio.tlh_portfolios,
                 currency=USD,
             )
         )
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
-    def product_projection_metric_fan(request: ProjectionSamplingRequest) -> JSONResponse:
-        return payload(product_service.metric_fan(request))
+    def product_projection_metric_fan(request: ProjectionSamplingRequest, services: Services) -> JSONResponse:
+        return payload(services.product_service.metric_fan(request))
 
     @app.post("/api/product/projections/terminal_distribution", response_model=TerminalDistributionResponse)
-    def product_projection_terminal_distribution(request: ProjectionSamplingRequest) -> JSONResponse:
-        return payload(product_service.terminal_distribution(request))
+    def product_projection_terminal_distribution(
+        request: ProjectionSamplingRequest, services: Services
+    ) -> JSONResponse:
+        return payload(services.product_service.terminal_distribution(request))
 
     @app.post("/api/product/projections/summary", response_model=ProductProjectionResponse)
-    def product_projection_summary(request: ProductProjectionRequest) -> JSONResponse:
-        return payload(product_service.projection_summary(request))
+    def product_projection_summary(request: ProductProjectionRequest, services: Services) -> JSONResponse:
+        return payload(services.product_service.projection_summary(request))
 
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
-    def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
-        return payload(product_service.rollout(request))
+    def product_projection_rollout(request: RolloutRequest, services: Services) -> JSONResponse:
+        return payload(services.product_service.rollout(request))
 
     @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
-    async def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
+    async def calibration_run(
+        request: CalibrationRunRequest, services: Services, price_clients: PriceClients
+    ) -> JSONResponse:
+        config = services.config
         loaded = config.calibration_catalog
         if loaded is None:
             return error(400, "calibration catalog is not loaded for this server instance")
@@ -245,7 +288,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             loaded.catalog,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            price_clients=app.state.price_clients,
+            price_clients=price_clients,
             bundle=bundle,
             level_paths=level_paths,
             inflation_history=anchors.inflation_history,
@@ -309,33 +352,35 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         )
 
     @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse)
-    async def budget_snapshot(request: BudgetSnapshotRequest) -> JSONResponse:
-        if config.budget_service is None:
+    async def budget_snapshot(request: BudgetSnapshotRequest, services: Services) -> JSONResponse:
+        budget_service = services.config.budget_service
+        if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await config.budget_service.build_snapshot(window=request.window)
+        result = await budget_service.build_snapshot(window=request.window)
         return payload(result, exclude_none=False)
 
     @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
-    async def budget_transactions(request: BudgetTransactionsRequest) -> JSONResponse:
-        if config.budget_service is None:
+    async def budget_transactions(request: BudgetTransactionsRequest, services: Services) -> JSONResponse:
+        budget_service = services.config.budget_service
+        if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await config.budget_service.list_transactions_in_bucket(
-            bucket_id=request.bucket_id, window=request.window
-        )
+        result = await budget_service.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
         return payload(result, exclude_none=False)
 
     @app.post("/api/budget/snapshot.csv", include_in_schema=False)
-    async def budget_snapshot_csv(request: BudgetSummaryCsvRequest) -> Response:
-        if config.budget_service is None:
+    async def budget_snapshot_csv(request: BudgetSummaryCsvRequest, services: Services) -> Response:
+        budget_service = services.config.budget_service
+        if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await config.budget_service.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
+        result = await budget_service.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
         return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
 
     @app.post("/api/budget/transactions.csv", include_in_schema=False)
-    async def budget_transactions_csv(request: BudgetTransactionsRequest) -> Response:
-        if config.budget_service is None:
+    async def budget_transactions_csv(request: BudgetTransactionsRequest, services: Services) -> Response:
+        budget_service = services.config.budget_service
+        if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await config.budget_service.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
+        result = await budget_service.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
         return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
 
     # The health check is not part of the typed wire contract, so keep it out of the
@@ -345,6 +390,23 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def healthz() -> PlainTextResponse:
         return PlainTextResponse("ok\n", headers=no_store)
 
+    return app
+
+
+def create_app(config: ApiServerConfig) -> FastAPI:
+    services = build_services(config)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Enter the price-client provider once for the process so any provider-owned resources are
+        # bound to the serving loop and closed on shutdown. `/api/calibration/run` reads them off
+        # `app.state` through `PriceClients`.
+        async with config.price_clients as price_clients:
+            app.state.price_clients = price_clients
+            yield
+
+    app = build_app(lifespan=lifespan)
+    app.state.services = services
     return app
 
 

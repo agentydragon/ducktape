@@ -339,6 +339,7 @@ py_library(
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/product:portfolio",
+        "//finance/augur/product:service",
         "//finance/augur/product:wire",
         "//finance/augur/sim:money",
         "//finance/augur/x/models:sample_sanity",
@@ -349,6 +350,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -453,14 +455,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
-        ":config",
-        ":finance",
-        ":portfolio_source_config",
         ":server",
-        ":wire",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:ids",
-        "//finance/augur/x/models:independent",
         "//finance/budget:wire",
     ],
 )
