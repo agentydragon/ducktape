@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -171,11 +172,14 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	// The read store never appends, so it settles nothing.
 	history := storage.NewStore(readDB, false)
 	service := api.NewService(api.Options{
-		Reader:  &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
-		Wakeups: hub, Resolver: readerAuth, Callers: c.ReaderAccounts,
+		Reader:         &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
+		Wakeups:        hub,
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	})
-	server := grpc.NewServer(observability.GRPCServerOption())
+	methods := auth.HealthMethods()
+	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
+	maps.Copy(methods, api.Methods(readerAuth, c.ReaderAccounts))
+	server := grpc.NewServer(append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption())...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)

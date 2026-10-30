@@ -53,42 +53,6 @@ func sandboxWatchRequest(uid string) *operatorpb.WatchSandboxNotificationsReques
 	return &operatorpb.WatchSandboxNotificationsRequest{Namespace: testNamespace, Name: sandboxName, Uid: uid}
 }
 
-func TestOnlyTheOperatorAccountMayWatch(t *testing.T) {
-	server := newServer(t)
-	watches := map[string]func(token string) error{
-		"WatchSandboxNotifications": func(token string) error {
-			_, err := server.firstSandboxSnapshot(t, token, sandboxWatchRequest(sandboxUID))
-			return err
-		},
-		"WatchSessionNotices": func(token string) error {
-			_, err := server.firstNoticeStates(t, token, testSession)
-			return err
-		},
-	}
-	for name, watch := range watches {
-		for token, want := range map[string]codes.Code{
-			"":                  codes.Unauthenticated,
-			outsiderToken:       codes.Unauthenticated,
-			sandboxToken:        codes.PermissionDenied,
-			otherSandboxToken:   codes.PermissionDenied,
-			operatorToken:       codes.OK,
-			"test-token-unseen": codes.Unauthenticated,
-		} {
-			t.Run(fmt.Sprintf("%s as %q", name, token), func(t *testing.T) {
-				requireCode(t, watch(token), want)
-			})
-		}
-	}
-}
-
-func TestNoAccountMayWatchWhileNoOperatorIsConfigured(t *testing.T) {
-	server := newServer(t, func(c *serverConfig) { c.operatorReader = "" })
-	_, err := server.firstSandboxSnapshot(t, operatorToken, sandboxWatchRequest(sandboxUID))
-	requireCode(t, err, codes.PermissionDenied)
-	_, err = server.firstNoticeStates(t, operatorToken, testSession)
-	requireCode(t, err, codes.PermissionDenied)
-}
-
 func TestTheOperatorHasNoAgentInboxAuthority(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "operator-has-none")

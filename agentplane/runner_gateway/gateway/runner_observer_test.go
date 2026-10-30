@@ -121,7 +121,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicServer := grpc.NewServer()
+	publicServer := grpc.NewServer(g.Methods().ServerOptions(0)...)
 	g.RegisterExecutor(publicServer)
 	go func() { _ = publicServer.Serve(publicListener) }()
 	t.Cleanup(publicServer.Stop)

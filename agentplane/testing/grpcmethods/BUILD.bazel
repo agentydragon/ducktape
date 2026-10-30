@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "grpcmethods",
+    testonly = True,
+    srcs = ["grpcmethods.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/grpcmethods",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/workload_auth/go/auth",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)

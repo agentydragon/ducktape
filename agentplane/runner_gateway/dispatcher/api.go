@@ -44,9 +44,8 @@ type RunnerCommands interface {
 
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	Store         *Store
-	Auth          *auth.Resolver
-	Callers       map[auth.Account]struct{}
+	Store *Store
+	// WakeCallers are the admitted callers whose commands and openings wake a stopped Sandbox.
 	WakeCallers   map[auth.Account]struct{}
 	Sandboxes     SandboxReader
 	Runner        RunnerCommands
@@ -80,9 +79,6 @@ func inScope(filter *dispatcherpb.DispatchFilter, row *dispatcherpb.Dispatch) bo
 
 func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse]) error {
 	ctx := stream.Context()
-	if _, err := s.caller(ctx); err != nil {
-		return err
-	}
 	if s.Hub == nil {
 		return status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
 	}
@@ -188,8 +184,26 @@ func sendWatchDispatch(
 	}
 }
 
-func (s *Service) caller(ctx context.Context) (*Account, error) {
-	principal, err := s.Auth.RequireAccount(ctx, s.Callers)
+// Methods admits callers to every SessionDispatcher RPC.
+func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
+	rule := auth.Accounts(resolver, callers)
+	return auth.Methods{
+		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName:           rule,
+		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:           rule,
+		dispatcherpb.SessionDispatcher_ChangeReasoningEffort_FullMethodName: rule,
+		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName:         rule,
+		dispatcherpb.SessionDispatcher_OpenSession_FullMethodName:           rule,
+		dispatcherpb.SessionDispatcher_GetSessionOpening_FullMethodName:     rule,
+		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
+		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
+		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
+		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
+	}
+}
+
+// wakeAccount is the admitted caller when its commands wake a stopped Sandbox, else nil.
+func (s *Service) wakeAccount(ctx context.Context) (*Account, error) {
+	principal, err := auth.Caller(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +258,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 		trace.WithAttributes(attribute.String("session.id", sessionID), attribute.String("sandbox.name", sandbox)),
 	)
 	defer func() { observability.End(span, resultErr) }()
-	wake, err := s.caller(ctx)
+	wake, err := s.wakeAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +321,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
-	wake, err := s.caller(ctx)
+	wake, err := s.wakeAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -334,9 +348,6 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 }
 
 func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
-	if _, err := s.caller(ctx); err != nil {
-		return nil, err
-	}
 	if err := required(request.GetSessionId()); err != nil {
 		return nil, err
 	}
@@ -352,9 +363,6 @@ func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.G
 }
 
 func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
-	if _, err := s.caller(ctx); err != nil {
-		return nil, err
-	}
 	if err := required(request.GetCommandId()); err != nil {
 		return nil, err
 	}
@@ -370,9 +378,6 @@ func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDisp
 }
 
 func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.CancelDispatchRequest) (*dispatcherpb.CancelDispatchResponse, error) {
-	if _, err := s.caller(ctx); err != nil {
-		return nil, err
-	}
 	if err := required(request.GetCommandId()); err != nil {
 		return nil, err
 	}
@@ -419,9 +424,6 @@ func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter)
 }
 
 func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
-	if _, err := s.caller(ctx); err != nil {
-		return nil, err
-	}
 	rows, err := s.list(ctx, request.GetFilter())
 	if err != nil {
 		return nil, err
@@ -430,9 +432,6 @@ func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.List
 }
 
 func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	if _, err := s.caller(ctx); err != nil {
-		return nil, err
-	}
 	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), request.GetTurnId()); err != nil {
 		return nil, err
 	}

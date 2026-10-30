@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -52,37 +53,36 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 // the EgressAdmin API beside it when c configures the admin gRPC API: it admits the callers and the
 // audience from c. options holds what the services read.
 func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
-	grpcServer := grpc.NewServer(observability.GRPCServerOption())
-	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
-	var shutdown shutdowner = adminServer
+	methods := auth.HealthMethods()
+	var service *admin.Service
 	if c.adminGRPCEnabled() {
-		service, err := newAdminService(c, reviews, options)
+		callers, err := c.adminGRPCCallers()
 		if err != nil {
 			return nil, err
 		}
+		namespaces := make([]string, 0, len(callers))
+		for _, caller := range callers {
+			if !slices.Contains(namespaces, caller.Namespace) {
+				namespaces = append(namespaces, caller.Namespace)
+			}
+		}
+		resolver, err := auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(methods, admin.Methods(resolver, callers))
+		options.WatchLease = adminWatchLease
+		service = admin.NewService(options)
+	}
+	grpcServer := grpc.NewServer(append(methods.ServerOptions(0), observability.GRPCServerOption())...)
+	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
+	var shutdown shutdowner = adminServer
+	if service != nil {
 		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
 		shutdown = watchingServer{Server: adminServer, service: service}
 	}
 	facade.MountGRPC(adminServer, grpcServer)
 	return shutdown, nil
-}
-
-func newAdminService(c config, reviews auth.TokenReviews, options admin.ServiceOptions) (*admin.Service, error) {
-	callers, err := c.adminGRPCCallers()
-	if err != nil {
-		return nil, err
-	}
-	namespaces := make([]string, 0, len(callers))
-	for _, caller := range callers {
-		if !slices.Contains(namespaces, caller.Namespace) {
-			namespaces = append(namespaces, caller.Namespace)
-		}
-	}
-	if options.Resolver, err = auth.NewResolver(reviews, c.AdminGRPCAudience, namespaces); err != nil {
-		return nil, err
-	}
-	options.Callers, options.WatchLease = callers, adminWatchLease
-	return admin.NewService(options), nil
 }
 
 // watchingServer ends the watches its gRPC service holds open before the HTTP server shuts down,

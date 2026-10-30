@@ -13,8 +13,11 @@ may take that long to affect a cached token. Rejections and review failures are 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
-Service uses this path. Other callers use Pod-bound `Principal` values, and `RequireAccount` adds
-their per-method account allowlist.
+Service uses this path. Other callers use Pod-bound `Principal` values.
+
+[`methods.go`](go/auth/methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
+each full method name to the `Rule` admitting its callers and refuses any method it does not list
+([gRPC services](../docs/grpc_services.md#authentication)).
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
 configured for Sandbox workload tokens. Cluster configuration passes the audience to each verifier;

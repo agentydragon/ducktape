@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -232,7 +233,10 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	operator := api.NewNotificationsOperator(options)
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer(observability.GRPCServerOption())
+	methods := auth.HealthMethods()
+	// A watch carries no deadline of its own, so the request timeout bounds its admission.
+	maps.Copy(methods, api.Methods(options))
+	grpcServer := grpc.NewServer(append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
 	notificationspb.RegisterNotificationsServer(grpcServer, api.NewNotifications(options))
 	operatorpb.RegisterNotificationsOperatorServer(grpcServer, operator)
 	healthpb.RegisterHealthServer(grpcServer, health)

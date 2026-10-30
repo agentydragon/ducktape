@@ -59,6 +59,7 @@ go_test(
     srcs = [
         "fixture_test.go",
         "gateway_testmain_test.go",
+        "methods_test.go",
         "peer_test.go",
         "proxy_test.go",
         "records_test.go",
@@ -76,6 +77,7 @@ go_test(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
         "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/go/auth",
         "@io_k8s_api//coordination/v1:coordination",

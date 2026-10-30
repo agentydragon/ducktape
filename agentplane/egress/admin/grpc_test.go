@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"strings"
@@ -14,8 +15,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -92,15 +93,13 @@ func followOnTicks(ticks <-chan struct{}, settled chan<- struct{}) fakeChanges {
 // client for it. Only test-reader is an allowed caller.
 func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminClient, *Service) {
 	t.Helper()
-	var err error
-	options.Resolver, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
+	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	options.Callers = []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}
 	service := NewService(options)
 	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer()
+	server := grpc.NewServer(Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}}).ServerOptions(0)...)
 	egressadminpb.RegisterEgressAdminServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -114,14 +113,6 @@ func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminC
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	return egressadminpb.NewEgressAdminClient(connection), service
-}
-
-// unreadIndex fails the test when it is read.
-type unreadIndex struct{ t *testing.T }
-
-func (i unreadIndex) Status() watchhealth.Status {
-	i.t.Error("index read before the caller was admitted")
-	return watchhealth.Status{}
 }
 
 func bearing(token string) context.Context {
@@ -138,45 +129,39 @@ var unauthenticated = &egressadminpb.DecisionFilter{Scope: &egressadminpb.Decisi
 	Unauthenticated: &egressadminpb.Unauthenticated{},
 }}
 
-func TestEveryRPCAdmitsOnlyAllowedCallersBeforeReadingAnything(t *testing.T) {
-	store := &fakeDecisions{}
-	changes := fakeChanges(func(context.Context, func() error) error {
-		t.Error("history followed before the caller was admitted")
-		return nil
-	})
-	client, _ := serveGRPC(t, ServiceOptions{
-		Decisions: store, Changes: changes, Index: unreadIndex{t}, HistoryHealth: fakeHistory{}, WatchLease: time.Hour,
-	})
-
-	for _, test := range []struct {
-		name    string
-		ctx     context.Context
-		refused codes.Code
-	}{
-		{"no bearer", context.Background(), codes.Unauthenticated},
-		{"bearer no ServiceAccount proved", bearing("test-forged-token"), codes.Unauthenticated},
-		{"ServiceAccount not allowed", bearing(strangerToken), codes.PermissionDenied},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := client.ListDecisions(test.ctx, &egressadminpb.ListDecisionsRequest{Filter: unauthenticated})
-			if status.Code(err) != test.refused {
-				t.Errorf("ListDecisions: %v", err)
+func TestEveryRPCAdmitsOnlyAllowedCallers(t *testing.T) {
+	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{callerNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := Methods(resolver, []auth.Account{{Namespace: callerNamespace, Name: "test-reader"}})
+	register := func(server *grpc.Server) {
+		egressadminpb.RegisterEgressAdminServer(server, egressadminpb.UnimplementedEgressAdminServer{})
+	}
+	connection := grpcmethods.Serve(t, methods, register)
+	for _, method := range grpcmethods.Of(egressadminpb.EgressAdmin_ServiceDesc) {
+		t.Run(method.Name, func(t *testing.T) {
+			// The stand-in servicer answers Unimplemented to a call the policy admitted.
+			for _, test := range []struct {
+				name string
+				ctx  context.Context
+				want codes.Code
+			}{
+				{"no bearer", context.Background(), codes.Unauthenticated},
+				{"bearer no ServiceAccount proved", bearing("test-forged-token"), codes.Unauthenticated},
+				{"ServiceAccount not allowed", bearing(strangerToken), codes.PermissionDenied},
+				{"allowed", bearing(readerToken), codes.Unimplemented},
+			} {
+				if got := status.Code(method.Call(test.ctx, connection)); got != test.want {
+					t.Errorf("%s: %v, want %v", test.name, got, test.want)
+				}
 			}
-			_, err = client.GetHealth(test.ctx, &egressadminpb.GetHealthRequest{})
-			if status.Code(err) != test.refused {
-				t.Errorf("GetHealth: %v", err)
-			}
-			stream, err := client.WatchDecisions(test.ctx, &egressadminpb.WatchDecisionsRequest{Filter: unauthenticated})
-			if err == nil {
-				_, err = stream.Recv()
-			}
-			if status.Code(err) != test.refused {
-				t.Errorf("WatchDecisions: %v", err)
+			unlisted := maps.Clone(methods)
+			delete(unlisted, method.Name)
+			if got := status.Code(method.Call(bearing(readerToken), grpcmethods.Serve(t, unlisted, register))); got != codes.PermissionDenied {
+				t.Errorf("unlisted, an allowed caller got %v", got)
 			}
 		})
-	}
-	if len(store.asked) != 0 {
-		t.Fatalf("history read for a caller that was not admitted: %v", store.asked)
 	}
 }
 

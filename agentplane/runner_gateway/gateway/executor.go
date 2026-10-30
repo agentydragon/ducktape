@@ -16,16 +16,14 @@ type executorServer struct {
 	gateway *Gateway
 }
 
-// Resolve each request through the current Sandbox and its elected Gateway-to-Runner connection.
+// Resolve each request through the current Sandbox and its elected Gateway-to-Runner connection. Gateway.Methods
+// admitted the caller.
 func (s *executorServer) executionConnection(
 	ctx context.Context,
 	scope *executorpb.ExecutionScope,
 	newSession bool,
 ) (context.Context, *runnerConnection, context.CancelFunc, error) {
 	g := s.gateway
-	if err := g.authorize(ctx, g.executorCallers); err != nil {
-		return nil, nil, nil, err
-	}
 	if scope == nil || scope.GetDestination() == nil || scope.GetExpectedIncarnationUid() == "" ||
 		scope.GetSessionId() == "" || len(scope.GetSessionId()) > 128 {
 		return nil, nil, nil, status.Error(codes.InvalidArgument, "destination, expected incarnation and Session ID are required")

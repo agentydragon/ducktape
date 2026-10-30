@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
@@ -87,15 +89,14 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 	history := storage.NewStore(db, true)
 	service := NewService(Options{
 		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		Wakeups: hub, Resolver: resolver,
-		Callers:        []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
-		RequestTimeout: requestTimeout, WatchLease: lease,
+		Wakeups: hub, RequestTimeout: requestTimeout, WatchLease: lease,
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	methods := Methods(resolver, []auth.Account{{Namespace: testNamespace, Name: "test-reader"}})
+	server := grpc.NewServer(methods.ServerOptions(requestTimeout)...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -140,53 +141,31 @@ func testEntry(cursor uint64) *eventlogpb.EventEntry {
 	}
 }
 
-func unary[Request, Response any](call func(context.Context, *Request, ...grpc.CallOption) (*Response, error)) func(context.Context) error {
-	return func(ctx context.Context) error {
-		_, err := call(ctx, new(Request))
-		return err
-	}
-}
-
 func TestEveryRPCAdmitsOnlyTheConfiguredCallers(t *testing.T) {
-	server := newServer(t, time.Minute)
-	calls := map[string]func(context.Context) error{
-		"ReadSessionEvents":        unary(server.client.ReadSessionEvents),
-		"ReadSessionObservations":  unary(server.client.ReadSessionObservations),
-		"GetSessionSummary":        unary(server.client.GetSessionSummary),
-		"BatchGetSessionSummaries": unary(server.client.BatchGetSessionSummaries),
-		"FindSessions":             unary(server.client.FindSessions),
-		"ReadThreadEntities":       unary(server.client.ReadThreadEntities),
-		"ReadEntityEvidence":       unary(server.client.ReadEntityEvidence),
-		"ReadNativeFrames":         unary(server.client.ReadNativeFrames),
-		"FollowSession": func(ctx context.Context) error {
-			sessionID, _ := server.record(t)
-			stream, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
-				SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
-			})
-			if err != nil {
-				return err
-			}
-			_, err = stream.Recv()
-			return err
-		},
-		"WatchSessionSummaries": func(ctx context.Context) error {
-			stream, err := server.client.WatchSessionSummaries(ctx, &historypb.WatchSessionSummariesRequest{})
-			if err != nil {
-				return err
-			}
-			_, err = stream.Recv()
-			return err
-		},
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, call := range calls {
-		t.Run(name, func(t *testing.T) {
-			for token, want := range map[string]codes.Code{"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated, strangerToken: codes.PermissionDenied} {
-				if got := status.Code(call(bearing(t, token))); got != want {
+	methods := Methods(resolver, []auth.Account{{Namespace: testNamespace, Name: "test-reader"}})
+	register := func(server *grpc.Server) {
+		historypb.RegisterHistoryServiceServer(server, historypb.UnimplementedHistoryServiceServer{})
+	}
+	connection := grpcmethods.Serve(t, methods, register)
+	for _, method := range grpcmethods.Of(historypb.HistoryService_ServiceDesc) {
+		t.Run(method.Name, func(t *testing.T) {
+			// The stand-in servicer answers Unimplemented to a call the policy admitted.
+			for token, want := range map[string]codes.Code{
+				"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated,
+				strangerToken: codes.PermissionDenied, readerToken: codes.Unimplemented,
+			} {
+				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
 					t.Errorf("with token %q: %v, want %v", token, got, want)
 				}
 			}
-			if got := status.Code(call(bearing(t, readerToken))); got == codes.Unauthenticated || got == codes.PermissionDenied {
-				t.Errorf("an allowed caller was refused: %v", got)
+			unlisted := maps.Clone(methods)
+			delete(unlisted, method.Name)
+			if got := status.Code(method.Call(bearing(t, readerToken), grpcmethods.Serve(t, unlisted, register))); got != codes.PermissionDenied {
+				t.Errorf("unlisted, an allowed caller got %v", got)
 			}
 		})
 	}
@@ -207,7 +186,7 @@ func TestAFailureReachesTheClientAsAFixedStatus(t *testing.T) {
 		"reset epoch":              {t.Context(), fmt.Errorf("%w: a Session", reads.ErrScopeReset), codes.FailedPrecondition},
 		"invalid stored entity":    {t.Context(), fmt.Errorf("%w: a row", reads.ErrInvalidStoredEntity), codes.Internal},
 		"invalid request":          {t.Context(), fmt.Errorf("%w: a limit", storage.ErrInvalidArgument), codes.InvalidArgument},
-		"admission refusal":        {t.Context(), status.Error(codes.PermissionDenied, "refused"), codes.PermissionDenied},
+		"answered status":          {t.Context(), status.Error(codes.PermissionDenied, "refused"), codes.PermissionDenied},
 		"expired request deadline": {expired, errors.New("query canceled"), codes.DeadlineExceeded},
 		"canceled call":            {canceled, errors.New("query canceled"), codes.Canceled},
 		"backend failure":          {t.Context(), errors.New("pq: password authentication failed for user secret-user"), codes.Unavailable},

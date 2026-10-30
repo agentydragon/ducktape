@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -254,17 +255,20 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
-		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
+		Store: store, WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	server := grpc.NewServer(
+	methods := auth.HealthMethods()
+	maps.Copy(methods, dispatcher.Methods(dispatchAuth, c.DispatcherCallers))
+	maps.Copy(methods, g.Methods())
+	server := grpc.NewServer(append(
+		methods.ServerOptions(0),
 		observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             30 * time.Second,
 			PermitWithoutStream: false,
 		}),
-	)
+	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	defer server.Stop()
 	g.RegisterProxy(server)
