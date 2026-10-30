@@ -223,7 +223,7 @@ const EMPTY_KEYED_COLLECTION: Row = Row {
 };
 
 /// A call that inspects no operand: it neither coerces nor reads one.
-const PRIMITIVE_PREDICATE: Row = Row {
+const INSPECTS_NO_OPERAND: Row = Row {
     op: IntrinsicOp::ArrayIsArray,
     invocation: &[Invocation::Call],
     cite: "sec-array.isarray",
@@ -526,8 +526,9 @@ pub const ROWS: &[Row] = &[
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::RegExp)],
     },
-    // IsArray throws only for a revoked Proxy, which runs no user code.
-    PRIMITIVE_PREDICATE,
+    // IsArray also throws a TypeError for a revoked Proxy, which `throws`
+    // does not model; no user code runs.
+    INSPECTS_NO_OPERAND,
     // `Number.is*` return false for a non-Number without converting it.
     // `Number`, `Boolean`, `String`, `Proxy` and the host constructors are
     // outside the native census.
@@ -535,25 +536,25 @@ pub const ROWS: &[Row] = &[
         op: IntrinsicOp::NumberIsFinite,
         cite: "sec-number.isfinite",
         requires: &[],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     Row {
         op: IntrinsicOp::NumberIsInteger,
         cite: "sec-number.isinteger",
         requires: &[],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     Row {
         op: IntrinsicOp::NumberIsNaN,
         cite: "sec-number.isnan",
         requires: &[],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     Row {
         op: IntrinsicOp::NumberIsSafeInteger,
         cite: "sec-number.issafeinteger",
         requires: &[],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     // SameValue dispatches on the operand types.
     Row {
@@ -563,14 +564,14 @@ pub const ROWS: &[Row] = &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "is"),
         ],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     // ToBoolean is decided by the operand type.
     Row {
         op: IntrinsicOp::Boolean,
         cite: "sec-boolean-constructor-boolean-value",
         requires: &[],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     OWN_ENUMERABLE,
     Row {
@@ -628,7 +629,7 @@ pub const ROWS: &[Row] = &[
         allocates: Some(Kind::Array),
         returns: Return::Fresh,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Array)],
-        ..PRIMITIVE_PREDICATE
+        ..INSPECTS_NO_OPERAND
     },
     // The default label `"utf-8"` is valid; a supplied label can throw a
     // RangeError.

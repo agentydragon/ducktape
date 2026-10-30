@@ -1275,6 +1275,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         return None;
                     }
                 }
+                // A write through a `Rest` selector is not modeled.
                 _ => return None,
             }
         }
