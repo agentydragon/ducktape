@@ -8,20 +8,14 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	coordinationv1 "k8s.io/api/coordination/v1"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -29,7 +23,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 )
 
 func main() {
@@ -64,39 +57,19 @@ func run(c config) error {
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	labelled, err := labels.NewRequirement(sandboxapi.SandboxLabel, selection.Exists, nil)
-	if err != nil {
-		return err
-	}
-	ours := labels.NewSelector().Add(*labelled)
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.WrapTransport = observability.WrapHTTPTransport(restConfig.WrapTransport)
 	kubeVirt, err := servesKubeVirt(restConfig)
 	if err != nil {
 		return err
 	}
-	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings and,
-	// where KubeVirt is installed, VMs and VMIs only those carrying the Sandbox label. Events carry no
-	// labels: it holds those about any Pod.
-	byObject := map[client.Object]cache.ByObject{
-		&corev1.Pod{}:                   {Label: ours},
-		&corev1.PersistentVolumeClaim{}: {Label: ours},
-		&corev1.ServiceAccount{}:        {Label: ours},
-		&policyapi.PolicyBinding{}:      {Label: ours},
-		&corev1.Event{}:                 {Field: fields.OneTermEqualSelector("involvedObject.kind", "Pod")},
-	}
-	if kubeVirt {
-		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
-		byObject[&kubevirtv1.VirtualMachineInstance{}] = cache.ByObject{Label: ours}
-	} else {
+	if !kubeVirt {
 		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
 	}
-	// Only the Runner Gateway's connection Leases, not the leader election Lease.
-	connection, err := labels.NewRequirement(sandboxlease.ConnectionLabel, selection.Equals, []string{"true"})
+	byObject, err := sandboxcontroller.CacheByObject(kubeVirt)
 	if err != nil {
 		return err
 	}
-	byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: c.MetricsBindAddress},
