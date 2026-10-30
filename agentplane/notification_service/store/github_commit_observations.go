@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	"github.com/google/uuid"
 )
 
@@ -25,9 +26,11 @@ type GitHubCommitRefreshKey struct {
 	Event          model.EventName
 }
 
-func (k GitHubCommitRefreshKey) row() (string, string, []any) {
-	return "github_commit_refresh", "app_id = $1 AND installation_id = $2 AND repository_id = $3 AND subject_kind = 'pull_request' AND subject_key = $4 AND event = $5",
-		[]any{k.AppID, k.InstallationID, k.Subject.RepositoryID, k.Subject.Key, string(k.Event)}
+var commitRefresh = refreshTable("github_commit_refresh",
+	"app_id", "installation_id", "repository_id", "subject_kind", "subject_key", "event")
+
+func (k GitHubCommitRefreshKey) refresh() (lease.Table, []any) {
+	return commitRefresh, []any{k.AppID, k.InstallationID, k.Subject.RepositoryID, "pull_request", k.Subject.Key, string(k.Event)}
 }
 
 func (k GitHubCommitRefreshKey) validate() error {

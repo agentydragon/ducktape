@@ -44,14 +44,6 @@ In the merged service, key delivery by Sandbox on a work queue fed by informer e
 
 ## PostgreSQL
 
-### `POSTGRES_LEASE_HELPER`
-
-Four hand-rolled acquire/renew/expiry/fence/release implementations on `clock_timestamp()`: the History
-`session_projection_lease`, the Notification inbox `claim`/`claim_until`, the GitHub refresh claim
-columns, and the sampler's `owner`/`lease_until`/`generation`. Extract one `postgres/go` helper with
-fencing tokens and move each user to it; evaluate River where the user is really a job queue. The
-Dispatcher's ownership is excluded: it moves to the Gateway with the merge.
-
 ### `DISPATCHER_WATCH_VERSIONS`
 
 Blocked on the [merge design](dispatcher_gateway_merge.md). `WatchDispatches` ships deleted rows as
