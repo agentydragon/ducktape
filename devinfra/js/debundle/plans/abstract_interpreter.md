@@ -58,15 +58,15 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 
 ### Purity (`purity/`, `cross_module_*.rs`)
 
-| #   | Family                            | Files                                                        | Proves                                                                                                                                                                                                                                                                | Premises                                                  | Contract tests                                                                                                                                | Docs                                                                                                                                                  |
-| --- | --------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 23  | Whitelists                        | `purity/whitelists.rs`                                       | Eleven tables (`PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`, `PURE_GLOBAL_CALLS`, `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS`, `PURE_BUILTIN_NEW_*`, `PURE_STATIC_FUNCTION_REFS`, `PURE_OBJECT_CALLS_ON_PLAIN_DATA`, `PLAIN_DATA_HOSTILE_BUILTINS`, `SHADOW_TRACKED_GLOBALS`) | ECMA-262 citation per entry; receiver unshadowed; A11     | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness §§ Admission rule, `PURE_STATIC_PROPS`, `PURE_STATIC_FUNCTION_REFS`, `PURE_OBJECT_CALLS_ON_PLAIN_DATA`, Native `Proxy`, `String.raw` |
-| 24  | Expression classifier             | `purity/classifier.rs`, `builtin_calls.rs`, `purity_type.rs` | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads                                                                                                              | Syntactic; result-primitive gate for coercion             | `purity`, `initializer_purity`, `export_default_purity`, `dependency_graph_purity_reason`, `impure_call_reason_growth`, `repeated_var_purity` | purity_soundness § Declared purity — spec trust contracts                                                                                             |
-| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `plain_data.rs`, `ts_enum_iife.rs`   | `ChunkBinding` kinds; PlainData escape/write scan; TS enum IIFE; exact enum member reads and computed keys                                                                                                                                                            | Name-based write scan plus value-flow alias check         | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits                                                                      |
-| 26  | Value classes                     | `purity/value_inference.rs`                                  | Fluent, plain-array, primitive, Symbol-const, stable numeric `var`                                                                                                                                                                                                    | Syntax matchers; whole-chunk write/escape gates in #25    | `purity`, `captured_value_input`                                                                                                              | purity_soundness § Immutable Symbol computed keys                                                                                                     |
-| 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`       | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                                                                                                                                        | Resolved import graph; absent export stays `unknown_call` | `cross_module_purity_scale`, `pure_members`, `purity`                                                                                         | inference § Scheduling                                                                                                                                |
-| 28  | Cross-module primitive values     | `cross_module_values.rs`                                     | Primitive import/re-export closure                                                                                                                                                                                                                                    | Provider ESM without CJS surface, `eval`, `with`          | `imported_primitive`                                                                                                                          | purity_soundness § Imported primitive coercion timing                                                                                                 |
-| 29  | Redundant hint probes (consumer)  | `purity/redundant_hints.rs`                                  | Diagnostics over #23–#27                                                                                                                                                                                                                                              | —                                                         | `purity_hint_diagnostics`                                                                                                                     | purity_soundness § Redundant purity hints                                                                                                             |
+| #   | Family                            | Files                                                                                                 | Proves                                                                                                                                                   | Premises                                                  | Contract tests                                                                                                                                | Docs                                                                             |
+| --- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 23  | Whitelists (landed, step 4a)      | `facts/abstract_domain/builtins.rs` rows and `DATA_PROPERTIES`; `purity/native_rows.rs` projects them | Rows with `assumed_intact`; purity admits a row when its listed steps are silent for the syntactic operands                                              | ECMA-262 citation per row; receiver unshadowed; A11       | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness § Admission rule: builtin summary rows                          |
+| 24  | Expression classifier             | `purity/classifier.rs`, `purity_type.rs`                                                              | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads | Syntactic; result-primitive gate for coercion             | `purity`, `initializer_purity`, `export_default_purity`, `dependency_graph_purity_reason`, `impure_call_reason_growth`, `repeated_var_purity` | purity_soundness § Declared purity — spec trust contracts                        |
+| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `plain_data.rs`, `ts_enum_iife.rs`                                            | `ChunkBinding` kinds; PlainData escape/write scan; TS enum IIFE; exact enum member reads and computed keys                                               | Name-based write scan plus value-flow alias check         | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
+| 26  | Value classes                     | `purity/value_inference.rs`                                                                           | Fluent, plain-array, primitive, Symbol-const, stable numeric `var`                                                                                       | Syntax matchers; whole-chunk write/escape gates in #25    | `purity`, `captured_value_input`                                                                                                              | purity_soundness § Immutable Symbol computed keys                                |
+| 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`                                                | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                           | Resolved import graph; absent export stays `unknown_call` | `cross_module_purity_scale`, `pure_members`, `purity`                                                                                         | inference § Scheduling                                                           |
+| 28  | Cross-module primitive values     | `cross_module_values.rs`                                                                              | Primitive import/re-export closure                                                                                                                       | Provider ESM without CJS surface, `eval`, `with`          | `imported_primitive`                                                                                                                          | purity_soundness § Imported primitive coercion timing                            |
+| 29  | Redundant hint probes (consumer)  | `purity/redundant_hints.rs`                                                                           | Diagnostics over #23–#27                                                                                                                                 | —                                                         | `purity_hint_diagnostics`                                                                                                                     | purity_soundness § Redundant purity hints                                        |
 
 ### Admission and author inputs
 
@@ -189,7 +189,7 @@ purity reads as `UnknownCall`.
 | #18 namespace privacy                                                        | Whole-chunk flow of one namespace value                   | Derived: `escape` of the namespace allocation; listed members read as `Prop(ns, member)`                                                                                                                                                                                                                          |
 | #19 callback pool, fallback, array iteration                                 | Budgets, interned contexts, bulk effect merge             | Kept as the interpreter core                                                                                                                                                                                                                                                                                      |
 | #21 native models, #22 own-property projections                              | Per-operation input/return/heap arms                      | Table rows (§ 3)                                                                                                                                                                                                                                                                                                  |
-| #23 whitelists, #24 classifier                                               | Per-operation purity tables; result-primitive gate        | Table rows; `Pure ⇔ effects ∩ {Write(observable), Invoke, Havoc} = ∅`. `Throw` stays allowed for purity, matching today's "fires no user code" contract                                                                                                                                                           |
+| #23 whitelists, #24 classifier                                               | Per-operation purity tables; result-primitive gate        | Table rows; `Pure ⇔ effects ∩ {Write(observable), Invoke, Havoc} = ∅`. A row's own `throws` (`OnValue`, unmet type checks) excludes admission, as the whitelists did; throws of operand evaluation stay outside purity                                                                                            |
 | #25 PlainData                                                                | Name-based write scan + alias escape scan                 | Derived: `escape = Private`, `taint = Clean`, props all `Prim`                                                                                                                                                                                                                                                    |
 | #26 fluent / plain-array / Symbol-const / stable numeric                     | Finite positive closures                                  | Derived: `Prim(Const)` tracking and `Alloc(Array)` with `Prim` elements; fluent stays an axiom (`fluent_exports`)                                                                                                                                                                                                 |
 | #27 recursive purity                                                         | Bottom-up effects over call obligations                   | Kept: callable summaries are the same worklist facts                                                                                                                                                                                                                                                              |
@@ -221,22 +221,27 @@ Row {
 ArgSel ::= This | Arg(i) | Rest(i) | Elements(Arg(i)) | Entries(Arg(i))
 ```
 
-Landed with step 1, as the subset the nine former `native_call_model` arms
-consume: `Row { op, invocation, cite, arity, coerces, invokes, allocates:
-Option<Kind>, mutates: &[Mutation], returns, requires: &[IntrinsicSlot] }`
-(slot-level `requires` from step 2) with `ArgSel ::= Arg(i)`, `Mutation ::=
-Integrity | DefineProperties | FreshOwnDescriptorsOf | FreshOwnKeysOf |
-FreshRetains`, `Return ::= Unknown | Primitive | Arg(i) | Fresh`. `throws`,
+Landed with steps 1 and 4a: `Row { op, invocation, cite, arity, coerces,
+invokes, allocates: Option<Kind>, mutates: &[Mutation], returns, throws,
+assumed_intact, requires: &[IntrinsicSlot] }` (slot-level `requires` from
+step 2; empty outside the census) with `Invocation ::= Call | Construct |
+Tag`, `ArgSel ::= Arg(i) | Rest(i)`, `Mutation ::= Integrity |
+DefineProperties | FreshOwnDescriptorsOf | FreshOwnKeysOf | FreshRetains`,
+`Return ::= Unknown | Primitive | Arg(i) | Fresh`, `Throws ::= Never |
+UnlessObjects | UnlessCallable | OnValue`, plus `DATA_PROPERTIES` for static
+reads. Per-element iteration steps are `CoerceOp::{EntryGet,
+EntryKeyToPropertyKey}` rather than `Elements`/`Entries` selectors.
 `Multiplicity`, `Prim(kind)` and `Invoke`-bearing rows arrive with the step
-that first reads them (3 for the value lattice).
+that first reads them (3 for the value lattice). `assumed_intact` is purity's
+A11 identity premise; it goes once purity reads integrity flags.
 
 `coerces` is where user code can hide: a row with `coerces = []` and
 `invokes = []` fires no user code for any inputs; a row that coerces `Arg(0)`
 fires no user code only when the interpreter proves `Arg(0)` is `Prim` or a
-`Clean` ordinary object with intact prototype (§ 2.3). The old whitelist
-distinction `PURE_STATIC_CALLS` vs `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS` vs
-`PURE_OBJECT_CALLS_ON_PLAIN_DATA` is exactly this one column evaluated against
-the argument lattice.
+`Clean` ordinary object with intact prototype (§ 2.3). Since step 4a purity
+evaluates this column against syntactic operand shapes
+(`purity/native_rows.rs`); 4b replaces the shapes with the argument
+lattice.
 
 ### 3.2 Worked rows
 
@@ -350,15 +355,16 @@ atomic group or loss there.
 - `Purity::Pure ⇔` the statement's effect set has no `Write` to an observable
   cell, no `Invoke`, no `Havoc`. `PurityRule` reasons become projections of
   the offending effect (`Coerce` → `CoercingOperator`, `Havoc` → `UnknownCall`,
-  …) so `dependency_graph.json` wire shape is unchanged. Whitelists (#23)
-  become rows; `PURE_OBJECT_CALLS_ON_PLAIN_DATA` is the generic row plus the
-  `Clean` ordinary-object resolution; PlainData (#25) is `escape = Private ∧
-taint = Clean ∧ props ⊆ Prim`. Delete `whitelists.rs`, `builtin_calls.rs`,
+  …) so `dependency_graph.json` wire shape is unchanged. PlainData (#25) is
+  `escape = Private ∧ taint = Clean ∧ props ⊆ Prim`; `native_rows.rs`'s
+  syntactic operand resolution becomes the `Coerce` resolution rule. Delete
   `plain_data.rs`, `ts_enum_iife.rs` (the IIFE is interpreted), most of
-  `classifier.rs`; keep `purity_type.rs` as the projection and
+  `classifier.rs` (including the namespace-facade shape and the
+  result-primitive / safe-key predicates it took over from the deleted
+  `builtin_calls.rs`); keep `purity_type.rs` as the projection and
   `effect_inference.rs` as the cross-module worklist over summaries.
-- Stack: 4a whitelists → rows; 4b PlainData → heap state; 4c classifier →
-  projection.
+- Stack: 4a whitelists → rows (landed); 4b PlainData → heap state; 4c
+  classifier → projection.
 - Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
   `initializer_purity`, `export_default_purity`, `pure_members`,
   `cross_module_purity_scale`, `dependency_graph_purity_reason`,
@@ -585,7 +591,3 @@ Fix during the step that touches the area; listed so they are not rediscovered.
 - `docs/inference.md` opens with "`inference.rs` provides a dependency
   worklist"; the worklist is `inference/iterative.rs`, `inference.rs` only
   defines `Judgment` and re-exports.
-- `purity/whitelists.rs` names the `PURE_OBJECT_CALLS_ON_PLAIN_DATA` exclusion
-  shortlist as `Object.assign`, `Object.getOwnPropertyNames`, `Array.from`;
-  `docs/purity_soundness.md` lists `Object.assign`, `Object.getPrototypeOf` /
-  `getOwnPropertyDescriptor`, `Array.from`.

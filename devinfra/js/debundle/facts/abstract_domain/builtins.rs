@@ -166,6 +166,11 @@ pub struct Row {
     pub mutates: &'static [Mutation],
     pub returns: Return,
     pub throws: Throws,
+    /// Whether syntactic purity may take the callee's identity from A11 and
+    /// an unshadowed spelling alone. Otherwise purity reaches the operation
+    /// only through a certificate proving `requires`: the census or a
+    /// `native_operation_inputs` site.
+    pub assumed_intact: bool,
     /// Slots the callee's identity reads: its global binding and, for a
     /// static member, that data property. The row applies only when every
     /// slot's integrity flag is intact or author-asserted at the call site.
@@ -195,6 +200,7 @@ const PRIMITIVE_UNARY_MATH: Row = Row {
     mutates: &[],
     returns: Return::Primitive,
     throws: Throws::Never,
+    assumed_intact: false,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Math),
         IntrinsicSlot::Static(NativeIntrinsic::Math, "round"),
@@ -212,6 +218,7 @@ const EMPTY_KEYED_COLLECTION: Row = Row {
     mutates: &[],
     returns: Return::Fresh,
     throws: Throws::Never,
+    assumed_intact: true,
     requires: &[IntrinsicSlot::Global(NativeIntrinsic::Map)],
 };
 
@@ -227,6 +234,7 @@ const PRIMITIVE_PREDICATE: Row = Row {
     mutates: &[],
     returns: Return::Primitive,
     throws: Throws::Never,
+    assumed_intact: true,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Array),
         IntrinsicSlot::Static(NativeIntrinsic::Array, "isArray"),
@@ -249,6 +257,7 @@ const OWN_ENUMERABLE: Row = Row {
     mutates: &[],
     returns: Return::Fresh,
     throws: Throws::Never,
+    assumed_intact: true,
     requires: &[
         IntrinsicSlot::Global(NativeIntrinsic::Object),
         IntrinsicSlot::Static(NativeIntrinsic::Object, "keys"),
@@ -267,6 +276,7 @@ const EMPTY_HOST_OBJECT: Row = Row {
     mutates: &[],
     returns: Return::Unknown,
     throws: Throws::Never,
+    assumed_intact: true,
     requires: &[],
 };
 
@@ -282,6 +292,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Primitive,
         throws: Throws::Never,
+        assumed_intact: true,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Symbol)],
     },
     // The GlobalSymbolRegistry is agent-local and unobservable from source.
@@ -296,6 +307,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Primitive,
         throws: Throws::Never,
+        assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Symbol),
             IntrinsicSlot::Static(NativeIntrinsic::Symbol, "for"),
@@ -349,6 +361,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshRetains(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::UnlessCallable(ArgSel::Arg(0)),
+        assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::FinalizationRegistry)],
     },
     PRIMITIVE_UNARY_MATH,
@@ -412,6 +425,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::Never,
+        assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyDescriptors"),
@@ -431,6 +445,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::FreshOwnKeysOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
         throws: Throws::Never,
+        assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyNames"),
@@ -459,6 +474,7 @@ pub const ROWS: &[Row] = &[
         }],
         returns: Return::Arg(ArgSel::Arg(0)),
         throws: Throws::UnlessObjects(&[ArgSel::Arg(0)]),
+        assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperties"),
@@ -482,6 +498,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[Mutation::Integrity(ArgSel::Arg(0))],
         returns: Return::Arg(ArgSel::Arg(0)),
         throws: Throws::Never,
+        assumed_intact: true,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Object),
             IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
@@ -506,6 +523,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Unknown,
         throws: Throws::OnValue,
+        assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::RegExp)],
     },
     // IsArray throws only for a revoked Proxy, which runs no user code.
@@ -646,6 +664,7 @@ pub const ROWS: &[Row] = &[
         ],
         returns: Return::Fresh,
         throws: Throws::UnlessObjects(&[ArgSel::Arg(0), ArgSel::Arg(1)]),
+        assumed_intact: true,
         requires: &[],
     },
     // The template object's `raw` strings are the engine's own frozen data;
@@ -664,6 +683,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Primitive,
         throws: Throws::Never,
+        assumed_intact: true,
         requires: &[],
     },
 ];

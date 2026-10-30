@@ -630,7 +630,7 @@ pub(crate) fn classify_fluent_chain(
 
 /// Common backbone for `Expr::Call` and `OptChainBase::Call` —
 /// classify a `callee_expr(args…)` invocation. Walks the same
-/// whitelists and chunk-local function-body purity cache the
+/// builtin rows and chunk-local function-body purity cache the
 /// regular call classifier consults; the only difference between
 /// `Expr::Call` and `OptChainBase::Call` is the null-coalesce
 /// short-circuit on the optional form, which is irrelevant for

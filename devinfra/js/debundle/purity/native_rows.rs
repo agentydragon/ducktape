@@ -3,8 +3,9 @@
 //! invokes nothing, writes only fresh allocations or its plain-data operands,
 //! and every listed coercion and type check runs no user code and completes
 //! normally on the call's syntactic operands. Callee identity is the
-//! unshadowed global spelling under A11; the census slots in `requires` are
-//! the synchronous interpreter's premise, not purity's.
+//! unshadowed global spelling under A11, for rows marked `assumed_intact`;
+//! the census slots in `requires` are the synchronous interpreter's premise,
+//! not purity's.
 
 use super::*;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
@@ -40,11 +41,13 @@ pub(crate) enum Elements {
     Entries { keyed: bool },
 }
 
-/// Whether the row can certify a call at all: it invokes nothing, writes
-/// only fresh allocations or operands its coercions already require to be
-/// plain data, and throws nothing a syntactic operand shape cannot exclude.
+/// Whether the row can certify a call at all: its identity is assumed under
+/// A11, it invokes nothing, writes only fresh allocations or operands its
+/// coercions already require to be plain data, and throws nothing a syntactic
+/// operand shape cannot exclude.
 fn certifies(row: &Row) -> bool {
-    row.invokes.is_empty()
+    row.assumed_intact
+        && row.invokes.is_empty()
         && matches!(row.throws, Throws::Never | Throws::UnlessObjects(_))
         && row.mutates.iter().all(|mutation| {
             matches!(

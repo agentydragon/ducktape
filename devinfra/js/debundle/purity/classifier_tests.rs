@@ -499,26 +499,29 @@ fn boolean_is_pure_on_any_value() {
 }
 
 #[test]
-fn coercing_rows_admit_only_silent_operands() {
-    // `ToNumber` completes on a non-BigInt primitive literal, `ToString` on
-    // any result-primitive operand; other operands keep a coercion reason.
+fn to_string_rows_admit_only_result_primitive_operands() {
+    // `ToString` completes without user code on any result-primitive
+    // operand; other operands keep a coercion reason.
     for src in [
-        "Math.round(1.5)",
-        "Math.trunc('2')",
-        "Symbol.for('key')",
         "Symbol(`description`)",
+        "Symbol(1 + 2)",
+        "new URLSearchParams(`a=1`)",
     ] {
         assert!(classify(src).is_pure(), "expected `{src}` to classify Pure");
     }
-    for src in ["Math.round(1n)", "Math.abs(x)", "Symbol.for(x)"] {
+    for src in ["Symbol(x)", "Symbol({})", "new URLSearchParams(q)"] {
         assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
     }
 }
 
 #[test]
-fn rows_that_throw_on_values_or_invoke_stay_unknown() {
-    // A pattern may be invalid; a registry checks callability.
+fn rows_without_assumed_identity_stay_unknown() {
+    // These callees' identities need the census or an author input
+    // (`native_operation_inputs`), which syntactic purity does not consult.
     for src in [
+        "Symbol.for('key')",
+        "Math.round(1.5)",
+        "Object.getOwnPropertyNames({ a: 1 })",
         "new RegExp('a+')",
         "new FinalizationRegistry(() => {})",
         "Object.defineProperties({}, {})",
