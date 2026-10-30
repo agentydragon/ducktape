@@ -322,6 +322,10 @@ impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
         self.facts.get(key)
     }
 
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &Key> {
+        self.facts.keys()
+    }
+
     pub(crate) fn into_values(self) -> BTreeMap<Key, Fact> {
         self.facts
             .into_iter()

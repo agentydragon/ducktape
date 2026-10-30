@@ -274,6 +274,22 @@ impl Values {
         true
     }
 
+    /// Ids of this set's origins whose bit is set in `mask` (indexed by
+    /// `OriginId`), without decoding the other origins.
+    fn ids_within<'a>(&'a self, mask: &'a [u64]) -> impl Iterator<Item = OriginId> + 'a {
+        let unknown = self.origins.id(ValueOrigin::Unknown);
+        let unknown = (self.unknown && bits_contain_id(mask, unknown)).then_some(unknown);
+        BitIndices::new(
+            self.bitmap
+                .bits
+                .iter()
+                .zip(mask)
+                .map(|(word, mask)| word & mask),
+        )
+        .map(OriginId)
+        .chain(unknown)
+    }
+
     pub(super) fn iter(&self) -> ValuesIter<'_> {
         ValuesIter {
             bits: BitIndices::new(self.bitmap.bits.iter().copied()),
@@ -663,6 +679,11 @@ impl CandidateObjectIndex<'_> {
             }
         }
     }
+}
+
+fn bits_contain_id(bits: &[u64], id: OriginId) -> bool {
+    bits.get(id.0 as usize / 64)
+        .is_some_and(|word| word & (1 << (id.0 % 64)) != 0)
 }
 
 fn bits_contain_all(into: &[u64], from: &[u64]) -> bool {
@@ -1671,13 +1692,13 @@ impl FlowProgram {
         let facts = if candidate_objects.is_empty() {
             values.into_values()
         } else {
-            let mut inference = IterativeInference::from_completed(
-                CandidateRules {
-                    origin_table: origin_table.clone(),
-                    native_set_allocations: native_set_allocations.keys().copied().collect(),
-                },
-                values,
+            let rules = CandidateRules::new(
+                origin_table.clone(),
+                native_set_allocations.keys().copied().collect(),
+                values.keys(),
+                &candidate_objects,
             );
+            let mut inference = IterativeInference::from_completed(rules, values);
             let candidate_words = candidate_objects.len().div_ceil(64);
             for (index, object) in candidate_objects.iter().copied().enumerate() {
                 let mut bits = vec![0; candidate_words];
@@ -2286,9 +2307,48 @@ impl IterativeRules for FlowRules {
 struct CandidateRules {
     origin_table: Arc<OriginTable>,
     native_set_allocations: BTreeSet<u32>,
+    /// Bitmap over `OriginId` of the origins whose reachability can ever be
+    /// present: seeded candidates and origins with a completed carrier fact.
+    /// Every other origin's reachability key stays absent, so it is not read.
+    may_reach: Vec<u64>,
 }
 
 impl CandidateRules {
+    fn new<'a>(
+        origin_table: Arc<OriginTable>,
+        native_set_allocations: BTreeSet<u32>,
+        completed_keys: impl IntoIterator<Item = &'a FlowKey>,
+        candidates: &[ValueOrigin],
+    ) -> Self {
+        let mut rules = Self {
+            may_reach: vec![0; origin_table.origins.len().div_ceil(64)],
+            origin_table,
+            native_set_allocations,
+        };
+        let origins: Vec<_> = completed_keys
+            .into_iter()
+            .filter_map(|key| rules.carrier_origin(key))
+            .chain(candidates.iter().copied())
+            .collect();
+        for origin in origins {
+            let id = rules.origin_table.id(origin).0;
+            rules.may_reach[id as usize / 64] |= 1 << (id % 64);
+        }
+        rules
+    }
+
+    /// The origin whose reachability a completed property-union or return fact carries.
+    fn carrier_origin(&self, key: &FlowKey) -> Option<ValueOrigin> {
+        match key {
+            FlowKey::Properties(object) if self.native_set_allocations.contains(object) => {
+                Some(ValueOrigin::NativeSet(*object))
+            }
+            FlowKey::Properties(object) => Some(ValueOrigin::Object(*object)),
+            FlowKey::Return(function) => Some(ValueOrigin::Function(*function)),
+            _ => None,
+        }
+    }
+
     /// Union the reachability of every value, then propose it once.
     fn propose_candidate_values(
         &self,
@@ -2297,9 +2357,8 @@ impl CandidateRules {
         values: &Values,
     ) {
         let mut reachable: Option<Arc<Vec<u64>>> = None;
-        for value in values {
-            let Some(fact) = context.read(FlowKey::CandidateReachable(self.origin_table.id(value)))
-            else {
+        for id in values.ids_within(&self.may_reach) {
+            let Some(fact) = context.read(FlowKey::CandidateReachable(id)) else {
                 continue;
             };
             let FlowFact::CandidateReachability(bits) = fact else {
@@ -2369,25 +2428,19 @@ impl IterativeRules for CandidateRules {
     }
 
     fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<CandidateRule> {
-        match (key, fact) {
-            (FlowKey::Binding(binding), FlowFact::Values(values)) if !values.is_empty() => {
-                vec![CandidateRule::Binding(*binding)]
-            }
-            (FlowKey::Properties(object), FlowFact::Values(values)) if !values.is_empty() => {
-                let origin = if self.native_set_allocations.contains(object) {
-                    ValueOrigin::NativeSet(*object)
-                } else {
-                    ValueOrigin::Object(*object)
-                };
-                vec![CandidateRule::Reachability(self.origin_table.id(origin))]
-            }
-            (FlowKey::Return(function), FlowFact::Values(values)) if !values.is_empty() => {
-                vec![CandidateRule::Reachability(
-                    self.origin_table.id(ValueOrigin::Function(*function)),
-                )]
-            }
-            _ => Vec::new(),
+        let FlowFact::Values(values) = fact else {
+            return Vec::new();
+        };
+        if values.is_empty() {
+            return Vec::new();
         }
+        if let FlowKey::Binding(binding) = key {
+            return vec![CandidateRule::Binding(*binding)];
+        }
+        self.carrier_origin(key)
+            .map(|origin| CandidateRule::Reachability(self.origin_table.id(origin)))
+            .into_iter()
+            .collect()
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
