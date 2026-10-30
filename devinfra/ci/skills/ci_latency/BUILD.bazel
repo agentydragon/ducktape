@@ -9,6 +9,7 @@ skill_package(
         skill_mapping(
             srcs = [
                 "SKILL.md",
+                "scripts/analyze_executions.py",
                 "scripts/attribution.py",
                 "scripts/checks.jq",
                 "scripts/collect.sh",
@@ -70,6 +71,11 @@ jq(
 ]]
 
 py_library(
+    name = "analyze_executions",
+    srcs = ["scripts/analyze_executions.py"],
+)
+
+py_library(
     name = "artifact_tools",
     srcs = ["scripts/attribution.py"],
 )
@@ -82,6 +88,17 @@ py_library(
 py_library(
     name = "snapshot_analysis",
     srcs = ["scripts/snapshot_analysis.py"],
+)
+
+py_test(
+    name = "test_analyze_executions",
+    srcs = ["test_analyze_executions.py"],
+    deps = [
+        ":analyze_executions",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

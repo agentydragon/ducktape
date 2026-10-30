@@ -207,6 +207,25 @@ records are counted rather than assumed zero. A target's summary can retain
 old cached durations and aggregate many shards, so do not rank fresh cost from
 that field alone. Inspect the critical path before promising feedback savings.
 
+For an offline cross-invocation stage and clock summary, save the
+`bbapi invocation list --json` response and each selected
+`bbapi execution <invocation-id> --json` response, then run:
+
+```bash
+python3 scripts/analyze_executions.py \
+  --invocations "$OUT/invocations.json" \
+  --executions "$OUT/execution-details" \
+  --observed-at "$OBSERVED_AT" > "$OUT/execution-summary.json"
+```
+
+`--observed-at` is the explicit UTC snapshot time. The analyzer deduplicates
+execution IDs and summarizes stages by mnemonic. Queue spans use
+`queuedTimestamp` to `workerStartTimestamp`; worker preparation uses
+`workerStartTimestamp` to `executionStartTimestamp`, which includes input-fetch
+time and does not isolate VM allocation. Spans require valid, ordered clocks.
+Partial rows are not aged to the observation time; span totals are action-seconds
+and do not measure worker occupancy or quota capacity.
+
 Before attributing costs to a landed optimization, verify the effective tested
 source contains it: `git merge-base --is-ancestor "$FIX_SHA" "$TESTED_SHA"`
 (exit 0: present; 1: absent; other: unavailable history). Use child invocation
