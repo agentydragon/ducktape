@@ -8,8 +8,8 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
-**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation and the central Codex
-spike are assigned to other agents. Do not dispatch duplicate work on those tracks.
+**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation is assigned to other
+agents. Do not dispatch duplicate work on that track.
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections.
@@ -453,9 +453,9 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity));
 the recommendation covers what remains open around them.
 
-Central Codex hosting through Sandbox exec servers, including coexistence with local modes, is
-`CENTRAL_SAMPLER_V1` in section 5. It does not gate the current placement decision or separate tool
-memory containment.
+Central Codex hosting through Sandbox exec servers is the opt-in
+[central sampler](../x/central_sampler/README.md), which coexists with local modes. It does not gate
+the current placement decision or separate tool memory containment.
 
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
@@ -562,10 +562,7 @@ flowchart LR
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_V1[In review: standalone central code-mode sampler]
-    CENTRAL_SAMPLER_V1 --> CENTRAL_SAMPLER_PRODUCTION_IMPL[Unscheduled: production sampler implementation, Go preferred]
-    CENTRAL_SAMPLER_PRODUCTION_IMPL --> CENTRAL_SAMPLER_DEPLOYMENT[Unscheduled: opt-in deployment]
-    CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: model-compatible tools and request features]
+    CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check and standard-mode compaction]
     CENTRAL_SAMPLER_ANTHROPIC_ROUTING[In review: direct Anthropic connections and credentials]
     CENTRAL_SAMPLER_ANTHROPIC_ROUTING --> CENTRAL_SAMPLER_ANTHROPIC_MESSAGES[In review: Messages, durable exchanges and compaction]
     CENTRAL_SAMPLER_ANTHROPIC_MESSAGES --> CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -592,8 +589,7 @@ Support the design cases of Sandbox-first native CLI use, Session-first central 
 execution-Sandbox deletion. Decide cardinality, capabilities, lifecycle, authority and attribution;
 reuse the existing versioned Codex environment API evidence without claiming unsupported modes work.
 Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
-these cases. This is not a prerequisite for the fixed-binding sampler in PR #12225 and authorizes
-no implementation, deployment or native-state migration.
+these cases. This authorizes no implementation, deployment or native-state migration.
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
 
@@ -616,81 +612,21 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
-### `CENTRAL_SAMPLER_V1` — independent central code-mode runner
-
-**In review; [PR #12225](https://github.com/agentydragon/ducktape/pull/12225); operator approved implementation,
-2026-10-27.** Root `/root` integrates branch `x/central-runtime-v1-20261027`.
-The independent executor companion fixture extraction and standalone sampler correctness fixes
-landed in [PR #12288](https://github.com/agentydragon/ducktape/pull/12288) and
-[PR #12292](https://github.com/agentydragon/ducktape/pull/12292). Both are incorporated from `devel`;
-this PR retains the central service integration and central-only shared runtime extensions.
-The placement decision is accepted: a shared independent sampler with its own PostgreSQL
-continuation and one lazy Codex JS host multiplexing logical Sessions. Each code-mode cell runs in
-a fresh V8 isolate/thread; executor delegates and process-handle namespaces remain per Session.
-The executor is fixed to a Sandbox/incarnation via the pinned Codex exec-server protocol, with
-Dispatcher direct command routing and existing History ingress. Wrapped Codex/Claude retain local
-execution and sampling. Required v1 capabilities are compaction,
-model-facing wait, stdin and interrupts. Remote AGENTS.md discovery and executor replacement are
-deferred; neither gates v1. OpenAI-shaped Responses API/code mode is the selected provider scope.
-
-Exit: reviewable experimental `x/` service with authenticated API, fixed-binding Gateway relay,
-durable commands/context/evidence, History export with lost-ack reconciliation, failure semantics,
-native-mode regression and integration tests, optional UI selection and documented resource limits.
-One-shot executor setup and the scripted-model k3s scenario through Dispatcher, Gateway, the bound
-executor and retained/folded History have passed. The shared Langfuse fixture refactor landed separately on `devel` first in [PR #12228](https://github.com/agentydragon/ducktape/pull/12228).
-No deployment or data migration is authorized here. [Accepted design](sampling_outside_sandboxes.md#accepted-central-sampler-v1)
-and [service contract](../x/central_sampler/SPEC.md). Earlier spike findings remain in
-[Codex placement evidence](../debug/central_codex_sampling.md) and
-[Postgres sampler evidence](../debug/postgres_codex_spike.md).
-[V1 validation](../debug/central_sampler_v1.md) records the passing combined execution/History test,
-native regressions and remaining deployment-specific limits.
-
-### `CENTRAL_SAMPLER_PRODUCTION_IMPL` — deployable sampler implementation
-
-**In flight; Codex, operator requested 2026-10-28; in [PR #12225](https://github.com/agentydragon/ducktape/pull/12225).** Rewrite the
-sampler service, provider/tool loop, persistence and History exporter in Go. The original Python
-prototype supplies the contracts and acceptance evidence; the pinned upstream JS host is one lazy
-shared process that multiplexes logical Sessions and creates a fresh V8 isolate for each code cell.
-Carry forward its authenticated API, PostgreSQL continuation and leases, uncertain-effect handling,
-compaction/wait/stdin/interrupts, Gateway relay and History outbox semantics. Reuse the wire fixtures
-and acceptance scenarios to validate the replacement. Exit: reviewed implementation with equivalent
-acceptance coverage, including recovery, fencing and native harness coexistence.
-
-### `CENTRAL_SAMPLER_DEPLOYMENT` — opt-in runtime deployment
-
-**In flight; Codex, operator requested 2026-10-28.** Deploy an isolated database, optional shared
-cdk8s sampler workload, audience/token and allowlists, configured provider route, History ingress
-network path and staging app offering. The one lazy Codex process and Go service share aggregate Pod
-CPU/memory limits; stronger per-cell or per-Session kernel isolation is deferred for future
-evaluation. Preserve existing native Session identities, history, state and wrapped harness
-operation. Validate the shared chart through k3s and trusted Session attribution; scripted wire
-fixtures alone do not establish live endpoint/model compaction support. Existing Sessions are not
-converted and new central Sessions remain explicitly selected. Exit: bounded acceptance for
-concurrent logical Sessions and data-preserving rollback.
-
-### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — model-compatible tools and request features
+### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check and standard-mode compaction
 
 **Unscheduled; operator requested 2026-10-29 PDT after a concrete provider rejection.** The route
 `ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k` returned HTTP 400 through LiteLLM:
-`input[0]: unknown input item type: "additional_tools"`. This establishes rejection of that request
-item, not absence of all tool support. An OpenAI-shaped endpoint alone does not establish support
-for Code-mode extensions or every Responses API feature.
+`input[0]: unknown input item type: "additional_tools"`. Each route now declares its Responses
+dialect and exec encoding; standard mode sends top-level function tools and rejects compaction
+([SPEC](../x/central_sampler/SPEC.md)). Remaining:
 
-Make sampler requests match the selected model/provider route's declared capabilities. Determine
-which tool representation and request features the route accepts, including Code-mode items/flags,
-ordinary function tools, reasoning controls, and compaction. Choose and document a supported path
-for models without native Code-mode extensions: ordinary function-tool calls with suitable Code-mode
-instructions where supported, or an explicit incompatible-model refusal before starting a turn.
+- A bounded check against the reported route establishing its actual accepted wire contract; the
+  standard/JSON path is covered only by deterministic fixtures.
+- Compaction for standard-mode routes, or an explicit decision that those routes run without it.
+
 Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
-payloads, or replay already dispatched effects. Keep capability ownership explicit between the
-model catalog, LLM ingress, and sampler; model changes must revalidate the selected path.
-
-Exit: compatible models can complete a tool-using turn without unsupported items/flags; existing
-Code-mode-capable routes retain their behavior. Deterministic provider fixtures cover both paths,
-incompatible selections, and capability changes, preserving truthful command/turn failure and
-uncertain-effect handling. Capture a bounded check against the reported route to establish its
-actual accepted wire contract. Independent of `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES`; no implementation or
-rollout is scheduled by this entry.
+payloads, or replay already dispatched effects. Independent of `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES`;
+no implementation or rollout is scheduled by this entry.
 
 ### `CENTRAL_SAMPLER_ANTHROPIC_ROUTING` — direct provider connections and credentials
 
