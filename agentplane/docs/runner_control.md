@@ -231,7 +231,7 @@ reach the holder through the control Service (`control_target`, a required setti
   is required for `QUIESCED`.
 
 Only the replica holding the runner's observation Lease calls it. Callers reach that replica through the
-Sandbox's control Service. Transport reconnect never replays calls; durable command retry uses the
+Sandbox's control Service. Holding that Lease does not make the replica the Sandbox's Dispatcher owner. Transport reconnect never replays calls; durable command retry uses the
 original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
 Stored native conversations may be dormant while their store's app server is running. A Session
 becomes ready after its native conversation preparation/reconciliation, without needing a turn.
