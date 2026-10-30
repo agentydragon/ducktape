@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::heap::is_plain_data_prop;
 use crate::facts::{ChunkValueFlow, DynamicScopeFact, own_data_keys};
 
 /// Prepared value shape and whole-chunk identity guards for the ordinary

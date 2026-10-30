@@ -42,9 +42,7 @@ use crate::analysis_inputs::{
 use crate::facts::abstract_domain::value::{PrimKinds, Value};
 use crate::facts::{TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::{
-    ChunkCodeGraph, Purity, PurityEffectRules, PurityMode, collect_plain_array_bindings,
-};
+use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
 
 /// Stable key identifying a module in the program (the chunk name).
 pub type ModuleKey = String;
@@ -171,7 +169,8 @@ impl<'a> ModulePurityFacts<'a> {
         let plain_data_inference_uses = structural.plain_data_inference_uses;
         let source_semantic_facts = structural.source_semantic_facts;
         let stable_array_spread_shapes = structural.stable_array_spread_shapes;
-        let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
+        let plain_array_bindings =
+            crate::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
