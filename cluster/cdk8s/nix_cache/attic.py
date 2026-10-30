@@ -128,8 +128,7 @@ ROTATOR_CONFIG = Config(
                     key=ci_token.GAFFER_WRITER_TOKEN.key,
                 ),
                 notification=WorkspaceNotification(
-                    workspace=workspace.NAME,
-                    annotation_key="gaffer.allegedly.works/attic-token-version",
+                    workspace=workspace.NAME, annotation_key="gaffer.allegedly.works/attic-token-version"
                 ),
             ),
         ),
