@@ -93,22 +93,6 @@ py_test(
 )
 
 py_library(
-    name = "background_task",
-    srcs = ["background_task.py"],
-)
-
-py_test(
-    name = "test_background_task",
-    srcs = ["test_background_task.py"],
-    deps = [
-        ":background_task",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "log_levels",
     srcs = ["log_levels.py"],
     deps = ["@pypi//pydantic"],

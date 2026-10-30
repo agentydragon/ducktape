@@ -481,7 +481,7 @@ class RunnerTemplate(Construct):
                     # agentplane-workload EgressCredential derives from its name. Central
                     # substitutes the sidecar-only projected token; the ingress replaces
                     # that with its server-held LiteLLM virtual key after live
-                    # WorkloadPrincipal resolution.
+                    # workload authentication.
                     k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
                     k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
                 ],

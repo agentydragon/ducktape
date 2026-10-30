@@ -3,16 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "console",
-    srcs = ["console.py"],
-    deps = [
-        ":errors",
-        "@pypi//aiohttp",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
     name = "errors",
     srcs = ["errors.py"],
 )
@@ -50,21 +40,6 @@ py_library(
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-    ],
-)
-
-py_test(
-    name = "test_console",
-    srcs = ["test_console.py"],
-    deps = [
-        ":conftest",
-        ":console",
-        ":errors",
-        "//:conftest",
-        "@pypi//aiohttp",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

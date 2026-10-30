@@ -142,7 +142,7 @@ runner would have to schedule fairly itself; and its writer binding and acknowle
 per frame instead of per call.
 
 **Writer binding.** The ingress authenticates every call's bearer for its own audience with a
-TokenReview, as the shared `WorkloadPrincipalAuthenticator` does
+TokenReview through `workload_auth/go/auth.Resolver`
 ([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
 and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
 first writers one is refused. A call for the Session from any other ServiceAccount fails with

@@ -1519,9 +1519,9 @@ Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
-`cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
-(`connected` turns false before the termination callback runs, so its tests cannot wait on
-`connected` instead); egress and app test support each build a throwaway CA; `docs/operator_federation.md` says "Event & Notification Hub"; `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
+`cluster/cdk8s/agentplane`. Known now: egress and app test support each build a throwaway CA;
+`docs/operator_federation.md` says "Event & Notification Hub";
+`cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
 ## 10. Runner ingress and control split

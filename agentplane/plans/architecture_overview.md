@@ -110,11 +110,12 @@ exploration (#10990, closed after this section absorbed it).
   PVCs, the launch ConfigMap, the ServiceAccount and the headless `<sandbox>-control` Service for
   each Sandbox (`sandbox_controller/`); the Runner Gateway writes the Service's EndpointSlice. They
   need scheduling, image pulls, kubelet mounts, cluster DNS and Cilium NetworkPolicy.
-- **Workload identity.** Pods get kubelet-projected, Pod-bound tokens: 600 s in Sandbox Pods
-  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Every service
-  TokenReviews each bearer, the Go ones reusing an acceptance for 30 s
-  ([workload authentication](../docs/workload_authentication.md)), and the review includes the
-  bound Pod's existence and UID, so a deleted Pod fails it (`workload_auth/principal.py`). A VM guest holds no token; the relay in its launcher Pod does. A
+- **Workload identity.** Pods get kubelet-projected tokens: 600 s in Sandbox Pods
+  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Destination services
+  use the Go resolver, which reuses accepted TokenReviews for up to 30 s
+  ([workload authentication](../docs/workload_authentication.md)). Pod-bound resolution checks the
+  bound Pod's existence and UID through TokenReview (`workload_auth/go/auth`); Action Service also
+  supports account-only resolution. A VM guest holds no token; the relay in its launcher Pod does. A
   second apiserver holds no Pods, so it cannot do the bound-Pod check: callers keep reviewing
   against the primary.
 - **RBAC.** Agents run `kubectl` against the real apiserver as their Sandbox's ServiceAccount through

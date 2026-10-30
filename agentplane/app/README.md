@@ -613,7 +613,7 @@ one. Which lists the service enforces is its contract
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
-  `WorkloadPrincipal` the token proves. The model endpoint remains governed by the credentialless egress design
+  workload identity the token proves. The model endpoint remains governed by the credentialless egress design
   in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.

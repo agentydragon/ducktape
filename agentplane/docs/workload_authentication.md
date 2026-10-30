@@ -30,7 +30,7 @@ central egress proxy
         +-----------------------------+
         v                             v
 authenticated LLM ingress       standalone Action Service
-shared WorkloadPrincipal        shared WorkloadPrincipal
+Go `auth.Principal`              Go `auth.ServiceAccountPrincipal`
 server-held LiteLLM key         service-owned authorization/lifecycle
 ```
 
@@ -41,15 +41,14 @@ blindly copies a raw `Proxy-Authorization` header, unconditionally appends `Auth
 new token, or introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context
 fails closed. Existing `secretRef` behavior remains unchanged.
 
-PR #5696 added the shared destination-side `WorkloadPrincipalAuthenticator` and
-`WorkloadPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
-audience, an allowed ServiceAccount subject, and one Pod name/UID claim pair. Nothing else is read:
-the API server validates the object the token is bound to, so a deleted or replaced Pod fails the
-TokenReview, and a Pod no Sandbox controls is its ServiceAccount like any other. Every service uses
-the one authenticator. The Python one reviews the bearer on every call; the Go one reuses the API
-server's acceptance for 30 s ([verdict reuse](../workload_auth/README.md)). The immutable principal
-contains namespace, ServiceAccount and Pod identity only.
-It contains no Thread, Agent, operator role, permissions, token, or caller body/header identity.
+Destination services construct a Go `workload_auth/go/auth.Resolver` with their audience and
+namespace allowlist. Pod-bound `ResolveToken` requires a reviewed ServiceAccount subject, UID, and
+one Pod name/UID claim pair. The API server validates the bound object in TokenReview, so a deleted
+or replaced Pod fails a fresh review; accepted verdicts are reused for up to 30 s
+([verdict reuse](../workload_auth/README.md)). Action Service uses `ResolveServiceAccountToken`,
+which requires the ServiceAccount UID and permits either no Pod claims or one complete pair. The
+result contains only account and, where proven, Pod identity. It contains no Thread, Agent, operator
+role, permissions, token, or caller body/header identity.
 
 The compatibility audience remains `agentplane-egress`. A future coordinated rename to
 `agentplane-workload` does not change the contract and is not required for the landed P0 behavior.
@@ -59,7 +58,7 @@ The compatibility audience remains `agentplane-egress`. A future coordinated ren
 ### Authenticated LLM ingress
 
 PR #5698 added an independently deployable ingress in front of LiteLLM. Staging runner traffic uses
-only the workload placeholder. The ingress resolves `WorkloadPrincipal`, strips caller credentials and
+only the workload placeholder. The ingress resolves a Pod-bound `auth.Principal`, strips caller credentials and
 identity-like metadata headers, forwards provider-native bodies/status/errors/SSE without protocol
 translation, and authenticates to LiteLLM with one server-held virtual key. Verified Sandbox
 metadata is stamped through LiteLLM's documented metadata header. See
@@ -67,7 +66,7 @@ metadata is stamped through LiteLLM's documented metadata header. See
 
 ### Standalone Action Service
 
-PR #5700 uses the same destination-side principal for workload submission and caller-own reads.
+PR #5700 uses the destination resolver's ServiceAccount identity for workload submission and caller-own reads.
 The caller is the ServiceAccount the Pod runs as, so two Pods sharing one are the same caller and
 one `PolicyBinding` covers both. The integration app/BFF operator surface uses separate authentication. See
 [`../action_service/README.md`](../action_service/README.md).
