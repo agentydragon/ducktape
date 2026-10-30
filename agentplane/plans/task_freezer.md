@@ -279,10 +279,9 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-The central-sampling portion is now owned by active `CENTRAL_SAMPLER_V1` in
-[task DAG](task_dag.md#harness_placement_design--sampler-placement-and-state-authority), informed by
-the completed Codex placement and Postgres harness spikes (operator, 2026-10-27). Do not create a competing authority
-decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
+The central-sampling portion shipped as the opt-in [central sampler](../x/central_sampler/README.md)
+([placement decision](sampling_outside_sandboxes.md#accepted-central-sampler-v1)); do not create a
+competing authority decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction
 is settled separately by the [runner control](../docs/runner_control.md), which currently retains
 runner durability.
