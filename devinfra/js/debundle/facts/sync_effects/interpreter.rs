@@ -65,13 +65,7 @@ enum NativeIdentitySource {
 }
 
 fn from_flow(values: FlowValues) -> Values {
-    values
-        .into_iter()
-        .map(|value| match value {
-            Value::Top => AbstractValue::Value(Value::Top),
-            other => AbstractValue::Value(other),
-        })
-        .collect()
+    values.into_iter().map(AbstractValue::Value).collect()
 }
 
 fn unknown() -> Values {

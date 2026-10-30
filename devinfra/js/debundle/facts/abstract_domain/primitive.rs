@@ -201,3 +201,56 @@ fn intrinsic_call(call: &CallExpr, scope: &impl PrimScope) -> Option<PrimKinds> 
         });
     admitted.then_some(kinds)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tracks `n` as Number, `b` as BigInt and `s` as String; `Symbol` and
+    /// `Math` are intact.
+    struct Bindings;
+
+    impl PrimScope for Bindings {
+        fn binding(&self, ident: &Ident) -> Option<PrimKinds> {
+            match ident.sym.as_ref() {
+                "n" => Some(PrimKinds::NUMBER),
+                "b" => Some(PrimKinds::BIGINT),
+                "s" => Some(PrimKinds::STRING),
+                _ => None,
+            }
+        }
+
+        fn intact_intrinsic(&self, _: &Row, global: &Ident, _: Option<&str>) -> bool {
+            matches!(global.sym.as_ref(), "Symbol" | "Math")
+        }
+    }
+
+    #[test]
+    fn expression_types_follow_ecmascript_operator_rules() {
+        let number_or_string = PrimKinds::NUMBER.union(PrimKinds::STRING);
+        let numeric = PrimKinds::NUMBER.union(PrimKinds::BIGINT);
+        for (source, expected) in [
+            ("n + 1", Some(PrimKinds::NUMBER)),
+            ("b * 2n", Some(PrimKinds::BIGINT)),
+            ("n + b", Some(PrimKinds::NONE)),
+            ("s + b", Some(PrimKinds::STRING)),
+            ("object + 1", Some(number_or_string)),
+            ("-object", Some(numeric)),
+            ("+b", Some(PrimKinds::NONE)),
+            ("b >>> 1n", Some(PrimKinds::NONE)),
+            ("object < n", Some(PrimKinds::BOOLEAN)),
+            ("n || s", Some(number_or_string)),
+            ("n || object", None),
+            ("Symbol('k')", Some(PrimKinds::SYMBOL)),
+            ("Math.round(n)", Some(PrimKinds::NUMBER)),
+            ("Math.round(object)", None),
+            ("Math.max(n)", None),
+        ] {
+            let module = raw_js_test_support::parse(&format!("({source});"));
+            let [ModuleItem::Stmt(Stmt::Expr(statement))] = module.body.as_slice() else {
+                panic!("{source} parses as one expression statement");
+            };
+            assert_eq!(evaluate(&statement.expr, &Bindings), expected, "{source}");
+        }
+    }
+}

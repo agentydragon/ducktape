@@ -1413,7 +1413,7 @@ fn prop_name_is(name: &PropName, expected: &str) -> bool {
 /// * conditionals whose both branches are result-primitive;
 /// * a reference to a chunk-top `const` provably bound to a
 ///   primitive value (`primitives`, from
-///   `collect_binding_value_classes`), when the name is not
+///   `collect_binding_prims`), when the name is not
 ///   locally shadowed.
 ///
 /// The global `undefined` is deliberately NOT admitted: it is an

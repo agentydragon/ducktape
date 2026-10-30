@@ -508,7 +508,8 @@ and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-
 
 The synchronous-effect interpreter can omit callback promotion for implicit
 coercion of an exact named/default imported binding when the provider proves
-that every value read from the export is primitive. The canonical shallow
+that every value read from the export is primitive; the importer receives the
+export's primitive types. The canonical shallow
 analysis recognizes primitive literals, untagged templates, unary/update and
 non-logical binary expressions that return a primitive when they complete, and
 the final value of a sequence. Conditional and logical expressions qualify
@@ -545,17 +546,18 @@ throws.
 
 ## Immutable Symbol computed keys
 
-Chunk-top `const` values made by unshadowed `Symbol()` with at most one
-primitive literal argument, and immutable aliases of those values, are safe
-computed property keys. `ToPropertyKey` returns a Symbol unchanged. The
-declaration's evaluation effects remain classified separately. Recognized
-direct writes to `Symbol` and static property/descriptor writes named
-`Symbol` disable this value proof; other mutation of built-in intrinsics
-remains under A11's author-audited integrity assumption.
-These bindings stay outside the result-primitive set used by string
-interpolation and numeric/string coercion: `ToString(Symbol)` throws.
-`let`/`var`, shadowed `Symbol`, spread or uncertain arguments, and locally
-shadowed key bindings keep the conservative classification.
+Chunk-top `const` bindings whose primitive type is Symbol are safe computed
+property keys: `ToPropertyKey` returns a Symbol unchanged. The type comes from
+the `%Symbol%` row of `facts/abstract_domain/builtins.rs` for an unshadowed
+callee with at most one spread-free argument proven primitive, or from an
+immutable alias of such a binding. The declaration's evaluation effects remain
+classified separately. Recognized direct writes to `Symbol` and static
+property/descriptor writes named `Symbol` disable the row; other mutation of built-in intrinsics remains under
+A11's author-audited integrity assumption. These bindings stay outside the
+result-primitive set used by string interpolation and numeric/string
+coercion: `ToString(Symbol)` throws. `let`/`var`, shadowed `Symbol`, spread or
+uncertain arguments, and locally shadowed key bindings keep the conservative
+classification.
 
 ## `String.raw` tagged templates
 

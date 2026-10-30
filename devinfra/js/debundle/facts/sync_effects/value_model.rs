@@ -179,9 +179,9 @@ impl<T> Ord for Captured<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum AbstractValue {
     Value(Value),
     Closure(u32, CapturedContext),

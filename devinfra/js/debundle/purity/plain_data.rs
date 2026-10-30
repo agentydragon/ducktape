@@ -510,24 +510,35 @@ pub(crate) fn collect_binding_prims(
     prims
 }
 
-/// Names a chunk may write through assignment, update, `delete` or a
-/// reflective define: `G` for a binding or property named `G`, and `G.m` for
-/// property `m` of binding `G`. A visible replacement can make an intrinsic
-/// return an object, so its builtin row stops applying.
+/// Builtin globals a chunk may write through assignment, update,
+/// `delete` or a reflective define: `G` for a binding or property named `G`,
+/// and `G.m` for property `m` of binding `G`. A visible replacement can make an
+/// intrinsic return an object, so its builtin row stops applying.
 #[derive(Default)]
 struct GlobalWriteFinder {
     written: BTreeSet<String>,
 }
 
 impl GlobalWriteFinder {
-    fn record_member(&mut self, member: &MemberExpr) {
-        let Some(key) = static_member_key(member) else {
-            return;
-        };
-        if let Expr::Ident(object) = member.obj.unwrap_parens() {
+    fn record(&mut self, name: &str) {
+        if builtins::GLOBALS.contains(name) {
+            self.written.insert(name.to_owned());
+        }
+    }
+
+    fn record_property(&mut self, object: &Expr, key: &str) {
+        if let Expr::Ident(object) = object.unwrap_parens()
+            && builtins::GLOBALS.contains(object.sym.as_ref())
+        {
             self.written.insert(format!("{}.{key}", object.sym));
         }
-        self.written.insert(key);
+        self.record(key);
+    }
+
+    fn record_member(&mut self, member: &MemberExpr) {
+        if let Some(key) = static_member_key(member) {
+            self.record_property(&member.obj, key);
+        }
     }
 }
 
@@ -537,20 +548,14 @@ impl Visit for GlobalWriteFinder {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                 self.record_member(member);
             }
-            other => {
-                let mut target = AssignTargetNames::default();
-                other.visit_with(&mut target);
-                self.written.extend(target.0.written);
-            }
+            other => other.visit_with(&mut AssignTargetNames(self)),
         }
         node.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         match node.arg.unwrap_parens() {
-            Expr::Ident(ident) => {
-                self.written.insert(ident.sym.to_string());
-            }
+            Expr::Ident(ident) => self.record(ident.sym.as_ref()),
             Expr::Member(member) => self.record_member(member),
             _ => {}
         }
@@ -578,10 +583,8 @@ impl Visit for GlobalWriteFinder {
             )
             && let [target, keys, ..] = node.args.as_slice()
         {
-            let keys: Vec<String> = match keys.expr.unwrap_parens() {
-                Expr::Lit(Lit::Str(key)) => {
-                    key.value.as_str().map(str::to_owned).into_iter().collect()
-                }
+            let keys: Vec<&str> = match keys.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(key)) => key.value.as_str().into_iter().collect(),
                 Expr::Object(object) => object
                     .props
                     .iter()
@@ -590,7 +593,7 @@ impl Visit for GlobalWriteFinder {
                             Prop::KeyValue(KeyValueProp {
                                 key: PropName::Ident(key),
                                 ..
-                            }) => Some(key.sym.to_string()),
+                            }) => Some(key.sym.as_ref()),
                             _ => None,
                         },
                         PropOrSpread::Spread(_) => None,
@@ -599,10 +602,7 @@ impl Visit for GlobalWriteFinder {
                 _ => Vec::new(),
             };
             for key in keys {
-                if let Expr::Ident(target) = target.expr.unwrap_parens() {
-                    self.written.insert(format!("{}.{key}", target.sym));
-                }
-                self.written.insert(key);
+                self.record_property(&target.expr, key);
             }
         }
         node.visit_children_with(self);
@@ -610,12 +610,11 @@ impl Visit for GlobalWriteFinder {
 }
 
 /// Every name a destructuring or other non-member assignment target writes.
-#[derive(Default)]
-struct AssignTargetNames(GlobalWriteFinder);
+struct AssignTargetNames<'a>(&'a mut GlobalWriteFinder);
 
-impl Visit for AssignTargetNames {
+impl Visit for AssignTargetNames<'_> {
     fn visit_ident(&mut self, ident: &Ident) {
-        self.0.written.insert(ident.sym.to_string());
+        self.0.record(ident.sym.as_ref());
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
@@ -624,11 +623,11 @@ impl Visit for AssignTargetNames {
     }
 }
 
-fn static_member_key(member: &MemberExpr) -> Option<String> {
+fn static_member_key(member: &MemberExpr) -> Option<&str> {
     match &member.prop {
-        MemberProp::Ident(id) => Some(id.sym.to_string()),
+        MemberProp::Ident(id) => Some(id.sym.as_ref()),
         MemberProp::Computed(key) => match key.expr.unwrap_parens() {
-            Expr::Lit(Lit::Str(value)) => value.value.as_str().map(str::to_owned),
+            Expr::Lit(Lit::Str(value)) => value.value.as_str(),
             _ => None,
         },
         MemberProp::PrivateName(_) => None,
