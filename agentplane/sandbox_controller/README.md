@@ -102,9 +102,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
 - **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
   the runner's published facts (quiesce stage, idle-since, bootstrap state, setup state, autosuspend
-  blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox;
-  renewals do not. Time is not an event, so the moment a live connection would lapse, and a lapsed
-  one, are requeued.
+  blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox, as does
+  a renewal that revives a lapsed connection; other renewals do not. Time is not an event, so the
+  moment a live connection would lapse is requeued. A lapsed or pending connection is not polled.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
