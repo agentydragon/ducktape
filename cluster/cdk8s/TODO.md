@@ -86,3 +86,15 @@ factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
 
 Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 `preconditions` has a typed factory built from the real `any`/`all` shape.
+
+## Watch GitHub secret inputs declaratively
+
+Evaluate a Crossplane Secret watch for `github-secrets-sync`, replacing the Attic
+rotator's explicit Workspace annotation patch. `provider-kubernetes` supports
+`Object.spec.watch` and references; the pinned OpenTofu provider only watches
+Workspaces and cannot discover Kubernetes dependencies inside Terraform modules.
+
+Done: changing or recreating the input Secret promptly reconciles the Workspace,
+including changes outside the rotator; retries survive controller restarts, the
+notification exposes only Secret identity/version, and the rotator no longer
+needs Workspace patch permission. Keep OpenTofu as the sole GitHub secret owner.
