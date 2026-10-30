@@ -243,13 +243,14 @@ unlike that earlier plaintext leak.
 
 ### CI token propagation
 
-The rotator publishes the Ducktape CI writer JWT to
-`nix-cache/attic-ducktape-ci-writer`, with no SOPS mirror. After a successful token check it patches the GitHub secrets
-OpenTofu Workspace with the Secret identity/version. Crossplane's annotation
-watch queues reconciliation; `github-secrets-sync` reads the Secret and owns
-the `ATTIC_TOKEN` Actions secret. The rotator retries the notification on runs
-that do not mint a token, so a failed notification does not wait for expiry.
-
-The Kubernetes-only roster requires the rotator image with storage-variant
-support to be deployed first. The cache signing keys, per-host reader rotation,
-and gaffer-private writer remain SOPS-backed.
+The rotator publishes separate Ducktape CI reader and writer JWTs to
+`nix-cache/attic-ducktape-ci-reader` and
+`nix-cache/attic-ducktape-ci-writer`. The reader pulls from `main` and `gaffer`
+without push scope. After a successful token check, the rotator patches distinct
+reader and writer version annotations on the GitHub secrets OpenTofu Workspace.
+Crossplane's annotation watch queues reconciliation; `github-secrets-sync` reads
+both Secrets and owns `ATTIC_READ_TOKEN` and `ATTIC_TOKEN` in the Ducktape
+Actions secrets. Annotations carry Secret identity/version, never token
+contents. The rotator retries notification on runs that do not mint a token, so
+a failed notification does not wait for expiry. The cache signing keys,
+per-host readers, and gaffer writer are unchanged.

@@ -344,6 +344,13 @@ metadata:
   namespace: nix-cache
 type: Opaque
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: attic-ducktape-ci-reader
+  namespace: nix-cache
+type: Opaque
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -433,6 +440,7 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
+      - attic-ducktape-ci-reader
       - attic-ducktape-ci-writer
     resources:
       - secrets
@@ -464,7 +472,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   annotations:
-    description: Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.yaml. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.py.
+    description: Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape CI reader and writer, and gaffer CI writer tokens) defined in rotators.yaml. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.py.
   name: attic-jwt-rotation
   namespace: nix-cache
 spec:

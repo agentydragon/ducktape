@@ -54,6 +54,13 @@ data "kubernetes_secret" "attic_ci_writer" {
   }
 }
 
+data "kubernetes_secret" "attic_ci_reader" {
+  metadata {
+    name      = "attic-ducktape-ci-reader"
+    namespace = "nix-cache"
+  }
+}
+
 data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
     name      = "pr-visuals-s3-credentials"
@@ -107,6 +114,12 @@ resource "github_actions_secret" "attic_token" {
   repository      = "ducktape"
   secret_name     = "ATTIC_TOKEN"
   plaintext_value = data.kubernetes_secret.attic_ci_writer.data["attic_token"]
+}
+
+resource "github_actions_secret" "attic_read_token" {
+  repository      = "ducktape"
+  secret_name     = "ATTIC_READ_TOKEN"
+  plaintext_value = data.kubernetes_secret.attic_ci_reader.data["attic_token"]
 }
 
 resource "github_actions_secret" "buildbuddy_api_key" {

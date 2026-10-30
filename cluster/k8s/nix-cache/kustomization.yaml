@@ -114,6 +114,22 @@ configMapGenerator:
                 workspace: github-secrets-sync
                 annotation_key: ducktape.allegedly.works/attic-token-version
               storage: kubernetes
+          - name: ducktape CI attic reader
+            sub: ducktape-ci-reader
+            validity: 1 year
+            pull:
+              - main
+              - gaffer
+            push: []
+            destination:
+              secret:
+                namespace: nix-cache
+                name: attic-ducktape-ci-reader
+                key: attic_token
+              notification:
+                workspace: github-secrets-sync
+                annotation_key: ducktape.allegedly.works/attic-reader-token-version
+              storage: kubernetes
           - name: gaffer CI attic writer
             sub: gaffer-ci
             validity: 1 year

@@ -35,7 +35,11 @@ def chart(app: App) -> Chart:
         chart, "forgejo-images-secrets", identity=identity, namespace="forgejo-images", read=["forgejo-images-creds"]
     )
     opentofu.secret_access(
-        chart, "attic-ci-token", identity=identity, namespace=ci_token.WRITER.namespace, read=[ci_token.WRITER.name]
+        chart,
+        "attic-ci-token",
+        identity=identity,
+        namespace=ci_token.WRITER.namespace,
+        read=[ci_token.READER.name, ci_token.WRITER.name],
     )
     opentofu.gitops_workspace(
         chart,

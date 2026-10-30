@@ -87,7 +87,7 @@ ROTATOR_CONFIG = Config(
             name="ducktape CI attic writer (main)",
             destination=KubernetesDestination(
                 secret=KubernetesSecretDestination(
-                    namespace=ci_token.WRITER.namespace, name=ci_token.WRITER.name, key=ci_token.TOKEN.key
+                    namespace=ci_token.WRITER.namespace, name=ci_token.WRITER.name, key=ci_token.WRITER_TOKEN.key
                 ),
                 notification=WorkspaceNotification(
                     workspace=workspace.NAME, annotation_key="ducktape.allegedly.works/attic-token-version"
@@ -97,6 +97,24 @@ ROTATOR_CONFIG = Config(
             validity="1 year",
             pull=["main", "gaffer"],
             push=["main", "public"],
+        ),
+        Token(
+            name="ducktape CI attic reader",
+            destination=KubernetesDestination(
+                secret=KubernetesSecretDestination(
+                    namespace=ci_token.READER.namespace,
+                    name=ci_token.READER.name,
+                    key=ci_token.READER_TOKEN.key,
+                ),
+                notification=WorkspaceNotification(
+                    workspace=workspace.NAME,
+                    annotation_key="ducktape.allegedly.works/attic-reader-token-version",
+                ),
+            ),
+            sub="ducktape-ci-reader",
+            validity="1 year",
+            pull=["main", "gaffer"],
+            push=[],
         ),
         Token(
             name="gaffer CI attic writer",
@@ -257,6 +275,12 @@ def _rotation(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=ci_token.WRITER.name, namespace=ci_token.WRITER.namespace),
         type="Opaque",
     )
+    k8s.KubeSecret(
+        scope,
+        "ci-reader-token",
+        metadata=k8s.ObjectMeta(name=ci_token.READER.name, namespace=ci_token.READER.namespace),
+        type="Opaque",
+    )
     notification_role = ClusterRole(
         scope,
         "ci-token-notification",
@@ -313,7 +337,10 @@ def _rotation(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"]),
             k8s.PolicyRule(api_groups=[""], resources=["pods/exec"], verbs=["create"]),
             k8s.PolicyRule(
-                api_groups=[""], resources=["secrets"], resource_names=[ci_token.WRITER.name], verbs=["get", "patch"]
+                api_groups=[""],
+                resources=["secrets"],
+                resource_names=[ci_token.READER.name, ci_token.WRITER.name],
+                verbs=["get", "patch"],
             ),
             # Resolving `deploy/attic` to a pod first reads the Deployment.
             k8s.PolicyRule(api_groups=["apps"], resources=["deployments"], verbs=["get"]),
@@ -334,7 +361,8 @@ def _rotation(scope: Construct) -> None:
             namespace=NAMESPACE,
             annotations={
                 "description": (
-                    "Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer"
+                    "Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape CI reader and writer, and"
+                    " gaffer CI writer"
                     " tokens) defined in rotators.yaml. Hourly cron; per-token freshness check skips entries with"
                     " >24h remaining, so a real mint runs ~once per token per year. See rotate.py."
                 )
