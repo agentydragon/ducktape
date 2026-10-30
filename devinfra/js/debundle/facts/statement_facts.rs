@@ -208,6 +208,7 @@ pub struct CallbackFactoryWriteWitness {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
+    pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
     /// Internal call-site certificate produced only after the checked local
     /// constructor-factory proof and ordinary synchronous execution both
     /// succeed. It is deliberately separate from the serialized proof-use

@@ -364,14 +364,8 @@ fn initialized_primitive_const_property_keeps_the_constructor_result_deferred() 
 }
 
 #[test]
-fn only_initialized_unreassigned_top_level_primitive_literals_are_closed_inputs() {
+fn only_initialized_unreassigned_top_level_primitive_values_are_closed_inputs() {
     let cases = [
-        (
-            "const label = { value: \"Example\" };\n",
-            "",
-            "create({ name: label, execute: () => later })",
-            &["label"][..],
-        ),
         (
             "const label = { get value() { return \"Example\"; } };\n",
             "",
@@ -774,4 +768,315 @@ fn constructor_effects_are_not_removed_by_the_factory_call_certificate() {
         &["callbacks/wrapped", "values/label", "values/later"],
         &["sequenced"],
     );
+}
+
+fn assert_admitted(source: &str, callback_members: &[&'static str], expected_output: &str) {
+    let fixture = run_fixture(fixture_opts(source, true, callback_members, &[], &[]));
+    assert_preserved_entry_output(&fixture, expected_output);
+    let graph = fixture.dependency_graph();
+    let reports: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .collect();
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.local_record_factory_uses.len())
+            .sum::<usize>(),
+        1
+    );
+    assert!(
+        reports
+            .iter()
+            .all(|report| report.local_record_factory_rejections.is_empty())
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["command"],
+        &["later"],
+    );
+}
+
+/// Runs the call unsplit (so the gate accepts) and returns the typed reason
+/// the annotated call's record was refused for.
+fn record_rejection(
+    before_command: &str,
+    call: &str,
+) -> (
+    analysis::reports::schema::RecordFactoryRejectionReason,
+    Option<String>,
+) {
+    let source = fixture_source(
+        "",
+        FACTORY,
+        before_command,
+        call,
+        "",
+        "console.log(typeof command.run);",
+    );
+    let mut members = vec![
+        Member::new("Flags"),
+        Member::new("mutate"),
+        Member::new("Holder"),
+        Member::new("create").with_retained_record_factory(),
+        Member::new("prefix"),
+        Member::new("command"),
+        Member::new("later"),
+    ];
+    members.extend(
+        ["handler", "label"]
+            .into_iter()
+            .filter(|name| before_command.contains(&format!("const {name} ")))
+            .map(Member::new),
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &members,
+            &["console.log(typeof command.run);"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+    let graph = fixture.dependency_graph();
+    let [rejection] = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .flat_map(|report| &report.local_record_factory_rejections)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("expected one record-factory rejection");
+    };
+    assert_eq!(rejection.factory_binding, "create");
+    assert!(rejection.source_location.is_some());
+    (rejection.reason, rejection.property.clone())
+}
+
+#[test]
+fn method_shorthand_is_a_retained_callback() {
+    let record = FRESH_RECORD.replace("execute: () => later,", "execute() { return later; },");
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "",
+        &format!("create({record})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+    assert_admitted(&source, &[], "169 0\n");
+}
+
+#[test]
+fn function_valued_bindings_are_retained_callbacks() {
+    for before_command in [
+        "function handler() { return later; }\n",
+        "const handler = () => later;\n",
+    ] {
+        let record = FRESH_RECORD.replace("execute: () => later,", "execute: handler,");
+        let source = fixture_source(
+            "",
+            FACTORY,
+            before_command,
+            &format!("create({record})"),
+            "",
+            "console.log(command.run(), command.weight);",
+        );
+        assert_admitted(&source, &["handler"], "169 0\n");
+    }
+    let shorthand = FRESH_RECORD.replace("execute: () => later,", "execute,");
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "const execute = () => later;\n",
+        &format!("create({shorthand})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+    assert_admitted(&source, &["execute"], "169 0\n");
+}
+
+#[test]
+fn shared_primitive_arrays_and_records_are_closed_inputs() {
+    for (before_command, value) in [
+        ("const modes = [Flags.FIRST, 2, \"ready\"];\n", "modes[0]"),
+        (
+            "const modes = { first: Flags.FIRST, label: \"ready\" };\n",
+            "modes.first",
+        ),
+    ] {
+        let record =
+            FRESH_RECORD.replace("execute: () => later,", "execute: () => later,\n  modes,");
+        let source = fixture_source(
+            "",
+            FACTORY,
+            before_command,
+            &format!("create({record})"),
+            "",
+            &format!("console.log(command.record.{value}, command.run());"),
+        );
+        assert_admitted(&source, &["modes"], "1 169\n");
+    }
+}
+
+#[test]
+fn template_literals_of_proven_primitives_are_admitted() {
+    let record = FRESH_RECORD.replace(
+        "execute: () => later,",
+        "execute: () => later,\n  name: `${label}-${Flags.SECOND}-${1}`,",
+    );
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "const label = \"Example\";\n",
+        &format!("create({record})"),
+        "",
+        "console.log(command.record.name, command.run());",
+    );
+    assert_admitted(&source, &["label"], "Example-2-1 169\n");
+}
+
+#[test]
+fn unproven_values_in_admitted_positions_fall_back() {
+    for (before_command, call, callback_members) in [
+        // A method under a computed key.
+        (
+            "const key = \"execute\";\n",
+            "create({ [key]() { return later; } })",
+            vec!["key"],
+        ),
+        // A reassigned function binding.
+        (
+            "let handler = () => later;\nhandler = () => later + 1;\n",
+            "create({ execute: handler })",
+            vec!["handler"],
+        ),
+        // An object binding, whose identity is shared and mutable.
+        (
+            "const handler = { valueOf() { return later; } };\n",
+            "create({ execute: handler })",
+            vec!["handler"],
+        ),
+        // A function binding initialized only after the call (TDZ).
+        ("", "create({ execute: handler })", vec![]),
+        // A shared array holding a callback.
+        (
+            "const handler = [() => later];\n",
+            "create({ execute: () => later, nested: handler })",
+            vec!["handler"],
+        ),
+        // A shared array given a callback before the call.
+        (
+            "const handler = [1];\nhandler.push(() => later);\n",
+            "create({ execute: () => later, nested: handler })",
+            vec!["handler"],
+        ),
+        // A shared record exposed to unknown code before the call.
+        (
+            "const handler = { mode: 1 };\nglobalThis.saved = handler;\n",
+            "create({ execute: () => later, nested: handler })",
+            vec!["handler"],
+        ),
+        // `ToString` of an object runs its `toString`.
+        (
+            "const label = { toString() { return String(later); } };\n",
+            "create({ execute: () => later, name: `${label}` })",
+            vec!["label"],
+        ),
+        // A proxy can intercept the conversion's property reads.
+        (
+            "const label = new Proxy({}, { get: () => () => later });\n",
+            "create({ execute: () => later, name: `${label}` })",
+            vec!["label"],
+        ),
+        // A substitution evaluated by a call.
+        (
+            "",
+            "create({ execute: () => later, name: `${String(1)}` })",
+            vec![],
+        ),
+        // A getter-backed member read.
+        (
+            "const label = { get value() { return later; } };\n",
+            "create({ execute: () => later, name: `${label.value}` })",
+            vec!["label"],
+        ),
+    ] {
+        let after = if callback_members.is_empty() && call.contains("handler") {
+            "const handler = () => later;\n"
+        } else {
+            ""
+        };
+        let source = fixture_source(
+            "",
+            FACTORY,
+            before_command,
+            call,
+            after,
+            "console.log(command.run());",
+        );
+        let later_members: &[&str] = if after.is_empty() { &[] } else { &["handler"] };
+        let statements: Vec<_> = before_command
+            .lines()
+            .filter(|line| !line.starts_with("const ") && !line.starts_with("let "))
+            .collect();
+        assert_atomic_fallback(&source, &callback_members, later_members, &statements);
+    }
+}
+
+#[test]
+fn refused_record_shapes_report_a_typed_reason() {
+    use analysis::reports::schema::RecordFactoryRejectionReason as Reason;
+    for (before_command, call, reason, property) in [
+        (
+            "",
+            "create({ ...{ execute: () => later } })",
+            Reason::Spread,
+            None,
+        ),
+        (
+            "",
+            "create({ execute: () => later, get name() { return \"x\"; } })",
+            Reason::Accessor,
+            None,
+        ),
+        (
+            "const label = { toString() { return \"x\"; } };\n",
+            "create({ execute: () => later, name: `${label}` })",
+            Reason::TemplateSubstitution,
+            Some("name"),
+        ),
+        (
+            "",
+            "create({ execute: () => later, name: `${String(1)}` })",
+            Reason::TemplateSubstitution,
+            Some("name"),
+        ),
+        (
+            "const handler = { execute: () => later };\n",
+            "create({ execute: () => later, nested: handler })",
+            Reason::UnprovenBinding,
+            Some("nested"),
+        ),
+        (
+            "const label = { value: \"x\" };\n",
+            "create({ execute: () => later, name: label.value })",
+            Reason::UnprovenMemberRead,
+            Some("name"),
+        ),
+        (
+            "",
+            "create({ execute: () => later, name: String(1) })",
+            Reason::UnsupportedValue,
+            Some("name"),
+        ),
+    ] {
+        assert_eq!(
+            record_rejection(before_command, call),
+            (reason, property.map(str::to_owned)),
+            "{call}"
+        );
+    }
 }

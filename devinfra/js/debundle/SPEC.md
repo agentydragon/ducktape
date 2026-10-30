@@ -933,16 +933,26 @@ it does not declare the factory pure or native identities intact.
 Admission requires a direct unary call of the selected stable top-level hoisted
 factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
-`__proto__`, and other eager calls. Nested dense arrays, literal values, inline
-callbacks and independently checked enum reads are supported. A record value
-may also be an identifier when it resolves to one simple top-level `const`
-declaration with a direct string, number, boolean, null, or BigInt literal
-initializer. That initializer must precede the call, the current prefix must
-contain exactly one primitive abstract value for the binding, and the binding
-must have no source writes or dynamic-scope contamination. The binding read
-still executes normally, retaining its eager dependency and TDZ behavior;
-object/function aliases and computed or otherwise nonliteral initializers are
-not admitted. The ordinary
+`__proto__`, duplicate keys, array holes and other eager calls. Nested dense
+arrays, literal values, inline callbacks, method definitions and independently
+checked enum reads are supported; defining a method allocates a function the
+record retains like an inline callback. A template literal is supported when
+every substitution is a literal, a primitive `const` below or a checked enum
+read, so its `ToString` runs no user code. A record value may also be an
+identifier when, at the call, it is an initialized top-level binding with no
+dynamic-scope contamination and one of:
+
+- one simple top-level `const` with a direct string, number, boolean, null, or
+  BigInt literal initializer, preceding the call, with no source writes and
+  exactly one primitive abstract value in the current prefix;
+- exactly one source function as its whole-chunk and prefix value; the record
+  stores it without calling it and retains it like an inline callback;
+- exactly one untainted literal dense array or plain-data object as its
+  whole-chunk and prefix value, every current slot of which is primitive.
+
+The binding read still executes normally, retaining its eager dependency and
+TDZ behavior; other object aliases, other member reads and nonliteral
+initializers are not admitted. The ordinary
 source-checked return-only constructor proof and normal execution remain in
 force, including eager lexical reads, TDZ, argument evaluation, exposure checks,
 side effects and ordering. A typed call-site certificate may remove the generic
@@ -954,7 +964,11 @@ exact checked constructor/property and input-object/missing-property pairs
 consume the assertion. Failed source proof or runtime admission restores
 conservative reachability and issues no purity certificate. Consumed author
 obligations appear in `synchronous_execution.local_record_factory_uses`,
-separately from inferred native integrity.
+separately from inferred native integrity. An annotated direct call that keeps
+the conservative path records one typed reason in
+`synchronous_execution.local_record_factory_rejections`: the refused record
+shape with its outermost property, or the checked-proof condition that failed
+(with the constructor check for `constructor_proof`).
 
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same

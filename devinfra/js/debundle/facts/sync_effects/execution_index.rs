@@ -49,7 +49,8 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
-    NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, SourceLocation,
+    NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
+    SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
@@ -290,52 +291,141 @@ fn literal_record_primitive(expression: &Expr) -> Option<LiteralRecordPrimitive>
     }
 }
 
-fn literal_record_factory_value(expression: &Expr) -> bool {
+/// Syntax of a direct annotated record-factory call's single argument. Binding
+/// reads, member reads and template substitutions are only candidates here:
+/// the interpreter proves their values at the call before consulting the
+/// author premise.
+pub(super) type RecordFactoryArgument =
+    Result<RecordFactoryRecord, (RecordFactoryRejectionReason, Option<String>)>;
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct RecordFactoryRecord {
+    /// Template substitutions, by outermost record property, whose `ToString`
+    /// must see a proven primitive.
+    pub(super) template_substitutions: Vec<(String, ValueExpr)>,
+}
+
+fn record_factory_argument(arguments: &[ExprOrSpread]) -> RecordFactoryArgument {
+    let [argument] = arguments else {
+        return Err((RecordFactoryRejectionReason::NotObjectLiteral, None));
+    };
+    if argument.spread.is_some() || !matches!(argument.expr.unwrap_parens(), Expr::Object(_)) {
+        return Err((RecordFactoryRejectionReason::NotObjectLiteral, None));
+    }
+    let mut record = RecordFactoryRecord::default();
+    record_factory_value(&argument.expr, None, &mut record)?;
+    Ok(record)
+}
+
+fn record_factory_value(
+    expression: &Expr,
+    property: Option<&str>,
+    record: &mut RecordFactoryRecord,
+) -> Result<(), (RecordFactoryRejectionReason, Option<String>)> {
+    let reject = |reason, name: Option<&str>| Err((reason, property.or(name).map(str::to_owned)));
     let expression = expression.unwrap_parens();
     if literal_record_primitive(expression).is_some() {
-        return true;
+        return Ok(());
     }
     match expression {
-        // Binding reads remain source/effect checked by the interpreter's
-        // prefix-value proof; this is only syntax admission at the call site.
-        Expr::Ident(_) => true,
+        Expr::Ident(_) => Ok(()),
         Expr::Object(object) => {
             let mut names = BTreeSet::new();
-            object.props.iter().all(|property| {
-                let PropOrSpread::Prop(property) = property else {
-                    return false;
+            for entry in &object.props {
+                let PropOrSpread::Prop(entry) = entry else {
+                    return reject(RecordFactoryRejectionReason::Spread, None);
                 };
-                let Prop::KeyValue(pair) = property.as_ref() else {
-                    return false;
+                let (key, value) = match entry.as_ref() {
+                    Prop::KeyValue(pair) => (&pair.key, Some(pair.value.as_ref())),
+                    // Defining a method allocates a function; no code runs.
+                    Prop::Method(method) => (&method.key, None),
+                    Prop::Shorthand(binding) => {
+                        let name = binding.sym.to_string();
+                        if name == "__proto__" {
+                            return reject(RecordFactoryRejectionReason::PrototypeKey, None);
+                        }
+                        if !names.insert(name.clone()) {
+                            return reject(RecordFactoryRejectionReason::DuplicateKey, Some(&name));
+                        }
+                        continue;
+                    }
+                    Prop::Getter(_) | Prop::Setter(_) => {
+                        return reject(RecordFactoryRejectionReason::Accessor, None);
+                    }
+                    Prop::Assign(_) => {
+                        return reject(RecordFactoryRejectionReason::UnsupportedValue, None);
+                    }
                 };
-                if matches!(pair.key, PropName::Computed(_)) {
-                    return false;
+                if matches!(key, PropName::Computed(_)) {
+                    return reject(RecordFactoryRejectionReason::ComputedKey, None);
                 }
-                let Some(name) = object_data_property_name(&pair.key) else {
-                    return false;
+                let Some(name) = object_data_property_name(key) else {
+                    let reason = if static_property_name(key).is_some() {
+                        RecordFactoryRejectionReason::PrototypeKey
+                    } else {
+                        RecordFactoryRejectionReason::ComputedKey
+                    };
+                    return reject(reason, None);
                 };
-                names.insert(name) && literal_record_factory_value(&pair.value)
-            })
+                if !names.insert(name.clone()) {
+                    return reject(RecordFactoryRejectionReason::DuplicateKey, Some(&name));
+                }
+                if let Some(value) = value {
+                    record_factory_value(value, Some(property.unwrap_or(&name)), record)?;
+                }
+            }
+            Ok(())
         }
-        Expr::Array(array) => array.elems.iter().all(|element| {
-            element.as_ref().is_some_and(|element| {
-                element.spread.is_none() && literal_record_factory_value(&element.expr)
-            })
-        }),
-        Expr::Arrow(_) => true,
-        Expr::Fn(function) => {
-            function.function.decorators.is_empty()
+        Expr::Array(array) => {
+            for element in &array.elems {
+                match element {
+                    Some(element) if element.spread.is_none() => {
+                        record_factory_value(&element.expr, property, record)?;
+                    }
+                    _ => return reject(RecordFactoryRejectionReason::ArrayShape, None),
+                }
+            }
+            Ok(())
+        }
+        Expr::Arrow(_) => Ok(()),
+        Expr::Fn(function)
+            if function.function.decorators.is_empty()
                 && function
                     .function
                     .params
                     .iter()
-                    .all(|parameter| parameter.decorators.is_empty())
+                    .all(|parameter| parameter.decorators.is_empty()) =>
+        {
+            Ok(())
         }
-        Expr::Member(member) => {
-            matches!(member.obj.unwrap_parens(), Expr::Ident(_))
-                && static_prop(&member.prop).is_some()
+        Expr::Member(member)
+            if matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                && static_prop(&member.prop).is_some() =>
+        {
+            Ok(())
         }
-        _ => false,
+        Expr::Member(_) => reject(RecordFactoryRejectionReason::UnprovenMemberRead, None),
+        Expr::Tpl(template) => {
+            for substitution in &template.exprs {
+                let substitution = substitution.unwrap_parens();
+                if literal_record_primitive(substitution).is_some() {
+                    continue;
+                }
+                let candidate = matches!(substitution, Expr::Ident(_))
+                    || matches!(substitution, Expr::Member(member)
+                        if matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                            && static_prop(&member.prop).is_some());
+                if !candidate {
+                    return reject(RecordFactoryRejectionReason::TemplateSubstitution, None);
+                }
+                record.template_substitutions.push((
+                    property.unwrap_or_default().to_owned(),
+                    ValueExpr::from_expr(substitution),
+                ));
+            }
+            Ok(())
+        }
+        _ => reject(RecordFactoryRejectionReason::UnsupportedValue, None),
     }
 }
 
@@ -5222,9 +5312,9 @@ struct ExecutionIndex {
     async_callables: BTreeSet<u32>,
     callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
-    /// Direct identifier calls with one fresh literal record argument. This
-    /// captures syntax only; semantic member-read admission is checked later.
-    literal_record_factory_calls: BTreeSet<CallSite>,
+    /// Direct calls of annotated record factories, with the syntax check of
+    /// their argument. Semantic admission is checked by the interpreter.
+    record_factory_calls: BTreeMap<CallSite, RecordFactoryArgument>,
     member_write_sites: BTreeSet<CallSite>,
     primitive_data_properties: BTreeSet<(u32, String)>,
     from_entries_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
@@ -5396,7 +5486,7 @@ impl Default for ExecutionIndex {
             async_callables: BTreeSet::new(),
             callable_member_reads: BTreeMap::new(),
             direct_call_members: BTreeSet::new(),
-            literal_record_factory_calls: BTreeSet::new(),
+            record_factory_calls: BTreeMap::new(),
             member_write_sites: BTreeSet::new(),
             primitive_data_properties: BTreeSet::new(),
             from_entries_map_calls: BTreeMap::new(),
@@ -10886,14 +10976,15 @@ impl Visit for ExecutionIndex {
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
         }
-        if let Callee::Expr(callee) = &call.callee
-            && matches!(callee.unwrap_parens(), Expr::Ident(_))
-            && let [argument] = call.args.as_slice()
-            && argument.spread.is_none()
-            && matches!(argument.expr.unwrap_parens(), Expr::Object(_))
-            && literal_record_factory_value(&argument.expr)
+        if self.current.is_none()
+            && let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(factory) = callee.unwrap_parens()
+            && self
+                .retained_record_factories
+                .contains(factory.sym.as_ref())
         {
-            self.literal_record_factory_calls.insert(call.span.into());
+            self.record_factory_calls
+                .insert(call.span.into(), record_factory_argument(&call.args));
         }
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()

@@ -1244,12 +1244,21 @@ see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership
 native-integrity fact. Its bounded admission and proof-use report are specified
 in [SPEC.md](../SPEC.md). The canonical fresh-record call check matters because
 the execution value model can erase assignment targets or sequence prefixes.
-An identifier-valued record property is admitted only when the canonical AST
-proves one simple top-level `const` with a direct primitive literal initializer,
-no source writes or dynamic-scope contamination, and a prefix value that is
-already initialized and exactly one primitive abstract value. The read remains
-part of normal eager execution, so TDZ and dependency ordering stay observable;
-aliases and nonliteral initializers retain fallback.
+Argument evaluation must run no user code and the stored values must not hide
+an unrepresented callback. An identifier-valued record property is admitted
+only when the binding is initialized and free of dynamic-scope contamination,
+and its value is a primitive literal `const` (one primitive prefix value), one
+source function (stored, not called: retained like an inline callback), or one
+untainted literal array or plain-data object whose current slots are all
+primitive. A shared primitive container holds no callback, and later writes
+through any alias land on the same tracked allocation. Method definitions only
+allocate functions. Template substitutions must be primitive `const`s or
+checked enum reads: `ToString` of an object can call `toString` or
+`Symbol.toPrimitive`, and a Symbol would throw. Spreads stay refused: copying
+reads every own enumerable property, so an accessor or proxy source runs code,
+and the copied keys are not visible to the constructor-read check. The read
+remains part of normal eager execution, so TDZ and dependency ordering stay
+observable.
 Source execution remains essential: nonreentry alone would not justify dropping
 a factory's eager lexical read or a class TDZ. The source-checked constructor
 proof admits only the existing private return-only allocation graph.

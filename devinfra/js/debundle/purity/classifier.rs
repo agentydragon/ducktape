@@ -71,14 +71,17 @@ pub(crate) fn classify_expr_purity(
         // Template interpolation runs ToString on each interpolated
         // value — an object operand fires user `toString` /
         // `[Symbol.toPrimitive]`. Each interpolation must therefore
-        // be statically primitive-valued in addition to being pure
+        // be statically primitive-valued (a stable enum's named member
+        // holds a number or string literal) in addition to being pure
         // to evaluate.
         Expr::Tpl(tpl) => tpl
             .exprs
             .iter()
             .map(|e| {
                 let p = classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph);
-                if is_result_primitive(e, &graph.primitive_bindings, local_shadowed) {
+                if is_result_primitive(e, &graph.primitive_bindings, local_shadowed)
+                    || graph.is_stable_ts_enum_primitive_member(e, local_shadowed)
+                {
                     p
                 } else {
                     p.worst(Purity::from_reason_with_detail(
