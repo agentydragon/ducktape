@@ -213,8 +213,20 @@ the tool promise rejects, and a future operation may attempt the same-session re
 Process starts, stdin writes, signals and other effectful operations are never automatically retried.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
-points operators to the linked boundary evidence. V1 never replays uncertain provider or executor
-effects automatically; see [blocked Session recovery](docs/blocked_session_recovery.md).
+points operators to the linked boundary evidence. An authenticated caller for the same account can
+call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
+to abandon a blocked cell/runtime failure. Its transaction locks the conversation before its session
+and requires an expired owner lease and an exact cursor match. It supports all unresolved cell,
+nested tool, and executor intents or lost live cells/processes;
+provider sampling, compaction, and setup uncertainty remain unsupported. Recovery stores an
+`abandoned` result with unknown remote outcome and no automatic replay, completes unanswered model
+calls with matching aborted outputs, retains provider history, and adds a model-visible warning.
+It marks live cells and nonterminal processes `abandoned` without killing remote processes or
+reporting them exited. It advances the owner generation and durable JavaScript session epoch in the
+same transaction, fencing late writes and forcing a new logical JavaScript session on any replica.
+The continuation cannot access prior `store()` / `load()` values or live-cell handles; old shared-host
+memory may remain inaccessible until that host exits. Recovery never retries an uncertain provider
+or executor operation; see [blocked Session recovery](docs/blocked_session_recovery.md).
 
 The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
 The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured

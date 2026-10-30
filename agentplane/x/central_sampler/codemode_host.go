@@ -72,6 +72,18 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 	if conversationID == "" || executor == nil {
 		return nil, errors.New("code-mode conversation and executor are required")
 	}
+	epoch := 0
+	if m.store != nil {
+		var err error
+		epoch, err = m.store.CodeSessionEpoch(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+	}
+	conversationKey := conversationID
+	if epoch > 0 {
+		conversationKey = fmt.Sprintf("%s:%d", conversationID, epoch)
+	}
 	m.connectMu.Lock()
 	defer m.connectMu.Unlock()
 	if _, err := m.ensureHost(); err != nil {
@@ -83,10 +95,10 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 		m.mu.Unlock()
 		return nil, errors.New("code-mode host is shutting down")
 	}
-	sessionID := m.sessionIDs[conversationID]
+	sessionID := m.sessionIDs[conversationKey]
 	if sessionID == "" {
 		sessionID = uuid.NewString()
-		m.sessionIDs[conversationID] = sessionID
+		m.sessionIDs[conversationKey] = sessionID
 	}
 	if m.active[sessionID] != nil {
 		m.mu.Unlock()
@@ -111,7 +123,7 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 		}
 		if err != nil {
 			_ = runtime.Detach(context.Background())
-			m.discardUnopenedSession(conversationID, sessionID)
+			m.discardUnopenedSession(conversationKey, sessionID)
 			return nil, fmt.Errorf("open code-mode session: %w", err)
 		}
 		runtimeErr := runtime.Err()
@@ -431,11 +443,11 @@ func (m *CodeModeHost) registerRequest(session *CodeMode, execute bool) (int64, 
 	return id, pending.response, pending.initial, nil
 }
 
-func (m *CodeModeHost) discardUnopenedSession(conversationID, sessionID string) {
+func (m *CodeModeHost) discardUnopenedSession(conversationKey, sessionID string) {
 	m.mu.Lock()
-	if m.sessionIDs[conversationID] == sessionID {
+	if m.sessionIDs[conversationKey] == sessionID {
 		if _, opened := m.openedSessions[sessionID]; !opened {
-			delete(m.sessionIDs, conversationID)
+			delete(m.sessionIDs, conversationKey)
 		}
 	}
 	m.mu.Unlock()

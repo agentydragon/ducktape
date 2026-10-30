@@ -2,6 +2,7 @@ package centralsampler
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,6 +113,218 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	}
 	if result["status"] != "rejected" || result["code"] != "invalid_request" {
 		t.Fatalf("known rejection result=%v", result)
+	}
+}
+
+func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "input": "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, []ResponsesItem{call}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cellIntent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell", "call": call})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cellID := "code-session:cell-1"
+	toolIntent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "cell_id": cellID, "tool": "exec"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executorIntent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "executor", "method": "process/start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, cellID, "live"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("code host detached")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blocked.Blocked {
+		t.Fatal("unknown cell result did not block the session")
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextItems, err := encodeItems(conversation.Items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET context_items=$2::jsonb WHERE id=$1`,
+		session.ConversationID, contextItems); err != nil {
+		t.Fatal(err)
+	}
+
+	cursor := blocked.Cursor
+	if _, err := store.RecoverSession(t.Context(), session.ID, "other-account", cursor, "reviewed evidence"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("wrong account recovered session: %v", err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor-1, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("stale cursor recovered session: %v", err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("active owner lease was ignored: %v", err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Blocked || recovered.BlockedReason != nil || recovered.Cursor <= cursor {
+		t.Fatalf("recovered session state=%+v", recovered)
+	}
+	if err := store.Finish(t.Context(), owner, cellIntent, map[string]any{"late": true}, nil, nil); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("old owner wrote after recovery: %v", err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence"); !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("stale retry recovered twice: %v", err)
+	}
+
+	for _, intentID := range []string{cellIntent, toolIntent, executorIntent} {
+		result, err := intentResultForDB(t, store, intentID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result["status"] != "abandoned" || result["remote_outcome"] != "unknown" || result["automatic_replay"] != false {
+			t.Fatalf("abandoned intent %s result=%v", intentID, result)
+		}
+	}
+	var generation, epoch int
+	var ownerToken sql.NullString
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT generation,code_session_epoch,owner::text FROM sampler_conversation WHERE id=$1`,
+		session.ConversationID).Scan(&generation, &epoch, &ownerToken); err != nil {
+		t.Fatal(err)
+	}
+	if generation != owner.Generation+1 || epoch != 1 || ownerToken.Valid {
+		t.Fatalf("recovery fence generation=%d epoch=%d owner=%v", generation, epoch, ownerToken)
+	}
+	var cellStatus string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_cell WHERE id=$1 AND conversation_id=$2`,
+		cellID, session.ConversationID).Scan(&cellStatus); err != nil {
+		t.Fatal(err)
+	}
+	if cellStatus != "abandoned" {
+		t.Fatalf("cell status=%q", cellStatus)
+	}
+
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.Read(t.Context(), newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(retained.Items) != 3 || retained.Items[1].Type != ResponsesItemCustomToolOutput || retained.Items[1].CallID != call.CallID || retained.Items[2].Role != "developer" {
+		t.Fatalf("provider history was not completed with a matching aborted output: %#v", retained.Items)
+	}
+	if len(retained.ContextItems) != 3 || retained.ContextItems[1].CallID != call.CallID || retained.ContextItems[2].Role != "developer" {
+		t.Fatalf("model context did not retain the aborted output: %#v", retained.ContextItems)
+	}
+}
+
+func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T) {
+	for _, kind := range []string{"cell", "process"} {
+		t.Run(kind, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "cell":
+				if err := store.CellResult(t.Context(), owner, "code-session:yielded-cell", "live"); err != nil {
+					t.Fatal(err)
+				}
+			case "process":
+				if err := store.RegisterProcess(t.Context(), owner, "unknown-process", false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("runtime lost")); err != nil {
+				t.Fatal(err)
+			}
+			blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+				t.Fatal(err)
+			}
+			if recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "runtime was lost"); err != nil {
+				t.Fatal(err)
+			} else if recovered.Blocked {
+				t.Fatal("recovered session remains blocked")
+			}
+			if kind == "process" {
+				var status string
+				if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE id='unknown-process'`).Scan(&status); err != nil {
+					t.Fatal(err)
+				}
+				if status != "abandoned" {
+					t.Fatalf("remote process status=%q", status)
+				}
+			}
+		})
+	}
+}
+
+func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
+	for _, kind := range []string{"sampling", "compaction", "setup"} {
+		t.Run(kind, func(t *testing.T) {
+			setup := ""
+			if kind == "setup" {
+				setup = "exit 1"
+			}
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, setup)
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "setup" {
+				exitCode := 1
+				if err := store.FinishSetup(t.Context(), owner, session.ID, &exitCode); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": kind}); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown outcome")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable"); !errors.Is(err, ErrPrecondition) {
+				t.Fatalf("unsupported %s boundary recovered: %v", kind, err)
+			}
+		})
 	}
 }
 

@@ -385,6 +385,9 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	if err != nil {
 		return nil, err
 	}
+	if process.Status == "abandoned" {
+		return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d was abandoned during recovery; its remote outcome is unknown and no input was sent", plan.sessionID)}
+	}
 	if process.Status != "running" && process.Status != "exited_unread" {
 		if process.Status == "abandoned" {
 			return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}

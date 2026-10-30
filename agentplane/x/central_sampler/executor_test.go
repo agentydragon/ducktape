@@ -118,6 +118,58 @@ func TestReadFileReturnsBytesWhileJournalingOnlyDigest(t *testing.T) {
 	}
 }
 
+func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "unknown-remote-process", 77, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("executor disconnected")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blocked.Blocked {
+		t.Fatal("unconfirmed executor process did not block the session")
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "remote process outcome reviewed"); err != nil {
+		t.Fatal(err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sends := 0
+	socket := &recoverySocket{
+		send: func([]byte) error { sends++; return nil },
+		receive: func() ([]byte, error) {
+			t.Fatal("abandoned process unexpectedly attempted a read")
+			return nil, nil
+		},
+	}
+	executor := &Executor{store: store, owner: newOwner, socket: socket, processLocks: map[string]*sync.Mutex{}}
+	result, err := executor.writeStdin(t.Context(), json.RawMessage(`{"session_id":77,"chars":"must not be sent"}`))
+	if result != nil || !errors.As(err, new(*toolError)) || !strings.Contains(err.Error(), "no input was sent") {
+		t.Fatalf("write_stdin result=%v error=%v, want a tool error disclosing no input was sent", result, err)
+	}
+	if sends != 0 {
+		t.Fatalf("write_stdin sent %d executor requests for an abandoned handle", sends)
+	}
+	process, err := store.ProcessByModelSession(t.Context(), newOwner, 77)
+	if err != nil || process.Status != "abandoned" {
+		t.Fatalf("abandoned process=%+v error=%v", process, err)
+	}
+}
+
 func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 	for _, operation := range []string{"setup", "command", "reconcile"} {
 		t.Run(operation, func(t *testing.T) {

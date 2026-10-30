@@ -204,6 +204,63 @@ func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *
 	return code
 }
 
+func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, peers := newFakeCodeModeManager(t)
+	manager.store = store
+	first, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, first.cellHandle("old-cell"), "live"); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Detach(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("executor reply lost")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "abandon the detached runtime"); err != nil {
+		t.Fatal(err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.OpenSession(t.Context(), session.ConversationID, newOwner, &Executor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.sessionID == first.sessionID {
+		t.Fatal("recovery reused the detached JavaScript session")
+	}
+	if second.host != first.host || len(peers()) != 1 {
+		t.Fatal("recovery restarted the shared host rather than replacing one logical session")
+	}
+	// A late request from the retired logical session cannot reach the new binding.
+	peer := peers()[0]
+	if err := peer.sendDelegate(9001, first.sessionID); err != nil {
+		t.Fatal(err)
+	}
+	assertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
+	if second.Err() != nil {
+		t.Fatalf("retired session affected its replacement: %v", second.Err())
+	}
+}
+
 func receivePeerFrame(t *testing.T, peer *fakeCodeModePeer) map[string]json.RawMessage {
 	t.Helper()
 	deadline := time.After(3 * time.Second)

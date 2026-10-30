@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -437,6 +438,211 @@ func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, 
 		return nil, ErrForbidden
 	}
 	return session, nil
+}
+
+// CodeSessionEpoch returns the durable logical JavaScript-session generation for a live owner.
+func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) {
+	var epoch int
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		return tx.QueryRowContext(ctx, `SELECT code_session_epoch FROM sampler_conversation WHERE id=$1`, owner.ConversationID).Scan(&epoch)
+	})
+	return epoch, err
+}
+
+// RecoverSession abandons one blocked cell/runtime boundary after an operator has inspected the
+// recorded evidence. It never retries the provider request or any executor operation.
+func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote string) (*Session, error) {
+	note := strings.TrimSpace(operatorNote)
+	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 {
+		return nil, ErrInvalid
+	}
+	var recovered *Session
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, session, err := lockSession(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if session.AccountUID != ownerUID {
+			return ErrForbidden
+		}
+		if session.Cursor != expectedCursor || !session.Blocked {
+			return ErrPrecondition
+		}
+		var activeLease bool
+		if err := tx.QueryRowContext(ctx, `SELECT owner IS NOT NULL AND lease_until IS NOT NULL AND lease_until>clock_timestamp()
+			FROM sampler_conversation WHERE id=$1`, conversation.ID).Scan(&activeLease); err != nil {
+			return err
+		}
+		if activeLease {
+			return ErrPrecondition
+		}
+		if session.SetupState != runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED && session.SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
+			return ErrPrecondition
+		}
+		if session.ActiveCommand != nil || session.ActiveTurn != nil {
+			return ErrPrecondition
+		}
+		if conversation.Pending != nil && conversation.Pending.Kind != PendingIntentCell {
+			return ErrPrecondition
+		}
+
+		type unresolvedIntent struct {
+			id   string
+			kind string
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT id::text,request FROM sampler_intent
+			WHERE conversation_id=$1 AND result IS NULL ORDER BY id FOR UPDATE`, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var unresolved []unresolvedIntent
+		pendingIntentFound := conversation.Pending == nil
+		for rows.Next() {
+			var intentID string
+			var requestWire []byte
+			if err := rows.Scan(&intentID, &requestWire); err != nil {
+				rows.Close()
+				return err
+			}
+			request, err := decodeMap(requestWire)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			kind := stringValue(request["kind"])
+			if kind != string(PendingIntentCell) && kind != "tool" && kind != "executor" {
+				rows.Close()
+				return ErrPrecondition
+			}
+			if kind == string(PendingIntentCell) {
+				if conversation.Pending == nil || intentID != conversation.Pending.ID || pendingIntentFound {
+					rows.Close()
+					return ErrPrecondition
+				}
+				pendingIntentFound = true
+			}
+			unresolved = append(unresolved, unresolvedIntent{id: intentID, kind: kind})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if !pendingIntentFound {
+			return ErrPrecondition
+		}
+
+		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		liveProcess, err := hasLiveProcess(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		if len(unresolved) == 0 && !liveCell && !liveProcess {
+			return ErrPrecondition
+		}
+
+		abandonedIntentIDs := make([]string, 0, len(unresolved))
+		for _, intent := range unresolved {
+			abandonedIntent := map[string]any{"status": "abandoned", "remote_outcome": "unknown", "automatic_replay": false}
+			wire, err := marshal(abandonedIntent)
+			if err != nil {
+				return err
+			}
+			result, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1 AND result IS NULL`, intent.id, wire)
+			if err != nil {
+				return err
+			}
+			updated, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if updated != 1 {
+				return ErrPrecondition
+			}
+			if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
+				session, intent.id, intent.kind, "abandoned", abandonedIntent); err != nil {
+				return err
+			}
+			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
+		}
+
+		abortedOutputs := make([]ResponsesItem, 0)
+		for _, call := range unansweredCalls(conversation.Items) {
+			abortedOutputs = append(abortedOutputs, call.OutputItem([]ResponsesContentPart{{
+				Type: "input_text", Text: "Aborted by operator recovery; remote effects may have occurred and were not replayed. The continuation uses a new JavaScript session, so prior store() and load() values are unavailable.",
+			}}))
+		}
+		if len(abortedOutputs) > 0 {
+			conversation.Items = append(conversation.Items, abortedOutputs...)
+			if conversation.ContextItems != nil {
+				conversation.ContextItems = append(conversation.ContextItems, abortedOutputs...)
+			}
+			for _, output := range abortedOutputs {
+				encoded, err := json.Marshal(output.Output)
+				if err != nil {
+					return err
+				}
+				if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
+					ItemCompleted: &eventpb.ItemCompleted{ItemId: output.CallID, Outcome: &eventpb.ItemCompleted_Tool{
+						Tool: &eventpb.ToolResult{Output: DisplayText(string(encoded)), Succeeded: false},
+					}},
+				}}); err != nil {
+					return err
+				}
+			}
+		}
+		resetNotice, err := newResponsesMessage("developer", "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing.")
+		if err != nil {
+			return err
+		}
+		conversation.Items = append(conversation.Items, resetNotice)
+		if conversation.ContextItems != nil {
+			conversation.ContextItems = append(conversation.ContextItems, resetNotice)
+		}
+
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_cell SET status='abandoned' WHERE conversation_id=$1 AND status='live'`, conversation.ID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned'
+			WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned')`, conversation.ID); err != nil {
+			return err
+		}
+
+		conversation.Pending = nil
+		conversation.Stopped = false
+		if err := updateConversation(ctx, tx, conversation); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET generation=generation+1,code_session_epoch=code_session_epoch+1,
+			owner=NULL,lease_until=NULL WHERE id=$1`, conversation.ID); err != nil {
+			return err
+		}
+		recoveryEvidence := map[string]any{
+			"status": "recovered", "operator_note": note, "javascript_state_reset": true,
+			"remote_outcome": "unknown", "automatic_replay": false,
+			"abandoned_intent_ids": abandonedIntentIDs,
+		}
+		if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID}, conversation, session,
+			uuid.NewString(), "recovery", "committed", recoveryEvidence); err != nil {
+			return err
+		}
+		session.Blocked = false
+		session.BlockedReason = nil
+		if err := persistSession(ctx, tx, session); err != nil {
+			return err
+		}
+		recovered = session
+		return nil
+	})
+	return recovered, err
 }
 
 func (s *Store) ListSessions(ctx context.Context, ownerUID string) ([]*Session, error) {

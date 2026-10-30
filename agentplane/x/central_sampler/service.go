@@ -185,6 +185,20 @@ func (s *Sampler) Compact(ctx context.Context, r *samplerpb.CompactRequest) (*sa
 	return &samplerpb.CompactResponse{Admission: entry}, err
 }
 
+func (s *Sampler) RecoverSession(ctx context.Context, r *samplerpb.RecoverSessionRequest) (*samplerpb.GetSessionResponse, error) {
+	ctx, cancel, principal, err := s.admitted(ctx)
+	defer cancel()
+	if err != nil {
+		return nil, err
+	}
+	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetExpectedCursor(), r.GetOperatorNote())
+	if err != nil {
+		return nil, samplerError(ctx, err)
+	}
+	description, err := Describe(session)
+	return description, samplerError(ctx, err)
+}
+
 func (s *Sampler) GetSession(ctx context.Context, r *samplerpb.GetSessionRequest) (*samplerpb.GetSessionResponse, error) {
 	ctx, cancel, principal, err := s.admitted(ctx)
 	defer cancel()

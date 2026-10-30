@@ -26,11 +26,31 @@ Use the API to inspect the durable record:
    system using its retained evidence. Confirm whether its side effects occurred before deciding
    what work to perform next.
 
-Do not resubmit an uncertain operation or edit the database to clear `blocked` or `pending`. V1 has
-no automatic unblock or effect-replay API. Preserve the blocked Session and its evidence. If its
-continuation cannot be safely reconciled, open a new Session after deciding how to handle the
-external work; the new Session does not inherit the old provider conversation or live JavaScript
-state.
+Do not resubmit an uncertain operation or edit the database to clear `blocked` or `pending`. After
+reviewing the evidence, an authorized caller may explicitly abandon a blocked cell/runtime failure:
+
+```text
+GetSession(session_id) -> attached.last_cursor
+RecoverSession(session_id, expected_cursor=attached.last_cursor, operator_note=review_summary)
+```
+
+The caller must be authenticated as the same account that opened the Session. Recovery requires an
+expired owner lease and the current attached cursor, so a stale review cannot clear a newer failure.
+It supports unresolved cell, nested tool, and executor intents, and lost live cells or process
+handles. Pending provider sampling, compaction, and setup failures remain blocked and require a new
+Session.
+
+Recovery preserves every request and boundary record, writes an `abandoned` result with
+`remote_outcome: unknown` and `automatic_replay: false`, and completes unanswered model calls with
+an aborted output matching each call ID. It retains provider history and adds a model-visible note
+that remote effects may have occurred and prior `store()` / `load()` values and live-cell handles are
+unavailable to the continuation. It does not kill remote processes or report them exited; their
+retained status becomes `abandoned`. The owner generation and JavaScript session epoch advance
+together, fencing late writes and ensuring a new logical JavaScript session on any replica. The old
+shared host may retain inaccessible session memory until it exits; recovery removes the active
+executor binding and creates no binding for that old session. Recreate required state in a new cell.
+Reconcile external effects separately before deciding what work to perform next. Recovery never
+replays an uncertain provider or executor operation.
 
 A known provider or pre-dispatch rejection with `blocked` false is different: its command outcome is
 recorded as failed, and later input can continue without replaying the rejected operation.

@@ -3,6 +3,9 @@
 import asyncio
 import base64
 import json
+import os
+import signal
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -45,6 +48,16 @@ async def wait_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, tu
     finally:
         stream.cancel()
     raise AssertionError("event stream ended before turn completion")
+
+
+def wait_for_host_pid(directory: Path) -> int:
+    deadline = time.monotonic() + 15
+    pid_path = directory / "code-mode-host.pid"
+    while time.monotonic() < deadline:
+        if pid_path.exists():
+            return int(pid_path.read_text().strip())
+        time.sleep(0.05)
+    raise AssertionError("isolated code-mode host did not become ready")
 
 
 @dataclass
@@ -517,6 +530,95 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
     executor_session_id = proxy.sessions[0][1]["execution_session_id"]
     assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
     assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
+
+
+async def test_explicit_recovery_resets_javascript_session_after_host_loss(
+    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    host_logs = undeclared_outputs_dir() / "recovery-host-loss"
+    async with Endpoint() as endpoint:
+        # Isolate this service's host so the test can deliberately terminate it without
+        # affecting another test's shared fixture or host process.
+        config = settings(database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, host_logs)
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="recover-start", text="Start the operation."
+                ),
+                metadata=METADATA,
+            )
+            async with await endpoint.next() as exchange:
+                source = 'store("recovery-state", "old-state"); await new Promise(() => {});'
+                await exchange.send(
+                    *response_stream([CustomToolCall("faulted-cell", "exec", source)], model="test-model").events
+                )
+
+            host_pid = await asyncio.to_thread(wait_for_host_pid, host_logs)
+            async with asyncio.timeout(15):
+                while not await store.has_live_cell(request.session_id):
+                    await asyncio.to_thread(time.sleep, 0.05)
+            os.killpg(host_pid, signal.SIGKILL)
+
+            assert (await wait_turn(stub, request.session_id, "recover-start")).status == event_pb2.TURN_STATUS_FAILED
+            async with asyncio.timeout(15):
+                while True:
+                    blocked = await stub.GetSession(
+                        sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                    )
+                    if blocked.blocked and await store.idle_generation(request.session_id) is not None:
+                        break
+                    await asyncio.to_thread(time.sleep, 0.05)
+            assert blocked.blocked
+
+            recovery = sampler_pb2.RecoverSessionRequest(
+                session_id=request.session_id,
+                expected_cursor=blocked.attached.last_cursor,
+                operator_note="Inspected the live cell and boundary evidence; recreate in-memory state before continuing.",
+            )
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
+            assert rejected.value.code() == grpc.StatusCode.PERMISSION_DENIED
+
+            recovered = await stub.RecoverSession(recovery, metadata=METADATA)
+            assert not recovered.blocked
+            assert recovered.attached.last_cursor > blocked.attached.last_cursor
+            assert await store.idle_generation(request.session_id) is not None
+            abandoned = [
+                intent
+                for intent in await store.intents()
+                if intent.result is not None and intent.result.get("status") == "abandoned"
+            ]
+            assert {intent.request.get("kind") for intent in abandoned} == {"cell"}
+            assert all(
+                intent.result is not None and intent.result.get("automatic_replay") is False for intent in abandoned
+            )
+
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="continue-after-recovery", text="Continue safely."
+                ),
+                metadata=METADATA,
+            )
+            async with await endpoint.next() as exchange:
+                prompt = json.dumps(exchange.request.body["input"])
+                assert "faulted-cell" in prompt
+                assert "not replayed" in prompt.lower()
+                assert "store()/load()" in prompt
+                assert "inaccessible memory until it exits" in prompt
+                await exchange.send(
+                    *response_stream(
+                        [CustomToolCall("check-reset", "exec", 'text(String(load("recovery-state")));')],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                assert "undefined" in json.dumps(exchange.request.body["input"])
+                await exchange.send(*response_stream([Message("continued after recovery")], model="test-model").events)
+            assert (
+                await wait_turn(stub, request.session_id, "continue-after-recovery")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 if __name__ == "__main__":

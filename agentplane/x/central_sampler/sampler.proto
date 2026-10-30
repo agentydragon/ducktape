@@ -12,6 +12,7 @@ service Sampler {
   rpc ChangeModel(agentplane.runner.ChangeModelRequest) returns (agentplane.runner.ChangeModelResponse);
   rpc ChangeReasoningEffort(agentplane.runner.ChangeReasoningEffortRequest) returns (agentplane.runner.ChangeReasoningEffortResponse);
   rpc InterruptTurn(agentplane.runner.InterruptTurnRequest) returns (agentplane.runner.InterruptTurnResponse);
+  rpc RecoverSession(RecoverSessionRequest) returns (GetSessionResponse);
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc GetCommand(GetCommandRequest) returns (GetCommandResponse);
@@ -53,3 +54,13 @@ message CompactRequest { string session_id = 1; string command_id = 2; }
 message CompactResponse { agentplane.proto.EventEntry admission = 1; }
 
 enum CommandOutcome { COMMAND_OUTCOME_UNSPECIFIED = 0; COMMAND_OUTCOME_ACCEPTED = 1; COMMAND_OUTCOME_APPLIED = 2; COMMAND_OUTCOME_FAILED = 3; COMMAND_OUTCOME_UNKNOWN = 4; }
+
+// Explicitly abandon an uncertain cell without replaying external effects.
+message RecoverSessionRequest {
+  string session_id = 1;
+  uint64 expected_cursor = 2;
+  // Required acknowledgment after inspecting boundary evidence. Remote outcomes may remain
+  // unknown; recovery opens a new logical JavaScript session, so prior cell handles and
+  // store/load values are unavailable to the continuation.
+  string operator_note = 3;
+}

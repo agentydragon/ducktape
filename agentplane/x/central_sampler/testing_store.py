@@ -67,6 +67,18 @@ class Store:
             )
         return None if generation is None else int(generation)
 
+    async def has_live_cell(self, session_id: str) -> bool:
+        async with self.engine.connect() as connection:
+            found = await connection.scalar(
+                text(
+                    "SELECT EXISTS(SELECT 1 FROM sampler_cell c "
+                    "JOIN sampler_session s ON s.conversation_id=c.conversation_id "
+                    "WHERE s.id=:session_id AND c.status='live')"
+                ),
+                {"session_id": session_id},
+            )
+        return bool(found)
+
     async def intents(self) -> list[IntentSnapshot]:
         async with self.engine.connect() as connection:
             rows = (
@@ -103,6 +115,31 @@ class Store:
             buffered_output=row.buffered_output,
             conversation_owner=row.owner,
         )
+
+    async def processes_for_session(self, session_id: str) -> list[ProcessSnapshot]:
+        async with self.engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT p.id, p.conversation_id::text, p.status, p.buffered_output, c.owner::text "
+                        "FROM sampler_process p "
+                        "JOIN sampler_conversation c ON c.id=p.conversation_id "
+                        "JOIN sampler_session s ON s.conversation_id=c.id "
+                        "WHERE s.id=:session_id ORDER BY p.id"
+                    ),
+                    {"session_id": session_id},
+                )
+            ).all()
+        return [
+            ProcessSnapshot(
+                id=row.id,
+                conversation_id=row.conversation_id,
+                status=row.status,
+                buffered_output=row.buffered_output,
+                conversation_owner=row.owner,
+            )
+            for row in rows
+        ]
 
     async def queued_notifications(self, session_id: str) -> list[str]:
         async with self.engine.connect() as connection:
