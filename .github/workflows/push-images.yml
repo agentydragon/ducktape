@@ -97,15 +97,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-ci-secrets
-        if: env.PUBLISH == 'true'
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - uses: imjasonh/setup-crane@v0.7
         if: env.PUBLISH == 'true'
 
       - name: Authenticate to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
         if: env.PUBLISH == 'true'
         shell: bash
         run: |
@@ -156,10 +154,6 @@ jobs:
         with:
           installables: ".#bb"
 
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - name: Test (gate for push)
         id: test
         if: matrix.test_target != '' && matrix.reuse_test_verdict != 'true'
@@ -183,6 +177,9 @@ jobs:
       - uses: imjasonh/setup-crane@v0.7
 
       - name: Authenticate to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
         if: matrix.registry == 'forgejo'
         shell: bash
         run: |
@@ -244,6 +241,9 @@ jobs:
     # kept rather than deleted because whether props comes back is an open question, and
     # the push scheme here (critic variants, digest+tag) is not obvious to reconstruct.
     #
+    # Before re-enabling, provision PROPS_REGISTRY_USERNAME and PROPS_REGISTRY_PASSWORD
+    # as GitHub Actions secrets from the cluster-owned Props credential. The Props
+    # namespace is currently absent; provisioning is parked with the service.
     # Re-enable by deleting `false &&`. Delete the job outright if props is not coming back.
     #
     # This does NOT quiet props in CI generally: bazel-ci runs `//...` on devel, so
@@ -263,10 +263,6 @@ jobs:
         with:
           installables: ".#bb"
 
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - name: Test (gate for push)
         uses: ./.github/actions/bb-remote
         with:
@@ -280,5 +276,5 @@ jobs:
           rbe_container_image: ${{ inputs.rbe_container_image }}
           env_overrides: |
             PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
-            PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}
-            PROPS_REGISTRY_PASSWORD=${{ env.PROPS_REGISTRY_PASSWORD }}
+            PROPS_REGISTRY_USERNAME=${{ secrets.PROPS_REGISTRY_USERNAME }}
+            PROPS_REGISTRY_PASSWORD=${{ secrets.PROPS_REGISTRY_PASSWORD }}

@@ -32,6 +32,10 @@ on:
         type: boolean
         default: false
     secrets:
+      FORGEJO_IMAGES_USERNAME:
+        required: false
+      FORGEJO_IMAGES_PASSWORD:
+        required: false
       SOPS_AGE_KEY:
         required: true
 
@@ -60,6 +64,8 @@ jobs:
       - name: Push image
         if: github.ref_name == 'devel'
         env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
           REGISTRY: ${{ inputs.registry }}
           GHCR_TOKEN: ${{ github.token }}
         run: |

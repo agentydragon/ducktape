@@ -33,4 +33,6 @@ jobs:
       image_name: cpap-gateway
       image: git.allegedly.works/ducktape-ci/cpap-gateway
     secrets:
+      FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+      FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

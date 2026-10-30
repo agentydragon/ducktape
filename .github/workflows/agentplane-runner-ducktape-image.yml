@@ -72,4 +72,6 @@ jobs:
       # runner image of their own: this image's first turn is on staging.
       smoke: bash agentplane/runner/ducktape_image_smoke.sh
     secrets:
+      FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+      FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

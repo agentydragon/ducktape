@@ -37,6 +37,10 @@ on:
         type: string
         default: ""
     secrets:
+      FORGEJO_IMAGES_USERNAME:
+        required: true
+      FORGEJO_IMAGES_PASSWORD:
+        required: true
       SOPS_AGE_KEY:
         required: true
 
@@ -84,6 +88,8 @@ jobs:
       - name: Push to Forgejo registry
         if: github.event_name != 'pull_request_target' && github.ref_name == 'devel'
         env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
           PIN_TAG: ${{ steps.meta.outputs.pin_tag }}
         run: |
           set -euo pipefail

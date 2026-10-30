@@ -67,12 +67,10 @@ jobs:
           # print it so the manifest is set from the build, not from memory.
           docker run --rm --entrypoint sh "$REF" -c 'id proxy; echo "configured user: $(id -u proxy):$(id -g proxy)"'
 
-      - uses: ./.github/actions/setup-ci-secrets
-        if: github.event_name == 'push'
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - name: Log in to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
         if: github.event_name == 'push'
         run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
 

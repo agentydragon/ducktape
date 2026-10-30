@@ -26,10 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - uses: docker/setup-buildx-action@v4
 
       - name: Compute tag
@@ -38,6 +34,9 @@ jobs:
         run: echo "pin_tag=devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Login to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
         shell: bash
         run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
 
