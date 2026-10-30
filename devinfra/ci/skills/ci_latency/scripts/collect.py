@@ -275,7 +275,7 @@ def main() -> None:
         action="append",
         type=int,
         default=[],
-        help="limit job and open-PR check details to runs for this workflow; may repeat",
+        help="limit job details to these workflow IDs; open-PR checks remain repo-wide; may repeat",
     )
     args = parser.parse_args()
     try:
