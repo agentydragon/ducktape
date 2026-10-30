@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -326,5 +327,165 @@ func TestExecutorReadRecoveryDoesNotReplaceMissingSession(t *testing.T) {
 				t.Fatalf("retained session changed: %+v", conversation.ExecutorSession)
 			}
 		})
+	}
+}
+
+func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "existing-process", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "existing-process", nil, "running", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	var requests []executorRequest[json.RawMessage]
+	var reply []byte
+	broken := &recoverySocket{send: func(b []byte) error {
+		var request executorRequest[json.RawMessage]
+		if err := json.Unmarshal(b, &request); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, request)
+		return io.EOF
+	}}
+	replacement := &recoverySocket{send: func(b []byte) error {
+		var request executorRequest[json.RawMessage]
+		if err := json.Unmarshal(b, &request); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, request)
+		switch request.Method {
+		case "initialize":
+			var params executorInitialize
+			if err := json.Unmarshal(request.Params, &params); err != nil {
+				t.Fatal(err)
+			}
+			if params.ResumeSessionID == nil || *params.ResumeSessionID != "retained-executor" {
+				t.Fatalf("resume=%+v", params)
+			}
+			reply, _ = json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"sessionId": "retained-executor"}})
+		case "initialized":
+		case "process/read":
+			reply, _ = json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{
+				"chunks": []any{}, "nextSeq": 0, "exited": false, "exitCode": nil, "closed": false, "failure": nil,
+			}})
+		default:
+			t.Fatalf("unexpected method %s", request.Method)
+		}
+		return nil
+	}, receive: func() ([]byte, error) { return reply, nil }}
+	opened, closed := 0, 0
+	e := &Executor{
+		store: store, owner: owner, socket: broken, lifetime: t.Context(), closeSocket: func() error { closed++; return nil },
+		openSocket: func(context.Context, context.Context) (executorSocket, func() error, error) {
+			opened++
+			return replacement, func() error { closed++; return nil }, nil
+		},
+	}
+	_, err = e.rpc(t.Context(), "process/start", executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}}, nil)
+	var transport *executorTransportError
+	if !errors.As(err, &transport) {
+		t.Fatalf("start error=%v, want explicit unknown transport outcome", err)
+	}
+	if transport.intentID == "" || transport.processID != "lost-start" || !strings.Contains(transport.Error(), "remote effect outcome is unknown") {
+		t.Fatalf("transport evidence=%+v error=%v", transport, transport)
+	}
+	_, err = e.rpc(t.Context(), "process/read", executorRead{ProcessID: "existing-process", MaxBytes: 65536}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != 1 || closed != 1 {
+		t.Fatalf("opened=%d closed=%d", opened, closed)
+	}
+	if len(requests) != 4 || requests[0].Method != "process/start" || requests[1].Method != "initialize" ||
+		requests[2].Method != "initialized" || requests[3].Method != "process/read" {
+		t.Fatalf("requests=%+v", requests)
+	}
+	starts := 0
+	for _, request := range requests {
+		if request.Method == "process/start" {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("lost process/start was replayed: %+v", requests)
+	}
+	var unresolved int
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&unresolved); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved != 0 {
+		t.Fatalf("unresolved=%d", unresolved)
+	}
+}
+
+func TestReconcileAbandonsProcessAfterTransportLoss(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, processID := range []string{"live-process-1", "live-process-2"} {
+		if err := store.RegisterProcess(t.Context(), owner, processID, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ProcessResult(t.Context(), owner, processID, nil, "running", nil, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RetainProcessOutput(t.Context(), owner, processID, 4, []byte("already observed"), false, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := &Executor{
+		store: store, owner: owner,
+		socket:       &recoverySocket{send: func([]byte) error { return io.EOF }},
+		lifetime:     t.Context(),
+		processLocks: map[string]*sync.Mutex{},
+	}
+	for range 2 {
+		progressed, err := e.ReconcileProcesses(t.Context(), time.Second)
+		if err != nil || !progressed {
+			t.Fatalf("progressed=%t error=%v", progressed, err)
+		}
+	}
+	for _, processID := range []string{"live-process-1", "live-process-2"} {
+		process, err := store.Process(t.Context(), owner, processID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if process.Status != "abandoned" || process.AfterSequence == nil || *process.AfterSequence != 4 ||
+			string(process.BufferedOutput) != "already observed" {
+			t.Fatalf("abandoned process lost evidence: %+v", process)
+		}
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Processes) != 0 {
+		t.Fatalf("abandoned process remains scheduled: %+v", state.Processes)
+	}
+	var result []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read'`, owner.ConversationID).Scan(&result); err != nil {
+		t.Fatal(err)
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(result, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false {
+		t.Fatalf("transport result evidence=%+v", evidence)
 	}
 }

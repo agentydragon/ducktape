@@ -191,6 +191,39 @@ func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
 	}
 }
 
+func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "1234-unknown", 1234, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "1234-unknown", 9, []byte("observed output"), true, ptrInt(17)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProcess(t.Context(), owner, "1234-unknown", nil, nil, "unknown", "retained-executor"); err != nil {
+		t.Fatal(err)
+	}
+	process, err := store.ProcessByModelSession(t.Context(), owner, 1234)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != "abandoned" || process.AfterSequence == nil || *process.AfterSequence != 9 ||
+		process.ExitCode == nil || *process.ExitCode != 17 || string(process.BufferedOutput) != "observed output" {
+		t.Fatalf("abandoned evidence: %+v", process)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Processes) != 0 {
+		t.Fatalf("abandoned process remains in scheduler: %+v", state.Processes)
+	}
+}
+
 func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")

@@ -61,9 +61,11 @@ a new host, but failed in-flight provider or executor work is never replayed.
 Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
 exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
 remain process memory and cannot be restored after host exit. Completed-cell outcomes and provider
-continuation are checkpointed in PostgreSQL. Lost live cells or uncertain effects block automatic
-continuation. Model-facing `exec` and `wait`, yielded process handles, stdin and external interrupts
-use the pinned upstream protocol. Process handles inherit
+continuation are checkpointed in PostgreSQL. Lost live cells and unresolved effects block automatic
+continuation; executor operations whose transport outcome is unknown are settled as abandoned and
+remain inspectable without blocking the JavaScript cell, model step, or Session. Model-facing `exec`
+and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream protocol.
+Process handles inherit
 upstream's detached retention limits.
 
 `notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
@@ -164,9 +166,22 @@ the command and turn fail without blocking the Session; subsequent input may con
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 The original driver error is retained in command and turn failure reasons and, for blocked sessions,
 in `GetSession.blocked_reason`.
-Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
-executor failures remain conservative because the surrounding JavaScript may already have caused
-effects. Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
+Unresolved transport loss, streams without a terminal response and uncertain execution remain
+blocking failures. A transport failure in a nested executor call is instead returned as a rejected
+JavaScript tool promise with the exec-server method, intent ID and process ID where available. Its
+intent result records `remote_outcome: unknown` and `automatic_replay: false`; its process row is
+marked `abandoned`, retaining observed output and exit-code evidence without claiming the remote
+process exited. Abandoned handles are excluded from scheduling and global blocking but remain
+inspectable; `write_stdin` rejects them before sending input. JavaScript may catch the rejection and
+continue, or an uncaught rejection produces the normal `Script failed` result for the model to handle.
+Before a later executor operation, the broker reconnects under the original Sandbox incarnation
+fence and resumes the same retained exec-server session. If resume fails, that initialize intent is
+also settled as unknown and the requested operation is rejected as not dispatched. Only cursor-based
+`process/read` may be retried within the original call, because it does not consume remote output.
+If idle process reconciliation encounters a transport failure while reading a handle, it also marks
+that process abandoned with its last observed cursor and buffered output, then lets the scheduler
+continue.
+Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
 or non-image files reject the cell's tool promise with upstream's message and resolve the intent.
 Its reads and result journal digests, not image bytes. Images a cell emits are prepared like upstream
 tool output (bounded to high- or original-detail size, labelled with their real MIME type) before
@@ -180,15 +195,18 @@ process until `process/read` reports closed streams and an empty output page, pr
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
 releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
-including after the old executor session expires. Unknown outcomes block continuation without
-advancing the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
+including after the old executor session expires. Unresolved outcomes block continuation without
+advancing the retained read cursor. An abandoned process keeps its last observed cursor and buffered
+output for inspection, but retains no runtime slot. Truly running processes and live JS cells retain a
+runtime slot.
 
-A transport failure during cursor-based `process/read` permits one reconnect and retry
-within the call's deadline. The sampler resumes the retained exec-server session under the same
-Sandbox incarnation fence and reuses the read intent, process ID and cursor. The read does not
-consume remote output; only its durable result advances the sampler's cursor. An expired session,
-changed session ID, failed reconnect or second transport failure remains blocking. Process starts,
-stdin writes, signals and other effectful operations are never automatically retried.
+A transport failure during cursor-based `process/read` permits one reconnect and retry within the
+call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
+incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
+output; only its durable result advances the sampler's cursor. An expired session, changed session
+ID, failed reconnect or second transport failure settles the affected intent and process as unknown;
+the tool promise rejects, and a future operation may attempt the same-session reconnect again.
+Process starts, stdin writes, signals and other effectful operations are never automatically retried.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor

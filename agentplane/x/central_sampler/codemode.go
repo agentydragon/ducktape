@@ -213,7 +213,12 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 	var rejected *toolError
 	if errors.As(err, &rejected) {
 		// Upstream rejects the nested call's promise with the tool's model-facing message.
-		if err := r.store.FinishNested(ctx, r.owner, intent, map[string]any{"error": rejected.message}); err != nil {
+		resultEvidence := map[string]any{"error": rejected.message}
+		var outcome *toolOutcomeError
+		if errors.As(err, &outcome) {
+			resultEvidence = outcome.evidence
+		}
+		if err := r.store.FinishNested(ctx, r.owner, intent, resultEvidence); err != nil {
 			if ctx.Err() == nil {
 				r.fail(err)
 			}

@@ -4,6 +4,17 @@ A blocked Session has an effect or live runtime handle whose outcome is uncertai
 not continue it automatically because replaying an accepted provider request or executor operation
 could duplicate external work.
 
+A nested executor transport failure is surfaced to JavaScript as a rejected tool promise and may leave
+the Session unblocked. Its intent and process evidence say `remote_outcome: unknown`; the process is
+marked abandoned, with observed output and exit-code evidence retained. This does not mean the remote
+command failed or exited. The cell may catch the error, and the model may continue after an uncaught
+error. Future executor calls first resume the same retained session under the original Sandbox
+incarnation fence. An abandoned `write_stdin` handle rejects before sending input. Reconcile any
+possibly completed external effect before asking the model to repeat it.
+
+If idle process reconciliation loses the transport while reading a process, it marks the process
+abandoned with its last observed cursor and buffered output, then returns control to the scheduler.
+
 Use the API to inspect the durable record:
 
 1. Call `GetSession` and read `blocked_reason` for the unresolved intent or handle.

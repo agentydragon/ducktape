@@ -163,16 +163,19 @@ type Executor struct {
 	codexPath   string
 	environment map[string]string
 	// shell is the executor-reported default shell; nil when the exec-server reports none.
-	shell        *execShell
-	rpcMu        sync.Mutex
-	dispatchMu   sync.Mutex
-	stopping     bool
-	processMu    sync.Mutex
-	processLocks map[string]*sync.Mutex
-	rpcTimeout   time.Duration
-	lifetime     context.Context
-	openSocket   func(context.Context, context.Context) (executorSocket, func() error, error)
-	closeSocket  func() error
+	shell      *execShell
+	rpcMu      sync.Mutex
+	dispatchMu sync.Mutex
+	stopping   bool
+	// reconnectRequired fences all future operations until this exact exec-server
+	// session has been resumed on a new transport.
+	reconnectRequired bool
+	processMu         sync.Mutex
+	processLocks      map[string]*sync.Mutex
+	rpcTimeout        time.Duration
+	lifetime          context.Context
+	openSocket        func(context.Context, context.Context) (executorSocket, func() error, error)
+	closeSocket       func() error
 }
 
 func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
@@ -302,7 +305,7 @@ func (e *Executor) initialize(ctx context.Context) error {
 	}
 	needsRemote := len(state.Cells) > 0
 	for _, process := range state.Processes {
-		if process.Status != "exited_unread" {
+		if process.Status != "exited_unread" && process.Status != "abandoned" {
 			needsRemote = true
 		}
 	}
@@ -346,6 +349,11 @@ func (e *Executor) send(ctx context.Context, value any) error {
 func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	e.rpcMu.Lock()
 	defer e.rpcMu.Unlock()
+	if e.reconnectRequired {
+		if err := e.reconnectLocked(ctx); err != nil {
+			return nil, &executorNotDispatchedError{method: method, processID: executorProcessID(params), retainedSession: e.retainedSessionID(ctx), cause: err}
+		}
+	}
 	return e.rpcLocked(ctx, method, params, resultEvidence)
 }
 
@@ -368,20 +376,37 @@ func (e *Executor) rpcLocked(ctx context.Context, method string, params any, res
 	if err != nil {
 		return nil, err
 	}
+	processID := executorProcessID(params)
 	reply, err := e.exchange(ctx, id, method, params)
 	var transport *executorTransportError
 	if method == "process/read" && errors.As(err, &transport) && ctx.Err() == nil && e.openSocket != nil {
-		if evidenceErr := e.store.ProtocolEvent(ctx, e.owner, intent, "executor", "reconnecting", map[string]any{"method": method, "reason": err.Error()}); evidenceErr != nil {
-			return nil, evidenceErr
+		if evidenceErr := e.store.ProtocolEvent(ctx, e.owner, intent, "executor", "reconnecting", map[string]any{"method": method, "process_id": processID, "reason": err.Error()}); evidenceErr != nil {
+			transport.intentID, transport.processID = intent, processID
+			if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.retainedSessionID(ctx))); finishErr != nil {
+				return nil, errors.Join(evidenceErr, fmt.Errorf("record unknown exec-server %s outcome: %w", method, finishErr))
+			}
+			return nil, transport
 		}
-		if reconnectErr := e.reconnect(ctx); reconnectErr != nil {
-			return nil, fmt.Errorf("%w; resume executor session: %w", err, reconnectErr)
+		if reconnectErr := e.reconnectLocked(ctx); reconnectErr != nil {
+			transport.cause = errors.Join(transport.cause, fmt.Errorf("resume executor session: %w", reconnectErr))
+			transport.intentID, transport.processID = intent, processID
+			if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.retainedSessionID(ctx))); finishErr != nil {
+				return nil, fmt.Errorf("record unknown exec-server %s outcome: %w", method, finishErr)
+			}
+			return nil, transport
 		}
 		// process/read is cursor based and does not consume output. Reuse the
 		// intent, process ID and cursor; never start the shell command again.
 		reply, err = e.exchange(ctx, id, method, params)
 	}
 	if err != nil {
+		if errors.As(err, &transport) {
+			transport.intentID, transport.processID = intent, processID
+			e.reconnectRequired = true
+			if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.retainedSessionID(ctx))); finishErr != nil {
+				return nil, fmt.Errorf("record unknown exec-server %s outcome: %w", method, finishErr)
+			}
+		}
 		return nil, err
 	}
 	if reply.Error != nil {
@@ -405,16 +430,115 @@ func (e *Executor) rpcLocked(ctx context.Context, method string, params any, res
 }
 
 type executorTransportError struct {
-	method string
-	phase  string
-	cause  error
+	method          string
+	phase           string
+	intentID        string
+	processID       string
+	retainedSession string
+	afterSequence   *uint64
+	output          *headTailBuffer
+	cause           error
 }
 
 func (e *executorTransportError) Error() string {
-	return fmt.Sprintf("exec-server %s %s failed; remote effect outcome may be unknown: %v", e.method, e.phase, e.cause)
+	return fmt.Sprintf("exec-server %s %s transport failed (intent %s%s): remote effect outcome is unknown; mutation was not replayed: %v",
+		e.method, e.phase, e.intentID, processDescription(e.processID), e.cause)
 }
 
 func (e *executorTransportError) Unwrap() error { return e.cause }
+
+func (e *executorTransportError) evidence(retainedSession string) map[string]any {
+	e.retainedSession = retainedSession
+	result := map[string]any{
+		"status": "abandoned", "remote_outcome": "unknown", "automatic_replay": false,
+		"method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error(),
+	}
+	if e.processID != "" {
+		result["process_id"] = e.processID
+	}
+	if retainedSession != "" {
+		result["executor_session_id"] = retainedSession
+	}
+	if e.afterSequence != nil {
+		result["after_seq"] = *e.afterSequence
+	}
+	if e.output != nil {
+		result["buffered_output"] = lossyUTF8(e.output.retained())
+		result["omitted_bytes"] = e.output.omitted
+	}
+	return result
+}
+
+type executorNotDispatchedError struct {
+	method          string
+	processID       string
+	retainedSession string
+	cause           error
+}
+
+func (e *executorNotDispatchedError) Error() string {
+	return fmt.Sprintf("exec-server %s was not dispatched%s because the retained session could not be resumed: %v; previous remote outcomes remain unknown and no mutation was replayed",
+		e.method, processDescription(e.processID), e.cause)
+}
+
+func (e *executorNotDispatchedError) Unwrap() error { return e.cause }
+
+func (e *executorNotDispatchedError) evidence() map[string]any {
+	result := map[string]any{"status": "abandoned", "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
+	if e.processID != "" {
+		result["process_id"] = e.processID
+	}
+	if e.retainedSession != "" {
+		result["executor_session_id"] = e.retainedSession
+	}
+	return result
+}
+
+func processDescription(id string) string {
+	if id == "" {
+		return ""
+	}
+	return " for process " + id
+}
+
+func executorProcessID(params any) string {
+	switch value := params.(type) {
+	case executorStart:
+		return value.ProcessID
+	case executorRead:
+		return value.ProcessID
+	case executorWrite:
+		return value.ProcessID
+	case executorSignal:
+		return value.ProcessID
+	case executorTerminate:
+		return value.ProcessID
+	default:
+		return ""
+	}
+}
+
+func (e *Executor) retainedSessionID(ctx context.Context) string {
+	if ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	conversation, err := e.store.Read(ctx, e.owner)
+	if err != nil || conversation.ExecutorSession == nil {
+		return ""
+	}
+	return *conversation.ExecutorSession
+}
+
+func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence map[string]any) error {
+	if ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	return e.store.FinishNested(ctx, e.owner, intent, evidence)
+}
 
 func (e *Executor) exchange(ctx context.Context, id, method string, params any) (*executorReply, error) {
 	if err := e.send(ctx, executorRequest[any]{ID: id, Method: method, Params: params}); err != nil {
@@ -444,9 +568,14 @@ func (e *Executor) exchange(ctx context.Context, id, method string, params any) 
 	}
 }
 
-// reconnect resumes exactly the retained executor session, under the original
+// reconnectLocked resumes exactly the retained executor session, under the original
 // Sandbox incarnation fence. An expired session is a failure, never a new session.
-func (e *Executor) reconnect(ctx context.Context) error {
+// The caller holds rpcMu, so initialize is sent through rpcLocked without recursion.
+func (e *Executor) reconnectLocked(ctx context.Context) error {
+	e.reconnectRequired = true
+	if e.openSocket == nil {
+		return errors.New("executor transport cannot be reopened")
+	}
 	conversation, err := e.store.Read(ctx, e.owner)
 	if err != nil {
 		return err
@@ -454,7 +583,9 @@ func (e *Executor) reconnect(ctx context.Context) error {
 	if conversation.ExecutorSession == nil {
 		return errors.New("cannot resume executor without a retained session ID")
 	}
-	_ = e.closeSocket()
+	if e.closeSocket != nil {
+		_ = e.closeSocket()
+	}
 	socket, closeSocket, err := e.openSocket(e.lifetime, ctx)
 	if err != nil {
 		return err
@@ -471,7 +602,11 @@ func (e *Executor) reconnect(ctx context.Context) error {
 	if initialized.SessionID != *conversation.ExecutorSession {
 		return errors.New("exec-server resumed a different session")
 	}
-	return e.send(ctx, executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}})
+	if err := e.send(ctx, executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}}); err != nil {
+		return err
+	}
+	e.reconnectRequired = false
+	return nil
 }
 
 func (e *Executor) close() error {
@@ -483,18 +618,59 @@ func (e *Executor) close() error {
 // Invoke runs one nested tool call from JavaScript. A *toolError is reported to the cell as a
 // rejected call; any other error leaves the remote outcome uncertain.
 func (e *Executor) Invoke(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
+	var result any
+	var err error
 	switch name {
 	case "exec_command":
-		return e.execCommand(ctx, arguments)
+		result, err = e.execCommand(ctx, arguments)
 	case "write_stdin":
-		return e.writeStdin(ctx, arguments)
+		result, err = e.writeStdin(ctx, arguments)
 	case "apply_patch":
-		return e.applyPatch(ctx, arguments)
+		result, err = e.applyPatch(ctx, arguments)
 	case "view_image":
-		return e.viewImage(ctx, arguments)
+		result, err = e.viewImage(ctx, arguments)
 	default:
 		return nil, fmt.Errorf("unsupported nested tool %q", name)
 	}
+	if err != nil {
+		return nil, e.outcomeToolError(ctx, err)
+	}
+	return result, nil
+}
+
+func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	var transport *executorTransportError
+	if errors.As(err, &transport) {
+		if transport.processID != "" {
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, "unknown", transport.retainedSession); abandonErr != nil {
+				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
+			}
+		}
+		return &toolOutcomeError{toolError: &toolError{transport.Error()}, evidence: transport.evidence(transport.retainedSession)}
+	}
+	var notDispatched *executorNotDispatchedError
+	if errors.As(err, &notDispatched) {
+		outcome := "unknown"
+		if notDispatched.processID != "" {
+			process, processErr := e.store.Process(ctx, e.owner, notDispatched.processID)
+			if processErr != nil {
+				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
+			}
+			if process.Status == "starting" {
+				outcome = "not_dispatched"
+			}
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, process.AfterSequence, nil, outcome, notDispatched.retainedSession); abandonErr != nil {
+				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.processID, abandonErr)
+			}
+		}
+		return &toolOutcomeError{toolError: &toolError{notDispatched.Error()}, evidence: notDispatched.evidence()}
+	}
+	return err
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and
@@ -680,6 +856,9 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 		return nil, err
 	}
 	if process.Status != "running" && process.Status != "exited_unread" {
+		if process.Status == "abandoned" {
+			return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}
+		}
 		return nil, fmt.Errorf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)
 	}
 	if plan.chars != "" {
@@ -759,6 +938,10 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS})
 		cancel()
 		if rpcErr != nil {
+			var transport *executorTransportError
+			if errors.As(rpcErr, &transport) {
+				transport.afterSequence, transport.output = after, output
+			}
 			return nil, rpcErr
 		}
 		for _, chunk := range result.Chunks {
@@ -808,6 +991,10 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, err
 		}
+		if row.Status == "abandoned" || row.Status == "exited" || row.Status == "exited_unread" {
+			lock.Unlock()
+			continue
+		}
 		if row.Status != "running" {
 			lock.Unlock()
 			return progressed, fmt.Errorf("cannot reconcile remote process in state %s", row.Status)
@@ -816,6 +1003,21 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536})
 		cancel()
 		if rpcErr != nil {
+			var transport *executorTransportError
+			var notDispatched *executorNotDispatchedError
+			if errors.As(rpcErr, &transport) || errors.As(rpcErr, &notDispatched) {
+				if transport != nil {
+					transport.afterSequence = row.AfterSequence
+				}
+				handled := e.outcomeToolError(ctx, rpcErr)
+				var toolOutcome *toolOutcomeError
+				if !errors.As(handled, &toolOutcome) {
+					lock.Unlock()
+					return progressed, handled
+				}
+				lock.Unlock()
+				return true, nil
+			}
 			lock.Unlock()
 			return progressed, rpcErr
 		}

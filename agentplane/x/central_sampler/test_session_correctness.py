@@ -119,16 +119,23 @@ async def faulting_executor_proxy(executor_url: str, *, drop_method: str, marker
                         if original is not None and original.get("method") == "initialize":
                             observed.initializations.append((original, payload))
 
-                        if payload.get("method") == "process/output":
+                        if payload.get("method") in {"process/output", "process/exited"}:
                             params = payload.get("params", {})
                             target_process_ids = {
                                 start.get("params", {}).get("processId")
                                 for start in observed.requests
                                 if is_target_start(start)
                             }
-                            if params.get("processId") in target_process_ids and marker.encode() in base64.b64decode(
-                                params["chunk"]
-                            ):
+                            output_observed = (
+                                payload.get("method") == "process/output"
+                                and params.get("processId") in target_process_ids
+                                and marker.encode() in base64.b64decode(params["chunk"])
+                            )
+                            effect_completed = (
+                                payload.get("method") == "process/exited"
+                                and params.get("processId") in target_process_ids
+                            )
+                            if output_observed or effect_completed:
                                 effect_observed = True
                                 observed.effect_observed.set()
                                 if drop_method == "process/start" and pending_start_reply is not None:
@@ -350,7 +357,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
     assert all(intent.result is not None for intent in await store.intents())
 
 
-async def test_lost_process_start_ack_is_not_replayed_and_blocks_session(
+async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
     store: Store, database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     output = "START_EFFECT_OBSERVED"
@@ -371,24 +378,35 @@ async def test_lost_process_start_ack_is_not_replayed_and_blocks_session(
                 metadata=METADATA,
             )
             async with await endpoint.next() as exchange:
-                source = 'text(await tools.exec_command({cmd: "printf x >> fault-marker && printf ' + output + '"}));'
+                source = (
+                    'store("sentinel", "before"); '
+                    'try { await tools.exec_command({cmd: "printf x >> fault-marker && printf ' + output + '"}); } '
+                    'catch (error) { store("lost-start-error", String(error)); } '
+                    'await tools.exec_command({cmd: "printf y >> continued-marker"}); '
+                    'text(load("sentinel")); text(load("lost-start-error"));'
+                )
                 await exchange.send(
                     *response_stream([CustomToolCall("start-ack-lost", "exec", source)], model="test-model").events
                 )
-            assert (await wait_turn(stub, request.session_id, "start-ack-lost")).status == event_pb2.TURN_STATUS_FAILED
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                assert "before" in json.dumps(outputs)
+                assert "remote effect outcome is unknown" in json.dumps(outputs)
+                assert "process" in json.dumps(outputs)
+                await exchange.send(
+                    *response_stream([Message("caught tool error and continued")], model="test-model").events
+                )
+            assert (
+                await wait_turn(stub, request.session_id, "start-ack-lost")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
-            assert session.blocked
-            command = await stub.GetCommand(
-                sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="start-ack-lost"),
-                metadata=METADATA,
-            )
-            assert command.outcome == sampler_pb2.COMMAND_OUTCOME_UNKNOWN
+            assert not session.blocked
 
     assert proxy.dropped.is_set()
     assert proxy.effect_observed.is_set()
-    assert len(proxy.initializations) == 1
+    assert len(proxy.initializations) == 2
     assert (tmp_path / "fault-marker").read_text() == "x"
     starts = [
         call
@@ -397,6 +415,7 @@ async def test_lost_process_start_ack_is_not_replayed_and_blocks_session(
     ]
     assert len(starts) == 1
     process_id = starts[0]["params"]["processId"]
+    assert (tmp_path / "continued-marker").read_text() == "y"
     assert not any(
         call.get("method") == "process/read" and call.get("params", {}).get("processId") == process_id
         for call in proxy.requests
@@ -408,7 +427,108 @@ async def test_lost_process_start_ack_is_not_replayed_and_blocks_session(
         and "fault-marker" in json.dumps(intent.request.get("params", {}).get("argv"))
     ]
     assert len(start_intents) == 1
-    assert start_intents[0].result is None
+    assert start_intents[0].result is not None
+    assert start_intents[0].result["remote_outcome"] == "unknown"
+    assert start_intents[0].result["automatic_replay"] is False
+    process = await store.process(int(process_id.split("-", maxsplit=1)[0]))
+    assert process is not None
+    assert process.status == "abandoned"
+    assert all(intent.result is not None for intent in await store.intents())
+    assert len(proxy.initializations) == 2
+    executor_session_id = proxy.initializations[0][1]["result"]["sessionId"]
+    assert proxy.initializations[1][0]["params"]["resumeSessionId"] == executor_session_id
+    assert proxy.initializations[1][1]["result"]["sessionId"] == executor_session_id
+
+
+async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
+    store: Store, database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    marker = "APPLY_PATCH_EFFECT_OBSERVED"
+    patch = "*** Begin Patch\n*** Add File: applied.txt\n+" + marker + "\n*** End Patch"
+    async with (
+        Endpoint() as endpoint,
+        faulting_executor_proxy(executor_url, drop_method="process/start", marker=marker) as proxy,
+    ):
+        config = settings(
+            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="uncaught-patch", text="Apply one patch."
+                ),
+                metadata=METADATA,
+            )
+            async with await endpoint.next() as exchange:
+                source = 'store("uncaught-sentinel", "persisted"); await tools.apply_patch(' + json.dumps(patch) + ");"
+                await exchange.send(
+                    *response_stream([CustomToolCall("uncaught-patch", "exec", source)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                failed = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                assert "Script failed" in json.dumps(failed)
+                assert "remote effect outcome is unknown" in json.dumps(failed)
+                await exchange.send(
+                    *response_stream(
+                        [
+                            CustomToolCall(
+                                "after-uncaught",
+                                "exec",
+                                'text(load("uncaught-sentinel")); await tools.exec_command({cmd: "printf continued >> continued-marker"});',
+                            )
+                        ],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                assert "persisted" in json.dumps(outputs)
+                await exchange.send(
+                    *response_stream([Message("continued after uncaught error")], model="test-model").events
+                )
+            assert (
+                await wait_turn(stub, request.session_id, "uncaught-patch")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            session = await stub.GetSession(
+                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            )
+            assert not session.blocked
+
+    assert proxy.dropped.is_set()
+    assert proxy.effect_observed.is_set()
+    assert (tmp_path / "applied.txt").read_text() == marker + "\n"
+    assert (tmp_path / "continued-marker").read_text() == "continued"
+    starts = [
+        call
+        for call in proxy.requests
+        if call.get("method") == "process/start" and marker in json.dumps(call.get("params", {}).get("argv"))
+    ]
+    assert len(starts) == 1
+    process_id = starts[0]["params"]["processId"]
+    assert not any(
+        call.get("method") == "process/read" and call.get("params", {}).get("processId") == process_id
+        for call in proxy.requests
+    )
+    patch_intents = [
+        intent
+        for intent in await store.intents()
+        if intent.request.get("method") == "process/start"
+        and marker in json.dumps(intent.request.get("params", {}).get("argv"))
+    ]
+    assert len(patch_intents) == 1
+    assert patch_intents[0].result is not None
+    assert patch_intents[0].result["remote_outcome"] == "unknown"
+    assert patch_intents[0].result["automatic_replay"] is False
+    process = await store.process(int(process_id.split("-", maxsplit=1)[0]))
+    assert process is not None
+    assert process.status == "abandoned"
+    assert all(intent.result is not None for intent in await store.intents())
+    assert len(proxy.initializations) == 2
+    executor_session_id = proxy.initializations[0][1]["result"]["sessionId"]
+    assert proxy.initializations[1][0]["params"]["resumeSessionId"] == executor_session_id
+    assert proxy.initializations[1][1]["result"]["sessionId"] == executor_session_id
 
 
 if __name__ == "__main__":

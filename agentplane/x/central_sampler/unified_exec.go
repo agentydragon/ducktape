@@ -32,11 +32,19 @@ var unifiedExecEnvironment = map[string]string{
 	"COLORTERM": "", "PAGER": "cat", "GIT_PAGER": "cat", "GH_PAGER": "cat", "CODEX_CI": "1",
 }
 
-// toolError is a nested tool failure returned to the calling JavaScript as a rejected call. It is
-// raised only where no remote effect happened or its outcome is known.
+// toolError is a nested tool failure returned to the calling JavaScript as a rejected call. A
+// toolOutcomeError also uses this path when a remote effect may have happened, with explicit
+// unknown-outcome evidence for the model and operator.
 type toolError struct{ message string }
 
 func (e *toolError) Error() string { return e.message }
+
+type toolOutcomeError struct {
+	*toolError
+	evidence map[string]any
+}
+
+func (e *toolOutcomeError) Unwrap() error { return e.toolError }
 
 func schemaString(description string) ResponsesJSONSchema {
 	return ResponsesJSONSchema{Type: "string", Description: description}

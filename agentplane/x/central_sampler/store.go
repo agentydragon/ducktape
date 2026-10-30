@@ -713,7 +713,7 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 		AND NOT (ss.id=ANY($1::varchar[])) AND (
 		ss.setup_state=$2 OR EXISTS(SELECT 1 FROM sampler_command cmd WHERE cmd.session_id=ss.id AND cmd.outcome=$3)
 		OR EXISTS(SELECT 1 FROM sampler_cell cell WHERE cell.conversation_id=c.id AND cell.status='live')
-		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread')))
+		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned')))
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(runnerpb.SetupState_SETUP_STATE_RUNNING),
 		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit)
 	if err != nil {
@@ -2069,7 +2069,7 @@ func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, 
 				cause = fmt.Sprintf("JavaScript cell %s has no live host", cellID)
 			} else {
 				var processID string
-				err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread') ORDER BY id LIMIT 1`, conversation.ID).Scan(&processID)
+				err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') ORDER BY id LIMIT 1`, conversation.ID).Scan(&processID)
 				if err != nil && !errors.Is(err, sql.ErrNoRows) {
 					return "", err
 				}
@@ -2338,6 +2338,61 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 	})
 }
 
+// AbandonProcess stops scheduling a remote handle whose transport outcome is unknown while
+// retaining every observed byte and exit code for inspection. It never records a remote exit.
+func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome, executorSessionID string) error {
+	if remoteOutcome != "unknown" && remoteOutcome != "not_dispatched" {
+		return ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
+			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrMissing
+		}
+		if err != nil {
+			return err
+		}
+		if process.Generation != owner.Generation {
+			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
+		}
+		if process.Status == "abandoned" {
+			return nil
+		}
+		if process.Status == "exited" {
+			return ErrPrecondition
+		}
+		if afterSequence == nil {
+			afterSequence = process.AfterSequence
+		}
+		buffered, omitted := process.BufferedOutput, process.OmittedBytes
+		if output != nil {
+			buffered, omitted = output.retained(), output.omitted
+		}
+		var sequence any
+		if afterSequence != nil {
+			sequence = *afterSequence
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status='abandoned',buffered_output=$4,omitted_bytes=$5 WHERE id=$1 AND conversation_id=$2`,
+			processID, owner.ConversationID, sequence, buffered, omitted); err != nil {
+			return err
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", "abandoned", map[string]any{
+			"after_seq": afterSequence, "exit_code": process.ExitCode, "remote_outcome": remoteOutcome,
+			"automatic_replay": false, "buffered_bytes": len(buffered), "omitted_bytes": omitted,
+			"executor_session_id": executorSessionID,
+		})
+	})
+}
+
 func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID string, afterSequence uint64, output []byte, exited bool, exitCode *int) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -2412,7 +2467,7 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 			return err
 		}
 		processRows, err := tx.QueryContext(ctx, `SELECT `+processColumns+`
-			FROM sampler_process WHERE conversation_id=$1 AND status <> 'exited'`, owner.ConversationID)
+			FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','abandoned')`, owner.ConversationID)
 		if err != nil {
 			return err
 		}
@@ -2725,7 +2780,7 @@ func hasLiveCell(ctx context.Context, tx *sql.Tx, conversationID string) (bool, 
 
 func hasLiveProcess(ctx context.Context, tx *sql.Tx, conversationID string) (bool, error) {
 	var found bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread'))`, conversationID).Scan(&found)
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned'))`, conversationID).Scan(&found)
 	return found, err
 }
 
