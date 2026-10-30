@@ -43,28 +43,18 @@ host_behavior:
   note: "Audited against Bun 1.3.10 standalone, revision …, sha256 …"
 ```
 
-Landed through step 2: the keys, their validation, and the loader-closed
-derivation (SPEC.md § Loader-closed derivation). That derivation counts every
-loader site in every analyzed chunk. On the canonical Claude CLI input with
-hypothetical audited keys it keeps all 76 graphs conservative and leaves the
-ten conflicts unchanged: the exported loader alias, two `module` imports and
-`ws` in loaded closures keep every target open (dynamic `import()` is not a
-synchronous loader site and holds nothing); all 476 literal
-`import.meta.require` calls target application chunks, and their closures
-reach back into 46 of the 76 targets (9 of the 10 conflict chunks); `ws`
-remains an unresolved static request in 7 of them. Steps 3 and 4 narrow the
-sites to those that can run while the target evaluates.
+Landed through step 3: the keys, their validation, the loader-closed
+derivation and mandatory suspension (SPEC.md § Loader-closed derivation).
+On the canonical Claude CLI input with hypothetical audited keys (including
+`synchronous_load_drains_microtasks: never`) all 76 graphs stay conservative
+and the ten conflicts are unchanged. The exported loader alias, two `module`
+imports and `ws` in loaded closures keep every target open. 24 of the 476
+literal `import.meta.require` calls are mandatorily suspended; the rest target
+application chunks whose closures reach back into 44 of the 76 targets. `ws`
+remains an unresolved static request in 7 of the conflict chunks. Step 4
+narrows the remaining sites to those that can run while the target evaluates.
 
 ## Steps
-
-### 3. Mandatory suspension
-
-A site-scoped phase fact: a loader call that follows an `await` on every path
-reaching it cannot run on the invoking synchronous stack. Model completion
-kinds (normal, return, throw, break, continue), branch joins, `catch` and
-`finally`; visit the await operand before marking suspension; unsupported
-shapes stay unknown. Existing `past_await` summaries reset across `try` and
-cannot prove the watcher shape the handoff describes.
 
 ### 4. Callable reachability and the loader alias
 

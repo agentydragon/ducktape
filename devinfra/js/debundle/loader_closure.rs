@@ -81,11 +81,17 @@ pub struct ChunkLoaderSurface<W> {
     /// Facts that keep a target open only when a loader request evaluates
     /// this chunk.
     pub load_failures: Vec<(LoaderClosureFailureKind, W)>,
+    /// Mandatorily suspended sites the caller excluded under
+    /// `synchronous_load_drains_microtasks: never`: they run in a promise job,
+    /// which no synchronous load can start.
+    pub suspended_sites: Vec<W>,
 }
 
 impl<W> ChunkLoaderSurface<W> {
     pub fn has_loader_sites(&self) -> bool {
-        !self.requests.is_empty() || !self.site_failures.is_empty()
+        !self.requests.is_empty()
+            || !self.site_failures.is_empty()
+            || !self.suspended_sites.is_empty()
     }
 }
 
@@ -109,6 +115,8 @@ pub struct LoaderClosure<W> {
     /// Chunks a loader request can evaluate, with their static and loader
     /// closures.
     pub loaded_chunks: BTreeSet<ChunkId>,
+    /// Mandatorily suspended sites excluded from the closure.
+    pub suspended_sites: usize,
     /// Host keys the certificate consumed; empty unless closed.
     pub dependencies: ProofDependencies,
 }
@@ -148,6 +156,7 @@ pub fn solve_loader_closure<W: Clone + Ord>(
                 LoaderClosure {
                     failures: verdict.failures.clone(),
                     loaded_chunks: verdict.loaded_chunks.clone(),
+                    suspended_sites: verdict.suspended_sites,
                     dependencies: judgment.dependencies().clone(),
                 },
             )
@@ -177,6 +186,7 @@ enum Fact<W> {
 struct Verdict<W> {
     failures: BTreeMap<LoaderClosureFailureKind, LoaderClosureFailure<W>>,
     loaded_chunks: BTreeSet<ChunkId>,
+    suspended_sites: usize,
 }
 
 impl<W: Ord> Verdict<W> {
@@ -184,6 +194,7 @@ impl<W: Ord> Verdict<W> {
         Self {
             failures: BTreeMap::new(),
             loaded_chunks: BTreeSet::new(),
+            suspended_sites: 0,
         }
     }
 
@@ -300,6 +311,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
             ),
         }
         for surface in self.chunks.values() {
+            verdict.suspended_sites += surface.suspended_sites.len();
             for (kind, witness) in &surface.site_failures {
                 verdict.add(*kind, LoaderClosureWitness::Site(witness.clone()));
             }
@@ -333,6 +345,11 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                 }
             }
         }
+        if verdict.suspended_sites > 0 {
+            dependencies
+                .host_behavior
+                .insert(HostBehaviorKey::SynchronousLoadDrainsMicrotasks);
+        }
         if verdict.failures.is_empty() {
             context.assume(&dependencies);
         }
@@ -363,6 +380,10 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
                 let before = current.loaded_chunks.len();
                 current.loaded_chunks.extend(contribution.loaded_chunks);
                 let mut changed = current.loaded_chunks.len() != before;
+                if contribution.suspended_sites > current.suspended_sites {
+                    current.suspended_sites = contribution.suspended_sites;
+                    changed = true;
+                }
                 for (kind, failure) in contribution.failures {
                     changed |= current.join_failure(kind, failure, usize::max);
                 }
@@ -392,6 +413,7 @@ mod tests {
                 .collect(),
             site_failures: Vec::new(),
             load_failures: Vec::new(),
+            suspended_sites: Vec::new(),
         }
     }
 

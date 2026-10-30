@@ -307,3 +307,71 @@ console.log("consumer", readLater());
     assert_preserved_entry_output(&fixture, "consumer ready\nlazy ready\n");
     assert_all_emitted_js_checks(&fixture);
 }
+
+fn microtask_free_host() -> HostBehavior {
+    HostBehavior {
+        synchronous_load_drains_microtasks: Some(SynchronousLoadDrainsMicrotasks::Never),
+        ..audited_host()
+    }
+}
+
+/// A non-literal request after an `await` on every path runs in a promise job.
+#[test]
+fn mandatorily_suspended_site_does_not_hold_the_target_open() {
+    let sidecar =
+        "export async function loadNamed(name) { await null; return import.meta.require(name); }\n";
+    let extra_chunks = [
+        ("static/helper", HELPER),
+        ("static/provider", PROVIDER),
+        ("static/sidecar", sidecar),
+    ];
+    let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
+    let fixture = run_fixture(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&provider_modules)
+            .with_host_behavior(microtask_free_host()),
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(report["policy"], "no_static_importer_reentry");
+    assert_eq!(report["loader"]["suspended_sites"], 1);
+    assert_eq!(
+        report["loader"]["host_keys"],
+        json!([
+            "loader_result_for_evaluating_module",
+            "synchronous_load_runs_app_callbacks",
+            "synchronous_load_drains_microtasks",
+        ])
+    );
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
+        "ready\n",
+    );
+}
+
+#[test]
+fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
+    let suspended =
+        "export async function loadNamed(name) { await null; return import.meta.require(name); }\n";
+    let conditional = "export async function loadNamed(name, wait) { if (wait) await null; return import.meta.require(name); }\n";
+    let operand =
+        "export async function loadNamed(name) { return await import.meta.require(name); }\n";
+    let caught = "export async function loadNamed(name) { try { await null; } catch { return import.meta.require(name); } }\n";
+    for (sidecar, host) in [
+        (suspended, audited_host()),
+        (conditional, microtask_free_host()),
+        (operand, microtask_free_host()),
+        (caught, microtask_free_host()),
+    ] {
+        let derivation = rejected_loader_derivation(
+            PROVIDER,
+            &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+            host,
+        );
+        let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
+        assert_eq!(first["source_chunk"], "static/sidecar", "{sidecar}");
+        assert!(derivation.get("suspended_sites").is_none(), "{sidecar}");
+    }
+}

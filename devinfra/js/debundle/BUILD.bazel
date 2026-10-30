@@ -956,7 +956,10 @@ rust_test(
 
 rust_library(
     name = "program_analysis",
-    srcs = ["program_analysis.rs"],
+    srcs = [
+        "loader_phase.rs",
+        "program_analysis.rs",
+    ],
     crate_root = "program_analysis.rs",
     edition = "2024",
     deps = [
@@ -968,6 +971,12 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
+)
+
+rust_test(
+    name = "program_analysis_test",
+    crate = ":program_analysis",
+    edition = "2024",
 )
 
 rust_library(

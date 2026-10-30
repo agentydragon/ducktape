@@ -33,6 +33,9 @@ pub enum ExportReentryLoaderDerivation {
         /// Chunks a loader request can evaluate, with their closures.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         loaded_chunks: Vec<String>,
+        /// Mandatorily suspended sites excluded from the closure.
+        #[serde(skip_serializing_if = "is_zero")]
+        suspended_sites: usize,
         /// The first witness and occurrence count of each failure kind.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         failures: Vec<ExportReentryLoaderFailure>,
@@ -61,6 +64,7 @@ impl ExportReentryLoaderDerivation {
                 .iter()
                 .map(|chunk| artifact.chunk_table.name(*chunk).to_string())
                 .collect(),
+            suspended_sites: closure.suspended_sites,
             failures: closure
                 .failures
                 .iter()
@@ -72,6 +76,10 @@ impl ExportReentryLoaderDerivation {
                 .collect(),
         }
     }
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 /// Literal loader requests that resolved, aggregated per source and target.
@@ -147,6 +155,30 @@ fn is_loader_factory(specifier: &str) -> bool {
     matches!(specifier, "module" | "node:module")
 }
 
+/// Whether a census site can load a module on the stack that runs it.
+fn is_loader_site(kind: InteropUseKind) -> bool {
+    match kind {
+        InteropUseKind::ImportMetaRequireLiteralCall
+        | InteropUseKind::ImportMetaRequireDynamicCall
+        | InteropUseKind::ImportMetaRequireReference
+        | InteropUseKind::GlobalThisRequire
+        | InteropUseKind::UnboundRequire
+        | InteropUseKind::UnboundModule
+        | InteropUseKind::ImportMetaDynamicProperty
+        | InteropUseKind::ImportMetaValue
+        | InteropUseKind::TsImportEquals => true,
+        // Export surfaces and fixed non-loader `import.meta` members cannot
+        // load a module. `import()` evaluates its target in a later job
+        // (ECMA-262 ContinueDynamicImport), never on the requester's stack;
+        // A3 admission owns internal targets.
+        InteropUseKind::DynamicImport
+        | InteropUseKind::UnboundModuleExports
+        | InteropUseKind::UnboundExports
+        | InteropUseKind::ImportMetaOtherProperty
+        | InteropUseKind::TsExportAssignment => false,
+    }
+}
+
 /// Classify every analyzed chunk's loader sites and the facts that matter
 /// when a loader request evaluates it.
 pub(super) fn loader_surfaces(
@@ -170,6 +202,7 @@ pub(super) fn loader_surfaces(
             requests: Vec::new(),
             site_failures: Vec::new(),
             load_failures: Vec::new(),
+            suspended_sites: Vec::new(),
         };
         if runtime.has_top_level_await {
             surface.load_failures.push((
@@ -247,6 +280,18 @@ pub(super) fn loader_surfaces(
                 specifier: site.specifier.clone(),
                 resolved_target: resolved_target.clone(),
             });
+            if !is_loader_site(site.kind) {
+                continue;
+            }
+            // A suspended site runs in a promise job; a synchronous load can
+            // start one only by draining microtasks.
+            if site.mandatory_suspension
+                && host_behavior.synchronous_load_drains_microtasks
+                    == Some(spec::SynchronousLoadDrainsMicrotasks::Never)
+            {
+                surface.suspended_sites.push(site_witness);
+                continue;
+            }
             let failure = match site.kind {
                 InteropUseKind::ImportMetaRequireLiteralCall => {
                     let specifier = site
@@ -303,25 +348,7 @@ pub(super) fn loader_surfaces(
                         Err(kind) => Some(kind),
                     }
                 }
-                InteropUseKind::ImportMetaRequireDynamicCall
-                | InteropUseKind::ImportMetaRequireReference
-                | InteropUseKind::GlobalThisRequire
-                | InteropUseKind::UnboundRequire
-                | InteropUseKind::UnboundModule
-                | InteropUseKind::ImportMetaDynamicProperty
-                | InteropUseKind::ImportMetaValue
-                | InteropUseKind::TsImportEquals => {
-                    Some(LoaderClosureFailureKind::OpaqueLoaderSite)
-                }
-                // Export surfaces and fixed non-loader `import.meta` members
-                // cannot load a module. `import()` evaluates its target in a
-                // later job (ECMA-262 ContinueDynamicImport), never on the
-                // requester's stack; A3 admission owns internal targets.
-                InteropUseKind::DynamicImport
-                | InteropUseKind::UnboundModuleExports
-                | InteropUseKind::UnboundExports
-                | InteropUseKind::ImportMetaOtherProperty
-                | InteropUseKind::TsExportAssignment => None,
+                _ => Some(LoaderClosureFailureKind::OpaqueLoaderSite),
             };
             if let Some(kind) = failure {
                 surface.site_failures.push((kind, site_witness));

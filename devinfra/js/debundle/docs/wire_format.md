@@ -72,7 +72,8 @@ the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
 `closed`, `host_keys` (keys a closed certificate consumed), `requests`
 (resolved literal requests per source chunk, specifier and `target`
 `{"builtin": id}` or `{"chunk": {"chunk", "file"}}`, with `request_count`),
-`loaded_chunks`, and `failures`. Each failure has a `reason`, its
+`loaded_chunks`, `suspended_sites` (mandatorily suspended sites excluded under
+`synchronous_load_drains_microtasks: never`), and `failures`. Each failure has a `reason`, its
 `occurrences`, and the `first` witness in chunk-name then site order: either
 `{"host_behavior": key}` or `{"site": {...}}`, a site naming its
 `source_chunk` and `form` (`interop` with the census `kind`, `item`, `line`,

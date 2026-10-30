@@ -217,6 +217,9 @@ pub struct InteropUse {
     pub span: Span,
     pub kind: InteropUseKind,
     pub specifier: Option<String>,
+    /// The site follows an `await` on every path of its innermost async
+    /// function, so it never runs on the stack that invoked that function.
+    pub mandatory_suspension: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]

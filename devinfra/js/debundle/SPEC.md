@@ -628,7 +628,7 @@ host_behavior:
 | `synchronous_module_loader`           | `present` | Export-reentry proof (below)                    |
 | `loader_result_for_evaluating_module` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_runs_app_callbacks` | `unknown` | Loader-closed derivation (below)                |
-| `synchronous_load_drains_microtasks`  | `unknown` | None yet; validated and echoed                  |
+| `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
 | `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
@@ -637,12 +637,6 @@ The three loader keys describe a loader, so each requires
 `synchronous_module_loader: present`; giving one with `none` is rejected.
 `unknown` is accepted and asserts nothing. `export_reentry.json` echoes the
 block as read.
-
-CLEANUP(added 2026-10-29): `synchronous_load_drains_microtasks` has no
-analysis reader; the loader-closed derivation does not need it because a
-drained reaction is application code whose loader sites the derivation
-already checks. Remove the key unless a step of `plans/host_behavior.md`
-gives it a reader.
 
 Every non-default value is an author assertion about the host. The author
 verifies it against the exact executable recorded in `note`, re-audits on every
@@ -715,7 +709,21 @@ all of the following hold:
   `await`, and no vendor replacement. Cycles through the target are therefore
   open; a loaded chunk need not be ESM.
 
-Step 2 counts every site in every analyzed chunk as reachable during the
+With `synchronous_load_drains_microtasks: never`, a mandatorily suspended site
+is excluded: its innermost function is async (not a generator) and every path
+from that function's entry to the site completes an `await`, so the site runs
+in a promise job, which no synchronous code, including a synchronous load, can
+start. The walk follows evaluation order: an `await` operand runs before the
+suspension it causes; a short-circuit, conditional or optional-chain operand
+joins with the path that skips it; a loop body may run zero times (`for await`
+awaits before its body and its exit); `catch` and `finally` start from the
+`try` entry; `break` joins its target's exit and `return`, `throw` and
+`continue` leave the path. Generators, getters, setters, constructors, class
+field initializers and static blocks are never suspended, and a site the walk
+finds on no path stays unsuspended. The derivation then consumes the key and
+reports the excluded `suspended_sites`.
+
+Every other site in every analyzed chunk counts as reachable during the
 target's initialization, wherever it is nested: a callback any chunk published
 earlier can run then, so the chunk holding a site does not bound when it
 executes; no site is narrowed to the target's initialization. A site the census does not see, such as a

@@ -20,6 +20,8 @@ use binding_targets::{
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
+mod loader_phase;
+
 /// True when a specifier string is a relative module path that the
 /// pass-through emission rewriter could canonicalize (any `.` / `/`
 /// prefix). Kept in sync with the gate in
@@ -399,6 +401,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
     }
 
+    let suspended = loader_phase::mandatorily_suspended_sites(
+        &parsed.module,
+        &interop_uses
+            .iter()
+            .map(|(_, span, _, _)| loader_phase::site_key(*span))
+            .collect(),
+    );
     let mut runtime_facts = ChunkRuntimeFacts {
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
@@ -420,6 +429,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 span,
                 kind,
                 specifier,
+                mandatory_suspension: suspended.contains(&loader_phase::site_key(span)),
             })
             .collect(),
         ..ChunkRuntimeFacts::default()

@@ -293,6 +293,7 @@ pub struct ProofDependencies {
 pub enum HostBehaviorKey {
     LoaderResultForEvaluatingModule,
     SynchronousLoadRunsAppCallbacks,
+    SynchronousLoadDrainsMicrotasks,
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
 }
 
