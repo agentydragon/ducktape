@@ -55,6 +55,7 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
 from agentplane.notification_service.settings import NoticeDebounceSettings
+from agentplane.runner.configuration import CodexReadiness
 from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant, vm_configuration
@@ -538,6 +539,15 @@ def build_chart(
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
+        vm_codex_readiness=(
+            CodexReadiness(
+                exec_server_ready_timeout_ms=60_000,
+                exec_server_probe_timeout_ms=5_000,
+                exec_server_dependency_timeout_ms=120_000,
+            )
+            if env.vm_sandboxes
+            else None
+        ),
         # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
         disable_otel_sdk=True,
     )

@@ -37,6 +37,7 @@ func runService(ctx context.Context, args []string) error {
 		VMProcessPolicy:             settings.VMProcessPolicy,
 		PodPID1:                     settings.PodPID1,
 		CodexExecServer:             settings.CodexExecServer,
+		CodexAppServerReadiness:     settings.CodexAppServerReadiness,
 		WorkspaceRoot:               settings.WorkspaceRoot,
 		InitializationCwd:           settings.InitializationCwd,
 		DebugCheckpoint:             settings.DebugCheckpoint,

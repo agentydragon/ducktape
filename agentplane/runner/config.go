@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -30,6 +31,7 @@ type Config struct {
 	VMProcessPolicy                  *supervision.SystemdPolicy
 	PodPID1                          bool
 	CodexExecServer                  *codexexecserver.Config
+	CodexAppServerReadiness          codexappserver.Readiness
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 	HTTPClient                       *http.Client

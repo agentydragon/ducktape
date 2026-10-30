@@ -51,7 +51,22 @@ Runner environment changes or state ownership begins.
 | `harness_environment`           | Required `inherit` names and `values` map defining the native process environment.                                         |
 | `claude`, `codex`               | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.        |
 | `environment`                   | Required tagged Pod or VM policy, including the optional executor.                                                         |
+| `codex_readiness`               | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                     |
 | `debug_checkpoint`              | Optional test-only object containing nonempty `name` and `command_id`.                                                     |
+
+`codex_readiness` accepts these optional positive `int64` millisecond values. Omitted fields keep
+the listed defaults; each window is configured independently.
+
+| Field                               | Default |
+| ----------------------------------- | ------: |
+| `exec_server_ready_timeout_ms`      | `20000` |
+| `exec_server_probe_timeout_ms`      |  `2000` |
+| `exec_server_probe_interval_ms`     |   `100` |
+| `exec_server_dependency_timeout_ms` | `30000` |
+| `app_server_start_timeout_ms`       | `90000` |
+| `app_server_initialize_timeout_ms`  | `60000` |
+
+Values must be representable as a Go `time.Duration` after conversion from milliseconds.
 
 `control` always serves the Runner protocol. Its required `security.mode` selects `mtls` or
 `insecure`; there is no default. Cluster and k3s templates explicitly select `mtls` with absolute TLS paths:

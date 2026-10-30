@@ -15,6 +15,8 @@ LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
 CA_BUNDLE = Path("/run/agentplane/trust/ca-certificates.crt")
 JAVA_TRUST_STORE = "/run/agentplane/trust/ca-certificates.p12"
 KUBECONFIG = f"{CONFIG_DIRECTORY}/kubeconfig"
+# Bound millisecond values before the Go loader converts them to signed nanosecond durations.
+_MAX_DURATION_MS = (2**63 - 1) // 1_000_000
 
 
 class Endpoint(BaseModel):
@@ -237,6 +239,19 @@ class DebugCheckpoint(BaseModel):
     command_id: str = Field(min_length=1)
 
 
+class CodexReadiness(BaseModel):
+    """Optional Codex startup windows; omitted values keep the Runner's defaults."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    exec_server_ready_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+    exec_server_probe_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+    exec_server_probe_interval_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+    exec_server_dependency_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+    app_server_start_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+    app_server_initialize_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
+
+
 class Configuration(BaseModel):
     """All Runner policy supplied by its template, separate from Sandbox launch identity."""
 
@@ -258,6 +273,7 @@ class Configuration(BaseModel):
     harness_environment: EnvironmentVariables
     claude: Harness | None = None
     codex: Harness | None = None
+    codex_readiness: CodexReadiness | None = None
     environment: Annotated[PodEnvironment | VMEnvironment, Field(discriminator="kind")]
     debug_checkpoint: DebugCheckpoint | None = None
 

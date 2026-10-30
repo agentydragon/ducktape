@@ -419,6 +419,13 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert {"port": 9090} in interface["ports"]
     config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
     config = json.loads(config_map["data"]["runner.json"])
+    assert config["codex_readiness"] == {
+        "exec_server_ready_timeout_ms": 60_000,
+        "exec_server_probe_timeout_ms": 5_000,
+        "exec_server_dependency_timeout_ms": 120_000,
+    }
+    pod_config = json.loads(_resource(fixture.objects, "ConfigMap", "runner-config")["data"]["runner.json"])
+    assert "codex_readiness" not in pod_config
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
         "security": {

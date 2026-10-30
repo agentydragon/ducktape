@@ -37,6 +37,7 @@ from agentplane.runner.configuration import (
     CA_BUNDLE,
     JAVA_TRUST_STORE,
     KUBECONFIG,
+    CodexReadiness,
     Configuration,
     Endpoint,
     Harness,
@@ -89,6 +90,7 @@ class RunnerVmTemplate(Construct):
         platform_instructions: str,
         harness_env: Mapping[str, str],
         session_reconcile_concurrency: int | None = None,
+        codex_readiness: CodexReadiness | None = None,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -106,6 +108,7 @@ class RunnerVmTemplate(Construct):
         config = Configuration(
             version=2,
             session_reconcile_concurrency=session_reconcile_concurrency,
+            codex_readiness=codex_readiness,
             state_dir="/state",
             workspace_root="/state/workspaces",
             initialization_cwd="/state/workspaces",

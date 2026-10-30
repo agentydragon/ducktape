@@ -235,6 +235,17 @@ func TestProbeCompletionPublicationFailureIsRetainedAndReportedOutsideLock(t *te
 }
 
 func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
+	testControllerProgressesPastReadinessDeadline(t, 200*time.Millisecond)
+}
+
+func TestControllerLongProbeIntervalCannotDelayReadinessDeadline(t *testing.T) {
+	testControllerProgressesPastReadinessDeadline(t, 10*time.Second)
+}
+
+func testControllerProgressesPastReadinessDeadline(t *testing.T, probeInterval time.Duration) {
+	t.Helper()
+	const readinessTimeout = 7 * time.Second
+	const probeTimeout = 5 * time.Second
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -245,6 +256,7 @@ func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
 		}
 		var workers sync.WaitGroup
 		var starts, stops atomic.Int32
+		probeDeadlines := make(chan time.Time, 1)
 		var stopOnce sync.Once
 		done := make(chan error, 1)
 		instance := &supervision.Instance{
@@ -266,7 +278,10 @@ func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
 			}
 			return effect(ctx)
 		}
-		host, err := NewHost(Config{URL: "ws://127.0.0.1:4501"}, Dependencies{
+		host, err := NewHost(Config{
+			URL:       "ws://127.0.0.1:4501",
+			Readiness: Readiness{Timeout: readinessTimeout, ProbeTimeout: probeTimeout, ProbeInterval: probeInterval},
+		}, Dependencies{
 			Context: ctx, State: store, Workers: &workers, Processes: processes,
 			Admission: admission, OnError: func(err error) { t.Errorf("exec-server host error: %v", err) },
 		}, Adapters{
@@ -275,6 +290,12 @@ func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
 				return instance, nil
 			},
 			Probe: func(ctx context.Context) error {
+				if deadline, ok := ctx.Deadline(); ok {
+					select {
+					case probeDeadlines <- deadline:
+					default:
+					}
+				}
 				<-ctx.Done()
 				return ctx.Err()
 			},
@@ -316,7 +337,40 @@ func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
 		if err != nil || !found || initial.Phase != Probing {
 			t.Fatalf("executor before readiness deadline = %+v, found=%t err=%v", initial, found, err)
 		}
-		time.Sleep(readyBudget)
+		if remaining := initial.ReadyDeadline.Sub(time.Now()); remaining != readinessTimeout {
+			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, readinessTimeout)
+		}
+		var probeDeadline time.Time
+		select {
+		case probeDeadline = <-probeDeadlines:
+		default:
+			t.Fatal("readiness probe did not start")
+		}
+		if remaining := probeDeadline.Sub(time.Now()); remaining != probeTimeout {
+			t.Fatalf("readiness probe timeout = %s, want %s", remaining, probeTimeout)
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		persisted, found, err := host.RuntimeState(ctx)
+		if err != nil || !found || persisted.ReadyDeadline != initial.ReadyDeadline {
+			t.Fatalf("probe retry changed readiness deadline: initial=%s current=%+v found=%t err=%v", initial.ReadyDeadline, persisted, found, err)
+		}
+		time.Sleep(probeTimeout - time.Second)
+		synctest.Wait()
+		retrying, found, err := host.RuntimeState(ctx)
+		if err != nil || !found || retrying.ReadyDeadline != initial.ReadyDeadline {
+			t.Fatalf("probe failure changed readiness deadline: initial=%s current=%+v found=%t err=%v", initial.ReadyDeadline, retrying, found, err)
+		}
+		if delay := retrying.NextProbe.Sub(time.Now()); delay != probeInterval {
+			t.Fatalf("readiness probe retry interval = %s, want %s", delay, probeInterval)
+		}
+		remaining := readinessTimeout - probeTimeout
+		time.Sleep(min(probeInterval, remaining))
+		synctest.Wait()
+		if probeInterval < remaining {
+			time.Sleep(remaining - probeInterval)
+			synctest.Wait()
+		}
 		synctest.Wait()
 		current, found, err := host.RuntimeState(ctx)
 		if err != nil || !found {
@@ -325,7 +379,14 @@ func TestControllerSelfProgressesPastReadinessDeadline(t *testing.T) {
 		if current.Phase != Retrying || current.ProcessID != "" || current.RestartFailures != 1 {
 			t.Fatalf("readiness timeout runtime = %+v, want retrying after self-scheduled stop", current)
 		}
-		if !strings.Contains(current.Error, "did not become ready within") {
+		if probeInterval > remaining && !time.Now().Equal(initial.ReadyDeadline) {
+			t.Fatalf("executor was fenced at %s, want readiness deadline %s", time.Now(), initial.ReadyDeadline)
+		}
+		wantError := "did not become ready within"
+		if probeInterval > remaining {
+			wantError = "before the readiness deadline"
+		}
+		if !strings.Contains(current.Error, wantError) {
 			t.Fatalf("readiness timeout error = %q", current.Error)
 		}
 		if starts.Load() != 1 || stops.Load() != 1 {

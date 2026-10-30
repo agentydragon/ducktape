@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
@@ -68,6 +69,7 @@ type Resolved struct {
 	VMProcessPolicy                  *supervision.SystemdPolicy
 	PodPID1                          bool
 	CodexExecServer                  *codexexecserver.Config
+	CodexAppServerReadiness          codexappserver.Readiness
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 }
