@@ -45,17 +45,12 @@ type Option func(*options)
 
 type options struct {
 	watchPeriod time.Duration
-	staleAfter  time.Duration
 	now         func() time.Time
 }
 
 // WithWatchPeriod bounds each watch request. client-go owns list, watch, reconnect, and relist;
 // this period is carried as the API server's timeoutSeconds watch option.
 func WithWatchPeriod(period time.Duration) Option { return func(o *options) { o.watchPeriod = period } }
-
-// WithStaleAfter sets how long a kind may go without a completed watch cycle before Fresh is false.
-// By default it is three watch periods.
-func WithStaleAfter(age time.Duration) Option { return func(o *options) { o.staleAfter = age } }
 
 // WithClock injects the health clock. It is useful for deterministic tests.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
@@ -122,10 +117,8 @@ func New(config *rest.Config, namespace string, opts ...Option) (*Index, error) 
 	if settings.now == nil {
 		return nil, errors.New("live inventory clock is required")
 	}
-	if settings.staleAfter == 0 {
-		settings.staleAfter = 3 * settings.watchPeriod
-	}
-	if settings.staleAfter < time.Second {
+	staleAfter := 3 * settings.watchPeriod
+	if staleAfter < time.Second {
 		return nil, errors.New("stale-after duration must be at least 1s")
 	}
 
@@ -138,7 +131,7 @@ func New(config *rest.Config, namespace string, opts ...Option) (*Index, error) 
 		}
 	}
 	index := &Index{
-		namespace: namespace, period: settings.watchPeriod, staleAfter: settings.staleAfter, now: settings.now,
+		namespace: namespace, period: settings.watchPeriod, staleAfter: staleAfter, now: settings.now,
 		cycles: make(map[string]time.Time, len(watchedKinds)), listRuns: make(map[string]uint64, len(watchedKinds)),
 		cycleRuns: make(map[string]uint64, len(watchedKinds)), syncDone: make(chan struct{}), runDone: make(chan struct{}),
 		changes: newChangeHub(),
