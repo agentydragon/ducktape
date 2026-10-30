@@ -96,6 +96,11 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
+One background importer loads the next image group while startup applies and waits for the preceding
+group: PKI during KubeVirt installation, service images during PKI readiness, and guest images during
+fixture application. Each workload waits for its own images before being applied, preventing registry
+pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
+
 The Pod runner uses the production `//agentplane/runner:disk_image` volume at `/run/agentplane/runner`, with a
 tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
 VM-only targets omit the Pod runner image:
