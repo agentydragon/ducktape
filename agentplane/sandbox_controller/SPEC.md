@@ -36,7 +36,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
   Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
-  nothing to seal. The Sandbox stays held, with `Running` reason `Quiescing`, while the quiesce fails or
+  nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
   UID in `status.quiesceAttempt`, so watch events and controller restarts cannot bypass its one-minute
   retry deadline; Lease facts can complete the seal sooner. Applies only to a controller configured
@@ -183,7 +183,13 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `CertificateIdentityConflict`, `CertificateSecretPending`, `CertificateSecretConflict`,
 `VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
 `PodConflict` or `VMConflict`
-(a Pod or VM of the Sandbox's name that it does not control). Credential and certificate pending
+(a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
+dispatch on typed status fields.
+
+`status.stopStage` is how far the controller has taken stopping the workload, absent while it runs or
+starts: `Quiescing` while it seals the current incarnation's Sessions before stopping or deleting it,
+`Deleting` while a deleted Sandbox with nothing left to seal has its workload and runner credentials
+removed, and `Stopped` once no Pod or VM runs and the state volume is kept. Credential and certificate pending
 reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
 keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
 suspend never interrupts it; a delete does not wait. While a scheduled Pod is Pending, the reason is

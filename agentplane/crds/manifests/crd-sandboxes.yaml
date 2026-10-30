@@ -298,6 +298,17 @@ spec:
                 - id
                 - kind
                 type: object
+              stopStage:
+                description: 'StopStage is how far the controller has taken stopping
+                  the Sandbox''s workload; absent while
+
+                  the workload runs or starts. Readers dispatch on it; condition reasons
+                  are display only.'
+                enum:
+                - Quiescing
+                - Deleting
+                - Stopped
+                type: string
               suspendedAtWakeGeneration:
                 format: int64
                 minimum: 0
