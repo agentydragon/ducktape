@@ -16,6 +16,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
@@ -550,7 +552,7 @@ func newExecutorLifecycleRunnerWithURL(t *testing.T, url string, start func(cont
 	config := Config{
 		StateDir: t.TempDir(),
 		Control:  insecureControl(),
-		Launch:   SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
+		Launch:   configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
 		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
 		CodexExecServer: &codexexecserver.Config{
 			URL: url, ContainerSocket: socket,
