@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -589,6 +590,52 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 	}
 	if len(entries) != 4 || entries[3].GetEvent().GetHarnessStderr() == nil || entries[3].GetEvent().GetHarnessStderr().Text != `{"request":"echo"}` {
 		t.Fatalf("late response journal = %v", entries)
+	}
+}
+
+func TestCodexJournalsExactWireFrames(t *testing.T) {
+	stdin := filepath.Join(t.TempDir(), "stdin")
+	// The fake app-server records each line it reads and answers it with spacing, member order and an
+	// escape that no encoder of ours would reproduce.
+	script := `reply='{ "result" : {"note":"é"} ,"id":'
+while IFS= read -r line; do
+	printf '%s\n' "$line" >> "$0"
+	id=${line#'{"id":'}
+	printf '%s%s }\n' "$reply" "${id%%,*}"
+done`
+	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", script, stdin})
+	adapter := codexadapter.New(s)
+	s.connection.readers.Add(1)
+	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := adapter.Interrupt(ctx, "turn-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.journal.WaitBeyond(ctx, 1); err != nil {
+		t.Fatalf("the reply was not journaled: %v", err)
+	}
+	entries, err := s.journal.Since(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := os.ReadFile(stdin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := strings.TrimSuffix(string(wire), "\n")
+	id, _, _ := strings.Cut(strings.TrimPrefix(sent, `{"id":`), ",")
+	want := []*eventpb.Native{
+		{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: sent},
+		{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: `{ "result" : {"note":"é"} ,"id":` + id + ` }`},
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("journal = %v, want the request and its reply", entries)
+	}
+	for i, entry := range entries {
+		if got := entry.GetEvent().GetNative(); got.GetDirection() != want[i].Direction || got.GetLine() != want[i].Line {
+			t.Fatalf("journaled %v %q, wire carried %v %q", got.GetDirection(), got.GetLine(), want[i].Direction, want[i].Line)
+		}
 	}
 }
 

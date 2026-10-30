@@ -120,13 +120,3 @@ only on thread changes, and give each entity one client-side source.
 and phase reporting, and because `EventSource` cannot see a 401, `live_stream.ts` probes `/models`
 after each hard close to trigger login. Use one fetch-based SSE reader that sees status codes and goes
 through `fetchWithLogin`.
-
-## Runner
-
-### `RUNNER_JSONRPC`
-
-Two hand-written JSON-RPC 2.0 clients with different envelopes: the exec-server client
-(`runner/execution/connection.go`, `protocol.go`) and the app-server adapter (`runner/codex/adapter.go`,
-a `map[string]any` envelope beside generated params). Both must capture exact native frames for the
-journal. Evaluate an existing Go library with a frame hook (`sourcegraph/jsonrpc2`,
-`creachadair/jrpc2`, `golang.org/x/exp/jsonrpc2`); otherwise share one envelope and correlation helper.

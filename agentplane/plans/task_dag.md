@@ -1930,7 +1930,6 @@ flowchart LR
     POSTGRES_LEASE_HELPER[Candidate: one PostgreSQL lease helper]
     SAMPLER_TYPED_STATE[Candidate: typed sampler states]
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
-    RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
@@ -1952,7 +1951,7 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
 `APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `GATEWAY_OBSERVER_RECONCILER`,
-`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`, `RUNNER_JSONRPC`,
+`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
 `FRONTEND_SSE_CLIENT`. `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals

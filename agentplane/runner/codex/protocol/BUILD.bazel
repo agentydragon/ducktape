@@ -13,7 +13,6 @@ js_run_binary(
     outs = ["protocol.gen.go"],
     args = [
         "codex_app_server_protocol.v2.schemas.json",
-        "codex_app_server_protocol.schemas.json",
         "protocol.gen.go",
     ],
     chdir = package_name(),
@@ -31,14 +30,11 @@ go_library(
 
 genrule(
     name = "schema",
-    outs = [
-        "codex_app_server_protocol.schemas.json",
-        "codex_app_server_protocol.v2.schemas.json",
-    ],
+    outs = ["codex_app_server_protocol.v2.schemas.json"],
     cmd = """
         schema_dir="$(@D)/schema.tmp"
         $(location @agentplane_codex_cli_linux_x64//:codex_binary) app-server generate-json-schema --experimental --out "$$schema_dir"
-        cp "$$schema_dir/"codex_app_server_protocol{,.v2}.schemas.json "$(@D)/"
+        cp "$$schema_dir/codex_app_server_protocol.v2.schemas.json" "$(@D)/"
     """,
     tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
     visibility = ["//agentplane/runner:__subpackages__"],

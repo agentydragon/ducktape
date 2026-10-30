@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -77,7 +78,7 @@ func (a *codexAdapter) BlocksCommandDispatch() bool {
 // Handshake starts or resumes this Session's thread on the shared app-server, which the Runner has
 // already initialized.
 func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
-	var response codexWireFrame
+	var response jsonrpc.Message
 	snapshot := a.host.Session()
 	a.mu.Lock()
 	threadID := a.threadID
@@ -94,9 +95,9 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		// Codex replays the old developer message on resume but rebuilds it from
 		// this configuration at the next compaction.
 		instructions := snapshot.Instructions
-		response, _, err = a.request(ctx, requestID, map[string]any{
-			"method": method, "id": requestID,
-			"params": protocol.ThreadResumeParams{
+		response, err = a.request(ctx, jsonrpc.Request[any]{
+			ID: requestID, Method: method,
+			Params: protocol.ThreadResumeParams{
 				ThreadID: threadID, ExcludeTurns: &excludeTurns, Config: threadEnvironment(snapshot.Environment),
 				DeveloperInstructions: &instructions,
 			},
@@ -125,7 +126,7 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		if snapshot.Instructions != "" {
 			params.DeveloperInstructions = &snapshot.Instructions
 		}
-		response, _, err = a.request(ctx, requestID, map[string]any{"method": method, "id": requestID, "params": params})
+		response, err = a.request(ctx, jsonrpc.Request[any]{ID: requestID, Method: method, Params: params})
 		if err != nil {
 			return "", fmt.Errorf("Codex thread/start: %w", err)
 		}
@@ -245,11 +246,11 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
 				continue
 			}
-			var frame codexWireFrame
-			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil || len(frame.ID) == 0 || frame.Method != "" {
+			frame, err := jsonrpc.Parse([]byte(native.GetLine()))
+			if err != nil || !frame.IsResponse() {
 				continue
 			}
-			requestID, ok := jsonString(frame.ID)
+			requestID, ok := frame.StringID()
 			if !ok || !requestIDs[requestID] {
 				continue
 			}
@@ -312,9 +313,9 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	a.mu.Lock()
 	a.turnStarts[requestID] = start
 	a.mu.Unlock()
-	if err := a.send(ctx, map[string]any{
-		"method": "turn/start", "id": requestID,
-		"params": protocol.TurnStartParams{
+	if err := a.send(ctx, jsonrpc.Request[any]{
+		ID: requestID, Method: "turn/start",
+		Params: protocol.TurnStartParams{
 			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
 			Model: &model, Effort: &effort,
 		},
@@ -338,11 +339,10 @@ func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
 	if err != nil {
 		return err
 	}
-	err = a.send(ctx, map[string]any{
-		"method": "turn/interrupt", "id": requestID,
-		"params": protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
+	return a.send(ctx, jsonrpc.Request[any]{
+		ID: requestID, Method: "turn/interrupt",
+		Params: protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
 	})
-	return err
 }
 
 func (a *codexAdapter) ChangeModel(_ context.Context, commandID, model string) error {
@@ -388,12 +388,12 @@ func (a *codexAdapter) takePendingChange(ctx context.Context, changes *[]codexPe
 }
 
 func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceSequence uint64) error {
-	var frame codexWireFrame
-	if err := json.Unmarshal(raw, &frame); err != nil {
+	frame, err := jsonrpc.Parse(raw)
+	if err != nil {
 		return fmt.Errorf("decode Codex frame: %w", err)
 	}
 	sources := []uint64{sourceSequence}
-	if len(frame.ID) > 0 && len(frame.Method) > 0 {
+	if frame.IsRequest() {
 		return a.answerServerRequest(ctx, frame)
 	}
 	threadScoped := map[string]bool{
@@ -419,9 +419,8 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 			return nil
 		}
 	}
-	if len(frame.ID) > 0 && len(frame.Method) == 0 {
-		id, ok := jsonString(frame.ID)
-		if ok {
+	if frame.IsResponse() {
+		if id, ok := frame.StringID(); ok {
 			return a.onResponse(ctx, frame, id, sources)
 		}
 		return nil
@@ -487,7 +486,7 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	return nil
 }
 
-func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, requestID string, sources []uint64) error {
+func (a *codexAdapter) onResponse(ctx context.Context, frame jsonrpc.Message, requestID string, sources []uint64) error {
 	a.mu.Lock()
 	start, ok := a.turnStarts[requestID]
 	if !ok || a.processingResponses[requestID] {
@@ -506,7 +505,7 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, req
 	return err
 }
 
-func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame codexWireFrame, start codexTurnStart, sources []uint64) error {
+func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame jsonrpc.Message, start codexTurnStart, sources []uint64) error {
 	if frame.Error != nil || len(frame.Result) == 0 || string(frame.Result) == "null" {
 		reason := "turn/start returned no result"
 		if frame.Error != nil {
@@ -703,31 +702,26 @@ func (a *codexAdapter) itemCompletedTool(ctx context.Context, itemID, output str
 	}}, sources)
 }
 
-func (a *codexAdapter) answerServerRequest(ctx context.Context, frame codexWireFrame) error {
-	return a.send(ctx, map[string]any{
-		"id": frame.ID, "error": protocol.JSONRPCErrorError{
-			Code: -32601, Message: "the agentplane runner does not answer " + frame.Method,
-		},
+func (a *codexAdapter) answerServerRequest(ctx context.Context, frame jsonrpc.Message) error {
+	return a.send(ctx, jsonrpc.ErrorReply{
+		ID:    frame.ID,
+		Error: jsonrpc.Error{Code: -32601, Message: "the agentplane runner does not answer " + frame.Method},
 	})
 }
 
-func (a *codexAdapter) request(ctx context.Context, requestID string, request any) (codexWireFrame, uint64, error) {
+func (a *codexAdapter) request(ctx context.Context, request jsonrpc.Request[any]) (jsonrpc.Message, error) {
 	frame, err := json.Marshal(request)
 	if err != nil {
-		return codexWireFrame{}, 0, err
+		return jsonrpc.Message{}, err
 	}
 	receipt, err := a.host.RequestNativeHandshake(ctx, frame, func(raw json.RawMessage) bool {
-		var response codexWireFrame
-		return json.Unmarshal(raw, &response) == nil && len(response.ID) > 0 && len(response.Method) == 0 && rawJSONIDEquals(response.ID, requestID)
+		response, err := jsonrpc.Parse(raw)
+		return err == nil && response.Answers(request.ID)
 	})
 	if err != nil {
-		return codexWireFrame{}, 0, err
+		return jsonrpc.Message{}, err
 	}
-	var response codexWireFrame
-	if err := json.Unmarshal(receipt.Frame, &response); err != nil {
-		return codexWireFrame{}, 0, err
-	}
-	return response, receipt.Sequence, nil
+	return jsonrpc.Parse(receipt.Frame)
 }
 
 // nextID names a request uniquely on the shared app-server, which carries every Codex Session's requests.
@@ -764,15 +758,6 @@ func (a *codexAdapter) emit(ctx context.Context, observation any, sources []uint
 		return fmt.Errorf("unsupported Codex observation type %T", observation)
 	}
 	return a.host.Emit(ctx, event, sources)
-}
-
-// codexWireFrame keeps opaque JSON-RPC payloads until a known method selects a generated type.
-type codexWireFrame struct {
-	ID     json.RawMessage             `json:"id"`
-	Method string                      `json:"method"`
-	Result json.RawMessage             `json:"result"`
-	Error  *protocol.JSONRPCErrorError `json:"error"`
-	Params json.RawMessage             `json:"params"`
 }
 
 type codexUnknownItem struct {
@@ -836,18 +821,7 @@ func decodeCodexItem(raw json.RawMessage) (any, error) {
 	}
 }
 
-func rawJSONIDEquals(raw json.RawMessage, expected string) bool {
-	var value string
-	return json.Unmarshal(raw, &value) == nil && value == expected
-}
-
-func jsonString(raw json.RawMessage) (string, bool) {
-	var value string
-	err := json.Unmarshal(raw, &value)
-	return value, err == nil
-}
-
-func codexResponseError(frame codexWireFrame) error {
+func codexResponseError(frame jsonrpc.Message) error {
 	if frame.Error != nil {
 		return fmt.Errorf("%s", frame.Error.Message)
 	}
