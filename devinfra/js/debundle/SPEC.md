@@ -2250,6 +2250,33 @@ record names the first construction check that failed as a typed `rejection`
 entries are in `native_prototype_property_checks`); later checks may fail too.
 These records do not change gate acceptance or emitted JavaScript.
 
+Each record's `reach` classifies the code the conservative path stands for.
+`{"kind": "bounded"}`: known source code, namely a rejected local construction
+or an invocation truncated at a recursion, depth or expansion bound, whose
+inputs and synchronous read closure reach nothing the interpreter cannot name.
+Otherwise `{"kind": "global", "cause": …}` names the rule that applied, checked
+for dynamic scope first, then for each input, then over the read closure:
+
+- `dynamic_scope`: the chunk has direct `eval` or `with`.
+- `borrowed_receiver`: the constructed class is used outside `new`, exported
+  under export reentry, mutated, or escaped to opaque code; a class in the
+  read closure is mutated or escaped; or the truncated callable itself
+  escaped.
+- `tainted_input`: an input, through stored properties, captures and
+  accessors, is an unknown value, a global object alias, a tainted object, or
+  a callable already escaped to opaque code.
+- `foreign_record`: an input or the callee is a foreign deferred record.
+- `unknown_callee`: the read closure of the code and its inputs' callables
+  contains a call whose callee value flow does not resolve to local callables
+  or a builtin row, a member or protocol operation on an import, global or
+  otherwise unknown binding, or an opaque body. An `unknown_call_target` is
+  `unknown_callee`, except a foreign record's call (`foreign_record`).
+- `unmodelled_operation`: every `unsupported_operation`.
+- `escaped_callback_pool`: a bound hit while running the callbacks opaque code
+  may invoke, whose pool is the escape set accumulated over the prefix.
+
+The classification is a report: both reaches promote the same effects.
+
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the
 property, the absence verdict, and the number of blocking source operations.

@@ -229,6 +229,7 @@ fn nested_unknown_call_keeps_lexical_callsite_and_deduplicates_cached_execution(
     assert_entry_output(&fixture, "6\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "unknown_call_target"}));
+    assert_eq!(loss["reach"], global_reach("unknown_callee"));
     assert_eq!(loss["statement_ordinal"], 0);
     assert_eq!(loss["source_location"]["source_path"], "static/app.js");
     assert_eq!(loss["source_location"]["start_line"], 1);
@@ -256,6 +257,7 @@ fn unsupported_coercion_reports_its_operation() {
             "code": "unsupported_operation", "operation": "implicit_coercion"
         }),
     );
+    assert_eq!(loss["reach"], global_reach("unmodelled_operation"));
     assert_eq!(loss["statement_ordinal"], 1);
     assert_eq!(loss["source_location"]["start_line"], 2);
 }
@@ -281,6 +283,8 @@ fn acyclic_call_chain_reports_the_actual_depth_bound() {
             "code": "invocation_depth_limit", "limit": 64
         }),
     );
+    // The truncated chain calls only local functions.
+    assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 64);
     assert_eq!(loss["source_location"]["start_line"], 65);
 }
@@ -319,6 +323,7 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     assert_entry_output(&fixture, "7\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "recursive_invocation"}));
+    assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 0);
     assert_eq!(
         execution(&fixture, "following"),
@@ -336,9 +341,98 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_entry_output(&fixture, "326\n");
     let result = execution(&fixture, "result");
-    assert_reason(
+    let loss = assert_reason(
         &result,
         serde_json::json!({"code": "callback_pool_limit", "limit": 64, "pool_size": 65}),
+    );
+    assert_eq!(loss["reach"], global_reach("escaped_callback_pool"));
+}
+
+fn global_reach(cause: &str) -> Value {
+    serde_json::json!({"kind": "global", "cause": cause})
+}
+
+/// The reach of the rejected construction of `result` in `source`, whose
+/// entry prints `3`.
+fn construction_reach(source: &str, extra_chunks: &[(&str, &str)]) -> Value {
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks));
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    result["precision_losses"]
+        .as_array()
+        .expect("losses")
+        .iter()
+        .find(|loss| loss["reason"]["code"] == "unsupported_construction")
+        .unwrap_or_else(|| panic!("missing construction loss in {result}"))["reach"]
+        .clone()
+}
+
+#[test]
+fn rejected_construction_of_local_code_with_inline_callback_is_bounded() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[],
+        ),
+        serde_json::json!({"kind": "bounded"})
+    );
+}
+
+#[test]
+fn constructor_calling_a_global_function_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "globalThis.log = () => {};\nclass Box { constructor(read) { this.read = read; log(read); } }\nconst result = new Box(() => 3);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("unknown_callee")
+    );
+}
+
+#[test]
+fn constructor_reaching_an_import_through_a_local_helper_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "import { pass } from './lib.js';\nfunction helper(value) { return pass(value); }\nclass Box { constructor(read) { this.read = helper(read); } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[(
+                "static/lib",
+                "export function pass(value) { return value; }"
+            )],
+        ),
+        global_reach("unknown_callee")
+    );
+}
+
+#[test]
+fn argument_escaped_to_opaque_code_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } }\nconst read = () => 3;\nJSON.stringify({ read });\nconst result = new Box(...[read]);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("tainted_input")
+    );
+}
+
+#[test]
+fn published_class_with_a_borrowed_method_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } get() { return this.read(); } }\nglobalThis.borrowed = Box.prototype.get;\nconst result = new Box(...[() => 3]);\nconsole.log(result.get());",
+            &[],
+        ),
+        global_reach("borrowed_receiver")
+    );
+}
+
+#[test]
+fn dynamic_scope_in_the_chunk_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("dynamic_scope")
     );
 }
 
