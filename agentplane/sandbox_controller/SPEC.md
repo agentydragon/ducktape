@@ -195,8 +195,9 @@ with the reason and message of `Running`.
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
 `AwaitingRunner`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
-means the authenticated Gateway connection has not reported its runner boot ID, so it is not yet a
-live connection. Losing the connection restarts and replaces nothing. A controller not configured to
+means the Gateway has claimed observation of this incarnation but has not received its first valid
+`WatchState` message containing the runner boot ID. The Gateway initiates the mTLS connection to the
+runner listener; the claim precedes dialing and does not prove connectivity or authentication. Losing the connection restarts and replaces nothing. A controller not configured to
 read Leases omits it.
 
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has

@@ -51,7 +51,7 @@ const (
 	// Lease watch enqueues on.
 	runnerLapsedPoll = 5 * time.Second
 	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
-	// drops every connection at once and the runners reconnect to the new replicas.
+	// drops every connection at once and the new Gateway replicas reconnect to the runners.
 	runnerDisconnectGrace = time.Minute
 )
 
@@ -756,15 +756,15 @@ func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condi
 		return condition, 0
 	}
 	if lease == nil {
-		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
+		condition.Reason, condition.Message = "NeverConnected", "the Runner Gateway has not established a connection to this runner"
 		return condition, 0
 	}
 	if runner := lease.Annotations[sandboxlease.PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
-		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
+		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the Runner Gateway has not established a connection to Pod %s's runner", incarnation.Name)
 		return condition, 0
 	}
 	if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] == "" {
-		condition.Reason, condition.Message = "ConnectionPending", "the runner authenticated but has not reported its boot identity"
+		condition.Reason, condition.Message = "ConnectionPending", "the Runner Gateway is waiting for the runner's first state message; connectivity and authentication are not yet confirmed"
 		return condition, runnerLapsedPoll
 	}
 	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
@@ -774,10 +774,10 @@ func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condi
 	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
 	if remaining := lapse.Sub(now); remaining > 0 {
 		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
-		condition.Message = fmt.Sprintf("Pod %s's runner is connected to the Runner Gateway", incarnation.Name)
+		condition.Message = fmt.Sprintf("the Runner Gateway is connected to Pod %s's runner", incarnation.Name)
 		return condition, remaining
 	}
-	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
+	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("the Runner Gateway has not renewed the connection Lease for Pod %s's runner since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
 	return condition, runnerLapsedPoll
 }
 
@@ -800,7 +800,7 @@ func bootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod,
 	switch facts.Bootstrap {
 	case sandboxlease.BootstrapNone:
 		condition.Status = metav1.ConditionUnknown
-		condition.Reason, condition.Message = "BootstrapNotReported", "the runner has not reported its bootstrap"
+		condition.Reason, condition.Message = "BootstrapNotReported", "the Runner Gateway has not received bootstrap status from the runner"
 	case sandboxlease.BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
 	case sandboxlease.BootstrapSucceeded:
