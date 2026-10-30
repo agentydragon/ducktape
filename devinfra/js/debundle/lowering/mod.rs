@@ -460,6 +460,7 @@ pub fn materialize_logical_modules(
         &declared_pure_new,
         &full_swap_chunk_ids,
         &vendor_affected_chunk_ids,
+        &vendor_plan.partially_swapped_symbols(),
         Some(&cross_module_chunk_closure),
     )?;
     let chunk_results = GLOBALS

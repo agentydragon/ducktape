@@ -181,6 +181,22 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
+    /// Swapped symbols of every partially swapped chunk, plain or bundled:
+    /// the emitted program runs replacement code for each of them.
+    pub fn partially_swapped_symbols(
+        &self,
+    ) -> BTreeMap<ChunkId, &BTreeMap<String, PartialSwapSymbol>> {
+        self.partial_swaps
+            .iter()
+            .map(|(chunk, plan)| (*chunk, &plan.symbols))
+            .chain(
+                self.bundled_partial_swaps
+                    .iter()
+                    .map(|(chunk, plan)| (*chunk, &plan.symbols)),
+            )
+            .collect()
+    }
+
     pub fn affected_chunk_ids(&self) -> BTreeSet<ChunkId> {
         self.boundary_renames
             .iter()
