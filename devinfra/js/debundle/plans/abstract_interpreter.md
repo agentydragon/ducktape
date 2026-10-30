@@ -315,6 +315,14 @@ Canonical replays (hours at `-c opt`, both corpora) are required only for the
 steps that change what the gates can prove: 2, 5a–5d and 6. Steps 3, 4, 7
 and 8 are covered by the public controls and the e2e suite.
 
+Pipeline order: `facts/analyze.rs::analyze_chunk_with_policy_and_sync` runs
+purity (`ChunkCodeGraph`) → heap-content effects → the interpreter
+(`annotate_synchronous_calls`), and the interpreter consumes the purity graph
+and statement facts. The vendor-prune path (`analyze_vendor_prune_chunk`)
+never runs the interpreter. A step that derives from the interpreter a fact
+purity or heap-content effects consume lands after 4c and 6, or owns that
+reorder and measures its cost.
+
 ### Step 0 — baseline
 
 Done 2026-10-29: <../perf/abstract_interpreter_step0_baseline.md> (public
@@ -382,7 +390,12 @@ taint = Clean ∧ props ⊆ Prim`. Delete `whitelists.rs`, `builtin_calls.rs`,
 - 5a collections: `set_iterables.rs`, `array_spreads.rs` → derived from
   `Iterate` resolution on `Clean` dense arrays; the interval co-location check
   stays in `graph/build.rs`. Tests `set_iterable_reentry`,
-  `stable_array_spread`, `native_operation_input`.
+  `stable_array_spread`, `native_operation_input`. Depends on 4b, 4c and 6:
+  purity and heap-content effects consume these certificates before the
+  interpreter runs (§ 5 pipeline order); the domain has no heap
+  `escape`/`taint`/`dense` state before 4b; and a flow-insensitive
+  derivation from `ChunkValueFlow` loses per-prefix precision, since
+  `array_spreads.rs` accepts producers mutated or escaping after the spread.
 - 5b local construction: `local_class_construction.rs`, `fresh_receiver.rs`,
   `fresh_record.rs` → interpreting the constructor/factory body. Tests
   `local_class_construction`, `local_record_factory_contract`,
