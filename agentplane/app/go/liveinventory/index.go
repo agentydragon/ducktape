@@ -308,6 +308,9 @@ func (i *Index) GetSandbox(ctx context.Context, name string) (*sandboxapi.Sandbo
 	return sandboxCopy, pod.DeepCopy(), nil
 }
 
+// Health returns the cache's watch health, as Snapshot reports it.
+func (i *Index) Health() watchhealth.Status { return i.health.Status() }
+
 // PolicyGeneration returns the monotonic trigger changed by every PolicyBinding or PolicySet event.
 func (i *Index) PolicyGeneration() uint64 { return i.policyGeneration.Load() }
 
