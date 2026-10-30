@@ -22,9 +22,9 @@ fence enforces. The target (or the fence) enforces every call; no human is on th
   custody is separate from whose authority the target enforces.
 - Audit lives in the target's logs and the fence's logs, not in a ledger of named operations.
 
-**Brokered credential.** Haku holds the operator's privileged credential. The agent calls a Haku
-tool; policy auto-approves or a human approves; Haku executes with the operator's credential and
-returns the result.
+**Brokered credential.** The Action Service holds the operator's privileged credential. The agent
+requests an Action; policy auto-approves or a human approves; the Action Service executes with the
+operator's credential and returns the result.
 
 - Works for any system, including ones with no usable RBAC.
 - Argument-level conditions are possible ("only labels under this namespace", "only repositories
@@ -48,9 +48,11 @@ The common case is a mix, split by operation class rather than by system:
   operator approves once, and the target enforces from then on. This keeps the apiserver's
   authorization semantics where they belong; the risk is authority issued that cannot be revoked
   in time. See [the candidate revocation gate](#candidate-revocation-gate-for-minted-grants).
-- **Broker refuses what delegation already covers.** The Kubernetes redundancy auto-deny is the
-  general rule: when the caller's own identity covers a request, the brokered path denies with a
-  pointer to the direct path, so the privileged credential is never spent where a scoped one works.
+- **Broker refuses what delegation already covers.** When the caller's own identity covers a
+  request, the brokered path denies with a pointer to the direct path, so the privileged credential
+  is never spent where a scoped one works. Haku Console's Kubernetes redundancy auto-deny did this
+  (removed in #8877); the Action Service has no equivalent yet
+  ([TODO](../action_service/TODO.md#refuse-an-action-the-callers-own-permissions-already-cover)).
 
 ## Kubernetes Sandbox access decisions
 
@@ -77,7 +79,7 @@ accounting and the observation-to-use race; they are not established by this pla
 
 Authority in Kubernetes is the token times the bindings, and either can be cut at the apiserver.
 "Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
-cut under Haku's control alone: the agent never holds the real credential, only a placeholder, and
+cut under Agentplane's control alone: the agent never holds the real credential, only a placeholder, and
 the proxy substitutes the real one only while the identity's RBAC objects match what the ledger
 says they should be. This applies the egress gateway's
 [identity boundary and evidence](../docs/adr_sandbox_proxy_gateway.md#identity-boundary-and-historical-evidence)
