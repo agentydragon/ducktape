@@ -1,7 +1,7 @@
 // Package api serves the History Service's HistoryService gRPC API: the reads of retained Session history and
 // of its folded Threads, raw entry follows and summary change watches.
 //
-// Every RPC admits only the configured callers, each proving a ServiceAccount by a bearer reviewed on that call
+// Methods admits only the configured callers, each proving a ServiceAccount by a bearer reviewed on that call
 // (agentplane/docs/grpc_services.md): a public Session UUID is not itself authority to read a transcript.
 package api
 
@@ -25,23 +25,17 @@ type Service struct {
 	historypb.UnimplementedHistoryServiceServer
 	reader         *reads.Reader
 	wakeups        *wakeups.Hub
-	resolver       *auth.Resolver
-	callers        map[auth.Account]struct{}
 	requestTimeout time.Duration
 	lease          time.Duration
 	draining       context.Context
 	drain          context.CancelFunc
 }
 
-// Options are what a Service reads and whom it admits.
+// Options are what a Service reads.
 type Options struct {
 	Reader *reads.Reader
 	// Wakeups listens to raw history, summary changes and Session openings.
 	Wakeups *wakeups.Hub
-	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver reviews, and
-	// the ServiceAccount must be one of Callers.
-	Resolver *auth.Resolver
-	Callers  []auth.Account
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
 	RequestTimeout time.Duration
 	// WatchLease ends each watch and follow after this long: a stream is admitted once, so the lease bounds
@@ -49,14 +43,27 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-func NewService(options Options) *Service {
-	allowed := make(map[auth.Account]struct{}, len(options.Callers))
-	for _, caller := range options.Callers {
-		allowed[caller] = struct{}{}
+// Methods admits callers to every HistoryService RPC: each proves, by a bearer resolver reviews, one of callers.
+func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
+	rule := auth.Accounts(resolver, callers)
+	return auth.Methods{
+		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
+		historypb.HistoryService_FollowSession_FullMethodName:            rule,
+		historypb.HistoryService_ReadSessionObservations_FullMethodName:  rule,
+		historypb.HistoryService_GetSessionSummary_FullMethodName:        rule,
+		historypb.HistoryService_BatchGetSessionSummaries_FullMethodName: rule,
+		historypb.HistoryService_ReadThreadEntities_FullMethodName:       rule,
+		historypb.HistoryService_ReadEntityEvidence_FullMethodName:       rule,
+		historypb.HistoryService_ReadNativeFrames_FullMethodName:         rule,
+		historypb.HistoryService_FindSessions_FullMethodName:             rule,
+		historypb.HistoryService_WatchSessionSummaries_FullMethodName:    rule,
 	}
+}
+
+func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
-		reader: options.Reader, wakeups: options.Wakeups, resolver: options.Resolver, callers: allowed,
+		reader: options.Reader, wakeups: options.Wakeups,
 		requestTimeout: options.RequestTimeout, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -64,21 +71,10 @@ func NewService(options Options) *Service {
 // Drain ends every open watch and follow, so a shutdown that waits for open calls is not held up until their leases.
 func (s *Service) Drain() { s.drain() }
 
-// authenticate admits the configured callers only.
-func (s *Service) authenticate(ctx context.Context) error {
-	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
-		return failure(ctx, err)
-	}
-	return nil
-}
-
-// serve admits the caller, then runs read, both under the request timeout.
+// serve runs read under the request timeout.
 func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *Request) (*Response, error)) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
 	defer cancel()
-	if err := s.authenticate(ctx); err != nil {
-		return nil, err
-	}
 	response, err := read(ctx, request)
 	if err != nil {
 		return nil, failure(ctx, err)
@@ -123,7 +119,7 @@ func (s *Service) ReadNativeFrames(ctx context.Context, request *historypb.ReadN
 func failure(ctx context.Context, err error) error {
 	switch {
 	case status.Code(err) != codes.Unknown:
-		// An admission refusal, or a failure already answered.
+		// A failure already answered.
 		return err
 	case errors.Is(err, storage.ErrNotFound):
 		return status.Error(codes.NotFound, "session history not found")

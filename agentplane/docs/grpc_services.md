@@ -55,11 +55,16 @@ follows it; code that differs converges on it.
 
 - Callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
-- A servicer admits its caller first thing in each RPC through `agentplane/workload_auth/go/auth`:
-  `Resolver.RequireAccount` checks the caller's account against an allowlist, and `Resolver.Resolve`
-  returns the whole principal for a door that authorizes on more than the account (the runner ingress
-  binds a Session to its writer; runner control resolves the Sandbox Pod). Services never carry their
-  own copy of the bearer parsing.
+- A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
+  (`agentplane/workload_auth/go/auth`): `auth.Methods` maps every served method's full name to a
+  `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves, `Public`
+  only for the health service via `auth.HealthMethods`). A method it does not list is refused before
+  its bearer is read, so a new RPC is closed until its Rule is written. The package owning a servicer
+  exports its `Methods`; the handler reads the admitted principal with `auth.Caller`. Tests iterate
+  the generated `ServiceDesc` with `agentplane/testing/grpcmethods`.
+- A door that authorizes on more than the account calls `Resolver.Resolve` itself (the runner
+  ingress binds a Session to its writer; runner control resolves the Sandbox Pod). Services never
+  carry their own copy of the bearer parsing.
 
 ## Errors
 

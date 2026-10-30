@@ -15,12 +15,10 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,28 +28,12 @@ import (
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
 
-const testAudience = "test-dispatcher"
+// caller is the account the store tests' calls were admitted as.
+var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
-var (
-	api    *kubeapiserver.Server
-	caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
-	// callerToken proves caller to the Service's resolver.
-	callerToken string
-)
-
-func useAPIServer(server *kubeapiserver.Server) (err error) {
-	api = server
-	callerToken, err = server.WorkloadToken(context.Background(), caller, testAudience)
-	return err
-}
-
-func callerResolver(t *testing.T) *auth.Resolver {
-	t.Helper()
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{caller.Namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resolver
+// admitted is a call context admitted as caller.
+func admitted() context.Context {
+	return auth.WithCaller(context.Background(), auth.Principal{Account: caller})
 }
 
 type oneSandbox struct{}
@@ -397,12 +379,10 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	store := testStore(t, 3)
-	resolver := callerResolver(t)
 	service := &Service{
-		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{caller: {}},
-		WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
+		Store: store, WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
 	}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	ctx := admitted()
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
 	first, err := service.SubmitInput(ctx, request)
 	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
@@ -461,17 +441,15 @@ func (w *blockedDispatchWatch) Send(*dispatcherpb.WatchDispatchesResponse) error
 }
 
 func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	ctx := admitted()
 	store := testStore(t, 5)
 	for _, id := range []string{"watch-a", "watch-b", "watch-c"} {
 		if _, err := store.Enqueue(ctx, "watch-session", "sandbox-api", sandboxUID, input(id, "x"), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	resolver := callerResolver(t)
 	service := &Service{
-		Store: store, Auth: resolver, Callers: map[auth.Account]struct{}{caller: {}},
-		Hub:        &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+		Store: store, Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -507,7 +485,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 		{name: "caller cancellation", lease: time.Hour, cancel: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			base := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+			base := admitted()
 			ctx, cancel := context.WithCancel(base)
 			defer cancel()
 			release := make(chan struct{})
@@ -515,8 +493,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
 			}
 			service := &Service{
-				Store: testStore(t, 5), Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}},
-				Hub:        &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+				Store: testStore(t, 5), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
 				WatchLease: tc.lease,
 			}
 			request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
@@ -556,12 +533,11 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 }
 
 func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
-	resolver := callerResolver(t)
 	callers := map[auth.Account]struct{}{caller: {}}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	ctx := admitted()
 
 	blocked := &Service{
-		Store: testStore(t, 3), Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
+		Store: testStore(t, 3), WakeCallers: callers, Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
@@ -573,7 +549,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
 	runner := &rejectingRunner{err: rejection}
 	service := &Service{
-		Store: testStore(t, 3), Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
+		Store: testStore(t, 3), WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
@@ -1240,7 +1216,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 }
 
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	ctx := admitted()
 	store := testStore(t, 3)
 	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
@@ -1259,7 +1235,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
 	runner := &acceptingRunner{calls: make(chan string, 1)}
-	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, Runner: runner}
+	service := &Service{Store: store, Sandboxes: blockedSandbox{}, Runner: runner}
 	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "active-turn"})
 	if err != nil || result.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
 		t.Fatalf("central interrupt: %v %v", result, err)
@@ -1270,9 +1246,9 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 }
 
 func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	ctx := admitted()
 	store := testStore(t, 3)
-	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
+	service := &Service{Store: store, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)

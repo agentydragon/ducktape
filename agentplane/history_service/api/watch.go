@@ -26,9 +26,6 @@ type watchStream = grpc.ServerStreamingServer[historypb.WatchSessionSummariesRes
 // spurious `changed`.
 func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummariesRequest, stream watchStream) error {
 	ctx := stream.Context()
-	if err := s.admit(ctx); err != nil {
-		return err
-	}
 	leased, endLease := context.WithTimeout(ctx, s.lease)
 	defer endLease()
 	defer context.AfterFunc(s.draining, endLease)()
@@ -61,13 +58,6 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 			return s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
 		}
 	}
-}
-
-// admit authenticates under the request timeout; the stream itself carries no deadline.
-func (s *Service) admit(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
-	defer cancel()
-	return s.authenticate(ctx)
 }
 
 // announceOpenings sends `session_opened` for each Session recorded after the position, and returns the last

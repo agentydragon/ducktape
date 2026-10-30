@@ -2,8 +2,8 @@
 // subscriptions and inboxes, and `NotificationsOperator`, which the integration app calls to show an operator
 // what a Sandbox's notifications are doing.
 //
-// Every RPC admits its caller first, by a bearer reviewed on that call (agentplane/docs/grpc_services.md). A
-// workload acts for its own ServiceAccount and only on what that account owns.
+// Methods admits every RPC's caller before it runs, by a bearer reviewed on that call
+// (agentplane/docs/grpc_services.md). A workload acts for its own ServiceAccount and only on what that account owns.
 package api
 
 import (
@@ -15,6 +15,8 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -51,7 +53,7 @@ type Options struct {
 	Store *store.Store
 	// Wakeups must listen to store.WorkChannel, which the operator's watches follow.
 	Wakeups *wakeups.Hub
-	// Resolver reviews a caller's bearer; it admits only the namespaces the Sandboxes run in.
+	// Resolver reviews a caller's bearer for Methods; it admits only the namespaces the Sandboxes run in.
 	Resolver *auth.Resolver
 	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
 	Namespace string
@@ -76,4 +78,30 @@ type Options struct {
 	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how long a
 	// revoked token keeps reading.
 	WatchLease time.Duration
+}
+
+// Methods admits any workload Options.Resolver accepts to Notifications, and only the OperatorReader to
+// NotificationsOperator.
+func Methods(options Options) auth.Methods {
+	workloads := auth.AnyAccount(options.Resolver)
+	var operators []auth.Account
+	if options.OperatorReader != "" {
+		operators = []auth.Account{{Namespace: options.Namespace, Name: options.OperatorReader}}
+	}
+	operator := auth.Accounts(options.Resolver, operators)
+	return auth.Methods{
+		notificationspb.Notifications_CreateSubscription_FullMethodName:           workloads,
+		notificationspb.Notifications_ListSubscriptions_FullMethodName:            workloads,
+		notificationspb.Notifications_GetSubscription_FullMethodName:              workloads,
+		notificationspb.Notifications_RenewSubscription_FullMethodName:            workloads,
+		notificationspb.Notifications_CancelSubscription_FullMethodName:           workloads,
+		notificationspb.Notifications_ListInboxes_FullMethodName:                  workloads,
+		notificationspb.Notifications_ReadInbox_FullMethodName:                    workloads,
+		notificationspb.Notifications_AcknowledgeInbox_FullMethodName:             workloads,
+		notificationspb.Notifications_RetireInbox_FullMethodName:                  workloads,
+		notificationspb.Notifications_SendMessage_FullMethodName:                  workloads,
+		notificationspb.Notifications_GetMessage_FullMethodName:                   workloads,
+		operatorpb.NotificationsOperator_WatchSandboxNotifications_FullMethodName: operator,
+		operatorpb.NotificationsOperator_WatchSessionNotices_FullMethodName:       operator,
+	}
 }
