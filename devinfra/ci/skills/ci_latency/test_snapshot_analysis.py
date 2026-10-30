@@ -90,6 +90,82 @@ def test_latest_attempt_without_visible_gate_does_not_reuse_older_success():
     assert result["heads"][0]["feedback_proxy_seconds"] is None
 
 
+def test_rerun_of_older_workflow_run_is_ordered_by_latest_attempt_job_clock():
+    gate = "Required gate"
+    head = "f" * 40
+    snapshot = {
+        "runs": [_run(1, 10, "2026-01-01T10:00:00Z", head, attempt=2), _run(2, 10, "2026-01-01T10:30:00Z", head)],
+        "jobs": [
+            _job(
+                11,
+                1,
+                gate,
+                "2026-01-01T11:00:00Z",
+                "2026-01-01T11:01:00Z",
+                "2026-01-01T11:02:00Z",
+                attempt=2,
+                conclusion="failure",
+            ),
+            _job(21, 2, gate, "2026-01-01T10:30:00Z", "2026-01-01T10:31:00Z", "2026-01-01T10:32:00Z"),
+        ],
+    }
+
+    result = snapshot_analysis.analyze_feedback(snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate])
+
+    gate_result = result["heads"][0]["gates"][0]
+    assert gate_result["workflows"][0]["run_id"] == 1
+    assert gate_result["state"] == "failed"
+
+
+def test_rerun_without_attempt_clock_is_unknown_even_if_created_time_orders_older_run_first():
+    gate = "Required gate"
+    head = "1" * 40
+    snapshot = {
+        "runs": [_run(1, 10, "2026-01-01T10:00:00Z", head, attempt=2), _run(2, 10, "2026-01-01T10:30:00Z", head)],
+        "jobs": [
+            _job(11, 1, gate, None, None, None, attempt=2, status="in_progress", conclusion=None),
+            _job(21, 2, gate, "2026-01-01T10:30:00Z", "2026-01-01T10:31:00Z", "2026-01-01T10:32:00Z"),
+        ],
+    }
+
+    result = snapshot_analysis.analyze_feedback(snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate])
+
+    gate_result = result["heads"][0]["gates"][0]
+    assert gate_result["state"] == "unknown"
+    assert gate_result["attempt"] == "unknown"
+
+
+def test_success_requires_a_valid_completion_clock_for_each_selected_gate_job():
+    gate = "Required gate"
+    head = "2" * 40
+    snapshot = {
+        "runs": [_run(1, 10, "2026-01-01T10:00:00Z", head)],
+        "jobs": [
+            _job(11, 1, gate, "2026-01-01T10:00:00Z", "2026-01-01T10:01:00Z", "2026-01-01T10:02:00Z"),
+            _job(12, 1, gate, "2026-01-01T10:00:00Z", "2026-01-01T10:01:00Z", None),
+        ],
+    }
+
+    result = snapshot_analysis.analyze_feedback(snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate])
+
+    assert result["heads"][0]["outcome"] == "incomplete"
+    assert result["heads"][0]["feedback_proxy_seconds"] is None
+
+
+def test_negative_completion_offset_is_not_reported_as_green_feedback():
+    gate = "Required gate"
+    head = "3" * 40
+    snapshot = {
+        "runs": [_run(1, 10, "2026-01-01T10:00:00Z", head)],
+        "jobs": [_job(11, 1, gate, "2026-01-01T09:58:00Z", "2026-01-01T09:58:30Z", "2026-01-01T09:59:00Z")],
+    }
+
+    result = snapshot_analysis.analyze_feedback(snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate])
+
+    assert result["heads"][0]["outcome"] == "incomplete"
+    assert result["heads"][0]["feedback_proxy_seconds"] is None
+
+
 def test_fork_and_unknown_source_states_are_not_reported_as_green():
     gate_a, gate_b = "Gate A", "Gate B"
     fork = _run(1, 10, "2026-01-01T10:00:00Z", "d" * 40, head_repo="contributor/fork")

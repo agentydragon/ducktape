@@ -36,6 +36,36 @@ def _sort_run(run: Mapping[str, Any]) -> tuple[dt.datetime, int]:
     return created, identifier if isinstance(identifier, int) else -1
 
 
+def _attempt_clock(
+    run: Mapping[str, Any], jobs_by_run: Mapping[int, list[Mapping[str, Any]]], gate: str
+) -> dt.datetime | None:
+    latest_jobs, _ = _latest_attempt_jobs(run, jobs_by_run, gate)
+    if latest_jobs:
+        clocks = [_timestamp(job.get("created_at")) or _timestamp(job.get("started_at")) for job in latest_jobs]
+        known_clocks = [clock for clock in clocks if clock is not None]
+        return min(known_clocks) if len(known_clocks) == len(clocks) else None
+    # A first-attempt run with no matching job can still be ordered by its
+    # creation clock; a rerun keeps the original created_at, so that fallback
+    # cannot order it relative to another run.
+    return _timestamp(run.get("created_at")) if run.get("run_attempt") == 1 else None
+
+
+def _latest_workflow_run(
+    workflow_runs: list[Mapping[str, Any]], jobs_by_run: Mapping[int, list[Mapping[str, Any]]], gate: str
+) -> tuple[Mapping[str, Any], bool]:
+    """Order runs by the selected latest-attempt gate job clocks when possible."""
+    if len(workflow_runs) == 1:
+        return workflow_runs[0], True
+    clocks = [_attempt_clock(run, jobs_by_run, gate) for run in workflow_runs]
+    known_clocks = [clock for clock in clocks if clock is not None]
+    known = len(known_clocks) == len(clocks) and len(set(known_clocks)) == len(clocks)
+    if known:
+        pairs = [(run, clock) for run, clock in zip(workflow_runs, clocks, strict=True) if clock is not None]
+        chosen = max(pairs, key=lambda pair: pair[1])[0]
+        return chosen, True
+    return max(workflow_runs, key=_sort_run), False
+
+
 def _head_source(runs: Iterable[Mapping[str, Any]]) -> tuple[str, str | None]:
     repositories = {
         (run.get("repository") or {}).get("full_name") for run in runs if isinstance(run.get("repository"), dict)
@@ -63,7 +93,7 @@ def _job_state(job: Mapping[str, Any]) -> str:
         )
     conclusion = job.get("conclusion")
     if conclusion == "success":
-        return "success"
+        return "success" if _timestamp(job.get("completed_at")) is not None else "unknown"
     if conclusion in {"failure", "timed_out", "action_required", "startup_failure"}:
         return "failed"
     if conclusion == "cancelled":
@@ -117,7 +147,7 @@ def _gate_result(
     workflow_results: list[dict[str, Any]] = []
     for workflow_id in sorted(source_workflows):
         workflow_runs = [run for run in runs if run.get("workflow_id") == workflow_id]
-        run = max(workflow_runs, key=_sort_run)
+        run, run_order_known = _latest_workflow_run(workflow_runs, jobs_by_run, gate)
         latest_jobs, attempt_known = _latest_attempt_jobs(run, jobs_by_run, gate)
         if not latest_jobs:
             workflow_results.append(
@@ -127,13 +157,14 @@ def _gate_result(
                     "run_attempt": run.get("run_attempt"),
                     "state": "missing",
                     "attempt_known": attempt_known,
+                    "run_order_known": run_order_known,
                     "jobs": [],
                 }
             )
             continue
 
         states = [_job_state(job) for job in latest_jobs]
-        state = _combine_states(states) if attempt_known else "unknown"
+        state = _combine_states(states) if attempt_known and run_order_known else "unknown"
         completed = [job.get("completed_at") for job in latest_jobs]
         completed_times = [_timestamp(value) for value in completed]
         complete_at = max((value for value in completed_times if value is not None), default=None)
@@ -145,7 +176,13 @@ def _gate_result(
             (value for value in (_timestamp(job.get("created_at")) for job in latest_jobs) if value is not None),
             default=None,
         )
+        if state == "success" and any(value is None for value in completed_times):
+            state = "unknown"
         if state == "success" and complete_at is None:
+            state = "unknown"
+        if state == "success" and head_start is not None and complete_at is not None and complete_at < head_start:
+            state = "unknown"
+        if state == "success" and created_at is not None and complete_at is not None and complete_at < created_at:
             state = "unknown"
         workflow_results.append(
             {
@@ -154,6 +191,7 @@ def _gate_result(
                 "run_attempt": run.get("run_attempt"),
                 "state": state,
                 "attempt_known": attempt_known,
+                "run_order_known": run_order_known,
                 "created_at": created_at.isoformat().replace("+00:00", "Z") if created_at else None,
                 "started_at": started_at.isoformat().replace("+00:00", "Z") if started_at else None,
                 "completed_at": complete_at.isoformat().replace("+00:00", "Z") if complete_at else None,
@@ -184,7 +222,11 @@ def _gate_result(
     return {
         "name": gate,
         "state": state,
-        "attempt": "known" if all(result["attempt_known"] for result in workflow_results) else "unknown",
+        "attempt": (
+            "known"
+            if all(result["attempt_known"] and result["run_order_known"] for result in workflow_results)
+            else "unknown"
+        ),
         "completed_at": finished.isoformat().replace("+00:00", "Z") if finished else None,
         "offset_from_first_run_seconds": (finished - head_start).total_seconds() if finished and head_start else None,
         "workflows": workflow_results,
