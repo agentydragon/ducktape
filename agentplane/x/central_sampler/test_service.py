@@ -62,6 +62,8 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
         )
         config.models["compatible-model"] = config.models["test-model"].model_copy(update={"reasoning_efforts": {""}})
         config.models["standard-model"] = ModelConfig(
+            connection="provider",
+            provider_model="standard-provider-model",
             reasoning_efforts={"", "high"},
             api="responses",
             responses=ResponsesConfig(dialect="standard"),
@@ -901,6 +903,8 @@ async def test_unknown_json_function_call_returns_function_output(
             update={
                 "models": {
                     "test-model": ModelConfig(
+                        connection="provider",
+                        provider_model="test-model",
                         reasoning_efforts={"", "high"},
                         api="responses",
                         responses=ResponsesConfig(dialect=dialect),
@@ -975,6 +979,8 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
             update={
                 "models": {
                     "test-model": ModelConfig(
+                        connection="provider",
+                        provider_model="test-model",
                         reasoning_efforts={"", "high"},
                         api="responses",
                         responses=ResponsesConfig(dialect=dialect),

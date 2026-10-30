@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -15,6 +16,8 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
+    PathMapping,
+    Secret,
     Volume,
 )
 from constructs import Construct
@@ -74,8 +77,7 @@ class CentralSampler(Construct):
 
         settings = Settings(
             listen=f"0.0.0.0:{self.service.pod_port}",
-            llm_proxy_url=props.llm_proxy_url,
-            credential_file=props.credential_file,
+            connections=dict(props.connections),
             models=dict(props.models),
             audience=central_sampler.TOKEN_AUDIENCE,
             allowed_accounts={f"{namespace}/{runner_gateway.NAME}"},
@@ -120,6 +122,7 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
+            # Provider Secret files are reread per request; rotating them must not restart the shared host.
             annotations={"configmap.reloader.stakater.com/reload": settings_file.config_map.name},
             replica_profile=replace(
                 env.replicas, count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
@@ -141,6 +144,23 @@ class CentralSampler(Construct):
         workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.deployment.init_containers[0].mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
+        for connection_name, secret_key in props.connection_credentials.items():
+            connection = props.connections.get(connection_name)
+            if connection is None:
+                raise ValueError(f"credential configured for unknown connection {connection_name!r}")
+            credential_file = connection.auth.credential_file
+            if credential_file is None:
+                raise ValueError(f"connection {connection_name!r} has a Secret but no credential_file")
+            if secret_key.secret.namespace != namespace:
+                raise ValueError(f"connection {connection_name!r} credential Secret must be in {namespace!r}")
+            credential_volume = Volume.from_secret(
+                self,
+                f"{connection_name}-credential-volume",
+                Secret.from_secret_name(self, f"{connection_name}-credential-secret", secret_key.secret.name),
+                default_mode=0o440,
+                items={secret_key.key: PathMapping(path=credential_file.name)},
+            )
+            workload.container.mount(str(credential_file.parent), credential_volume, read_only=True)
         workload.project_tokens(
             "caller-tokens",
             "/var/run/secrets/central-sampler",
@@ -154,18 +174,30 @@ class CentralSampler(Construct):
     def add_platform_resources(self) -> None:
         """Add the API admission and egress rules used by the sampler runtime."""
         namespace = self.env.namespace
+        props = self.env.central_sampler
+        assert props is not None
+        egress = [
+            cilium.dns_egress(),
+            EgressRule.to_entities(Entity.KUBE_APISERVER),
+            database.egress(namespace),
+            runner_gateway.service(namespace).egress(),
+            history_service.ingress_service(namespace).egress(),
+            llm_ingress.service(namespace).egress(),
+        ]
+        anthropic_connection = props.connections.get("anthropic-api")
+        if (
+            anthropic_connection is not None
+            and urlsplit(str(anthropic_connection.base_url)).hostname == "api.anthropic.com"
+        ):
+            # The DNS proxy must observe a matching query before a Cilium toFQDNs
+            # peer can authorize the resolved destination.
+            egress.append(cilium.dns_egress(resolves=["api.anthropic.com"]))
+            egress.append(EgressRule.to_fqdns("api.anthropic.com"))
         NetworkPolicy(
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=central_sampler.NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[runner_gateway.service(namespace).pods.admit(self.service.pod_port)],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                database.egress(namespace),
-                runner_gateway.service(namespace).egress(),
-                history_service.ingress_service(namespace).egress(),
-                llm_ingress.service(namespace).egress(),
-            ],
+            egress=egress,
         )

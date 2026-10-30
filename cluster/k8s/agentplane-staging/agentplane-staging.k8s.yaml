@@ -2841,10 +2841,26 @@ data:
   settings.json: |
     {
       "listen": "0.0.0.0:8080",
-      "llm_proxy_url": "http://llm-ingress.agentplane-staging.svc:8080",
-      "credential_file": "/var/run/secrets/central-sampler/llm",
+      "connections": {
+        "llm-ingress": {
+          "base_url": "http://llm-ingress.agentplane-staging.svc:8080",
+          "auth": {
+            "type": "bearer",
+            "credential_file": "/var/run/secrets/central-sampler/llm"
+          }
+        },
+        "anthropic-api": {
+          "base_url": "https://api.anthropic.com",
+          "auth": {
+            "type": "anthropic_api_key",
+            "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key"
+          }
+        }
+      },
       "models": {
         "chatgpt-sub/oai-responses/gpt-6-astra": {
+          "connection": "llm-ingress",
+          "provider_model": "chatgpt-sub/oai-responses/gpt-6-astra",
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -2860,6 +2876,8 @@ data:
           ]
         },
         "chatgpt-sub/oai-responses/gpt-6-luna": {
+          "connection": "llm-ingress",
+          "provider_model": "chatgpt-sub/oai-responses/gpt-6-luna",
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -2875,6 +2893,8 @@ data:
           ]
         },
         "chatgpt-sub/oai-responses/gpt-6.1-sol": {
+          "connection": "llm-ingress",
+          "provider_model": "chatgpt-sub/oai-responses/gpt-6.1-sol",
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -2890,6 +2910,8 @@ data:
           ]
         },
         "antigravity/ant-messages/claude-opus-4-6-thinking": {
+          "connection": "llm-ingress",
+          "provider_model": "antigravity/ant-messages/claude-opus-4-6-thinking",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2904,6 +2926,8 @@ data:
           ]
         },
         "antigravity/ant-messages/claude-sonnet-4-6": {
+          "connection": "llm-ingress",
+          "provider_model": "antigravity/ant-messages/claude-sonnet-4-6",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2918,6 +2942,8 @@ data:
           ]
         },
         "antigravity/ant-messages/gemini-3-flash": {
+          "connection": "llm-ingress",
+          "provider_model": "antigravity/ant-messages/gemini-3-flash",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2932,6 +2958,8 @@ data:
           ]
         },
         "antigravity/ant-messages/gemini-3.5-flash-lite": {
+          "connection": "llm-ingress",
+          "provider_model": "antigravity/ant-messages/gemini-3.5-flash-lite",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2946,6 +2974,8 @@ data:
           ]
         },
         "antigravity/ant-messages/gemini-3.8-flash-high": {
+          "connection": "llm-ingress",
+          "provider_model": "antigravity/ant-messages/gemini-3.8-flash-high",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2959,6 +2989,8 @@ data:
           ]
         },
         "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
+          "connection": "llm-ingress",
+          "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2972,6 +3004,8 @@ data:
           ]
         },
         "ollama/oai-chat/gpt-oss-20b-128k": {
+          "connection": "llm-ingress",
+          "provider_model": "ollama/oai-chat/gpt-oss-20b-128k",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2982,6 +3016,8 @@ data:
           ]
         },
         "ollama/oai-chat/gpt-oss-120b-128k": {
+          "connection": "llm-ingress",
+          "provider_model": "ollama/oai-chat/gpt-oss-120b-128k",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2992,6 +3028,8 @@ data:
           ]
         },
         "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
+          "connection": "llm-ingress",
+          "provider_model": "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -2999,6 +3037,138 @@ data:
           "exec_encoding": "json",
           "reasoning_efforts": [
             ""
+          ]
+        },
+        "anthropic-api/ant-messages/claude-opus-5-5": {
+          "connection": "anthropic-api",
+          "provider_model": "claude-opus-5-5",
+          "api": "anthropic_messages",
+          "anthropic_messages": {
+            "max_tokens": 32768,
+            "thinking": {
+              "type": "adaptive",
+              "block_binding": {
+                "prefix_mismatch_behavior": "error"
+              }
+            },
+            "prompt_cache": {
+              "ttl": "5m"
+            },
+            "cache_diagnostics": true,
+            "per_message_effort": true,
+            "strict_tool_input": true,
+            "eager_input_streaming": true,
+            "compaction": {
+              "max_tokens": 8192,
+              "auto_compact_tokens": 750000
+            }
+          },
+          "exec_encoding": "json",
+          "reasoning_efforts": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "anthropic-api/ant-messages/claude-sonnet-5-5": {
+          "connection": "anthropic-api",
+          "provider_model": "claude-sonnet-5-5",
+          "api": "anthropic_messages",
+          "anthropic_messages": {
+            "max_tokens": 32768,
+            "thinking": {
+              "type": "adaptive",
+              "block_binding": {
+                "prefix_mismatch_behavior": "error"
+              }
+            },
+            "prompt_cache": {
+              "ttl": "5m"
+            },
+            "cache_diagnostics": true,
+            "per_message_effort": true,
+            "strict_tool_input": true,
+            "eager_input_streaming": true,
+            "compaction": {
+              "max_tokens": 8192,
+              "auto_compact_tokens": 750000
+            }
+          },
+          "exec_encoding": "json",
+          "reasoning_efforts": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "anthropic-api/ant-messages/claude-haiku-5-5": {
+          "connection": "anthropic-api",
+          "provider_model": "claude-haiku-5-5",
+          "api": "anthropic_messages",
+          "anthropic_messages": {
+            "max_tokens": 32768,
+            "thinking": {
+              "type": "adaptive",
+              "block_binding": {
+                "prefix_mismatch_behavior": "error"
+              }
+            },
+            "prompt_cache": {
+              "ttl": "5m"
+            },
+            "cache_diagnostics": true,
+            "per_message_effort": true,
+            "strict_tool_input": true,
+            "eager_input_streaming": true,
+            "compaction": {
+              "max_tokens": 8192,
+              "auto_compact_tokens": 750000
+            }
+          },
+          "exec_encoding": "json",
+          "reasoning_efforts": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "xhigh"
+          ]
+        },
+        "anthropic-api/ant-messages/claude-fable-5-1": {
+          "connection": "anthropic-api",
+          "provider_model": "claude-fable-5-1",
+          "api": "anthropic_messages",
+          "anthropic_messages": {
+            "max_tokens": 32768,
+            "thinking": {
+              "type": "adaptive",
+              "block_binding": {
+                "prefix_mismatch_behavior": "error"
+              }
+            },
+            "prompt_cache": {
+              "ttl": "5m"
+            },
+            "cache_diagnostics": true,
+            "per_message_effort": true,
+            "strict_tool_input": true,
+            "eager_input_streaming": true,
+            "compaction": {
+              "max_tokens": 8192,
+              "auto_compact_tokens": 750000
+            }
+          },
+          "exec_encoding": "json",
+          "reasoning_efforts": [
+            "high",
+            "low",
+            "max",
+            "medium",
+            "xhigh"
           ]
         }
       },
@@ -3104,6 +3274,9 @@ spec:
               readOnly: true
             - mountPath: /var/log/central-sampler
               name: logs
+            - mountPath: /var/run/secrets/central-sampler-anthropic
+              name: secret-agentplane-staging-anthropic-api-key
+              readOnly: true
             - mountPath: /var/run/secrets/central-sampler
               name: caller-tokens
               readOnly: true
@@ -3164,6 +3337,13 @@ spec:
           name: central-sampler-settings
         - emptyDir: {}
           name: logs
+        - name: secret-agentplane-staging-anthropic-api-key
+          secret:
+            defaultMode: 288
+            items:
+              - key: api-key
+                path: api-key
+            secretName: agentplane-staging-anthropic-api-key
         - name: caller-tokens
           projected:
             sources:
@@ -3249,6 +3429,27 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchName: api.anthropic.com
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.anthropic.com
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: central-sampler
@@ -3347,6 +3548,38 @@ data:
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K) — cluster Ollama
           reasoning_efforts: []
+        - model: anthropic-api/ant-messages/claude-opus-5-5
+          display_name: Opus 5.5 — Anthropic API
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+        - model: anthropic-api/ant-messages/claude-sonnet-5-5
+          display_name: Sonnet 5.5 — Anthropic API
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+        - model: anthropic-api/ant-messages/claude-haiku-5-5
+          display_name: Haiku 5.5 — Anthropic API
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
+        - model: anthropic-api/ant-messages/claude-fable-5-1
+          display_name: Fable 5.1 — Anthropic API
+          reasoning_efforts:
+            - low
+            - medium
+            - high
+            - xhigh
+            - max
       harnesses:
         HARNESS_CLAUDE:
           - antigravity/ant-messages/claude-opus-4-6-thinking
@@ -3380,6 +3613,10 @@ data:
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          - anthropic-api/ant-messages/claude-opus-5-5
+          - anthropic-api/ant-messages/claude-sonnet-5-5
+          - anthropic-api/ant-messages/claude-haiku-5-5
+          - anthropic-api/ant-messages/claude-fable-5-1
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex
@@ -9076,6 +9313,78 @@ spec:
   target:
     creationPolicy: Owner
     name: litellm-key-agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-anthropic-api-key-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-anthropic-key
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-anthropic-api-key-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-anthropic-api-key-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-anthropic-api-key-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: ESO copy of the canonical Anthropic API key from litellm for the central sampler.
+  name: agentplane-staging-anthropic-api-key
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: litellm-anthropic-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-anthropic-api-key-secret-store
+  target:
+    creationPolicy: Owner
+    name: agentplane-staging-anthropic-api-key
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

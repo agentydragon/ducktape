@@ -98,7 +98,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture-model", Attribution: SessionAttribution{SessionID: "fixture-session"}, Items: []ResponsesItem{item}}, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture-model", Attribution: SessionAttribution{SessionID: "fixture-session"}, Items: []ResponsesItem{item}}, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 			t.Run(string(dialect)+"/"+effort, func(t *testing.T) {
 				attribution := SessionAttribution{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
 				params := ResponsesRequestParams{Model: "fixture", Effort: effort, Attribution: attribution}
-				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: dialect}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}}
+				config := ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: dialect}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}}
 				body, err := BuildResponsesRequest(params, config)
 				if err != nil {
 					t.Fatal(err)
@@ -201,7 +201,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 	for _, mode := range []ResponsesDialect{ResponsesDialectStandard, ResponsesDialectLite} {
 		for _, encoding := range []ExecEncoding{ExecEncodingJSON, ExecEncodingFreeform} {
 			t.Run(string(mode)+"/"+string(encoding), func(t *testing.T) {
-				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding, ReasoningEfforts: []string{"", "high"}}
+				config := ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding, ReasoningEfforts: []string{"", "high"}}
 				body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}}, config)
 				if err != nil {
 					t.Fatal(err)
@@ -289,7 +289,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	items := []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
 	}
-	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}, Items: items}, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}, Items: items}, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}

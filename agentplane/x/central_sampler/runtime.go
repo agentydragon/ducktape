@@ -742,11 +742,19 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	if len(conversation.Items) > 0 {
 		last := conversation.Items[len(conversation.Items)-1]
-		if last.Type == ResponsesItemMessage && last.Role == "assistant" {
+		if (last.Type == ResponsesItemMessage && last.Role == "assistant") || anthropicEndTurn(last) {
 			return "done", nil
 		}
 	}
-	if r.settings.AutoCompactTokens != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *r.settings.AutoCompactTokens && len(state.Cells) == 0 {
+	threshold := r.settings.AutoCompactTokens
+	config := r.settings.Models[session.Model]
+	if config.API == APIStyleAnthropicMessages {
+		threshold = nil
+		if config.AnthropicMessages.Compaction != nil {
+			threshold = config.AnthropicMessages.Compaction.AutoCompactTokens
+		}
+	}
+	if threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
@@ -755,31 +763,64 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
 		return "", err
 	}
+	if config.API == APIStyleAnthropicMessages {
+		conversation, err = r.store.RecordAnthropicExecutionState(ctx, owner, state)
+		if err != nil {
+			return "", err
+		}
+	}
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return "", err
 	}
-	body, err := BuildResponsesRequest(ResponsesRequestParams{
-		Model: session.Model, Effort: session.Effort, Attribution: metadata,
+	params := ResponsesRequestParams{
+		Model: config.ProviderModel, Effort: session.Effort, Attribution: metadata,
 		Items: conversation.Context(), Instructions: conversation.Instructions, ExecutionState: state,
-	}, r.settings.Models[session.Model])
+	}
+	connection, err := r.settings.Connection(session.Model)
 	if err != nil {
 		return "", err
 	}
-	credential, err := r.settings.ReadCredential()
+	var body any
+	if config.API == APIStyleAnthropicMessages {
+		if config.AnthropicMessages.PerMessageEffort {
+			launch := &samplerpb.OpenSessionRequest{}
+			if err := proto.Unmarshal(session.Configuration, launch); err != nil {
+				return "", err
+			}
+			params.Effort = launch.GetSpec().GetReasoningEffort()
+		}
+		body, err = BuildAnthropicRequest(params, config, anthropicPreviousMessageID(conversation.Items))
+	} else {
+		body, err = BuildResponsesRequest(params, config)
+	}
 	if err != nil {
 		return "", err
 	}
-	intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "sampling", "body": body})
+	wire, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}
-	headers, err := r.store.ProviderHeaders(ctx, owner)
+	// Persist the exact outgoing content before dispatch; credentials never enter this record.
+	intentID, err := r.store.Begin(ctx, owner, providerRequestAudit("sampling", connection, config, body, wire))
 	if err != nil {
 		return "", err
 	}
-	response, err := Sample(ctx, client, r.settings.LLMProxyURL, credential, body, r.settings.Models[session.Model].Responses,
-		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, false)
+	var response *ProviderResponse
+	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
+	if config.API == APIStyleAnthropicMessages {
+		response, err = SampleAnthropic(ctx, client, connection, config, wire, evidence, false)
+	} else {
+		var credential string
+		credential, err = connection.Auth.ReadCredential()
+		if err == nil {
+			var headers map[string]string
+			headers, err = r.store.ProviderHeaders(ctx, owner)
+			if err == nil {
+				response, err = Sample(ctx, client, connection.BaseURL, credential, body.(ResponsesRequest), config.Responses, evidence, headers, false)
+			}
+		}
+	}
 	if err != nil {
 		var known *KnownFailureError
 		if errors.As(err, &known) {
@@ -790,9 +831,16 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	seenCallIDs := make(map[string]struct{})
+	if config.API == APIStyleAnthropicMessages {
+		for _, prior := range conversation.Items {
+			if call, ok := prior.ToolCall(); ok {
+				seenCallIDs[call.CallID] = struct{}{}
+			}
+		}
+	}
 	for _, item := range response.Output {
 		call, isCall := item.ToolCall()
-		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && !isCall {
+		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && item.Type != ResponsesItemAnthropicMessage && !isCall {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported provider output type", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err
@@ -824,7 +872,10 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 		}
 	}
-	contextTokens := response.Terminal.TotalTokens()
+	contextTokens := response.AnthropicContextTokens
+	if response.Terminal != nil {
+		contextTokens = response.Terminal.TotalTokens()
+	}
 	if err := r.store.Finish(ctx, owner, intentID, response.Audit(), response.Output, contextTokens); err != nil {
 		return "", err
 	}
@@ -854,18 +905,25 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
+	if r.settings.Models[model].API == APIStyleAnthropicMessages {
+		return r.compactAnthropic(ctx, owner, model, conversation, metadata, state)
+	}
 	body, err := BuildResponsesCompactionRequest(ResponsesRequestParams{
-		Model: model, Attribution: metadata,
+		Model: r.settings.Models[model].ProviderModel, Attribution: metadata,
 		Items: original, Instructions: conversation.Instructions, ExecutionState: state,
 	}, r.settings.Models[model])
 	if err != nil {
 		return err
 	}
-	credential, err := r.settings.ReadCredential()
+	connection, err := r.settings.Connection(model)
 	if err != nil {
 		return err
 	}
-	intentID, err := r.store.BeginCompaction(ctx, owner, map[string]any{"kind": "compaction", "body": body}, original)
+	credential, err := connection.Auth.ReadCredential()
+	if err != nil {
+		return err
+	}
+	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestAudit("compaction", connection, r.settings.Models[model], body, mustJSON(body)), original)
 	if err != nil {
 		return err
 	}
@@ -874,7 +932,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	response, err := Sample(ctx, client, r.settings.LLMProxyURL, credential, body, r.settings.Models[model].Responses,
+	response, err := Sample(ctx, client, connection.BaseURL, credential, body, r.settings.Models[model].Responses,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
 	if err != nil {
 		var known *KnownFailureError

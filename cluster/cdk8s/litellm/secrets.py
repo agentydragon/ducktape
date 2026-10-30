@@ -22,11 +22,13 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"
 _NAMESPACE = "litellm"
 _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
+ANTHROPIC_API_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-anthropic-key").key("api-key")
 _SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml", "rugged-local-llm-bearer-token.sops.yaml")
 _TANA_REFRESH_TOKEN = "tana-firebase-refresh-token"
 
@@ -104,10 +106,10 @@ def _chart(app: App) -> Chart:
     _external_secret(
         chart,
         "anthropic",
-        name="litellm-anthropic-key",
-        target="litellm-anthropic-key",
+        name=ANTHROPIC_API_KEY.secret.name,
+        target=ANTHROPIC_API_KEY.secret.name,
         store=_EXTERNAL_CREDS_STORE,
-        secret_key="api-key",
+        secret_key=ANTHROPIC_API_KEY.key,
         source="llm-anthropic-haku",
         source_property="api-key",
     )

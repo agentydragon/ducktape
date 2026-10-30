@@ -86,7 +86,11 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
         harnesses={
             Harness.CLAUDE: [route.id for route in models.claude],
             Harness.CODEX: [route.id for route in models.codex],
-            **({Harness.CENTRAL_SAMPLER: [route.id for route in models.codex]} if central_sampler_enabled else {}),
+            **(
+                {Harness.CENTRAL_SAMPLER: [route.id for route in models.central_sampler]}
+                if central_sampler_enabled
+                else {}
+            ),
         },
     )
 

@@ -4,6 +4,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
 # gazelle:exclude test_live_provider.py
+# gazelle:exclude test_live_anthropic_provider.py
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -112,6 +113,41 @@ live_openai_py_test(
     ],
 )
 
+# Direct organization Anthropic Messages acceptance; manual and bounded. The live macro name is
+# retained because it also owns pytest's shared mock/live target mechanics.
+live_openai_py_test(
+    name = "test_live_anthropic_provider",
+    size = "large",
+    srcs = ["test_live_anthropic_provider.py"],
+    credential_secret = "ANTHROPIC_API_KEY",
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    live_env = ["ANTHROPIC_MODEL"],
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":testing",
+        ":testing_store",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/testing:codex_fixtures",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2_grpc",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
 py_test(
     name = "test_service",
     size = "medium",
@@ -139,6 +175,34 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_anthropic_service",
+    size = "medium",
+    srcs = ["test_anthropic_service.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":settings",
+        ":testing",
+        ":testing_store",
+        "//:conftest",
+        "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/runner:runner_service_pb2",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -281,6 +345,7 @@ py_library(
 go_library(
     name = "central_sampler",
     srcs = [
+        "anthropic.go",
         "codemode.go",
         "codemode_description.go",
         "codemode_host.go",
@@ -355,6 +420,7 @@ go_test(
     name = "central_sampler_test",
     size = "medium",
     srcs = [
+        "anthropic_test.go",
         "codemode_description_test.go",
         "codemode_output_test.go",
         "codemode_protocol_test.go",

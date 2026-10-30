@@ -33,9 +33,12 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 The opt-in [central code-mode sampler](x/central_sampler/README.md) keeps sampling, JavaScript
 and continuation in a separate service and database; the Sandbox supplies only its executor.
 Wrapped Codex and Claude continue to sample and execute inside their Sandbox. Staging enables the
-optional cdk8s sampler with the same models as Codex; existing native Sessions retain their harness.
-The [k3s sampler scenarios](system_tests/README.md#central-sampler) use the same workload construct,
-including its database migration and projected service-account credentials.
+optional cdk8s sampler with shared Responses routes and a separate direct-API selection. Existing
+native Sessions retain their harness. The sampler selects direct Anthropic Messages API routes
+independently; those direct models are not offered by the Codex or Claude harnesses. Responses calls
+use LLM ingress with the projected workload token, while Anthropic calls use a separate mounted API
+key and a host-pinned Cilium egress rule. The [k3s sampler scenarios](system_tests/README.md#central-sampler)
+use the same workload construct, including its database migration and projected service-account credentials.
 
 ## Go service images
 
@@ -100,6 +103,8 @@ flowchart LR
     end
     alloy[Alloy OTLP receiver]
     sdk_services[[Instrumented Agentplane services]]
+    responses[Responses API providers]
+    anthropic[Anthropic Messages API]
 
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
@@ -124,7 +129,8 @@ flowchart LR
     sampler --> samplerdb
     sampler -->|typed execution: Executor gRPC| gw
     sampler -->|RunnerIngress.Push| hs
-    sampler -->|Responses API, Session attribution| llm
+    sampler -->|Responses API| llm -->|model API| responses
+    sampler -->|direct Anthropic Messages API| anthropic
     gw --> k8s
     notif --> k8s
     actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s

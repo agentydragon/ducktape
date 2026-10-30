@@ -55,6 +55,40 @@ class Store:
             ).one()
         return SessionSnapshot(cursor=row.cursor, blocked=row.blocked)
 
+    async def archive_items(self, session_id: str) -> list[dict[str, Any]]:
+        """Append-only conversation transcript, retained across compaction."""
+        async with self.engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT item::text FROM sampler_conversation_item i "
+                        "JOIN sampler_session s ON s.conversation_id=i.conversation_id "
+                        "WHERE s.id=:session_id ORDER BY i.ordinal"
+                    ),
+                    {"session_id": session_id},
+                )
+            ).all()
+        decoded = [json.loads(row[0]) for row in rows]
+        assert all(isinstance(item, dict) for item in decoded)
+        return decoded
+
+    async def active_context(self, session_id: str) -> list[dict[str, Any]]:
+        """The current model context, falling back to the full archive before compaction."""
+        async with self.engine.connect() as connection:
+            encoded = await connection.scalar(
+                text(
+                    "SELECT c.context_items::text FROM sampler_conversation c "
+                    "JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=:session_id"
+                ),
+                {"session_id": session_id},
+            )
+        if encoded is None or encoded == "null":
+            return await self.archive_items(session_id)
+        decoded: Any = json.loads(encoded)
+        assert isinstance(decoded, list)
+        assert all(isinstance(item, dict) for item in decoded)
+        return decoded
+
     async def idle_generation(self, session_id: str) -> int | None:
         async with self.engine.connect() as connection:
             generation = await connection.scalar(

@@ -803,9 +803,12 @@ func newCodeModeAdvanceFixture(t *testing.T, call ResponsesToolCall) (*Store, Ow
 		execEncoding = ExecEncodingFreeform
 	}
 	settings := Settings{
+		Connections: map[string]ConnectionConfig{
+			"provider": {BaseURL: "https://provider.invalid", Auth: AuthConfig{Type: AuthTypeBearer, Credential: "fixture-credential"}},
+		},
 		Models: map[string]ModelConfig{
 			"fixture-model": {
-				API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite},
+				Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite},
 				ExecEncoding: execEncoding, ReasoningEfforts: []string{""},
 			},
 		},

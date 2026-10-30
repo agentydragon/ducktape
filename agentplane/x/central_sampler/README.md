@@ -1,7 +1,7 @@
 # Central sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses API loop and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
+Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
@@ -17,7 +17,7 @@ the pinned upstream Codex binary. Python is used only by the acceptance fixtures
 
 [The API](sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
 recovery and evidence; the [sampling plan](../../plans/sampling_outside_sandboxes.md) records the
-placement decision and deferred Claude branch.
+placement decision and deferred follow-ups.
 
 For a blocked Session, use the [recovery guide](docs/blocked_session_recovery.md) to inspect its
 reason and linked evidence without replaying an uncertain operation.
@@ -36,11 +36,10 @@ own Pod, initialize its DB with an init container, and use projected service-acc
 Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
 CPU and memory limits.
 
-Server-owned configuration names the service, the LLM proxy base URL, credential source,
+Server-owned configuration names the service, provider connections and credential sources,
 model contracts and per-model reasoning-effort allowlists, TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. The LLM proxy connection
-uses exactly one of `credential` or `credential_file`; the service reads the file before each
-request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named connection uses `auth.type` (`bearer` or `anthropic_api_key`) and exactly one of
+`auth.credential` or `auth.credential_file`; the service reads the file before each request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
 `gateway_token_file`. The sampler uses one generated `Executor` client for its Gateway and direct
@@ -101,41 +100,85 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 Run the service, exporter and executor integration targets via Bazel. They use real PostgreSQL,
 pinned upstream host/executor processes, authenticated Gateway/History and scripted provider wire
 fixtures. Scripted acceptance does not establish live provider or subscription compatibility.
-Provider compaction uses Codex's remote-v2 beta protocol; choose a supporting endpoint/model.
+Responses Lite compaction uses Codex's remote-v2 beta protocol. Anthropic uses native server-side
+on-demand compaction; choose a supporting model. The manual
+`//agentplane/x/central_sampler:test_live_anthropic_provider.live` target exercises real organization
+API access, strict JSON exec, signed thinking and compaction across restart, and Haiku cache
+creation/reads through an effort change. BuildBuddy must supply `ANTHROPIC_API_KEY` securely;
+[persistent provisioning remains a follow-up](https://github.com/agentydragon/ducktape/issues/13063).
 See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results and fixture diagnosis.
 
 ## Model contracts
 
-Only `api: responses` is implemented. A future API adapter (such as Anthropic Messages) can add
-its own API-specific configuration alongside the shared exec encoding. Unsupported API values
-are rejected. Provider-native transcript and continuation handling still require that adapter;
-this configuration change does not implement cross-API session switching.
-
-The top-level `models` map keys model route IDs to an API, tool encoding and allowed reasoning efforts.
-Agentplane deployment configuration owns these compatibility choices; the shared model catalog
-holds no sampler-specific fields. The service uses one top-level proxy connection; upstream
-routing belongs to the LLM proxy:
+The `models` map binds public route IDs to a named `connection`, explicit `provider_model`,
+API contract and reasoning-effort allowlist. Connections belong to server settings; Session callers
+cannot choose endpoints or authentication. The organization Anthropic connection goes directly to
+`api.anthropic.com`, independently of the Responses proxy. Both providers use the same V8 host,
+nested tools, executor, effect journal and History export.
 
 ```json
 {
-  "llm_proxy_url": "http://llm-proxy.invalid",
-  "credential_file": "/var/run/secrets/llm/token",
+  "connections": {
+    "responses-ingress": {
+      "base_url": "http://llm-proxy.invalid",
+      "auth": { "type": "bearer", "credential_file": "/var/run/secrets/llm/token" }
+    },
+    "anthropic-organization": {
+      "base_url": "https://api.anthropic.com",
+      "auth": { "type": "anthropic_api_key", "credential_file": "/var/run/secrets/anthropic/api-key" }
+    }
+  },
   "models": {
     "native-code-model": {
+      "connection": "responses-ingress",
+      "provider_model": "native-code-model",
       "api": "responses",
       "responses": { "dialect": "lite" },
       "exec_encoding": "freeform",
       "reasoning_efforts": ["", "high"]
     },
-    "function-calling-model": {
-      "api": "responses",
-      "responses": { "dialect": "standard" },
+    "anthropic-api/ant-messages/claude-haiku-5-5": {
+      "connection": "anthropic-organization",
+      "provider_model": "claude-haiku-5-5",
+      "api": "anthropic_messages",
       "exec_encoding": "json",
-      "reasoning_efforts": [""]
+      "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+      "anthropic_messages": {
+        "max_tokens": 16384,
+        "thinking": { "type": "adaptive", "block_binding": { "prefix_mismatch_behavior": "error" } },
+        "prompt_cache": { "ttl": "5m" },
+        "cache_diagnostics": true,
+        "per_message_effort": true,
+        "strict_tool_input": true,
+        "eager_input_streaming": true,
+        "compaction": { "max_tokens": 4096, "auto_compact_tokens": 160000, "keep_recent_turns": 1 }
+      }
     }
   }
 }
 ```
+
+Anthropic preserves complete native messages, signed thinking/redacted thinking and signed
+compaction blocks. Eager argument deltas are logged as they arrive; no tool is executed until
+`message_stop` validates a complete `tool_use` response. Truncation before that terminal event
+leaves the intent unknown. Unsupported blocks and stop reasons fail without executing partial tools.
+Images use base64 image blocks, and repeated asynchronous outputs become contextual user messages.
+
+The adapter sends a stable system prompt and tool schema. Environment and execution-handle changes
+are appended durably. Effort changes append an empty system control using Anthropic's beta, keeping
+the launch effort fixed at the top level. Cache diagnostics compare against the last ordinary
+provider response ID, including across sampler restarts. Cache counters and full native diagnostics
+are retained in the DB; an unavailable diagnostic is not a cache miss.
+
+`compaction` enables manual and sampler-triggered server-side on-demand compaction. It replaces only
+active context, leaving the append-only conversation and History intact. `keep_recent_turns: 0`
+summarizes all context; positive values preserve that many completed turns and any subsequent input.
+Boundaries move backward over an effort control to keep signed thinking valid. The signed summary
+goes first, followed directly by the unchanged suffix. Summarized effort is restored after the next
+new user message. Live cells and unanswered tools prevent compaction; failed compaction preserves
+old context. Background compaction and dynamic definitions remain in the [task DAG](../../plans/task_dag.md).
+Langfuse export is an independent deferred follow-up; native exchanges are already retained in
+the sampler DB.
 
 `responses.dialect` and `exec_encoding` are independent; all four combinations are supported. `lite` uses Codex's
 Responses Lite header, `additional_tools` input item and all-turn reasoning context. `standard`
@@ -162,7 +205,9 @@ the central sampler for Qwen; existing sessions keep their harness. Backend mode
 Codex metadata remain available for existing sessions.
 
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
-A model change within a Session must preserve API, dialect and exec encoding, and the target must
+A model change within a Session must preserve connection, API, dialect and exec encoding; Anthropic
+also requires the same provider model and request options because signed continuation is bound to
+them. The target must
 allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
 use a new route ID to change it. Standard routes reject manual compaction, and reaching the
 configured automatic compaction threshold fails the turn before any private compaction request.
