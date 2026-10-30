@@ -8,13 +8,14 @@
 
 use super::abstract_domain::builtins::Row;
 use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
+use super::abstract_domain::value::{Kind, Value};
 use super::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordFacts,
 };
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
-use super::value_flow::{ChunkValueFlow, ValueOrigin};
+use super::value_flow::ChunkValueFlow;
 use crate::analysis_inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
@@ -634,7 +635,7 @@ impl ArgumentNoEscapeFacts {
             let binding = &input.binding;
             let function = input.function_start;
             let values = flow.values_of_binding(binding);
-            if !values.iter().eq([ValueOrigin::Function(function)]) {
+            if !values.iter().eq([Value::Alloc(Kind::Function, function)]) {
                 continue;
             }
             let rebound = statements.iter().any(|statement| {

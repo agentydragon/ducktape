@@ -3,8 +3,9 @@
 use crate::analysis_inputs::NativeIntrinsic;
 use crate::facts::abstract_domain::builtins::Row;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
-use crate::facts::value_flow::{ValueOrigin, Values};
+use crate::facts::value_flow::Values;
 use crate::inference::CertificateContext;
 use crate::reports::schema::InferenceRule;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,7 +51,7 @@ impl CallableInferenceInputs {
         let mut keys = Vec::new();
         for (binding, facts) in &self.functions {
             for value in facts.values.iter() {
-                let ValueOrigin::Function(function) = value else {
+                let Value::Alloc(Kind::Function, function) = value else {
                     continue;
                 };
                 keys.push(SemanticKey::StableFunction {
@@ -100,7 +101,7 @@ impl CallableInferenceInputs {
                 .get(binding)?
                 .values
                 .iter()
-                .eq([ValueOrigin::Function(*function)])
+                .eq([Value::Alloc(Kind::Function, *function)])
                 .then_some(SemanticFact::Function(*function)),
             SemanticKey::StableProvider { binding, function } => {
                 let source = self.functions.get(binding)?;

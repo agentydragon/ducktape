@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::value::{Kind, Value};
 
 /// Collect chunk-top `const` / `let` / `var`-bound bindings whose
 /// initializer(s) are plain-literal data shapes (plain object literal
@@ -62,15 +63,15 @@ fn plain_data_candidate_names(inits_by_name: &PlainDataInitGroups<'_>) -> BTreeS
 fn plain_data_object_roots(
     inits_by_name: &PlainDataInitGroups<'_>,
     candidates: &BTreeSet<String>,
-) -> BTreeSet<crate::facts::ValueOrigin> {
+) -> BTreeSet<Value> {
     let mut objects = BTreeSet::new();
     for name in candidates {
         let inits = &inits_by_name[name];
         let candidate_objects: BTreeSet<_> = inits
             .iter()
             .filter_map(|(init, _)| match init.unwrap_parens() {
-                Expr::Object(object) => Some(crate::facts::ValueOrigin::Object(object.span.lo.0)),
-                Expr::Array(array) => Some(crate::facts::ValueOrigin::Object(array.span.lo.0)),
+                Expr::Object(object) => Some(Value::Alloc(Kind::Object, object.span.lo.0)),
+                Expr::Array(array) => Some(Value::Alloc(Kind::Object, array.span.lo.0)),
                 _ => None,
             })
             .collect();
@@ -83,9 +84,7 @@ fn plain_data_object_roots(
 
 /// Candidate roots needed by PlainData's escape scan. This prepass lets value
 /// flow seed candidate reachability before its single shared solve.
-pub(crate) fn plain_data_candidate_roots(
-    body: &[TopLevelItemView<'_>],
-) -> BTreeSet<crate::facts::ValueOrigin> {
+pub(crate) fn plain_data_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
     let inits_by_name = plain_data_init_groups(body);
     let candidates = plain_data_candidate_names(&inits_by_name);
     plain_data_object_roots(&inits_by_name, &candidates)
@@ -362,11 +361,48 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
 
 const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
 
+/// A fresh array literal (`None`), or an array derived from `Some(binding)`
+/// by a non-mutating array method.
+fn plain_array_source(expr: &Expr) -> Option<Option<String>> {
+    match expr.unwrap_parens() {
+        Expr::Array(_) => Some(None),
+        Expr::Ident(ident) => Some(Some(ident.sym.to_string())),
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return None;
+            };
+            let Expr::Member(member) = callee.unwrap_parens() else {
+                return None;
+            };
+            if !matches!(
+                &member.prop,
+                MemberProp::Ident(prop) if ["filter", "flatMap", "map", "slice"].contains(&prop.sym.as_ref())
+            ) {
+                return None;
+            }
+            plain_array_source(member.obj.as_ref())
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn collect_plain_array_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
 ) -> BTreeSet<String> {
-    let candidates = infer_plain_array_candidates(body);
+    let candidates = close_const_aliases(
+        &BTreeSet::new(),
+        body.iter().flat_map(|item| {
+            plain_data_var_candidates(item.as_module_item())
+                .into_iter()
+                .filter_map(|(target, init, kind)| {
+                    (kind == VarDeclKind::Const)
+                        .then(|| plain_array_source(init))
+                        .flatten()
+                        .map(|source| (target, source))
+                })
+        }),
+    );
     if candidates.is_empty() {
         return BTreeSet::new();
     }
@@ -405,72 +441,127 @@ pub(crate) fn collect_plain_array_bindings(
         .collect()
 }
 
-/// Chunk-top `const` value classes plus stable top-level numeric `var`
-/// bindings. Symbols stay separate because `ToPropertyKey` accepts them but
-/// `ToString` throws. Stable numeric vars require one direct initialization,
-/// retained whole-chunk declaration/rebind facts, no dynamic scope, and a
-/// Number-only initializer. Their module-wide value class is Number after the
-/// initializer and primitive `undefined` before it, so they are not published
-/// as exact Number bindings. Initializer effects remain classified at the
-/// declaration site.
+/// Primitive types of chunk-top `const` bindings and stable top-level `var`
+/// bindings, evaluated in source order: an initializer reads only bindings
+/// declared before it, the set visible without hitting the temporal dead
+/// zone. Function and arrow initializers never reach here
+/// (`plain_data_var_candidates` filters them).
 ///
-/// Source-prefix inference: a const resolves only references to consts
-/// declared before it — exactly the set visible without hitting the
-/// temporal dead zone. Function/arrow inits never reach here
-/// (`plain_data_var_candidates` filters them) and are not primitive anyway.
-pub(crate) fn collect_binding_value_classes(
+/// A stable `var` has one direct initialization, retained whole-chunk
+/// declaration and rebind facts and no dynamic scope; it is tracked only for
+/// a Number initializer. Before that initializer runs it is `undefined`, so
+/// its module-wide type always includes Undefined. Initializer effects remain
+/// classified at the declaration site.
+pub(crate) fn collect_binding_prims(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
-    stable_var_number_candidates: &BTreeSet<Id>,
-) -> BindingValueClasses {
-    let mut symbol_write = SymbolGlobalWriteFinder::default();
+    stable_vars: &BTreeSet<Id>,
+) -> BindingPrims {
+    let mut writes = GlobalWriteFinder::default();
     for item in body {
-        item.as_module_item().visit_with(&mut symbol_write);
+        item.as_module_item().visit_with(&mut writes);
     }
-    let mut classes = infer_const_value_classes(body, shadowed, stable_var_number_candidates);
-    if symbol_write.hit {
-        // A visible replacement can make `Symbol(...)` return an object.
-        // Discard even earlier candidates so later computed-key uses cannot
-        // rely on source-order assumptions about an untracked global cell.
-        classes.symbol_const_bindings.clear();
+    let mut prims = BindingPrims {
+        kinds: BTreeMap::new(),
+        replaced_globals: writes
+            .written
+            .into_iter()
+            .chain(shadowed.iter().map(|name| (*name).to_owned()))
+            .collect(),
+    };
+    let top_level = BTreeSet::new();
+    for item in body {
+        let item = item.as_module_item();
+        let mut declared = Vec::new();
+        for (name, init, kind) in plain_data_var_candidates(item) {
+            if kind == VarDeclKind::Const
+                && let Some(kinds) = evaluate(init, &prims.scope(&top_level))
+                && !kinds.is_empty()
+            {
+                declared.push((name, kinds));
+            }
+        }
+        if let Some(var) = crate::facts::var_decl_of_item(item)
+            && var.kind == VarDeclKind::Var
+        {
+            for decl in &var.decls {
+                if let (Pat::Ident(binding), Some(init)) = (&decl.name, decl.init.as_deref())
+                    && stable_vars.contains(&binding.id.to_id())
+                    && let Some(kinds) = evaluate(init, &prims.scope(&top_level))
+                    && kinds.is_only(PrimKinds::NUMBER.union(PrimKinds::UNDEFINED))
+                {
+                    declared.push((
+                        binding.id.sym.to_string(),
+                        kinds.union(PrimKinds::UNDEFINED),
+                    ));
+                }
+            }
+        }
+        for (name, kinds) in declared {
+            // A duplicate declaration is a SyntaxError in a module; joining
+            // keeps malformed input deterministic.
+            prims
+                .kinds
+                .entry(name)
+                .and_modify(|current| *current = current.union(kinds))
+                .or_insert(kinds);
+        }
     }
-    classes
+    prims
 }
 
+/// Names a chunk may write through assignment, update, `delete` or a
+/// reflective define: `G` for a binding or property named `G`, and `G.m` for
+/// property `m` of binding `G`. A visible replacement can make an intrinsic
+/// return an object, so its builtin row stops applying.
 #[derive(Default)]
-struct SymbolGlobalWriteFinder {
-    hit: bool,
+struct GlobalWriteFinder {
+    written: BTreeSet<String>,
 }
 
-impl Visit for SymbolGlobalWriteFinder {
+impl GlobalWriteFinder {
+    fn record_member(&mut self, member: &MemberExpr) {
+        let Some(key) = static_member_key(member) else {
+            return;
+        };
+        if let Expr::Ident(object) = member.obj.unwrap_parens() {
+            self.written.insert(format!("{}.{key}", object.sym));
+        }
+        self.written.insert(key);
+    }
+}
+
+impl Visit for GlobalWriteFinder {
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         match &node.left {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                self.hit |= is_symbol_member(member);
+                self.record_member(member);
             }
             other => {
-                let mut target = SymbolTargetFinder::default();
+                let mut target = AssignTargetNames::default();
                 other.visit_with(&mut target);
-                self.hit |= target.hit;
+                self.written.extend(target.0.written);
             }
         }
         node.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        if matches!(node.arg.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "Symbol")
-            || matches!(node.arg.unwrap_parens(), Expr::Member(member) if is_symbol_member(member))
-        {
-            self.hit = true;
+        match node.arg.unwrap_parens() {
+            Expr::Ident(ident) => {
+                self.written.insert(ident.sym.to_string());
+            }
+            Expr::Member(member) => self.record_member(member),
+            _ => {}
         }
         node.visit_children_with(self);
     }
 
     fn visit_unary_expr(&mut self, node: &UnaryExpr) {
         if node.op == UnaryOp::Delete
-            && matches!(node.arg.unwrap_parens(), Expr::Member(member) if is_symbol_member(member))
+            && let Expr::Member(member) = node.arg.unwrap_parens()
         {
-            self.hit = true;
+            self.record_member(member);
         }
         node.visit_children_with(self);
     }
@@ -485,67 +576,62 @@ impl Visit for SymbolGlobalWriteFinder {
                 ("Object", "defineProperty" | "defineProperties" | "assign")
                     | ("Reflect", "defineProperty" | "set")
             )
-            && node.args.len() >= 2
-            && (matches!(node.args[1].expr.unwrap_parens(), Expr::Lit(Lit::Str(key)) if key.value.as_str() == Some("Symbol"))
-                || matches!(node.args[1].expr.unwrap_parens(), Expr::Object(object) if object.props.iter().any(|prop| matches!(prop, PropOrSpread::Prop(prop) if matches!(prop.as_ref(), Prop::KeyValue(kv) if matches!(&kv.key, PropName::Ident(id) if id.sym.as_ref() == "Symbol"))))))
+            && let [target, keys, ..] = node.args.as_slice()
         {
-            self.hit = true;
+            let keys: Vec<String> = match keys.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(key)) => {
+                    key.value.as_str().map(str::to_owned).into_iter().collect()
+                }
+                Expr::Object(object) => object
+                    .props
+                    .iter()
+                    .filter_map(|prop| match prop {
+                        PropOrSpread::Prop(prop) => match prop.as_ref() {
+                            Prop::KeyValue(KeyValueProp {
+                                key: PropName::Ident(key),
+                                ..
+                            }) => Some(key.sym.to_string()),
+                            _ => None,
+                        },
+                        PropOrSpread::Spread(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for key in keys {
+                if let Expr::Ident(target) = target.expr.unwrap_parens() {
+                    self.written.insert(format!("{}.{key}", target.sym));
+                }
+                self.written.insert(key);
+            }
         }
         node.visit_children_with(self);
     }
 }
 
+/// Every name a destructuring or other non-member assignment target writes.
 #[derive(Default)]
-struct SymbolTargetFinder {
-    hit: bool,
-}
+struct AssignTargetNames(GlobalWriteFinder);
 
-impl Visit for SymbolTargetFinder {
+impl Visit for AssignTargetNames {
     fn visit_ident(&mut self, ident: &Ident) {
-        self.hit |= ident.sym.as_ref() == "Symbol";
+        self.0.written.insert(ident.sym.to_string());
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
-        self.hit |= is_symbol_member(member);
+        self.0.record_member(member);
         member.visit_children_with(self);
     }
 }
 
-fn is_symbol_member(member: &MemberExpr) -> bool {
+fn static_member_key(member: &MemberExpr) -> Option<String> {
     match &member.prop {
-        MemberProp::Ident(id) => id.sym.as_ref() == "Symbol",
-        MemberProp::Computed(key) => {
-            matches!(key.expr.unwrap_parens(), Expr::Lit(Lit::Str(value)) if value.value.as_str() == Some("Symbol"))
-        }
-        MemberProp::PrivateName(_) => false,
-    }
-}
-
-pub(crate) fn is_symbol_const_init(
-    init: &Expr,
-    symbols: &BTreeSet<String>,
-    shadowed: &BTreeSet<&'static str>,
-) -> bool {
-    match init.unwrap_parens() {
-        Expr::Ident(id) => symbols.contains(id.sym.as_ref()),
-        Expr::Call(call) if !shadowed.contains("Symbol") => {
-            matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "Symbol"))
-                && call.args.len() <= 1
-                && call.args.iter().all(|arg| {
-                    arg.spread.is_none()
-                        && matches!(
-                            arg.expr.unwrap_parens(),
-                            Expr::Lit(
-                                Lit::Str(_)
-                                    | Lit::Num(_)
-                                    | Lit::Bool(_)
-                                    | Lit::Null(_)
-                                    | Lit::BigInt(_)
-                            )
-                        )
-                })
-        }
-        _ => false,
+        MemberProp::Ident(id) => Some(id.sym.to_string()),
+        MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+            Expr::Lit(Lit::Str(value)) => value.value.as_str().map(str::to_owned),
+            _ => None,
+        },
+        MemberProp::PrivateName(_) => None,
     }
 }
 
@@ -569,7 +655,55 @@ pub(crate) fn collect_fluent_const_bindings(
     body: &[TopLevelItemView<'_>],
     seed: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    infer_fluent_const_bindings(body, seed)
+    if seed.is_empty() {
+        return BTreeSet::new();
+    }
+    let aliases = body.iter().flat_map(|item| {
+        plain_data_var_candidates(item.as_module_item())
+            .into_iter()
+            .filter_map(|(target, init, kind)| {
+                (kind == VarDeclKind::Const)
+                    .then(|| fluent_chain_root(init))
+                    .flatten()
+                    .map(|root| (target, Some(root.to_owned())))
+            })
+    });
+    close_const_aliases(seed, aliases)
+}
+
+/// The positive closure of a value class over chunk-top `const` aliases:
+/// `(target, None)` holds the class outright, `(target, Some(source))` when
+/// `source` does.
+fn close_const_aliases(
+    seed: &BTreeSet<String>,
+    aliases: impl IntoIterator<Item = (String, Option<String>)>,
+) -> BTreeSet<String> {
+    let mut inference = IterativeInference::new(ConstAliasRules);
+    for name in seed {
+        inference.seed(name.clone(), ());
+    }
+    inference.solve_values(aliases).into_keys().collect()
+}
+
+struct ConstAliasRules;
+
+impl IterativeRules for ConstAliasRules {
+    type Key = String;
+    type Fact = ();
+    type Rule = (String, Option<String>);
+
+    fn evaluate(&self, (target, source): &Self::Rule, context: &mut impl FactContext<String, ()>) {
+        if source
+            .as_ref()
+            .is_none_or(|source| context.read(source.clone()).is_some())
+        {
+            context.propose(target.clone(), ());
+        }
+    }
+
+    fn merge(_: &String, _: &mut (), _: ()) -> bool {
+        false
+    }
 }
 
 /// The root identifier of a fluent chain — a chain of static
@@ -783,7 +917,7 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     argument_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
     argument_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     candidate_index: Option<crate::facts::CandidateObjectIndex<'a>>,
-    object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
+    object_to_names: BTreeMap<Value, BTreeSet<String>>,
     return_exempt: BTreeSet<String>,
     primitive_members: BTreeMap<Id, BTreeSet<String>>,
 }

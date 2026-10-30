@@ -17,6 +17,7 @@ use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{ArgSel, IntrinsicOp, Return, Row};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
+use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
@@ -33,7 +34,7 @@ use crate::facts::sync_effects::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
     infer_own_property_projection,
 };
-use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
+use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
     set_iterables::SetIterableProof,
@@ -67,14 +68,14 @@ fn from_flow(values: FlowValues) -> Values {
     values
         .into_iter()
         .map(|value| match value {
-            ValueOrigin::Unknown => AbstractValue::Unknown,
-            other => AbstractValue::Origin(other),
+            Value::Top => AbstractValue::Value(Value::Top),
+            other => AbstractValue::Value(other),
         })
         .collect()
 }
 
 fn unknown() -> Values {
-    Values::from([AbstractValue::Unknown])
+    Values::from([AbstractValue::Value(Value::Top)])
 }
 
 #[derive(Debug, Clone, Default)]
@@ -428,7 +429,7 @@ pub(super) struct ExecutionInputs<'source> {
     flow: &'source ChunkValueFlow,
     set_iterable_proof: &'source SetIterableProof,
     shadowed: &'source BTreeSet<&'static str>,
-    imported_primitives: &'source BTreeSet<String>,
+    imported_values: &'source BTreeMap<String, Value>,
     /// Stable own primitive fields, admitted using canonical rebind facts.
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
@@ -922,7 +923,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         values: &Values,
         request: OwnPropertyRequest,
     ) -> Option<OwnPropertyProof> {
-        let Some(AbstractValue::Origin(ValueOrigin::Object(object))) = values.first() else {
+        let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = values.first() else {
             return None;
         };
         if values.len() != 1 {
@@ -992,10 +993,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let slots = projection
             .names
             .into_iter()
-            .map(|name| Values::from([AbstractValue::StringPrimitive(name)]))
+            .map(|_| Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]))
             .collect();
         self.retain_dense_array(object, slots);
-        Some(AbstractValue::Origin(ValueOrigin::Object(object)))
+        Some(AbstractValue::Value(Value::Alloc(Kind::Object, object)))
     }
 
     fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
@@ -1014,7 +1015,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
         let mut getters = Values::new();
         for value in receivers {
-            let AbstractValue::Origin(ValueOrigin::Object(object)) = value else {
+            let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = value else {
                 continue;
             };
             let Some(accessors) = self.state.applied_accessors.get(object) else {
@@ -1049,7 +1050,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let [target_values, map_values] = args else {
             return;
         };
-        let [AbstractValue::Origin(ValueOrigin::Object(target))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, target))] =
             target_values.iter().collect::<Vec<_>>().as_slice()
         else {
             return;
@@ -1087,7 +1088,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     properties.insert(
                         Some(name.clone()),
                         if getter.is_empty() {
-                            Values::from([AbstractValue::Undefined])
+                            Values::from([AbstractValue::UNDEFINED])
                         } else {
                             unknown()
                         },
@@ -1227,7 +1228,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     };
                     if !(self.ordinary_object_prototype_intact()
                         && matches!(target_values.iter().collect::<Vec<_>>().as_slice(),
-                            [AbstractValue::Origin(ValueOrigin::Object(object))]
+                            [AbstractValue::Value(Value::Alloc(Kind::Object, object))]
                                 if self.inputs.index.plain_data_objects.contains(object)
                                     && !self.state.tainted_objects.contains(object)
                                     && self.state.prefix_object_properties.get(object)
@@ -1268,7 +1269,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         || !values.iter().next().is_some_and(|value| {
                             matches!(
                                 value,
-                                AbstractValue::Origin(ValueOrigin::Function(_))
+                                AbstractValue::Value(Value::Alloc(Kind::Function, _))
                                     | AbstractValue::Closure(_, _)
                             )
                         })
@@ -1413,13 +1414,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } = resolution;
         let mut values = match row.returns {
             Return::Unknown => unknown(),
-            Return::Primitive => Values::from([AbstractValue::NonCallable]),
+            Return::Prim(kinds) => Values::from([AbstractValue::Value(Value::Prim(kinds))]),
             Return::Arg(ArgSel::Arg(index)) => args.get(index).cloned().unwrap_or_else(unknown),
             Return::Arg(ArgSel::Rest(_)) => unknown(),
             Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
         };
         if may_throw {
-            values.insert(AbstractValue::Unavailable);
+            values.insert(AbstractValue::Value(Value::Unavailable));
         }
         values
     }
@@ -1457,7 +1458,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     retained.extend(self.callback_values(argument));
                     // This retained graph establishes no recursive ordinary-data
                     // shape or stronger retained-factory input contract.
-                    values.extend([self.deferred_callbacks(retained), AbstractValue::Unknown]);
+                    values.extend([
+                        self.deferred_callbacks(retained),
+                        AbstractValue::Value(Value::Top),
+                    ]);
                 }
                 Mutation::Integrity(_) | Mutation::DefineProperties { .. } => {}
                 Mutation::FreshRetains(ArgSel::Rest(_)) => return unknown(),
@@ -1527,8 +1531,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         matches!(
             values.iter().collect::<Vec<_>>().as_slice(),
             [AbstractValue::Closure(_, _)]
-                | [AbstractValue::Origin(
-                    ValueOrigin::Function(_) | ValueOrigin::Class(_)
+                | [AbstractValue::Value(
+                    Value::Alloc(Kind::Function, _) | Value::Alloc(Kind::Class, _)
                 )]
         )
     }
@@ -1536,7 +1540,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         values: &Values,
     ) -> Option<BTreeMap<Option<String>, Values>> {
-        let [AbstractValue::Origin(ValueOrigin::Object(object))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
@@ -1572,7 +1576,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn dense_source(&self, values: &Values) -> Option<(u32, DenseArray)> {
-        let [AbstractValue::Origin(ValueOrigin::Object(object))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
@@ -1627,19 +1631,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let length = dense.slots.len().max(slots.len());
         dense
             .slots
-            .resize_with(length, || Values::from([AbstractValue::Undefined]));
+            .resize_with(length, || Values::from([AbstractValue::UNDEFINED]));
         for (index, current) in dense.slots.iter_mut().enumerate() {
             if let Some(values) = slots.get(index) {
                 current.extend(values.iter().cloned());
             } else {
-                current.insert(AbstractValue::Undefined);
+                current.insert(AbstractValue::UNDEFINED);
             }
         }
         let properties = state.prefix_object_properties.entry(object).or_default();
         properties
             .entry(Some("length".into()))
             .or_default()
-            .insert(AbstractValue::NonCallable);
+            .insert(AbstractValue::PRIMITIVE);
         for (index, values) in dense.slots.iter().enumerate() {
             properties
                 .entry(Some(index.to_string()))
@@ -1671,7 +1675,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 continue;
             };
             let mut values = self.evaluate(&element.value, env, captures);
-            may_throw |= values.remove(&AbstractValue::Unavailable);
+            may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
             if values.is_empty() {
                 can_complete = false;
                 continue;
@@ -1691,7 +1695,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Do not publish this array origin or its retained callbacks when
             // evaluation can only throw before the literal is constructed.
             return if may_throw {
-                Values::from([AbstractValue::Unavailable])
+                Values::from([AbstractValue::Value(Value::Unavailable)])
             } else {
                 Values::new()
             };
@@ -1708,9 +1712,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             self.state.tainted_objects.insert(object);
         }
-        let mut result = Values::from([AbstractValue::Origin(ValueOrigin::Object(object))]);
+        let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
         if may_throw {
-            result.insert(AbstractValue::Unavailable);
+            result.insert(AbstractValue::Value(Value::Unavailable));
         }
         result
     }
@@ -1737,12 +1741,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for values in &dense.slots {
             if values.is_empty()
                 || values.iter().any(|value| match value {
-                    AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                         (!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object))
                             || self.state.tainted_objects.contains(object)
                     }
-                    AbstractValue::Origin(ValueOrigin::Function(key))
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
                     value if value.is_primitive() => false,
                     _ => true,
@@ -1753,7 +1757,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let callback = self.evaluate(&proof.callback, env, captures);
         let (key, captured) = match callback.iter().collect::<Vec<_>>().as_slice() {
-            [AbstractValue::Origin(ValueOrigin::Function(key))] => (*key, None),
+            [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => (*key, None),
             [AbstractValue::Closure(key, captured)] => (*key, Some(captured.clone())),
             _ => return None,
         };
@@ -1813,7 +1817,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return false;
         };
-        let source_values = Values::from([AbstractValue::Origin(ValueOrigin::Object(source))]);
+        let source_values =
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, source))]);
         let original_callbacks = self.callback_values(&source_values);
         let protected_objects = self.reachable_objects(&source_values);
         self.state
@@ -1828,7 +1833,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 key,
                 vec![
                     values.clone(),
-                    Values::from([AbstractValue::NonCallable]),
+                    Values::from([AbstractValue::PRIMITIVE]),
                     source_values.clone(),
                 ],
                 captured.clone(),
@@ -1841,16 +1846,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
             let valid = !unsupported && self.dense_source(&current_source).is_some_and(|(object, current)| object == source && current.slots == dense.slots)
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Origin(ValueOrigin::Object(object)) if self.state.tainted_objects.contains(object)))
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Origin(ValueOrigin::Function(key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if self.state.tainted_objects.contains(object)))
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
             let valid = valid
                 && (proof.method != ArrayIterationMethod::Map
                     || returned.iter().all(|value| match value {
-                        AbstractValue::NonCallable
-                        | AbstractValue::Undefined
-                        | AbstractValue::Origin(ValueOrigin::Function(_))
+                        AbstractValue::Value(Value::Prim(_))
+                        | AbstractValue::Value(Value::Alloc(Kind::Function, _))
                         | AbstractValue::Closure(_, _) => true,
-                        AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                        AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                             !self.state.tainted_objects.contains(object)
                                 && (self.inputs.index.plain_data_objects.contains(object)
                                     || self.state.ordinary_spread_copies.contains(object)
@@ -1962,7 +1966,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         let source_values = self.evaluate(&proof.source, env, captures);
-        let [AbstractValue::Origin(ValueOrigin::Object(array))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, array))] =
             source_values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
@@ -1977,13 +1981,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .inputs
                 .flow
                 .values_of_property(*array, &index.to_string())?;
-            if slot.iter().next().is_none()
-                || slot.iter().any(|origin| origin == ValueOrigin::Unknown)
-            {
+            if slot.iter().next().is_none() || slot.iter().any(|origin| origin == Value::Top) {
                 return None;
             }
             for origin in slot {
-                let ValueOrigin::Object(entry) = origin else {
+                let Value::Alloc(Kind::Object, entry) = origin else {
                     return None;
                 };
                 if !self.inputs.index.plain_data_objects.contains(&entry)
@@ -2004,7 +2006,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if key_values.is_empty() || key_values.iter().any(|value| !value.is_primitive()) {
                     return None;
                 }
-                expected_entries.insert(AbstractValue::Origin(ValueOrigin::Object(entry)));
+                expected_entries.insert(AbstractValue::Value(Value::Alloc(Kind::Object, entry)));
             }
         }
         let actual_entries = self
@@ -2070,11 +2072,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         let helper_key = match helper.first() {
-            Some(AbstractValue::Origin(ValueOrigin::Function(key))) => *key,
+            Some(AbstractValue::Value(Value::Alloc(Kind::Function, key))) => *key,
             Some(AbstractValue::Closure(key, captured)) if captured.values.is_empty() => *key,
             _ => return None,
         };
-        let Some(AbstractValue::Origin(ValueOrigin::Class(target_key))) = target.first() else {
+        let Some(AbstractValue::Value(Value::Alloc(Kind::Class, target_key))) = target.first()
+        else {
             return None;
         };
         if application.stable_origins(self.inputs.flow) != Some((helper_key, *target_key)) {
@@ -2342,10 +2345,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             } else {
                 match value {
-                    ValueExpr::Origin(ValueOrigin::Function(_)) => {}
+                    ValueExpr::Alloc(Kind::Function, _) => {}
                     ValueExpr::Binding(id) => {
                         if !self.state.prefix_values.get(id).is_some_and(|values| {
-                            !values.is_empty() && !values.contains(&AbstractValue::Unavailable)
+                            !values.is_empty()
+                                && !values.contains(&AbstractValue::Value(Value::Unavailable))
                         }) {
                             return None;
                         }
@@ -2479,10 +2483,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         (self.inputs.index.callback_factory_imports.contains(factory)
-            && matches!(
-                args.as_slice(),
-                [ValueExpr::Origin(ValueOrigin::Function(_))]
-            )
+            && matches!(args.as_slice(), [ValueExpr::Alloc(Kind::Function, _)])
             && fact.declared.contains(binding)
             && self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
             && call.kind == CallKind::Call
@@ -2530,14 +2531,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .flow
                 .values_of_binding(factory)
                 .iter()
-                .ne([ValueOrigin::Function(key)])
+                .ne([Value::Alloc(Kind::Function, key)])
             || call.kind != CallKind::Call
             || call.has_spread
             || CallSite::from(call.span) != *site
             || !args.iter().all(|arg| {
                 matches!(
                     arg,
-                    ValueExpr::Origin(ValueOrigin::Function(_)) | ValueExpr::NonCallable
+                    ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable
                 )
             })
         {
@@ -2567,7 +2568,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .any(|param| param.binding.is_none() || param.default.is_some())
             || callable.local_assignments.iter().any(|(id, value)| {
                 !callable.local_functions.contains(id)
-                    || !matches!(value, ValueExpr::Origin(ValueOrigin::Function(_)))
+                    || !matches!(value, ValueExpr::Alloc(Kind::Function, _))
             })
             || callable.returns.len() != 1
             || !matches!(callable.returns[0], ValueExpr::ObjectLiteral(..))
@@ -2642,9 +2643,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     })
             }
             ValueExpr::Binding(id) => allowed.contains(id),
-            ValueExpr::Origin(ValueOrigin::Function(_))
-            | ValueExpr::NonCallable
-            | ValueExpr::Undefined => true,
+            ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable | ValueExpr::Undefined => {
+                true
+            }
             _ => false,
         }
     }
@@ -2822,16 +2823,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self
                 .state
                 .global_escaped_callbacks
-                .contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+                .contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
             || self
                 .inputs
                 .flow
                 .values_of_binding(factory)
                 .iter()
-                .ne([ValueOrigin::Function(key)])
+                .ne([Value::Alloc(Kind::Function, key)])
             || !self.state.prefix_values.get(factory).is_some_and(|values| {
                 values.len() == 1
-                    && values.contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+                    && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
             })
         {
             return Err(RecordFactoryRejectionReason::FactoryIdentity);
@@ -2948,9 +2949,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Primitive(operands) => operands
                 .iter()
                 .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
-            ValueExpr::Origin(ValueOrigin::Function(_))
-            | ValueExpr::NonCallable
-            | ValueExpr::Undefined => true,
+            ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable | ValueExpr::Undefined => {
+                true
+            }
             _ => false,
         }
     }
@@ -2972,7 +2973,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .contains(binding)
             && self.state.initialized_bindings.contains(binding)
             && self.state.prefix_values.get(binding).is_some_and(|values| {
-                values.len() == 1 && values.contains(&AbstractValue::NonCallable)
+                values.len() == 1 && values.contains(&AbstractValue::PRIMITIVE)
             })
     }
 
@@ -2986,7 +2987,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let [ValueOrigin::Function(key)] = self
+        let [Value::Alloc(Kind::Function, key)] = self
             .inputs
             .flow
             .values_of_binding(binding)
@@ -2998,7 +2999,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state.prefix_values.get(binding).is_some_and(|values| {
             values.len() == 1
                 && values.iter().all(|value| {
-                    matches!(value, AbstractValue::Origin(ValueOrigin::Function(function))
+                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, function))
                         | AbstractValue::Closure(function, _) if *function == key)
                 })
         })
@@ -3015,7 +3016,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let [ValueOrigin::Object(object)] = self
+        let [Value::Alloc(Kind::Object, object)] = self
             .inputs
             .flow
             .values_of_binding(binding)
@@ -3023,9 +3024,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .collect::<Vec<_>>()[..]
         else {
             return false;
-        };
-        let primitive = |value: &AbstractValue| {
-            matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
         };
         let literal = if self.inputs.index.array_elements.contains_key(&object) {
             self.inputs.index.dense_array_literals.contains_key(&object)
@@ -3036,23 +3034,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && !self.state.tainted_objects.contains(&object)
             && self.state.prefix_values.get(binding).is_some_and(|values| {
                 values.len() == 1
-                    && values.contains(&AbstractValue::Origin(ValueOrigin::Object(object)))
+                    && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Object, object)))
             })
             && self
                 .state
                 .prefix_object_properties
                 .get(&object)
-                .is_some_and(|properties| properties.values().flatten().all(primitive))
-            && self
-                .state
-                .dense_arrays
-                .get(&object)
-                .is_none_or(|dense| dense.slots.iter().flatten().all(primitive))
+                .is_some_and(|properties| {
+                    properties
+                        .values()
+                        .flatten()
+                        .all(AbstractValue::is_primitive)
+                })
+            && self.state.dense_arrays.get(&object).is_none_or(|dense| {
+                dense
+                    .slots
+                    .iter()
+                    .flatten()
+                    .all(AbstractValue::is_primitive)
+            })
     }
 
     fn stable_local_class_key(&self, binding: &Id) -> Option<u32> {
         let values = self.state.prefix_values.get(binding)?;
-        let [AbstractValue::Origin(ValueOrigin::Class(key))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Class, key))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
@@ -3163,7 +3168,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         let values = self.state.prefix_values.get(base)?;
-        let Some(AbstractValue::Origin(ValueOrigin::Class(base_key))) = values.first() else {
+        let Some(AbstractValue::Value(Value::Alloc(Kind::Class, base_key))) = values.first() else {
             return None;
         };
         let base_owner = *self.inputs.index.class_owners.get(base_key)?;
@@ -3481,7 +3486,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut visit: impl FnMut(&AbstractValue),
     ) {
         match value {
-            AbstractValue::Origin(ValueOrigin::Object(object) | ValueOrigin::NativeSet(object)) => {
+            AbstractValue::Value(
+                Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object),
+            ) => {
                 if include_object_properties
                     && let Some(properties) = self.state.prefix_object_properties.get(object)
                 {
@@ -3524,8 +3531,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             // Keep the carrier inventory exhaustive: when AbstractValue gains
             // another retained-reference shape, this visitor must classify it.
-            AbstractValue::Origin(
-                ValueOrigin::Function(_) | ValueOrigin::Class(_) | ValueOrigin::Unknown,
+            AbstractValue::Value(
+                Value::Alloc(Kind::Function | Kind::Class, _)
+                | Value::Prim(_)
+                | Value::Unavailable
+                | Value::Top,
             )
             | AbstractValue::ClassMembers(_)
             | AbstractValue::CallbackFactory
@@ -3533,12 +3543,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | AbstractValue::ForeignDeferredRecord
             | AbstractValue::ObjectAssign
             | AbstractValue::ArrayIntrinsic
-            | AbstractValue::GlobalObject
-            | AbstractValue::StringPrimitive(_)
-            | AbstractValue::Undefined
-            | AbstractValue::NonCallable
-            | AbstractValue::Unavailable
-            | AbstractValue::Unknown => {}
+            | AbstractValue::GlobalObject => {}
+            AbstractValue::Value(Value::Alloc(
+                Kind::Array
+                | Kind::Map
+                | Kind::WeakMap
+                | Kind::WeakSet
+                | Kind::RegExp
+                | Kind::Registry
+                | Kind::Proxy,
+                _,
+            )) => unreachable!("the interpreter identifies allocations as Object or Set"),
         }
     }
 
@@ -3552,7 +3567,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let mut expand_stored_references = true;
             let mut expand_object_properties = true;
             match &value {
-                AbstractValue::Origin(ValueOrigin::Function(_)) => {
+                AbstractValue::Value(Value::Alloc(Kind::Function, _)) => {
                     callbacks.insert(value.clone());
                 }
                 AbstractValue::Closure(_, _) => {
@@ -3561,7 +3576,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // rather than revisit it along every path through captures.
                     expand_stored_references = callbacks.insert(value.clone());
                 }
-                AbstractValue::Origin(ValueOrigin::Class(key))
+                AbstractValue::Value(Value::Alloc(Kind::Class, key))
                 | AbstractValue::ClassMembers(key) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
                 }
@@ -3578,10 +3593,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::OwnDescriptorMap(site) => {
                     expand_stored_references = visited_descriptor_maps.insert(*site);
                 }
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                     expand_object_properties = visited_objects.insert(*object);
                 }
-                AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
+                AbstractValue::GlobalObject | AbstractValue::Value(Value::Top)
+                    if !expanded_escaped =>
+                {
                     // Unknown external data cannot expose an unescaped local
                     // callback. Preserve tracked escapes; exports are added
                     // separately at opaque call sites, and known object
@@ -3591,7 +3608,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.state
                             .global_escaped_callbacks
                             .iter()
-                            .filter(|value| !matches!(value, AbstractValue::Unknown))
+                            .filter(|value| !matches!(value, AbstractValue::Value(Value::Top)))
                             .cloned(),
                     );
                 }
@@ -3657,7 +3674,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ForeignReturn::Argument { index } => result.extend(
                     args.get(*index)
                         .cloned()
-                        .unwrap_or_else(|| Values::from([AbstractValue::Undefined])),
+                        .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED])),
                 ),
                 ForeignReturn::FreshAllocation => {
                     let retained = self.retain_foreign_arguments(summary, args);
@@ -3665,7 +3682,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     result.insert(self.deferred_callbacks(callbacks));
                 }
                 ForeignReturn::Primitive => {
-                    result.insert(AbstractValue::NonCallable);
+                    result.insert(AbstractValue::PRIMITIVE);
                 }
             }
         }
@@ -3673,7 +3690,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // an ESM cycle can delay past this call. A function declaration is
         // initialized at instantiation.
         if summary.invocation == ForeignInvocation::Construct {
-            result.insert(AbstractValue::Unavailable);
+            result.insert(AbstractValue::Value(Value::Unavailable));
         }
         result
     }
@@ -3745,7 +3762,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     let is_ordinary_callable = |value: &AbstractValue| {
                         matches!(
                             value,
-                            AbstractValue::Origin(ValueOrigin::Function(_))
+                            AbstractValue::Value(Value::Alloc(Kind::Function, _))
                                 | AbstractValue::Closure(_, _)
                         )
                     };
@@ -3837,7 +3854,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let values = &args[*position];
                 if values.is_empty()
                     || !values.iter().all(|value| match value {
-                        AbstractValue::Origin(ValueOrigin::Function(key))
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
                         | AbstractValue::Closure(key, _) => {
                             self.inputs.index.callables.contains_key(key)
                                 && !self.state.tainted_functions.contains(key)
@@ -3857,7 +3874,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let functions: BTreeSet<_> = retained
                 .iter()
                 .filter_map(|value| match value {
-                    AbstractValue::Origin(ValueOrigin::Function(key))
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => Some(*key),
                     _ => None,
                 })
@@ -3868,7 +3885,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     root = receiver;
                 }
                 matches!(root, ValueExpr::Binding(binding) if self.inputs.flow.values_of_binding(binding).iter()
-                    .any(|origin| matches!(origin, ValueOrigin::Function(key) if functions.contains(&key))))
+                    .any(|origin| matches!(origin, Value::Alloc(Kind::Function, key) if functions.contains(&key))))
             };
             // Existing callable own/prototype surfaces are outside the fresh
             // input proof. Reject recognized writes through all local aliases,
@@ -3942,7 +3959,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             let receivers = self.evaluate(&write.receiver, env, env);
-            let [AbstractValue::Origin(ValueOrigin::Object(object))] =
+            let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
                 receivers.iter().collect::<Vec<_>>().as_slice()
             else {
                 return BTreeSet::new();
@@ -4014,7 +4031,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                     }
-                    AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                         if !certified_data_receivers.contains(&object) {
                             self.state.tainted_objects.insert(object);
                         }
@@ -4050,7 +4067,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                     }
-                    AbstractValue::Unknown
+                    AbstractValue::Value(Value::Top)
                     | AbstractValue::DeferredCallbacks(_)
                     | AbstractValue::ForeignDeferredRecord => {
                         self.taint_objects(&values);
@@ -4082,7 +4099,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for write in writes {
             let receivers = self.evaluate(&write.receiver, env, captures);
             let uncertified = receivers.iter().filter(|value| !matches!(value,
-                AbstractValue::Origin(ValueOrigin::Object(object)) if certified_data_receivers.contains(object))).cloned().collect();
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) if certified_data_receivers.contains(object))).cloned().collect();
             self.taint_objects(&uncertified);
             let mut callbacks = self.callback_values(&receivers);
             let mut root = &write.receiver;
@@ -4093,7 +4110,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let callable_surface = root_values.iter().any(|value| {
                 matches!(
                     value,
-                    AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _)
+                    AbstractValue::Value(Value::Alloc(Kind::Function, _))
+                        | AbstractValue::Closure(_, _)
                 )
             });
             if !callable_surface
@@ -4166,12 +4184,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ArrayIntrinsic => {
                     self.state.array_intrinsic_mutated = true;
                 }
-                AbstractValue::Origin(ValueOrigin::Object(object))
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
                     if !self.state.tainted_objects.insert(*object) =>
                 {
                     expand_stored_references = false;
                 }
-                AbstractValue::Origin(ValueOrigin::NativeSet(site))
+                AbstractValue::Value(Value::Alloc(Kind::Set, site))
                     if !self.state.tainted_native_sets.insert(*site) =>
                 {
                     expand_stored_references = false;
@@ -4179,7 +4197,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::OwnDescriptorMap(site) => {
                     self.invalidate_own_descriptor_map(*site);
                 }
-                AbstractValue::Origin(ValueOrigin::Function(key)) => {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.tainted_functions.insert(*key);
                 }
                 AbstractValue::Closure(key, _) => {
@@ -4304,7 +4322,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if values.is_empty()
                 || !values.iter().all(|value| {
                     matches!(value,
-                    AbstractValue::Origin(ValueOrigin::Object(object))
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object))
                         if self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.tainted_objects.contains(object))
                 })
@@ -4375,7 +4393,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            if let AbstractValue::Origin(ValueOrigin::Object(object)) = &value {
+            if let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = &value {
                 objects.insert(*object);
             }
             self.visit_stored_references(&value, true, |reference| {
@@ -4392,7 +4410,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            if let AbstractValue::Origin(ValueOrigin::Class(key))
+            if let AbstractValue::Value(Value::Alloc(Kind::Class, key))
             | AbstractValue::ClassMembers(key)
             | AbstractValue::Instance(key, _) = &value
             {
@@ -4405,7 +4423,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn default_class_has_instance(&self, values: &Values) -> bool {
-        let [AbstractValue::Origin(ValueOrigin::Class(key))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Class, key))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return false;
@@ -4435,8 +4453,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn ordinary_prototype_chain(&self, values: &Values) -> bool {
         !values.is_empty()
             && values.iter().all(|value| match value {
-                AbstractValue::NonCallable | AbstractValue::Undefined => true,
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                AbstractValue::Value(Value::Prim(_)) => true,
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                     !self.state.tainted_objects.contains(object)
                         && self.array_intrinsics_intact()
                         && (self.inputs.index.plain_data_objects.contains(object)
@@ -4486,7 +4504,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.promote_foreign_record(outcome);
                     None
                 }
-                AbstractValue::Origin(ValueOrigin::Function(key))
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => self
                     .inputs
                     .index
@@ -4497,7 +4515,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .inputs
                     .flow
                     .callable_source_unit
-                    .get(&ValueOrigin::Class(key))
+                    .get(&Value::Alloc(Kind::Class, key))
                     .or_else(|| self.inputs.index.class_owners.get(&key))
                     .copied(),
                 _ => None,
@@ -4582,7 +4600,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut roots = BTreeSet::new();
         for callback in self.callback_values(captured) {
             let key = match callback {
-                AbstractValue::Origin(ValueOrigin::Function(key))
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => key,
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
@@ -4634,7 +4652,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .into_iter()
             .filter(|callback| {
                 match callback {
-                    AbstractValue::Origin(ValueOrigin::Function(key))
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => self
                         .inputs
                         .index
@@ -4709,7 +4727,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .inputs
             .flow
             .callable_source_unit
-            .get(&ValueOrigin::Class(key))
+            .get(&Value::Alloc(Kind::Class, key))
             .copied()
             .or_else(|| self.inputs.index.class_owners.get(&key).copied());
         let Some(owner) = owner else {
@@ -4783,14 +4801,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut has_unknown = values.is_empty();
         for value in values {
             let (function, captured) = match value {
-                AbstractValue::Origin(ValueOrigin::Class(base))
+                AbstractValue::Value(Value::Alloc(Kind::Class, base))
                 | AbstractValue::ClassMembers(base) => {
                     self.promote_class_members(base, outcome);
                     continue;
                 }
-                AbstractValue::Origin(ValueOrigin::Function(function)) => (function, None),
+                AbstractValue::Value(Value::Alloc(Kind::Function, function)) => (function, None),
                 AbstractValue::Closure(function, captured) => (function, Some(captured)),
-                value if value.is_primitive() || matches!(value, AbstractValue::Unavailable) => {
+                value
+                    if value.is_primitive()
+                        || matches!(value, AbstractValue::Value(Value::Unavailable)) =>
+                {
                     continue;
                 }
                 _ => {
@@ -4867,7 +4888,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .exported_hoisted_functions
                 .iter()
                 .copied()
-                .map(|key| AbstractValue::Origin(ValueOrigin::Function(key))),
+                .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key))),
         );
         values.extend(self.state.exported_runtime_values.iter().cloned());
         self.callback_values(&values)
@@ -5006,7 +5027,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // currently available callback, so each formal gets the conservative
         // callback set plus a non-callable/unknown possibility.
         let mut possible_argument = callbacks.clone();
-        possible_argument.insert(AbstractValue::Unknown);
+        possible_argument.insert(AbstractValue::Value(Value::Top));
         let args_for = |key: u32, index: &ExecutionIndex| {
             let count = index
                 .callables
@@ -5016,7 +5037,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let reentrant_pool = callbacks.iter().any(|callback| {
             let key = match callback {
-                AbstractValue::Origin(ValueOrigin::Function(key))
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => *key,
                 _ => return false,
             };
@@ -5075,7 +5096,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     continue;
                 }
-                AbstractValue::Origin(ValueOrigin::Function(key)) => {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.invoke(key, args_for(key, self.inputs.index), None, false)
                 }
                 AbstractValue::Closure(key, captured) => {
@@ -5108,7 +5129,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .prefix_values
                 .entry(id.clone())
                 .or_default()
-                .insert(AbstractValue::Unknown);
+                .insert(AbstractValue::Value(Value::Top));
             if changed {
                 self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
             }
@@ -5172,7 +5193,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
-                AbstractValue::Origin(ValueOrigin::Function(key))
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => Some(*key),
                 _ => None,
             };
@@ -5186,7 +5207,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .inputs
                     .flow
                     .callable_source_unit
-                    .get(&ValueOrigin::Class(*key))
+                    .get(&Value::Alloc(Kind::Class, *key))
             {
                 roots.insert(owner);
             }
@@ -5361,7 +5382,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         let [source] = args else { return None };
-        let [AbstractValue::Origin(ValueOrigin::Object(actual))] =
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, actual))] =
             source.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
@@ -5391,9 +5412,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> Values {
         let result = site.allocation_id();
         let Some(map) = self.capture_own_descriptor_map(site, Some(proof)) else {
-            return Values::from([AbstractValue::Unavailable]);
+            return Values::from([AbstractValue::Value(Value::Unavailable)]);
         };
-        let target = Values::from([AbstractValue::Origin(ValueOrigin::Object(result))]);
+        let target = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))]);
         self.apply_own_descriptor_map_transfer(&[target.clone(), Values::from([map])]);
         let Some(certificate) = self.inputs.index.descriptor_copy_calls.get(&site) else {
             unreachable!()
@@ -5420,8 +5441,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Provider code and native operations may still throw after argument
         // evaluation. Keep normal-return identity and abrupt completion apart.
         Values::from([
-            AbstractValue::Origin(ValueOrigin::Object(result)),
-            AbstractValue::Unavailable,
+            AbstractValue::Value(Value::Alloc(Kind::Object, result)),
+            AbstractValue::Value(Value::Unavailable),
         ])
     }
 
@@ -5524,30 +5545,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return Values::from([AbstractValue::InlineCallbackFactory]);
                 }
                 if self.inputs.index.imported_bindings.contains(id)
-                    && self.inputs.imported_primitives.contains(id.0.as_ref())
+                    && let Some(value) = self.inputs.imported_values.get(id.0.as_ref())
                 {
-                    // Preserve the source-proved primitive result through the
+                    // Preserve the source-proved exported value through the
                     // ordinary value transfers, including local copies. Reads
                     // and import ordering remain separate statement facts.
-                    return Values::from([AbstractValue::NonCallable]);
+                    return Values::from([AbstractValue::Value(*value)]);
                 }
                 if self.inputs.top_bindings.contains(id) {
                     if let Some(prefix_values) = self.state.prefix_values.get(id) {
                         let mut values = prefix_values.clone();
                         if !self.state.initialized_bindings.contains(id) {
                             values.insert(if self.inputs.var_bindings.contains(id) {
-                                AbstractValue::Undefined
+                                AbstractValue::UNDEFINED
                             } else {
-                                AbstractValue::Unavailable
+                                AbstractValue::Value(Value::Unavailable)
                             });
                         }
                         values
                     } else if self.inputs.var_bindings.contains(id) {
-                        Values::from([AbstractValue::Undefined])
+                        Values::from([AbstractValue::UNDEFINED])
                     } else {
                         // Whole-chunk flow includes future initializers. A
                         // missing prefix value for a local binding is TDZ.
-                        Values::from([AbstractValue::Unavailable])
+                        Values::from([AbstractValue::Value(Value::Unavailable)])
                     }
                 } else if let Some(values) = env.get(id) {
                     values.clone()
@@ -5565,13 +5586,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if values.is_empty() { unknown() } else { values }
                 }
             }
-            ValueExpr::Origin(ValueOrigin::Function(key)) => {
-                Values::from([AbstractValue::Closure(
-                    *key,
-                    self.closure_captures(*key, captures),
-                )])
+            ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
+                *key,
+                self.closure_captures(*key, captures),
+            )]),
+            ValueExpr::Alloc(kind, site) => {
+                Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
             }
-            ValueExpr::Origin(origin) => Values::from([AbstractValue::Origin(*origin)]),
             ValueExpr::ObjectLiteral(key, properties) => {
                 if self.inputs.index.exact_object_spread_copies.contains(key)
                     && let [(None, source)] = properties.as_slice()
@@ -5584,7 +5605,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if previously_evaluated {
                             for (property, values) in current.iter_mut() {
                                 if !properties.contains_key(property) {
-                                    changed |= values.insert(AbstractValue::Undefined);
+                                    changed |= values.insert(AbstractValue::UNDEFINED);
                                 }
                             }
                         }
@@ -5593,7 +5614,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             let slot = current.entry(property).or_default();
                             let before = slot.len();
                             if previously_evaluated && new_property {
-                                slot.insert(AbstractValue::Undefined);
+                                slot.insert(AbstractValue::UNDEFINED);
                             }
                             slot.extend(values);
                             changed |= slot.len() != before;
@@ -5602,7 +5623,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                         self.state.ordinary_spread_copies.insert(*key);
-                        return Values::from([AbstractValue::Origin(ValueOrigin::Object(*key))]);
+                        return Values::from([AbstractValue::Value(Value::Alloc(
+                            Kind::Object,
+                            *key,
+                        ))]);
                     }
                     self.state.tainted_objects.insert(*key);
                     if self.state.array_iteration_depth > 0 {
@@ -5617,7 +5641,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut can_complete = true;
                 for (property, expression) in properties {
                     let mut values = self.evaluate(expression, env, captures);
-                    if values.remove(&AbstractValue::Unavailable) {
+                    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
                         may_throw = true;
                         can_complete &= !values.is_empty();
                     }
@@ -5641,15 +5665,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 let mut result = Values::new();
                 if can_complete {
-                    result.insert(AbstractValue::Origin(ValueOrigin::Object(*key)));
+                    result.insert(AbstractValue::Value(Value::Alloc(Kind::Object, *key)));
                 }
                 if may_throw || !can_complete {
-                    result.insert(AbstractValue::Unavailable);
+                    result.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 result
             }
-            ValueExpr::Undefined => Values::from([AbstractValue::Undefined]),
-            ValueExpr::NonCallable => Values::from([AbstractValue::NonCallable]),
+            ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
+            ValueExpr::NonCallable => Values::from([AbstractValue::PRIMITIVE]),
             ValueExpr::Member(object, property, is_static_identifier) => {
                 if property
                     .as_deref()
@@ -5659,7 +5683,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // key as an own primitive field on the current initialized
                     // binding. The read keeps its ordinary eager dependency,
                     // but cannot retrieve a getter or callable value.
-                    return Values::from([AbstractValue::NonCallable]);
+                    return Values::from([AbstractValue::PRIMITIVE]);
                 }
                 if let ValueExpr::Binding(id) = object.as_ref()
                     && *is_static_identifier
@@ -5687,7 +5711,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.invalidate_own_descriptor_map(site);
                             let callbacks = self.descriptor_map_callbacks(site);
                             values.insert(self.deferred_callbacks(callbacks));
-                            values.insert(AbstractValue::Unknown);
+                            values.insert(AbstractValue::Value(Value::Top));
                         }
                         AbstractValue::ForeignDeferredRecord => {
                             values.insert(AbstractValue::ForeignDeferredRecord);
@@ -5697,15 +5721,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         AbstractValue::GlobalObject => {
                             values.extend(self.state.global_escaped_callbacks.iter().cloned());
-                            values.insert(AbstractValue::Unknown);
+                            values.insert(AbstractValue::Value(Value::Top));
                         }
-                        AbstractValue::Unavailable => {
-                            values.insert(AbstractValue::Unavailable);
+                        AbstractValue::Value(Value::Unavailable) => {
+                            values.insert(AbstractValue::Value(Value::Unavailable));
                         }
                         AbstractValue::DeferredCallbacks(captured) => {
                             values.insert(AbstractValue::DeferredCallbacks(captured));
                         }
-                        AbstractValue::Origin(ValueOrigin::Class(key))
+                        AbstractValue::Value(Value::Alloc(Kind::Class, key))
                         | AbstractValue::ClassMembers(key) => {
                             values.insert(AbstractValue::ClassMembers(key));
                         }
@@ -5715,7 +5739,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             }
                             values.insert(AbstractValue::Instance(key, captured));
                         }
-                        AbstractValue::Origin(ValueOrigin::Object(object_id)) => {
+                        AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
                             if self.state.dense_arrays.contains_key(&object_id)
                                 && (property.is_none()
                                     || matches!(
@@ -5733,9 +5757,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                     if let Some(found) = properties.get(&Some(property.clone())) {
                                         values.extend(found.iter().cloned());
                                     } else if self.absent_plain_data_property(object_id, property) {
-                                        values.insert(AbstractValue::Undefined);
+                                        values.insert(AbstractValue::UNDEFINED);
                                     } else {
-                                        values.insert(AbstractValue::Unknown);
+                                        values.insert(AbstractValue::Value(Value::Top));
                                     }
                                     values.extend(
                                         properties
@@ -5754,14 +5778,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 {
                                     values.extend(from_flow(found.clone()));
                                 } else {
-                                    values.insert(AbstractValue::Unknown);
+                                    values.insert(AbstractValue::Value(Value::Top));
                                 }
                             } else {
-                                values.insert(AbstractValue::Unknown);
+                                values.insert(AbstractValue::Value(Value::Top));
                             }
                         }
                         _ => {
-                            values.insert(AbstractValue::Unknown);
+                            values.insert(AbstractValue::Value(Value::Top));
                         }
                     }
                 }
@@ -5773,21 +5797,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
-                        Values::from([AbstractValue::Undefined])
+                        Values::from([AbstractValue::UNDEFINED])
                     } else {
-                        Values::from([AbstractValue::Origin(ValueOrigin::Object(
+                        Values::from([AbstractValue::Value(Value::Alloc(
+                            Kind::Object,
                             proof.result.unwrap(),
                         ))])
                     };
                 }
                 let targets = self.evaluate(callee, env, captures);
-                if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
-                    return Values::from([AbstractValue::Unavailable]);
+                if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
+                {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
                 }
-                let inline_callback = matches!(
-                    args.as_slice(),
-                    [ValueExpr::Origin(ValueOrigin::Function(_))]
-                );
+                let inline_callback =
+                    matches!(args.as_slice(), [ValueExpr::Alloc(Kind::Function, _)]);
                 let expressions = args;
                 let mut args: Vec<Values> = args
                     .iter()
@@ -5795,20 +5819,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .collect();
                 let args_may_throw = args
                     .iter()
-                    .any(|values| values.contains(&AbstractValue::Unavailable));
-                if args
-                    .iter()
-                    .any(|values| values.len() == 1 && values.contains(&AbstractValue::Unavailable))
-                {
-                    return Values::from([AbstractValue::Unavailable]);
+                    .any(|values| values.contains(&AbstractValue::Value(Value::Unavailable)));
+                if args.iter().any(|values| {
+                    values.len() == 1 && values.contains(&AbstractValue::Value(Value::Unavailable))
+                }) {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
                 }
                 for values in &mut args {
-                    values.remove(&AbstractValue::Unavailable);
+                    values.remove(&AbstractValue::Value(Value::Unavailable));
                 }
                 if let Some(summary) = self.foreign_call_summary(CallKind::Call, callee) {
                     let mut result = self.foreign_call_result(&summary, &args);
                     if args_may_throw {
-                        result.insert(AbstractValue::Unavailable);
+                        result.insert(AbstractValue::Value(Value::Unavailable));
                     }
                     return result;
                 }
@@ -5828,16 +5851,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // call. Keep result identity opaque and retain the source
                     // and every deferred callback for later property reads or
                     // publication, without running a getter at this call.
-                    let mut retained =
-                        Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+                    let mut retained = Values::from([AbstractValue::Value(Value::Alloc(
+                        Kind::Object,
+                        source_object,
+                    ))]);
                     retained.extend(self.callback_values(&retained));
                     // The provider's cache may still be in its temporal dead
                     // zone during an ESM cycle. No success-only return fact
                     // may erase that possible throw.
                     return Values::from([
                         self.deferred_callbacks(retained),
-                        AbstractValue::Unknown,
-                        AbstractValue::Unavailable,
+                        AbstractValue::Value(Value::Top),
+                        AbstractValue::Value(Value::Unavailable),
                     ]);
                 }
                 if let Some(proof) = self.descriptor_copy_projection(callee, &args, *span) {
@@ -5858,14 +5883,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // call-timing lane still needs a live descriptor map and
                     // an empty target, and falls back opaquely otherwise.
                     let mut result = args[0].clone();
-                    result.insert(AbstractValue::Unavailable);
+                    result.insert(AbstractValue::Value(Value::Unavailable));
                     return result;
                 }
                 if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
                 {
                     let result = self.deferred_callbacks(callbacks);
                     return if args_may_throw {
-                        Values::from([result, AbstractValue::Unavailable])
+                        Values::from([result, AbstractValue::Value(Value::Unavailable)])
                     } else {
                         Values::from([result])
                     };
@@ -5882,9 +5907,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || targets.iter().any(|target| {
                         matches!(
                             target,
-                            AbstractValue::Unavailable
-                                | AbstractValue::Undefined
-                                | AbstractValue::NonCallable
+                            AbstractValue::Value(Value::Unavailable)
+                                | AbstractValue::Value(Value::Prim(_))
                         )
                     });
                 for target in targets {
@@ -5910,12 +5934,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         AbstractValue::DeferredCallbacks(captured) => {
                             returns.insert(AbstractValue::DeferredCallbacks(captured));
-                            returns.insert(AbstractValue::Unknown);
+                            returns.insert(AbstractValue::Value(Value::Top));
                         }
-                        AbstractValue::Unavailable
-                        | AbstractValue::Undefined
-                        | AbstractValue::NonCallable => {}
-                        AbstractValue::Origin(ValueOrigin::Function(key)) => {
+                        AbstractValue::Value(Value::Unavailable)
+                        | AbstractValue::Value(Value::Prim(_)) => {}
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                             returns.extend(self.invoke(key, args.clone(), None, false).returns);
                         }
                         AbstractValue::Closure(key, captured) => {
@@ -5927,19 +5950,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::ObjectAssign => {
                             returns.extend(args.first().cloned().unwrap_or_else(unknown));
                         }
-                        AbstractValue::Unknown => {
-                            returns.insert(AbstractValue::Unknown);
+                        AbstractValue::Value(Value::Top) => {
+                            returns.insert(AbstractValue::Value(Value::Top));
                         }
                         _ => {
-                            returns.insert(AbstractValue::Unknown);
+                            returns.insert(AbstractValue::Value(Value::Top));
                         }
                     }
                 }
                 if returns.is_empty() && may_throw {
-                    return Values::from([AbstractValue::Unavailable]);
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
                 }
                 if may_throw {
-                    returns.insert(AbstractValue::Unavailable);
+                    returns.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 returns
             }
@@ -5950,21 +5973,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
                 let mut successful_args = evaluated_args.clone();
-                let mut args_may_throw = targets.contains(&AbstractValue::Unavailable);
+                let mut args_may_throw =
+                    targets.contains(&AbstractValue::Value(Value::Unavailable));
                 for values in &mut successful_args {
-                    args_may_throw |= values.remove(&AbstractValue::Unavailable);
+                    args_may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
                 }
                 if let Some(summary) = self.foreign_call_summary(CallKind::New, callee) {
-                    if (targets.len() == 1 && targets.contains(&AbstractValue::Unavailable))
+                    if (targets.len() == 1
+                        && targets.contains(&AbstractValue::Value(Value::Unavailable)))
                         || evaluated_args.iter().any(|values| {
-                            values.len() == 1 && values.contains(&AbstractValue::Unavailable)
+                            values.len() == 1
+                                && values.contains(&AbstractValue::Value(Value::Unavailable))
                         })
                     {
-                        return Values::from([AbstractValue::Unavailable]);
+                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
                     }
                     let mut result = self.foreign_call_result(&summary, &successful_args);
                     if args_may_throw {
-                        result.insert(AbstractValue::Unavailable);
+                        result.insert(AbstractValue::Value(Value::Unavailable));
                     }
                     return result;
                 }
@@ -5975,8 +6001,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .is_some()
                 {
                     return Values::from([
-                        AbstractValue::Origin(ValueOrigin::NativeSet(span.allocation_id())),
-                        AbstractValue::Unavailable,
+                        AbstractValue::Value(Value::Alloc(Kind::Set, span.allocation_id())),
+                        AbstractValue::Value(Value::Unavailable),
                     ]);
                 }
                 if let Some(returns) =
@@ -5995,25 +6021,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .retained_constructor_calls
                     .contains_key(span)
                 {
-                    if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
-                        return Values::from([AbstractValue::Unavailable]);
+                    if targets.len() == 1
+                        && targets.contains(&AbstractValue::Value(Value::Unavailable))
+                    {
+                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
                     }
                     if evaluated_args.iter().any(|values| {
-                        values.len() == 1 && values.contains(&AbstractValue::Unavailable)
+                        values.len() == 1
+                            && values.contains(&AbstractValue::Value(Value::Unavailable))
                     }) {
-                        return Values::from([AbstractValue::Unavailable]);
+                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
                     }
                     let mut successful_args = evaluated_args.clone();
                     let mut may_throw = false;
                     for values in &mut successful_args {
-                        may_throw |= values.remove(&AbstractValue::Unavailable);
+                        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
                     }
                     if let Some(callbacks) =
                         self.retained_constructor_callbacks(*span, args, &successful_args)
                     {
                         let result = self.deferred_callbacks(callbacks);
                         return if may_throw {
-                            Values::from([result, AbstractValue::Unavailable])
+                            Values::from([result, AbstractValue::Value(Value::Unavailable)])
                         } else {
                             Values::from([result])
                         };
@@ -6027,14 +6056,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     let mut may_throw = false;
                     let mut successful_args = Values::new();
                     for values in &evaluated_args {
-                        if values.contains(&AbstractValue::Unavailable) {
+                        if values.contains(&AbstractValue::Value(Value::Unavailable)) {
                             may_throw = true;
                             can_complete &= values.len() > 1;
                         }
                         successful_args.extend(
                             values
                                 .iter()
-                                .filter(|value| **value != AbstractValue::Unavailable)
+                                .filter(|value| **value != AbstractValue::Value(Value::Unavailable))
                                 .cloned(),
                         );
                     }
@@ -6043,13 +6072,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         results.insert(self.deferred_callbacks(callbacks));
                     }
                     if may_throw || !can_complete {
-                        results.insert(AbstractValue::Unavailable);
+                        results.insert(AbstractValue::Value(Value::Unavailable));
                     }
                     return results;
                 }
                 for target in targets {
                     match target {
-                        AbstractValue::Origin(ValueOrigin::Class(key)) => {
+                        AbstractValue::Value(Value::Alloc(Kind::Class, key)) => {
                             if let Ok((_, instance)) =
                                 self.construct_local_class(key, &evaluated_args)
                             {
@@ -6059,7 +6088,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 // constructor execution taints one of its inputs. Keep the
                                 // result opaque, but do not drop callbacks reachable from
                                 // the arguments: the unknown instance may retain them.
-                                results.insert(AbstractValue::Unknown);
+                                results.insert(AbstractValue::Value(Value::Top));
                                 let callbacks: Values = successful_args
                                     .iter()
                                     .flat_map(|values| self.callback_values(values))
@@ -6069,11 +6098,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 }
                             }
                         }
-                        AbstractValue::Unavailable => {
-                            results.insert(AbstractValue::Unavailable);
+                        AbstractValue::Value(Value::Unavailable) => {
+                            results.insert(AbstractValue::Value(Value::Unavailable));
                         }
                         _ => {
-                            results.insert(AbstractValue::Unknown);
+                            results.insert(AbstractValue::Value(Value::Top));
                         }
                     }
                 }
@@ -6088,7 +6117,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut may_throw = false;
                 for operand in operands {
                     let mut values = self.evaluate(operand, env, captures);
-                    if values.remove(&AbstractValue::Unavailable) {
+                    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
                         may_throw = true;
                     }
                     if values.is_empty() {
@@ -6098,10 +6127,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 let mut results = Values::new();
                 if can_complete {
-                    results.insert(AbstractValue::NonCallable);
+                    results.insert(AbstractValue::PRIMITIVE);
                 }
                 if may_throw || !can_complete {
-                    results.insert(AbstractValue::Unavailable);
+                    results.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 results
             }
@@ -6237,11 +6266,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let mut values = args
                 .get(index)
                 .cloned()
-                .unwrap_or_else(|| Values::from([AbstractValue::Undefined]));
+                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
             if let Some(default) = &param.default
-                && values.contains(&AbstractValue::Undefined)
+                && values.contains(&AbstractValue::UNDEFINED)
             {
-                values.remove(&AbstractValue::Undefined);
+                values.remove(&AbstractValue::UNDEFINED);
                 values.extend(self.evaluate(default, &env, &env));
             }
             if let Some(binding) = &param.binding {
@@ -6259,8 +6288,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if property.is_none()
                         || values.is_empty()
                         || values.iter().any(|value| match value {
-                            AbstractValue::NonCallable | AbstractValue::Undefined => false,
-                            AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                            AbstractValue::Value(Value::Prim(_)) => false,
+                            AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                                 (!self.inputs.index.plain_data_objects.contains(object)
                                     && !self.state.ordinary_spread_copies.contains(object)
                                     && !self.state.dense_arrays.contains_key(object))
@@ -6393,7 +6422,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.returns.extend(returned);
         }
         if callable.may_fall_through {
-            outcome.returns.insert(AbstractValue::Undefined);
+            outcome.returns.insert(AbstractValue::UNDEFINED);
         }
 
         let mut writes: Vec<_> = callable
@@ -6536,9 +6565,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if call.kind == CallKind::InProtocol
                 && self.ordinary_prototype_chain(&operands[0])
-                && operands[0]
-                    .iter()
-                    .all(|value| matches!(value, AbstractValue::Origin(ValueOrigin::Object(_))))
+                && operands[0].iter().all(|value| {
+                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, _)))
+                })
             {
                 return;
             }
@@ -6610,7 +6639,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.promote_raw_callbacks(&accessor_getters, outcome);
             }
             let unsupported_local = values.iter().any(|value| match value {
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                     self.state.tainted_objects.contains(object)
                         || ((!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object)
@@ -6628,7 +6657,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // A fresh Set identity is not an own-data record. Its size is
                 // an inherited accessor and its methods need a separate
                 // native-identity and own-override proof.
-                AbstractValue::Origin(ValueOrigin::NativeSet(_)) => true,
+                AbstractValue::Value(Value::Alloc(Kind::Set, _)) => true,
                 AbstractValue::Instance(key, _) => {
                     self.state.tainted_classes.contains(key)
                         || !property.as_ref().is_some_and(|property| {
@@ -6653,7 +6682,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if unsupported_local {
                 if values.iter().any(|value| {
                     matches!(value,
-                    AbstractValue::Origin(ValueOrigin::Object(object))
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object))
                     if self.state.descriptor_copy_results.contains(object))
                 }) {
                     self.promote_escaped_callbacks(&values, outcome);
@@ -6729,15 +6758,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if values.iter().all(|value| {
                 matches!(
                     value,
-                    AbstractValue::NonCallable
-                        | AbstractValue::Undefined
-                        | AbstractValue::Unavailable
+                    AbstractValue::Value(Value::Prim(_)) | AbstractValue::Value(Value::Unavailable)
                 )
             }) {
                 return;
             }
             let mut possible_values = values;
-            possible_values.remove(&AbstractValue::Unavailable);
+            possible_values.remove(&AbstractValue::Value(Value::Unavailable));
             if possible_values.is_empty() {
                 return;
             }
@@ -6802,7 +6829,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
-        if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
+        if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable)) {
             return;
         }
         let mut args: Vec<Values> = call
@@ -6810,14 +6837,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .iter()
             .map(|arg| self.evaluate(arg, env, captures))
             .collect();
-        if args
-            .iter()
-            .any(|values| values.len() == 1 && values.contains(&AbstractValue::Unavailable))
-        {
+        if args.iter().any(|values| {
+            values.len() == 1 && values.contains(&AbstractValue::Value(Value::Unavailable))
+        }) {
             return;
         }
         for values in &mut args {
-            values.remove(&AbstractValue::Unavailable);
+            values.remove(&AbstractValue::Value(Value::Unavailable));
         }
         // The provider body runs no other code and writes only its own
         // allocations. The call stays impure for purity and S-chain order.
@@ -6987,7 +7013,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let receiver_values = self.evaluate(receiver, env, captures);
             if receiver_values.iter().any(|value| {
                 matches!(value,
-                AbstractValue::Origin(ValueOrigin::Object(object))
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
                 if self.state.descriptor_copy_results.contains(object))
             }) {
                 opaque_args.push(receiver_values);
@@ -7006,7 +7032,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || targets.iter().any(|target| {
                 matches!(
                     target,
-                    AbstractValue::Unknown
+                    AbstractValue::Value(Value::Top)
                         | AbstractValue::DeferredCallbacks(_)
                         | AbstractValue::ClassMembers(_)
                         | AbstractValue::Instance(_, _)
@@ -7045,7 +7071,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         && (retained_callback
                             || matches!(
                                 call.args.as_slice(),
-                                [ValueExpr::Origin(ValueOrigin::Function(_))]
+                                [ValueExpr::Alloc(Kind::Function, _)]
                             )) =>
                 {
                     if let ValueExpr::Binding(imported_local) = &call.callee {
@@ -7062,7 +7088,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         && !call.has_spread
                         && matches!(
                             call.args.as_slice(),
-                            [ValueExpr::Origin(ValueOrigin::Function(_))]
+                            [ValueExpr::Alloc(Kind::Function, _)]
                         ) => {}
                 AbstractValue::ForeignDeferredRecord => {
                     self.promote_foreign_record(outcome);
@@ -7110,9 +7136,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     possible_args.push((*captured.values).clone());
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
                 }
-                AbstractValue::Unavailable
-                | AbstractValue::Undefined
-                | AbstractValue::NonCallable => {}
+                AbstractValue::Value(Value::Unavailable) | AbstractValue::Value(Value::Prim(_)) => {
+                }
                 AbstractValue::ObjectAssign
                     if call.kind == CallKind::Call
                         && call.plain_object_sources
@@ -7153,7 +7178,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.unknown_call = true;
                     self.widen_native_effects();
                 }
-                AbstractValue::Origin(ValueOrigin::Class(key)) if call.kind == CallKind::New => {
+                AbstractValue::Value(Value::Alloc(Kind::Class, key))
+                    if call.kind == CallKind::New =>
+                {
                     let constructed = if call.has_spread {
                         Err(ConstructionRejection::SpreadArguments)
                     } else {
@@ -7193,7 +7220,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     }
                 }
-                AbstractValue::Origin(ValueOrigin::Function(key))
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
                     let mut nested = self.invoke(key, args.clone(), None, false);
@@ -7249,7 +7276,7 @@ fn callback_source_units_for_signature(
         let expression = callback_argument_exprs.get(position)?;
         let values: BTreeSet<_> = match expression {
             ValueExpr::Binding(binding) => flow.values_of_binding(binding).into_iter().collect(),
-            ValueExpr::Origin(origin) => BTreeSet::from([*origin]),
+            ValueExpr::Alloc(kind, site) => BTreeSet::from([Value::Alloc(*kind, *site)]),
             // Calls, object members and aggregate expressions can return or
             // expose callbacks through paths this local witness does not link.
             _ => return None,
@@ -7258,7 +7285,7 @@ fn callback_source_units_for_signature(
             return None;
         }
         for value in values {
-            if !matches!(value, ValueOrigin::Function(_)) {
+            if !matches!(value, Value::Alloc(Kind::Function, _)) {
                 return None;
             }
             source_units.insert(*flow.callable_source_unit.get(&value)?);
@@ -7496,12 +7523,12 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum PrefixNeededKey {
     Binding(Id),
-    Object(ValueOrigin),
+    Object(Value),
 }
 
 struct PrefixNeededRules<'a> {
     dependencies: &'a BTreeMap<Id, BTreeSet<Id>>,
-    member_write_receivers: &'a BTreeMap<ValueOrigin, BTreeSet<Id>>,
+    member_write_receivers: &'a BTreeMap<Value, BTreeSet<Id>>,
     flow: &'a ChunkValueFlow,
 }
 
@@ -7522,7 +7549,7 @@ impl IterativeRules for PrefixNeededRules<'_> {
                     }
                 }
                 for origin in self.flow.values_of_binding(binding) {
-                    if matches!(origin, ValueOrigin::Object(_))
+                    if matches!(origin, Value::Alloc(Kind::Object, _))
                         && self.member_write_receivers.contains_key(&origin)
                     {
                         context.propose(PrefixNeededKey::Object(origin), ());
@@ -7550,7 +7577,7 @@ impl IterativeRules for PrefixNeededRules<'_> {
 fn close_prefix_needed_bindings(
     seeds: &BTreeSet<Id>,
     dependencies: &BTreeMap<Id, BTreeSet<Id>>,
-    member_write_receivers: &BTreeMap<ValueOrigin, BTreeSet<Id>>,
+    member_write_receivers: &BTreeMap<Value, BTreeSet<Id>>,
     flow: &ChunkValueFlow,
 ) -> BTreeSet<Id> {
     let mut producers = BTreeSet::new();
@@ -7724,7 +7751,7 @@ pub(crate) fn annotate_synchronous_calls(
             expression.bindings(dependencies.entry(id.clone()).or_default());
         }
     }
-    let mut member_write_receivers = BTreeMap::<ValueOrigin, BTreeSet<Id>>::new();
+    let mut member_write_receivers = BTreeMap::<Value, BTreeSet<Id>>::new();
     for writes in &index.top_member_value_writes {
         for (receiver, _, expression) in writes {
             if index.global_object_names.contains(receiver.0.as_ref()) {
@@ -7739,7 +7766,7 @@ pub(crate) fn annotate_synchronous_calls(
                 // that receiver's prefix value whenever its known object
                 // identity also reaches a needed binding.
                 for origin in flow.values_of_binding(receiver) {
-                    if matches!(origin, ValueOrigin::Object(_)) {
+                    if matches!(origin, Value::Alloc(Kind::Object, _)) {
                         member_write_receivers
                             .entry(origin)
                             .or_default()
@@ -7806,7 +7833,7 @@ pub(crate) fn annotate_synchronous_calls(
     for (binding, key) in &index.hoisted_bindings {
         initial_values.insert(
             binding.clone(),
-            Values::from([AbstractValue::Origin(ValueOrigin::Function(*key))]),
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))]),
         );
         initialized_bindings.insert(binding.clone());
     }
@@ -7818,7 +7845,7 @@ pub(crate) fn annotate_synchronous_calls(
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
-        imported_primitives: &hints.imported_primitives,
+        imported_values: &hints.imported_values,
         enum_data_members,
         top_bindings,
         binding_owner: facts
@@ -7907,7 +7934,7 @@ pub(crate) fn annotate_synchronous_calls(
             .exported_hoisted_functions
             .iter()
             .copied()
-            .map(|key| AbstractValue::Origin(ValueOrigin::Function(key)))
+            .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key)))
             .collect(),
         prefix_revision: 0,
         invocation_depth: 0,

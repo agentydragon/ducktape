@@ -9,6 +9,7 @@ use crate::analysis_inputs::{
     NativeInputKind, NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
     StableSetIterableUse,
 };
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use anyhow::{Result, bail};
@@ -419,7 +420,8 @@ fn proven_static_member_sets(
                             return false;
                         };
                         let mut receiver_values = flow.values_of_expr(&member.obj).into_iter();
-                        let Some(ValueOrigin::Object(object)) = receiver_values.next() else {
+                        let Some(Value::Alloc(Kind::Object, object)) = receiver_values.next()
+                        else {
                             return false;
                         };
                         receiver_values.next().is_none()

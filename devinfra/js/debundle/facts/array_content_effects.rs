@@ -6,6 +6,7 @@
 //! conservative barriers in the graph emitter.
 
 use super::*;
+use crate::facts::abstract_domain::value::{Kind, Value};
 
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
@@ -34,7 +35,7 @@ pub(crate) fn annotate_heap_content_effects(
             .native_set_allocations()
             .keys()
             .copied()
-            .map(ValueOrigin::NativeSet),
+            .map(|site| Value::Alloc(Kind::Set, site)),
     );
     let reachability = value_flow.candidate_object_index(&candidates);
     let mut proof_uses = Vec::with_capacity(body.len());
@@ -82,7 +83,7 @@ pub(crate) fn annotate_heap_content_effects(
     proof_uses
 }
 
-pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<ValueOrigin> {
+pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
     let mut origins = ArrayOriginCollector::default();
     for item in body {
         item.as_module_item().visit_with(&mut origins);
@@ -90,8 +91,12 @@ pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<V
     array_candidate_roots_from_origins(&origins.0)
 }
 
-fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<ValueOrigin> {
-    origins.iter().copied().map(ValueOrigin::Object).collect()
+fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value> {
+    origins
+        .iter()
+        .copied()
+        .map(|site| Value::Alloc(Kind::Object, site))
+        .collect()
 }
 
 #[derive(Default)]
@@ -162,11 +167,11 @@ impl ArrayContentCollector<'_> {
         let mut possible = 0usize;
         for value in values {
             match value {
-                ValueOrigin::Object(object) if self.array_origins.contains(&object) => {
+                Value::Alloc(Kind::Object, object) if self.array_origins.contains(&object) => {
                     arrays.insert(object);
                     possible += 1;
                 }
-                ValueOrigin::Unknown => unknown = true,
+                Value::Top => unknown = true,
                 _ => possible += 1,
             }
         }
@@ -181,11 +186,11 @@ impl ArrayContentCollector<'_> {
         let mut count = 0;
         for value in values {
             match value {
-                ValueOrigin::NativeSet(site) => {
+                Value::Alloc(Kind::Set, site) => {
                     sets.insert(site);
                     count += 1;
                 }
-                ValueOrigin::Unknown => unknown = true,
+                Value::Top => unknown = true,
                 _ => count += 1,
             }
         }
@@ -236,10 +241,10 @@ impl ArrayContentCollector<'_> {
         let mut arrays = BTreeSet::new();
         self.array_reachability
             .for_values(&values, |origin| match origin {
-                ValueOrigin::Object(object) if self.array_origins.contains(&object) => {
+                Value::Alloc(Kind::Object, object) if self.array_origins.contains(&object) => {
                     arrays.insert(EffectCell::ArrayContents(object));
                 }
-                ValueOrigin::NativeSet(site) => {
+                Value::Alloc(Kind::Set, site) => {
                     arrays.insert(EffectCell::SetContents(site));
                 }
                 _ => {}
@@ -438,7 +443,7 @@ impl Visit for ArrayContentCollector<'_> {
                     && !callee_origins.is_empty()
                     && callee_origins
                         .iter()
-                        .all(|value| matches!(value, ValueOrigin::Function(_)));
+                        .all(|value| matches!(value, Value::Alloc(Kind::Function, _)));
                 if !known_local {
                     self.record_opaque_call();
                 }

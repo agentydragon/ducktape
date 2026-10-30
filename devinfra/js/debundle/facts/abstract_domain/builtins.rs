@@ -11,7 +11,7 @@
 use super::effect::CoerceOp;
 use super::heap::Mutation;
 use super::integrity::IntrinsicSlot;
-use super::value::Kind;
+use super::value::{Kind, PrimKinds};
 use crate::analysis_inputs::NativeIntrinsic;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -124,8 +124,8 @@ impl IntrinsicOp {
 pub enum Return {
     /// No shape is tracked.
     Unknown,
-    /// A primitive.
-    Primitive,
+    /// A primitive of one of these types.
+    Prim(PrimKinds),
     /// The operand itself, identity preserved.
     Arg(ArgSel),
     /// The allocation named by `Row::allocates`.
@@ -198,7 +198,7 @@ const PRIMITIVE_UNARY_MATH: Row = Row {
     invokes: &[],
     allocates: None,
     mutates: &[],
-    returns: Return::Primitive,
+    returns: Return::Prim(PrimKinds::NUMBER),
     throws: Throws::Never,
     assumed_intact: false,
     requires: &[
@@ -232,7 +232,7 @@ const INSPECTS_NO_OPERAND: Row = Row {
     invokes: &[],
     allocates: None,
     mutates: &[],
-    returns: Return::Primitive,
+    returns: Return::Prim(PrimKinds::BOOLEAN),
     throws: Throws::Never,
     assumed_intact: true,
     requires: &[
@@ -290,7 +290,7 @@ pub const ROWS: &[Row] = &[
         invokes: &[],
         allocates: None,
         mutates: &[],
-        returns: Return::Primitive,
+        returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
         assumed_intact: true,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Symbol)],
@@ -305,7 +305,7 @@ pub const ROWS: &[Row] = &[
         invokes: &[],
         allocates: None,
         mutates: &[],
-        returns: Return::Primitive,
+        returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
         assumed_intact: false,
         requires: &[
@@ -682,7 +682,7 @@ pub const ROWS: &[Row] = &[
         invokes: &[],
         allocates: None,
         mutates: &[],
-        returns: Return::Primitive,
+        returns: Return::Prim(PrimKinds::STRING),
         throws: Throws::Never,
         assumed_intact: true,
         requires: &[],
