@@ -168,7 +168,7 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 	if err != nil {
 		return nil, fmt.Errorf("starting external MCP authorization: %w", err)
 	}
-	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube}
+	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube, recheckPeriod: 5 * time.Second, tokens: map[auth.Account]cachedToken{}}
 	connection, err := dialActions(c.ActionsTarget, caller)
 	if err != nil {
 		return nil, err
