@@ -419,7 +419,8 @@ atomic group or loss there.
   (destructuring admission); heap-content effects read `LocalClassHeapProof`.
   All run before the interpreter, and on the vendor-prune path without it.
   The derived fact, `Alloc(One)` with known props and `escape = Private`, is
-  heap state the domain gains in 4b. `fresh_receiver.rs` is read only by the
+  heap state 4b only has for chunk-top initializers, without `props`; the
+  interpreter's per-allocation state arrives with 4c and 6. `fresh_receiver.rs` is read only by the
   interpreter but needs the same state: an enum IIFE adds new keys to its
   `{}` receiver, so setter freedom rests on the receiver's escape and taint,
   not on fields it already owns.
