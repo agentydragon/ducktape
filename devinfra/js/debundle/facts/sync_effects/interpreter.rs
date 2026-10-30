@@ -42,8 +42,9 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
-    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, InferenceRule, NativeIntegrityCheck,
-    NativeIntegrityGuard, NativePrefixObservation, NativePrototypePropertyCheck,
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, InferenceRule,
+    LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
+    NativePrefixObservation, NativePrototypePropertyCheck, RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
 use source_identity::SourceUnitOrdinal;
@@ -2640,8 +2641,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// An author assertion is attached to the canonical top-level factory,
     /// and only supplies premises at an exact, syntactically fresh call site.
-    fn annotated_record_factory(&self, fact: &StatementFacts) -> Option<(Id, Span)> {
-        let [(_, ValueExpr::Call(callee, args, site))] =
+    /// `Err` names the refused argument shape of a direct annotated call.
+    fn annotated_record_factory(
+        &self,
+        fact: &StatementFacts,
+    ) -> Option<Result<(Id, Span), LocalRecordFactoryRejection>> {
+        let [(_, ValueExpr::Call(callee, _, site))] =
             self.inputs.index.top_assignments[fact.ordinal.0].as_slice()
         else {
             return None;
@@ -2649,25 +2654,100 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ValueExpr::Binding(factory) = callee.as_ref() else {
             return None;
         };
-        if args.len() != 1
-            || !self.inputs.top_bindings.contains(factory)
+        if !self.inputs.top_bindings.contains(factory)
             || !self
                 .inputs
                 .index
                 .retained_record_factories
                 .contains(factory.0.as_ref())
-            || !self
-                .inputs
-                .index
-                .literal_record_factory_calls
-                .contains(site)
         {
             return None;
         }
+        let argument = self.inputs.index.record_factory_calls.get(site)?;
         let call = self.inputs.index.top_calls[fact.ordinal.0]
             .iter()
             .find(|call| CallSite::from(call.span) == *site)?;
-        Some((factory.clone(), call.span))
+        let rejection = |reason, property| LocalRecordFactoryRejection {
+            factory_binding: factory.0.to_string(),
+            reason,
+            property,
+            construction: None,
+            lexical_statement_ordinal: fact.ordinal,
+            source_location: None,
+            span: call.span,
+        };
+        let record = match argument {
+            Ok(record) => record,
+            Err((reason, property)) => return Some(Err(rejection(*reason, property.clone()))),
+        };
+        // `ToString` of a proven primitive runs no user code (none of the
+        // admitted primitives is a Symbol, whose `ToString` throws).
+        if let Some((property, _)) = record
+            .template_substitutions
+            .iter()
+            .find(|(_, value)| !self.closed_primitive_input(value))
+        {
+            return Some(Err(rejection(
+                RecordFactoryRejectionReason::TemplateSubstitution,
+                Some(property.clone()),
+            )));
+        }
+        Some(Ok((factory.clone(), call.span)))
+    }
+
+    /// The first record property the checked constructor proof refused, for
+    /// an annotated call whose argument passed the syntax check.
+    fn record_factory_input_rejection(
+        &self,
+        fact: &StatementFacts,
+    ) -> Option<(RecordFactoryRejectionReason, Option<String>)> {
+        let [(_, ValueExpr::Call(_, args, _))] =
+            self.inputs.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        let [ValueExpr::ObjectLiteral(_, properties)] = args.as_slice() else {
+            return None;
+        };
+        properties.iter().find_map(|(property, value)| {
+            self.unclosed_constructor_input(value)
+                .map(|reason| (reason, property.clone()))
+        })
+    }
+
+    /// The failed check of the factory's returned top-level allocation.
+    fn returned_construction_rejection(&self, factory: &Id) -> Option<ConstructionRejection> {
+        let key = self.inputs.index.hoisted_bindings.get(factory)?;
+        let [ValueExpr::New(class, args, _)] =
+            self.inputs.index.callables.get(key)?.returns.as_slice()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(class) = class.as_ref() else {
+            return None;
+        };
+        let Some(class) = self.stable_local_class_key(class) else {
+            return Some(ConstructionRejection::UncheckedConstructor);
+        };
+        self.eligible_local_constructor(class, args.len()).err()
+    }
+
+    fn unclosed_constructor_input(
+        &self,
+        value: &ValueExpr,
+    ) -> Option<RecordFactoryRejectionReason> {
+        if self.closed_constructor_input(value) {
+            return None;
+        }
+        Some(match value {
+            ValueExpr::Binding(_) => RecordFactoryRejectionReason::UnprovenBinding,
+            ValueExpr::Member(..) => RecordFactoryRejectionReason::UnprovenMemberRead,
+            ValueExpr::ObjectLiteral(_, properties) => properties
+                .iter()
+                .find_map(|(_, value)| self.unclosed_constructor_input(value))
+                .unwrap_or(RecordFactoryRejectionReason::UnsupportedValue),
+            _ => RecordFactoryRejectionReason::UnsupportedValue,
+        })
     }
 
     /// A checked constructor can retain callbacks in a fresh instance without
@@ -2677,40 +2757,55 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
-    ) -> Option<CheckedLocalConstructorFactory> {
+    ) -> Result<CheckedLocalConstructorFactory, RecordFactoryRejectionReason> {
+        if self.state.reachability.incomplete {
+            return Err(RecordFactoryRejectionReason::IncompleteExecution);
+        }
+        if self.inputs.exported_owners.contains(&fact.ordinal) {
+            return Err(RecordFactoryRejectionReason::ExportedResult);
+        }
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
-            || self.state.reachability.incomplete
-            || self.inputs.exported_owners.contains(&fact.ordinal)
             || self.inputs.index.opaque_top.contains(&fact.ordinal)
             || !self.inputs.index.top_property_writes[fact.ordinal.0].is_empty()
             || !self.inputs.index.top_member_value_writes[fact.ordinal.0].is_empty()
             || !self.inputs.index.top_callback_result_writes[fact.ordinal.0].is_empty()
             || !self.inputs.index.top_exported_values[fact.ordinal.0].is_empty()
         {
-            return None;
+            return Err(RecordFactoryRejectionReason::StatementShape);
         }
         let [(binding, ValueExpr::Call(callee, args, site))] =
             self.inputs.index.top_assignments[fact.ordinal.0].as_slice()
         else {
-            return None;
+            return Err(RecordFactoryRejectionReason::StatementShape);
         };
-        // Proven enum own-field reads are retained in the normal top-level
-        // executor and eager facts, but cannot invoke a getter or callback.
+        // Proven enum own-field reads, and template `ToString` of proven
+        // primitives, are retained in the normal top-level executor and eager
+        // facts, but cannot invoke a getter or callback.
         let calls: Vec<_> = self.inputs.index.top_calls[fact.ordinal.0]
             .iter()
-            .filter(|call| {
-                call.kind != CallKind::LocalMemberRead
-                    || !self.closed_enum_member_read(&call.callee)
+            .filter(|call| match call.kind {
+                CallKind::LocalMemberRead => !self.closed_enum_member_read(&call.callee),
+                CallKind::ImplicitCoercion => !matches!(call.args.as_slice(),
+                    [argument] if self.closed_primitive_input(argument)),
+                _ => true,
             })
             .collect();
+        if !args.iter().all(|arg| self.closed_constructor_input(arg)) {
+            return Err(RecordFactoryRejectionReason::UnsupportedValue);
+        }
         let [call] = calls.as_slice() else {
-            return None;
+            return Err(RecordFactoryRejectionReason::ArgumentEffects);
         };
         let ValueExpr::Binding(factory) = callee.as_ref() else {
-            return None;
+            return Err(RecordFactoryRejectionReason::FactoryIdentity);
         };
-        let &key = self.inputs.index.hoisted_bindings.get(factory)?;
+        let &key = self
+            .inputs
+            .index
+            .hoisted_bindings
+            .get(factory)
+            .ok_or(RecordFactoryRejectionReason::FactoryIdentity)?;
         if !fact.declared.contains(binding)
             || !self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
             || self.inputs.index.exported_bindings.contains(factory)
@@ -2728,14 +2823,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 values.len() == 1
                     && values.contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
             })
-            || call.kind != CallKind::Call
-            || call.has_spread
-            || CallSite::from(call.span) != *site
-            || !args.iter().all(|arg| self.closed_constructor_input(arg))
         {
-            return None;
+            return Err(RecordFactoryRejectionReason::FactoryIdentity);
         }
-        let callable = self.inputs.index.callables.get(&key)?;
+        if call.kind != CallKind::Call || call.has_spread || CallSite::from(call.span) != *site {
+            return Err(RecordFactoryRejectionReason::ArgumentEffects);
+        }
+        let callable = self
+            .inputs
+            .index
+            .callables
+            .get(&key)
+            .ok_or(RecordFactoryRejectionReason::FactoryBody)?;
         if callable.opaque
             || callable.generator
             || self.inputs.index.async_callables.contains(&key)
@@ -2755,7 +2854,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .any(|param| param.binding.is_none() || param.default.is_some())
         {
-            return None;
+            return Err(RecordFactoryRejectionReason::FactoryBody);
         }
         let params: BTreeMap<_, _> = callable
             .params
@@ -2773,33 +2872,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &mut allocations,
         );
         if !checked_return {
-            return None;
+            return Err(RecordFactoryRejectionReason::ConstructorProof);
         }
         let allowed_reads: BTreeSet<_> = params.keys().cloned().chain(class_reads).collect();
         if !callable.reads.is_subset(&allowed_reads) {
-            return None;
+            return Err(RecordFactoryRejectionReason::FactoryBody);
         }
         let mut indexed_allocations = BTreeMap::new();
         for nested in &callable.calls {
             let ValueExpr::Binding(class) = &nested.callee else {
-                return None;
+                return Err(RecordFactoryRejectionReason::FactoryBody);
             };
-            let class_key = self.stable_local_class_key(class)?;
+            let class_key = self
+                .stable_local_class_key(class)
+                .ok_or(RecordFactoryRejectionReason::ConstructorProof)?;
             if nested.kind != CallKind::New || nested.has_spread {
-                return None;
+                return Err(RecordFactoryRejectionReason::FactoryBody);
             }
             *indexed_allocations
                 .entry((class_key, nested.args.len()))
                 .or_insert(0) += 1;
         }
         if allocations != indexed_allocations {
-            return None;
+            return Err(RecordFactoryRejectionReason::FactoryBody);
         }
         let mut owners = BTreeSet::from([callable.owner]);
         for (class_key, _) in allocations.keys() {
-            owners.insert(*self.inputs.index.class_owners.get(class_key)?);
+            owners.insert(
+                *self
+                    .inputs
+                    .index
+                    .class_owners
+                    .get(class_key)
+                    .ok_or(RecordFactoryRejectionReason::ConstructorProof)?,
+            );
         }
-        Some(CheckedLocalConstructorFactory {
+        Ok(CheckedLocalConstructorFactory {
             call_span: call.span,
             checked_owners: owners,
         })
@@ -2823,14 +2931,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             ValueExpr::Member(..) => self.closed_enum_member_read(value),
             ValueExpr::Binding(binding) => {
-                self.inputs
-                    .index
-                    .direct_primitive_const_bindings
-                    .contains(binding)
-                    && self.state.initialized_bindings.contains(binding)
-                    && self.state.prefix_values.get(binding).is_some_and(|values| {
-                        values.len() == 1 && values.contains(&AbstractValue::NonCallable)
-                    })
+                self.closed_primitive_binding(binding)
+                    || self.closed_function_binding(binding)
+                    || self.closed_primitive_data_binding(binding)
             }
             ValueExpr::Primitive(operands) => operands
                 .iter()
@@ -2840,6 +2943,101 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | ValueExpr::Undefined => true,
             _ => false,
         }
+    }
+
+    /// A proven primitive: an initialized literal `const` or a closed enum's
+    /// own primitive member.
+    fn closed_primitive_input(&self, value: &ValueExpr) -> bool {
+        match value {
+            ValueExpr::Binding(binding) => self.closed_primitive_binding(binding),
+            ValueExpr::Member(..) => self.closed_enum_member_read(value),
+            _ => false,
+        }
+    }
+
+    fn closed_primitive_binding(&self, binding: &Id) -> bool {
+        self.inputs
+            .index
+            .direct_primitive_const_bindings
+            .contains(binding)
+            && self.state.initialized_bindings.contains(binding)
+            && self.state.prefix_values.get(binding).is_some_and(|values| {
+                values.len() == 1 && values.contains(&AbstractValue::NonCallable)
+            })
+    }
+
+    /// An initialized top-level binding whose every whole-chunk value is one
+    /// source function. Reading it runs no code, and the record retains the
+    /// function exactly as it retains an inline callback: storing is not a call.
+    fn closed_function_binding(&self, binding: &Id) -> bool {
+        if !self.inputs.top_bindings.contains(binding)
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+            || !self.state.initialized_bindings.contains(binding)
+        {
+            return false;
+        }
+        let [ValueOrigin::Function(key)] = self
+            .inputs
+            .flow
+            .values_of_binding(binding)
+            .iter()
+            .collect::<Vec<_>>()[..]
+        else {
+            return false;
+        };
+        self.state.prefix_values.get(binding).is_some_and(|values| {
+            values.len() == 1
+                && values.iter().all(|value| {
+                    matches!(value, AbstractValue::Origin(ValueOrigin::Function(function))
+                        | AbstractValue::Closure(function, _) if *function == key)
+                })
+        })
+    }
+
+    /// An initialized top-level binding to one untainted literal array or
+    /// plain-data object whose every current slot holds a primitive. The
+    /// shared identity runs no code when stored, holds no callback, and later
+    /// writes through any alias are tracked on the same allocation.
+    fn closed_primitive_data_binding(&self, binding: &Id) -> bool {
+        if !self.inputs.top_bindings.contains(binding)
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+            || !self.state.initialized_bindings.contains(binding)
+        {
+            return false;
+        }
+        let [ValueOrigin::Object(object)] = self
+            .inputs
+            .flow
+            .values_of_binding(binding)
+            .iter()
+            .collect::<Vec<_>>()[..]
+        else {
+            return false;
+        };
+        let primitive = |value: &AbstractValue| {
+            matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
+        };
+        let literal = if self.inputs.index.array_elements.contains_key(&object) {
+            self.inputs.index.dense_array_literals.contains_key(&object)
+        } else {
+            self.inputs.index.plain_data_objects.contains(&object)
+        };
+        literal
+            && !self.state.tainted_objects.contains(&object)
+            && self.state.prefix_values.get(binding).is_some_and(|values| {
+                values.len() == 1
+                    && values.contains(&AbstractValue::Origin(ValueOrigin::Object(object)))
+            })
+            && self
+                .state
+                .prefix_object_properties
+                .get(&object)
+                .is_some_and(|properties| properties.values().flatten().all(primitive))
+            && self
+                .state
+                .dense_arrays
+                .get(&object)
+                .is_none_or(|dense| dense.slots.iter().flatten().all(primitive))
     }
 
     fn stable_local_class_key(&self, binding: &Id) -> Option<u32> {
@@ -7798,9 +7996,37 @@ impl Executor<'_, '_> {
         self.state.fallback_local_owners.clear();
         self.state.returned_callback_owners.clear();
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
-        let annotated_record_factory = self.annotated_record_factory(fact);
+        let (annotated_record_factory, mut record_factory_rejection) =
+            match self.annotated_record_factory(fact) {
+                Some(Ok(factory)) => (Some(factory), None),
+                Some(Err(rejection)) => (None, Some(rejection)),
+                None => (None, None),
+            };
         self.state.checking_record_factory_contract = annotated_record_factory.is_some();
         let checked_local_constructor_factory = self.closed_local_constructor_factory_result(fact);
+        if let Err(reason) = &checked_local_constructor_factory
+            && let Some((factory, span)) = &annotated_record_factory
+        {
+            let construction = (*reason == RecordFactoryRejectionReason::ConstructorProof)
+                .then(|| self.returned_construction_rejection(factory))
+                .flatten();
+            let (reason, property) = if *reason == RecordFactoryRejectionReason::UnsupportedValue {
+                self.record_factory_input_rejection(fact)
+                    .unwrap_or((*reason, None))
+            } else {
+                (*reason, None)
+            };
+            record_factory_rejection = Some(LocalRecordFactoryRejection {
+                factory_binding: factory.0.to_string(),
+                reason,
+                property,
+                construction,
+                lexical_statement_ordinal: fact.ordinal,
+                source_location: None,
+                span: *span,
+            });
+        }
+        let checked_local_constructor_factory = checked_local_constructor_factory.ok();
         self.state.private_constructor_result_owners = checked_local_constructor_factory
             .as_ref()
             .map_or_else(BTreeSet::new, |proof| proof.checked_owners.clone());
@@ -8079,6 +8305,10 @@ impl Executor<'_, '_> {
                 },
             );
         }
+        outcome
+            .effects
+            .local_record_factory_rejections
+            .extend(record_factory_rejection);
         // The certificate is minted from the source proof above only after
         // the ordinary executor has completed this exact initializer without
         // falling back. It is consumed by analyze.rs to remove only the

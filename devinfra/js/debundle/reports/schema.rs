@@ -493,6 +493,8 @@ pub struct SynchronousExecutionReport {
     pub inference_uses: Vec<InferenceUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_record_factory_uses: Vec<LocalRecordFactoryUse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_record_factory_rejections: Vec<LocalRecordFactoryRejection>,
     /// Evaluated premises which failed; other eligibility conditions may also fail.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
@@ -536,6 +538,67 @@ pub struct LocalRecordFactoryUse {
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
     pub(crate) span: swc_common::Span,
+}
+
+/// A direct call of an annotated record factory whose argument is outside the
+/// admitted fresh-record shapes, so the author premise was not consulted.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LocalRecordFactoryRejection {
+    pub factory_binding: String,
+    pub reason: RecordFactoryRejectionReason,
+    /// Outermost record property holding the refused value, when there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    /// The returned allocation's failed constructor check, for `constructor_proof`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub construction: Option<ConstructionRejection>,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
+}
+
+/// Why an annotated record-factory call kept the conservative path. The
+/// first group refuses the argument's shape; the rest are checked-constructor
+/// proof conditions outside the record.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordFactoryRejectionReason {
+    /// The call does not pass exactly one direct object literal.
+    NotObjectLiteral,
+    /// An object spread whose source is not a proven fresh plain-data record.
+    Spread,
+    ComputedKey,
+    /// A getter or setter, which a constructor property read could invoke.
+    Accessor,
+    /// A `__proto__` key, which sets the prototype instead of a field.
+    PrototypeKey,
+    DuplicateKey,
+    /// An array hole or array spread.
+    ArrayShape,
+    /// A value whose evaluation can run code (calls, assignments, sequences, ...).
+    UnsupportedValue,
+    /// A binding read not proven to hold a primitive or a function at the call.
+    UnprovenBinding,
+    /// A member read not proven to be a closed enum's own primitive member.
+    UnprovenMemberRead,
+    /// A template substitution not proven primitive, so `ToString` could run code.
+    TemplateSubstitution,
+    /// Synchronous execution was already incomplete before this statement.
+    IncompleteExecution,
+    /// The result binding is exported, with importer reentry not ruled out.
+    ExportedResult,
+    /// The call is not the sole initializer of one declared binding, or the
+    /// statement also writes properties or exports values.
+    StatementShape,
+    /// The statement evaluates other calls or unproven conversions.
+    ArgumentEffects,
+    /// The callee is not the stable, unexposed hoisted factory function.
+    FactoryIdentity,
+    /// The factory body is not one return of checked local allocations.
+    FactoryBody,
+    /// A constructed class failed the checked local constructor proof.
+    ConstructorProof,
 }
 
 /// A successful timing refinement that consumed a `reentry_free_operations`
