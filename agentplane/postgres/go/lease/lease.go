@@ -34,7 +34,8 @@ type Table struct {
 	Name string
 	// Key are the columns identifying a row, in the order of Lease.Key.
 	Key []string
-	// Holder is the uuid column naming the holder of the current or last lease.
+	// Holder is the uuid column naming the holder of the current lease. Release sets it NULL, so it must be
+	// nullable unless the table is Owned.
 	Holder string
 	// Until is the timestamptz column at which the lease expires. NULL is never live.
 	Until string
@@ -198,15 +199,16 @@ func (t Table) Renew(ctx context.Context, tx *sql.Tx, lease Lease, duration time
 	return lease, nil
 }
 
-// Release ends the lease now, if it is still this holder's, so the next holder need not wait out its expiry.
-// Releasing a lost lease does nothing.
+// Release ends the lease now, if it is still this holder's, so the next holder need not wait out its expiry: it
+// clears the holder and moves the expiry no later than now, or deletes an owned row. Releasing a lost lease does
+// nothing.
 func (t Table) Release(ctx context.Context, tx *sql.Tx, lease Lease) error {
 	if err := t.check(lease.Key); err != nil {
 		return err
 	}
 	n := len(lease.Key)
-	query := fmt.Sprintf("UPDATE %[1]s SET %[2]s = LEAST(%[2]s, clock_timestamp()) WHERE %[3]s AND %[4]s = $%[5]d",
-		t.name(), column(t.Until), t.where(), column(t.Holder), n+1)
+	query := fmt.Sprintf(`UPDATE %[1]s SET %[4]s = NULL, %[2]s = LEAST(%[2]s, clock_timestamp())
+		WHERE %[3]s AND %[4]s = $%[5]d`, t.name(), column(t.Until), t.where(), column(t.Holder), n+1)
 	if t.Owned {
 		query = fmt.Sprintf("DELETE FROM %s WHERE %s AND %s = $%d", t.name(), t.where(), column(t.Holder), n+1)
 	}
