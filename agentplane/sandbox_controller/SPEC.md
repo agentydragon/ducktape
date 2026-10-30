@@ -200,6 +200,12 @@ means the Gateway has claimed observation of this incarnation but has not receiv
 runner listener; the claim precedes dialing and does not prove connectivity or authentication. Losing the connection restarts and replaces nothing. A controller not configured to
 read Leases omits it.
 
+Suspension and deletion require quiescence only for a verified runner incarnation. A Gateway
+observation claim alone does not prove contact. The Lease retains `last-connected-pod-uid` after
+a validated boot identity is recorded, across reconnect claims and Lease expiry; losing connectivity
+does not waive quiescence for a previously connected runner. A pending claim with no verified contact
+can stop without a Quiesce RPC.
+
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has
 none (`NoBootstrap`). It is Unknown with `BootstrapNotReported` while the incarnation's runner has
 reported nothing, False with `BootstrapRunning` while the script runs, and False with

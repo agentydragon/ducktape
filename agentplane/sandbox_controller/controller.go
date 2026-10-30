@@ -312,7 +312,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 // Gateway records on the Sandbox's Lease, or "" if none ever did.
 func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
-	return lease.Annotations[sandboxlease.PodUIDAnnotation], err
+	return sandboxlease.LastConnectedPodUID(lease.Annotations), err
 }
 
 // runnerLease reads the Lease the Runner Gateway writes for the Sandbox's runner connection; it is
@@ -399,7 +399,7 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	}
 	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runner {
 		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
-			return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: remaining}, nil
+			return &unready{reason: "Quiescing", message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
 		}
 	}
 	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}

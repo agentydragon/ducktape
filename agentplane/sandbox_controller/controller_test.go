@@ -3,6 +3,7 @@ package sandboxcontroller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1404,5 +1405,54 @@ func TestAStoppedSandboxIsSuspended(t *testing.T) {
 	suspended := getSandbox(t, c)
 	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || suspended.Status.SuspendedBy == nil || *suspended.Status.SuspendedBy != sandboxapi.SuspendedByRequested {
 		t.Errorf("operating mode = %s, suspendedBy = %v, want Suspended by Requested", suspended.Status.OperatingMode, suspended.Status.SuspendedBy)
+	}
+}
+
+func TestPendingObservationDoesNotBlockSuspensionOrDeletion(t *testing.T) {
+	for _, deleting := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deleting=%v", deleting), func(t *testing.T) {
+			r, c := runningWithRunner(t)
+			var lease coordinationv1.Lease
+			key := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+			if err := c.Get(context.Background(), key, &lease); err != nil {
+				t.Fatal(err)
+			}
+			delete(lease.Annotations, sandboxlease.RunnerBootIDAnnotation)
+			if err := c.Update(context.Background(), &lease); err != nil {
+				t.Fatal(err)
+			}
+			if deleting {
+				deleteSandbox(t, c)
+			} else {
+				setRunning(t, c, false)
+			}
+			reconcileOnce(t, r)
+			if getPod(t, c) != nil {
+				t.Fatal("pending observation prevented stopping the Pod")
+			}
+			if r.Quiescer.(*fakeQuiescer).calls != 0 {
+				t.Fatal("asked an unverified runner to quiesce")
+			}
+		})
+	}
+}
+
+func TestPreviouslyConnectedRunnerStillBlocksSuspensionAfterReclaim(t *testing.T) {
+	r, c := runningWithRunner(t)
+	var lease coordinationv1.Lease
+	key := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+	if err := c.Get(context.Background(), key, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = "uid-pod"
+	delete(lease.Annotations, sandboxlease.RunnerBootIDAnnotation)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil || r.Quiescer.(*fakeQuiescer).calls != 1 {
+		t.Fatal("lost verified contact allowed unsafe suspension")
 	}
 }

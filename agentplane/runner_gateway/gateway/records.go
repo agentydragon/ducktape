@@ -102,6 +102,9 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Ide
 			_, err = r.coordination.Leases(r.namespace).Create(ctx, lease, metav1.CreateOptions{})
 		} else {
 			lease.ResourceVersion = current.ResourceVersion
+			if uid := sandboxlease.LastConnectedPodUID(current.Annotations); uid != "" {
+				lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = uid
+			}
 			_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		}
 		if err != nil {
@@ -133,6 +136,7 @@ func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxrea
 			lease.Annotations = make(map[string]string)
 		}
 		lease.Annotations[sandboxlease.RunnerBootIDAnnotation] = bootID
+		lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = lease.Annotations[sandboxlease.PodUIDAnnotation]
 		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
 		return err
 	})

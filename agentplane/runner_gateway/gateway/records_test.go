@@ -112,3 +112,51 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 		t.Fatalf("idle runner retained blocker annotation: %s", lease.Annotations[sandboxlease.AutosuspendBlockersAnnotation])
 	}
 }
+
+func TestObservationClaimsPreserveVerifiedContact(t *testing.T) {
+	ctx := context.Background()
+	kube := kubernetesfake.NewSimpleClientset()
+	identity := sandboxreader.Identity{Name: testSandbox, UID: testSandboxUID}
+	records, err := newConnectionRecords(kube.CoordinationV1(), kube.DiscoveryV1(), testNamespace,
+		connectionHolder{name: "gateway", ip: "192.0.2.10", port: sandboxapi.ControlServicePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := records.claim(ctx, identity, testPodUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func() *coordinationv1.Lease {
+		t.Helper()
+		lease, err := kube.CoordinationV1().Leases(testNamespace).Get(ctx, testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return lease
+	}
+	if sandboxlease.LastConnectedPodUID(read().Annotations) != "" {
+		t.Fatal("claim counted as contact")
+	}
+	if err := records.recordBootID(ctx, identity, epoch, "boot"); err != nil {
+		t.Fatal(err)
+	}
+	for _, uid := range []string{testPodUID, "replacement-pod"} {
+		epoch, err = records.claim(ctx, identity, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease := read()
+		if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != "" {
+			t.Fatal("claim retained current boot ID")
+		}
+		if sandboxlease.LastConnectedPodUID(lease.Annotations) != testPodUID {
+			t.Fatal("claim erased verified contact")
+		}
+	}
+	if err := records.recordBootID(ctx, identity, epoch, "replacement-boot"); err != nil {
+		t.Fatal(err)
+	}
+	if sandboxlease.LastConnectedPodUID(read().Annotations) != "replacement-pod" {
+		t.Fatal("verified replacement did not update contact")
+	}
+}
