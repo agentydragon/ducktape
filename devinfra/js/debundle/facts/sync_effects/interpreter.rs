@@ -331,6 +331,9 @@ pub(super) struct ExecutionState {
     record_factory_prototype_premises: RefCell<RecordFactoryPrototypePremises>,
     checking_record_factory_contract: bool,
     prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Callables run so far by the current top-level owner; joins
+    /// `prior_effect_owners` when it finishes.
+    statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
     accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
@@ -2889,6 +2892,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return;
         }
+        self.state.statement_executed_owners.insert(owner);
         if self.state.reachability.unknown_call_seen {
             self.extend_reachable_owners([owner]);
         } else if let Some(roots) = &mut self.state.prior_reachability_roots {
@@ -4706,11 +4710,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // The summarized bodies can also reach a callable through the heap
         // rather than a lexical read: a stored closure they call or return,
-        // or an accessor their property access runs. Such a callable was
-        // created by an owner that already ran in this prefix, so take the
-        // same candidate owners a property write's setter check uses.
+        // or an accessor their property access runs. Storing it there took
+        // an effect: a prior impure owner or a callable run earlier in this
+        // statement, whose lexical closure covers the stored callable's body.
+        // A pure owner's fresh object is reachable only through a lexical
+        // read of its binding, which the closure already follows.
         roots.insert(effect_owner);
         roots.extend(outcome.executed_owners.iter().copied());
+        roots.extend(self.state.statement_executed_owners.iter().copied());
         roots.extend(
             self.state
                 .prior_effect_owners
@@ -4722,21 +4729,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .accepted_deferred_global_writes
                         .contains(candidate)
                 }),
-        );
-        roots.extend(
-            self.state
-                .prior_reachability_roots
-                .iter()
-                .flatten()
-                .copied(),
-        );
-        roots.extend(
-            self.state
-                .reachability
-                .owners
-                .iter()
-                .copied()
-                .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
         );
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
         let mut reached = SourceUnitReadClosure::extend_synchronous_source_units(
@@ -7362,6 +7354,7 @@ pub(crate) fn annotate_synchronous_calls(
         record_factory_prototype_premises: RefCell::default(),
         checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
+        statement_executed_owners: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
         frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),
@@ -7873,6 +7866,7 @@ impl Executor<'_, '_> {
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
+        self.state.statement_executed_owners.clear();
         self.state.returned_callback_owners.clear();
         self.state.private_constructor_result_owners.clear();
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
