@@ -1,12 +1,35 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
 skill_package(
     name = "ci_reliability",
     contents = [
-        skill_mapping(srcs = ["SKILL.md"]),
+        skill_mapping(
+            srcs = [
+                "SKILL.md",
+                "scripts/merge_census.py",
+            ],
+            preserve_paths = True,
+        ),
         skill_mapping(
             srcs = ["//devinfra/ci/reports:publish.py"],
             prefix = "scripts",
         ),
+    ],
+)
+
+py_library(
+    name = "merge_census",
+    srcs = ["scripts/merge_census.py"],
+)
+
+py_test(
+    name = "test_merge_census",
+    srcs = ["test_merge_census.py"],
+    deps = [
+        ":merge_census",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

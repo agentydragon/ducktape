@@ -90,6 +90,23 @@ ones merged while required checks were failing, timed out, cancelled or still
 pending. In this repository, the owner sometimes force-merges because of flakes:
 these are priority discovery leads even when the PR or mainline is now green.
 
+For a complete merged-PR census, partition the UTC observation window by day and
+compare each exact required CheckRun name's latest visible timestamps with the PR's
+`mergedAt`:
+
+```bash
+python3 scripts/merge_census.py "$REPO" "$SINCE" "$UNTIL" "$OUT/merged-pr-census.json" \
+  --gate "bazel-ci / Test & Build" \
+  --gate "Pre-commit checks" \
+  --gate "Build artifacts + imports check"
+```
+
+The command cross-checks each day against both GitHub search and the PR listing,
+and fails if either reaches the 1,000-result search cap or returns an incomplete
+partition. Its classifications are candidates based on the current rollup; the
+tool explicitly marks historical attempts incomplete because a later rerun can
+hide the check state visible at merge.
+
 Reconstruct check state **at merge time** from the PR's merged head, merge
 timestamp, associated check/status and workflow-attempt history, and the actual
 tested revisions. A later passing rerun must not erase a failure or pending check
