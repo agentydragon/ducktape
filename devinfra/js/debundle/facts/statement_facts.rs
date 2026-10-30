@@ -275,8 +275,8 @@ impl SynchronousCalls {
 }
 
 /// Source- and execution-checked evidence that one exact factory call only
-/// allocates the validated local constructor graph. The call-site purity pass
-/// consumes this to discharge only the generic impure-callee reason at
+/// allocates the validated local constructor graph. The settled purity
+/// projection consumes this to discharge only the impure-callee effect at
 /// `call_span`; factory and class purity summaries remain unchanged. An
 /// author assertion may supply otherwise-unproved prototype premises, but
 /// native/source evidence can establish them without an assertion.

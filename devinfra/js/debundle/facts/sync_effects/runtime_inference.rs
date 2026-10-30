@@ -9,9 +9,10 @@ use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::SettledPurity;
 use crate::facts::statement_facts::SynchronousCalls;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::Purity;
+use crate::purity::Effects;
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
@@ -39,7 +40,7 @@ enum RuntimeRule {
 
 enum RuntimeFact {
     Prefix(Box<ExecutionState>),
-    Purity(Box<Purity>),
+    Purity(Box<Effects>),
     Effects(Box<SynchronousCalls>),
     Request(Box<RuntimeRequest>),
     Result(Box<RuntimeResult>),
@@ -155,7 +156,7 @@ impl RuntimeQueries<'_, '_> {
             .borrow_mut()
             .read_final(RuntimeKey::Purity(owner))
         {
-            Some(RuntimeFact::Purity(purity)) => purity.is_pure(),
+            Some(RuntimeFact::Purity(effects)) => effects.is_pure(),
             _ => unreachable!("purity is published at each statement's program point"),
         }
     }
@@ -335,7 +336,7 @@ impl RuntimeRules<'_, '_> {
         // matter for acceptance.
         context.propose(
             RuntimeKey::Purity(owner),
-            RuntimeFact::Purity(Box::new(self.inputs.statement_purity(owner))),
+            RuntimeFact::Purity(Box::new(self.inputs.statement_effects(owner))),
         );
         let queries = RuntimeQueries {
             inputs: self.inputs,
@@ -429,7 +430,7 @@ pub(super) fn infer_synchronous_execution(
     inputs: &ExecutionInputs<'_>,
     initial: ExecutionState,
     owner_count: usize,
-) -> Vec<(SynchronousCalls, Purity)> {
+) -> Vec<(SynchronousCalls, SettledPurity)> {
     let mut inference = IterativeInference::new(RuntimeRules {
         inputs,
         owner_count,
@@ -446,8 +447,30 @@ pub(super) fn infer_synchronous_execution(
                 facts.remove(&RuntimeKey::Effects(owner)),
                 facts.remove(&RuntimeKey::Purity(owner)),
             ) {
-                (Some(RuntimeFact::Effects(effects)), Some(RuntimeFact::Purity(purity))) => {
-                    (*effects, *purity)
+                (Some(RuntimeFact::Effects(calls)), Some(RuntimeFact::Purity(effects))) => {
+                    // The checked local record factory certificate is minted
+                    // only after ordinary execution of this exact initializer
+                    // completes; it refines the settled verdict, never the
+                    // one execution consumed.
+                    let purity = match calls
+                        .local_record_factory_purity
+                        .as_ref()
+                        .filter(|certificate| !certificate.checked_owners.is_empty())
+                    {
+                        Some(certificate) => SettledPurity {
+                            executed: effects.as_ref().clone().project(),
+                            refined: Some(
+                                effects
+                                    .discharge_call(
+                                        certificate.call_span,
+                                        &certificate.dependencies,
+                                    )
+                                    .project(),
+                            ),
+                        },
+                        None => SettledPurity::unrefined(*effects),
+                    };
+                    (*calls, purity)
                 }
                 _ => unreachable!("every source owner has a settled execution result"),
             }

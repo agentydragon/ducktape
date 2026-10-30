@@ -40,7 +40,7 @@ pub(crate) use crate::analysis_inputs::{
     AnalysisInputs, KnownEffect, LocalEffectPolicy, ValidatedNativeOperationFacts,
 };
 pub(crate) use crate::purity::{
-    ChunkCodeGraph, Purity, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
+    ChunkCodeGraph, Purity, RedundantPureMemberHint, RedundantPurityHint,
     classify_class_static_purity, classify_expr_purity, classify_var_decl_purity,
     detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };

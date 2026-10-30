@@ -231,6 +231,21 @@ impl Effects {
         self
     }
 
+    /// Discharge the call of an impure function at `span` when it is the only
+    /// such call there: a certificate proved that call's execution adds no
+    /// observable effect. Every other effect stays.
+    pub(crate) fn discharge_call(mut self, span: Span, dependencies: &ProofDependencies) -> Self {
+        let discharged = |event: &EffectEvent| {
+            matches!(event, EffectEvent::Call { callee, span: site, .. }
+                if *site == span && !callee.is_pure())
+        };
+        if self.events.iter().filter(|event| discharged(event)).count() == 1 {
+            self.events.retain(|event| !discharged(event));
+            self.dependencies.extend(dependencies);
+        }
+        self
+    }
+
     pub(crate) fn is_pure(&self) -> bool {
         self.events.iter().all(|event| match event {
             EffectEvent::Effect { .. } => false,

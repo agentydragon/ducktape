@@ -614,7 +614,7 @@ where
         }
         SynchronousCallAnalysis::Omit => facts
             .iter()
-            .map(|fact| purity_context.statement_purity(fact))
+            .map(|fact| SettledPurity::unrefined(purity_context.statement_effects(fact)))
             .collect(),
     };
     for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
@@ -626,9 +626,6 @@ where
             hints,
             &graph,
         );
-    }
-    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
-        discharge_checked_local_record_factory_calls(&mut facts);
     }
     for fact in &mut facts {
         // Resolve any reason spans on `fact.purity` to SourceLocations using
@@ -752,48 +749,6 @@ where
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
-    }
-}
-
-/// Generic function-body purity cannot compose the already-checked private
-/// constructor graph at one call site. Consume only the typed certificate
-/// produced by successful ordinary synchronous execution, and remove only its
-/// matching `impure_function_call` reason. Argument, callee, read, and any
-/// other expression reasons remain classified normally; function-body purity
-/// caches are never changed.
-fn discharge_checked_local_record_factory_calls(facts: &mut [StatementFacts]) {
-    for fact in facts {
-        let Some(certificate) = fact
-            .synchronous_calls
-            .as_ref()
-            .and_then(|calls| calls.local_record_factory_purity.as_ref())
-        else {
-            continue;
-        };
-        if certificate.checked_owners.is_empty() {
-            continue;
-        }
-        let Purity::NotPure { reasons } = &mut fact.purity else {
-            continue;
-        };
-        let matching = reasons
-            .iter()
-            .filter(|reason| {
-                reason.rule == PurityRule::ImpureFunctionCall
-                    && reason.span == certificate.call_span
-            })
-            .count();
-        if matching != 1 {
-            continue;
-        }
-        reasons.retain(|reason| {
-            !(reason.rule == PurityRule::ImpureFunctionCall && reason.span == certificate.call_span)
-        });
-        if reasons.is_empty() {
-            fact.purity = Purity::Pure {
-                dependencies: certificate.dependencies.clone(),
-            };
-        }
     }
 }
 
@@ -960,13 +915,13 @@ fn assemble_statement_facts(
 /// still constrain module order.
 fn settle_statement_purity(
     fact: &mut StatementFacts,
-    purity: Purity,
+    purity: SettledPurity,
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
     graph: &ChunkCodeGraph,
 ) {
-    if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
+    if purity.executed.is_pure() && !has_trusted_initializer_purity(item, hints) {
         fact.at_init_unresolved_sources.clear();
         fact.at_init_unresolved_inline_fn = false;
     } else {
@@ -977,5 +932,5 @@ fn settle_statement_purity(
         fact.at_init_unresolved_inline_fn = fact.at_init_unresolved_inline_fn
             && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
     }
-    fact.purity = purity;
+    fact.purity = purity.refined.unwrap_or(purity.executed);
 }
