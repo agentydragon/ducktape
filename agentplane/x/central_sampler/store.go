@@ -892,31 +892,28 @@ func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor 
 	})
 }
 
-func (s *Store) PendingSessions(ctx context.Context, target string, exclude []string, after string, limit int) ([]*Session, error) {
+// PendingSessionIDs pages in ID order, after the given ID, through Sessions whose export to target is behind.
+func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, limit int) ([]string, error) {
 	if limit <= 0 || limit > 4096 {
 		return nil, protocol.ErrInvalid
 	}
-	if exclude == nil {
-		exclude = []string{}
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT ss.id,ss.conversation_id::text,ss.account_uid,ss.configuration,ss.model,ss.effort,ss.source_id,ss.cursor,
-		ss.active_turn,ss.active_command,ss.workspace_prepared,ss.setup_state,ss.setup_started,ss.blocked,ss.blocked_reason
-		FROM sampler_session ss LEFT JOIN sampler_export_checkpoint cp ON cp.session_id=ss.id AND cp.destination=$1
-		WHERE NOT (ss.id=ANY($3::varchar[])) AND (cp.cursor IS NULL OR cp.cursor<ss.cursor)
-		ORDER BY CASE WHEN ss.id>$2 THEN 0 ELSE 1 END, ss.id LIMIT $4`, target, after, pq.Array(exclude), limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss
+		LEFT JOIN sampler_export_checkpoint cp ON cp.session_id=ss.id AND cp.destination=$1
+		WHERE ss.id>$2 AND (cp.cursor IS NULL OR cp.cursor<ss.cursor)
+		ORDER BY ss.id LIMIT $3`, target, after, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var sessions []*Session
+	var ids []string
 	for rows.Next() {
-		session, err := scanSession(rows)
-		if err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		sessions = append(sessions, session)
+		ids = append(ids, id)
 	}
-	return sessions, rows.Err()
+	return ids, rows.Err()
 }
 
 func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int) ([]string, error) {

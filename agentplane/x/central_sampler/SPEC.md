@@ -363,9 +363,11 @@ checkpoint. Reconnecting reconciles the remote cursor before sending, including 
 after History commit but before local acknowledgement. It does not retry model/tool operations.
 Bounded pages and concurrent send/ack handling apply backpressure independently of sampling.
 The exporter reuses its connection and drains pending pages without an unconditional timer delay.
-Bounded scheduling quanta share capacity between Sessions; committed outbox notifications wake idle
-exporters across replicas, and listener reconnection triggers durable catch-up. Only failures incur
-retry backoff. Each stream covers its announced snapshot; newer commits receive a fresh announcement
+Bounded scheduling quanta share capacity between Sessions. The exporter is correct with one sampler
+replica only: it claims no Session in the database, so a second replica would export the same
+Session concurrently. Committed outbox notifications from any writer wake the idle exporter, and
+listener reconnection triggers durable catch-up. Only failures incur retry backoff, per Session,
+exponential, and reset by progress. Each stream covers its announced snapshot; newer commits receive a fresh announcement
 so History also retains the final Session metadata. Caught-up archives retain no streams or tasks.
 History unavailability delays display while the sampler retains its outbox.
 

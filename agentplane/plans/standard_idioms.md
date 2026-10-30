@@ -76,14 +76,6 @@ summary and runs a lease transaction and checkpoint read per Session. Fold only 
 checkpoint is behind their last cursor (an indexed condition or a pending table maintained by
 `Append`), claimed with `SKIP LOCKED`. Exit: work per wake is proportional to changed Sessions.
 
-### `SAMPLER_EXPORTER_WORKQUEUE`
-
-The sampler exporter (`x/central_sampler/exporter.go`) hand-rolls a keyed queue with in-flight set,
-retry deadlines, earliest-retry timer, concurrency cap and round-robin cursor, retrying a failing
-Session every 1 s flat and logging only the error's type. Use client-go `workqueue`
-(`TypedRateLimitingQueue`, `AddAfter`, per-item exponential backoff) and log the error. Add a
-`SKIP LOCKED` claim, or fix `SPEC.md`'s "across replicas", before scaling past one replica.
-
 ### `DISPATCHER_KEYED_DELIVERY`
 
 Blocked on the [merge design](dispatcher_gateway_merge.md). The Dispatcher turns any Sandbox event into
