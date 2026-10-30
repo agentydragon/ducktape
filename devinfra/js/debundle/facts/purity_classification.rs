@@ -1,4 +1,63 @@
 use super::*;
+use crate::analysis_inputs::ProofDependencies;
+use source_identity::SourceUnitOrdinal;
+
+/// Everything a statement's purity transfer reads besides the statement's own
+/// facts. Each input is source-only: the transfer runs at the statement's
+/// program point in the synchronous runtime store (or, on the vendor-prune
+/// path, outside it) and produces the purity the interpreter consumes there.
+pub(crate) struct StatementPurityContext<'a> {
+    pub(crate) body: &'a [TopLevelItemView<'a>],
+    pub(crate) shadowed: &'a BTreeSet<&'static str>,
+    pub(crate) hints: &'a AnalysisInputs,
+    pub(crate) graph: &'a ChunkCodeGraph,
+    pub(crate) proofs: ItemPurityProofs<'a>,
+    /// `var` bindings declared by more than one statement.
+    pub(crate) shared_vars: &'a BTreeSet<Id>,
+    /// Exact native own-data read candidates per statement, with the
+    /// certificate's dependencies when the census or an author input proves
+    /// the read.
+    pub(crate) native_own_data_reads:
+        &'a BTreeMap<SourceUnitOrdinal, Vec<(Span, Option<ProofDependencies>)>>,
+}
+
+impl StatementPurityContext<'_> {
+    pub(crate) fn statement_purity(&self, fact: &StatementFacts) -> Purity {
+        let item = self.body[fact.ordinal.0].as_module_item();
+        let mut purity = item_purity(
+            item,
+            fact.kind,
+            self.shadowed,
+            self.hints,
+            self.graph,
+            &self.proofs,
+            !fact.local_effects.is_empty(),
+        );
+        if !fact.var_initializers.is_disjoint(self.shared_vars) {
+            purity = purity.worst(Purity::from_reason_with_detail(
+                PurityRule::AssignOrUpdate,
+                item.span(),
+                "initializer writes a shared var binding".to_string(),
+            ));
+        }
+        // The exact native-reference initializer uses the same semantic
+        // certificate for purity as for heap and synchronous timing. A known
+        // replacement or unsupported read must not inherit the older
+        // name-based static-reference purity verdict.
+        for (span, dependencies) in self
+            .native_own_data_reads
+            .get(&fact.ordinal)
+            .into_iter()
+            .flatten()
+        {
+            purity = match dependencies {
+                Some(dependencies) => purity.with_dependencies(dependencies),
+                None => purity.worst(Purity::from_reason(PurityRule::UnknownMember, *span)),
+            };
+        }
+        purity
+    }
+}
 
 pub(crate) struct ItemPurityProofs<'a> {
     pub(crate) native_operations: &'a ValidatedNativeOperationFacts,

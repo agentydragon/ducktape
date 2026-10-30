@@ -529,55 +529,35 @@ where
         dynamic_scope,
         rebindings: &rebindings,
     };
+    let native_own_data_reads = per_statement
+        .iter()
+        .map(|statement| {
+            let reads = prepared_sync_index
+                .native_own_data_read_candidates(statement.ordinal)
+                .iter()
+                .map(|&span| {
+                    let dependencies = prepared_sync_index
+                        .native_own_data_read(span)
+                        .map(|(_, _, dependencies)| dependencies);
+                    (span, dependencies)
+                })
+                .collect();
+            (statement.ordinal, reads)
+        })
+        .collect();
     let mut facts: Vec<StatementFacts> = body
         .iter()
         .zip(per_statement)
         .map(|(item_view, structural_facts)| {
-            let item = item_view.as_module_item();
-            let mut fact = assemble_statement_facts(
-                item,
+            assemble_statement_facts(
+                item_view.as_module_item(),
                 structural_facts,
                 &shadowed,
                 hints,
                 &native_facts,
                 &graph,
-                &fresh_record_destructuring,
                 &local_effect_context,
-                &shared_vars,
-            );
-            // The exact native-reference initializer uses the same semantic
-            // certificate for purity as for heap and synchronous timing.
-            // A known replacement or unsupported read must not inherit the
-            // older name-based static-reference purity verdict.
-            for &span in prepared_sync_index.native_own_data_read_candidates(fact.ordinal) {
-                fact.purity = if let Some((_, _, dependencies)) =
-                    prepared_sync_index.native_own_data_read(span)
-                {
-                    fact.purity.with_dependencies(&dependencies)
-                } else {
-                    fact.purity
-                        .worst(Purity::from_reason(PurityRule::UnknownMember, span))
-                };
-            }
-            // Resolve any reason spans on `fact.purity` to
-            // SourceLocations using the same per-chunk line index.
-            // Done after fact construction because the classifier
-            // doesn't have access to the line resolver.
-            if let Some(source_path) = source_path
-                && let Purity::NotPure { reasons } = &mut fact.purity
-            {
-                for reason in reasons.iter_mut() {
-                    reason.source_location = line_range_for_span(reason.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
-                }
-            }
-            fact
+            )
         })
         .collect();
     for fact in &mut facts {
@@ -600,21 +580,74 @@ where
         },
         &mut facts,
     );
-    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
-        super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
-            &body,
-            &value_flow,
-            super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
-                set_iterable: &set_iterable_proof,
-                graph: &graph,
-                index: prepared_sync_index,
-            },
+    let purity_context = StatementPurityContext {
+        body: &body,
+        shadowed: &shadowed,
+        hints,
+        graph: &graph,
+        proofs: ItemPurityProofs {
+            native_operations: &native_facts,
+            fresh_record_destructuring: &fresh_record_destructuring,
+        },
+        shared_vars: &shared_vars,
+        native_own_data_reads: &native_own_data_reads,
+    };
+    // Statement purity is computed at each statement's program point inside
+    // synchronous execution, which consumes it there. The vendor-prune path
+    // runs the same transfer without execution.
+    let purities = match synchronous_calls {
+        SynchronousCallAnalysis::Include => {
+            super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
+                &body,
+                &value_flow,
+                super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
+                    set_iterable: &set_iterable_proof,
+                    graph: &graph,
+                    purity: &purity_context,
+                    index: prepared_sync_index,
+                },
+                &shadowed,
+                hints,
+                export_reentry_policy,
+                &mut facts,
+            )
+        }
+        SynchronousCallAnalysis::Omit => facts
+            .iter()
+            .map(|fact| purity_context.statement_purity(fact))
+            .collect(),
+    };
+    for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
+        settle_statement_purity(
+            fact,
+            purity,
+            item_view.as_module_item(),
             &shadowed,
             hints,
-            export_reentry_policy,
-            &mut facts,
+            &graph,
         );
+    }
+    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
         discharge_checked_local_record_factory_calls(&mut facts);
+    }
+    for fact in &mut facts {
+        // Resolve any reason spans on `fact.purity` to SourceLocations using
+        // the same per-chunk line index; the classifier has no line resolver.
+        if let Some(source_path) = source_path
+            && let Purity::NotPure { reasons } = &mut fact.purity
+        {
+            for reason in reasons.iter_mut() {
+                reason.source_location =
+                    line_range_for_span(reason.span).map(|(start_line, end_line, start_column)| {
+                        SourceLocation {
+                            source_path: source_path.to_string(),
+                            start_line,
+                            end_line,
+                            start_column: Some(start_column),
+                        }
+                    });
+            }
+        }
     }
     for (fact, (inferences, inputs)) in facts.iter_mut().zip(native_read_uses) {
         if let Some(calls) = &mut fact.synchronous_calls {
@@ -817,11 +850,11 @@ where
 }
 
 /// Fold the policy-independent per-statement facts together with the
-/// policy-dependent local-effect and purity classifications into a
-/// complete [`StatementFacts`] record. Called once per statement by
-/// [`analyze_chunk_with_policy`] after the policy-independent layer
-/// has already walked the AST.
-#[allow(clippy::too_many_arguments)] // The prepared shape context extends the existing assembly inputs.
+/// policy-dependent local-effect classification into a [`StatementFacts`]
+/// record. Called once per statement by [`analyze_chunk_with_policy`] after
+/// the policy-independent layer has already walked the AST. Purity and the
+/// fallback pruning it gates are settled later by
+/// [`settle_statement_purity`].
 fn assemble_statement_facts(
     item: &ModuleItem,
     structural: StructuralStatementFacts,
@@ -829,9 +862,7 @@ fn assemble_statement_facts(
     hints: &AnalysisInputs,
     native_facts: &ValidatedNativeOperationFacts,
     graph: &ChunkCodeGraph,
-    fresh_record_destructuring: &crate::purity::FreshRecordDestructuringContext<'_>,
     local_effect_context: &local_effects::LocalEffectContext,
-    shared_vars: &BTreeSet<Id>,
 ) -> StatementFacts {
     let StructuralStatementFacts {
         ordinal,
@@ -849,9 +880,9 @@ fn assemble_statement_facts(
         member_write_roots,
         calls,
         constructor,
-        at_init_unresolved_sources,
+        mut at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
-        first_order_unresolved_sources,
+        mut first_order_unresolved_sources,
         first_order_unresolved_inline_fn,
         declares_direct_function,
         global_writes,
@@ -861,25 +892,6 @@ fn assemble_statement_facts(
         argument_value_escapes: _,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
-    let mut purity = item_purity(
-        item,
-        kind,
-        shadowed,
-        hints,
-        graph,
-        &ItemPurityProofs {
-            native_operations: native_facts,
-            fresh_record_destructuring,
-        },
-        !local_effects.is_empty(),
-    );
-    if !var_initializers.is_disjoint(shared_vars) {
-        purity = purity.worst(Purity::from_reason_with_detail(
-            PurityRule::AssignOrUpdate,
-            item.span(),
-            "initializer writes a shared var binding".to_string(),
-        ));
-    }
     // Opaque at-init calls: a call/new the purity classifier can't
     // prove Pure may touch any cell (I/O like `console.log`, global
     // props written inside callee bodies, indirect eval) — the
@@ -893,50 +905,13 @@ fn assemble_statement_facts(
     } else if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
         dataflow_opacity.insert(DataflowOpacityCause::OpaqueAtInitCall);
     }
-    // Ordinary eager reads (including `pureWrap(B)`) always remain in
-    // `reads.eager`. For classifier/callee-pure statements, clearing the
-    // unresolved-call fallback also asserts that opaque calls cannot
-    // synchronously invoke callback bodies at module init. An
-    // initializer-only trust annotation certifies the initializer's
-    // evaluation effects but deliberately does not make that callback
-    // assertion: retain its fallback roots so callback-body binding reads
-    // still constrain module order.
     let no_sync_arg_sources = no_sync_member_argument_fallback_sources(item, hints);
-    let mut first_order_unresolved_sources = first_order_unresolved_sources;
     for id in &no_sync_arg_sources.first_order_lazy {
         first_order_unresolved_sources.remove(id);
     }
-    let (at_init_unresolved_sources, at_init_unresolved_inline_fn, first_order_unresolved_sources) =
-        if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
-            (BTreeSet::new(), false, first_order_unresolved_sources)
-        } else {
-            let safe_array_sources =
-                safe_plain_array_at_init_fallback_sources(item, shadowed, graph);
-            let mut at_init_unresolved_sources = at_init_unresolved_sources;
-            for id in &no_sync_arg_sources.eager {
-                at_init_unresolved_sources.remove(id);
-            }
-
-            if safe_array_sources.is_empty() {
-                let at_init_unresolved_inline_fn = at_init_unresolved_inline_fn
-                    && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
-                (
-                    at_init_unresolved_sources,
-                    at_init_unresolved_inline_fn,
-                    first_order_unresolved_sources,
-                )
-            } else {
-                (
-                    at_init_unresolved_sources
-                        .difference(&safe_array_sources)
-                        .cloned()
-                        .collect(),
-                    at_init_unresolved_inline_fn
-                        && has_untrusted_at_init_unresolved_inline_fn_call(item, hints),
-                    first_order_unresolved_sources,
-                )
-            }
-        };
+    for id in &no_sync_arg_sources.eager {
+        at_init_unresolved_sources.remove(id);
+    }
 
     StatementFacts {
         ordinal,
@@ -965,7 +940,42 @@ fn assemble_statement_facts(
         dataflow_opacity,
         heap_contents: super::HeapContentEffects::default(),
         heap_native_integrity_uses: Vec::new(),
-        purity,
+        // Conservative until `settle_statement_purity` records the verdict.
+        purity: Purity::NotPure {
+            reasons: Vec::new(),
+        },
         kind,
     }
+}
+
+/// Record a statement's purity and prune the at-init fallback it gates.
+///
+/// Ordinary eager reads (including `pureWrap(B)`) always remain in
+/// `reads.eager`. For classifier/callee-pure statements, clearing the
+/// unresolved-call fallback also asserts that opaque calls cannot
+/// synchronously invoke callback bodies at module init. An
+/// initializer-only trust annotation certifies the initializer's
+/// evaluation effects but deliberately does not make that callback
+/// assertion: retain its fallback roots so callback-body binding reads
+/// still constrain module order.
+fn settle_statement_purity(
+    fact: &mut StatementFacts,
+    purity: Purity,
+    item: &ModuleItem,
+    shadowed: &BTreeSet<&'static str>,
+    hints: &AnalysisInputs,
+    graph: &ChunkCodeGraph,
+) {
+    if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
+        fact.at_init_unresolved_sources.clear();
+        fact.at_init_unresolved_inline_fn = false;
+    } else {
+        let safe_array_sources = safe_plain_array_at_init_fallback_sources(item, shadowed, graph);
+        for id in &safe_array_sources {
+            fact.at_init_unresolved_sources.remove(id);
+        }
+        fact.at_init_unresolved_inline_fn = fact.at_init_unresolved_inline_fn
+            && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
+    }
+    fact.purity = purity;
 }

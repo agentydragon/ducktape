@@ -3313,6 +3313,40 @@ source/spec/package bytes and path membership before and after probes and before
 publishing a report or checkpoint. Resume prepares again and validates a fresh
 baseline before reusing definitive checkpoint records.
 
+### Purity and synchronous execution share one context
+
+Statement purity, function effects and the synchronous interpreter's
+per-prefix facts live in one `IterativeInference` context
+(<inference.md> § Dependency regions). Its dependencies run forward only:
+
+- Function effects are source-only and complete before execution starts;
+  nothing at a source prefix refines them.
+- A statement's purity is a fact at its own program point, produced once
+  `Prefix(n)` has settled, from source facts, the completed function effects
+  and whole-chunk heap facts. The interpreter consumes it while executing
+  statement _n_ and produces `Prefix(n+1)`.
+- Interpreter results at _n_ refine only later consumers: the final purity
+  projection (a checked local record factory call drops its matching call
+  reason), heap-content order and the graph.
+
+Whether a member read's object can be written later is a whole-chunk fact
+(`facts/abstract_domain/heap.rs`), not prefix state: a pure statement leaves
+the S-chain and may move past a later write, so purity at _n_ needs "no write
+at any prefix", which `Prefix(n)` cannot say.
+
+**Rejected for now: one least fixpoint over growing prefix states.** Making
+`ExecutionState` a joinable growing fact would let later prefixes refine
+earlier purity: per-prefix heap state could replace the whole-chunk write
+facts, and effect growth anywhere would re-wake the statements before it.
+It was costed and lost on three counts. Effect growth at any prefix
+re-executes every prefix after the first affected one, so cascades are
+bounded only by statements × growth events. Every prefix snapshot must be
+retained instead of the bounded live frontier `take_final` gives today. And
+the cost on the canonical inputs could not be bounded before building it,
+against a budget of 10% per step. The settled-prefix invariant ("the state
+after statement _n_ is never rewritten") stays. The condition for revisiting
+this is recorded at the purity read of `Prefix(n)`.
+
 ## Vendor chunk swapping
 
 The `vendor` spec map classifies chunks as vendor code at one of four
