@@ -4704,6 +4704,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 roots.insert(owner);
             }
         }
+        // The summarized bodies can also reach a callable through the heap
+        // rather than a lexical read: a stored closure they call or return,
+        // or an accessor their property access runs. Such a callable was
+        // created by an owner that already ran in this prefix, so take the
+        // same candidate owners a property write's setter check uses.
+        roots.insert(effect_owner);
+        roots.extend(outcome.executed_owners.iter().copied());
+        roots.extend(
+            self.state
+                .prior_effect_owners
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    !self
+                        .state
+                        .accepted_deferred_global_writes
+                        .contains(candidate)
+                }),
+        );
+        roots.extend(
+            self.state
+                .prior_reachability_roots
+                .iter()
+                .flatten()
+                .copied(),
+        );
+        roots.extend(
+            self.state
+                .reachability
+                .owners
+                .iter()
+                .copied()
+                .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
+        );
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
         let mut reached = SourceUnitReadClosure::extend_synchronous_source_units(
             &self.inputs.synchronous_owner_adjacency,
