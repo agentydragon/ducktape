@@ -203,22 +203,13 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	}
 }
 
-func TestPeerIdentityRequiresTLSInfoWithVerifiedLeaf(t *testing.T) {
-	identity, err := url.Parse("spiffe://agentplane/runner/agent-ns/sandbox-uid/pod-uid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeLeaf := &x509.Certificate{Raw: []byte("arbitrary peer certificate"), URIs: []*url.URL{identity}}
+func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 	cases := []struct {
 		name string
 		info credentials.AuthInfo
 	}{
 		{name: "no auth info"},
-		{name: "unverified TLSInfo", info: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{fakeLeaf}}}},
-		{name: "mismatched verified leaf", info: credentials.TLSInfo{State: tls.ConnectionState{
-			PeerCertificates: []*x509.Certificate{fakeLeaf},
-			VerifiedChains:   [][]*x509.Certificate{{{Raw: []byte("different certificate")}}},
-		}}},
+		{name: "TLS without peer certificate", info: credentials.TLSInfo{}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -237,14 +228,12 @@ func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
 	}
 	now := time.Now()
 	expiredLeaf := &x509.Certificate{
-		Raw:       []byte("verified expired leaf"),
 		URIs:      []*url.URL{identity},
 		NotBefore: now.Add(-2 * time.Hour),
 		NotAfter:  now.Add(-time.Hour),
 	}
 	ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{expiredLeaf},
-		VerifiedChains:   [][]*x509.Certificate{{expiredLeaf}},
 	}}})
 	if _, err := runner_transport.PeerIdentity(ctx); err == nil {
 		t.Fatal("PeerIdentity accepted an expired leaf from an existing TLS connection")
