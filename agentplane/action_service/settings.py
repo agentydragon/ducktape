@@ -84,7 +84,7 @@ class Settings(YamlFileSettings):
         description="Maximum duration for orchestration_v1 Session operations.",
     )
     policy_resync_seconds: int = Field(
-        default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
+        default=300, gt=0, description="Policy watch lifetime; every watched kind renews its watch this often."
     )
     # CLEANUP(added 2026-10-27): Retained up to the generated maximum until the key is removed after rollout.
     max_wait_seconds: float = Field(
