@@ -11697,7 +11697,8 @@ pub(crate) fn infer_callable_capabilities(
                     crate::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
             },
-            // Only a declaration is published as `foreign_call`.
+            // Only a declaration is published as `foreign_call` or a record;
+            // an initializer can only be a callback factory.
             |call| call.hoisted || call.callback_factory,
         );
     }
@@ -11837,12 +11838,9 @@ fn foreign_call(
                 .expect("derivation checked the census for every construction"),
         );
     }
-    // The record consumer has no pre-initialization throw: an importer may
-    // call an initializer before its statement runs.
     let record = derived
         .record
         .as_ref()
-        .filter(|_| hoisted)
         .map(|members| returned_record(index, members, &derived, &dependencies));
     let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
         derived.returns == BTreeSet::from([crate::analysis_inputs::ForeignReturn::FreshAllocation])

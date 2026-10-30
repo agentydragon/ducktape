@@ -154,7 +154,8 @@ fn a_vendor_marked_provider_keeps_its_summary() {
 #[test]
 fn an_initializer_export_gets_no_call_or_record_summary() {
     // An importer can call it before the provider's statement has run, which
-    // neither consumer models as a possible throw.
+    // neither consumer models as a possible throw. Its callback-factory
+    // projection is covered by `imported_callback_timing`.
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { make } from './peer.js';\nconst queue = make();\nconsole.log(queue.size);\n",
