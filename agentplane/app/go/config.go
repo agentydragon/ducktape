@@ -319,7 +319,7 @@ func loadConfigWithArgs(args []string) (Config, error) {
 }
 
 // applyCommandLineOverrides accepts the kebab-case flag for every exported Config field. Values
-// use YAML scalars or JSON/YAML objects, matching the Python settings CLI's structured values.
+// are literal for strings and YAML scalars or JSON/YAML objects for other field types.
 // Call it after YAML and environment decoding so CLI values have the highest precedence.
 func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []string, error) {
 	flags := flag.NewFlagSet("agentplane-app", flag.ContinueOnError)
@@ -361,7 +361,9 @@ func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []stri
 			continue
 		}
 		var decoded any
-		if err := yaml.Unmarshal([]byte(*configured.value), &decoded); err != nil {
+		if configType.Field(configured.index).Type.Kind() == reflect.String {
+			decoded = *configured.value
+		} else if err := yaml.Unmarshal([]byte(*configured.value), &decoded); err != nil {
 			return nil, nil, fmt.Errorf("invalid --%s value: %w", configured.name, err)
 		}
 		cliSettings[configured.key] = decoded
