@@ -122,18 +122,8 @@ class CentralSampler(Construct):
                 memory=MemoryResources(request=Size.mebibytes(512), limit=Size.gibibytes(4)),
             ),
             termination_grace=Duration.seconds(60),
-            annotations={
-                "configmap.reloader.stakater.com/reload": settings_file.config_map.name,
-                **(
-                    {
-                        "secret.reloader.stakater.com/reload": ",".join(
-                            sorted({key.secret.name for key in props.connection_credentials.values()})
-                        )
-                    }
-                    if props.connection_credentials
-                    else {}
-                ),
-            },
+            # Provider Secret files are reread per request; rotating them must not restart the shared host.
+            annotations={"configmap.reloader.stakater.com/reload": settings_file.config_map.name},
             replica_profile=replace(
                 env.replicas, count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
             ),

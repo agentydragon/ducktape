@@ -3204,7 +3204,6 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: central-sampler-settings
-    secret.reloader.stakater.com/reload: agentplane-staging-anthropic-api-key
   labels:
     app.kubernetes.io/name: central-sampler
   name: central-sampler
