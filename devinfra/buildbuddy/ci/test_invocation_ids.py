@@ -44,10 +44,6 @@ def test_every_input_separates_the_result() -> None:
     assert invocation_id(run_id="33060467223", attempt="1", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="2", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="1", role="build") != base
-    assert invocation_id(run_id="33060467222", attempt="1", role="race") != base
-    assert invocation_id(run_id="33060467222", attempt="1", role="race") != invocation_id(
-        run_id="33060467222", attempt="1", role="build"
-    )
 
 
 def test_scope_separates_parallel_release_artifact_builds() -> None:
@@ -69,25 +65,23 @@ def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: 
     github_output = tmp_path / "github-output"
     write_bazel_ci_outputs(github_output, run_id="33060467222", attempt="1")
     outputs = parse_github_outputs(github_output.read_text())
-    role_ids = {role: outputs[role] for role in ("test", "build", "race")}
+    role_ids = {role: outputs[role] for role in ("test", "build")}
 
     assert role_ids == {
-        role: str(invocation_id(run_id="33060467222", attempt="1", role=role)) for role in ("test", "build", "race")
+        role: str(invocation_id(run_id="33060467222", attempt="1", role=role)) for role in ("test", "build")
     }
-    assert outputs["linkage_roles"].split(",") == ["test", "build", "race"]
+    assert outputs["linkage_roles"].split(",") == ["test", "build"]
     all_ids = outputs["all_invocation_ids"].split(",")
-    assert all_ids == [role_ids[role] for role in ("test", "build", "race")]
+    assert all_ids == [role_ids[role] for role in ("test", "build")]
     assert list(zip(outputs["linkage_roles"].split(","), all_ids, strict=True)) == [
         ("test", role_ids["test"]),
         ("build", role_ids["build"]),
-        ("race", role_ids["race"]),
     ]
-    assert outputs["publication"].split(",") == [role_ids["test"], role_ids["build"]]
-    assert role_ids["race"] not in outputs["publication"].split(",")
+    assert outputs["publication"].split(",") == [role_ids["build"]]
+    assert role_ids["test"] not in outputs["publication"].split(",")
     assert outputs["env_overrides"].splitlines() == [
         f"TEST_INVOCATION_ID={role_ids['test']}",
         f"BUILD_INVOCATION_ID={role_ids['build']}",
-        f"RACE_INVOCATION_ID={role_ids['race']}",
     ]
 
 

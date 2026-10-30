@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 import pytest_bazel
 
-from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, TestSummary
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import publication_evidence
 from devinfra.ci.publication_test_verdicts import TestEvidence, verify
@@ -153,8 +153,40 @@ def test_loading_keeps_exact_test_evidence_separate_from_merged_outputs(monkeypa
     assert not evidence.tests.is_covered("//a:test")[0]
 
 
-def test_missing_test_invocation_keeps_test_gates_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(publication_evidence, "read", lambda _: push_sweep([summary("//a:test", "PASSED")]))
+def test_build_outputs_and_race_test_verdicts_are_loaded_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_SHA", SOURCE)
+    monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    normal = Output(
+        label="//app:binary", path="bin/app", uri="normal-uri", digest="normal", size=10, output_group="default"
+    )
+    instrumented = dataclasses.replace(normal, uri="race-uri", digest="race")
+    build = Invocation(outputs=[normal], test_status={})
+    tests = dataclasses.replace(push_sweep([summary("//a:test", "PASSED")]), outputs=[instrumented])
+    calls = []
+
+    def read(identifier: str) -> Invocation:
+        calls.append(identifier)
+        return tests if identifier == TEST_INVOCATION_ID else build
+
+    monkeypatch.setattr(publication_evidence, "read", read)
+    evidence = publication_evidence.load(
+        ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
+    )
+    assert calls == ["build", TEST_INVOCATION_ID]
+    assert evidence.outputs is not None
+    assert evidence.outputs.outputs == [normal]
+    assert evidence.tests.is_covered("//a:test")[0]
+
+
+def test_unreadable_test_invocation_keeps_test_gates_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    def read(identifier: str) -> Invocation:
+        if identifier == TEST_INVOCATION_ID:
+            raise BuildBuddyError("offline")
+        return push_sweep([summary("//a:test", "PASSED")])
+
+    monkeypatch.setattr(publication_evidence, "read", read)
     evidence = publication_evidence.load(
         ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
     )
