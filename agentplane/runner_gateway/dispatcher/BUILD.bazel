@@ -193,3 +193,9 @@ go_test(
         "@org_golang_google_grpc//status",
     ],
 )
+
+go_test(
+    name = "watch_test",
+    srcs = ["watch_test.go"],
+    embed = [":dispatcher"],
+)

@@ -16,7 +16,9 @@ import (
 )
 
 type watchSubscription struct {
-	changed  chan struct{}
+	changed chan struct{}
+	// Nil for a subscriber that only needs invalidations. A bounded terminal buffer nobody drains
+	// would overflow and fail the subscriber after its capacity of terminal events.
 	terminal chan TerminalEvent
 	failure  chan string
 }
@@ -63,13 +65,22 @@ func (h *WatchHub) connectionEvent(event pq.ListenerEventType, err error) {
 	_ = err // Listener reconnects itself; stream failure is the observable contract.
 }
 
+// subscribe is a WatchDispatches stream's subscription: invalidations and terminal snapshots.
 func (h *WatchHub) subscribe() (*watchSubscription, func(), error) {
+	return h.add(&watchSubscription{make(chan struct{}, 1), make(chan TerminalEvent, 32), make(chan string, 1)})
+}
+
+// subscribeChanges receives invalidations and listener failures but no terminal snapshots.
+func (h *WatchHub) subscribeChanges() (*watchSubscription, func(), error) {
+	return h.add(&watchSubscription{changed: make(chan struct{}, 1), failure: make(chan string, 1)})
+}
+
+func (h *WatchHub) add(sub *watchSubscription) (*watchSubscription, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if !h.connected {
 		return nil, nil, errors.New("PostgreSQL watch listener is disconnected")
 	}
-	sub := &watchSubscription{make(chan struct{}, 1), make(chan TerminalEvent, 32), make(chan string, 1)}
 	h.subscribers[sub] = struct{}{}
 	return sub, func() { h.mu.Lock(); delete(h.subscribers, sub); h.mu.Unlock() }, nil
 }
@@ -107,6 +118,9 @@ func (h *WatchHub) notifyTerminal(event TerminalEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for sub := range h.subscribers {
+		if sub.terminal == nil {
+			continue
+		}
 		select {
 		case sub.terminal <- event:
 		default:

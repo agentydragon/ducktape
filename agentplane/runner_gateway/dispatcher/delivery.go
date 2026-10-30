@@ -127,7 +127,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	var unsubscribe func()
 	for sub == nil {
 		var err error
-		sub, unsubscribe, err = w.Hub.subscribe()
+		sub, unsubscribe, err = w.Hub.subscribeChanges()
 		if err == nil {
 			break
 		}
