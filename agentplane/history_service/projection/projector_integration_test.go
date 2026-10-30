@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -543,13 +544,13 @@ func TestAnObservationTheFoldDoesNotModelStallsWithoutACursor(t *testing.T) {
 func TestAProjectionWithoutItsLeaseFoldsNothing(t *testing.T) {
 	f := newProjectorFixture(t)
 	sessionID := f.retained(t, f.history, harnessStarted(1))
-	lease := f.acquire(t, sessionID)
-	if err := withTx(t, f.db, func(tx *sql.Tx) error { return ReleaseLease(context.Background(), tx, lease) }); err != nil {
+	held := f.acquire(t, sessionID)
+	if err := withTx(t, f.db, func(tx *sql.Tx) error { return ReleaseLease(context.Background(), tx, held) }); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, lease); !errors.Is(err, ErrLeaseLost) {
-		t.Fatalf("projecting without the lease = %v, want ErrLeaseLost", err)
+	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, held); !errors.Is(err, lease.ErrLost) {
+		t.Fatalf("projecting without the lease = %v, want lease.ErrLost", err)
 	}
 	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
 		t.Fatal("a projection without its lease advanced the fold")
