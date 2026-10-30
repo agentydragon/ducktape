@@ -606,7 +606,8 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                 assert "faulted-cell" in prompt
                 assert "not replayed" in prompt.lower()
                 assert "store()/load()" in prompt
-                assert "inaccessible memory until it exits" in prompt
+                assert "new JavaScript session" in prompt
+                assert "live-cell handles are unavailable" in prompt
                 await exchange.send(
                     *response_stream(
                         [CustomToolCall("check-reset", "exec", 'text(String(load("recovery-state")));')],
