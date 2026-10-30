@@ -335,6 +335,45 @@ func TestEmptyValuesUseNativeJSONShapes(t *testing.T) {
 	}
 }
 
+func TestNativeFramesAreTheWireBytes(t *testing.T) {
+	var reply []byte
+	p := &peer{}
+	p.handle = func(ctx context.Context, ws *websocket.Conn, r nativeRequest) bool {
+		// Spacing, member order and an escape that no encoder of ours would reproduce.
+		frame := []byte(fmt.Sprintf("{ \"result\" : {\"processId\":\"p\",\"note\":\"\\u00e9\"},\n \"id\" : %q }", r.ID))
+		p.mu.Lock()
+		reply = frame
+		p.mu.Unlock()
+		return ws.Write(ctx, websocket.MessageText, frame) == nil
+	}
+	_, client := fixture(t, p)
+	scope := testScope()
+	opened, _ := open(t, client, scope, nil)
+	started, err := client.StartProcess(t.Context(), &executorpb.StartProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "start", ProcessId: "p", Argv: []string{"/bin/sh"}, Cwd: "file:///work"})
+	if err != nil || started.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("start response=%v err=%v", started, err)
+	}
+	p.mu.Lock()
+	received, sent := p.payloads, reply
+	p.mu.Unlock()
+	if len(received) != 3 || len(opened.NativeFrames) != 3 || len(started.NativeFrames) != 2 {
+		t.Fatalf("received=%d open frames=%d start frames=%d", len(received), len(opened.NativeFrames), len(started.NativeFrames))
+	}
+	for _, check := range []struct {
+		frame *executorpb.ExecutionNativeFrame
+		wire  []byte
+	}{
+		{opened.NativeFrames[0], received[0]},
+		{opened.NativeFrames[2], received[1]},
+		{started.NativeFrames[0], received[2]},
+		{started.NativeFrames[1], sent},
+	} {
+		if !bytes.Equal(check.frame.Payload, check.wire) {
+			t.Fatalf("%s frame journaled %q, wire carried %q", check.frame.Direction, check.frame.Payload, check.wire)
+		}
+	}
+}
+
 func TestNotificationBurstUsesOpenSessionAndDoesNotPoisonUnaryRPCs(t *testing.T) {
 	notification := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"data":%q}}`, strings.Repeat("x", 600_000)))
 	nullIDNotification := []byte(`{"id":null,"method":"codex/event","params":{"data":"null-id"}}`)

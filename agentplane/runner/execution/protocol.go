@@ -1,37 +1,16 @@
 package execution
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 )
-
-// Codex rust-v0.162.1 exec-server-protocol/src/protocol.rs and rpc.rs own these wire shapes.
-type executorRequest[P any] struct {
-	ID     string `json:"id,omitempty"`
-	Method string `json:"method"`
-	Params P      `json:"params"`
-}
-
-type executorReply struct {
-	ID     *string           `json:"id"`
-	Method string            `json:"method"`
-	Result json.RawMessage   `json:"result"`
-	Error  *executorRPCError `json:"error"`
-}
-
-type executorRPCError struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data,omitempty"`
-}
 
 // executorRejectedError is an exec-server JSON-RPC error reply: the request had no effect.
 type executorRejectedError struct {
 	method  string
-	code    int
+	code    int64
 	message string
 }
 
@@ -45,6 +24,7 @@ func (e *executorRejectedError) Error() string {
 	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
 }
 
+// Codex rust-v0.162.1 exec-server-protocol/src/protocol.rs owns these wire shapes.
 type executorInitialize struct {
 	ClientName      string  `json:"clientName"`
 	ResumeSessionID *string `json:"resumeSessionId"`
@@ -112,7 +92,7 @@ type executorReadResult struct {
 func (r *executorReadResult) UnmarshalJSON(data []byte) error {
 	type readResult executorReadResult
 	var result readResult
-	if err := decodeProtocolObject(data, &result); err != nil {
+	if err := jsonrpc.UnmarshalObject(data, &result); err != nil {
 		return err
 	}
 	if result.Chunks == nil {
@@ -185,20 +165,3 @@ type (
 		HandleID string `json:"handleId"`
 	}
 )
-
-// Decode one complete JSON object. Raw payloads remain available to the evidence journal.
-func decodeProtocolObject(data []byte, value any) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return errors.New("protocol payload must be a JSON object")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(trimmed))
-	decoder.UseNumber()
-	if err := decoder.Decode(value); err != nil {
-		return err
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return errors.New("protocol payload has trailing JSON")
-	}
-	return nil
-}

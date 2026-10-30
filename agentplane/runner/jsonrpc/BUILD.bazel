@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "jsonrpc",
+    srcs = ["jsonrpc.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/jsonrpc",
+    visibility = ["//agentplane/runner:__subpackages__"],
+)
+
+go_test(
+    name = "jsonrpc_test",
+    srcs = ["jsonrpc_test.go"],
+    embed = [":jsonrpc"],
+)
