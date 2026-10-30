@@ -125,3 +125,50 @@ fn opaque_import(span: Span, (sym, ctxt): Id, package: &str) -> ModuleItem {
         phase: ImportPhase::Evaluation,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use js_ast::{emit_js_module, parse_js_module};
+    use spec::PartialSwapKind;
+
+    #[test]
+    fn swapped_bindings_become_imports_at_the_same_statement_ordinals() {
+        js_ast::with_swc_globals(|| {
+            let mut parsed = parse_js_module(
+                "vendor.js",
+                "const kept = 1, sw = () => kept;\n\
+                 export const { sibling, sw2 } = globalThis.source;\n\
+                 function sw3() { return kept; }\n\
+                 export function sw4() {}\n\
+                 export { sw as a, sw2 as b, sw3 as c };\n",
+            )
+            .unwrap();
+            let symbol = |local: Option<&str>| PartialSwapSymbol {
+                package: "pkg".into(),
+                kind: PartialSwapKind::Named,
+                upstream_export: Some("x".into()),
+                local: local.map(str::to_owned),
+            };
+            let symbols = BTreeMap::from([
+                ("a".to_string(), symbol(None)),
+                ("b".to_string(), symbol(None)),
+                ("helper".to_string(), symbol(Some("sw3"))),
+                ("sw4".to_string(), symbol(None)),
+            ]);
+            // Each original item keeps its position and declarator count;
+            // fresh imports only follow the last one.
+            parsed.module = module_with_opaque_swapped_symbols(&parsed.module, &symbols);
+            assert_eq!(
+                emit_js_module(&parsed, &[]).unwrap(),
+                "const kept = 1, sw = __debundle_swapped;\n\
+                 export const { sibling, sw2 } = __debundle_swapped_2;\n\
+                 import { sw3 } from \"pkg\";\n\
+                 import { sw4 } from \"pkg\";\n\
+                 export { sw as a, sw2 as b, sw3 as c };\n\
+                 import { __debundle_swapped } from \"pkg\";\n\
+                 import { __debundle_swapped_2 } from \"pkg\";\n",
+            );
+        });
+    }
+}
