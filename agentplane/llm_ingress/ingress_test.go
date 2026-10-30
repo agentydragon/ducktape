@@ -1020,3 +1020,27 @@ func TestLargeRequestBodyStreamsWithoutFullBuffering(t *testing.T) {
 		t.Fatalf("body=%q err=%v", got.body, got.err)
 	}
 }
+
+func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
+	tokenA := workloadToken(t, "test-sandbox-a")
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL)
+	client := testClient()
+	defer client.CloseIdleConnections()
+
+	headers := bearer(tokenA)
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	response, err := client.Do(mustRequest(t, http.MethodGet, ingress.URL+"/v1/models", headers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	_ = response.Body.Close()
+	got := backend.snapshotRequests()
+	if response.StatusCode == http.StatusSwitchingProtocols || len(got) != 1 ||
+		got[0].headers.Get("Upgrade") != "" || got[0].headers.Get("Connection") != "" {
+		t.Fatalf("status=%d backend requests=%+v", response.StatusCode, got)
+	}
+}
