@@ -714,15 +714,17 @@ pub(crate) struct ChunkValueFlow {
 impl ChunkValueFlow {
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
-        let value_expr = FlowValueExpr::from_ast(expr);
+        let mut symbols = FlowSymbols::default();
+        let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
         let work = Rc::new(Cell::new(0));
         let mut flow = self.clone();
         if flow.bindings.is_empty() && flow.properties.is_empty() && flow.returns.is_empty() {
             flow.origin_table = OriginTable::for_expr(expr);
         }
         let mut values = ValuesBuilder::with_work(flow.origin_table.clone(), work.clone());
-        append_value_expr(&value_expr, &mut values, &flow.declared_ids, &mut |key| {
-            flow.values_for_key(key)
+        let declared = symbols.declared(&flow.declared_ids);
+        append_value_expr(&value_expr, &mut values, &declared, &mut |key| {
+            flow.values_for_key(&symbols, key)
         });
         (values.finish(), work.get())
     }
@@ -1102,16 +1104,16 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    fn values_for_key(&self, key: &FlowKey) -> Option<Values> {
+    fn values_for_key(&self, symbols: &FlowSymbols, key: FlowKey) -> Option<Values> {
         match key {
-            FlowKey::Binding(id) => self.bindings.get(id).cloned(),
+            FlowKey::Binding(slot) => self.bindings.get(symbols.id(slot)).cloned(),
             FlowKey::Property(object, property) => self
                 .properties
-                .get(object)
-                .and_then(|properties| properties.get(property))
+                .get(&object)
+                .and_then(|properties| properties.get(symbols.name(property)))
                 .cloned(),
-            FlowKey::Properties(object) => self.property_unions.get(object).cloned(),
-            FlowKey::Return(function) => self.returns.get(function).cloned(),
+            FlowKey::Properties(object) => self.property_unions.get(&object).cloned(),
+            FlowKey::Return(function) => self.returns.get(&function).cloned(),
             FlowKey::ValueFlowActive
             | FlowKey::CandidateBinding(_)
             | FlowKey::CandidateReachable(_)
@@ -1262,8 +1264,8 @@ impl ChunkValueFlow {
 fn append_value_expr(
     expr: &FlowValueExpr,
     values: &mut ValuesBuilder,
-    declared_ids: &BTreeSet<Id>,
-    read_values: &mut impl FnMut(&FlowKey) -> Option<Values>,
+    declared: &[bool],
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
 ) {
     let mut pending = vec![expr];
     while let Some(expr) = pending.pop() {
@@ -1274,31 +1276,28 @@ fn append_value_expr(
             continue;
         }
         match expr {
-            FlowValueExpr::Binding(id) => {
-                let key = FlowKey::Binding(id.clone());
-                if let Some(found) = read_values(&key) {
+            FlowValueExpr::Binding(slot) => {
+                if let Some(found) = read_values(FlowKey::Binding(*slot)) {
                     values.extend(&found);
-                } else if !declared_ids.contains(id) {
+                } else if !declared[slot.0 as usize] {
                     values.push(ValueOrigin::Unknown);
                 }
             }
             FlowValueExpr::Value(value) => values.push(*value),
             FlowValueExpr::Member { object, property } => {
                 let mut objects = values.child();
-                append_value_expr(object, &mut objects, declared_ids, read_values);
+                append_value_expr(object, &mut objects, declared, read_values);
                 for origin in objects.finish() {
                     if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
                         if let Some(property) = property {
                             // Unknown is durable even when a later write adds a value.
-                            let key = FlowKey::Property(object, property.clone());
-                            if let Some(found) = read_values(&key) {
+                            if let Some(found) = read_values(FlowKey::Property(object, *property)) {
                                 values.extend(&found);
                             } else {
                                 values.push(ValueOrigin::Unknown);
                             }
                         } else {
-                            let key = FlowKey::Properties(object);
-                            if let Some(found) = read_values(&key) {
+                            if let Some(found) = read_values(FlowKey::Properties(object)) {
                                 values.extend(&found);
                             }
                             values.push(ValueOrigin::Unknown);
@@ -1310,11 +1309,10 @@ fn append_value_expr(
             }
             FlowValueExpr::Call(callee) => {
                 let mut targets = values.child();
-                append_value_expr(callee, &mut targets, declared_ids, read_values);
+                append_value_expr(callee, &mut targets, declared, read_values);
                 for origin in targets.finish() {
                     if let ValueOrigin::Function(function) = origin {
-                        let key = FlowKey::Return(function);
-                        if let Some(found) = read_values(&key) {
+                        if let Some(found) = read_values(FlowKey::Return(function)) {
                             values.extend(&found);
                         }
                     } else {
@@ -1352,13 +1350,62 @@ impl Visit for DeclaredBindingCollector {
     }
 }
 
+/// A binding named anywhere in one flow program. Facts and rules are keyed
+/// by slot so the worklist compares integers, not identifier text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct BindingSlot(u32);
+
+/// A static property name written or read anywhere in one flow program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct PropertySlot(u32);
+
+#[derive(Default)]
+struct FlowSymbols {
+    bindings: Vec<Id>,
+    binding_slots: HashMap<Id, BindingSlot>,
+    properties: Vec<String>,
+    property_slots: HashMap<String, PropertySlot>,
+}
+
+impl FlowSymbols {
+    fn binding(&mut self, id: Id) -> BindingSlot {
+        *self.binding_slots.entry(id).or_insert_with_key(|id| {
+            self.bindings.push(id.clone());
+            BindingSlot(u32::try_from(self.bindings.len() - 1).expect("binding slot overflow"))
+        })
+    }
+
+    fn property(&mut self, name: String) -> PropertySlot {
+        *self.property_slots.entry(name).or_insert_with_key(|name| {
+            self.properties.push(name.clone());
+            PropertySlot(u32::try_from(self.properties.len() - 1).expect("property slot overflow"))
+        })
+    }
+
+    fn id(&self, slot: BindingSlot) -> &Id {
+        &self.bindings[slot.0 as usize]
+    }
+
+    fn name(&self, slot: PropertySlot) -> &str {
+        &self.properties[slot.0 as usize]
+    }
+
+    /// Whether each slot names a binding declared in the chunk, indexed by slot.
+    fn declared(&self, declared_ids: &BTreeSet<Id>) -> Vec<bool> {
+        self.bindings
+            .iter()
+            .map(|id| declared_ids.contains(id))
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone)]
 enum FlowValueExpr {
-    Binding(Id),
+    Binding(BindingSlot),
     Value(ValueOrigin),
     Member {
         object: Box<FlowValueExpr>,
-        property: Option<String>,
+        property: Option<PropertySlot>,
     },
     Call(Box<FlowValueExpr>),
     Union(Box<FlowValueExpr>, Box<FlowValueExpr>),
@@ -1367,22 +1414,22 @@ enum FlowValueExpr {
 }
 
 impl FlowValueExpr {
-    fn from_ast(expr: &Expr) -> Self {
+    fn from_ast(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr.unwrap_parens() {
-            Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt),
+            Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols),
             Expr::Bin(bin)
                 if matches!(
                     bin.op,
                     BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
                 ) =>
             {
-                Self::from_union_branches(&bin.left, &bin.right)
+                Self::from_union_branches(&bin.left, &bin.right, symbols)
             }
-            expr => Self::from_ast_leaf(expr),
+            expr => Self::from_ast_leaf(expr, symbols),
         }
     }
 
-    fn from_union_branches(left: &Expr, right: &Expr) -> Self {
+    fn from_union_branches(left: &Expr, right: &Expr, symbols: &mut FlowSymbols) -> Self {
         let mut pending = vec![right, left];
         let mut leaves = Vec::new();
         while let Some(expr) = pending.pop() {
@@ -1400,7 +1447,7 @@ impl FlowValueExpr {
                     pending.push(&bin.right);
                     pending.push(&bin.left);
                 }
-                leaf => leaves.push(Self::from_ast_leaf(leaf)),
+                leaf => leaves.push(Self::from_ast_leaf(leaf, symbols)),
             }
         }
 
@@ -1425,27 +1472,27 @@ impl FlowValueExpr {
         leaves.pop().unwrap_or(Self::Empty)
     }
 
-    fn from_ast_leaf(expr: &Expr) -> Self {
+    fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr {
-            Expr::Ident(ident) => Self::Binding(ident.to_id()),
+            Expr::Ident(ident) => Self::Binding(symbols.binding(ident.to_id())),
             Expr::Fn(function) => Self::Value(ValueOrigin::Function(function.function.span.lo.0)),
             Expr::Arrow(arrow) => Self::Value(ValueOrigin::Function(arrow.span.lo.0)),
             Expr::Class(class) => Self::Value(ValueOrigin::Class(class.class.span.lo.0)),
             Expr::Object(object) => Self::Value(ValueOrigin::Object(object.span.lo.0)),
             Expr::Array(array) => Self::Value(ValueOrigin::Object(array.span.lo.0)),
             Expr::Member(member) => Self::Member {
-                object: Box::new(Self::from_ast(&member.obj)),
-                property: static_prop(&member.prop),
+                object: Box::new(Self::from_ast(&member.obj, symbols)),
+                property: static_prop(&member.prop).map(|name| symbols.property(name)),
             },
             Expr::Call(call) => match &call.callee {
-                Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee))),
+                Callee::Expr(callee) => Self::Call(Box::new(Self::from_ast(callee, symbols))),
                 _ => Self::Unknown,
             },
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
-                .map_or(Self::Unknown, |last| Self::from_ast(last)),
-            Expr::Assign(assign) => Self::from_ast(&assign.right),
+                .map_or(Self::Unknown, |last| Self::from_ast(last, symbols)),
+            Expr::Assign(assign) => Self::from_ast(&assign.right, symbols),
             Expr::Lit(_) | Expr::This(_) | Expr::Tpl(_) => Self::Empty,
             _ => Self::Unknown,
         }
@@ -1455,44 +1502,44 @@ impl FlowValueExpr {
 #[derive(Debug, Clone)]
 enum FlowEvent {
     FunctionDeclaration {
-        id: Id,
+        id: BindingSlot,
         origin: ValueOrigin,
     },
     ClassDeclaration {
-        id: Id,
+        id: BindingSlot,
         origin: ValueOrigin,
     },
     Variable {
-        id: Id,
+        id: BindingSlot,
         init: FlowValueExpr,
     },
     AssignBinding {
-        id: Id,
+        id: BindingSlot,
         right: FlowValueExpr,
     },
     AssignProperty {
         object: FlowValueExpr,
-        property: String,
+        property: PropertySlot,
         right: FlowValueExpr,
     },
     WritePropertyExpr {
         object: u32,
-        property: String,
+        property: PropertySlot,
         value: FlowValueExpr,
     },
     WritePropertyBinding {
         object: u32,
-        property: String,
-        binding: Id,
+        property: PropertySlot,
+        binding: BindingSlot,
     },
     WritePropertyValue {
         object: u32,
-        property: String,
+        property: PropertySlot,
         value: ValueOrigin,
     },
     FunctionMetadata {
         function: u32,
-        params: Vec<Option<Id>>,
+        params: Vec<Option<BindingSlot>>,
     },
     Return {
         function: u32,
@@ -1504,14 +1551,14 @@ enum FlowEvent {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum FlowKey {
     /// Opens parameter-driven calls after the first ordinary value fact exists.
     ValueFlowActive,
-    Binding(Id),
-    CandidateBinding(Id),
+    Binding(BindingSlot),
+    CandidateBinding(BindingSlot),
     CandidateReachable(OriginId),
-    Property(u32, String),
+    Property(u32, PropertySlot),
     Properties(u32),
     Return(u32),
     Parameters(u32),
@@ -1524,8 +1571,8 @@ enum FlowFact {
     ValueFlowActive,
     Values(Values),
     CandidateReachability(Arc<Vec<u64>>),
-    Parameters(Vec<Option<Id>>),
-    ReadyParameters(Vec<Option<Id>>),
+    Parameters(Vec<Option<BindingSlot>>),
+    ReadyParameters(Vec<Option<BindingSlot>>),
 }
 
 /// Candidate reachability is a second stratum over the completed value facts:
@@ -1533,11 +1580,12 @@ enum FlowFact {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum CandidateRule {
     Reachability(OriginId),
-    Binding(Id),
+    Binding(BindingSlot),
 }
 
 struct FlowProgram {
     declared_ids: BTreeSet<Id>,
+    symbols: FlowSymbols,
     events: Vec<FlowEvent>,
     origin_table: Arc<OriginTable>,
     candidate_objects: Vec<ValueOrigin>,
@@ -1559,6 +1607,7 @@ impl FlowProgram {
     ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
+            symbols: FlowSymbols::default(),
             events: Vec::new(),
             origins: BTreeSet::from([ValueOrigin::Unknown]),
             source_unit: SourceUnitOrdinal(0),
@@ -1581,6 +1630,7 @@ impl FlowProgram {
         );
         Self {
             declared_ids: collector.declared_ids,
+            symbols: collector.symbols,
             events: collector.events,
             origin_table: Arc::new(OriginTable::from_origins(collector.origins)),
             candidate_objects: candidate_objects.iter().copied().collect(),
@@ -1594,6 +1644,7 @@ impl FlowProgram {
     fn solve(self) -> (ChunkValueFlow, usize, usize) {
         let Self {
             declared_ids,
+            symbols,
             events,
             origin_table,
             candidate_objects,
@@ -1609,7 +1660,7 @@ impl FlowProgram {
         let event_executions = Rc::new(Cell::new(0));
         let rules = FlowRules {
             events,
-            declared_ids: declared_ids.clone(),
+            declared: symbols.declared(&declared_ids),
             origin_table: origin_table.clone(),
             #[cfg(test)]
             argument_evaluations: argument_evaluations.clone(),
@@ -1660,17 +1711,18 @@ impl FlowProgram {
                     flow.candidate_reachability
                         .insert(flow.origin_table.origin(origin), bits);
                 }
-                (FlowKey::CandidateBinding(id), FlowFact::CandidateReachability(bits)) => {
-                    flow.candidate_bindings.insert(id, bits);
+                (FlowKey::CandidateBinding(slot), FlowFact::CandidateReachability(bits)) => {
+                    flow.candidate_bindings
+                        .insert(symbols.id(slot).clone(), bits);
                 }
-                (FlowKey::Binding(id), FlowFact::Values(values)) => {
-                    flow.bindings.insert(id, values);
+                (FlowKey::Binding(slot), FlowFact::Values(values)) => {
+                    flow.bindings.insert(symbols.id(slot).clone(), values);
                 }
                 (FlowKey::Property(object, property), FlowFact::Values(values)) => {
                     flow.properties
                         .entry(object)
                         .or_default()
-                        .insert(property, values);
+                        .insert(symbols.name(property).to_owned(), values);
                 }
                 (FlowKey::Properties(object), FlowFact::Values(values)) => {
                     flow.property_unions.insert(object, values);
@@ -1679,7 +1731,13 @@ impl FlowProgram {
                     flow.returns.insert(function, values);
                 }
                 (FlowKey::Parameters(function), FlowFact::Parameters(params)) => {
-                    flow.params.insert(function, params);
+                    flow.params.insert(
+                        function,
+                        params
+                            .into_iter()
+                            .map(|param| param.map(|slot| symbols.id(slot).clone()))
+                            .collect(),
+                    );
                 }
                 _ => unreachable!("flow key and fact variants must agree"),
             }
@@ -1694,6 +1752,7 @@ impl FlowProgram {
 
 struct FlowProgramCollector {
     declared_ids: BTreeSet<Id>,
+    symbols: FlowSymbols,
     events: Vec<FlowEvent>,
     origins: BTreeSet<ValueOrigin>,
     source_unit: SourceUnitOrdinal,
@@ -1714,8 +1773,10 @@ impl Visit for FlowProgramCollector {
         let origin = ValueOrigin::Function(node.function.span.lo.0);
         self.declared_ids.insert(id.clone());
         self.canonical.entry(origin).or_insert_with(|| id.clone());
-        self.events
-            .push(FlowEvent::FunctionDeclaration { id, origin });
+        self.events.push(FlowEvent::FunctionDeclaration {
+            id: self.symbols.binding(id),
+            origin,
+        });
         node.function.visit_with(self);
     }
 
@@ -1727,7 +1788,10 @@ impl Visit for FlowProgramCollector {
         self.callable_source_unit
             .entry(origin)
             .or_insert(self.source_unit);
-        self.events.push(FlowEvent::ClassDeclaration { id, origin });
+        self.events.push(FlowEvent::ClassDeclaration {
+            id: self.symbols.binding(id),
+            origin,
+        });
         node.class.visit_with(self);
     }
 
@@ -1741,7 +1805,7 @@ impl Visit for FlowProgramCollector {
                     .or_insert_with(|| binding.id.to_id());
             }
             self.events.push(FlowEvent::Variable {
-                id: binding.id.to_id(),
+                id: self.symbols.binding(binding.id.to_id()),
                 init: match init {
                     Expr::New(construction)
                         if self
@@ -1750,7 +1814,7 @@ impl Visit for FlowProgramCollector {
                     {
                         FlowValueExpr::Value(ValueOrigin::NativeSet(construction.span.lo.0))
                     }
-                    other => FlowValueExpr::from_ast(other),
+                    other => FlowValueExpr::from_ast(other, &mut self.symbols),
                 },
             });
         }
@@ -1761,16 +1825,16 @@ impl Visit for FlowProgramCollector {
         match &node.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                 self.events.push(FlowEvent::AssignBinding {
-                    id: binding.id.to_id(),
-                    right: FlowValueExpr::from_ast(&node.right),
+                    id: self.symbols.binding(binding.id.to_id()),
+                    right: FlowValueExpr::from_ast(&node.right, &mut self.symbols),
                 });
             }
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                 if let Some(property) = static_prop(&member.prop) {
                     self.events.push(FlowEvent::AssignProperty {
-                        object: FlowValueExpr::from_ast(&member.obj),
-                        property,
-                        right: FlowValueExpr::from_ast(&node.right),
+                        object: FlowValueExpr::from_ast(&member.obj, &mut self.symbols),
+                        property: self.symbols.property(property),
+                        right: FlowValueExpr::from_ast(&node.right, &mut self.symbols),
                     });
                 }
             }
@@ -1789,23 +1853,23 @@ impl Visit for FlowProgramCollector {
                         if let Some(property) = object_prop(&kv.key) {
                             self.events.push(FlowEvent::WritePropertyExpr {
                                 object,
-                                property,
-                                value: FlowValueExpr::from_ast(&kv.value),
+                                property: self.symbols.property(property),
+                                value: FlowValueExpr::from_ast(&kv.value, &mut self.symbols),
                             });
                         }
                     }
                     Prop::Shorthand(ident) => {
                         self.events.push(FlowEvent::WritePropertyBinding {
                             object,
-                            property: ident.sym.to_string(),
-                            binding: ident.to_id(),
+                            property: self.symbols.property(ident.sym.to_string()),
+                            binding: self.symbols.binding(ident.to_id()),
                         });
                     }
                     Prop::Method(method) => {
                         if let Some(property) = object_prop(&method.key) {
                             self.events.push(FlowEvent::WritePropertyValue {
                                 object,
-                                property,
+                                property: self.symbols.property(property),
                                 value: ValueOrigin::Function(method.function.span.lo.0),
                             });
                         }
@@ -1824,8 +1888,8 @@ impl Visit for FlowProgramCollector {
             if let Some(element) = element {
                 self.events.push(FlowEvent::WritePropertyExpr {
                     object,
-                    property: index.to_string(),
-                    value: FlowValueExpr::from_ast(&element.expr),
+                    property: self.symbols.property(index.to_string()),
+                    value: FlowValueExpr::from_ast(&element.expr, &mut self.symbols),
                 });
             }
         }
@@ -1851,7 +1915,7 @@ impl Visit for FlowProgramCollector {
                 .params
                 .iter()
                 .map(|param| match &param.pat {
-                    Pat::Ident(binding) => Some(binding.id.to_id()),
+                    Pat::Ident(binding) => Some(self.symbols.binding(binding.id.to_id())),
                     _ => None,
                 })
                 .collect(),
@@ -1879,7 +1943,7 @@ impl Visit for FlowProgramCollector {
                 .params
                 .iter()
                 .map(|param| match param {
-                    Pat::Ident(binding) => Some(binding.id.to_id()),
+                    Pat::Ident(binding) => Some(self.symbols.binding(binding.id.to_id())),
                     _ => None,
                 })
                 .collect(),
@@ -1888,7 +1952,7 @@ impl Visit for FlowProgramCollector {
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
             self.events.push(FlowEvent::Return {
                 function,
-                value: FlowValueExpr::from_ast(expr),
+                value: FlowValueExpr::from_ast(expr, &mut self.symbols),
             });
         }
         node.visit_children_with(self);
@@ -1904,7 +1968,7 @@ impl Visit for FlowProgramCollector {
         if let (Some(function), Some(value)) = (self.current_function, node.arg.as_deref()) {
             self.events.push(FlowEvent::Return {
                 function,
-                value: FlowValueExpr::from_ast(value),
+                value: FlowValueExpr::from_ast(value, &mut self.symbols),
             });
         }
         node.visit_children_with(self);
@@ -1913,11 +1977,11 @@ impl Visit for FlowProgramCollector {
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee {
             self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(callee),
+                callee: FlowValueExpr::from_ast(callee, &mut self.symbols),
                 args: node
                     .args
                     .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr))
+                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
                     .collect(),
             });
         }
@@ -1927,10 +1991,10 @@ impl Visit for FlowProgramCollector {
     fn visit_new_expr(&mut self, node: &NewExpr) {
         if let Some(args) = &node.args {
             self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(&node.callee),
+                callee: FlowValueExpr::from_ast(&node.callee, &mut self.symbols),
                 args: args
                     .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr))
+                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
                     .collect(),
             });
         }
@@ -2002,12 +2066,13 @@ pub(crate) struct FlowWorkStats {
 #[derive(Clone)]
 struct CachedArgument {
     values: Values,
-    binding_dependencies: BTreeSet<Id>,
+    binding_dependencies: BTreeSet<BindingSlot>,
 }
 
 struct FlowRules {
     events: Vec<FlowEvent>,
-    declared_ids: BTreeSet<Id>,
+    /// Indexed by binding slot.
+    declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
     #[cfg(test)]
     argument_evaluations: Rc<Cell<usize>>,
@@ -2020,17 +2085,17 @@ impl FlowRules {
         &self,
         expr: &FlowValueExpr,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        binding_dependencies: Option<&mut BTreeSet<Id>>,
+        binding_dependencies: Option<&mut BTreeSet<BindingSlot>>,
     ) -> Values {
         let mut binding_dependencies = binding_dependencies;
         let mut values = ValuesBuilder::new(self.origin_table.clone());
-        append_value_expr(expr, &mut values, &self.declared_ids, &mut |key| {
-            if let FlowKey::Binding(id) = key
+        append_value_expr(expr, &mut values, &self.declared, &mut |key| {
+            if let FlowKey::Binding(slot) = key
                 && let Some(binding_dependencies) = binding_dependencies.as_deref_mut()
             {
-                binding_dependencies.insert(id.clone());
+                binding_dependencies.insert(slot);
             }
-            match context.read(key.clone()) {
+            match context.read(key) {
                 Some(FlowFact::Values(values)) => Some(values.clone()),
                 Some(_) => {
                     unreachable!("value expressions cannot read parameter metadata")
@@ -2057,7 +2122,7 @@ impl FlowRules {
     fn propose_property(
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         object: u32,
-        property: String,
+        property: PropertySlot,
         values: Values,
     ) {
         if values.is_empty() {
@@ -2093,15 +2158,15 @@ impl IterativeRules for FlowRules {
             FlowEvent::FunctionDeclaration { id, origin }
             | FlowEvent::ClassDeclaration { id, origin } => {
                 let values = self.singleton_value(*origin);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::Variable { id, init } => {
                 let values = self.values_of_expr_tracking(init, context, None);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::AssignBinding { id, right } => {
                 let values = self.values_of_expr_tracking(right, context, None);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::AssignProperty {
                 object,
@@ -2112,7 +2177,7 @@ impl IterativeRules for FlowRules {
                 let objects = self.values_of_expr_tracking(object, context, None);
                 for origin in objects {
                     if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
-                        Self::propose_property(context, object, property.clone(), values.clone());
+                        Self::propose_property(context, object, *property, values.clone());
                     }
                 }
             }
@@ -2122,19 +2187,16 @@ impl IterativeRules for FlowRules {
                 value,
             } => {
                 let values = self.values_of_expr_tracking(value, context, None);
-                Self::propose_property(context, *object, property.clone(), values);
+                Self::propose_property(context, *object, *property, values);
             }
             FlowEvent::WritePropertyBinding {
                 object,
                 property,
                 binding,
             } => {
-                let values = self.values_of_expr_tracking(
-                    &FlowValueExpr::Binding(binding.clone()),
-                    context,
-                    None,
-                );
-                Self::propose_property(context, *object, property.clone(), values);
+                let values =
+                    self.values_of_expr_tracking(&FlowValueExpr::Binding(*binding), context, None);
+                Self::propose_property(context, *object, *property, values);
             }
             FlowEvent::WritePropertyValue {
                 object,
@@ -2142,7 +2204,7 @@ impl IterativeRules for FlowRules {
                 value,
             } => {
                 let values = self.singleton_value(*value);
-                Self::propose_property(context, *object, property.clone(), values);
+                Self::propose_property(context, *object, *property, values);
             }
             FlowEvent::FunctionMetadata { function, params } => {
                 context.propose(
@@ -2201,7 +2263,7 @@ impl IterativeRules for FlowRules {
                         };
                         // Proposals are immediately visible to later arguments and targets.
                         // Recompute only arguments that read a binding this invocation grows.
-                        if Self::propose_values(context, FlowKey::Binding(param.clone()), values) {
+                        if Self::propose_values(context, FlowKey::Binding(param), values) {
                             for cached in &mut cached_args {
                                 if cached.as_ref().is_some_and(|cached| {
                                     cached.binding_dependencies.contains(&param)
@@ -2277,13 +2339,12 @@ impl IterativeRules for CandidateRules {
     fn evaluate(&self, rule: &CandidateRule, context: &mut impl FactContext<FlowKey, FlowFact>) {
         match rule {
             CandidateRule::Binding(binding) => {
-                let Some(values) = Self::carrier_values(context, FlowKey::Binding(binding.clone()))
-                else {
+                let Some(values) = Self::carrier_values(context, FlowKey::Binding(*binding)) else {
                     return;
                 };
                 self.propose_candidate_values(
                     context,
-                    FlowKey::CandidateBinding(binding.clone()),
+                    FlowKey::CandidateBinding(*binding),
                     &values,
                 );
             }
@@ -2310,7 +2371,7 @@ impl IterativeRules for CandidateRules {
     fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<CandidateRule> {
         match (key, fact) {
             (FlowKey::Binding(binding), FlowFact::Values(values)) if !values.is_empty() => {
-                vec![CandidateRule::Binding(binding.clone())]
+                vec![CandidateRule::Binding(*binding)]
             }
             (FlowKey::Properties(object), FlowFact::Values(values)) if !values.is_empty() => {
                 let origin = if self.native_set_allocations.contains(object) {
