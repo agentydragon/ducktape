@@ -4,7 +4,10 @@ package(default_visibility = ["//agentplane/runner:__subpackages__"])
 
 go_library(
     name = "ingress",
-    srcs = ["client.go"],
+    srcs = [
+        "client.go",
+        "supervisor.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/ingress",
     deps = [
         "//agentplane/history_service:runner_ingress_go_proto",
@@ -20,7 +23,10 @@ go_library(
 
 go_test(
     name = "ingress_test",
-    srcs = ["client_test.go"],
+    srcs = [
+        "client_test.go",
+        "supervisor_test.go",
+    ],
     embed = [":ingress"],
     race = "on",
     deps = [

@@ -56,12 +56,12 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 - `executorrelay/`: executor stream admission limits, relay registry, bounded forwarding queues,
   WebSocket channels and cancellation/join ownership. Runner supplies its admission barrier and
   executor readiness; aggregate shutdown drains relays before fencing the exec-server.
-- `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
-  authentication and discovery worker scheduling. It keeps ingress available while Runner shutdown
-  flushes final acknowledgements. Runner retains one
-  inventory notification seam and owns starting and joining per-Session delivery workers.
-- `ingress/`: each Session's history push protocol, including replay, acknowledgements,
-  backpressure, sealing, journal wakeups and retry. Runner retains discovery and worker lifecycle.
+- `transport.go`: Runner-wide `Run` orchestration and component composition. It keeps ingress alive
+  while Runner shutdown flushes final acknowledgements.
+- `ingress/`: History connection and authentication, each Session's push protocol (replay, durable
+  ACKs, backpressure, seal ordering, journal wakeups and retry), and supervision of per-Session
+  workers. It discovers unsealed Sessions, keeps one worker per Session, and owns cancellation and
+  joins; Runner supplies inventory, change notifications and ACK publication.
 - `stream/`: outbound gRPC setup for per-Session History ingress.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
   with foreign-key links to their originating commands, and recovery queries. It depends on the
@@ -212,8 +212,9 @@ transaction publication, coalesced receipts, rollback, and seals. `persistence_t
 session metadata and initialization log compatibility. `session_test.go`
 checks native reply publication after translation commits and final frames at EOF.
 `ingress/client_test.go` exercises real loopback gRPC replay, durable acknowledgements,
-journal wakeups, backpressure and seal ordering; `transport_test.go` covers Runner wiring and COSI
-acknowledgement observation. `process_test.go` checks parent-death fencing,
+journal wakeups, backpressure and seal ordering; `ingress/supervisor_test.go` covers per-Session
+worker discovery and joins. `transport_test.go` covers Runner wiring, COSI acknowledgement
+observation and shutdown flushing. `process_test.go` checks parent-death fencing,
 native descendants, inherited state ownership, and cancellation during blocked input.
 These are not physical power-loss tests.
 

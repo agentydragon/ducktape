@@ -98,7 +98,7 @@ func (s *quiesceIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 	return stream.Send(&ingresspb.Acknowledgement{Cursor: s.sealCursor, Sealed: true})
 }
 
-func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
+func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 	runner, session := lifecycleTestSession(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -126,7 +126,7 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 	})
 	loopDone := make(chan error, 1)
 	go func() {
-		loopDone <- runner.ingressLoop(ctx, configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"})
+		loopDone <- runner.newIngressSupervisor(configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"}).Run(ctx)
 	}()
 
 	select {

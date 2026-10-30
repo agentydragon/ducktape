@@ -5,12 +5,9 @@ import (
 	"errors"
 	"sync"
 
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/ingress"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
-	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/stream"
 	"google.golang.org/grpc"
 )
 
@@ -37,7 +34,7 @@ func (r *Runner) Run(ctx context.Context, ingressEndpoint configuration.Endpoint
 	streams.Add(1)
 	go func() {
 		defer streams.Done()
-		if err := r.ingressLoop(ingressCtx, ingressEndpoint); err != nil {
+		if err := r.newIngressSupervisor(ingressEndpoint).Run(ingressCtx); err != nil {
 			r.fail(err)
 		}
 	}()
@@ -55,58 +52,29 @@ func (r *Runner) Run(ctx context.Context, ingressEndpoint configuration.Endpoint
 	return errors.Join(failure, closeErr)
 }
 
-func (r *Runner) ingressLoop(ctx context.Context, endpoint configuration.Endpoint) error {
-	ctx, cancel := context.WithCancel(ctx)
-	conn, err := stream.NewConnection(endpoint.Target)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	client := ingress.NewClient(ingresspb.NewRunnerIngressClient(conn), r.store, func(id string, ack retained.Acknowledgement) error {
-		if err := r.lifecycle.publishAck(id, ack); err != nil {
-			return err
-		}
-		r.changed()
-		return nil
-	})
-	authCtx := stream.Authenticated(ctx, endpoint.Bearer)
-	active := map[string]bool{}
-	finished := make(chan string, 16)
-	var pushes sync.WaitGroup
-	defer func() { cancel(); pushes.Wait() }()
-	for {
-		changed := r.changesSince()
-		for _, s := range r.sessions.Inventory() {
-			if active[s.ID()] {
-				continue
-			}
-			ack, err := r.store.ReadAcknowledgement(s.ID())
-			if err != nil {
+func (r *Runner) newIngressSupervisor(endpoint configuration.Endpoint) *ingress.Supervisor {
+	return ingress.NewSupervisor(ingress.SupervisorConfig{
+		Target:          endpoint.Target,
+		Bearer:          endpoint.Bearer,
+		Store:           r.store,
+		Changes:         r.changesSince,
+		Inventory:       r.ingressSources,
+		OnWorkerFailure: r.fail,
+		OnAcknowledgement: func(id string, ack retained.Acknowledgement) error {
+			if err := r.lifecycle.publishAck(id, ack); err != nil {
 				return err
 			}
-			if ack != nil && ack.Sealed {
-				continue
-			}
-			active[s.ID()] = true
-			pushes.Add(1)
-			go func(s *session.Session) {
-				defer pushes.Done()
-				err := client.Deliver(authCtx, ingress.Source{ID: s.ID(), Announce: s.Attached, Journal: s.EventJournal()})
-				if err != nil {
-					r.fail(err)
-				}
-				select {
-				case finished <- s.ID():
-				case <-ctx.Done():
-				}
-			}(s)
-		}
-		select {
-		case <-ctx.Done():
+			r.changed()
 			return nil
-		case id := <-finished:
-			delete(active, id)
-		case <-changed:
-		}
+		},
+	})
+}
+
+func (r *Runner) ingressSources() []ingress.Source {
+	currentSessions := r.sessions.Inventory()
+	sources := make([]ingress.Source, 0, len(currentSessions))
+	for _, current := range currentSessions {
+		sources = append(sources, ingress.Source{ID: current.ID(), Announce: current.Attached, Journal: current.EventJournal()})
 	}
+	return sources
 }

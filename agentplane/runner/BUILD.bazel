@@ -588,7 +588,6 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
-        "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
@@ -612,7 +611,6 @@ go_library(
         "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "//agentplane/runner/session",
-        "//agentplane/runner/stream",
         "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
         "//agentplane/runner_transport",
