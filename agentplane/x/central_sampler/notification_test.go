@@ -60,7 +60,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
 	startTurnForStore(t, store, session, owner, "turn")
-	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cell, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell"})
+	cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 				commandID := "turn"
 				err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "fixture failure"}})
 			} else {
-				err = store.FinishCommand(t.Context(), owner, session.ID, "turn", ending)
+				err = store.FinishCommand(t.Context(), owner, session.ID, "turn", TurnResult(ending))
 			}
 			if err != nil {
 				t.Fatal(err)

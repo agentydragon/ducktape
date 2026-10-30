@@ -1,6 +1,7 @@
 package centralsampler
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
@@ -29,9 +30,7 @@ func modelToolSurface(encoding protocol.ExecEncoding) (protocol.ToolSurface, err
 	return protocol.ToolSurface{Description: description, Parameters: parameters, FreeformGrammar: execFreeformGrammar, WaitDescription: waitToolDescription(), WaitParameters: waitToolParameters()}, nil
 }
 
-// Authentication is deliberately absent. This record is committed with the pending intent,
-// before the provider receives the request.
-func providerRequestAudit(kind string, connection ConnectionConfig, config ModelConfig, body any, wire []byte) map[string]any {
+func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, config ModelConfig, wire []byte) IntentRequest {
 	path := "/v1/responses"
 	var headers map[string]string
 	switch config.API {
@@ -39,7 +38,10 @@ func providerRequestAudit(kind string, connection ConnectionConfig, config Model
 		path = "/v1/messages"
 		headers = anthropic.Headers(*config.AnthropicMessages)
 	case protocol.APIStyleResponses:
-		headers = responses.Headers(config.Responses, kind == "compaction")
+		headers = responses.Headers(config.Responses, kind == PendingIntentCompaction)
 	}
-	return map[string]any{"kind": kind, "api": config.API, "connection": config.Connection, "provider_model": config.ProviderModel, "method": "POST", "url": strings.TrimRight(connection.BaseURL, "/") + path, "headers": headers, "body": body, "wire_request": string(wire)}
+	return IntentRequest{Kind: kind, ProviderRequest: &ProviderRequest{
+		API: config.API, Connection: config.Connection, ProviderModel: config.ProviderModel, Method: http.MethodPost,
+		URL: strings.TrimRight(connection.BaseURL, "/") + path, Headers: headers, Body: wire, WireRequest: string(wire),
+	}}
 }

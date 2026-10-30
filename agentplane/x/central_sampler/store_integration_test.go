@@ -46,7 +46,7 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "input": "first"}); err != nil {
+	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
@@ -80,18 +80,18 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"})
+	first, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"}); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
 	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-2"})
+	second, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,24 +147,25 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "fixture-old-process", false); err != nil {
 		t.Fatal(err)
 	}
-	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "input": "first"})
+	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "recover-call", Name: "exec", Input: "text(1)", ID: "recover-item"}
+	toolCall := protocol.ToolInvocation{Encoding: protocol.ExecEncodingFreeform, CallID: call.CallID, Name: call.Name, Input: call.Input}
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell", "call": call})
+	cellIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cellID := "code-session:cell-1"
-	toolIntent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "cell_id": cellID, "tool": "exec"})
+	toolIntent, err := store.RecordNested(t.Context(), owner, IntentTool, map[string]any{"cell_id": cellID, "tool": "exec"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	executorIntent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "executor", "method": "process/start"})
+	executorIntent, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,18 +325,19 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}
 	call := responses.Item{Type: responses.ItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
+	toolCall := protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, CallID: call.CallID, Name: call.Name, Input: call.Arguments}
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell", "call": call})
+	cellIntent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +465,7 @@ func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": kind}); err != nil {
+				if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentKind(kind)}); err != nil {
 					t.Fatal(err)
 				}
 				if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown outcome")); err != nil {
@@ -638,7 +640,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
+	intent, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +806,7 @@ func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
 	if conversation.Pending == nil || conversation.Pending.Kind != PendingIntentInterrupt {
 		t.Fatalf("incomplete interrupt did not persist a blocking intent: %v", conversation.Pending)
 	}
-	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"}); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("incomplete interrupt allowed a new effect: %v", err)
 	}
 }
@@ -917,7 +919,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 			}
 			switch uncertainty {
 			case "nested":
-				if _, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "name": "exec_command"}); err != nil {
+				if _, err := store.RecordNested(t.Context(), owner, IntentTool, map[string]any{"name": "exec_command"}); err != nil {
 					t.Fatal(err)
 				}
 			case "cell":
@@ -929,7 +931,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+			intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -990,7 +992,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 		`{"type":"reasoning","provider_id":9007199254740993}`); err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})
+	intentID, err := store.RecordNested(t.Context(), owner, IntentTool, map[string]any{"opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1302,7 +1304,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	admitInput(t, store, session.ID, "after-model", "next turn text")
 	// A running cell's unresolved intent still reports the input, so its observation can yield, but
 	// the input only joins once the intent has an outcome.
-	intent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell"})
+	intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
 	if err != nil {
 		t.Fatal(err)
 	}

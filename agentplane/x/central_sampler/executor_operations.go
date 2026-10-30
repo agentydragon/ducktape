@@ -147,8 +147,7 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
-	request := map[string]any{"kind": "executor", "method": "initialize", "resume_session_id": resume}
-	intent, err := e.store.RecordNested(ctx, e.owner, request)
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": "initialize", "resume_session_id": resume})
 	if err != nil {
 		return err
 	}
@@ -361,11 +360,11 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 			return nil, &executorNotDispatchedError{method: method, processID: executorProcessID(params), retainedSession: e.retainedSessionID(ctx), cause: err}
 		}
 	}
-	requestJSON, err := protocolObject(map[string]any{"kind": "executor", "method": method, "params": params})
+	requestJSON, err := protocolObject(map[string]any{"method": method, "params": params})
 	if err != nil {
 		return nil, err
 	}
-	intent, err := e.store.RecordNested(ctx, e.owner, requestJSON)
+	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, requestJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -589,7 +588,7 @@ func (e *executorTransportError) Error() string {
 }
 func (e *executorTransportError) Unwrap() error { return e.cause }
 func (e *executorTransportError) evidence(retainedSession string) map[string]any {
-	result := map[string]any{"status": "abandoned", "remote_outcome": "unknown", "automatic_replay": false, "method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error()}
+	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "unknown", "automatic_replay": false, "method": e.method, "phase": e.phase, "intent_id": e.intentID, "transport_error": e.cause.Error()}
 	if e.processID != "" {
 		result["process_id"] = e.processID
 	}
@@ -616,7 +615,7 @@ func (e *executorNotDispatchedError) Error() string {
 }
 func (e *executorNotDispatchedError) Unwrap() error { return e.cause }
 func (e *executorNotDispatchedError) evidence() map[string]any {
-	result := map[string]any{"status": "abandoned", "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
+	result := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "not_dispatched", "automatic_replay": false, "method": e.method, "transport_error": e.cause.Error()}
 	if e.processID != "" {
 		result["process_id"] = e.processID
 	}
