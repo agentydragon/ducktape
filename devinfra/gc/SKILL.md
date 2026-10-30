@@ -144,9 +144,9 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
 
 - `PRUNE`: a default MD5-named base, or a per-session base under `~/.claude/session-env/`,
   whose recorded workspace is absent or under `/tmp`, with no live server or nested mount. A
-  server is live only when the process at its recorded PID is running Bazel on that very base
-  — a bare PID proves nothing, since a sandboxed server records its namespace-local PID and a
-  host PID is recycled once the server exits. Remove with `workspace-gc bazel-bases --delete`;
+  server is live only when some process's argv names that very base as `--output_base` — a
+  bare recorded PID proves nothing, since a sandboxed server records its namespace-local PID
+  and a host PID is recycled once the server exits. Remove with `workspace-gc bazel-bases --delete`;
   it revalidates and locks every candidate before deletion. Deleting a `/tmp` output base
   leaves its workspace intact.
 - `KEEP`: leave it alone. A base whose workspace is a **prunable worktree** outside `/tmp`
