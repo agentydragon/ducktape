@@ -38,6 +38,9 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 pub(crate) use crate::SourceLocation;
 pub(crate) use crate::facts::TopLevelItemView;
 pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
+pub(crate) use crate::facts::abstract_domain::effect::{
+    CoerceSite, Effect, HavocCause, InvokeSite,
+};
 pub(crate) use crate::facts::abstract_domain::primitive::evaluate;
 pub(crate) use crate::facts::abstract_domain::value::PrimKinds;
 
@@ -59,6 +62,7 @@ pub(crate) use effect_inference::*;
 pub(crate) use fluent::*;
 pub(crate) use fresh_record::*;
 pub(crate) use native_rows::*;
+pub(crate) use purity_type::Effects;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
 

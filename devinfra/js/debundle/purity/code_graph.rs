@@ -858,7 +858,7 @@ fn classify_function_body(
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Purity {
+) -> Effects {
     // Names bound by this function (its params and every binding
     // declared anywhere in its body) lexically shadow EVERY outer
     // resolution path of the same name: chunk-top PlainData
@@ -886,9 +886,9 @@ fn classify_function_body(
         .params
         .iter()
         .filter_map(|pat| param_destructuring_purity(pat))
-        .fold(Purity::pure(), Purity::worst);
+        .fold(Effects::none(), Effects::then);
     let mut collector = BodyPurityCollector {
-        purity: Purity::pure(),
+        effects: Effects::none(),
         fresh_record: graph.fresh_record_proof(function.key),
         shadowed,
         local_shadowed,
@@ -896,7 +896,7 @@ fn classify_function_body(
         graph,
     };
     function.visit_body_with(&mut collector);
-    param_purity.worst(collector.purity)
+    param_purity.then(collector.effects)
 }
 
 fn classify_function_body_transfer(
@@ -911,7 +911,7 @@ fn classify_function_body_transfer(
         .as_ref()
         .expect("transfer extraction configures an obligation buffer");
     obligations.borrow_mut().clear();
-    let mut purity = classify_function_body(function, shadowed, declared_pure, graph);
+    let mut purity = classify_function_body(function, shadowed, declared_pure, graph).project();
     if let Purity::NotPure { reasons } = &mut purity
         && let Some(locate) = locate.as_deref_mut()
     {
@@ -937,23 +937,26 @@ fn classify_function_body_transfer(
 /// params (fresh array from the arguments list) contribute nothing;
 /// default-value expressions are classified separately as
 /// expressions by the body walk.
-pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
+pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
     match pat {
         Pat::Ident(_) => None,
         Pat::Rest(rest) => param_destructuring_purity(&rest.arg),
         Pat::Assign(assign) => param_destructuring_purity(&assign.left),
-        Pat::Array(arr) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Array(arr) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             arr.span,
             "array destructuring fires the iterator protocol on the bound value".to_string(),
         )),
-        Pat::Object(obj) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Object(obj) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             obj.span,
             "object destructuring fires [[Get]] (user getters / proxy traps) on the bound value"
                 .to_string(),
         )),
-        Pat::Invalid(_) | Pat::Expr(_) => Some(Purity::from_reason(PurityRule::Other, pat.span())),
+        Pat::Invalid(_) | Pat::Expr(_) => Some(Effects::of(
+            Effect::Havoc(HavocCause::Unmodeled),
+            pat.span(),
+        )),
     }
 }
 
@@ -963,7 +966,7 @@ pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
 /// lazy scopes — their purity, if needed, comes from their own
 /// graph entry or from the caller's `Unknown` fallback).
 struct BodyPurityCollector<'a> {
-    purity: Purity,
+    effects: Effects,
     fresh_record: Option<&'a FreshRecordProof>,
     shadowed: &'a BTreeSet<&'static str>,
     /// Every name bound by the function whose body is being walked
@@ -1005,7 +1008,7 @@ impl Visit for BodyPurityCollector<'_> {
             self.declared_pure,
             self.graph,
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(p);
+        self.effects = std::mem::take(&mut self.effects).then(p);
     }
 
     // Statement-level effects that don't surface as an Impure /
@@ -1014,16 +1017,16 @@ impl Visit for BodyPurityCollector<'_> {
     // pauses execution observably to a host attached to the
     // process. Both make the enclosing function not Pure.
     fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
-        let throw_reason = Purity::from_reason(PurityRule::ThrowStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(throw_reason);
+        let throw_reason = Effects::of(Effect::Havoc(HavocCause::ThrowStatement), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(throw_reason);
         // Still recurse so the thrown expression contributes its
         // own purity (e.g. `throw io()` should also see the call).
         node.arg.visit_with(self);
     }
 
     fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
-        let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(dbg_reason);
+        let dbg_reason = Effects::of(Effect::Havoc(HavocCause::Debugger), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(dbg_reason);
     }
 
     // Iteration statements fire user code beyond their
@@ -1035,22 +1038,22 @@ impl Visit for BodyPurityCollector<'_> {
     // regular recursion, but the protocol firing is invisible to it
     // — flag the statement itself.
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-of fires the iterator protocol on the iterated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-in enumeration can fire proxy traps on the enumerated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
@@ -1059,7 +1062,7 @@ impl Visit for BodyPurityCollector<'_> {
     // init expression's own classification doesn't cover.
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let Some(reason) = param_destructuring_purity(&node.name) {
-            self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
+            self.effects = std::mem::take(&mut self.effects).then(reason);
         }
         node.visit_children_with(self);
     }

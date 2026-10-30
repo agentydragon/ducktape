@@ -158,6 +158,145 @@ impl PurityRule {
     }
 }
 
+/// The effects of evaluating source, in evaluation order, with the proof
+/// dependencies of the discharges that kept other steps effect-free. `Purity`
+/// is its projection: pure exactly when no event projects to a reason.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Effects {
+    events: Vec<EffectEvent>,
+    dependencies: ProofDependencies,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EffectEvent {
+    Effect {
+        effect: Effect,
+        span: Span,
+        detail: Option<String>,
+    },
+    /// A call of a function whose own effects are already projected. Pure
+    /// callees contribute their dependencies; an impure callee is one
+    /// `ImpureFunctionCall` reason at this site, linked to its verdict.
+    Call {
+        callee: Arc<Purity>,
+        name: String,
+        span: Span,
+    },
+}
+
+impl Effects {
+    pub(crate) fn none() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn of(effect: Effect, span: Span) -> Self {
+        Self::of_opt_detail(effect, span, None)
+    }
+
+    pub(crate) fn of_detail(effect: Effect, span: Span, detail: String) -> Self {
+        Self::of_opt_detail(effect, span, Some(detail))
+    }
+
+    pub(crate) fn of_opt_detail(effect: Effect, span: Span, detail: Option<String>) -> Self {
+        Self {
+            events: vec![EffectEvent::Effect {
+                effect,
+                span,
+                detail,
+            }],
+            dependencies: ProofDependencies::default(),
+        }
+    }
+
+    pub(crate) fn call(callee: &Arc<Purity>, name: &str, span: Span) -> Self {
+        Self {
+            events: vec![EffectEvent::Call {
+                callee: Arc::clone(callee),
+                name: name.to_string(),
+                span,
+            }],
+            dependencies: ProofDependencies::default(),
+        }
+    }
+
+    /// Evaluate `self`, then `next`.
+    pub(crate) fn then(mut self, next: Self) -> Self {
+        self.events.extend(next.events);
+        self.dependencies.extend(&next.dependencies);
+        self
+    }
+
+    pub(crate) fn with_dependencies(mut self, additional: &ProofDependencies) -> Self {
+        self.dependencies.extend(additional);
+        self
+    }
+
+    pub(crate) fn is_pure(&self) -> bool {
+        self.events.iter().all(|event| match event {
+            EffectEvent::Effect { .. } => false,
+            EffectEvent::Call { callee, .. } => callee.is_pure(),
+        })
+    }
+
+    pub(crate) fn project(self) -> Purity {
+        let mut dependencies = self.dependencies;
+        let mut reasons = Vec::new();
+        for event in self.events {
+            match event {
+                EffectEvent::Effect {
+                    effect,
+                    span,
+                    detail,
+                } => reasons.push(PurityReason::new(rule(effect), span, detail)),
+                EffectEvent::Call { callee, name, span } => match callee.as_ref() {
+                    Purity::Pure {
+                        dependencies: callee_dependencies,
+                    } => dependencies.extend(callee_dependencies),
+                    Purity::NotPure { .. } => reasons.push(
+                        PurityReason::new(
+                            PurityRule::ImpureFunctionCall,
+                            span,
+                            Some(format!("function `{name}` has an impure body")),
+                        )
+                        .with_cause(callee),
+                    ),
+                },
+            }
+        }
+        if reasons.is_empty() {
+            Purity::Pure { dependencies }
+        } else {
+            Purity::NotPure { reasons }
+        }
+    }
+}
+
+/// The reason rule reporting `effect`.
+fn rule(effect: Effect) -> PurityRule {
+    match effect {
+        Effect::Write => PurityRule::AssignOrUpdate,
+        Effect::Delete => PurityRule::DeleteOperator,
+        Effect::Coerce(CoerceSite::Operator) => PurityRule::CoercingOperator,
+        Effect::Coerce(CoerceSite::PropertyKey) => PurityRule::ToPropertyKeyCoercion,
+        Effect::Coerce(CoerceSite::Iteration) => PurityRule::IterationProtocol,
+        Effect::Coerce(CoerceSite::Destructuring) => PurityRule::DestructuringPattern,
+        Effect::Coerce(CoerceSite::ArraySpread) => PurityRule::ArraySpread,
+        Effect::Coerce(CoerceSite::ObjectSpread) => PurityRule::ObjectSpread,
+        Effect::Invoke(InvokeSite::Call) => PurityRule::UnknownCall,
+        Effect::Invoke(InvokeSite::Construct) => PurityRule::UnknownNew,
+        Effect::Invoke(InvokeSite::TaggedTemplate) => PurityRule::TaggedTpl,
+        Effect::Invoke(InvokeSite::MemberRead) => PurityRule::UnknownMember,
+        Effect::Invoke(InvokeSite::SuperProperty) => PurityRule::SuperProp,
+        Effect::Invoke(InvokeSite::ClassDefinition) => PurityRule::ClassStaticObservable,
+        Effect::Throws | Effect::Havoc(HavocCause::Unmodeled) => PurityRule::Other,
+        Effect::Havoc(HavocCause::Suspension) => PurityRule::AwaitOrYield,
+        Effect::Havoc(HavocCause::ThrowStatement) => PurityRule::ThrowStmt,
+        Effect::Havoc(HavocCause::Debugger) => PurityRule::DebuggerStmt,
+        Effect::Havoc(HavocCause::ControlFlow) => PurityRule::BareControlFlow,
+        Effect::Havoc(HavocCause::CoverInitializedName) => PurityRule::ObjectAssignProp,
+    }
+}
+
 impl Purity {
     pub fn pure() -> Self {
         Self::Pure {
@@ -202,24 +341,6 @@ impl Purity {
                 a.extend(b);
                 Purity::NotPure { reasons: a }
             }
-        }
-    }
-
-    pub(crate) fn from_reason(rule: PurityRule, span: Span) -> Self {
-        Self::from_reason_opt_detail(rule, span, None)
-    }
-
-    pub(crate) fn from_reason_with_detail(rule: PurityRule, span: Span, detail: String) -> Self {
-        Self::from_reason_opt_detail(rule, span, Some(detail))
-    }
-
-    pub(crate) fn from_reason_opt_detail(
-        rule: PurityRule,
-        span: Span,
-        detail: Option<String>,
-    ) -> Self {
-        Purity::NotPure {
-            reasons: vec![PurityReason::new(rule, span, detail)],
         }
     }
 }

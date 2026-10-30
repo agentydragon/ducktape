@@ -161,8 +161,9 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     };
     let init = var.decls[0].init.as_deref().expect("init");
     assert!(
-        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph))
-            .is_pure()
+        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+            .project())
+        .is_pure()
     );
 }
 

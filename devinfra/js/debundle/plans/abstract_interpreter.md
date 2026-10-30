@@ -172,6 +172,13 @@ own data. This single resolution rule replaces #24's `CoercingOperator`,
 reads as an opaque barrier (#13 `CellOrderBarrier::AllPriorEvents`) and what
 purity reads as `UnknownCall`.
 
+Landed with 4c layer 2: purity's effects are `facts/abstract_domain/effect.rs`
+`Effect ::= Write | Delete | Coerce(site) | Invoke(site) | Throws |
+Havoc(cause)`; the classifier returns them in evaluation order with calls of
+projected functions (`purity/purity_type.rs::Effects`), and `Purity` with its
+`PurityRule` reasons is their projection. Cells, `Read`, `Alloc` and value
+operands arrive with the steps that first read them.
+
 ### 2.4 Lattice and widening
 
 - Program state at a program point is one `(Env, Heap)`; paths join, never
