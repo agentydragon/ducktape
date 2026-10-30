@@ -224,3 +224,18 @@ scripted tests establish the sampler's protocol and execution behavior.
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
 allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a
 central Session into a native harness Session.
+
+## Codex features left out
+
+- Sandboxing, execpolicy, approvals and the network proxy: the Sandbox, egress proxy and Action
+  Service own these boundaries.
+- Codex local persistence (rollout files, thread store, state DB): PostgreSQL and History replace it.
+- Turn diffs, review mode, desktop in-app panes and fast mode.
+- Codex plugins, apps and connectors, unless specifically wanted later.
+- Image generation: a different API; if wanted, an Agentplane Action instead.
+- Shell plumbing (shell snapshots, zsh fork, login-shell PATH, PowerShell), worktree management and
+  external-agent migration.
+- TUI, cloud tasks and ChatGPT-backend features (login/keyring, PSP, plan analytics, access
+  programs, request compression).
+- Local model providers (LiteLLM routes models), Codex's OTel exporter, feedback upload and Windows
+  support.
