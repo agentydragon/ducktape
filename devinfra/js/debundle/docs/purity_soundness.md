@@ -1134,7 +1134,8 @@ Why member reads on PlainData are pure:
   `typeof`/`!`/`void` operand, `Object.{keys,values,entries,freeze,
 fromEntries}` single argument with `Object` unshadowed, the vetted
   TS-enum-IIFE argument, an author-proven non-escaping argument
-  (`argument_inputs`), a tracked alias declaration or return, or
+  (`argument_inputs`), a tracked alias declaration, a tracked alias
+  return from a body only analyzed code can call (below), or
   `export { X }`. A call argument or stored member value also publishes
   every allocation value flow says it can reach.
 
@@ -1149,9 +1150,18 @@ fromEntries}` single argument with `Object` unshadowed, the vetted
   direct literal identities through local assignments, function
   parameters, returns, and static object properties. A direct
   `return X` or concise `() => X` is admitted only when the literal
-  identity is tracked; the scan checks aliases and disqualifies `X`
-  when one is passed to an unknown consumer or used at a mutation
-  site. Other return shapes remain escapes.
+  identity is tracked and the enclosing body is called only by analyzed
+  code: a chunk-top `function f` or `const f =` anonymous function or
+  arrow, declared once, never reassigned and referenced only as a direct
+  call or `new` callee or in an export, or an anonymous function or arrow
+  that is itself the callee. Any other body (`setTimeout(() => X)`, an
+  object method, an accessor, a constructor, a stored callback) can be
+  called by code the scan does not see, which receives `X`; and a
+  non-arrow body mentioning `arguments` can hand itself out through
+  `arguments.callee`. The scan checks the call sites' uses of the result
+  through value flow and disqualifies `X` when one is passed to an unknown
+  consumer or used at a mutation site. Other return shapes remain
+  escapes.
 
 - **Primitive member values do not expose their receiver.** The escape scan
   distinguishes an exact static member read on a chunk-top `const` object

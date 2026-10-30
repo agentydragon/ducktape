@@ -57,7 +57,8 @@ pub enum Mutation {
 /// Whether code the scan does not follow can hold a reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Escape {
-    /// Only tracked aliases, returns, member-read receivers, spread sources,
+    /// Only tracked aliases, returns from bodies only analyzed code can call
+    /// (`in_chunk_callables`), member-read receivers, spread sources,
     /// `typeof`/`!`/`void` operands, operand-only builtin rows and
     /// author-proven non-escaping arguments see the reference. Exports do not
     /// publish: importers are assumed not to mutate an exported binding's
@@ -243,6 +244,7 @@ impl ChunkHeap {
         scan.argument_facts = arguments;
         scan.candidate_index = Some(value_flow.candidate_object_index(&roots));
         scan.primitive_members = primitive_members;
+        scan.in_chunk_callables = in_chunk_callables(body);
         for item in body {
             let module_item = item.as_module_item();
             match module_item {
@@ -476,6 +478,202 @@ pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
     }
 }
 
+/// A function or arrow body, by its source extent.
+type BodyKey = (u32, u32);
+
+fn body_key(span: swc_common::Span) -> BodyKey {
+    (span.lo.0, span.hi.0)
+}
+
+/// Bodies that only analyzed code can call, so a value they return reaches
+/// only call sites value flow follows: a chunk-top `function f` or `const f =`
+/// anonymous function or arrow whose binding is declared once, never
+/// reassigned, and referenced only as a direct call or `new` callee or in an
+/// export; and an anonymous function or arrow that is itself a callee. Any
+/// other body may be held by code the scan does not see (`setTimeout(() =>
+/// X)`, a method, a stored callback), which can call it and receive `X`.
+/// Exports follow `Escape::Private`'s importer assumption. A non-arrow body
+/// that mentions `arguments` can hand out itself through `arguments.callee`.
+fn in_chunk_callables(body: &[TopLevelItemView<'_>]) -> BTreeSet<BodyKey> {
+    let mut declarations: BTreeMap<Id, usize> = BTreeMap::new();
+    let mut named: BTreeMap<Id, BodyKey> = BTreeMap::new();
+    for item in body {
+        let item = item.as_module_item();
+        for id in collect_declared_names(item) {
+            *declarations.entry(id).or_default() += 1;
+        }
+        let decl = match item {
+            ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
+            _ => continue,
+        };
+        match decl {
+            Decl::Fn(function) if !mentions_arguments(&function.function) => {
+                named.insert(function.ident.to_id(), body_key(function.function.span));
+            }
+            Decl::Var(var) if var.kind == VarDeclKind::Const => {
+                for declarator in &var.decls {
+                    if let Pat::Ident(binding) = &declarator.name
+                        && let Some(init) = declarator.init.as_deref()
+                        && let Some(key) = anonymous_body(init)
+                    {
+                        named.insert(binding.id.to_id(), key);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    named.retain(|id, _| declarations.get(id) == Some(&1));
+    let mut references = CalleeOnlyReferences {
+        named: &named,
+        escaped: BTreeSet::new(),
+        inline: BTreeSet::new(),
+    };
+    for item in body {
+        item.as_module_item().visit_with(&mut references);
+    }
+    let CalleeOnlyReferences {
+        escaped, inline, ..
+    } = references;
+    named
+        .into_iter()
+        .filter(|(id, _)| !escaped.contains(id))
+        .map(|(_, key)| key)
+        .chain(inline)
+        .collect()
+}
+
+/// The body of an anonymous function or arrow expression that cannot reach
+/// itself through `arguments.callee`. A named function expression can pass
+/// itself by name.
+fn anonymous_body(expr: &Expr) -> Option<BodyKey> {
+    match expr.unwrap_parens() {
+        Expr::Fn(FnExpr {
+            ident: None,
+            function,
+        }) if !mentions_arguments(function) => Some(body_key(function.span)),
+        Expr::Arrow(arrow) => Some(body_key(arrow.span)),
+        _ => None,
+    }
+}
+
+fn mentions_arguments(function: &Function) -> bool {
+    struct Arguments(bool);
+    impl Visit for Arguments {
+        fn visit_ident(&mut self, ident: &Ident) {
+            self.0 |= ident.sym == "arguments";
+        }
+    }
+    let mut found = Arguments(false);
+    function.visit_with(&mut found);
+    found.0
+}
+
+/// Marks a candidate binding escaped at any reference other than a direct
+/// callee or an export, and at any rebinding.
+struct CalleeOnlyReferences<'a> {
+    named: &'a BTreeMap<Id, BodyKey>,
+    escaped: BTreeSet<Id>,
+    inline: BTreeSet<BodyKey>,
+}
+
+impl CalleeOnlyReferences<'_> {
+    fn visit_callee(&mut self, callee: &Expr) {
+        match callee.unwrap_parens() {
+            Expr::Ident(ident) if self.named.contains_key(&ident.to_id()) => {}
+            expr => {
+                if let Some(key) = anonymous_body(expr) {
+                    self.inline.insert(key);
+                }
+                expr.visit_with(self);
+            }
+        }
+    }
+
+    fn escape_all_in<N: VisitWith<IdentsIn>>(&mut self, node: &N) {
+        let mut names = IdentsIn(BTreeSet::new());
+        node.visit_with(&mut names);
+        self.escaped
+            .extend(names.0.into_iter().filter(|id| self.named.contains_key(id)));
+    }
+}
+
+/// Every identifier in a pattern or assignment target.
+struct IdentsIn(BTreeSet<Id>);
+
+impl Visit for IdentsIn {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.0.insert(ident.to_id());
+    }
+}
+
+impl Visit for CalleeOnlyReferences<'_> {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        match &node.callee {
+            Callee::Expr(callee) => self.visit_callee(callee),
+            callee => callee.visit_with(self),
+        }
+        node.args.visit_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &NewExpr) {
+        self.visit_callee(&node.callee);
+        node.args.visit_with(self);
+    }
+
+    fn visit_ident(&mut self, ident: &Ident) {
+        let id = ident.to_id();
+        if self.named.contains_key(&id) {
+            self.escaped.insert(id);
+        }
+    }
+
+    // A binding position declares rather than references; the rebinding
+    // forms are handled below.
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        node.function.visit_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        // Only the candidate's own `const` declarator initializes it with its
+        // body; a nested `var` of the same binding replaces it.
+        let own = node.init.as_deref().and_then(anonymous_body).is_some_and(|key| {
+            matches!(&node.name, Pat::Ident(binding) if self.named.get(&binding.id.to_id()) == Some(&key))
+        });
+        if node.init.is_some() && !own {
+            self.escape_all_in(&node.name);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        self.escape_all_in(&node.left);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        self.escape_all_in(&node.left);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        self.escape_all_in(&node.left);
+        node.visit_children_with(self);
+    }
+
+    fn visit_export_named_specifier(&mut self, _node: &ExportNamedSpecifier) {}
+
+    fn visit_export_default_expr(&mut self, node: &ExportDefaultExpr) {
+        if !matches!(node.expr.unwrap_parens(), Expr::Ident(ident) if self.named.contains_key(&ident.to_id()))
+        {
+            node.visit_children_with(self);
+        }
+    }
+}
+
 /// Whole-chunk scan that publishes or taints tracked allocations and records
 /// rebinding of tracked names.
 ///
@@ -510,11 +708,16 @@ struct HeapScan<'a> {
     argument_inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
     candidate_index: Option<CandidateObjectIndex<'a>>,
     /// Chunk-top names value flow says hold a literal root. Declaring one as
-    /// another's alias, or returning one, keeps the identity tracked.
+    /// another's alias, or returning one from an in-chunk callable, keeps the
+    /// identity tracked.
     aliases: &'a BTreeSet<String>,
     /// Own primitive fields of `const` object literals: passing `X.k` passes
     /// a primitive, not the receiver.
     primitive_members: BTreeMap<Id, BTreeSet<String>>,
+    /// Bodies only analyzed code can call; see `in_chunk_callables`.
+    in_chunk_callables: BTreeSet<BodyKey>,
+    /// Whether each enclosing function body is one of `in_chunk_callables`.
+    callable_scopes: Vec<bool>,
 }
 
 impl<'a> HeapScan<'a> {
@@ -537,6 +740,8 @@ impl<'a> HeapScan<'a> {
             candidate_index: None,
             aliases,
             primitive_members: BTreeMap::new(),
+            in_chunk_callables: BTreeSet::new(),
+            callable_scopes: Vec::new(),
         }
     }
 }
@@ -735,6 +940,33 @@ impl HeapScan<'_> {
         }
     }
 
+    fn with_callable_scope<F: FnOnce(&mut Self)>(&mut self, in_chunk: bool, f: F) {
+        self.callable_scopes.push(in_chunk);
+        f(self);
+        self.callable_scopes.pop();
+    }
+
+    /// Whether a value returned from the innermost enclosing body reaches only
+    /// analyzed callers, whose uses of the result value flow follows.
+    fn returns_stay_in_chunk(&self) -> bool {
+        self.callable_scopes.last() == Some(&true)
+    }
+
+    /// A value returned to analyzed callers is followed at their call sites
+    /// by value flow, so a tracked alias stays tracked. A value returned from
+    /// any other body reaches code the scan does not see.
+    fn visit_returned(&mut self, value: &Expr) {
+        if self.returns_stay_in_chunk() {
+            if !matches!(value.unwrap_parens(), Expr::Ident(ident) if self.aliases.contains(ident.sym.as_ref()))
+            {
+                value.visit_with(self);
+            }
+        } else {
+            self.apply_to_reachable(value, HeapEffect::Publish);
+            value.visit_with(self);
+        }
+    }
+
     fn visit_top_level_var(&mut self, var: &VarDecl) {
         for decl in &var.decls {
             decl.name.visit_with(self);
@@ -888,13 +1120,9 @@ impl Visit for HeapScan<'_> {
     fn visit_import_named_specifier(&mut self, _node: &ImportNamedSpecifier) {}
 
     fn visit_return_stmt(&mut self, node: &ReturnStmt) {
-        if let Some(arg) = node.arg.as_deref()
-            && let Expr::Ident(ident) = arg.unwrap_parens()
-            && self.aliases.contains(ident.sym.as_ref())
-        {
-            return;
+        if let Some(arg) = node.arg.as_deref() {
+            self.visit_returned(arg);
         }
-        node.visit_children_with(self);
     }
 
     // An identifier member receiver is read, not captured.
@@ -1017,15 +1245,17 @@ impl Visit for HeapScan<'_> {
             .flat_map(binding_targets::binding_names)
             .map(|id| id.0.to_string())
             .collect();
-        self.with_scope(scope, params, |s| {
-            for param in &node.params {
-                param.visit_with(s);
-            }
-            match node.body.as_ref() {
-                ArrowFunctionBody::Expr(expr)
-                    if matches!(expr.unwrap_parens(), Expr::Ident(ident) if s.aliases.contains(ident.sym.as_ref())) => {}
-                body => body.visit_with(s),
-            }
+        let in_chunk = self.in_chunk_callables.contains(&body_key(node.span));
+        self.with_callable_scope(in_chunk, |s| {
+            s.with_scope(scope, params, |s| {
+                for param in &node.params {
+                    param.visit_with(s);
+                }
+                match node.body.as_ref() {
+                    ArrowFunctionBody::Expr(expr) => s.visit_returned(expr),
+                    body => body.visit_with(s),
+                }
+            });
         });
     }
 
@@ -1037,7 +1267,24 @@ impl Visit for HeapScan<'_> {
             .flat_map(|p| binding_targets::binding_names(&p.pat))
             .map(|id| id.0.to_string())
             .collect();
-        self.with_scope(scope, params, |s| node.visit_children_with(s));
+        let in_chunk = self.in_chunk_callables.contains(&body_key(node.span));
+        self.with_callable_scope(in_chunk, |s| {
+            s.with_scope(scope, params, |s| node.visit_children_with(s));
+        });
+    }
+
+    // Accessor and constructor bodies are not `Function` nodes; whoever holds
+    // the object or class can run them.
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        self.with_callable_scope(false, |s| node.visit_children_with(s));
+    }
+
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        self.with_callable_scope(false, |s| node.visit_children_with(s));
+    }
+
+    fn visit_constructor(&mut self, node: &Constructor) {
+        self.with_callable_scope(false, |s| node.visit_children_with(s));
     }
 }
 
@@ -1109,6 +1356,37 @@ mod tests {
             "const foo = { v: 1 }; window.held = [foo];",
         ] {
             assert_eq!(plain_data(source), Vec::<String>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_returned_alias_escapes_with_its_function() {
+        for source in [
+            "const foo = { v: 1 }; setTimeout(() => foo);",
+            "const foo = { v: 1 }; setTimeout(function () { return foo; });",
+            "const foo = { v: 1 }; function get() { return foo; } setTimeout(get);",
+            "const foo = { v: 1 }; const get = () => foo; window.get = get;",
+            "const foo = { v: 1 }; function get() { return foo; } get = other;",
+            "const foo = { v: 1 }; function get() { sink(arguments.callee); return foo; } get();",
+            "const foo = { v: 1 }; const api = { get() { return foo; } }; sink(api);",
+            "const foo = { v: 1 }; const api = { get read() { return foo; } }; sink(api);",
+            "const foo = { v: 1 }; class C { constructor() { return foo; } } sink(C);",
+            "const foo = { v: 1 }; function get() { return foo; } setTimeout(() => get());",
+            "const foo = { v: 1 }; function get() { return foo; } setTimeout(function () { return get(); });",
+        ] {
+            assert_eq!(plain_data(source), Vec::<String>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_returned_alias_stays_private_under_in_chunk_callers() {
+        for source in [
+            "const foo = { v: 1 }; function get() { return foo; } get().v;",
+            "const foo = { v: 1 }; const get = () => foo; get().v;",
+            "const foo = { v: 1 }; const v = (() => foo)().v;",
+            "const foo = { v: 1 }; export function get() { return foo; }",
+        ] {
+            assert_eq!(plain_data(source), ["foo"], "{source}");
         }
     }
 
