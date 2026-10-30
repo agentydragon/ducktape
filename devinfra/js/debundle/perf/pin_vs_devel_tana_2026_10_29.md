@@ -268,6 +268,8 @@ callbacks.
 
 ### Vendor-chunk value flow (`prepare_cross_module_purity`)
 
+Fixes and remaining cost: <value_flow_tana_2026_10_29.md>.
+
 The provider chunk is prepared once (one marker pair, one `ModulePurityFacts::prepare`
 call per provider module that has any required export): `prepare` runs
 `complete_chunk_structural_with_inputs` over the whole provider body (the full
