@@ -10,7 +10,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
@@ -125,11 +124,6 @@ func (r *Runner) admit(id string, c *commandpb.Command) (entry *eventlogpb.Event
 	if r.closing {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Unavailable, "runner is closing")
-	}
-	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
-	if desiredState.Mode == runnerlifecycle.Closing && progress.Generation == desiredState.Generation && progress.Stage == runnerlifecycle.Closed {
-		r.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}
 	lameduck := !r.lifecycle.accepting()
 	if err := r.lifecycle.changeAdmissionsLocked(1); err != nil {

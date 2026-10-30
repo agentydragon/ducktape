@@ -199,6 +199,12 @@ already cleared by readers. A failed fence retains the process attachment and pr
 
 ## Quiesce and close
 
+Command handlers take the same `Runner.mu` barrier as `Quiesce` and `Close`. They reject the local
+close latch, read desired mode and lameduck policy, then count the handler before touching Session
+storage or journals. `Close` sets its latch before publishing `Closing`, so a failed desired-state
+publication still rejects new commands. Aggregate status reports lifecycle progress through
+`GetStatus` and shutdown waits; it is not an admission predicate.
+
 `Quiesce` checks the optional idle token and persists lameduck with the current incarnation UID while
 holding the Runner admission barrier. New Session creation and new ordinary command IDs are then
 refused. An already admitted duplicate retains its journaled result, and an exact-turn interrupt can

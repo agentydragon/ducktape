@@ -1937,24 +1937,3 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 second implementation of `runner/vm.nix`'s guest boot contract (disks by serial, workspace format,
 harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.
-
-## 16. Runner lifecycle follow-up
-
-The [Runner lifecycle ownership probe](../runner/plans/lifecycle_ownership_probe.md) maps current
-state ownership, admission locking, shutdown order, and worker joins. This decision is a narrow
-follow-up; it does not reopen the implemented lifecycle contract.
-
-```mermaid
-flowchart LR
-    RUNNER_ADMISSION_STATUS_DESIGN[Decision: aggregate status in command admission]
-```
-
-### `RUNNER_ADMISSION_STATUS_DESIGN` — decide whether aggregate status is part of command admission
-
-**Decision, unscheduled.** `Runner.admit` rejects its local close latch under `Runner.mu`, then reads
-aggregate status only to test a `Closed` predicate that normal Runner writes make unreachable. The
-read also makes a failed COSI status read fatal. Recommendation: remove it from command admission;
-keep admission on the local close latch and desired mode, and let status and shutdown paths own
-aggregate-status failure observation. Question: is a command admission intentionally a health check
-for aggregate status? If so, retain an explicit named health observation and remove only the dead
-`Closed` predicate. Any runtime change waits for this decision and the Runner race-test gate.

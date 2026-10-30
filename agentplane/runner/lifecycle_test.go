@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -19,14 +20,58 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 const lifecycleTestTimeout = 10 * time.Second
+
+type admissionStatusReadFailure struct {
+	context context.Context
+	err     error
+}
+
+type runnerAdmissionProbeState struct {
+	state.State
+	statusReadMu           sync.Mutex
+	statusReadFailures     []admissionStatusReadFailure
+	failDesiredPublication atomic.Bool
+	desiredPublicationErr  error
+}
+
+func (s *runnerAdmissionProbeState) failNextStatusRead(ctx context.Context, err error) {
+	s.statusReadMu.Lock()
+	defer s.statusReadMu.Unlock()
+	s.statusReadFailures = append(s.statusReadFailures, admissionStatusReadFailure{context: ctx, err: err})
+}
+
+func (s *runnerAdmissionProbeState) Get(ctx context.Context, pointer resource.Pointer, options ...state.GetOption) (resource.Resource, error) {
+	if pointer.Type() == runnerlifecycle.AggregateStatusType {
+		s.statusReadMu.Lock()
+		for index, failure := range s.statusReadFailures {
+			if ctx == failure.context {
+				s.statusReadFailures = append(s.statusReadFailures[:index], s.statusReadFailures[index+1:]...)
+				s.statusReadMu.Unlock()
+				return nil, failure.err
+			}
+		}
+		s.statusReadMu.Unlock()
+	}
+	return s.State.Get(ctx, pointer, options...)
+}
+
+func (s *runnerAdmissionProbeState) Modify(ctx context.Context, target resource.Resource, update func(resource.Resource) error, options ...state.UpdateOption) error {
+	if target.Metadata().Type() == runnerlifecycle.DesiredStateType && s.failDesiredPublication.Swap(false) {
+		return s.desiredPublicationErr
+	}
+	return s.State.Modify(ctx, target, update, options...)
+}
 
 func lifecycleTestSession(t *testing.T) (*Runner, *session.Session) {
 	t.Helper()
@@ -391,6 +436,17 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		releaseBatch()
 		t.Fatalf("wait for Close to drain admission: %v", err)
 	}
+	cursor := s.EventJournal().LastCursor()
+	if _, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{
+		SessionId: s.ID(), CommandId: "close-after-barrier", Text: "late input",
+	}); status.Code(err) != codes.Unavailable {
+		releaseBatch()
+		t.Fatalf("command after Close barrier = %v, want Unavailable", err)
+	}
+	if after := s.EventJournal().LastCursor(); after != cursor {
+		releaseBatch()
+		t.Fatalf("command after Close barrier changed journal cursor: %d -> %d", cursor, after)
+	}
 	select {
 	case err := <-closeDone:
 		releaseBatch()
@@ -407,6 +463,91 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	after, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
 	if err != nil || !found || after.Admissions != 0 {
 		t.Fatalf("RunnerInputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
+	}
+}
+
+func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
+	store := &runnerAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
+	r, s, _ := lifecycleTestBlockedSetupWithState(t, store)
+	statusReadErr := errors.New("injected aggregate-status read failure")
+	store.failNextStatusRead(r.ctx, statusReadErr)
+	before := s.EventJournal().LastCursor()
+	response, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{
+		SessionId: s.ID(), CommandId: "admission-with-status-read-failure", Text: "input",
+	})
+	if err != nil || response == nil || response.Admission == nil || response.Admission.Cursor <= before {
+		t.Fatalf("command admission = response %v, err %v; want durable admission", response, err)
+	}
+	select {
+	case failure := <-r.fatal:
+		t.Fatalf("command admission observed aggregate status failure: %v", failure)
+	default:
+	}
+
+	statusContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store.failNextStatusRead(statusContext, statusReadErr)
+	if _, err := r.GetStatus(statusContext, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetStatus after aggregate-status read failure = %v, want Unavailable", err)
+	}
+}
+
+func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
+	store := &runnerAdmissionProbeState{
+		State:                 state.WrapCore(namespaced.NewState(inmem.Build)),
+		desiredPublicationErr: errors.New("injected desired-state publication failure"),
+	}
+	workspace := t.TempDir()
+	proxy := modelConfigServer(t)
+	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), nil, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		store.failDesiredPublication.Store(false)
+		if r.closeDone == nil {
+			if err := r.Close(context.Background()); err != nil {
+				t.Errorf("close test Runner: %v", err)
+			}
+			return
+		}
+		<-r.closeDone
+		if r.closeErr != nil {
+			if err := r.finishClose(); err != nil {
+				t.Errorf("finish test Runner after injected failure: %v", err)
+			}
+		}
+	})
+	if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Startup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	s := r.sessions.Get(request.SessionId)
+	store.failDesiredPublication.Store(true)
+	if err := r.Close(context.Background()); !errors.Is(err, store.desiredPublicationErr) {
+		t.Fatalf("Close with failed desired-state publication = %v, want injected failure", err)
+	}
+	if !r.isClosing() {
+		t.Fatal("failed desired-state publication cleared the local close latch")
+	}
+
+	cursor := s.EventJournal().LastCursor()
+	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{
+		SessionId: s.ID(), CommandId: "after-failed-close-publication", Text: "late input",
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("command after failed Close publication = %v, want Unavailable", err)
+	}
+	if after := s.EventJournal().LastCursor(); after != cursor {
+		t.Fatalf("command after failed Close publication changed journal cursor: %d -> %d", cursor, after)
+	}
+	if admissions, err := r.lifecycle.admissionCount(context.Background()); err != nil || admissions != 0 {
+		t.Fatalf("admissions after failed Close publication = %d, err %v; want zero", admissions, err)
 	}
 }
 
