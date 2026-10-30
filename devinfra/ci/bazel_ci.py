@@ -198,6 +198,9 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     affected_query = temp_dir / "affected-query.txt"
     affected = temp_dir / "affected.txt"
 
+    # Cross-run base-hash caching was evaluated and deferred; see
+    # debug/bazel_diff_base_hash_cache.md for measurements and revisit conditions.
+    # Base/head queries share warm Bazel state: time the whole driver, not just base.
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", base])
     _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(base_hashes)])
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", head_sha])
