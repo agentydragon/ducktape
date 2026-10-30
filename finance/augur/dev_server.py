@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
     app = build_dev_app(augur_config, api_only=args.api_only, price_clients=default_price_clients())
-    return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port, fd=args.fd)
+    return run_app(app=app, augur_config=augur_config, listen_address=args.listen_address)
 
 
 if __name__ == "__main__":

@@ -24,8 +24,8 @@ def run_server(
         subprocess.Popen(
             [
                 str(binary),
-                "--fd",
-                str(listener.socket.fileno()),
+                "--listen-address",
+                f"fd:{listener.socket.fileno()}",
                 "--config",
                 str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
                 *args,

@@ -129,6 +129,8 @@ than duplicating this convention.
 
 `//finance/augur/api:server` is API-only: reads a `Config` from `--config`,
 `$AUGUR_CONFIG_PATH` or `/etc/augur/config.yaml`; serves `/api/*` and `/healthz`.
+The API server and `//finance/augur:dev` accept `--listen-address host:port` (default
+`127.0.0.1:8767`) or `--listen-address fd:N` for an inherited listening socket.
 `/api/deployment` reports source commits from `AUGUR_{API,FRONTEND}_IMAGE_TAG` (or
 `AUGUR_{API,FRONTEND}_SOURCE_COMMIT`); pass them as env values (e.g. Flux ImagePolicy `:tag`
 markers), never stamped into the image, which would defeat digest dedup. Deployments serve

@@ -10,6 +10,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import uvicorn
 import yaml
@@ -397,11 +398,7 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: PriceCl
 
 
 def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> None:
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
-    parser.add_argument(
-        "--fd", type=int, help="Serve on this inherited listening socket instead of binding --host/--port."
-    )
+    parser.add_argument("--listen-address", default="127.0.0.1:8767", help="TCP host:port address or inherited fd:N.")
     parser.add_argument("--api-only", action="store_true", help=api_only_help)
 
 
@@ -420,13 +417,44 @@ def build_configured_server_arg_parser(
 
 def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> int:
     app = create_app_from_augur_config(augur_config, price_clients=default_price_clients())
-    return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port, fd=args.fd)
+    return run_app(app=app, augur_config=augur_config, listen_address=args.listen_address)
 
 
-def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int | None = None) -> int:
-    """Serve `app` on `host`:`port`, or on the inherited listening socket `fd` when supplied."""
-    config = uvicorn.Config(app, host=host, port=port)
-    with config.bind_socket() if fd is None else socket.socket(fileno=fd) as sock:
+def _open_server_socket(*, app: FastAPI, listen_address: str) -> tuple[uvicorn.Config, socket.socket]:
+    if listen_address.startswith("fd:"):
+        fd_text = listen_address.removeprefix("fd:")
+        if not fd_text.isascii() or not fd_text.isdigit() or int(fd_text) < 3:
+            raise ValueError(f"invalid inherited listener address {listen_address!r}")
+        sock = socket.socket(fileno=int(fd_text))
+        try:
+            socket_type = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE)
+            listening = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN)
+        except OSError:
+            sock.close()
+            raise
+        if sock.family not in (socket.AF_INET, socket.AF_INET6) or socket_type != socket.SOCK_STREAM:
+            sock.close()
+            raise ValueError(f"inherited descriptor {listen_address!r} is not a TCP socket")
+        if listening != 1:
+            sock.close()
+            raise ValueError(f"inherited descriptor {listen_address!r} is not listening")
+        return uvicorn.Config(app), sock
+
+    try:
+        address = urlsplit(f"tcp://{listen_address}")
+        port = address.port
+    except ValueError as exc:
+        raise ValueError(f"invalid TCP listener address {listen_address!r}") from exc
+    if port is None or address.path or address.query or address.fragment or address.username is not None:
+        raise ValueError(f"invalid TCP listener address {listen_address!r}")
+    config = uvicorn.Config(app, host=address.hostname or "", port=port)
+    return config, config.bind_socket()
+
+
+def run_app(*, app: FastAPI, augur_config: Config, listen_address: str) -> int:
+    """Serve `app` on a TCP host:port address or inherited listening descriptor (fd:N)."""
+    config, sock = _open_server_socket(app=app, listen_address=listen_address)
+    with sock:
         bound_host, bound_port = sock.getsockname()[:2]
         print(f"serving Augur API on http://{bound_host}:{bound_port}")
         print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")

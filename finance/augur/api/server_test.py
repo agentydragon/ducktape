@@ -11,8 +11,10 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from finance.augur.api.server import _open_server_socket
 from finance.augur.testing.server import run_server
 from util.bazel.runfiles import get_required_path
 
@@ -36,6 +38,25 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         },
     ) as origin:
         yield origin
+
+
+def test_server_binds_tcp_host_port() -> None:
+    _, listener = _open_server_socket(app=FastAPI(), listen_address="127.0.0.1:0")
+    with listener:
+        host, port = listener.getsockname()[:2]
+        assert host == "127.0.0.1"
+        assert port > 0
+
+
+@pytest.mark.parametrize("listen_address", ["fd:not-a-number", "fd:2"])
+def test_server_rejects_invalid_inherited_listener_address(listen_address: str) -> None:
+    with pytest.raises(ValueError, match="invalid inherited listener address"):
+        _open_server_socket(app=FastAPI(), listen_address=listen_address)
+
+
+def test_server_rejects_malformed_tcp_listener_address() -> None:
+    with pytest.raises(ValueError, match="invalid TCP listener address"):
+        _open_server_socket(app=FastAPI(), listen_address="[::1")
 
 
 def _post_json(origin: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
