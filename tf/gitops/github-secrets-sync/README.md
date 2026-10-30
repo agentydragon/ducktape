@@ -75,3 +75,9 @@ Workspace; the sync Workspace has read access to both Secrets.
 The reader token can pull from `main` and `gaffer` but cannot push. Workflows
 that only substitute from Attic use `ATTIC_READ_TOKEN`; upload jobs use
 `ATTIC_TOKEN` only on runs that push to Attic.
+
+The `DUCKTAPE_AUTOMATION_PRIVATE_KEY` Actions secret comes from the existing
+`flux-system/ducktape-automation-github-app` Secret's `githubAppPrivateKey`.
+Flux decrypts that SOPS-managed Secret; OpenTofu owns the Actions copy.
+Provision and verify it before switching `mint-automation-token` away from CI
+SOPS decryption. Retain the CI recipient until all remaining consumers migrate.

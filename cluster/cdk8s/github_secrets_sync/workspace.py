@@ -26,6 +26,7 @@ def chart(app: App) -> Chart:
             # keep-sorted start
             "buildbuddy-api-key",
             "ci-age-key",
+            "ducktape-automation-github-app",
             "github-secrets-sync-pat",
             "pr-visuals-s3-credentials",
             # keep-sorted end

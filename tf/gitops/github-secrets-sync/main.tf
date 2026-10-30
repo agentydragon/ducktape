@@ -26,6 +26,14 @@ data "kubernetes_secret" "github_secrets_sync_pat" {
   }
 }
 
+# Reuse Flux's SOPS-managed App identity; do not maintain another key copy.
+data "kubernetes_secret" "automation_app" {
+  metadata {
+    name      = "ducktape-automation-github-app"
+    namespace = "flux-system"
+  }
+}
+
 data "kubernetes_secret" "ci_age_key" {
   metadata {
     name      = "ci-age-key"
@@ -73,6 +81,12 @@ data "github_user" "agentydragon" {
 }
 
 # --- GitHub Actions Secrets ---
+
+resource "github_actions_secret" "automation_app_private_key" {
+  repository      = "ducktape"
+  secret_name     = "DUCKTAPE_AUTOMATION_PRIVATE_KEY"
+  plaintext_value = data.kubernetes_secret.automation_app.data["githubAppPrivateKey"]
+}
 
 resource "github_actions_secret" "sops_age_key" {
   repository      = "ducktape"
