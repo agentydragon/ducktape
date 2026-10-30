@@ -22,6 +22,15 @@ single-use per admitted request (`DisableKeepAlives`, which covers HTTP/2 too), 
 coalesced connection can never carry a request to an address other than the one the admission
 pinned.
 
+## Sidecar relay: a per-connection request loop, not `httputil.ReverseProxy`
+
+The sidecar parses each request with `http.ReadRequest` and writes it with `Request.WriteProxy` over
+one central proxy connection per workload connection. `http.Server` with `ReverseProxy` would pool
+upstream connections, breaking the per-client-connection `ConnectionID` the central proxy records;
+rewrite responses (`Date`, sniffed `Content-Type`, re-chunking, hop-by-hop stripping); and answer
+malformed requests without the `x-agentplane-egress-sidecar` refusal header the `agentplane` CLI
+classifies errors by. CONNECT needs a hijacked tunnel either way.
+
 ## Sidecar settings: strict `yaml.v3`, not Viper
 
 The proxy and the other Go services read their settings through Viper. The sidecar does not, because
