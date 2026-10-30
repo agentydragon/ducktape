@@ -2,8 +2,8 @@
 
 **Status: verified 2026-10-30.** Crossplane `v2.4.2` watched a namespaced
 Secret required by a cluster-scoped `WatchProbe`, reran its Composition within
-one second, and propagated the value through an existing provider-opentofu
-Workspace. The Workspace spec and identity remained stable through updates,
+one second, and propagated the value through a new output-only Workspace
+managed by the existing provider-opentofu. The Workspace spec and identity remained stable through updates,
 Secret recreation, and an explicitly approved Crossplane core restart.
 
 ## Live results
@@ -59,8 +59,7 @@ watch-spike.example.org/input-resource-version: {{ $secret.metadata.resourceVers
 
 The composed Workspace used `source: Inline`, external name
 `native-secret-watch-spike`, and the `native-secret-watch-spike` ProviderConfig.
-Its static module (`observer.tf` in the transient fixture):
-it read the Secret directly with the Kubernetes provider and exposed
+Its static module (`observer.tf` in the transient fixture) read the Secret directly with the Kubernetes provider and exposed
 `nonsensitive(data.kubernetes_secret.input.data["marker"])` as
 `observed_marker`. It used `deletionPolicy: Delete`, management policies
 `Observe`, `Create`, `Update`, and `Delete`, `initArgs: [-reconfigure]`, and
@@ -68,9 +67,10 @@ it read the Secret directly with the Kubernetes provider and exposed
 
 The ProviderConfig used the PostgreSQL backend at
 `tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate` with the dedicated
-`native_secret_watch_spike` schema. Setting the Workspace external name to
-`native-secret-watch-spike` was required: the default name selected old local
-state and failed. The state DB password stayed in a Kubernetes Secret; no
+`native_secret_watch_spike` schema. The initial local/default-workspace setup
+failed with `No state file was found`. The successful setup used PostgreSQL and
+the explicitly named workspace; the individual contribution of those changes
+was not isolated. The state DB password stayed in a Kubernetes Secret; no
 credential value was placed in the spike manifests or this report. The
 `marker` value was disposable non-sensitive test data.
 
@@ -117,7 +117,9 @@ starts dependency watches for their GVKs. The
 routes a namespaced name match back to the dependent XR. The
 [function runner](https://github.com/crossplane-contrib/function-go-templating/blob/v0.13.2/fn.go#L91-L95)
 applies the explicit one-hour TTL. The watch is kind-wide; this proof does not
-show namespace/name-scoped informer RBAC.
+show namespace/name-scoped informer RBAC. No Kubernetes provider was installed;
+the existing Crossplane core identity already had cluster-wide Secret
+list/watch permission.
 
 ## Minimal trigger and inspection
 
