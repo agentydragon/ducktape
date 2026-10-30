@@ -959,6 +959,7 @@ rust_library(
     name = "program_analysis",
     srcs = [
         "loader_phase.rs",
+        "loader_reach.rs",
         "program_analysis.rs",
     ],
     crate_root = "program_analysis.rs",

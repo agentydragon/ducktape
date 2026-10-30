@@ -9,9 +9,10 @@ use analysis::loader_closure::{
     LoaderRequest, LoaderRequestTarget,
 };
 use anyhow::Result;
-use artifact::reports::{InteropUseKind, StaticModuleRequestMode};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
+use artifact::reports::{InteropUseKind, LoaderBinding, SitePhase, StaticModuleRequestMode};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, ResolvedImportReference};
 use serde::Serialize;
+use swc_common::Span;
 
 use super::{ExportReentryTarget, report_target};
 
@@ -36,6 +37,9 @@ pub enum ExportReentryLoaderDerivation {
         /// Mandatorily suspended sites excluded from the closure.
         #[serde(skip_serializing_if = "is_zero")]
         suspended_sites: usize,
+        /// Loader sites no reachable code can enter, excluded from the closure.
+        #[serde(skip_serializing_if = "is_zero")]
+        unreachable_sites: usize,
         /// The first witness and occurrence count of each failure kind.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         failures: Vec<ExportReentryLoaderFailure>,
@@ -52,19 +56,20 @@ impl ExportReentryLoaderDerivation {
 
     pub(super) fn from_closure(
         closure: &LoaderClosure<LoaderSiteWitness>,
-        requests: &[ExportReentryLoaderRequest],
+        surfaces: &LoaderSurfaces,
         artifact: &ChunkBundle,
     ) -> Self {
         Self::LoaderClosure {
             closed: closure.is_closed(),
             host_keys: closure.dependencies.host_behavior.clone(),
-            requests: requests.to_vec(),
+            requests: surfaces.requests.clone(),
             loaded_chunks: closure
                 .loaded_chunks
                 .iter()
                 .map(|chunk| artifact.chunk_table.name(*chunk).to_string())
                 .collect(),
             suspended_sites: closure.suspended_sites,
+            unreachable_sites: surfaces.unreachable_sites,
             failures: closure
                 .failures
                 .iter()
@@ -133,6 +138,24 @@ pub enum LoaderSite {
         #[serde(skip_serializing_if = "Option::is_none")]
         resolved_target: Option<ExportReentryTarget>,
     },
+    /// A use of a binding holding an exported loader alias.
+    LoaderBindingUse {
+        item: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        line: Option<usize>,
+        call: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        specifier: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resolved_target: Option<ExportReentryTarget>,
+    },
+    /// A request exposing a loader-exporting chunk's whole namespace.
+    NamespaceRequest {
+        item: usize,
+        specifier: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resolved_target: Option<ExportReentryTarget>,
+    },
     TopLevelAwait,
     VendorChunk,
 }
@@ -140,6 +163,8 @@ pub enum LoaderSite {
 pub(super) struct LoaderSurfaces {
     pub chunks: BTreeMap<ChunkId, ChunkLoaderSurface<LoaderSiteWitness>>,
     pub requests: Vec<ExportReentryLoaderRequest>,
+    /// Loader sites no reachable code can enter, excluded from the closure.
+    pub unreachable_sites: usize,
 }
 
 impl LoaderSurfaces {
@@ -179,6 +204,166 @@ fn is_loader_site(kind: InteropUseKind) -> bool {
     }
 }
 
+/// How a classified use may load a module.
+enum LoaderUse<'s> {
+    /// A direct call with one string literal, resolved against `resolve_from`
+    /// (the module whose `import.meta` supplied the loader).
+    Literal {
+        specifier: &'s str,
+        resolve_from: ChunkId,
+    },
+    Opaque,
+}
+
+/// Classifies loader uses against the whole artifact.
+struct Classifier<'a> {
+    artifact: &'a ChunkBundle,
+    indexes: &'a ArtifactIndexes,
+    host_behavior: &'a spec::HostBehavior,
+    /// Chunks exporting a loader alias: any request exposing their namespace
+    /// exposes the loader.
+    alias_chunks: BTreeSet<ChunkId>,
+    request_counts: BTreeMap<(String, String, LoaderRequestReportTarget), usize>,
+    unreachable_sites: usize,
+}
+
+impl Classifier<'_> {
+    fn resolve(&self, specifier: &str, from: ChunkId) -> Result<Option<ResolvedImportReference>> {
+        Ok(self.indexes.resolve_runtime_import_reference(
+            specifier,
+            from,
+            &self.artifact.chunk(from)?.analysis.entry_file,
+            &self.artifact.chunk_table,
+        ))
+    }
+
+    /// The analyzed chunk whose entry `reference` names.
+    fn entry_chunk(&self, reference: &ResolvedImportReference) -> Result<Option<ChunkId>> {
+        Ok((self.artifact.has_chunk(reference.target_chunk_id)
+            && self
+                .artifact
+                .chunk(reference.target_chunk_id)?
+                .analysis
+                .entry_file
+                == reference.target_file)
+            .then_some(reference.target_chunk_id))
+    }
+
+    fn report_target(&self, reference: &ResolvedImportReference) -> ExportReentryTarget {
+        report_target(
+            reference.target_chunk_id,
+            &reference.target_file,
+            self.artifact,
+        )
+    }
+
+    /// Classify one use that may call the loader. `witness` builds the site
+    /// witness given the resolved target of a literal request.
+    fn classify(
+        &mut self,
+        surface: &mut ChunkLoaderSurface<LoaderSiteWitness>,
+        source_chunk: &str,
+        phase: SitePhase,
+        loader_use: LoaderUse<'_>,
+        witness: impl FnOnce(Option<ExportReentryTarget>) -> LoaderSiteWitness,
+    ) -> Result<()> {
+        match phase {
+            SitePhase::Unreachable => {
+                self.unreachable_sites += 1;
+                return Ok(());
+            }
+            // A suspended site runs in a promise job; a synchronous load can
+            // start one only by draining microtasks.
+            SitePhase::MandatorilySuspended
+                if self.host_behavior.synchronous_load_drains_microtasks
+                    == Some(spec::SynchronousLoadDrainsMicrotasks::Never) =>
+            {
+                surface.suspended_sites.push(witness(None));
+                return Ok(());
+            }
+            SitePhase::MandatorilySuspended | SitePhase::Synchronous => {}
+        }
+        let LoaderUse::Literal {
+            specifier,
+            resolve_from,
+        } = loader_use
+        else {
+            surface
+                .site_failures
+                .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness(None)));
+            return Ok(());
+        };
+        let resolved = self.resolve(specifier, resolve_from)?;
+        let resolved_target = resolved
+            .as_ref()
+            .map(|reference| self.report_target(reference));
+        let witness = witness(resolved_target.clone());
+        if is_loader_factory(specifier) {
+            surface
+                .site_failures
+                .push((LoaderClosureFailureKind::LoaderFactoryRequest, witness));
+            return Ok(());
+        }
+        let target = match &resolved {
+            Some(reference) => match self.entry_chunk(reference)? {
+                Some(chunk) => {
+                    if self.alias_chunks.contains(&chunk) {
+                        // The returned namespace holds the exported loader.
+                        surface
+                            .site_failures
+                            .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness.clone()));
+                    }
+                    (
+                        LoaderRequestTarget::Chunk(chunk),
+                        LoaderRequestReportTarget::Chunk(resolved_target.expect("resolved target")),
+                    )
+                }
+                None => {
+                    surface
+                        .site_failures
+                        .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
+                    return Ok(());
+                }
+            },
+            None => match spec::NodeBuiltinModule::from_static_specifier(specifier) {
+                Some(builtin)
+                    if self
+                        .host_behavior
+                        .reentry_free_builtin_modules
+                        .contains(&builtin) =>
+                {
+                    (
+                        LoaderRequestTarget::ReentryFreeBuiltin(builtin),
+                        LoaderRequestReportTarget::Builtin(builtin),
+                    )
+                }
+                Some(_) => {
+                    surface.site_failures.push((
+                        LoaderClosureFailureKind::NonReentryFreeBuiltinRequest,
+                        witness,
+                    ));
+                    return Ok(());
+                }
+                None => {
+                    surface
+                        .site_failures
+                        .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
+                    return Ok(());
+                }
+            },
+        };
+        *self
+            .request_counts
+            .entry((source_chunk.to_string(), specifier.to_string(), target.1))
+            .or_default() += 1;
+        surface.requests.push(LoaderRequest {
+            target: target.0,
+            witness,
+        });
+        Ok(())
+    }
+}
+
 /// Classify every analyzed chunk's loader sites and the facts that matter
 /// when a loader request evaluates it.
 pub(super) fn loader_surfaces(
@@ -187,8 +372,32 @@ pub(super) fn loader_surfaces(
     host_behavior: &spec::HostBehavior,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<LoaderSurfaces> {
+    // Exported loader aliases by defining chunk and export name.
+    let mut aliases = BTreeSet::<(ChunkId, String)>::new();
+    let mut alias_definitions = BTreeSet::<(ChunkId, Span)>::new();
+    for chunk in &artifact.chunks {
+        for binding in &chunk.analysis.runtime_facts.loader_bindings {
+            if let LoaderBinding::LoaderAlias {
+                definition,
+                exported_as,
+            } = &binding.binding
+            {
+                alias_definitions.insert((chunk.chunk_id, *definition));
+                for name in exported_as {
+                    aliases.insert((chunk.chunk_id, name.clone()));
+                }
+            }
+        }
+    }
+    let mut classifier = Classifier {
+        artifact,
+        indexes,
+        host_behavior,
+        alias_chunks: aliases.iter().map(|(chunk, _)| *chunk).collect(),
+        request_counts: BTreeMap::new(),
+        unreachable_sites: 0,
+    };
     let mut chunks = BTreeMap::new();
-    let mut request_counts = BTreeMap::<(String, String, LoaderRequestReportTarget), usize>::new();
     for chunk in &artifact.chunks {
         let source = chunk.chunk_id;
         let source_chunk = artifact.chunk_table.name(source).to_string();
@@ -217,18 +426,13 @@ pub(super) fn loader_surfaces(
             ));
         }
         for request in &runtime.static_requests {
-            let resolved = indexes.resolve_runtime_import_reference(
-                &request.specifier,
-                source,
-                &chunk.analysis.entry_file,
-                &artifact.chunk_table,
-            );
+            let resolved = classifier.resolve(&request.specifier, source)?;
             let static_witness = || {
                 witness(LoaderSite::StaticRequest {
                     specifier: request.specifier.clone(),
-                    resolved_target: resolved.as_ref().map(|reference| {
-                        report_target(reference.target_chunk_id, &reference.target_file, artifact)
-                    }),
+                    resolved_target: resolved
+                        .as_ref()
+                        .map(|reference| classifier.report_target(reference)),
                 })
             };
             if is_loader_factory(&request.specifier) {
@@ -240,11 +444,7 @@ pub(super) fn loader_surfaces(
             let closed_request = match &resolved {
                 Some(reference) if artifact.has_chunk(reference.target_chunk_id) => {
                     surface.static_targets.insert(reference.target_chunk_id);
-                    artifact
-                        .chunk(reference.target_chunk_id)?
-                        .analysis
-                        .entry_file
-                        == reference.target_file
+                    classifier.entry_chunk(reference)?.is_some()
                 }
                 Some(_) => false,
                 None => spec::NodeBuiltinModule::from_static_specifier(&request.specifier)
@@ -261,104 +461,151 @@ pub(super) fn loader_surfaces(
                 ));
             }
         }
-        for site in &runtime.interop_uses {
-            let resolved = site.specifier.as_deref().and_then(|specifier| {
-                indexes.resolve_runtime_import_reference(
-                    specifier,
-                    source,
-                    &chunk.analysis.entry_file,
-                    &artifact.chunk_table,
-                )
-            });
-            let resolved_target = resolved.as_ref().map(|reference| {
-                report_target(reference.target_chunk_id, &reference.target_file, artifact)
-            });
-            let site_witness = witness(LoaderSite::Interop {
-                kind: site.kind,
-                item: site.item_index,
-                line: site.line,
-                specifier: site.specifier.clone(),
-                resolved_target: resolved_target.clone(),
-            });
-            if !is_loader_site(site.kind) {
-                continue;
-            }
-            // A suspended site runs in a promise job; a synchronous load can
-            // start one only by draining microtasks.
-            if site.mandatory_suspension
-                && host_behavior.synchronous_load_drains_microtasks
-                    == Some(spec::SynchronousLoadDrainsMicrotasks::Never)
+        for request in &runtime.namespace_requests {
+            let resolved = classifier.resolve(&request.specifier, source)?;
+            if let Some(reference) = &resolved
+                && classifier.alias_chunks.contains(&reference.target_chunk_id)
             {
-                surface.suspended_sites.push(site_witness);
-                continue;
+                surface.site_failures.push((
+                    LoaderClosureFailureKind::OpaqueLoaderSite,
+                    witness(LoaderSite::NamespaceRequest {
+                        item: request.item_index,
+                        specifier: request.specifier.clone(),
+                        resolved_target: Some(classifier.report_target(reference)),
+                    }),
+                ));
             }
-            let failure = match site.kind {
-                InteropUseKind::ImportMetaRequireLiteralCall => {
-                    let specifier = site
+        }
+        for site in &runtime.interop_uses {
+            let interop_witness = |resolved_target| {
+                witness(LoaderSite::Interop {
+                    kind: site.kind,
+                    item: site.item_index,
+                    line: site.line,
+                    specifier: site.specifier.clone(),
+                    resolved_target,
+                })
+            };
+            let loader_use = match site.kind {
+                InteropUseKind::ImportMetaRequireLiteralCall => LoaderUse::Literal {
+                    specifier: site
                         .specifier
                         .as_deref()
-                        .expect("literal loader calls carry their specifier");
-                    let builtin = spec::NodeBuiltinModule::from_static_specifier(specifier);
-                    let target = match (&resolved, builtin) {
-                        _ if is_loader_factory(specifier) => {
-                            Err(LoaderClosureFailureKind::LoaderFactoryRequest)
-                        }
-                        (Some(reference), _)
-                            if artifact.has_chunk(reference.target_chunk_id)
-                                && artifact
-                                    .chunk(reference.target_chunk_id)?
-                                    .analysis
-                                    .entry_file
-                                    == reference.target_file =>
-                        {
-                            Ok((
-                                LoaderRequestTarget::Chunk(reference.target_chunk_id),
-                                LoaderRequestReportTarget::Chunk(
-                                    resolved_target.clone().expect("resolved target"),
-                                ),
-                            ))
-                        }
-                        (Some(_), _) => Err(LoaderClosureFailureKind::UnresolvableLoaderRequest),
-                        (None, Some(builtin))
-                            if host_behavior
-                                .reentry_free_builtin_modules
-                                .contains(&builtin) =>
-                        {
-                            Ok((
-                                LoaderRequestTarget::ReentryFreeBuiltin(builtin),
-                                LoaderRequestReportTarget::Builtin(builtin),
-                            ))
-                        }
-                        (None, Some(_)) => {
-                            Err(LoaderClosureFailureKind::NonReentryFreeBuiltinRequest)
-                        }
-                        (None, None) => Err(LoaderClosureFailureKind::UnresolvableLoaderRequest),
+                        .expect("literal loader calls carry their specifier"),
+                    resolve_from: source,
+                },
+                // Classified through the binding it initializes.
+                InteropUseKind::ImportMetaRequireReference
+                    if alias_definitions.contains(&(source, site.span)) =>
+                {
+                    continue;
+                }
+                // A dynamic import is no loader site, but the namespace it
+                // obtains exposes an exported loader.
+                InteropUseKind::DynamicImport => {
+                    let target = match site.specifier.as_deref() {
+                        Some(specifier) => classifier.resolve(specifier, source)?,
+                        None => None,
                     };
                     match target {
-                        Ok((target, report)) => {
-                            *request_counts
-                                .entry((source_chunk.clone(), specifier.to_string(), report))
-                                .or_default() += 1;
-                            surface.requests.push(LoaderRequest {
-                                target,
-                                witness: site_witness,
-                            });
-                            continue;
+                        Some(reference)
+                            if classifier.alias_chunks.contains(&reference.target_chunk_id) =>
+                        {
+                            let resolved_target = Some(classifier.report_target(&reference));
+                            let phase = match site.phase {
+                                SitePhase::Unreachable => SitePhase::Unreachable,
+                                // The namespace outlives the job that loads it.
+                                SitePhase::MandatorilySuspended | SitePhase::Synchronous => {
+                                    SitePhase::Synchronous
+                                }
+                            };
+                            classifier.classify(
+                                &mut surface,
+                                &source_chunk,
+                                phase,
+                                LoaderUse::Opaque,
+                                |_| interop_witness(resolved_target),
+                            )?;
                         }
-                        Err(kind) => Some(kind),
+                        _ => {}
                     }
+                    continue;
                 }
-                _ => Some(LoaderClosureFailureKind::OpaqueLoaderSite),
+                kind if !is_loader_site(kind) => continue,
+                _ => LoaderUse::Opaque,
             };
-            if let Some(kind) = failure {
-                surface.site_failures.push((kind, site_witness));
+            classifier.classify(
+                &mut surface,
+                &source_chunk,
+                site.phase,
+                loader_use,
+                interop_witness,
+            )?;
+        }
+        for binding in &runtime.loader_bindings {
+            let resolve_from = match &binding.binding {
+                LoaderBinding::LoaderAlias { .. } => source,
+                LoaderBinding::Import {
+                    source: specifier,
+                    imported,
+                } => {
+                    let Some(reference) = classifier.resolve(specifier, source)? else {
+                        continue;
+                    };
+                    if !classifier.alias_chunks.contains(&reference.target_chunk_id) {
+                        continue;
+                    }
+                    let defining = reference.target_chunk_id;
+                    if classifier.entry_chunk(&reference)?.is_none() {
+                        // Not the entry that exports the alias: unclassified.
+                        surface.site_failures.push((
+                            LoaderClosureFailureKind::OpaqueLoaderSite,
+                            witness(LoaderSite::NamespaceRequest {
+                                item: binding.uses.first().map_or(0, |u| u.item_index),
+                                specifier: specifier.clone(),
+                                resolved_target: Some(classifier.report_target(&reference)),
+                            }),
+                        ));
+                        continue;
+                    }
+                    if !aliases.contains(&(defining, imported.clone())) {
+                        continue;
+                    }
+                    defining
+                }
+            };
+            for loader_use in &binding.uses {
+                let classified = match &loader_use.literal {
+                    Some(specifier) => LoaderUse::Literal {
+                        specifier,
+                        resolve_from,
+                    },
+                    None => LoaderUse::Opaque,
+                };
+                classifier.classify(
+                    &mut surface,
+                    &source_chunk,
+                    loader_use.phase,
+                    classified,
+                    |resolved_target| {
+                        witness(LoaderSite::LoaderBindingUse {
+                            item: loader_use.item_index,
+                            line: loader_use.line,
+                            call: loader_use.call,
+                            specifier: loader_use.literal.clone(),
+                            resolved_target,
+                        })
+                    },
+                )?;
             }
         }
         chunks.insert(source, surface);
     }
     Ok(LoaderSurfaces {
         chunks,
-        requests: request_counts
+        unreachable_sites: classifier.unreachable_sites,
+        requests: classifier
+            .request_counts
             .into_iter()
             .map(
                 |((source_chunk, specifier, target), request_count)| ExportReentryLoaderRequest {

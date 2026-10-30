@@ -43,26 +43,18 @@ host_behavior:
   note: "Audited against Bun 1.3.10 standalone, revision …, sha256 …"
 ```
 
-Landed through step 3: the keys, their validation, the loader-closed
-derivation and mandatory suspension (SPEC.md § Loader-closed derivation).
-On the canonical Claude CLI input with hypothetical audited keys (including
-`synchronous_load_drains_microtasks: never`) all 76 graphs stay conservative
-and the ten conflicts are unchanged. The exported loader alias, two `module`
-imports and `ws` in loaded closures keep every target open. 24 of the 476
-literal `import.meta.require` calls are mandatorily suspended; the rest target
-application chunks whose closures reach back into 44 of the 76 targets. `ws`
-remains an unresolved static request in 7 of the conflict chunks. Step 4
-narrows the remaining sites to those that can run while the target evaluates.
+Landed through step 4: the keys, their validation, the loader-closed
+derivation, mandatory suspension, callable reachability and loader-alias
+classification (SPEC.md § Loader-closed derivation). On the canonical Claude
+CLI input with hypothetical audited keys all 76 graphs stay conservative and
+the ten conflicts are unchanged. Every target is held open by: five
+non-literal calls of the exported loader alias (native addon paths), 119
+literal alias calls of names outside the closed builtin list (`assert`,
+`querystring`, `bun:ffi`, `undici`, embedded asset files), three `module`
+requests, and `ws` in loaded closures. Literal requests into application
+chunks reach back into 44 of the 76 targets; no loader site is unreachable.
 
 ## Steps
-
-### 4. Callable reachability and the loader alias
-
-Prove at-initialization reachability of the callable containing a loader site,
-including aliases, returned functions, getters, constructors and host-invoked
-callbacks; syntactic nesting proves neither presence nor absence. An exported
-loader alias is an independent escape and is classified for every guarded
-chunk; proving only a target's small import closure is insufficient.
 
 ### 5. Adopt
 
