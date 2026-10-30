@@ -143,6 +143,9 @@ Neither protocol is stored inside the other's item envelope. Protocol adapters o
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
+The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
+stream event and its derived History observations commit atomically before parsing continues;
+evidence failure stops the stream without acknowledging the pending effect.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.

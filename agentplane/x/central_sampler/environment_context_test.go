@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
 // The expected strings are Codex rust-v0.162.1's rendered `<environment_context>` shape, which the
@@ -59,7 +60,7 @@ func TestEnvironmentContextUpdate(t *testing.T) {
 	}
 }
 
-func messageText(t *testing.T, item ResponsesItem) string {
+func messageText(t *testing.T, item responses.Item) string {
 	t.Helper()
 	var text string
 	if err := json.Unmarshal(item.Content, &text); err == nil {
@@ -85,7 +86,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	submit := func(id, text string) []ResponsesItem {
+	submit := func(id, text string) []responses.Item {
 		t.Helper()
 		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 			CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}},
@@ -164,9 +165,9 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 		t.Fatal(err)
 	}
 	originalItems := responsesItems(t, conversation.Context())
-	replacement := &ResponsesContext{Items: []ResponsesItem{
+	replacement := &responses.Context{Items: []responses.Item{
 		originalItems[len(originalItems)-1],
-		{Type: ResponsesItemCompaction, EncryptedContent: "fixture-opaque"},
+		{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque"},
 	}}
 	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)

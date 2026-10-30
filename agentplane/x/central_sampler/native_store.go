@@ -3,6 +3,8 @@ package centralsampler
 import (
 	"context"
 	"database/sql"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *ExecutionState) (*Conversation, error) {
@@ -14,7 +16,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 			return err
 		}
 		if conversation.Pending != nil {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
@@ -23,7 +25,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 		if err := s.recordEnvironmentContext(conversation, session); err != nil {
 			return err
 		}
-		if err := conversation.apply(func(native NativeContext) error { return native.AppendExecutionState(state) }); err != nil {
+		if err := conversation.apply(func(native protocol.Context) error { return native.AppendExecutionState(state.protocolState()) }); err != nil {
 			return err
 		}
 		return updateConversation(ctx, tx, conversation)

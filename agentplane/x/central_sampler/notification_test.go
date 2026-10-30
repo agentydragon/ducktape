@@ -8,6 +8,8 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
 func startTurnForStore(t *testing.T, store *Store, session *Session, owner Owner, commandID string) {
@@ -31,10 +33,10 @@ func queuedNotifications(t *testing.T, store *Store, conversationID string) int 
 	return count
 }
 
-func outputTexts(items []ResponsesItem) []string {
+func outputTexts(items []responses.Item) []string {
 	var texts []string
 	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
+		if item.Type == responses.ItemCustomToolOutput {
 			texts = append(texts, item.Output[0].Text)
 		}
 	}
@@ -48,7 +50,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.QueueNotification(t.Context(), owner, "exec-call", "cell", "idle"); !errors.Is(err, ErrPrecondition) {
+	if err := store.QueueNotification(t.Context(), owner, "exec-call", "cell", "idle"); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
 	startTurnForStore(t, store, session, owner, "turn")
@@ -56,7 +58,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "exec-call", Name: "exec", Input: "notify('progress')"}
+	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "exec-call", Name: "exec", Input: "notify('progress')"}
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.QueueNotification(t.Context(), owner, "exec-call", "cell", "progress"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DrainNotifications(t.Context(), owner); !errors.Is(err, ErrPrecondition) {
+	if _, err := store.DrainNotifications(t.Context(), owner); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("drain before the step's own output was recorded: %v", err)
 	}
 	conversation, err := store.Read(t.Context(), owner)
@@ -78,7 +80,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.FinishTool(t.Context(), owner, cell, map[string]any{}, invocation, []ContentPart{{Type: "input_text", Text: "final"}}); err != nil {
+	if err := store.FinishTool(t.Context(), owner, cell, map[string]any{}, invocation, []protocol.ContentPart{{Type: "input_text", Text: "final"}}); err != nil {
 		t.Fatal(err)
 	}
 	if drained, err := store.DrainNotifications(t.Context(), owner); err != nil || !drained {
@@ -121,7 +123,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 			}
 			if ending == "failed" {
 				commandID := "turn"
-				err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &KnownFailureError{Evidence: map[string]any{"reason": "fixture failure"}})
+				err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "fixture failure"}})
 			} else {
 				err = store.FinishCommand(t.Context(), owner, session.ID, "turn", ending)
 			}

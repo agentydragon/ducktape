@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/lib/pq"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -249,7 +249,7 @@ func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversati
 	err := tx.QueryRowContext(ctx, `SELECT c.id::text FROM sampler_conversation c
 		JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=$1 FOR UPDATE OF c`, sessionID).Scan(&conversationID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, ErrMissing
+		return nil, nil, protocol.ErrMissing
 	}
 	if err != nil {
 		return nil, nil, err
@@ -265,7 +265,7 @@ func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversati
 		source_id, cursor, active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason
 		FROM sampler_session WHERE id=$1 FOR UPDATE`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, ErrMissing
+		return nil, nil, protocol.ErrMissing
 	}
 	return conversation, session, err
 }
@@ -319,9 +319,9 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	return entry, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api APIStyle) (*Session, error) {
+func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
 	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	if _, err := newNativeContext(api); err != nil {
 		return nil, err
@@ -349,12 +349,12 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if !proto.Equal(previous, request) {
 				return ErrConflict
 			}
-			var existingAPI APIStyle
+			var existingAPI protocol.APIStyle
 			if err := tx.QueryRowContext(ctx, `SELECT api FROM sampler_conversation WHERE id=$1`, existing.ConversationID).Scan(&existingAPI); err != nil {
 				return err
 			}
 			if existingAPI != api {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 			opened = existing
 			return nil
@@ -406,7 +406,7 @@ func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, 
 	session, err := scanSession(s.db.QueryRowContext(ctx, `SELECT id, conversation_id, account_uid, configuration, model, effort, source_id, cursor,
 		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrMissing
+		return nil, protocol.ErrMissing
 	}
 	if err != nil {
 		return nil, err
@@ -434,7 +434,7 @@ func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) 
 func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {
 	note := strings.TrimSpace(operatorNote)
 	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 || len(replacementIncarnationUID) > 128 || strings.TrimSpace(replacementIncarnationUID) != replacementIncarnationUID {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	var recovered *Session
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
@@ -446,7 +446,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			return ErrForbidden
 		}
 		if session.Cursor != expectedCursor || !session.Blocked {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		var activeLease bool
 		if err := tx.QueryRowContext(ctx, `SELECT owner IS NOT NULL AND lease_until IS NOT NULL AND lease_until>clock_timestamp()
@@ -454,16 +454,16 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			return err
 		}
 		if activeLease {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if session.SetupState != runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED && session.SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if session.ActiveCommand != nil || session.ActiveTurn != nil {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if conversation.Pending != nil && conversation.Pending.Kind != PendingIntentCell {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 
 		type unresolvedIntent struct {
@@ -492,12 +492,12 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			kind := stringValue(request["kind"])
 			if kind != string(PendingIntentCell) && kind != "tool" && kind != "executor" {
 				rows.Close()
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 			if kind == string(PendingIntentCell) {
 				if conversation.Pending == nil || intentID != conversation.Pending.ID || pendingIntentFound {
 					rows.Close()
-					return ErrPrecondition
+					return protocol.ErrPrecondition
 				}
 				pendingIntentFound = true
 			}
@@ -522,12 +522,12 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			call, isCall := intent.Request["call"].(map[string]any)
 			if intent.ConversationID != conversation.ID || stringValue(intent.Request["kind"]) != "cell" ||
 				stringValue(intent.Result["status"]) != "rejected" || !known || dispatched || !isCall {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 			rejectedCallID = stringValue(call["call_id"])
 			rejectionReason = stringValue(intent.Result["reason"])
 			if rejectedCallID == "" || rejectionReason == "" {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 		}
 
@@ -540,7 +540,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			return err
 		}
 		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
@@ -559,7 +559,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return err
 			}
 			if updated != 1 {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 			if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
 				session, intent.id, intent.kind, "abandoned", abandonedIntent); err != nil {
@@ -577,7 +577,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			if call.CallID == rejectedCallID {
 				message = "Tool call rejected before dispatch: " + rejectionReason + ". No runtime or executor operation was dispatched for this call."
 			}
-			output := []ContentPart{{Type: "input_text", Text: message}}
+			output := []protocol.ContentPart{{Type: "input_text", Text: message}}
 			if err := conversation.appendToolResult(call, output); err != nil {
 				return err
 			}
@@ -586,13 +586,13 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return err
 			}
 			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
-				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: DisplayText(string(encoded)), Succeeded: false}},
+				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
 			}}}); err != nil {
 				return err
 			}
 		}
-		if err := conversation.apply(func(state NativeContext) error {
-			return state.AppendNotice([]ContentPart{{Type: "input_text", Text: "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."}})
+		if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."}})
 		}); err != nil {
 			return err
 		}
@@ -684,7 +684,7 @@ func (s *Store) ListSessions(ctx context.Context, ownerUID string) ([]*Session, 
 
 func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	if session == nil {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	request := &samplerpb.OpenSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
@@ -727,7 +727,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 
 func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerUID == "" {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(command)
 	if err != nil {
@@ -760,7 +760,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
@@ -798,7 +798,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
 			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return ErrPrecondition
+				return protocol.ErrPrecondition
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {
@@ -826,7 +826,7 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 	var sequence uint64
 	if err := s.db.QueryRowContext(ctx, `SELECT admission,outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND id=$2`, id, commandID).Scan(&sequence, &outcome, &failure); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrMissing
+			return nil, protocol.ErrMissing
 		}
 		return nil, err
 	}
@@ -846,7 +846,7 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 
 func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
 	if limit <= 0 || limit > 4096 {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3`, id, after, limit)
 	if err != nil {
@@ -894,7 +894,7 @@ func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor 
 
 func (s *Store) PendingSessions(ctx context.Context, target string, exclude []string, after string, limit int) ([]*Session, error) {
 	if limit <= 0 || limit > 4096 {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	if exclude == nil {
 		exclude = []string{}
@@ -921,7 +921,7 @@ func (s *Store) PendingSessions(ctx context.Context, target string, exclude []st
 
 func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int) ([]string, error) {
 	if limit <= 0 {
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 	if exclude == nil {
 		exclude = []string{}
@@ -951,13 +951,13 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 
 func (s *Store) Claim(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
 	if lease <= 0 {
-		return Owner{}, ErrInvalid
+		return Owner{}, protocol.ErrInvalid
 	}
 	var owner Owner
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := scanConversation(tx.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, conversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
@@ -988,7 +988,7 @@ func (s *Store) Claim(ctx context.Context, conversationID string, lease time.Dur
 
 func (s *Store) Renew(ctx context.Context, owner Owner, lease time.Duration) error {
 	if lease <= 0 {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
@@ -1028,16 +1028,16 @@ func (s *Store) Read(ctx context.Context, owner Owner) (*Conversation, error) {
 	return result, err
 }
 
-func (s *Store) Create(ctx context.Context, api APIStyle, prompt string, instructions *string) (string, error) {
+func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string, instructions *string) (string, error) {
 	if prompt == "" {
-		return "", ErrInvalid
+		return "", protocol.ErrInvalid
 	}
 	id := uuid.NewString()
 	archive, err := newNativeContext(api)
 	if err != nil {
 		return "", err
 	}
-	if err := archive.AppendUser([]ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+	if err := archive.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
 		return "", err
 	}
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
@@ -1053,7 +1053,7 @@ func (s *Store) Create(ctx context.Context, api APIStyle, prompt string, instruc
 func (s *Store) Status(ctx context.Context, conversationID string) (map[string]any, error) {
 	conversation, err := scanConversation(s.db.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1`, conversationID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrMissing
+		return nil, protocol.ErrMissing
 	}
 	if err != nil {
 		return nil, err
@@ -1068,25 +1068,17 @@ func (s *Store) Status(ctx context.Context, conversationID string) (map[string]a
 	}, nil
 }
 
-func (s *Store) ProviderMetadata(ctx context.Context, owner Owner) (SessionAttribution, error) {
+func (s *Store) ProviderMetadata(ctx context.Context, owner Owner) (protocol.SessionAttribution, error) {
 	var sessionID string
 	var activeTurn sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT id,active_turn FROM sampler_session WHERE conversation_id=$1`, owner.ConversationID).Scan(&sessionID, &activeTurn); err != nil {
-		return SessionAttribution{}, err
+		return protocol.SessionAttribution{}, err
 	}
 	turn := sessionID
 	if activeTurn.Valid {
 		turn = activeTurn.String
 	}
-	return SessionAttribution{SessionID: sessionID, ThreadID: sessionID, TurnID: turn}, nil
-}
-
-func (s *Store) ProviderHeaders(ctx context.Context, owner Owner) (map[string]string, error) {
-	metadata, err := s.ProviderMetadata(ctx, owner)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]string{"x-agentplane-session-id": metadata.SessionID}, nil
+	return protocol.SessionAttribution{SessionID: sessionID, ThreadID: sessionID, TurnID: turn}, nil
 }
 
 func (s *Store) pgError(err error) error {
@@ -1158,7 +1150,7 @@ func nullableJSON(value string) any {
 func (s *Store) Begin(ctx context.Context, owner Owner, request map[string]any) (string, error) {
 	kind := PendingIntentKind(stringValue(request["kind"]))
 	if !kind.valid() {
-		return "", ErrInvalid
+		return "", protocol.ErrInvalid
 	}
 	id := uuid.NewString()
 	requestWire, err := marshal(request)
@@ -1176,7 +1168,7 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request map[string]any) 
 			return err
 		}
 		if conversation.Pending != nil {
-			return &UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
+			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
@@ -1197,11 +1189,11 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request map[string]any) 
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result map[string]any, records []json.RawMessage, contextTokens *int) error {
 	return s.finish(ctx, owner, intentID, result, contextTokens, func(c *Conversation) error {
-		return c.apply(func(state NativeContext) error { return state.AppendRecords(records) })
+		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
 	})
 }
 
-func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call ToolInvocation, output []ContentPart) error {
+func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	return s.finish(ctx, owner, intentID, result, nil, func(c *Conversation) error {
 		return c.appendToolResult(call, output)
 	})
@@ -1218,7 +1210,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 			return err
 		}
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentKind("")) {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
 		if err != nil {
@@ -1248,9 +1240,9 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 	})
 }
 
-func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failure *KnownFailureError) error {
+func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failure *protocol.KnownFailureError) error {
 	if failure == nil {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -1258,7 +1250,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			return err
 		}
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentKind("")) {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
 		if err != nil {
@@ -1301,7 +1293,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			}
 			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 		}
-		outputs, err := settlePendingCalls(conversation, func(call ToolInvocation) string { return "Not dispatched because the turn failed." })
+		outputs, err := settlePendingCalls(conversation, func(call protocol.ToolInvocation) string { return "Not dispatched because the turn failed." })
 		if err != nil {
 			return err
 		}
@@ -1333,7 +1325,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[string]any, original NativeContext) (string, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[string]any, original protocol.Context) (string, error) {
 	id := uuid.NewString()
 	requestWire, err := marshal(request)
 	if err != nil {
@@ -1345,27 +1337,27 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[st
 			return err
 		}
 		if conversation.Pending != nil {
-			return &UnknownEffectError{Reason: "unresolved intent; cannot compact"}
+			return &protocol.UnknownEffectError{Reason: "unresolved intent; cannot compact"}
 		}
 		if err := checkInterrupt(ctx, tx, owner); err != nil {
 			return err
 		}
 		if !sameNativeContext(conversation.Context(), original) {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
 		if liveCell {
-			return &UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
+			return &protocol.UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
 		}
 		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
 		if err != nil {
 			return err
 		}
 		if unresolved {
-			return &UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
+			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
@@ -1383,7 +1375,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[st
 	return id, err
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit map[string]any, original, replacement NativeContext) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit map[string]any, original, replacement protocol.Context) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -1394,10 +1386,10 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 			return err
 		}
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentCompaction) {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if !sameNativeContext(conversation.Context(), original) {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
 		if err != nil {
@@ -1415,7 +1407,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 			return err
 		}
 		if replacement.API() != conversation.API {
-			return ErrInvalid
+			return protocol.ErrInvalid
 		}
 		if err := replacement.CheckSettled(); err != nil {
 			return err
@@ -1441,7 +1433,7 @@ func (s *Store) completeCompactionCommand(ctx context.Context, tx *sql.Tx, sessi
 		return nil
 	}
 	command, err := commandFor(ctx, tx, session.ID, *session.ActiveCommand)
-	if errors.Is(err, ErrMissing) {
+	if errors.Is(err, protocol.ErrMissing) {
 		return nil
 	}
 	if err != nil {
@@ -1476,7 +1468,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, request map[strin
 	id := uuid.NewString()
 	kind := stringValue(request["kind"])
 	if kind == "" {
-		return "", ErrInvalid
+		return "", protocol.ErrInvalid
 	}
 	requestWire, err := marshal(request)
 	if err != nil {
@@ -1493,7 +1485,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, request map[strin
 			}
 		}
 		if pendingMatches(conversation.Pending, "", PendingIntentCompaction) {
-			return &UnknownEffectError{Reason: "cannot start a nested effect during compaction"}
+			return &protocol.UnknownEffectError{Reason: "cannot start a nested effect during compaction"}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
@@ -1537,7 +1529,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 
 func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID string, tty bool) error {
 	if processID == "" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
@@ -1554,7 +1546,7 @@ func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID stri
 // number is released when its process is recorded as exited.
 func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID string, sessionID int, tty bool) error {
 	if processID == "" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
@@ -1583,7 +1575,7 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 				return err
 			}
 			if liveProcess || liveCell {
-				return &UnknownEffectError{Reason: "executor returned another session; existing handles cannot be replaced"}
+				return &protocol.UnknownEffectError{Reason: "executor returned another session; existing handles cannot be replaced"}
 			}
 		}
 		conversation.ExecutorSession = &sessionID
@@ -1608,8 +1600,8 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 		return err
 	}
 	if update := environmentContextUpdate(conversation.EnvironmentContext, current); update != "" {
-		if err := conversation.apply(func(state NativeContext) error {
-			return state.AppendUser([]ContentPart{{Type: "input_text", Text: update}})
+		if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
 		}); err != nil {
 			return err
 		}
@@ -1669,7 +1661,7 @@ func (s *Store) StartSetup(ctx context.Context, owner Owner, sessionID string) (
 
 func (s *Store) SetupOutput(ctx context.Context, owner Owner, sessionID, stream string, data []byte) error {
 	if stream != "stdout" && stream != "stderr" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
@@ -1709,7 +1701,7 @@ func (s *Store) FinishSetup(ctx context.Context, owner Owner, sessionID string, 
 
 func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, exitCode *int) error {
 	if session.SetupState != runnerpb.SetupState_SETUP_STATE_RUNNING {
-		return ErrPrecondition
+		return protocol.ErrPrecondition
 	}
 	session.Blocked = false
 	session.BlockedReason = nil
@@ -1773,7 +1765,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			return err
 		}
 		if session.Blocked {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if session.ActiveCommand != nil {
 			if err := s.ensureTurnInterrupt(ctx, tx, owner, session); err != nil {
@@ -1805,15 +1797,15 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		switch {
 		case payload.GetSubmitInput() != nil:
 			if conversation.Pending != nil {
-				return &UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
+				return &protocol.UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
 			}
 			// Codex records environment updates before the turn's user input.
 			if err := s.recordEnvironmentContext(conversation, session); err != nil {
 				return err
 			}
 			text := payload.GetSubmitInput().GetText()
-			if err := conversation.apply(func(state NativeContext) error {
-				return state.AppendUser([]ContentPart{{Type: "input_text", Text: text}})
+			if err := conversation.apply(func(state protocol.Context) error {
+				return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}})
 			}); err != nil {
 				return err
 			}
@@ -1848,7 +1840,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetChangeReasoningEffort() != nil:
 			previous := session.Effort
 			session.Effort = payload.GetChangeReasoningEffort().GetEffort()
-			if err := conversation.apply(func(state NativeContext) error { return state.ChangeEffort(session.Effort) }); err != nil {
+			if err := conversation.apply(func(state protocol.Context) error { return state.ChangeEffort(session.Effort) }); err != nil {
 				return err
 			}
 			next.Outcome = samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
@@ -1873,7 +1865,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetCompact() != nil:
 			session.ActiveCommand = &next.ID
 		default:
-			return ErrInvalid
+			return protocol.ErrInvalid
 		}
 		if err := updateConversation(ctx, tx, conversation); err != nil {
 			return err
@@ -1974,8 +1966,8 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 		}
 		for index, command := range commands {
 			text := inputs[index].GetText()
-			if err := conversation.apply(func(state NativeContext) error {
-				return state.AppendUser([]ContentPart{{Type: "input_text", Text: text}})
+			if err := conversation.apply(func(state protocol.Context) error {
+				return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}})
 			}); err != nil {
 				return err
 			}
@@ -2286,7 +2278,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if commandID != nil {
 		var err error
 		command, err = commandFor(ctx, tx, session.ID, *commandID)
-		if err != nil && !errors.Is(err, ErrMissing) {
+		if err != nil && !errors.Is(err, protocol.ErrMissing) {
 			return err
 		}
 		if command != nil && command.Outcome != samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED {
@@ -2312,7 +2304,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if err != nil {
 		return err
 	}
-	var knownFailure *KnownFailureError
+	var knownFailure *protocol.KnownFailureError
 	known := errors.As(failure, &knownFailure) && knownFailure != nil
 	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
@@ -2323,7 +2315,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	}
 	reason := "execution stopped; inspect durable boundary evidence"
 	if failure != nil {
-		reason = DisplayText(failure.Error())
+		reason = protocol.DisplayText(failure.Error())
 	}
 	session.BlockedReason = nil
 	if session.Blocked {
@@ -2432,7 +2424,7 @@ func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*Re
 		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		return err
 	})
@@ -2450,7 +2442,7 @@ func (s *Store) ProcessByModelSession(ctx context.Context, owner Owner, sessionI
 		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE conversation_id=$1 AND model_session_id=$2 AND status <> 'exited'`, owner.ConversationID, sessionID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		return err
 	})
@@ -2486,7 +2478,7 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 
 func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status string, exitCode *int, consumeOutput bool) error {
 	if status == "" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -2496,7 +2488,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
@@ -2538,7 +2530,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 // retaining every observed byte and exit code for inspection. It never records a remote exit.
 func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome, executorSessionID string) error {
 	if remoteOutcome != "unknown" && remoteOutcome != "not_dispatched" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -2548,7 +2540,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
@@ -2560,7 +2552,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 			return nil
 		}
 		if process.Status == "exited" {
-			return ErrPrecondition
+			return protocol.ErrPrecondition
 		}
 		if afterSequence == nil {
 			afterSequence = process.AfterSequence
@@ -2598,7 +2590,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
@@ -2636,7 +2628,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 
 func (s *Store) CellResult(ctx context.Context, owner Owner, cellID, status string) error {
 	if cellID == "" || status == "" {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -2705,7 +2697,7 @@ func (s *Store) CheckLiveCells(ctx context.Context, owner Owner, runtimeAvailabl
 	}
 	for _, cell := range state.Cells {
 		if !runtimeAvailable || cell.Generation != owner.Generation {
-			return &UnknownEffectError{Reason: "live JavaScript cell lost its host; automatic replay and V8 recovery are unsafe"}
+			return &protocol.UnknownEffectError{Reason: "live JavaScript cell lost its host; automatic replay and V8 recovery are unsafe"}
 		}
 	}
 	return nil
@@ -2716,7 +2708,7 @@ func (s *Store) RequestInterrupt(ctx context.Context, conversationID string, gen
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := scanConversation(tx.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, conversationID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrMissing
+			return protocol.ErrMissing
 		}
 		if err != nil {
 			return err
@@ -2760,11 +2752,11 @@ func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, e
 
 func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestIDs []string, result map[string]any) error {
 	if len(requestIDs) == 0 {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	cleanupComplete, ok := result["cleanup_complete"].(bool)
 	if !ok {
-		return ErrInvalid
+		return protocol.ErrInvalid
 	}
 	resultWire, err := marshal(result)
 	if err != nil {
@@ -2789,7 +2781,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 				return err
 			}
 			if rowsAffected != 1 {
-				return ErrMissing
+				return protocol.ErrMissing
 			}
 		}
 		activeCall := ""
@@ -2828,7 +2820,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentInterrupt}
 		}
 		if cleanupComplete {
-			if _, err := settlePendingCalls(conversation, func(call ToolInvocation) string {
+			if _, err := settlePendingCalls(conversation, func(call protocol.ToolInvocation) string {
 				if call.CallID == activeCall {
 					return "Interrupted by user. Partial effects may have occurred."
 				}
@@ -2878,10 +2870,10 @@ func (s *Store) AppendInput(ctx context.Context, owner Owner, prompt string) err
 			return err
 		}
 		if conversation.Pending != nil {
-			return &UnknownEffectError{Reason: "unresolved intent blocks new input; automatic replay is unsafe"}
+			return &protocol.UnknownEffectError{Reason: "unresolved intent blocks new input; automatic replay is unsafe"}
 		}
-		if err := conversation.apply(func(state NativeContext) error {
-			return state.AppendUser([]ContentPart{{Type: "input_text", Text: prompt}})
+		if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}})
 		}); err != nil {
 			return err
 		}
@@ -2915,7 +2907,7 @@ func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) erro
 	if err != nil {
 		return err
 	}
-	return &UnknownEffectError{Reason: "earlier owner left an unresolved effect"}
+	return &protocol.UnknownEffectError{Reason: "earlier owner left an unresolved effect"}
 }
 
 func (s *Store) CheckRecovery(ctx context.Context, owner Owner) error {
@@ -2937,7 +2929,7 @@ func pendingMatches(pending *PendingIntent, id string, kind PendingIntentKind) b
 	return kind == "" || pending.Kind == kind
 }
 
-func sameNativeContext(left, right NativeContext) bool {
+func sameNativeContext(left, right protocol.Context) bool {
 	if left.API() != right.API() {
 		return false
 	}
@@ -2949,11 +2941,11 @@ func sameNativeContext(left, right NativeContext) bool {
 	if err != nil {
 		return false
 	}
-	lv, err := decodeJSONValue(l)
+	lv, err := protocol.DecodeJSONValue(l)
 	if err != nil {
 		return false
 	}
-	rv, err := decodeJSONValue(r)
+	rv, err := protocol.DecodeJSONValue(r)
 	if err != nil {
 		return false
 	}
@@ -2972,7 +2964,7 @@ func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
 		&intent.ID, &intent.ConversationID, &intent.Generation, &request, &result,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrMissing
+		return nil, protocol.ErrMissing
 	}
 	if err != nil {
 		return nil, err
@@ -3012,7 +3004,7 @@ func commandFor(ctx context.Context, tx *sql.Tx, sessionID, commandID string) (*
 		&command.SessionID, &command.ID, &command.Payload, &command.Admission, &outcome, &failure,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrMissing
+		return nil, protocol.ErrMissing
 	}
 	if err != nil {
 		return nil, err
@@ -3029,14 +3021,14 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 	return err
 }
 
-func settlePendingCalls(conversation *Conversation, message func(ToolInvocation) string) ([]map[string]any, error) {
+func settlePendingCalls(conversation *Conversation, message func(protocol.ToolInvocation) string) ([]map[string]any, error) {
 	calls, err := conversation.Archive.PendingCalls()
 	if err != nil {
 		return nil, err
 	}
 	outputs := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
-		content := []ContentPart{{Type: "input_text", Text: message(call)}}
+		content := []protocol.ContentPart{{Type: "input_text", Text: message(call)}}
 		if err := conversation.appendToolResult(call, content); err != nil {
 			return nil, err
 		}

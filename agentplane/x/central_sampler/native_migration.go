@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 const nativeMigrationAdvisoryLockID int64 = 7241821
@@ -30,7 +33,7 @@ type convertedLegacyContext struct {
 // migrateNativeConversations performs all classification, record conversion, API writes, and
 // constraint installation in one transaction. If any conversation is ambiguous or malformed,
 // PostgreSQL rolls back the whole archive conversion and leaves its records available for retry.
-func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[string]APIStyle) error {
+func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -62,7 +65,7 @@ func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[s
 	}
 	for _, conversation := range conversations {
 		if conversation.api.Valid {
-			if !validConversationAPI(APIStyle(conversation.api.String)) {
+			if !validConversationAPI(protocol.APIStyle(conversation.api.String)) {
 				return fmt.Errorf("conversation %s has unsupported API %q", conversation.id, conversation.api.String)
 			}
 			continue
@@ -163,12 +166,12 @@ func loadLegacyConversations(ctx context.Context, tx *sql.Tx) ([]legacyConversat
 	return conversations, rows.Err()
 }
 
-func determineLegacyAPI(ctx context.Context, tx *sql.Tx, conversation legacyConversation, modelAPIs map[string]APIStyle) (APIStyle, error) {
+func determineLegacyAPI(ctx context.Context, tx *sql.Tx, conversation legacyConversation, modelAPIs map[string]protocol.APIStyle) (protocol.APIStyle, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT request FROM sampler_intent WHERE conversation_id=$1 ORDER BY id`, conversation.id)
 	if err != nil {
 		return "", fmt.Errorf("read API evidence for conversation %s: %w", conversation.id, err)
 	}
-	var requestAPIs []APIStyle
+	var requestAPIs []protocol.APIStyle
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
@@ -184,7 +187,7 @@ func determineLegacyAPI(ctx context.Context, tx *sql.Tx, conversation legacyConv
 		if !present {
 			continue
 		}
-		var api APIStyle
+		var api protocol.APIStyle
 		if err := json.Unmarshal(apiRaw, &api); err != nil || !validConversationAPI(api) {
 			rows.Close()
 			return "", fmt.Errorf("conversation %s has invalid intent request.api %s", conversation.id, apiRaw)
@@ -217,7 +220,7 @@ func determineLegacyAPI(ctx context.Context, tx *sql.Tx, conversation legacyConv
 	// Before API adapters existed, Store.Create was the only path that made a conversation without
 	// a Session. Its initial prompt, intents, and every standalone record used the Responses wire
 	// format.
-	return APIStyleResponses, nil
+	return protocol.APIStyleResponses, nil
 }
 
 func loadLegacyArchive(ctx context.Context, tx *sql.Tx, conversationID string) ([]json.RawMessage, error) {
@@ -237,27 +240,27 @@ func loadLegacyArchive(ctx context.Context, tx *sql.Tx, conversationID string) (
 	return records, rows.Err()
 }
 
-func validConversationAPI(api APIStyle) bool {
-	return api == APIStyleResponses || api == APIStyleAnthropicMessages
+func validConversationAPI(api protocol.APIStyle) bool {
+	return api == protocol.APIStyleResponses || api == protocol.APIStyleAnthropicMessages
 }
 
 func isNullJSON(raw []byte) bool {
 	return len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
-func nativeContextWire(api APIStyle, converted convertedLegacyContext) ([]byte, error) {
+func nativeContextWire(api protocol.APIStyle, converted convertedLegacyContext) ([]byte, error) {
 	state, err := decodeNativeRecords(api, converted.records)
 	if err != nil {
 		return nil, err
 	}
-	if anthropic, ok := state.(*AnthropicContext); ok && anthropic.Messages == nil {
+	if anthropic, ok := state.(*anthropic.Context); ok && anthropic.Messages == nil {
 		anthropic.Messages = []json.RawMessage{}
 	}
 	wire, err := json.Marshal(state)
 	if err != nil {
 		return nil, err
 	}
-	if api == APIStyleAnthropicMessages && converted.pendingEffort != "" {
+	if api == protocol.APIStyleAnthropicMessages && converted.pendingEffort != "" {
 		var object map[string]json.RawMessage
 		if err := json.Unmarshal(wire, &object); err != nil {
 			return nil, err
@@ -286,9 +289,9 @@ type legacyToolProjection struct {
 
 // convertLegacyRecords preserves native Responses objects verbatim and translates the old mixed
 // Anthropic transcript to the message sequence that anthropicInput previously constructed.
-func convertLegacyRecords(api APIStyle, records []json.RawMessage) (convertedLegacyContext, error) {
+func convertLegacyRecords(api protocol.APIStyle, records []json.RawMessage) (convertedLegacyContext, error) {
 	converted := convertedLegacyContext{}
-	if api == APIStyleResponses {
+	if api == protocol.APIStyleResponses {
 		for i, raw := range records {
 			kind, err := legacyRecordType(raw)
 			if err != nil {
@@ -304,7 +307,7 @@ func convertLegacyRecords(api APIStyle, records []json.RawMessage) (convertedLeg
 		}
 		return converted, nil
 	}
-	if api != APIStyleAnthropicMessages {
+	if api != protocol.APIStyleAnthropicMessages {
 		return convertedLegacyContext{}, fmt.Errorf("unsupported API %q", api)
 	}
 

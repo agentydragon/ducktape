@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 func TestExecDescriptionDeclaresEveryNestedToolInput(t *testing.T) {
 	definitions := toolDefinitions()
-	description, err := execToolDescription(definitions, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}})
+	description, err := execToolDescription(definitions, protocol.ExecEncodingFreeform)
 	if err != nil {
 		t.Fatal(err)
 	}

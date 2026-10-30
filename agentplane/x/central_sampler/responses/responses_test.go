@@ -1,4 +1,4 @@
-package centralsampler
+package responses
 
 import (
 	"bytes"
@@ -10,7 +10,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
+
+func testToolSurface(encoding protocol.ExecEncoding) protocol.ToolSurface {
+	description := "Execute JavaScript source."
+	if encoding == protocol.ExecEncodingFreeform {
+		description += " First-line pragma: // @exec: {\"yield_time_ms\": 10000}."
+	}
+	return protocol.ToolSurface{
+		Description:     description,
+		Parameters:      json.RawMessage(`{"type":"object","properties":{"code":{"type":"string"}},"required":["code"]}`),
+		FreeformGrammar: "start: SOURCE\nSOURCE: /[\\s\\S]+/",
+		WaitDescription: "Waits for a yielded cell.",
+		WaitParameters:  json.RawMessage(`{"type":"object","properties":{"cell_id":{"type":"string"}},"required":["cell_id"]}`),
+	}
+}
 
 func TestCompletedItemTextJoinsReasoningSummaryParts(t *testing.T) {
 	for _, test := range []struct {
@@ -20,16 +36,16 @@ func TestCompletedItemTextJoinsReasoningSummaryParts(t *testing.T) {
 		{`{"type":"reasoning","summary":[{"type":"summary_text","text":"**Plan**"},{"type":"summary_text","text":"Read the file."}]}`, "**Plan**\nRead the file."},
 		{`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"one "},{"type":"output_text","text":"answer"}]}`, "one answer"},
 	} {
-		var item ResponsesItem
+		var item Item
 		if err := json.Unmarshal([]byte(test.item), &item); err != nil {
 			t.Fatal(err)
 		}
-		got, err := responsesText(item)
+		got, err := Text(item)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got != test.want {
-			t.Fatalf("responsesText(%s) = %q, want %q", test.item, got, test.want)
+			t.Fatalf("Text(%s) = %q, want %q", test.item, got, test.want)
 		}
 	}
 }
@@ -42,14 +58,14 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 		"",
 		"",
 	}, "\n")
-	response, err := readProviderStream(context.Background(), strings.NewReader(stream), nil)
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := canonicalJSON(response.Output); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := protocol.CanonicalJSON(response.Output); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("opaque provider number changed during decoding: %s", got)
 	}
-	if got := canonicalJSON(response.Audit()); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := protocol.CanonicalJSON(response.Audit()); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("opaque provider number changed in audit evidence: %s", got)
 	}
 }
@@ -66,41 +82,41 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		"",
 		"",
 	}, "\n")
-	response, err := readProviderStream(context.Background(), strings.NewReader(stream), nil)
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(response.Output) != 2 {
-		t.Fatalf("expected only streamed completed items, got %s", canonicalJSON(response.Output))
+		t.Fatalf("expected only streamed completed items, got %s", protocol.CanonicalJSON(response.Output))
 	}
 	reasoning, call := response.Output[0], response.Output[1]
-	text, err := responsesText(reasoning)
+	text, err := Text(reasoning)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reasoning.Type != ResponsesItemReasoning || text != "Inspect the workspace." || reasoning.EncryptedContent != "" || len(reasoning.Content) != 0 {
-		t.Fatalf("streamed reasoning was replaced: %s", canonicalJSON(reasoning))
+	if reasoning.Type != ItemReasoning || text != "Inspect the workspace." || reasoning.EncryptedContent != "" || len(reasoning.Content) != 0 {
+		t.Fatalf("streamed reasoning was replaced: %s", protocol.CanonicalJSON(reasoning))
 	}
-	if call.Type != ResponsesItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
-		t.Fatalf("streamed tool call changed: %s", canonicalJSON(call))
+	if call.Type != ItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
+		t.Fatalf("streamed tool call changed: %s", protocol.CanonicalJSON(call))
 	}
 	var terminal struct {
-		Output []ResponsesItem `json:"output"`
+		Output []Item `json:"output"`
 	}
-	if err := json.Unmarshal([]byte(canonicalJSON(response.Terminal)), &terminal); err != nil {
+	if err := json.Unmarshal([]byte(protocol.CanonicalJSON(response.Terminal)), &terminal); err != nil {
 		t.Fatal(err)
 	}
 	if len(terminal.Output) != 3 || terminal.Output[0].EncryptedContent != "fixture-opaque-reasoning" {
-		t.Fatalf("terminal evidence was not retained: %s", canonicalJSON(response.Terminal))
+		t.Fatalf("terminal evidence was not retained: %s", protocol.CanonicalJSON(response.Terminal))
 	}
 }
 
 func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
-	var item ResponsesItem
+	var item Item
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture-model", Attribution: SessionAttribution{SessionID: "fixture-session"}, Items: []ResponsesItem{item}}, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildRequest(RequestParams{Model: "fixture-model", Attribution: protocol.SessionAttribution{SessionID: "fixture-session"}, Items: []Item{item}, Tools: testToolSurface(protocol.ExecEncodingFreeform)}, Config{Dialect: DialectLite}, protocol.ExecEncodingFreeform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +127,8 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools := map[string]ResponsesAdditionalTool{}
-	for _, tool := range body.Input[0].(ResponsesItem).Tools {
+	tools := map[string]AdditionalTool{}
+	for _, tool := range body.Input[0].(Item).Tools {
 		tools[tool.Name] = tool
 	}
 	if exec := tools["exec"]; exec.Type != "custom" || exec.Format == nil || exec.Format.Type != "grammar" || exec.Format.Syntax != "lark" {
@@ -146,33 +162,33 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 }
 
 func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
-	for _, dialect := range []ResponsesDialect{ResponsesDialectLite, ResponsesDialectStandard} {
+	for _, dialect := range []Dialect{DialectLite, DialectStandard} {
 		for _, effort := range []string{"", "high"} {
 			t.Run(string(dialect)+"/"+effort, func(t *testing.T) {
-				attribution := SessionAttribution{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
-				params := ResponsesRequestParams{Model: "fixture", Effort: effort, Attribution: attribution}
-				config := ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: dialect}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}}
-				body, err := BuildResponsesRequest(params, config)
+				attribution := protocol.SessionAttribution{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
+				params := RequestParams{Model: "fixture", Effort: effort, Attribution: attribution, Tools: testToolSurface(protocol.ExecEncodingJSON)}
+				config := Config{Dialect: dialect}
+				body, err := BuildRequest(params, config, protocol.ExecEncodingJSON)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if body.PromptCacheKey != attribution.SessionID {
 					t.Fatalf("prompt cache key = %q", body.PromptCacheKey)
 				}
-				if dialect == ResponsesDialectLite {
-					want := ResponsesClientMetadata{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
+				if dialect == DialectLite {
+					want := ClientMetadata{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
 					if body.ClientMetadata == nil || *body.ClientMetadata != want {
 						t.Fatalf("client metadata = %+v", body.ClientMetadata)
 					}
 				} else if body.ClientMetadata != nil {
 					t.Fatal("standard request includes private metadata")
 				}
-				if dialect == ResponsesDialectLite || effort != "" {
+				if dialect == DialectLite || effort != "" {
 					if body.Reasoning == nil || body.Reasoning.Effort != effort || !slices.Equal(body.Include, []string{"reasoning.encrypted_content"}) {
 						t.Fatalf("reasoning = %+v, include = %v", body.Reasoning, body.Include)
 					}
 					wantContext, wantSummary := "", ""
-					if dialect == ResponsesDialectLite {
+					if dialect == DialectLite {
 						wantContext, wantSummary = "all_turns", codexReasoningSummary
 					}
 					if body.Reasoning.Context != wantContext || body.Reasoning.Summary != wantSummary {
@@ -181,8 +197,8 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 				} else if body.Reasoning != nil || len(body.Include) != 0 {
 					t.Fatal("standard request without effort includes reasoning configuration")
 				}
-				compaction, err := BuildResponsesCompactionRequest(params, config)
-				if dialect == ResponsesDialectStandard {
+				compaction, err := BuildCompactionRequest(params, config, protocol.ExecEncodingJSON)
+				if dialect == DialectStandard {
 					if err == nil {
 						t.Fatal("standard compaction accepted")
 					}
@@ -190,7 +206,7 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if compaction.Input[len(compaction.Input)-1].(ResponsesItem).Type != ResponsesItemCompactionTrigger || *compaction.ClientMetadata != *body.ClientMetadata {
+					if compaction.Input[len(compaction.Input)-1].(Item).Type != ItemCompactionTrigger || *compaction.ClientMetadata != *body.ClientMetadata {
 						t.Fatalf("compaction request = %+v", compaction)
 					}
 				}
@@ -199,12 +215,46 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 	}
 }
 
-func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
-	for _, mode := range []ResponsesDialect{ResponsesDialectStandard, ResponsesDialectLite} {
-		for _, encoding := range []ExecEncoding{ExecEncodingJSON, ExecEncodingFreeform} {
+func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
+	original := &Context{}
+	if err := original.AppendRecords([]json.RawMessage{
+		[]byte(`{"type":"message","role":"user","content":"a sufficiently long original context"}`),
+		[]byte(`{"type":"message","role":"assistant","content":"old response"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
+	replacement, err := ValidateCompaction(original, records, map[string]any{"events": []any{}}, "Current environment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replacement.Items) != 2 || replacement.Items[0].Type != ItemMessage || replacement.Items[0].Role != "user" || replacement.Items[1].Type != ItemCompaction {
+		t.Fatalf("compacted context has unexpected boundary items: %+v", replacement.Items)
+	}
+	if got := string(replacement.Items[1].Raw); got != string(records[0]) {
+		t.Fatalf("opaque compaction record changed: %s", got)
+	}
+}
+
+func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
+	original := &Context{Items: []Item{{Type: ItemMessage, Role: "user", Content: json.RawMessage(`"long original context"`)}}}
+	for _, records := range [][]json.RawMessage{
+		{},
+		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
+		{[]byte(`{"type":"compaction"}`)},
+	} {
+		if _, err := ValidateCompaction(original, records, nil, "environment"); err == nil {
+			t.Fatalf("accepted unusable summary %s", records)
+		}
+	}
+}
+
+func TestDialectAndExecEncodingAreIndependent(t *testing.T) {
+	for _, mode := range []Dialect{DialectStandard, DialectLite} {
+		for _, encoding := range []protocol.ExecEncoding{protocol.ExecEncodingJSON, protocol.ExecEncodingFreeform} {
 			t.Run(string(mode)+"/"+string(encoding), func(t *testing.T) {
-				config := ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding, ReasoningEfforts: []string{"", "high"}}
-				body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}}, config)
+				config := Config{Dialect: mode}
+				body, err := BuildRequest(RequestParams{Model: "fixture", Attribution: protocol.SessionAttribution{SessionID: "session"}, Tools: testToolSurface(encoding)}, config, encoding)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -217,8 +267,8 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					t.Fatal(err)
 				}
 				tools := body.Tools
-				if mode == ResponsesDialectLite {
-					tools = body.Input[0].(ResponsesItem).Tools
+				if mode == DialectLite {
+					tools = body.Input[0].(Item).Tools
 					if _, present := wire["tools"]; present {
 						t.Fatal("Lite declares top-level tools")
 					}
@@ -239,10 +289,10 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 				if strings.Contains(execDescription, "{{") {
 					t.Fatal("unresolved exec description template")
 				}
-				if strings.Contains(execDescription, "// @exec:") != (encoding == ExecEncodingFreeform) {
+				if strings.Contains(execDescription, "// @exec:") != (encoding == protocol.ExecEncodingFreeform) {
 					t.Fatal("exec description has wrong input contract")
 				}
-				if encoding == ExecEncodingJSON {
+				if encoding == protocol.ExecEncodingJSON {
 					if len(tools) != 1 || tools[0].Name != "exec" || tools[0].Type != "function" {
 						t.Fatalf("JSON tools: %+v", tools)
 					}
@@ -252,18 +302,18 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 				} else if len(tools) != 2 || tools[0].Type != "custom" || tools[1].Name != "wait" {
 					t.Fatalf("freeform tools: %+v", tools)
 				}
-				for _, call := range []ToolInvocation{
-					{Encoding: ExecEncodingJSON, Name: "exec"},
-					{Encoding: ExecEncodingFreeform, Name: "exec"},
-					{Encoding: ExecEncodingJSON, Name: "wait"},
+				for _, call := range []protocol.ToolInvocation{
+					{Encoding: protocol.ExecEncodingJSON, Name: "exec"},
+					{Encoding: protocol.ExecEncodingFreeform, Name: "exec"},
+					{Encoding: protocol.ExecEncodingJSON, Name: "wait"},
 				} {
-					want := encoding == ExecEncodingJSON && call.Name == "exec" && call.Encoding == ExecEncodingJSON ||
-						encoding == ExecEncodingFreeform && (call.Name == "exec" && call.Encoding == ExecEncodingFreeform || call.Name == "wait" && call.Encoding == ExecEncodingJSON)
-					if call.IsModelTool(config) != want {
+					want := encoding == protocol.ExecEncodingJSON && call.Name == "exec" && call.Encoding == protocol.ExecEncodingJSON ||
+						encoding == protocol.ExecEncodingFreeform && (call.Name == "exec" && call.Encoding == protocol.ExecEncodingFreeform || call.Name == "wait" && call.Encoding == protocol.ExecEncodingJSON)
+					if call.IsModelTool(encoding) != want {
 						t.Fatalf("wrong tool validation: %+v", call)
 					}
-					wantConfiguredName := call.Name == "exec" || encoding == ExecEncodingFreeform && call.Name == "wait"
-					if call.IsConfiguredToolName(config) != wantConfiguredName {
+					wantConfiguredName := call.Name == "exec" || encoding == protocol.ExecEncodingFreeform && call.Name == "wait"
+					if call.IsConfiguredToolName(encoding) != wantConfiguredName {
 						t.Fatalf("wrong configured-name validation: %+v", call)
 					}
 				}
@@ -271,13 +321,13 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					if r.URL.Path != "/v1/responses" {
 						t.Errorf("Responses request path: %q", r.URL.Path)
 					}
-					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == ResponsesDialectLite) {
+					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == DialectLite) {
 						t.Errorf("Lite header: %q", got)
 					}
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
 				}))
 				defer server.Close()
-				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, config.Responses, nil, nil, false); err != nil {
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, config, nil, nil, false); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -286,7 +336,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 }
 
 func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
-	state := &ResponsesContext{}
+	state := &Context{}
 	if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"function_call","name":"exec","call_id":"call","arguments":"{\"code\":\"text(1)\"}"}`)}); err != nil {
 		t.Fatal(err)
 	}
@@ -294,14 +344,14 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
 		t.Fatal(err)
 	}
 	items := state.Items
-	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}, Items: items}, ModelConfig{Connection: "provider", ProviderModel: "fixture-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildRequest(RequestParams{Model: "fixture", Attribution: protocol.SessionAttribution{SessionID: "session"}, Items: items, Tools: testToolSurface(protocol.ExecEncodingJSON)}, Config{Dialect: DialectStandard}, protocol.ExecEncodingJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +368,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if strings.Contains(encoded, "custom_tool_call_output") {
 		t.Fatal("standard notification became a duplicate tool output")
 	}
-	if items[1].Type != ResponsesItemFunctionOutput || items[2].Type != ResponsesItemFunctionOutput {
+	if items[1].Type != ItemFunctionOutput || items[2].Type != ItemFunctionOutput {
 		t.Fatal("async outputs did not retain the function-call encoding")
 	}
 }
@@ -328,19 +378,19 @@ func TestToolInvocationShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T
 		name         string
 		item         string
 		wantValid    bool
-		wantEncoding ExecEncoding
+		wantEncoding protocol.ExecEncoding
 	}{
 		{
 			name:         "unknown custom tool has an answerable shape",
 			item:         `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom","input":"{}"}`,
 			wantValid:    true,
-			wantEncoding: ExecEncodingFreeform,
+			wantEncoding: protocol.ExecEncodingFreeform,
 		},
 		{
 			name:         "unknown function has an answerable shape",
 			item:         `{"type":"function_call","call_id":"function-1","name":"missing_function","arguments":"{}"}`,
 			wantValid:    true,
-			wantEncoding: ExecEncodingJSON,
+			wantEncoding: protocol.ExecEncodingJSON,
 		},
 		{
 			name: "custom call without input is malformed",
@@ -360,7 +410,7 @@ func TestToolInvocationShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var item ResponsesItem
+			var item Item
 			if err := json.Unmarshal([]byte(test.item), &item); err != nil {
 				t.Fatal(err)
 			}
@@ -377,8 +427,8 @@ func TestToolInvocationShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T
 	}
 }
 
-func TestResponsesContextRetainsNativeRawRecordsAndNumericPrecision(t *testing.T) {
-	state := &ResponsesContext{}
+func TestContextRetainsNativeRawRecordsAndNumericPrecision(t *testing.T) {
+	state := &Context{}
 	input := json.RawMessage(` {"type":"reasoning","provider_data":{"large":9007199254740993}} `)
 	if err := state.AppendRecords([]json.RawMessage{input}); err != nil {
 		t.Fatal(err)
@@ -395,13 +445,13 @@ func TestResponsesContextRetainsNativeRawRecordsAndNumericPrecision(t *testing.T
 	}
 }
 
-func TestResponsesContextRejectsMarkersAndUnknownRecordsAtomically(t *testing.T) {
+func TestContextRejectsMarkersAndUnknownRecordsAtomically(t *testing.T) {
 	for _, typeName := range []string{
 		"anthropic_message", "reasoning_effort", "reasoning_effort_restore", "execution_state",
 		"additional_tools", "compaction_trigger", "unknown_record",
 	} {
 		t.Run(typeName, func(t *testing.T) {
-			state := &ResponsesContext{}
+			state := &Context{}
 			if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"message","role":"user","content":[]}`)}); err != nil {
 				t.Fatal(err)
 			}
@@ -419,8 +469,8 @@ func TestResponsesContextRejectsMarkersAndUnknownRecordsAtomically(t *testing.T)
 	}
 }
 
-func TestResponsesContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
-	state := &ResponsesContext{}
+func TestContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
+	state := &Context{}
 	if err := state.AppendRecords([]json.RawMessage{
 		[]byte(`{"type":"message","role":"user","content":[]}`),
 		[]byte(`{"type":"function_call","call_id":"call-1","name":"exec","arguments":"{}"}`),
@@ -428,24 +478,24 @@ func TestResponsesContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending, err := state.PendingCalls()
-	if err != nil || len(pending) != 1 || pending[0].SourceRecord != 2 || pending[0].Encoding != ExecEncodingJSON {
+	if err != nil || len(pending) != 1 || pending[0].SourceRecord != 2 || pending[0].Encoding != protocol.ExecEncodingJSON {
 		t.Fatalf("pending calls=%+v, error=%v", pending, err)
 	}
 	call, err := state.FindCall("call-1")
 	if err != nil || call.SourceRecord != 2 {
 		t.Fatalf("found call=%+v, error=%v", call, err)
 	}
-	if _, err := state.FindCall("missing"); !errors.Is(err, ErrMissing) {
-		t.Fatalf("unknown call error=%v, want ErrMissing", err)
+	if _, err := state.FindCall("missing"); !errors.Is(err, protocol.ErrMissing) {
+		t.Fatalf("unknown call error=%v, want protocol.ErrMissing", err)
 	}
-	parts := []ContentPart{{Type: "input_text", Text: "first"}}
+	parts := []protocol.ContentPart{{Type: "input_text", Text: "first"}}
 	if err := state.AppendToolResult(call, parts); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
 		t.Fatal(err)
 	}
-	if state.Items[2].Type != ResponsesItemFunctionOutput || state.Items[3].Type != ResponsesItemFunctionOutput {
+	if state.Items[2].Type != ItemFunctionOutput || state.Items[3].Type != ItemFunctionOutput {
 		t.Fatalf("tool outputs=%+v", state.Items[2:])
 	}
 	if err := state.CheckSettled(); err != nil {
@@ -453,8 +503,8 @@ func TestResponsesContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
 	}
 }
 
-func TestResponsesContextUsesCustomOutputForFreeformCalls(t *testing.T) {
-	state := &ResponsesContext{}
+func TestContextUsesCustomOutputForFreeformCalls(t *testing.T) {
+	state := &Context{}
 	if err := state.AppendRecords([]json.RawMessage{
 		[]byte(`{"type":"custom_tool_call","call_id":"exec-1","name":"exec","input":"text(1)"}`),
 	}); err != nil {
@@ -464,15 +514,15 @@ func TestResponsesContextUsesCustomOutputForFreeformCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := state.Items[1].Type; got != ResponsesItemCustomToolOutput {
-		t.Fatalf("freeform result type=%s, want %s", got, ResponsesItemCustomToolOutput)
+	if got := state.Items[1].Type; got != ItemCustomToolOutput {
+		t.Fatalf("freeform result type=%s, want %s", got, ItemCustomToolOutput)
 	}
 }
 
-func TestResponsesContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
+func TestContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 	call := []byte(`{"type":"function_call","call_id":"call-1","name":"exec","arguments":"{}"}`)
 	functionOutput := []byte(`{"type":"function_call_output","call_id":"call-1","output":[]}`)
 	for _, test := range []struct {
@@ -484,7 +534,7 @@ func TestResponsesContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 		{name: "wrong output encoding", records: [][]byte{call, []byte(`{"type":"custom_tool_call_output","call_id":"call-1","output":[]}`)}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			state := &ResponsesContext{}
+			state := &Context{}
 			records := make([]json.RawMessage, len(test.records))
 			for index, record := range test.records {
 				records[index] = record
@@ -497,7 +547,7 @@ func TestResponsesContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 			}
 		})
 	}
-	state := &ResponsesContext{}
+	state := &Context{}
 	if err := state.AppendRecords([]json.RawMessage{call}); err != nil {
 		t.Fatal(err)
 	}
@@ -506,24 +556,24 @@ func TestResponsesContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 	}
 }
 
-func TestResponsesContextTerminalAndAdapterOnlyState(t *testing.T) {
-	state := &ResponsesContext{}
-	if err := state.AppendUser([]ContentPart{{Type: "input_text", Text: "question"}}); err != nil {
+func TestContextTerminalAndAdapterOnlyState(t *testing.T) {
+	state := &Context{}
+	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "question"}}); err != nil {
 		t.Fatal(err)
 	}
 	if state.TurnComplete() {
 		t.Fatal("user message completed a turn")
 	}
-	if err := state.AppendNotice([]ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
+	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
 		t.Fatal(err)
 	}
-	if state.Items[1].Type != ResponsesItemMessage || state.Items[1].Role != "developer" || state.TurnComplete() {
+	if state.Items[1].Type != ItemMessage || state.Items[1].Role != "developer" || state.TurnComplete() {
 		t.Fatalf("notice did not become a non-terminal developer message: %+v", state.Items[1])
 	}
 	if err := state.ChangeEffort("high"); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendExecutionState(&ExecutionState{Cells: []LiveCell{{ID: "live"}}}); err != nil {
+	if err := state.AppendExecutionState(&protocol.ExecutionState{Cells: []protocol.ActiveCell{{ID: "live"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := state.AppendRecords([]json.RawMessage{[]byte(`{"type":"message","role":"assistant","content":[]}`)}); err != nil {
@@ -543,13 +593,13 @@ func TestResponsesContextTerminalAndAdapterOnlyState(t *testing.T) {
 	}
 }
 
-func TestResponsesItemRetainsImageAndAudioContent(t *testing.T) {
+func TestItemRetainsImageAndAudioContent(t *testing.T) {
 	input := []byte(`[{"type":"input_image","image_url":"data:image/png;base64,opaque","detail":"high"},{"type":"input_audio","data":"opaque-audio","format":"wav"}]`)
-	var content []ContentPart
+	var content []protocol.ContentPart
 	if err := json.Unmarshal(input, &content); err != nil {
 		t.Fatal(err)
 	}
-	item := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call-1", Output: content}
+	item := Item{Type: ItemCustomToolOutput, CallID: "call-1", Output: content}
 	encoded, err := json.Marshal(item)
 	if err != nil {
 		t.Fatal(err)

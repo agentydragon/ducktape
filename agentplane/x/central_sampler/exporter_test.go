@@ -19,6 +19,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -137,7 +138,7 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
 		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
-	}, "test-account-uid", APIStyleResponses)
+	}, "test-account-uid", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}

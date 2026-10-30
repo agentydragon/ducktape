@@ -1,10 +1,11 @@
-package centralsampler
+package anthropic
 
 import (
 	"encoding/json"
 	"fmt"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 func anthropicHistoryItemID(message map[string]json.RawMessage, index int, block map[string]json.RawMessage) string {
@@ -48,15 +49,15 @@ func anthropicBlockDelta(message map[string]json.RawMessage, index int, block ma
 	switch deltaType {
 	case "text_delta":
 		return &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{
-			ItemId: itemID, Text: DisplayText(delta),
+			ItemId: itemID, Text: protocol.DisplayText(delta),
 		}}}
 	case "thinking_delta":
 		return &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{
-			ItemId: itemID, Text: DisplayText(delta),
+			ItemId: itemID, Text: protocol.DisplayText(delta),
 		}}}
 	case "input_json_delta":
 		return &eventpb.Event{Observation: &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{
-			ItemId: itemID, PartialJson: DisplayText(delta),
+			ItemId: itemID, PartialJson: protocol.DisplayText(delta),
 		}}}
 	default:
 		return nil
@@ -78,7 +79,7 @@ func anthropicBlockCompleted(message map[string]json.RawMessage, index int, bloc
 		return nil
 	}
 	return &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
-		ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: DisplayText(text)},
+		ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: protocol.DisplayText(text)},
 	}}}
 }
 
@@ -89,10 +90,10 @@ func anthropicToolArguments(message map[string]json.RawMessage, index int, block
 		return nil
 	}
 	encoded := string(arguments)
-	if len(arguments) > DisplayBytes {
+	if len(arguments) > protocol.DisplayBytes {
 		source, err := json.Marshal(struct {
 			Source string `json:"source"`
-		}{Source: DisplayText(encoded)})
+		}{Source: protocol.DisplayText(encoded)})
 		if err != nil {
 			return nil
 		}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
 func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
@@ -63,7 +64,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := &ResponsesContext{Items: []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "opaque"}}}
+	replacement := &responses.Context{Items: []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}}}
 	intentID, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
 	if err != nil {
 		t.Fatal(err)

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/google/uuid"
 )
 
@@ -118,7 +119,7 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 			var response codeHostResponse
 			err = decodeProtocolObject(value, &response)
 			if err == nil && (response.Type != "session/ready" || response.SessionID != sessionID) {
-				err = fmt.Errorf("unexpected code-mode session/open response: %s", canonicalJSON(response))
+				err = fmt.Errorf("unexpected code-mode session/open response: %s", protocol.CanonicalJSON(response))
 			}
 		}
 		if err != nil {
@@ -228,7 +229,7 @@ func (m *CodeModeHost) startHost() (*Host, error) {
 	}
 	if ready.Type != codeReady || ready.SelectedVersion != 1 || ready.Capabilities == nil {
 		_ = host.Close()
-		return nil, fmt.Errorf("unexpected code-mode handshake: %s", canonicalJSON(ready))
+		return nil, fmt.Errorf("unexpected code-mode handshake: %s", protocol.CanonicalJSON(ready))
 	}
 	for _, capability := range ready.Capabilities {
 		if !slices.Contains(offered, capability) {
@@ -415,7 +416,7 @@ func (m *CodeModeHost) dispatch(host *Host, frame *codeFrame, raw []byte) error 
 		m.mu.Unlock()
 		return nil
 	}
-	return fmt.Errorf("unexpected code-mode frame: %s", canonicalJSON(frame))
+	return fmt.Errorf("unexpected code-mode frame: %s", protocol.CanonicalJSON(frame))
 }
 
 func (m *CodeModeHost) sendDelegateError(host *Host, id int64, message string) error {

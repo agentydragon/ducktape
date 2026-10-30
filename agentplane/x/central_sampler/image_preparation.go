@@ -14,6 +14,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
@@ -65,7 +66,7 @@ func (e *imagePreparationError) Unwrap() error { return e.err }
 // provider request and every sampling intent's journaled body carries their full base64 again.
 // The 32 MiB view_image cap (view_image.go) also differs from upstream, which has none and
 // fails only at the 64 MiB WebSocket message or code-mode frame bounds.
-func prepareOutputImages(parts []ContentPart) ([]ContentPart, error) {
+func prepareOutputImages(parts []protocol.ContentPart) ([]protocol.ContentPart, error) {
 	for index, part := range parts {
 		if part.Type != "input_image" {
 			continue
@@ -73,7 +74,7 @@ func prepareOutputImages(parts []ContentPart) ([]ContentPart, error) {
 		prepared, err := prepareOutputImage(part)
 		if failed := (*imagePreparationError)(nil); errors.As(err, &failed) {
 			slog.Warn("failed to prepare tool output image", "error", err)
-			parts[index] = ContentPart{Type: "input_text", Text: failed.placeholder}
+			parts[index] = protocol.ContentPart{Type: "input_text", Text: failed.placeholder}
 			continue
 		}
 		if err != nil {
@@ -85,10 +86,10 @@ func prepareOutputImages(parts []ContentPart) ([]ContentPart, error) {
 }
 
 // Codex rust-v0.162.1 core/src/image_preparation.rs resize_image.
-func prepareOutputImage(part ContentPart) (ContentPart, error) {
+func prepareOutputImage(part protocol.ContentPart) (protocol.ContentPart, error) {
 	var fields map[string]json.RawMessage
 	if err := decodeProtocolObject(part.Raw, &fields); err != nil {
-		return ContentPart{}, err
+		return protocol.ContentPart{}, err
 	}
 	rawURL, inline := fields["image_url"]
 	if !inline {
@@ -96,11 +97,11 @@ func prepareOutputImage(part ContentPart) (ContentPart, error) {
 	}
 	var imageURL string
 	if err := json.Unmarshal(rawURL, &imageURL); err != nil {
-		return ContentPart{}, fmt.Errorf("input_image image_url: %w", err)
+		return protocol.ContentPart{}, fmt.Errorf("input_image image_url: %w", err)
 	}
 	scheme, _, _ := strings.Cut(imageURL, ":")
 	if strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https") {
-		return ContentPart{}, &imagePreparationError{placeholder: remoteImageURLPlaceholder, err: errors.New("remote image URLs are not supported")}
+		return protocol.ContentPart{}, &imagePreparationError{placeholder: remoteImageURLPlaceholder, err: errors.New("remote image URLs are not supported")}
 	}
 	if !hasFoldedPrefix(imageURL, "data:") {
 		return part, nil
@@ -108,7 +109,7 @@ func prepareOutputImage(part ContentPart) (ContentPart, error) {
 	var detail *string
 	if raw, ok := fields["detail"]; ok {
 		if err := json.Unmarshal(raw, &detail); err != nil {
-			return ContentPart{}, fmt.Errorf("input_image detail: %w", err)
+			return protocol.ContentPart{}, fmt.Errorf("input_image detail: %w", err)
 		}
 	}
 	limits := highDetailLimits
@@ -118,27 +119,27 @@ func prepareOutputImage(part ContentPart) (ContentPart, error) {
 		case "original":
 			limits = originalDetailLimits
 		case "low":
-			return ContentPart{}, &imagePreparationError{placeholder: unsupportedLowDetailPlaceholder, err: errors.New("image detail `low` is not supported")}
+			return protocol.ContentPart{}, &imagePreparationError{placeholder: unsupportedLowDetailPlaceholder, err: errors.New("image detail `low` is not supported")}
 		default:
-			return ContentPart{}, fmt.Errorf("unsupported input_image detail %q", *detail)
+			return protocol.ContentPart{}, fmt.Errorf("unsupported input_image detail %q", *detail)
 		}
 	}
 	mime, data, err := loadDataURLForPrompt(imageURL, limits)
 	if err != nil {
-		return ContentPart{}, err
+		return protocol.ContentPart{}, err
 	}
 	encodedURL, err := json.Marshal("data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data))
 	if err != nil {
-		return ContentPart{}, err
+		return protocol.ContentPart{}, err
 	}
 	fields["image_url"] = encodedURL
 	raw, err := json.Marshal(fields)
 	if err != nil {
-		return ContentPart{}, err
+		return protocol.ContentPart{}, err
 	}
-	var prepared ContentPart
+	var prepared protocol.ContentPart
 	if err := json.Unmarshal(raw, &prepared); err != nil {
-		return ContentPart{}, err
+		return protocol.ContentPart{}, err
 	}
 	return prepared, nil
 }

@@ -13,32 +13,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
 const (
 	defaultExecutorInitializeTimeoutSeconds = 30
 	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
-)
-
-type APIStyle string
-
-const (
-	APIStyleResponses         APIStyle = "responses"
-	APIStyleAnthropicMessages APIStyle = "anthropic_messages"
-)
-
-type ResponsesDialect string
-
-const (
-	ResponsesDialectLite     ResponsesDialect = "lite"
-	ResponsesDialectStandard ResponsesDialect = "standard"
-)
-
-type ExecEncoding string
-
-const (
-	ExecEncodingFreeform ExecEncoding = "freeform"
-	ExecEncodingJSON     ExecEncoding = "json"
 )
 
 type AuthType string
@@ -50,48 +33,13 @@ const (
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	Connection        string                   `json:"connection"`
-	ProviderModel     string                   `json:"provider_model"`
-	API               APIStyle                 `json:"api"`
-	Responses         ResponsesConfig          `json:"responses,omitzero"`
-	AnthropicMessages *AnthropicMessagesConfig `json:"anthropic_messages,omitempty"`
-	ExecEncoding      ExecEncoding             `json:"exec_encoding"`
-	ReasoningEfforts  []string                 `json:"reasoning_efforts"`
-}
-
-type ResponsesConfig struct {
-	Dialect ResponsesDialect `json:"dialect"`
-}
-
-type AnthropicMessagesConfig struct {
-	MaxTokens           int                         `json:"max_tokens"`
-	Thinking            *AnthropicThinkingConfig    `json:"thinking,omitempty"`
-	PromptCache         *AnthropicPromptCacheConfig `json:"prompt_cache,omitempty"`
-	CacheDiagnostics    bool                        `json:"cache_diagnostics,omitempty"`
-	PerMessageEffort    bool                        `json:"per_message_effort,omitempty"`
-	StrictToolInput     bool                        `json:"strict_tool_input,omitempty"`
-	EagerInputStreaming bool                        `json:"eager_input_streaming,omitempty"`
-	Compaction          *AnthropicCompactionConfig  `json:"compaction,omitempty"`
-}
-
-type AnthropicThinkingConfig struct {
-	Type         string                       `json:"type"`
-	BudgetTokens *int                         `json:"budget_tokens,omitempty"`
-	BlockBinding *AnthropicBlockBindingConfig `json:"block_binding,omitempty"`
-}
-
-type AnthropicBlockBindingConfig struct {
-	PrefixMismatchBehavior string `json:"prefix_mismatch_behavior"`
-}
-
-type AnthropicPromptCacheConfig struct {
-	TTL string `json:"ttl"`
-}
-
-type AnthropicCompactionConfig struct {
-	MaxTokens         int  `json:"max_tokens"`
-	AutoCompactTokens *int `json:"auto_compact_tokens,omitempty"`
-	KeepRecentTurns   int  `json:"keep_recent_turns,omitempty"`
+	Connection        string                `json:"connection"`
+	ProviderModel     string                `json:"provider_model"`
+	API               protocol.APIStyle     `json:"api"`
+	Responses         responses.Config      `json:"responses,omitzero"`
+	AnthropicMessages *anthropic.Config     `json:"anthropic_messages,omitempty"`
+	ExecEncoding      protocol.ExecEncoding `json:"exec_encoding"`
+	ReasoningEfforts  []string              `json:"reasoning_efforts"`
 }
 
 func (c ModelConfig) Validate() error {
@@ -104,22 +52,22 @@ func (c ModelConfig) Validate() error {
 	if len(c.ReasoningEfforts) == 0 {
 		return errors.New("model reasoning_efforts must not be empty")
 	}
-	if c.ExecEncoding != ExecEncodingFreeform && c.ExecEncoding != ExecEncodingJSON {
+	if c.ExecEncoding != protocol.ExecEncodingFreeform && c.ExecEncoding != protocol.ExecEncodingJSON {
 		return errors.New("exec_encoding must be freeform or json")
 	}
 	switch c.API {
-	case APIStyleResponses:
-		if c.Responses.Dialect != ResponsesDialectLite && c.Responses.Dialect != ResponsesDialectStandard {
-			return errors.New("responses.dialect must be lite or standard")
+	case protocol.APIStyleResponses:
+		if err := c.Responses.Validate(); err != nil {
+			return err
 		}
 		if c.AnthropicMessages != nil {
 			return errors.New("anthropic_messages settings are only valid for the anthropic_messages API")
 		}
-	case APIStyleAnthropicMessages:
-		if c.Responses != (ResponsesConfig{}) {
+	case protocol.APIStyleAnthropicMessages:
+		if c.Responses != (responses.Config{}) {
 			return errors.New("responses settings are only valid for the responses API")
 		}
-		if c.ExecEncoding != ExecEncodingJSON {
+		if c.ExecEncoding != protocol.ExecEncodingJSON {
 			return errors.New("anthropic_messages requires exec_encoding json")
 		}
 		if c.AnthropicMessages == nil {
@@ -139,113 +87,18 @@ func (c ModelConfig) Validate() error {
 	return nil
 }
 
-func (c *AnthropicMessagesConfig) Validate() error {
-	if c.MaxTokens <= 0 {
-		return errors.New("anthropic_messages.max_tokens must be positive")
-	}
-	if c.Thinking != nil {
-		switch c.Thinking.Type {
-		case "adaptive", "disabled":
-			if c.Thinking.BudgetTokens != nil {
-				return errors.New("thinking.budget_tokens is only valid with thinking.type enabled")
-			}
-		case "enabled":
-			if c.Thinking.BudgetTokens == nil || *c.Thinking.BudgetTokens <= 0 || *c.Thinking.BudgetTokens >= c.MaxTokens {
-				return errors.New("thinking.type enabled requires budget_tokens between zero and max_tokens")
-			}
-		default:
-			return errors.New("thinking.type must be adaptive, disabled, or enabled")
-		}
-		if c.Thinking.BlockBinding != nil {
-			if c.Thinking.Type != "adaptive" {
-				return errors.New("thinking.block_binding requires thinking.type adaptive")
-			}
-			switch c.Thinking.BlockBinding.PrefixMismatchBehavior {
-			case "error", "drop_block":
-			default:
-				return errors.New("thinking.block_binding.prefix_mismatch_behavior must be error or drop_block")
-			}
-		}
-	}
-	if c.PerMessageEffort && (c.Thinking == nil || c.Thinking.Type != "adaptive") {
-		return errors.New("per_message_effort requires thinking.type adaptive")
-	}
-	if c.PromptCache != nil && c.PromptCache.TTL != "5m" && c.PromptCache.TTL != "1h" {
-		return errors.New("prompt_cache.ttl must be 5m or 1h")
-	}
-	if c.Compaction != nil {
-		if c.Compaction.MaxTokens <= 0 {
-			return errors.New("compaction.max_tokens must be positive")
-		}
-		if c.Compaction.AutoCompactTokens != nil && *c.Compaction.AutoCompactTokens <= 0 {
-			return errors.New("compaction.auto_compact_tokens must be positive")
-		}
-		if c.Compaction.KeepRecentTurns < 0 {
-			return errors.New("compaction.keep_recent_turns must not be negative")
-		}
-	}
-	return nil
-}
-
 func (c ModelConfig) Compatible(other ModelConfig) bool {
 	if c.Connection != other.Connection || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
 		return false
 	}
 	switch c.API {
-	case APIStyleResponses:
-		return c.Responses == other.Responses
-	case APIStyleAnthropicMessages:
-		return c.ProviderModel == other.ProviderModel && c.Responses == other.Responses && anthropicMessagesEqual(c.AnthropicMessages, other.AnthropicMessages)
+	case protocol.APIStyleResponses:
+		return c.Responses.Compatible(other.Responses)
+	case protocol.APIStyleAnthropicMessages:
+		return c.ProviderModel == other.ProviderModel && c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
 	default:
 		return false
 	}
-}
-
-func anthropicMessagesEqual(left, right *AnthropicMessagesConfig) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	if left.MaxTokens != right.MaxTokens || left.CacheDiagnostics != right.CacheDiagnostics || left.PerMessageEffort != right.PerMessageEffort || left.StrictToolInput != right.StrictToolInput || left.EagerInputStreaming != right.EagerInputStreaming {
-		return false
-	}
-	if !anthropicThinkingEqual(left.Thinking, right.Thinking) || !anthropicPromptCacheEqual(left.PromptCache, right.PromptCache) || !anthropicCompactionEqual(left.Compaction, right.Compaction) {
-		return false
-	}
-	return true
-}
-
-func anthropicThinkingEqual(left, right *AnthropicThinkingConfig) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	if left.Type != right.Type || !intPointerEqual(left.BudgetTokens, right.BudgetTokens) {
-		return false
-	}
-	if left.BlockBinding == nil || right.BlockBinding == nil {
-		return left.BlockBinding == right.BlockBinding
-	}
-	return left.BlockBinding.PrefixMismatchBehavior == right.BlockBinding.PrefixMismatchBehavior
-}
-
-func anthropicPromptCacheEqual(left, right *AnthropicPromptCacheConfig) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return left.TTL == right.TTL
-}
-
-func anthropicCompactionEqual(left, right *AnthropicCompactionConfig) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return left.MaxTokens == right.MaxTokens && left.KeepRecentTurns == right.KeepRecentTurns && intPointerEqual(left.AutoCompactTokens, right.AutoCompactTokens)
-}
-
-func intPointerEqual(left, right *int) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return *left == *right
 }
 
 type ConnectionConfig struct {
@@ -394,10 +247,10 @@ func (s Settings) Validate() error {
 		if !ok {
 			return fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
 		}
-		if config.API == APIStyleResponses && connection.Auth.Type != AuthTypeBearer {
+		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer {
 			return fmt.Errorf("model %s responses API requires bearer connection auth", model)
 		}
-		if config.API == APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
+		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
 			return fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model)
 		}
 	}

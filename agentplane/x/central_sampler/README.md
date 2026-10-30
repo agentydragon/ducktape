@@ -165,6 +165,13 @@ nested tools, executor, effect journal and History export.
 }
 ```
 
+The Go implementation separates native protocols into `anthropic/` and `responses/` packages.
+Both depend on `protocol/` for content, tool invocations, context operations and the evidence sink;
+neither imports the sampler or the other API package. The sampler owns settings, credentials,
+leases, effect intents, execution and storage. Native compaction plans prepare requests and validate
+replacements; the sampler commits the request before dispatch and applies the replacement under
+its context and lease fences.
+
 Conversations record their API explicitly. Responses stores native Responses items; Anthropic
 stores native Messages API messages. Typed protocol contexts own rendering, tool pairing, effort,
 and compaction. Generic tool invocations carry native source-record links and are execution

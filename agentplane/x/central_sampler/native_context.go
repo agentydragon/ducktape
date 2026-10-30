@@ -1,38 +1,25 @@
 package centralsampler
 
-import "encoding/json"
+import (
+	"encoding/json"
 
-// NativeContext is sealed to the two protocol implementations. Records are native API objects;
-// execution decisions never become additional conversation records.
-type NativeContext interface {
-	json.Marshaler
-	API() APIStyle
-	Records() ([]json.RawMessage, error)
-	AppendRecords([]json.RawMessage) error
-	AppendUser([]ContentPart) error
-	AppendNotice([]ContentPart) error
-	AppendToolResult(ToolInvocation, []ContentPart) error
-	ChangeEffort(string) error
-	AppendExecutionState(*ExecutionState) error
-	PendingCalls() ([]ToolInvocation, error)
-	FindCall(string) (ToolInvocation, error)
-	CheckSettled() error
-	TurnComplete() bool
-	nativeContext()
-}
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
+)
 
-func newNativeContext(api APIStyle) (NativeContext, error) {
+func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
 	switch api {
-	case APIStyleResponses:
-		return &ResponsesContext{}, nil
-	case APIStyleAnthropicMessages:
-		return &AnthropicContext{}, nil
+	case protocol.APIStyleResponses:
+		return &responses.Context{}, nil
+	case protocol.APIStyleAnthropicMessages:
+		return &anthropic.Context{}, nil
 	default:
-		return nil, ErrInvalid
+		return nil, protocol.ErrInvalid
 	}
 }
 
-func decodeNativeContext(api APIStyle, raw []byte) (NativeContext, error) {
+func decodeNativeContext(api protocol.APIStyle, raw []byte) (protocol.Context, error) {
 	state, err := newNativeContext(api)
 	if err != nil {
 		return nil, err
@@ -43,7 +30,7 @@ func decodeNativeContext(api APIStyle, raw []byte) (NativeContext, error) {
 	return state, nil
 }
 
-func decodeNativeRecords(api APIStyle, records []json.RawMessage) (NativeContext, error) {
+func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (protocol.Context, error) {
 	state, err := newNativeContext(api)
 	if err != nil {
 		return nil, err
@@ -54,7 +41,7 @@ func decodeNativeRecords(api APIStyle, records []json.RawMessage) (NativeContext
 	return state, nil
 }
 
-func cloneNativeContext(state NativeContext) (NativeContext, error) {
+func cloneNativeContext(state protocol.Context) (protocol.Context, error) {
 	wire, err := json.Marshal(state)
 	if err != nil {
 		return nil, err

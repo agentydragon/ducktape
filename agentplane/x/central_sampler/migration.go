@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -17,7 +18,7 @@ var migrationFiles embed.FS
 // Migrate applies the sampler-owned Goose SQL migrations, converts retained conversations to
 // their native API representation, and verifies the resulting schema. modelAPIs explicitly maps
 // configured public model routes to their provider API for legacy sessions without request evidence.
-func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]APIStyle) error {
+func Migrate(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
 	files, err := fs.Sub(migrationFiles, "schema")
 	if err != nil {
 		return err

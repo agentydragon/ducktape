@@ -1,4 +1,4 @@
-package centralsampler
+package anthropic
 
 import (
 	"bytes"
@@ -8,22 +8,22 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 const executionStatePrefix = "Active execution handles: "
 
-// AnthropicContext stores one native Messages API message per record. Messages are kept as raw
+// Context stores one native Messages API message per record. Messages are kept as raw
 // JSON so provider-owned fields, content block boundaries, signatures, and usage survive replay.
-type AnthropicContext struct {
+type Context struct {
 	Messages      []json.RawMessage `json:"messages"`
 	PendingEffort *string           `json:"pending_effort,omitempty"`
 }
 
-func (*AnthropicContext) nativeContext() {}
+func (*Context) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessages }
 
-func (*AnthropicContext) API() APIStyle { return APIStyleAnthropicMessages }
-
-func (c *AnthropicContext) Records() ([]json.RawMessage, error) {
+func (c *Context) Records() ([]json.RawMessage, error) {
 	if c == nil {
 		return nil, errors.New("nil Anthropic context")
 	}
@@ -32,14 +32,14 @@ func (c *AnthropicContext) Records() ([]json.RawMessage, error) {
 		if err := validateAnthropicMessage(record); err != nil {
 			return nil, fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
-		result[i] = cloneJSON(record)
+		result[i] = protocol.CloneJSON(record)
 	}
 	return result, nil
 }
 
 // WireMessages removes response-envelope metadata that belongs only in storage while preserving
 // the native role, content block sequence, and per-message effort control sent to Anthropic.
-func (c *AnthropicContext) WireMessages() ([]json.RawMessage, error) {
+func (c *Context) WireMessages() ([]json.RawMessage, error) {
 	records, err := c.Records()
 	if err != nil {
 		return nil, err
@@ -49,13 +49,13 @@ func (c *AnthropicContext) WireMessages() ([]json.RawMessage, error) {
 	}
 	wire := make([]json.RawMessage, 0, len(records))
 	for index, record := range records {
-		fields := anthropicMessageFields(record)
+		fields := messageFields(record)
 		message := map[string]json.RawMessage{
-			"role":    cloneJSON(fields["role"]),
-			"content": cloneJSON(fields["content"]),
+			"role":    protocol.CloneJSON(fields["role"]),
+			"content": protocol.CloneJSON(fields["content"]),
 		}
 		if outputConfig, present := fields["output_config"]; present {
-			message["output_config"] = cloneJSON(outputConfig)
+			message["output_config"] = protocol.CloneJSON(outputConfig)
 		}
 		encoded, err := json.Marshal(message)
 		if err != nil {
@@ -66,7 +66,7 @@ func (c *AnthropicContext) WireMessages() ([]json.RawMessage, error) {
 	return wire, nil
 }
 
-func (c *AnthropicContext) AppendRecords(records []json.RawMessage) error {
+func (c *Context) AppendRecords(records []json.RawMessage) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -76,12 +76,12 @@ func (c *AnthropicContext) AppendRecords(records []json.RawMessage) error {
 		}
 	}
 	for _, record := range records {
-		c.Messages = append(c.Messages, cloneJSON(record))
+		c.Messages = append(c.Messages, protocol.CloneJSON(record))
 	}
 	return nil
 }
 
-func (c *AnthropicContext) AppendUser(parts []ContentPart) error {
+func (c *Context) AppendUser(parts []protocol.ContentPart) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -107,7 +107,7 @@ func (c *AnthropicContext) AppendUser(parts []ContentPart) error {
 
 // AppendNotice adds server-generated context as a native user message without activating a
 // deferred effort restoration. Recovery notices are not new user input.
-func (c *AnthropicContext) AppendNotice(parts []ContentPart) error {
+func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -122,7 +122,7 @@ func (c *AnthropicContext) AppendNotice(parts []ContentPart) error {
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
-func (c *AnthropicContext) AppendToolResult(call ToolInvocation, parts []ContentPart) error {
+func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -147,7 +147,7 @@ func (c *AnthropicContext) AppendToolResult(call ToolInvocation, parts []Content
 			return err
 		}
 		text := "Asynchronous output from exec call " + call.CallID + ":\n" + string(encoded)
-		return c.AppendNotice([]ContentPart{{Type: "input_text", Text: text}})
+		return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}})
 	}
 	result := map[string]any{
 		"type":        "tool_result",
@@ -165,7 +165,7 @@ func (c *AnthropicContext) AppendToolResult(call ToolInvocation, parts []Content
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
-func (c *AnthropicContext) ChangeEffort(effort string) error {
+func (c *Context) ChangeEffort(effort string) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -180,7 +180,7 @@ func (c *AnthropicContext) ChangeEffort(effort string) error {
 	return nil
 }
 
-func (c *AnthropicContext) appendEffortControl(effort string) error {
+func (c *Context) appendEffortControl(effort string) error {
 	if strings.TrimSpace(effort) == "" {
 		return errors.New("Anthropic effort must be non-empty")
 	}
@@ -195,7 +195,7 @@ func (c *AnthropicContext) appendEffortControl(effort string) error {
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
-func (c *AnthropicContext) AppendExecutionState(state *ExecutionState) error {
+func (c *Context) AppendExecutionState(state *protocol.ExecutionState) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -231,7 +231,7 @@ func (c *AnthropicContext) AppendExecutionState(state *ExecutionState) error {
 		return nil
 	}
 	text := executionStatePrefix + string(wire)
-	return c.AppendNotice([]ContentPart{{Type: "input_text", Text: text}})
+	return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}})
 }
 
 type anthropicExecutionState struct {
@@ -251,9 +251,9 @@ type anthropicActiveProcess struct {
 	ExitCode  *int   `json:"exit_code"`
 }
 
-func (c *AnthropicContext) lastExecutionState() (json.RawMessage, bool, error) {
+func (c *Context) lastExecutionState() (json.RawMessage, bool, error) {
 	for i := len(c.Messages) - 1; i >= 0; i-- {
-		fields := anthropicMessageFields(c.Messages[i])
+		fields := messageFields(c.Messages[i])
 		if rawString(fields, "role") != "user" {
 			continue
 		}
@@ -291,23 +291,23 @@ func anthropicContentBlocks(raw json.RawMessage) ([]json.RawMessage, error) {
 	return blocks, nil
 }
 
-func (c *AnthropicContext) FindCall(callID string) (ToolInvocation, error) {
+func (c *Context) FindCall(callID string) (protocol.ToolInvocation, error) {
 	if c == nil {
-		return ToolInvocation{}, errors.New("nil Anthropic context")
+		return protocol.ToolInvocation{}, errors.New("nil Anthropic context")
 	}
 	calls, err := c.toolCalls()
 	if err != nil {
-		return ToolInvocation{}, err
+		return protocol.ToolInvocation{}, err
 	}
 	for _, call := range calls {
 		if call.CallID == callID {
 			return call, nil
 		}
 	}
-	return ToolInvocation{}, ErrMissing
+	return protocol.ToolInvocation{}, protocol.ErrMissing
 }
 
-func (c *AnthropicContext) PendingCalls() ([]ToolInvocation, error) {
+func (c *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
 	if c == nil {
 		return nil, errors.New("nil Anthropic context")
 	}
@@ -319,7 +319,7 @@ func (c *AnthropicContext) PendingCalls() ([]ToolInvocation, error) {
 	if err != nil {
 		return nil, err
 	}
-	pending := make([]ToolInvocation, 0, len(calls))
+	pending := make([]protocol.ToolInvocation, 0, len(calls))
 	for _, call := range calls {
 		if !answered[call.CallID] {
 			pending = append(pending, call)
@@ -328,11 +328,11 @@ func (c *AnthropicContext) PendingCalls() ([]ToolInvocation, error) {
 	return pending, nil
 }
 
-func (c *AnthropicContext) toolCalls() ([]ToolInvocation, error) {
-	calls := []ToolInvocation{}
+func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
+	calls := []protocol.ToolInvocation{}
 	seen := map[string]bool{}
 	for recordIndex, record := range c.Messages {
-		fields := anthropicMessageFields(record)
+		fields := messageFields(record)
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
 		}
@@ -361,15 +361,15 @@ func (c *AnthropicContext) toolCalls() ([]ToolInvocation, error) {
 				return nil, fmt.Errorf("duplicate Anthropic tool call ID %q", callID)
 			}
 			seen[callID] = true
-			calls = append(calls, ToolInvocation{
-				Encoding: ExecEncodingJSON, CallID: callID, Name: name, Input: string(input), SourceRecord: recordIndex + 1,
+			calls = append(calls, protocol.ToolInvocation{
+				Encoding: protocol.ExecEncodingJSON, CallID: callID, Name: name, Input: string(input), SourceRecord: recordIndex + 1,
 			})
 		}
 	}
 	return calls, nil
 }
 
-func (c *AnthropicContext) answeredCalls() (map[string]bool, error) {
+func (c *Context) answeredCalls() (map[string]bool, error) {
 	known := map[string]bool{}
 	calls, err := c.toolCalls()
 	if err != nil {
@@ -380,7 +380,7 @@ func (c *AnthropicContext) answeredCalls() (map[string]bool, error) {
 	}
 	answered := map[string]bool{}
 	for recordIndex, record := range c.Messages {
-		fields := anthropicMessageFields(record)
+		fields := messageFields(record)
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
 		}
@@ -409,7 +409,7 @@ func (c *AnthropicContext) answeredCalls() (map[string]bool, error) {
 	return answered, nil
 }
 
-func (c *AnthropicContext) CheckSettled() error {
+func (c *Context) CheckSettled() error {
 	calls, err := c.PendingCalls()
 	if err != nil {
 		return err
@@ -420,12 +420,12 @@ func (c *AnthropicContext) CheckSettled() error {
 			ids[index] = call.CallID
 		}
 		slices.Sort(ids)
-		return &UnknownEffectError{Reason: fmt.Sprintf("unresolved Anthropic tool calls %v", ids)}
+		return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved Anthropic tool calls %v", ids)}
 	}
 	return nil
 }
 
-func (c *AnthropicContext) TurnComplete() bool {
+func (c *Context) TurnComplete() bool {
 	if c == nil || len(c.Messages) == 0 {
 		return false
 	}
@@ -439,7 +439,7 @@ func (c *AnthropicContext) TurnComplete() bool {
 	return message.Role == "assistant" && message.StopReason == "end_turn"
 }
 
-func (c *AnthropicContext) MarshalJSON() ([]byte, error) {
+func (c *Context) MarshalJSON() ([]byte, error) {
 	if c == nil {
 		return []byte("null"), nil
 	}
@@ -459,7 +459,7 @@ func (c *AnthropicContext) MarshalJSON() ([]byte, error) {
 	}{Messages: messages, PendingEffort: c.PendingEffort})
 }
 
-func (c *AnthropicContext) UnmarshalJSON(data []byte) error {
+func (c *Context) UnmarshalJSON(data []byte) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}

@@ -7,11 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
 )
 
 func fixtureSettings() Settings {
 	return Settings{
-		Models:      map[string]ModelConfig{"test-model": {Connection: "provider", ProviderModel: "test-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}},
+		Models:      map[string]ModelConfig{"test-model": {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}},
 		Connections: map[string]ConnectionConfig{"provider": {BaseURL: "https://model.invalid", Auth: AuthConfig{Type: AuthTypeBearer, Credential: "test-credential"}}},
 		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
@@ -65,16 +69,16 @@ func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *tes
 
 func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
-		"missing connection":           {ProviderModel: "test-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
-		"missing provider model":       {Connection: "provider", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
-		"missing api":                  {Connection: "provider", ProviderModel: "test-model", Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
-		"unsupported api":              {Connection: "provider", ProviderModel: "test-model", API: "unknown", ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"high"}},
-		"missing responses config":     {Connection: "provider", ProviderModel: "test-model", API: APIStyleResponses, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
-		"unsupported responses mode":   {Connection: "provider", ProviderModel: "test-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: "unknown"}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
-		"missing exec encoding":        {Connection: "provider", ProviderModel: "test-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ReasoningEfforts: []string{"high"}},
-		"unsupported exec encoding":    {Connection: "provider", ProviderModel: "test-model", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: "yaml", ReasoningEfforts: []string{"high"}},
-		"anthropic needs config":       {Connection: "provider", ProviderModel: "test-model", API: APIStyleAnthropicMessages, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"high"}},
-		"anthropic requires json exec": {Connection: "provider", ProviderModel: "test-model", API: APIStyleAnthropicMessages, AnthropicMessages: &AnthropicMessagesConfig{MaxTokens: 4096}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"missing connection":           {ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"missing provider model":       {Connection: "provider", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"missing api":                  {Connection: "provider", ProviderModel: "test-model", Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"unsupported api":              {Connection: "provider", ProviderModel: "test-model", API: "unknown", ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{"high"}},
+		"missing responses config":     {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"unsupported responses mode":   {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: "unknown"}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
+		"missing exec encoding":        {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ReasoningEfforts: []string{"high"}},
+		"unsupported exec encoding":    {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: "yaml", ReasoningEfforts: []string{"high"}},
+		"anthropic needs config":       {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleAnthropicMessages, ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{"high"}},
+		"anthropic requires json exec": {Connection: "provider", ProviderModel: "test-model", API: protocol.APIStyleAnthropicMessages, AnthropicMessages: &anthropic.Config{MaxTokens: 4096}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := fixtureSettings()
@@ -94,17 +98,17 @@ func TestAnthropicSettingsResolveNamedConnectionAndEnforceControls(t *testing.T)
 	s.Models["test-model"] = ModelConfig{
 		Connection:       "provider",
 		ProviderModel:    "claude-test",
-		API:              APIStyleAnthropicMessages,
-		ExecEncoding:     ExecEncodingJSON,
+		API:              protocol.APIStyleAnthropicMessages,
+		ExecEncoding:     protocol.ExecEncodingJSON,
 		ReasoningEfforts: []string{"high"},
-		AnthropicMessages: &AnthropicMessagesConfig{
+		AnthropicMessages: &anthropic.Config{
 			MaxTokens: 4096,
-			Thinking: &AnthropicThinkingConfig{
+			Thinking: &anthropic.ThinkingConfig{
 				Type:         "adaptive",
-				BlockBinding: &AnthropicBlockBindingConfig{PrefixMismatchBehavior: "drop_block"},
+				BlockBinding: &anthropic.BlockBindingConfig{PrefixMismatchBehavior: "drop_block"},
 			},
-			PromptCache: &AnthropicPromptCacheConfig{TTL: "1h"},
-			Compaction:  &AnthropicCompactionConfig{MaxTokens: 12000, KeepRecentTurns: 1},
+			PromptCache: &anthropic.PromptCacheConfig{TTL: "1h"},
+			Compaction:  &anthropic.CompactionConfig{MaxTokens: 12000, KeepRecentTurns: 1},
 		},
 	}
 	if err := s.Validate(); err != nil {
@@ -127,15 +131,15 @@ func TestAnthropicSettingsResolveNamedConnectionAndEnforceControls(t *testing.T)
 
 	for name, edit := range map[string]func(*ModelConfig){
 		"responses dialect is API-specific": func(config *ModelConfig) {
-			config.Responses = ResponsesConfig{Dialect: ResponsesDialectLite}
+			config.Responses = responses.Config{Dialect: responses.DialectLite}
 		},
 		"positive token limit": func(config *ModelConfig) { config.AnthropicMessages.MaxTokens = 0 },
 		"enabled thinking requires a budget": func(config *ModelConfig) {
-			config.AnthropicMessages.Thinking = &AnthropicThinkingConfig{Type: "enabled"}
+			config.AnthropicMessages.Thinking = &anthropic.ThinkingConfig{Type: "enabled"}
 		},
 		"enabled thinking budget is below the output limit": func(config *ModelConfig) {
 			budget := config.AnthropicMessages.MaxTokens
-			config.AnthropicMessages.Thinking = &AnthropicThinkingConfig{Type: "enabled", BudgetTokens: &budget}
+			config.AnthropicMessages.Thinking = &anthropic.ThinkingConfig{Type: "enabled", BudgetTokens: &budget}
 		},
 		"block binding mode is closed": func(config *ModelConfig) {
 			config.AnthropicMessages.Thinking.BlockBinding.PrefixMismatchBehavior = "ignore"
@@ -144,7 +148,7 @@ func TestAnthropicSettingsResolveNamedConnectionAndEnforceControls(t *testing.T)
 			config.AnthropicMessages.Thinking.Type = "disabled"
 		},
 		"prompt cache TTL is closed": func(config *ModelConfig) {
-			config.AnthropicMessages.PromptCache = &AnthropicPromptCacheConfig{TTL: "30m"}
+			config.AnthropicMessages.PromptCache = &anthropic.PromptCacheConfig{TTL: "30m"}
 		},
 		"recent turns cannot be negative": func(config *ModelConfig) {
 			config.AnthropicMessages.Compaction.KeepRecentTurns = -1
@@ -169,7 +173,7 @@ func TestAnthropicSettingsResolveNamedConnectionAndEnforceControls(t *testing.T)
 	}
 }
 
-func copyAnthropicMessages(config *AnthropicMessagesConfig) *AnthropicMessagesConfig {
+func copyAnthropicMessages(config *anthropic.Config) *anthropic.Config {
 	copy := *config
 	if config.Thinking != nil {
 		thinking := *config.Thinking
@@ -191,29 +195,29 @@ func copyAnthropicMessages(config *AnthropicMessagesConfig) *AnthropicMessagesCo
 }
 
 func TestModelConfigCompatibilityTracksWireSemantics(t *testing.T) {
-	responses := fixtureSettings().Models["test-model"]
-	if !responses.Compatible(responses) {
+	responsesModel := fixtureSettings().Models["test-model"]
+	if !responsesModel.Compatible(responsesModel) {
 		t.Fatal("identical Responses routes should be compatible")
 	}
-	incompatibleResponses := responses
-	incompatibleResponses.Responses.Dialect = ResponsesDialectStandard
-	if responses.Compatible(incompatibleResponses) {
+	incompatibleResponses := responsesModel
+	incompatibleResponses.Responses.Dialect = responses.DialectStandard
+	if responsesModel.Compatible(incompatibleResponses) {
 		t.Fatal("different Responses dialects should not be compatible")
 	}
-	incompatibleResponses = responses
+	incompatibleResponses = responsesModel
 	incompatibleResponses.Connection = "other-provider"
-	if responses.Compatible(incompatibleResponses) {
+	if responsesModel.Compatible(incompatibleResponses) {
 		t.Fatal("different provider connections should not be compatible")
 	}
-	changedProviderModel := responses
+	changedProviderModel := responsesModel
 	changedProviderModel.ProviderModel = "other-model"
-	if !responses.Compatible(changedProviderModel) {
+	if !responsesModel.Compatible(changedProviderModel) {
 		t.Fatal("Responses routes with the same wire semantics may change provider model")
 	}
 
 	anthropic := ModelConfig{
-		Connection: "anthropic", ProviderModel: "claude-test", API: APIStyleAnthropicMessages, ExecEncoding: ExecEncodingJSON,
-		AnthropicMessages: &AnthropicMessagesConfig{MaxTokens: 4096, Thinking: &AnthropicThinkingConfig{Type: "adaptive"}},
+		Connection: "anthropic", ProviderModel: "claude-test", API: protocol.APIStyleAnthropicMessages, ExecEncoding: protocol.ExecEncodingJSON,
+		AnthropicMessages: &anthropic.Config{MaxTokens: 4096, Thinking: &anthropic.ThinkingConfig{Type: "adaptive"}},
 	}
 	if !anthropic.Compatible(anthropic) {
 		t.Fatal("identical Anthropic configurations should be compatible")
