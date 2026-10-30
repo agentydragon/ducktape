@@ -304,7 +304,7 @@ Cover discovery, linked evidence, live-feed revocation and unknown historical as
 this on a messaging transport.
 
 **Question for review:** should an `allSandboxes` read also reach histories with no recorded Sandbox
-UID, which are operator-only today ([History README](../history_service/README.md#which-sandbox-wrote-a-session))? Those rows keep the recorded
+UID, which are operator-only today ([History README](../history_service/README.md#session-writer-and-execution-sandbox))? Those rows keep the recorded
 namespace, which is all that target matches on; a history with no recorded Sandbox stays operator-only
 either way.
 
@@ -334,7 +334,7 @@ restarted watch catching up.
 ### `HISTORY_SANDBOX_ASSOCIATION_SOURCE` — an authoritative Sandbox UID source for History
 
 **Unscheduled TODO (operator, #11835).** History resolves a writer's Sandbox UID from the controller
-ownerReference on its ServiceAccount ([README](../history_service/README.md#which-sandbox-wrote-a-session)).
+ownerReference on its ServiceAccount ([README](../history_service/README.md#session-writer-and-execution-sandbox)).
 Consider whether the Sandbox Controller can expose a cleaner authoritative association instead; keep the
 ownerReference until that is reviewed. Related: a ServiceAccount recreated in place under the same Sandbox
 keeps failing as a different writer, and letting the Sandbox UID take over as the pin is a separate
@@ -1473,7 +1473,7 @@ the log. Verify the History Service and Electric reconnect with no data movement
 **Unscheduled; operator, 2026-10-11 PDT.** A small controller deletes Action box Pods with no
 `exec` for a configured time. The Action Service stamps a last-exec time on the box at each `exec`;
 a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sandbox-lifetime)` in
-`action_service/sandbox/inventory.go`; draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
+`action_service/sandbox/inventory.go`; the closed draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expired agent-sandbox boxes the same way.
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
@@ -1560,7 +1560,7 @@ flowchart TD
 
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
-[`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation).
+[`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
 
 ## 12. The Runner Gateway serves the runner's own service
 
