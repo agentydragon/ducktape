@@ -1,21 +1,21 @@
-# Sandbox tags and History's Sandbox records
+# History tags and History's Sandbox records
 
-Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; inbox tags implemented, history tags
-not.** Implementation
-gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations). The costs
-that led here and the directions weighed are in the
+Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; not implemented.** Inbox tags, the
+other tag kind, shipped; their behavior is in the [Sandboxes README](../sandboxes/README.md).
+Implementation gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
+The costs that led here and the directions weighed are in the
 [architecture overview](architecture_overview.md#keeping-finished-sandboxes-as-records).
 
-Collections of Sandboxes, used to grant sends and history reads in groups, are plain string tags on
-the Sandbox itself, with no membership objects. There are two kinds, one per service they gate.
-History keeps its own record of each Sandbox, so a Sandbox's history and the grants that read it
-outlive the Sandbox.
+History tags group Sandboxes to grant history reads, as inbox tags group them to grant sends. History
+keeps its own record of each Sandbox, so a Sandbox's history and the grants that read it outlive the
+Sandbox.
 
 ## Tags
 
-Two set-typed lists in `Sandbox.spec`, like `spec.policySets`:
+History tags are a set-typed list in `Sandbox.spec`, beside `spec.inboxTags`, written and gated the
+same way (Flux and the app; Sandbox RBAC only).
 
-|                                | Inbox tags                               | History tags                            |
+|                                | Inbox tags (shipped)                     | History tags                            |
 | ------------------------------ | ---------------------------------------- | --------------------------------------- |
 | Gates                          | sends into the Sandbox's Session inboxes | reads of the Sandbox's retained history |
 | Checked by                     | Notifications, against the live CR       | History, against its own record         |
@@ -23,40 +23,15 @@ Two set-typed lists in `Sandbox.spec`, like `spec.policySets`:
 
 The operator keeps them apart because they are "permission gates for different services", and
 inbox tags do "not make sense to archive" (2026-10-20 00:21). Each is named for the service where it
-counts (04:04): the inbox service, today the Notification service, and History. "Transcript tags",
-with History renamed to a transcript service, is a candidate (04:05, `HISTORY_SERVICE_RENAME` in the
-[task DAG](task_dag.md#8-ownership-and-naming-cleanup)).
-
-- A tag is "something like a tag on one or more Sandboxes that's just a string, without a UID
-  identity or a k8s object backing it, no Membership objects" (2026-10-19 09:58).
-- Flux and the app write tags (2026-10-20 01:17). Sandbox RBAC is the only gate, with no admission
-  rule (01:29): whoever can patch a Sandbox can already set its `spec.policySets`, which grants at
-  least as much.
-- Server-side apply tracks each entry of a set-typed list separately, and Flux takes back only
-  fields edited with `kubectl` (kustomize-controller's field-manager cleanup). On a Sandbox git
-  creates, git and the app can each own different tags, and a tag git declares is reverted if
-  changed live. Git cannot tag a Sandbox the app created, since Flux would then own the whole object.
-- An app preset supplies a launched Sandbox's initial tags. A tag removed later stays removed;
-  editing a preset changes only later launches.
-- A recreated Sandbox has only the tags its manifest or preset gives it, so a git-managed Sandbox
-  gets its tags back by name and an app-launched Sandbox's tags end with it.
+counts (04:04). "Transcript tags", with History renamed to a transcript service, is a candidate
+(04:05, `HISTORY_SERVICE_RENAME` in the [task DAG](task_dag.md#8-ownership-and-naming-cleanup)).
 
 ## Grants
 
-Each tag kind is a target of its own rule type, beside direct Sandboxes and `allSandboxes`
-([rule direction](multiagent_communication.md#tentative-implementation-direction)). Sends:
-
-```yaml
-type: session_inbox_access
-operations: [send_message]
-targets:
-  inboxTags: [developers]
-```
-
-Reads take a different kind of rule, as they take a different kind of tag (2026-10-21 03:43). Its
-shape is held with `THREAD_READ_POLICY_DESIGN`. Whatever its shape, a read grant matches history tags
-on History's record, never on the live CR, so a read is checked the same way before and after the
-Sandbox is deleted.
+Reads take a different kind of rule from sends, as they take a different kind of tag (2026-10-21
+03:43). Its shape is held with `THREAD_READ_POLICY_DESIGN`. Whatever its shape, a read grant matches
+history tags on History's record, never on the live CR, so a read is checked the same way before and
+after the Sandbox is deleted.
 
 ## History's record of a Sandbox
 
