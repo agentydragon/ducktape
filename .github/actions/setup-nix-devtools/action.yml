@@ -2,10 +2,10 @@ name: Setup Nix + Devtools
 description: Install Nix with the anonymous bootstrap cache and selected flake package outputs
 
 inputs:
-  package:
-    description: "Whitespace-separated Nix flake package names to install (e.g. devtools, precommit, or bb bbapi bbr)"
+  installables:
+    description: "Nix installables passed directly to nix profile install (e.g. .#bb .#bbapi .#bbr)"
     required: false
-    default: devtools
+    default: ".#devtools"
 
 runs:
   using: composite
@@ -33,14 +33,6 @@ runs:
           extra-substituters = https://cache.allegedly.works/public
           fallback = true
 
-    - name: Install ${{ inputs.package }}
+    - name: Install ${{ inputs.installables }}
       shell: bash
-      env:
-        PACKAGES: ${{ inputs.package }}
-      run: |
-        read -r -a packages <<< "$PACKAGES"
-        installables=()
-        for package in "${packages[@]}"; do
-          installables+=(".#$package")
-        done
-        nix profile install "${installables[@]}"
+      run: nix profile install ${{ inputs.installables }}

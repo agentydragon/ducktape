@@ -133,7 +133,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: prettier
+          installables: ".#prettier"
 
       - uses: docker/login-action@v4
         with:

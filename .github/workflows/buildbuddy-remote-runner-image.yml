@@ -112,7 +112,7 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         with:
-          package: prettier
+          installables: ".#prettier"
 
       - name: Pin on the latest branch after verifying its inputs
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only

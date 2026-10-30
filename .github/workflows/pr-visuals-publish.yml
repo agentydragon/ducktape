@@ -48,7 +48,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: pr-visuals
+          installables: ".#pr-visuals"
 
       - name: Announce visual review
         env:
@@ -96,7 +96,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: pr-visuals
+          installables: ".#pr-visuals"
 
       - name: Publish visual review
         id: visuals

@@ -154,7 +154,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: bb
+          installables: ".#bb"
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
@@ -261,7 +261,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: bb
+          installables: ".#bb"
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
