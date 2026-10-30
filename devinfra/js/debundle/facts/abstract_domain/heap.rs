@@ -19,6 +19,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::builtins::{self, ArgSel, Invocation};
+use super::primitive::{BindingPrims, evaluate};
 use super::value::{Kind, Value};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::{
@@ -423,6 +424,145 @@ pub(crate) fn plain_array_bindings(
         .filter(|(name, sites)| !scan.rebound.contains(*name) && all_plain(&scan.states, sites))
         .map(|(name, _)| name.clone())
         .collect()
+}
+
+/// Plain arrays whose every element is a primitive: a literal of primitive
+/// expressions, holes and spreads of earlier such arrays, or `filter`/`slice`
+/// of one. Each array is also never handed to a callback that could write it:
+/// an element callback of `forEach`/`map`/`filter`/`flatMap` on it must be an
+/// inline function taking at most the element and index, without
+/// `arguments`. `Clean` then keeps the elements primitive for the whole
+/// chunk, so iterating the array through an intact `%Array.prototype%`
+/// method passes only primitives and reaches no callable through it.
+pub(crate) fn primitive_element_arrays(
+    body: &[TopLevelItemView<'_>],
+    plain_arrays: &BTreeSet<String>,
+    prims: &BindingPrims,
+) -> BTreeSet<String> {
+    if plain_arrays.is_empty() {
+        return BTreeSet::new();
+    }
+    let mut exposure = ArrayExposure {
+        plain_arrays,
+        exposed: BTreeSet::new(),
+    };
+    for item in body {
+        item.as_module_item().visit_with(&mut exposure);
+    }
+    let unshadowed = BTreeSet::new();
+    let scope = prims.scope(&unshadowed);
+    let mut primitive = BTreeSet::new();
+    for item in body {
+        for (name, init, kind) in top_level_initializers(item.as_module_item()) {
+            if kind != VarDeclKind::Const
+                || !plain_arrays.contains(&name)
+                || exposure.exposed.contains(&name)
+            {
+                continue;
+            }
+            let elements_primitive = match init.unwrap_parens() {
+                Expr::Array(array) => array.elems.iter().flatten().all(|element| {
+                    match (element.spread, element.expr.unwrap_parens()) {
+                        (Some(_), source) => filtered_from(source, &primitive),
+                        (None, expr) => {
+                            evaluate(expr, &scope).is_some_and(|kinds| !kinds.is_empty())
+                        }
+                    }
+                }),
+                derived @ Expr::Call(_) => filtered_from(derived, &primitive),
+                _ => false,
+            };
+            if elements_primitive {
+                primitive.insert(name);
+            }
+        }
+    }
+    primitive
+}
+
+/// `source`, possibly through `filter`/`slice` calls, is one of `arrays`:
+/// the result's elements are a subset of its elements.
+fn filtered_from(expr: &Expr, arrays: &BTreeSet<String>) -> bool {
+    match expr.unwrap_parens() {
+        Expr::Ident(source) => arrays.contains(source.sym.as_ref()),
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return false;
+            };
+            let Expr::Member(member) = callee.unwrap_parens() else {
+                return false;
+            };
+            matches!(&member.prop, MemberProp::Ident(method) if matches!(method.sym.as_ref(), "filter" | "slice"))
+                && filtered_from(&member.obj, arrays)
+        }
+        _ => false,
+    }
+}
+
+/// The identifier receiver of `receiver.method(...)` for one of `methods`.
+fn array_method_receiver<'a>(call: &'a CallExpr, methods: &[&str]) -> Option<&'a str> {
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(member) = callee.unwrap_parens() else {
+        return None;
+    };
+    let (Expr::Ident(receiver), MemberProp::Ident(method)) =
+        (member.obj.unwrap_parens(), &member.prop)
+    else {
+        return None;
+    };
+    methods
+        .contains(&method.sym.as_ref())
+        .then_some(receiver.sym.as_ref())
+}
+
+/// Plain arrays whose element callback may receive the array itself: its
+/// third parameter, `arguments`, or a callback the scan cannot see.
+struct ArrayExposure<'a> {
+    plain_arrays: &'a BTreeSet<String>,
+    exposed: BTreeSet<String>,
+}
+
+impl Visit for ArrayExposure<'_> {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Some(receiver) =
+            array_method_receiver(node, &["forEach", "map", "filter", "flatMap"])
+            && self.plain_arrays.contains(receiver)
+            && !node.args.first().is_some_and(|callback| {
+                callback.spread.is_none() && sees_only_element(&callback.expr)
+            })
+        {
+            self.exposed.insert(receiver.to_owned());
+        }
+        node.visit_children_with(self);
+    }
+}
+
+/// An inline element callback with at most `(element, index)` identifier
+/// parameters that never reads `arguments`.
+fn sees_only_element(callback: &Expr) -> bool {
+    let simple = |pats: &mut dyn Iterator<Item = &Pat>| {
+        let pats: Vec<&Pat> = pats.collect();
+        pats.len() <= 2 && pats.iter().all(|pat| matches!(pat, Pat::Ident(_)))
+    };
+    match callback.unwrap_parens() {
+        Expr::Arrow(arrow) => simple(&mut arrow.params.iter()),
+        Expr::Fn(function) => {
+            struct Arguments(bool);
+            impl Visit for Arguments {
+                fn visit_ident(&mut self, ident: &Ident) {
+                    self.0 |= ident.sym.as_ref() == "arguments";
+                }
+                // A nested function's `arguments` is its own.
+                fn visit_function(&mut self, _: &Function) {}
+            }
+            let mut arguments = Arguments(false);
+            function.function.body.visit_with(&mut arguments);
+            simple(&mut function.function.params.iter().map(|param| &param.pat)) && !arguments.0
+        }
+        _ => false,
+    }
 }
 
 /// Pure syntactic check for a plain-data initializer: an object literal whose
@@ -1121,6 +1261,39 @@ mod tests {
         assert_eq!(
             plain_data("let foo = { v: 1 }; foo = make();"),
             Vec::<String>::new(),
+        );
+    }
+
+    fn primitive_arrays(source: &str) -> BTreeSet<String> {
+        let module = raw_js_test_support::parse(source);
+        let body = top_level_item_views(&module.body);
+        let plain = plain_array_bindings(&body, &compute_shadowed_globals(&body));
+        let prims = crate::facts::abstract_domain::primitive::collect_binding_prims(
+            &body,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        primitive_element_arrays(&body, &plain, &prims)
+    }
+
+    #[test]
+    fn primitive_element_arrays_hold_only_primitives_no_callback_can_replace() {
+        let source = r#"
+const name = "n";
+const literal = [1, name, , `t${name}`];
+const spread = [...literal, 2];
+const kept = spread.filter((value, index) => index).slice();
+const objects = [{ run: () => later }];
+const mapped = literal.map((value) => value);
+const writer = [1];
+writer.forEach((value, index, array) => { array[index] = { valueOf: sideEffect }; });
+const passed = [1];
+passed.forEach(sideEffect);
+export { literal, spread, kept, objects, mapped, writer, passed };
+"#;
+        assert_eq!(
+            primitive_arrays(source),
+            BTreeSet::from(["kept", "literal", "spread"].map(String::from)),
         );
     }
 }

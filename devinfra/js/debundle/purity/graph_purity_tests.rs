@@ -279,8 +279,7 @@ fn is_plain_array(src: &str, name: &str) -> bool {
     let module = parse(src);
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    graph.is_plain_array(name)
+    crate::facts::abstract_domain::heap::plain_array_bindings(&body, &shadowed).contains(name)
 }
 
 #[test]

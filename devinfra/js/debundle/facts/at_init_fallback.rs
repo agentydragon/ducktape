@@ -91,7 +91,9 @@ fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> 
         return None;
     }
     match member.obj.as_ref().unwrap_parens() {
-        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
+        Expr::Ident(recv) if graph.is_primitive_element_array(recv.sym.as_ref()) => {
+            Some(recv.to_id())
+        }
         _ => None,
     }
 }
@@ -117,7 +119,9 @@ fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Opt
         return None;
     }
     match member.obj.as_ref().unwrap_parens() {
-        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
+        Expr::Ident(recv) if graph.is_primitive_element_array(recv.sym.as_ref()) => {
+            Some(recv.to_id())
+        }
         other => plain_array_map_filter_chain_root(other, graph),
     }
 }

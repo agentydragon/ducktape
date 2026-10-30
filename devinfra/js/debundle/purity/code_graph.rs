@@ -42,13 +42,12 @@ pub struct ChunkCodeGraph {
     /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
     /// ToPropertyKey; ToString(Symbol) throws.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
-    /// Chunk-top `const X = [..]` bindings that remain static ordinary
-    /// arrays under the same no-escape scan as `PlainData`, and are
-    /// never used as the receiver of unknown/mutating array methods.
-    /// At-init fallback uses this to avoid treating `X.map(cb)` /
-    /// `X.forEach(cb)` as if those built-ins might invoke functions
-    /// held inside `X`; the callback body is still modeled separately.
-    plain_array_bindings: BTreeSet<String>,
+    /// Plain arrays (`heap::plain_array_bindings`) whose elements are all
+    /// primitives (`heap::primitive_element_arrays`). At-init fallback uses
+    /// this to avoid treating `X.map(cb)` / `X.forEach(cb)` as if those
+    /// built-ins might reach functions through `X`; the callback body is
+    /// still modeled separately.
+    primitive_element_arrays: BTreeSet<String>,
     /// Candidate own primitive fields of single-init TS enum objects.
     ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate>,
     /// Primitive enum fields are safe computed property keys only when the
@@ -479,6 +478,8 @@ impl ChunkCodeGraph {
                     .collect()
             })
             .unwrap_or_default();
+        let primitive_element_arrays =
+            heap::primitive_element_arrays(body, shape_inputs.plain_array_bindings, &binding_prims);
         let mut purity_call_targets = call_context.imported_targets.clone();
         purity_call_targets.extend(Self::inferred_function_keys(
             body,
@@ -499,7 +500,7 @@ impl ChunkCodeGraph {
             primitive_bindings: binding_prims.non_symbol_bindings(),
             symbol_const_bindings: binding_prims.symbol_bindings(),
             binding_prims,
-            plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
+            primitive_element_arrays,
             ts_enum_named_data_candidates,
             plain_data_dependencies,
             plain_data_inference_uses,
@@ -592,10 +593,10 @@ impl ChunkCodeGraph {
         self.plain_data_inference_uses.get(name)
     }
 
-    /// Whether `name` is a static ordinary array binding suitable for
+    /// Whether `name` is a plain array of primitives, suitable for
     /// array-method at-init fallback refinement.
-    pub(crate) fn is_plain_array(&self, name: &str) -> bool {
-        self.plain_array_bindings.contains(name)
+    pub(crate) fn is_primitive_element_array(&self, name: &str) -> bool {
+        self.primitive_element_arrays.contains(name)
     }
 
     pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {
