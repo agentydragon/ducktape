@@ -19,6 +19,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::builtins::{self, ArgSel, Invocation};
+use super::primitive::{BindingPrims, evaluate};
 use super::value::{Kind, Value};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::{
@@ -358,6 +359,9 @@ fn all_plain(states: &BTreeMap<Value, ObjectState>, sites: &BTreeSet<Value>) -> 
 }
 
 const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
+/// The non-mutating methods that call an element callback with
+/// `(element, index, array)`.
+const ELEMENT_CALLBACK_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map"];
 
 /// A fresh array literal (`None`), or an array derived from `Some(binding)`
 /// by a non-mutating array method.
@@ -387,7 +391,8 @@ fn plain_array_source(expr: &Expr) -> Option<Option<String>> {
 /// Chunk-top `const` arrays, literal or derived from one by a non-mutating
 /// method, whose allocation stays `Private` and `Clean` and is never the
 /// receiver of another method. Without value flow each binding denotes only
-/// its own initializer, and aliasing one is an escape.
+/// its own initializer, and aliasing one is an escape. So is handing it to an
+/// element callback that can see the array itself (`ArrayMethodScan`).
 pub(crate) fn plain_array_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
@@ -423,6 +428,95 @@ pub(crate) fn plain_array_bindings(
         .filter(|(name, sites)| !scan.rebound.contains(*name) && all_plain(&scan.states, sites))
         .map(|(name, _)| name.clone())
         .collect()
+}
+
+/// Plain arrays whose every element is a primitive: a literal of primitive
+/// expressions, holes and spreads of earlier such arrays, or `filter`/`slice`
+/// of one. `Clean` keeps the elements primitive for the whole chunk, so
+/// iterating the array through an intact `%Array.prototype%` method passes
+/// only primitives.
+pub(crate) fn primitive_element_arrays(
+    body: &[TopLevelItemView<'_>],
+    plain_arrays: &BTreeSet<String>,
+    prims: &BindingPrims,
+) -> BTreeSet<String> {
+    let unshadowed = BTreeSet::new();
+    let scope = prims.scope(&unshadowed);
+    let mut primitive = BTreeSet::new();
+    for item in body {
+        for (name, init, kind) in top_level_initializers(item.as_module_item()) {
+            if kind != VarDeclKind::Const || !plain_arrays.contains(&name) {
+                continue;
+            }
+            let elements_primitive = match init.unwrap_parens() {
+                Expr::Array(array) => array.elems.iter().flatten().all(|element| {
+                    match (element.spread, element.expr.unwrap_parens()) {
+                        (Some(_), source) => filtered_from(source, &primitive),
+                        (None, expr) => {
+                            evaluate(expr, &scope).is_some_and(|kinds| !kinds.is_empty())
+                        }
+                    }
+                }),
+                derived @ Expr::Call(_) => filtered_from(derived, &primitive),
+                _ => false,
+            };
+            if elements_primitive {
+                primitive.insert(name);
+            }
+        }
+    }
+    primitive
+}
+
+/// `source`, possibly through `filter`/`slice` calls, is one of `arrays`:
+/// the result's elements are a subset of its elements.
+fn filtered_from(expr: &Expr, arrays: &BTreeSet<String>) -> bool {
+    match expr.unwrap_parens() {
+        Expr::Ident(source) => arrays.contains(source.sym.as_ref()),
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return false;
+            };
+            let Expr::Member(member) = callee.unwrap_parens() else {
+                return false;
+            };
+            matches!(&member.prop, MemberProp::Ident(method) if matches!(method.sym.as_ref(), "filter" | "slice"))
+                && filtered_from(&member.obj, arrays)
+        }
+        _ => false,
+    }
+}
+
+/// An inline element callback with at most two parameters, neither a rest
+/// parameter, that never reads `arguments`: it cannot see the array, which
+/// the method passes third.
+pub(crate) fn sees_only_element(callback: &Expr) -> bool {
+    let fits =
+        |pats: Vec<&Pat>| pats.len() <= 2 && !pats.iter().any(|pat| matches!(pat, Pat::Rest(_)));
+    match callback.unwrap_parens() {
+        Expr::Arrow(arrow) => fits(arrow.params.iter().collect()),
+        Expr::Fn(function) => {
+            struct Arguments(bool);
+            impl Visit for Arguments {
+                fn visit_ident(&mut self, ident: &Ident) {
+                    self.0 |= ident.sym.as_ref() == "arguments";
+                }
+                // A nested function's `arguments` is its own.
+                fn visit_function(&mut self, _: &Function) {}
+            }
+            let mut arguments = Arguments(false);
+            function.function.body.visit_with(&mut arguments);
+            fits(
+                function
+                    .function
+                    .params
+                    .iter()
+                    .map(|param| &param.pat)
+                    .collect(),
+            ) && !arguments.0
+        }
+        _ => false,
+    }
 }
 
 /// Pure syntactic check for a plain-data initializer: an object literal whose
@@ -1046,6 +1140,8 @@ impl Visit for HeapScan<'_> {
 
 /// Taints a tracked array named as the receiver of any method other than a
 /// non-mutating one: the method may write its contents or invoke elements.
+/// Publishes one whose element callback may receive the array itself as its
+/// third argument or through `arguments`.
 struct ArrayMethodScan<'s, 'a> {
     scan: &'s mut HeapScan<'a>,
 }
@@ -1056,13 +1152,20 @@ impl Visit for ArrayMethodScan<'_, '_> {
             && let Expr::Member(member) = callee.unwrap_parens()
             && let Expr::Ident(recv) = member.obj.as_ref().unwrap_parens()
         {
-            let allowed = match &member.prop {
-                MemberProp::Ident(prop) => SAFE_PLAIN_ARRAY_METHODS.contains(&prop.sym.as_ref()),
-                MemberProp::Computed(_) | MemberProp::PrivateName(_) => false,
+            let method = match &member.prop {
+                MemberProp::Ident(prop) => Some(prop.sym.as_ref()),
+                MemberProp::Computed(_) | MemberProp::PrivateName(_) => None,
             };
-            if !allowed {
+            if !method.is_some_and(|method| SAFE_PLAIN_ARRAY_METHODS.contains(&method)) {
                 self.scan
                     .apply_to_name(recv.sym.as_ref(), HeapEffect::Taint);
+            } else if method.is_some_and(|method| ELEMENT_CALLBACK_METHODS.contains(&method))
+                && !node.args.first().is_some_and(|callback| {
+                    callback.spread.is_none() && sees_only_element(&callback.expr)
+                })
+            {
+                self.scan
+                    .apply_to_name(recv.sym.as_ref(), HeapEffect::Publish);
             }
         }
         node.visit_children_with(self);
@@ -1124,6 +1227,39 @@ mod tests {
         assert_eq!(
             plain_data("let foo = { v: 1 }; foo = make();"),
             Vec::<String>::new(),
+        );
+    }
+
+    fn primitive_arrays(source: &str) -> BTreeSet<String> {
+        let module = raw_js_test_support::parse(source);
+        let body = top_level_item_views(&module.body);
+        let plain = plain_array_bindings(&body, &compute_shadowed_globals(&body));
+        let prims = crate::facts::abstract_domain::primitive::collect_binding_prims(
+            &body,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        primitive_element_arrays(&body, &plain, &prims)
+    }
+
+    #[test]
+    fn primitive_element_arrays_hold_only_primitives_no_callback_can_replace() {
+        let source = r#"
+const name = "n";
+const literal = [1, name, , `t${name}`];
+const spread = [...literal, 2];
+const kept = spread.filter((value, index) => index).slice();
+const objects = [{ run: () => later }];
+const mapped = literal.map((value) => value);
+const writer = [1];
+writer.forEach((value, index, array) => { array[index] = { valueOf: sideEffect }; });
+const passed = [1];
+passed.forEach(sideEffect);
+export { literal, spread, kept, objects, mapped, writer, passed };
+"#;
+        assert_eq!(
+            primitive_arrays(source),
+            BTreeSet::from(["kept", "literal", "spread"].map(String::from)),
         );
     }
 }
