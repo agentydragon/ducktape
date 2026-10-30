@@ -27,7 +27,7 @@ use crate::facts::semantic_inference::{
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
-    FallbackOnlyEffects, ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
+    ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
@@ -41,9 +41,9 @@ use crate::facts::{
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
-    CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
-    ExecutionPrecisionLossReason, InferenceRule, NativeIntegrityCheck, NativeIntegrityGuard,
-    NativePrefixObservation, NativePrototypePropertyCheck,
+    AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, InferenceRule, NativeIntegrityCheck,
+    NativeIntegrityGuard, NativePrefixObservation, NativePrototypePropertyCheck,
 };
 use imbl::OrdMap;
 use source_identity::SourceUnitOrdinal;
@@ -124,6 +124,100 @@ impl Outcome {
             }
         }
     }
+
+    /// Moves `nested`'s binding effects into this outcome. Under an
+    /// `assumption` every moved effect is assumed by it; otherwise each keeps
+    /// the provenance `nested` recorded. Observed wins.
+    fn absorb_binding_effects(
+        &mut self,
+        nested: &mut SynchronousCalls,
+        assumption: Option<&AssumedEffectReason>,
+    ) {
+        let assumed = std::mem::take(&mut nested.fallback_only);
+        absorb_effects(
+            &mut self.effects.reads,
+            &mut self.effects.fallback_only.reads,
+            std::mem::take(&mut nested.reads),
+            &assumed.reads,
+            assumption,
+            |(id, _)| id,
+            holds_binding,
+        );
+        absorb_effects(
+            &mut self.effects.rebinds,
+            &mut self.effects.fallback_only.rebinds,
+            std::mem::take(&mut nested.rebinds),
+            &assumed.rebinds,
+            assumption,
+            |(id, _)| id,
+            holds_binding,
+        );
+        absorb_effects(
+            &mut self.effects.uninitialized_reads,
+            &mut self.effects.fallback_only.uninitialized_reads,
+            std::mem::take(&mut nested.uninitialized_reads),
+            &assumed.uninitialized_reads,
+            assumption,
+            |id| id,
+            BTreeSet::contains,
+        );
+    }
+}
+
+/// Whether a read or rebind set holds an effect on `binding` (from any owner).
+fn holds_binding(effects: &BTreeSet<(Id, SourceUnitOrdinal)>, binding: &Id) -> bool {
+    effects
+        .range((binding.clone(), SourceUnitOrdinal(0))..)
+        .next()
+        .is_some_and(|(id, _)| id == binding)
+}
+
+/// Records the provenance of an effect on `binding` about to be inserted.
+/// `held` says whether the effect set already holds one: an assumed effect
+/// only tags a binding nothing contributed yet, and an observed one clears
+/// the tag.
+fn note_effect_provenance(
+    assumed: &mut BTreeMap<Id, AssumedEffectReason>,
+    binding: &Id,
+    held: impl FnOnce() -> bool,
+    provenance: Option<&AssumedEffectReason>,
+) {
+    match provenance {
+        None => {
+            assumed.remove(binding);
+        }
+        Some(reason) => {
+            if !held() {
+                assumed.insert(binding.clone(), reason.clone());
+            }
+        }
+    }
+}
+
+fn absorb_effects<T: Ord>(
+    target: &mut BTreeSet<T>,
+    target_assumed: &mut BTreeMap<Id, AssumedEffectReason>,
+    source: BTreeSet<T>,
+    source_assumed: &BTreeMap<Id, AssumedEffectReason>,
+    assumption: Option<&AssumedEffectReason>,
+    binding: impl Fn(&T) -> &Id,
+    holds: impl Fn(&BTreeSet<T>, &Id) -> bool,
+) {
+    if assumption.is_some() || !source_assumed.is_empty() || !target_assumed.is_empty() {
+        // Effects on one binding are adjacent; decide each binding once,
+        // against what the target held before this merge.
+        let mut previous = None;
+        for effect in &source {
+            let id = binding(effect);
+            if previous == Some(id) {
+                continue;
+            }
+            previous = Some(id);
+            let provenance = assumption.or_else(|| source_assumed.get(id));
+            note_effect_provenance(target_assumed, id, || holds(target, id), provenance);
+        }
+    }
+    target.extend(source);
 }
 
 #[derive(Debug, Clone, Default)]
@@ -360,6 +454,11 @@ pub(super) struct ExecutionState {
     invocation_count: usize,
     callback_fallback: CallbackFallbackSummary,
     fallback_outcome: Outcome,
+    /// The conservative path in force while it promotes or executes code the
+    /// statement only may run; effects it contributes are assumed. Cleared
+    /// inside each invocation, whose outcome (and memo) records provenance
+    /// relative to itself.
+    assumption: Option<AssumedEffectReason>,
     fallback_callback_sizes: Option<(usize, usize)>,
     fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
     /// Returned callable source closures are static within one top-level
@@ -447,6 +546,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let RuntimeValue::Callbacks(result) = result else {
             unreachable!("callback operations produce callback results");
         };
+        result
+    }
+
+    /// Runs `run` as the conservative path `reason`: binding effects it
+    /// contributes are assumed. An enclosing path keeps its reason.
+    fn assuming<T>(&mut self, reason: AssumedEffectReason, run: impl FnOnce(&mut Self) -> T) -> T {
+        let outermost = self.state.assumption.is_none();
+        if outermost {
+            self.state.assumption = Some(reason);
+        }
+        let result = run(self);
+        if outermost {
+            self.state.assumption = None;
+        }
         result
     }
 
@@ -1569,14 +1682,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((proof, source, dense, key, captured))
     }
 
-    fn merge_array_effects(&mut self, outcome: &mut Outcome, nested: Outcome) {
+    fn merge_array_effects(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
         self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.effects.reads.extend(nested.effects.reads);
-        outcome.effects.rebinds.extend(nested.effects.rebinds);
-        outcome
-            .effects
-            .uninitialized_reads
-            .extend(nested.effects.uninitialized_reads);
+        outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
         outcome.executed_owners.extend(nested.executed_owners);
         outcome.unknown_call |= nested.unknown_call;
         outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -1667,10 +1775,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }));
             if !valid {
                 let callback_owner = self.inputs.index.callables[&key].owner;
-                self.promote_lazy_owner(
-                    callback_owner,
-                    self.state.current_top_owner.unwrap_or(callback_owner),
-                    outcome,
+                let effect_owner = self.state.current_top_owner.unwrap_or(callback_owner);
+                // Effects the per-slot invocations reached stay observed.
+                self.assuming(
+                    AssumedEffectReason::WholeBodyPromotion {
+                        operation: ExecutionOperation::ArrayIteration,
+                    },
+                    |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
                 self.state.tainted_objects.insert(proof.result.unwrap());
                 self.state
@@ -1972,6 +2083,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.promote_lazy_effects(reads, &fact.rebinds.lazy, effect_owner, outcome);
     }
 
+    /// Attributes `reads` and `rebinds` to `effect_owner`, assumed when a
+    /// conservative path is in force.
     fn promote_lazy_effects(
         &self,
         reads: &BTreeSet<Id>,
@@ -1979,45 +2092,82 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
+        let assumption = self.state.assumption.as_ref();
+        let effects = &mut outcome.effects;
+        if assumption.is_some() || !effects.fallback_only.is_empty() {
+            let top = &self.inputs.top_bindings;
+            let assumed = &mut effects.fallback_only;
+            for id in reads.intersection(top) {
+                note_effect_provenance(
+                    &mut assumed.reads,
+                    id,
+                    || holds_binding(&effects.reads, id),
+                    assumption,
+                );
+                if !self.state.initialized_bindings.contains(id) {
+                    note_effect_provenance(
+                        &mut assumed.uninitialized_reads,
+                        id,
+                        || effects.uninitialized_reads.contains(id),
+                        assumption,
+                    );
+                }
+            }
+            for id in rebinds.intersection(top) {
+                note_effect_provenance(
+                    &mut assumed.rebinds,
+                    id,
+                    || holds_binding(&effects.rebinds, id),
+                    assumption,
+                );
+            }
+        }
+        self.collect_lazy_effects(reads, rebinds, effect_owner, effects);
+    }
+
+    fn collect_lazy_effects(
+        &self,
+        reads: &BTreeSet<Id>,
+        rebinds: &BTreeSet<Id>,
+        effect_owner: SourceUnitOrdinal,
+        effects: &mut SynchronousCalls,
+    ) {
         // Large fallback summaries are already sorted. Building and merging
         // their sets in bulk avoids a tree lookup for every repeated read.
         // Small per-owner additions still use insertion into the larger set.
-        if reads.len() >= 64 && reads.len().saturating_mul(2) >= outcome.effects.reads.len() {
+        if reads.len() >= 64 && reads.len().saturating_mul(2) >= effects.reads.len() {
             let mut uninitialized = reads
                 .difference(&self.state.initialized_bindings)
                 .filter(|id| self.inputs.top_bindings.contains(*id))
                 .cloned()
                 .collect();
-            outcome
-                .effects
-                .uninitialized_reads
-                .append(&mut uninitialized);
+            effects.uninitialized_reads.append(&mut uninitialized);
             let mut promoted = reads
                 .intersection(&self.inputs.top_bindings)
                 .cloned()
                 .map(|id| (id, effect_owner))
                 .collect();
-            outcome.effects.reads.append(&mut promoted);
+            effects.reads.append(&mut promoted);
         } else {
             for id in reads
                 .iter()
                 .filter(|id| self.inputs.top_bindings.contains(*id))
             {
-                outcome.effects.reads.insert((id.clone(), effect_owner));
+                effects.reads.insert((id.clone(), effect_owner));
                 if !self.state.initialized_bindings.contains(id) {
-                    outcome.effects.uninitialized_reads.insert(id.clone());
+                    effects.uninitialized_reads.insert(id.clone());
                 }
             }
         }
-        if rebinds.len() >= 64 && rebinds.len().saturating_mul(2) >= outcome.effects.rebinds.len() {
+        if rebinds.len() >= 64 && rebinds.len().saturating_mul(2) >= effects.rebinds.len() {
             let mut promoted = rebinds
                 .intersection(&self.inputs.top_bindings)
                 .cloned()
                 .map(|id| (id, effect_owner))
                 .collect();
-            outcome.effects.rebinds.append(&mut promoted);
+            effects.rebinds.append(&mut promoted);
         } else {
-            outcome.effects.rebinds.extend(
+            effects.rebinds.extend(
                 rebinds
                     .iter()
                     .filter(|id| self.inputs.top_bindings.contains(*id))
@@ -2897,7 +3047,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_property_writes(
-        &self,
+        &mut self,
         writes: &[(Option<Id>, Option<String>)],
         owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
@@ -2947,54 +3097,63 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .filter(|candidate| self.may_be_available_accessor_owner(*candidate)),
             );
         }
-        let mut accessor_owners = BTreeSet::new();
-        if unknown_call {
-            accessor_owners.extend(possible_owners);
-        } else {
-            for (_, property) in writes {
-                if let Some(property) = property {
-                    accessor_owners.extend(
-                        self.inputs
-                            .index
-                            .setter_owners
-                            .get(&Some(property.clone()))
-                            .into_iter()
-                            .flatten()
-                            .copied(),
-                    );
-                    accessor_owners.extend(
-                        self.inputs
-                            .index
-                            .setter_owners
-                            .get(&None)
-                            .into_iter()
-                            .flatten()
-                            .copied(),
-                    );
-                } else {
-                    accessor_owners.extend(
-                        self.inputs
-                            .index
-                            .setter_owners
-                            .values()
-                            .flat_map(|owners| owners.iter().copied()),
-                    );
-                }
+        // Setters declared for a written property on a possible receiver stay
+        // observed. After an unknown call any available accessor owner may
+        // have been installed on a receiver: those others are assumed.
+        let mut named_owners = BTreeSet::new();
+        for (_, property) in writes {
+            if let Some(property) = property {
+                named_owners.extend(
+                    self.inputs
+                        .index
+                        .setter_owners
+                        .get(&Some(property.clone()))
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+                named_owners.extend(
+                    self.inputs
+                        .index
+                        .setter_owners
+                        .get(&None)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            } else {
+                named_owners.extend(
+                    self.inputs
+                        .index
+                        .setter_owners
+                        .values()
+                        .flat_map(|owners| owners.iter().copied()),
+                );
             }
-            accessor_owners = accessor_owners
-                .intersection(&possible_owners)
-                .copied()
-                .collect();
         }
-        if !accessor_owners.is_empty() {
+        let named_owners: BTreeSet<_> = named_owners
+            .intersection(&possible_owners)
+            .copied()
+            .collect();
+        let assumed_owners: BTreeSet<_> = if unknown_call {
+            possible_owners.difference(&named_owners).copied().collect()
+        } else {
+            BTreeSet::new()
+        };
+        if !named_owners.is_empty() || !assumed_owners.is_empty() {
             let effect_owner = if unknown_call {
                 self.state.current_top_owner.unwrap_or(owner)
             } else {
                 owner
             };
-            for accessor_owner in accessor_owners {
+            for accessor_owner in named_owners {
                 self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
             }
+            self.assuming(AssumedEffectReason::PossibleSetter, |this| {
+                for accessor_owner in assumed_owners {
+                    this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
+                }
+            });
             outcome.unsupported(ExecutionOperation::PropertyWrite, owner, DUMMY_SP);
         }
     }
@@ -3964,6 +4123,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .any(|object| self.state.dense_arrays.contains_key(object))
     }
 
+    /// [`Self::promote_raw_callbacks`] for values handed to opaque code, which
+    /// may or may not invoke them: the promoted closure is assumed.
+    fn promote_escaped_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
+        self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+            this.promote_raw_callbacks(values, outcome)
+        });
+    }
+
     fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
@@ -4064,9 +4231,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
-        let result = self.request_callback_operation(CallbackOperation::PromoteDeferred {
-            captured: captured.clone(),
-            outcome: Box::new(prior_outcome),
+        let result = self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+            this.request_callback_operation(CallbackOperation::PromoteDeferred {
+                captured: captured.clone(),
+                outcome: Box::new(prior_outcome),
+            })
         });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("deferred callback promotion returns its updated outcome");
@@ -4305,14 +4474,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .callables
                 .get(&function)
                 .map_or(0, |callable| callable.params.len());
-            let nested = self.invoke(function, vec![unknown(); count], captured, false);
+            let mut nested = self.invoke(function, vec![unknown(); count], captured, false);
             self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.effects.reads.extend(nested.effects.reads);
-            outcome.effects.rebinds.extend(nested.effects.rebinds);
-            outcome
-                .effects
-                .uninitialized_reads
-                .extend(nested.effects.uninitialized_reads);
+            outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -4386,10 +4550,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome: &mut Outcome,
     ) {
         let prior_outcome = std::mem::take(outcome);
-        let result = self.request_callback_operation(CallbackOperation::InvokePossible {
-            arguments: args.to_vec(),
-            no_sync_arguments,
-            outcome: Box::new(prior_outcome),
+        // Opaque code may or may not invoke the pool: what it reaches is assumed.
+        let result = self.assuming(AssumedEffectReason::OpaqueCallbackInvocation, |this| {
+            this.request_callback_operation(CallbackOperation::InvokePossible {
+                arguments: args.to_vec(),
+                no_sync_arguments,
+                outcome: Box::new(prior_outcome),
+            })
         });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("possible callback invocation returns its updated outcome");
@@ -4554,7 +4721,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
                     }
                 };
-                let nested = self.bounded_invocation_fallback(
+                let mut nested = self.bounded_invocation_fallback(
                     self.state
                         .current_top_owner
                         .expect("callback call has a top owner"),
@@ -4563,18 +4730,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     reason,
                 );
                 self.apply_rebind_effects(&nested.effects.rebinds);
-                outcome.effects.reads.extend(nested.effects.reads);
-                outcome.effects.rebinds.extend(nested.effects.rebinds);
-                outcome
-                    .effects
-                    .uninitialized_reads
-                    .extend(nested.effects.uninitialized_reads);
+                outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
                 outcome.executed_owners.extend(nested.executed_owners);
                 outcome.unknown_call |= nested.unknown_call;
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 return true;
             }
-            let nested = match callback {
+            let mut nested = match callback {
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
                     continue;
@@ -4598,12 +4760,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // the ordinary boundary at an unconditional await.
             self.promote_returned_callbacks(&nested.returns);
             self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.effects.reads.extend(nested.effects.reads);
-            outcome.effects.rebinds.extend(nested.effects.rebinds);
-            outcome
-                .effects
-                .uninitialized_reads
-                .extend(nested.effects.uninitialized_reads);
+            outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -4962,14 +5119,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Foreign bodies may read importer cells through a direct ESM capture,
         // without calling an exported callback. Preserve all such obligations.
         // This deliberately buys precision only at construction, not member use.
-        self.promote_lazy_effects(
-            &self.inputs.top_bindings,
-            &BTreeSet::new(),
-            self.state
-                .current_top_owner
-                .expect("foreign record use has a top owner"),
-            outcome,
-        );
+        self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+            this.promote_lazy_effects(
+                &this.inputs.top_bindings,
+                &BTreeSet::new(),
+                this.state
+                    .current_top_owner
+                    .expect("foreign record use has a top owner"),
+                outcome,
+            )
+        });
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.lose_precision(
@@ -5592,12 +5751,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
+        // The invocation's outcome (and its memo) records provenance relative
+        // to the invocation; the caller's merge applies its own assumption.
+        let assumption = self.state.assumption.take();
         let result = self.request(RuntimeOperation::Invoke {
             callable: key,
             arguments: args,
             captured,
             fresh_checked_constructor,
         });
+        self.state.assumption = assumption;
         let RuntimeValue::Outcome(outcome) = result else {
             unreachable!("invocation transfers produce outcomes");
         };
@@ -5880,22 +6043,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 && self.state.array_iteration_unsupported
                 && !unsupported_before)
         {
-            let fact = &self.inputs.facts[callable.owner.0];
-            self.promote_lazy_effects(
-                &fact.reads.lazy,
-                &fact.rebinds.lazy,
-                self.state.current_top_owner.unwrap_or(callable.owner),
-                &mut outcome,
-            );
-            outcome.unsupported(
-                if unsupported_inputs {
-                    ExecutionOperation::CallableInputs
-                } else {
-                    ExecutionOperation::ArrayIteration
+            let inputs = self.inputs;
+            let fact = &inputs.facts[callable.owner.0];
+            let operation = if unsupported_inputs {
+                ExecutionOperation::CallableInputs
+            } else {
+                ExecutionOperation::ArrayIteration
+            };
+            // What this execution reached stays observed; the rest of the
+            // body is assumed.
+            let effect_owner = self.state.current_top_owner.unwrap_or(callable.owner);
+            self.assuming(
+                AssumedEffectReason::WholeBodyPromotion { operation },
+                |this| {
+                    this.promote_lazy_effects(
+                        &fact.reads.lazy,
+                        &fact.rebinds.lazy,
+                        effect_owner,
+                        &mut outcome,
+                    )
                 },
-                callable.owner,
-                DUMMY_SP,
             );
+            outcome.unsupported(operation, callable.owner, DUMMY_SP);
         }
         self.state.active.remove(&active_invocation);
         self.state.invocation_depth -= 1;
@@ -6013,7 +6182,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let values: Values = operands.into_iter().flatten().collect();
             self.expose_class_capabilities(&values);
             self.taint_objects(&values);
-            self.promote_raw_callbacks(&values, outcome);
+            self.promote_escaped_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
             self.note_unknown_call(call);
             outcome.unsupported(
@@ -6041,7 +6210,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .is_none()
             {
                 let selected = self.evaluate(&call.callee, env, captures);
-                self.promote_raw_callbacks(&selected, outcome);
+                self.promote_escaped_callbacks(&selected, outcome);
                 self.invoke_possible_callbacks(&[selected], false, outcome);
                 self.note_unknown_call(call);
                 outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
@@ -6114,11 +6283,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Origin(ValueOrigin::Object(object))
                     if self.state.descriptor_copy_results.contains(object))
                 }) {
-                    self.promote_raw_callbacks(&values, outcome);
+                    self.promote_escaped_callbacks(&values, outcome);
                 }
                 self.taint_objects(&values);
                 let selected = self.evaluate(&call.callee, env, captures);
-                self.promote_raw_callbacks(&selected, outcome);
+                self.promote_escaped_callbacks(&selected, outcome);
                 if self.state.array_iteration_depth > 0 {
                     self.state.array_iteration_unsupported = true;
                 }
@@ -6137,7 +6306,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.unsupported(ExecutionOperation::ObjectSpread, call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
-            self.promote_raw_callbacks(&values, outcome);
+            self.promote_escaped_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
             return;
         }
@@ -6174,7 +6343,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // Consuming a custom iterator can execute deferred generator bodies.
-            self.promote_raw_callbacks(&values, outcome);
+            self.promote_escaped_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
             return;
         }
@@ -6444,7 +6613,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into()) {
             let source = self.evaluate(&proof.source.clone(), env, captures);
-            self.promote_raw_callbacks(&source, outcome);
+            self.promote_escaped_callbacks(&source, outcome);
             opaque_args.push(source);
         }
 
@@ -6539,7 +6708,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
-                    self.promote_class_members(key, outcome);
+                    self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+                        this.promote_class_members(key, outcome)
+                    });
                     self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
                 AbstractValue::Instance(key, captured) => {
@@ -6550,7 +6721,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
-                    self.promote_class_members(key, outcome);
+                    self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
+                        this.promote_class_members(key, outcome)
+                    });
                     let mut possible_args = opaque_args.clone();
                     possible_args.push((*captured.values).clone());
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
@@ -6589,9 +6762,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         possible_accessors.extend(self.all_owners());
                     }
                     let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
-                    for accessor_owner in possible_accessors {
-                        self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
-                    }
+                    self.assuming(AssumedEffectReason::PossibleSetter, |this| {
+                        for accessor_owner in possible_accessors {
+                            this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
+                        }
+                    });
                     outcome.unsupported(ExecutionOperation::ObjectAssign, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.widen_native_effects();
@@ -6603,14 +6778,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.construct_local_class(key, &args)
                     };
                     match constructed {
-                        Ok((nested, _)) => {
+                        Ok((mut nested, _)) => {
                             self.apply_rebind_effects(&nested.effects.rebinds);
-                            outcome.effects.reads.extend(nested.effects.reads);
-                            outcome.effects.rebinds.extend(nested.effects.rebinds);
-                            outcome
-                                .effects
-                                .uninitialized_reads
-                                .extend(nested.effects.uninitialized_reads);
+                            outcome.absorb_binding_effects(
+                                &mut nested.effects,
+                                self.state.assumption.as_ref(),
+                            );
                             outcome.executed_owners.extend(nested.executed_owners);
                             outcome.unknown_call |= nested.unknown_call;
                             outcome.inherit_completeness(
@@ -6641,27 +6814,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Origin(ValueOrigin::Function(key))
                     if call.kind == CallKind::Call =>
                 {
-                    let nested = self.invoke(key, args.clone(), None, false);
+                    let mut nested = self.invoke(key, args.clone(), None, false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome.effects.reads.extend(nested.effects.reads);
-                    outcome.effects.rebinds.extend(nested.effects.rebinds);
-                    outcome
-                        .effects
-                        .uninitialized_reads
-                        .extend(nested.effects.uninitialized_reads);
+                    outcome.absorb_binding_effects(
+                        &mut nested.effects,
+                        self.state.assumption.as_ref(),
+                    );
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
-                    let nested = self.invoke(key, args.clone(), Some(captured), false);
+                    let mut nested = self.invoke(key, args.clone(), Some(captured), false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome.effects.reads.extend(nested.effects.reads);
-                    outcome.effects.rebinds.extend(nested.effects.rebinds);
-                    outcome
-                        .effects
-                        .uninitialized_reads
-                        .extend(nested.effects.uninitialized_reads);
+                    outcome.absorb_binding_effects(
+                        &mut nested.effects,
+                        self.state.assumption.as_ref(),
+                    );
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -7362,6 +7531,7 @@ pub(crate) fn annotate_synchronous_calls(
         invocation_count: 0,
         callback_fallback: CallbackFallbackSummary::default(),
         fallback_outcome: Outcome::default(),
+        assumption: None,
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
         returned_callback_owners: BTreeSet::new(),
@@ -7618,51 +7788,20 @@ impl Executor<'_, '_> {
                 &mut outcome,
             );
         }
-        let fallback = std::mem::take(&mut self.state.fallback_outcome);
+        let mut fallback = std::mem::take(&mut self.state.fallback_outcome);
         if fallback.unknown_call {
-            // Provenance for the commuting-statements gate: what only the
-            // fallback summary contributed is assumed, not observed.
-            let observed_reads: BTreeSet<&Id> =
-                outcome.effects.reads.iter().map(|(id, _)| id).collect();
-            let observed_rebinds: BTreeSet<&Id> =
-                outcome.effects.rebinds.iter().map(|(id, _)| id).collect();
-            outcome.effects.fallback_only = Some(FallbackOnlyEffects {
-                reason: fallback
+            // Every effect only the fallback summary contributed is assumed
+            // by it, whichever path opened the summary.
+            let reason = AssumedEffectReason::FallbackSummary {
+                loss: fallback
                     .effects
                     .precision_losses
                     .first()
                     .expect("a fallback summary records the loss that opened it")
                     .reason
                     .clone(),
-                reads: fallback
-                    .effects
-                    .reads
-                    .iter()
-                    .map(|(id, _)| id)
-                    .filter(|id| !observed_reads.contains(id))
-                    .cloned()
-                    .collect(),
-                rebinds: fallback
-                    .effects
-                    .rebinds
-                    .iter()
-                    .map(|(id, _)| id)
-                    .filter(|id| !observed_rebinds.contains(id))
-                    .cloned()
-                    .collect(),
-                uninitialized_reads: fallback
-                    .effects
-                    .uninitialized_reads
-                    .difference(&outcome.effects.uninitialized_reads)
-                    .cloned()
-                    .collect(),
-            });
-            outcome.effects.reads.extend(fallback.effects.reads);
-            outcome.effects.rebinds.extend(fallback.effects.rebinds);
-            outcome
-                .effects
-                .uninitialized_reads
-                .extend(fallback.effects.uninitialized_reads);
+            };
+            outcome.absorb_binding_effects(&mut fallback.effects, Some(&reason));
             outcome.executed_owners.extend(fallback.executed_owners);
             outcome.unknown_call = true;
             outcome.inherit_completeness(false, fallback.effects.precision_losses);
@@ -7683,31 +7822,11 @@ impl Executor<'_, '_> {
             // executor path fails, restore the current statement's omitted
             // callback effects as well as all future reachability roots.
             let mut restored = Outcome::default();
+            let reason = AssumedEffectReason::PrivateConstructorRestore;
             for owner in self.state.reachability.owners.clone() {
                 self.promote_lazy_owner(owner, fact.ordinal, &mut restored);
             }
-            // Restored effects count as observed (conservative for the
-            // commuting-statements gate).
-            if let Some(fallback_only) = &mut outcome.effects.fallback_only {
-                for (id, _) in &restored.effects.reads {
-                    fallback_only.reads.remove(id);
-                }
-                for (id, _) in &restored.effects.rebinds {
-                    fallback_only.rebinds.remove(id);
-                }
-                for id in &restored.effects.uninitialized_reads {
-                    fallback_only.uninitialized_reads.remove(id);
-                }
-            }
-            outcome.effects.reads.append(&mut restored.effects.reads);
-            outcome
-                .effects
-                .rebinds
-                .append(&mut restored.effects.rebinds);
-            outcome
-                .effects
-                .uninitialized_reads
-                .append(&mut restored.effects.uninitialized_reads);
+            outcome.absorb_binding_effects(&mut restored.effects, Some(&reason));
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
         let mut prior_effect_owners = outcome.executed_owners.clone();

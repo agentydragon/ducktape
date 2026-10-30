@@ -1356,15 +1356,38 @@ frontier); those the premise makes inert.
 
 A binding effect is `observed` when it comes from the statement's syntax
 (declaration, initializer, eager read or rebind, local effect) or from
-synchronous execution the interpreter followed precisely. It is `fallback` when
-only the statement's fallback summary contributed it: having stopped expanding
-callbacks (`callback_pool_limit`, `recursive_invocation`,
-`invocation_depth_limit`, `invocation_expansion_limit`) or handed a returned
-callback to opaque code, the interpreter assumes each such callback may run and
-attributes its whole synchronous read/rebind closure to the statement. An
-effect both observed and assumed is `observed`. Asserting a pair with a
-`fallback` effect asserts that the assumed callback does not run (or does not
-reach the binding) during that statement's initialization. Ordering derived
+synchronous execution of code the statement definitely runs. It is `fallback`
+when only a conservative path contributed it, one that assumes code may run at
+the statement; the `reason`'s `path` names the first such path:
+
+- `fallback_summary` (`loss`: the precision loss that opened it): having
+  stopped expanding callbacks (`callback_pool_limit`, `recursive_invocation`,
+  `invocation_depth_limit`, `invocation_expansion_limit`) or handed a
+  returned callback to opaque code, the interpreter attributes each such
+  callback's whole synchronous read/rebind closure to the statement.
+- `opaque_callback_invocation`: a callback opaque code may invoke (escaped
+  earlier, exported, or reachable from the opaque operation's inputs),
+  executed as if it ran.
+- `escaped_callback_closure`: the synchronous closure of a callback, class or
+  foreign record exposed to opaque code, including values a member read of
+  an escaped record or of a native slot the census does not prove intact may
+  yield.
+- `possible_setter`: an accessor owner's body that a property write after an
+  unknown call, or an `Object.assign` onto an unproven target, may trigger.
+  A setter declared for the written property stays `observed`.
+- `whole_body_promotion` (`operation`: `callable_inputs` or
+  `array_iteration`): the lazy body of a callable whose inputs or iteration the
+  interpreter could not model, beyond what its execution reached.
+- `private_constructor_restore`: callback effects restored when a
+  private-constructor result proof's execution failed.
+- `unresolved_call_closure` (shared-`var` accesses only): the read closure of
+  an at-init callee promotion could not resolve.
+
+A setter or getter applied to the read receiver, a constructor body run by an
+unsupported `new`, and a method called on a receiver holding an array stay
+`observed`. An effect both observed and assumed is `observed`. Asserting a
+pair with a `fallback` effect asserts that the assumed code does not run (or
+does not reach the binding) during that statement's initialization. Ordering derived
 between two observed effects is never routed only through an assumed one: the
 binding timeline also orders each binding's observed effects among
 themselves, so inerting an edge to a fallback effect never releases an
@@ -2215,9 +2238,9 @@ as constraining, keyed by `explanation.kind`:
   `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
-  `{"kind": "observed"}` or `{"kind": "fallback", "reason": …}` with the
-  `precision_losses` reason that opened the statement's fallback summary; the
-  `explanation` text names each assumed side.
+  `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
+  naming the conservative path; the `explanation` text names each assumed
+  side.
 
 Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
 also carries `synchronous_execution_complete` when synchronous analysis ran;

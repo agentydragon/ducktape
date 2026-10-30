@@ -1,4 +1,5 @@
 use super::*;
+use crate::reports::schema::AssumedEffectReason;
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -219,9 +220,9 @@ pub(crate) struct SynchronousCalls {
     /// a real prefix value from a TDZ/initial-`undefined` observation so the
     /// dependency graph can preserve that observation point.
     pub uninitialized_reads: BTreeSet<Id>,
-    /// Bindings in `reads`, `rebinds` and `uninitialized_reads` that only the
-    /// statement's fallback summary contributed; `None` when no fallback ran.
-    pub fallback_only: Option<FallbackOnlyEffects>,
+    /// Bindings in `reads`, `rebinds` and `uninitialized_reads` that only
+    /// conservative paths contributed, each with the first such path.
+    pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
@@ -239,55 +240,42 @@ pub(crate) struct SynchronousCalls {
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
 }
 
-/// Binding effects an incomplete statement's fallback summary assumed rather
-/// than derived: callbacks the interpreter stopped expanding
-/// (`bounded_invocation_fallback`) or returned to opaque code are assumed to
-/// run, so their whole synchronous read/rebind closure is attributed to the
-/// statement. A binding precise execution also reached is not listed: an
-/// effect both observed and assumed is observed.
-#[derive(Debug, Clone)]
+/// Binding effects a statement's synchronous summary assumed rather than
+/// derived: contributed only by a conservative path that assumes code may run
+/// at the statement ([`AssumedEffectReason`]). An effect precise execution of
+/// code the statement definitely runs also reached is not listed: an effect
+/// both observed and assumed is observed. While the interpreter builds an
+/// invocation's outcome the maps are relative to that invocation; the
+/// enclosing statement re-tags them when an assumed path merges them.
+#[derive(Debug, Clone, Default)]
 pub(crate) struct FallbackOnlyEffects {
-    /// The precision loss that opened the statement's fallback summary.
-    pub reason: crate::reports::schema::ExecutionPrecisionLossReason,
-    pub reads: BTreeSet<Id>,
-    pub rebinds: BTreeSet<Id>,
-    pub uninitialized_reads: BTreeSet<Id>,
+    pub reads: BTreeMap<Id, AssumedEffectReason>,
+    pub rebinds: BTreeMap<Id, AssumedEffectReason>,
+    pub uninitialized_reads: BTreeMap<Id, AssumedEffectReason>,
+}
+
+impl FallbackOnlyEffects {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.reads.is_empty() && self.rebinds.is_empty() && self.uninitialized_reads.is_empty()
+    }
 }
 
 impl SynchronousCalls {
-    /// The fallback reason when only the fallback summary contributed the
-    /// read of `binding`; `None` when precise execution observed it.
-    pub(crate) fn fallback_read(
-        &self,
-        binding: &Id,
-    ) -> Option<&crate::reports::schema::ExecutionPrecisionLossReason> {
-        self.fallback_only
-            .as_ref()
-            .filter(|fallback| fallback.reads.contains(binding))
-            .map(|fallback| &fallback.reason)
+    /// The assumed path when only a conservative path contributed the read
+    /// of `binding`; `None` when it was observed.
+    pub(crate) fn fallback_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.reads.get(binding)
     }
 
     /// As [`Self::fallback_read`], for a rebind of `binding`.
-    pub(crate) fn fallback_rebind(
-        &self,
-        binding: &Id,
-    ) -> Option<&crate::reports::schema::ExecutionPrecisionLossReason> {
-        self.fallback_only
-            .as_ref()
-            .filter(|fallback| fallback.rebinds.contains(binding))
-            .map(|fallback| &fallback.reason)
+    pub(crate) fn fallback_rebind(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.rebinds.get(binding)
     }
 
     /// As [`Self::fallback_read`], for an observation of `binding` before
     /// its initializer ran.
-    pub(crate) fn fallback_uninitialized_read(
-        &self,
-        binding: &Id,
-    ) -> Option<&crate::reports::schema::ExecutionPrecisionLossReason> {
-        self.fallback_only
-            .as_ref()
-            .filter(|fallback| fallback.uninitialized_reads.contains(binding))
-            .map(|fallback| &fallback.reason)
+    pub(crate) fn fallback_uninitialized_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.uninitialized_reads.get(binding)
     }
 }
 

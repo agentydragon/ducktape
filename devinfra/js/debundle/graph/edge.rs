@@ -9,7 +9,7 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::facts::{DataflowOpacityCause, EffectCell};
-use crate::reports::schema::ExecutionPrecisionLossReason;
+use crate::reports::schema::AssumedEffectReason;
 
 use super::build::PremiseVerdict;
 use super::dependency_graph::SourceUnitId;
@@ -182,18 +182,16 @@ pub enum SequencedCause {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectProvenance {
-    /// Direct syntax or precise synchronous execution.
+    /// Direct syntax or precise synchronous execution of code the statement
+    /// definitely runs.
     Observed,
-    /// Contributed only by the statement's fallback summary, which assumes
-    /// every callback it stopped expanding may run; `reason` is the
-    /// precision loss that opened that summary.
-    Fallback {
-        reason: ExecutionPrecisionLossReason,
-    },
+    /// Contributed only by conservative paths that assume code may run;
+    /// `reason` names the first such path that contributed it.
+    Fallback { reason: AssumedEffectReason },
 }
 
 impl EffectProvenance {
-    pub(crate) fn from_fallback(reason: Option<&ExecutionPrecisionLossReason>) -> Self {
+    pub(crate) fn from_fallback(reason: Option<&AssumedEffectReason>) -> Self {
         reason.map_or(Self::Observed, |reason| Self::Fallback {
             reason: reason.clone(),
         })
@@ -211,7 +209,7 @@ impl fmt::Display for EffectProvenance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Observed => f.write_str("observed"),
-            Self::Fallback { reason } => write!(f, "assumed by the {reason} fallback"),
+            Self::Fallback { reason } => write!(f, "assumed by {reason}"),
         }
     }
 }
