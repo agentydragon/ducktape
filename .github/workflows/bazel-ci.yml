@@ -107,10 +107,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: bb
-
-      - name: Install pinned bbapi
-        run: nix profile install .#bbapi
+          installables: ".#bb .#bbapi"
 
       # Combined test + build in one bb-remote `--script` invocation:
       # - Saves one Firecracker VM allocation per CI run.
