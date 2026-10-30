@@ -762,8 +762,8 @@ pub struct SelectorValidationCounts {
     pub checked: usize,
     pub matched: usize,
     /// Author premises (`commuting_statements` entries) the graph build
-    /// rejected; `spec validate` counts them from the chunk's typed
-    /// diagnostics, which it reports beside the selector outcomes.
+    /// rejected; any fails `success`. Not reported: `spec validate` lists
+    /// the typed diagnostics themselves beside the selector outcomes.
     pub rejected_premises: usize,
 }
 
@@ -785,7 +785,6 @@ pub struct SelectorValidationSummary {
     pub success: bool,
     pub checked: usize,
     pub matched: usize,
-    pub rejected_premises: usize,
 }
 
 impl SelectorOutcomeReport {
@@ -808,7 +807,6 @@ impl SelectorOutcomeReport {
                     .all(|outcome| outcome.severity() != Severity::Error),
             checked: validation.checked,
             matched: validation.matched,
-            rejected_premises: validation.rejected_premises,
         })
     }
 
@@ -823,8 +821,8 @@ impl SelectorOutcomeReport {
             };
             let _ = writeln!(
                 out,
-                "Selector validation: {status}; checked={}, matched={}, rejected_premises={}",
-                validation.checked, validation.matched, validation.rejected_premises
+                "Selector validation: {status}; checked={}, matched={}",
+                validation.checked, validation.matched
             );
         }
         if !self.templates.is_empty() {

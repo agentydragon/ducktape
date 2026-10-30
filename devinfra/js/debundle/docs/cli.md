@@ -1177,8 +1177,8 @@ fails `run` with its diagnostic on stderr. `spec validate` reports it as a
 typed entry beside the selector outcomes: `commuting_statements_diagnostics[]`
 (`kind` ∈ `contradicted` with `conflicts[]`, `unused` with `reason`; each with
 `spec_location`, `a`, `b` and their bindings), read from the chunk's
-`commuting_statements_diagnostics.json`, and `validation.rejected_premises`
-counts them into `validation.success`. The ndjson stream emits each as a
+`commuting_statements_diagnostics.json`; any such entry fails
+`validation.success`. The ndjson stream emits each as a
 `commuting_statements_diagnostic` section.
 
 ## Gate queries

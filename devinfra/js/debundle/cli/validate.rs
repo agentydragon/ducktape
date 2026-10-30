@@ -83,8 +83,8 @@ pub struct ValidateArgs {
 }
 
 /// What `spec validate` reports: the selector outcomes, plus the author
-/// premises the graph build rejected, which no selector entity carries
-/// (`validation.rejected_premises` counts them into `success`).
+/// premises the graph build rejected, which no selector entity carries (any
+/// fails `validation.success`).
 #[derive(Debug, Default, Serialize)]
 struct ValidateReport {
     #[serde(flatten)]

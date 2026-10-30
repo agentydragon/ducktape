@@ -68,7 +68,6 @@ fn expect_rejected<'a>(build: impl Fn() -> FixtureOpts<'a>, kind: &str, tokens: 
     let report: serde_json::Value = serde_json::from_str(&validate.stdout)
         .unwrap_or_else(|error| panic!("{error}: spec validate stdout={}", validate.stdout));
     assert_eq!(report["validation"]["success"], false, "{report:#}");
-    assert_eq!(report["validation"]["rejected_premises"], 1, "{report:#}");
     let [diagnostic] = report["commuting_statements_diagnostics"]
         .as_array()
         .expect("commuting_statements_diagnostics")
@@ -395,6 +394,7 @@ fn co_declaration_sites_of_a_repeated_var_reject_the_pair() {
                 declared_source_unit("var shared = 2;", "shared"),
             ))
         },
+        "contradicted",
         &[ENTRY, CONTRADICTION, "shared `var` `shared`"],
     );
 }
