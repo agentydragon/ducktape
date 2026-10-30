@@ -103,7 +103,7 @@ rust_library(
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
     data = [
-        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_e2e",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
@@ -550,7 +550,7 @@ rust_test(
     srcs = ["cross_chunk_readable_imports_test.rs"],
     crate_root = "cross_chunk_readable_imports_test.rs",
     data = [
-        "//devinfra/js/debundle",
+        "//devinfra/js/debundle:debundle_e2e",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
