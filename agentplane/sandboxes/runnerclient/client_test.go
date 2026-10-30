@@ -2,88 +2,118 @@ package runnerclient
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-func TestWithClientRefreshesTokenAndCreatesConnectionPerCall(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("first-token\n"), 0o600); err != nil {
+// recordingRunner is the Runner Gateway proxy as WithClient reaches it; it records each call's metadata.
+type recordingRunner struct {
+	runnerservicepb.UnimplementedRunnerServer
+	received chan metadata.MD
+}
+
+func (r *recordingRunner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	r.received <- incoming
+	return &runnerpb.ListSessionsResponse{}, nil
+}
+
+// serve starts the recording runner on loopback and returns a Config for it whose token file holds token.
+func serve(t *testing.T, token string) (Config, *recordingRunner) {
+	t.Helper()
+	runner := &recordingRunner{received: make(chan metadata.MD, 4)}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
 		t.Fatal(err)
 	}
-	config := Config{
-		Target:                  "passthrough:///sandbox-control",
-		TokenFile:               tokenFile,
-		Timeout:                 time.Second,
-		SandboxName:             "sandbox",
-		SandboxUID:              "uid-sandbox",
-		SandboxNamespace:        "agentplane-staging",
-		DisableRetry:            true,
-		ReplaceOutgoingMetadata: true,
-	}
-	base := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("trace-id", "caller"))
-	var clients []runnerservicepb.RunnerClient
-	for _, token := range []string{"first-token", "rotated-token"} {
-		if token == "rotated-token" {
-			if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		err := WithClient(base, config, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
-			clients = append(clients, client)
-			deadline, ok := ctx.Deadline()
-			if !ok || time.Until(deadline) <= 0 {
-				t.Error("call context has no live deadline")
-			}
-			md, ok := metadata.FromOutgoingContext(ctx)
-			if !ok || len(md.Get("authorization")) != 1 || md.Get("authorization")[0] != "Bearer "+token || md.Get("trace-id") != nil {
-				t.Errorf("outgoing metadata = %v", md)
-			}
-			if len(md.Get(sandboxapi.RunnerProxySandboxMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxMetadataKey)[0] != config.SandboxName ||
-				len(md.Get(sandboxapi.RunnerProxySandboxUIDMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxUIDMetadataKey)[0] != config.SandboxUID ||
-				len(md.Get(sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey)[0] != config.SandboxNamespace ||
-				len(md.Get(sandboxapi.RunnerProxySandboxOwnerNameMetadataKey)) != 1 || md.Get(sandboxapi.RunnerProxySandboxOwnerNameMetadataKey)[0] != config.SandboxName {
-				t.Errorf("Sandbox identity metadata = %v", md)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(clients) != 2 || clients[0] == clients[1] {
-		t.Fatal("calls did not receive fresh connections")
+	server := grpc.NewServer()
+	runnerservicepb.RegisterRunnerServer(server, runner)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	writeToken(t, tokenFile, token)
+	return Config{
+		Target:           listener.Addr().String(),
+		TokenFile:        tokenFile,
+		Timeout:          10 * time.Second,
+		SandboxName:      "test-sandbox",
+		SandboxUID:       "test-sandbox-uid",
+		SandboxNamespace: "test-namespace",
+	}, runner
+}
+
+func writeToken(t *testing.T, path, token string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(token), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestWithClientAppendsMetadataWhenConfigured(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("token"), 0o600); err != nil {
-		t.Fatal(err)
+func listSessions(ctx context.Context, config Config) error {
+	return WithClient(ctx, config, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
+		_, err := client.ListSessions(ctx, &runnerpb.ListSessionsRequest{})
+		return err
+	})
+}
+
+func single(t *testing.T, md metadata.MD, key string) string {
+	t.Helper()
+	values := md.Get(key)
+	if len(values) != 1 {
+		t.Fatalf("%s = %q, want one value", key, values)
 	}
-	config := Config{
-		Target:           "passthrough:///sandbox-control",
-		TokenFile:        tokenFile,
-		Timeout:          time.Second,
-		SandboxName:      "sandbox",
-		SandboxUID:       "uid-sandbox",
-		SandboxNamespace: "agentplane-staging",
-	}
-	base := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("trace-id", "caller"))
-	if err := WithClient(base, config, func(ctx context.Context, _ runnerservicepb.RunnerClient) error {
-		md, ok := metadata.FromOutgoingContext(ctx)
-		if !ok || len(md.Get("trace-id")) != 1 || md.Get("trace-id")[0] != "caller" {
-			t.Errorf("outgoing metadata = %v", md)
+	return values[0]
+}
+
+func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
+	config, runner := serve(t, "test-token-one\n")
+	for _, want := range []string{"Bearer test-token-one", "Bearer test-token-rotated"} {
+		if err := listSessions(t.Context(), config); err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+		received := <-runner.received
+		if got := single(t, received, "authorization"); got != want {
+			t.Errorf("authorization = %q, want %q", got, want)
+		}
+		for key, want := range map[string]string{
+			sandboxapi.RunnerProxySandboxMetadataKey:               "test-sandbox",
+			sandboxapi.RunnerProxySandboxUIDMetadataKey:            "test-sandbox-uid",
+			sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
+			sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "test-sandbox",
+		} {
+			if got := single(t, received, key); got != want {
+				t.Errorf("%s = %q, want %q", key, got, want)
+			}
+		}
+		// The kubelet rotates the projected token in place; the next call carries the new one.
+		writeToken(t, config.TokenFile, "test-token-rotated")
+	}
+}
+
+func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		config, runner := serve(t, "test-token")
+		config.ReplaceOutgoingMetadata = replace
+		ctx := metadata.AppendToOutgoingContext(t.Context(), "test-caller-key", "test-caller-value")
+		if err := listSessions(ctx, config); err != nil {
+			t.Fatal(err)
+		}
+		received := <-runner.received
+		if forwarded := len(received.Get("test-caller-key")) > 0; forwarded == replace {
+			t.Errorf("ReplaceOutgoingMetadata=%v forwarded caller metadata=%v", replace, forwarded)
+		}
+		if got := single(t, received, "authorization"); got != "Bearer test-token" {
+			t.Errorf("authorization = %q", got)
+		}
 	}
 }
 

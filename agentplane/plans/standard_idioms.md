@@ -27,12 +27,6 @@ which `GracefulStop` cannot drain, and which forces the abort-write hook in `grp
 the Action Service and egress. Serve gRPC on its own listener, as the Runner Gateway does. Exit: drain
 on shutdown covered by a test; the abort-write hook removed if nothing else needs it.
 
-### `RUNNERCLIENT_PER_RPC_CREDENTIALS`
-
-`sandboxes/runnerclient/client.go` re-implements token-file reading and metadata attachment instead
-of `grpc/bearer` or a `PerRPCCredentials`. Reuse `bearer.Dial` (or `PerRPCCredentials` with
-`RequireTransportSecurity` false). The Python client's equivalent is justified and stays.
-
 ### `RUNNER_MTLS_GO_SPIFFE`
 
 `runner_transport/credentials.go` (about 470 lines) skips Go's verification and re-implements SPIFFE

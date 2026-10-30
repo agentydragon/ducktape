@@ -3,20 +3,16 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -77,23 +73,15 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	if target.Target == "" || target.TokenFile == "" || r.Timeout <= 0 {
 		return status.Error(codes.Internal, "invalid configured central sampler target")
 	}
-	data, err := os.ReadFile(target.TokenFile)
-	if err != nil {
-		return status.Error(codes.Unavailable, "cannot read central sampler token")
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return status.Error(codes.Unavailable, "central sampler token is empty")
-	}
-	conn, err := grpc.NewClient(target.Target, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	conn, err := bearer.Dial(target.Target, target.TokenFile, r.Timeout)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+token))
-	return call(ctx, samplerpb.NewSamplerClient(conn))
+	// The sampler sees only the bearer, never metadata the Dispatcher's caller attached.
+	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
 func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *runnerpb.SessionSpec, setup *string) error {
