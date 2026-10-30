@@ -97,11 +97,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup-nix-devtools
-        if: env.PUBLISH == 'true'
-        with:
-          package: citools
-
       - uses: ./.github/actions/setup-ci-secrets
         if: env.PUBLISH == 'true'
         with:
@@ -159,7 +154,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools
+          package: bb
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
@@ -266,7 +261,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools
+          package: bb
 
       - uses: ./.github/actions/setup-ci-secrets
         with:

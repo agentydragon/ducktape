@@ -19,16 +19,6 @@
 ducktapePkgs
 // gafferPkgs
 // {
-  # Minimal CI package: the BuildBuddy CLIs + sops (no Claude statusline wheel needed).
-  citools = pkgs.symlinkJoin {
-    name = "ducktape-citools";
-    paths = [
-      ducktapePkgs.bb
-      ducktapePkgs.bbapi
-      ducktapePkgs.bbr
-      pkgs.sops
-    ];
-  };
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";

@@ -76,10 +76,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          package: citools
-
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
@@ -121,7 +117,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools
+          package: bb
 
       - uses: ./.github/actions/setup-ci-secrets
         with:

@@ -82,8 +82,8 @@ def load_images(path: Path) -> list[Image]:
 
     A hand-written strict parse rather than a Pydantic model, because this module is
     imported as bare `python3 -m` on a GitHub Actions runner where the only Python is
-    the system one — the `citools` closure is bb, bbapi and sops, with no interpreter
-    of its own. Strictness is the part that matters and cannot be dropped: an
+    the system one, with no third-party Python packages installed. Strictness cannot
+    be dropped: an
     unrecognised key used to be ignored, so `tests:` for `test:` silently published an
     image with no test gate, and a misspelt `registry:` silently published it to GHCR.
     """

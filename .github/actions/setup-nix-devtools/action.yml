@@ -1,9 +1,9 @@
 name: Setup Nix + Devtools
-description: Install Nix with the anonymous bootstrap cache and a flake package output
+description: Install Nix with the anonymous bootstrap cache and selected flake package outputs
 
 inputs:
   package:
-    description: "Nix flake package to install (e.g. devtools, precommit, citools)"
+    description: "Whitespace-separated Nix flake package names to install (e.g. devtools, precommit, or bb bbapi bbr)"
     required: false
     default: devtools
 
@@ -35,4 +35,12 @@ runs:
 
     - name: Install ${{ inputs.package }}
       shell: bash
-      run: nix profile install .#${{ inputs.package }}
+      env:
+        PACKAGES: ${{ inputs.package }}
+      run: |
+        read -r -a packages <<< "$PACKAGES"
+        installables=()
+        for package in "${packages[@]}"; do
+          installables+=(".#$package")
+        done
+        nix profile install "${installables[@]}"

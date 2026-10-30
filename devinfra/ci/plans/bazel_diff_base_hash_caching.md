@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 1
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools # provides bb, bbapi, bbr, and sops
+          package: bb # mint-automation-token installs sops when needed
       - uses: ./.github/actions/mint-automation-token
         id: app
         with:
