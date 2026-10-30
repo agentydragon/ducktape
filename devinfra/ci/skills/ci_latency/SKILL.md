@@ -212,6 +212,23 @@ expensive or unexplained phases into subprocesses, services and dependencies.
 Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
+When a selected test emits spans, use them as the primary phase evidence before
+adding instrumentation. [Agentplane's phase-tracing notes](../../../../agentplane/system_tests/README.md#phase-tracing)
+document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
+traces relate to fixture and scenario lifetimes. Follow the
+[BuildBuddy artifact recipe](../../../../devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
+list the physical invocation's test artifacts first, then download the trace
+for the relevant target and shard/run/attempt. Tie it to the tested source SHA
+and a physical execution; do not infer a trace from a cached target summary.
+
+Reconstruct parent/child spans and concurrent intervals as a critical path;
+never sum nested or overlapping spans. Correlate their wall-time intervals with
+the test action, native command evidence, and service/guest logs. A span is not
+CPU time or a native command duration. Account for clock skew across hosts and
+the test time spent exporting spans. For a long wait, identify the queued work,
+the state producer and the observer that notices it. If CPU or off-CPU time is
+still unexplained, use a real profiler; do not add ad hoc timers.
+
 - Reconstruct setup, readiness, scenario execution, assertions, diagnostics and
   teardown. Use existing phase artifacts, logs, traces and real CPU/off-CPU or
   sampling profilers as appropriate. Attribute elapsed time as well as CPU:
