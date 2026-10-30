@@ -271,7 +271,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			}
 			runningProcess := false
 			for _, process := range state.Processes {
-				if process.Status != "exited_unread" && process.Status != "exited" {
+				if process.Status != ProcessExitedUnread && process.Status != ProcessExited {
 					runningProcess = true
 					break
 				}
@@ -326,10 +326,10 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			return activeCommand, err
 		}
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
-		result := ""
+		var result TurnResult
 		if payload.GetCompact() != nil {
 			err = r.compact(turnCtx, owner, session.Model)
-			result = "compact"
+			result = TurnCompact
 		} else {
 			for {
 				conversation, readErr := r.store.Read(turnCtx, owner)
@@ -360,11 +360,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 					}
 				}
 				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, client, session)
-				if err != nil || result == "done" || result == "interrupted" || result == "effects_unknown" {
+				if err != nil || result.endsTurn() {
 					break
-				}
-				if result == "cell" || result == "sample" || result == "compact" || result == "notification" || result == "steer" {
-					continue
 				}
 			}
 		}
@@ -373,16 +370,16 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			return activeCommand, err
 		}
 		if result == "" {
-			result = "done"
+			result = TurnDone
 		}
 		if err := r.store.FinishCommand(ctx, owner, sessionID, command.ID, result); err != nil {
 			return activeCommand, err
 		}
 		activeCommand = nil
-		if result == "effects_unknown" {
+		if result == TurnEffectsUnknown {
 			return nil, nil
 		}
-		if result == "interrupted" && live != nil {
+		if result == TurnInterrupted && live != nil {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = live.Close(closeCtx)
 			closeCancel()
@@ -497,7 +494,7 @@ func liveDone(live *liveHost) <-chan struct{} {
 	return live.code.Done()
 }
 
-func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, session *Session) (string, error) {
+func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, session *Session) (TurnResult, error) {
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
@@ -507,7 +504,7 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
 	type advanceResult struct {
-		result string
+		result TurnResult
 		err    error
 	}
 	completed := make(chan advanceResult, 1)
@@ -572,7 +569,7 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 	}
 }
 
-func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Owner, live *liveHost, interruptIDs []string, pending ...*PendingIntent) (string, error) {
+func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Owner, live *liveHost, interruptIDs []string, pending ...*PendingIntent) (TurnResult, error) {
 	var currentPending *PendingIntent
 	if len(pending) > 0 {
 		currentPending = pending[0]
@@ -607,7 +604,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	}
 	if stateErr == nil {
 		for _, process := range state.Processes {
-			if process.Status != "exited" && process.Status != "exited_unread" {
+			if process.Status != ProcessExited && process.Status != ProcessExitedUnread {
 				complete = false
 			}
 		}
@@ -627,18 +624,18 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	if cleanupErr != nil {
 		result["cleanup_error"] = cleanupErr.Error()
 	}
-	status := "effects_unknown"
+	status := TurnEffectsUnknown
 	if complete {
-		status = "interrupted"
+		status = TurnInterrupted
 	}
-	result["status"] = status
+	result["status"] = string(status)
 	if err := r.store.AcknowledgeInterrupt(cleanupCtx, owner, interruptIDs, result); err != nil {
 		return "", err
 	}
 	return status, nil
 }
 
-func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, client *http.Client, session *Session) (string, error) {
+func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, client *http.Client, session *Session) (TurnResult, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return "", err
@@ -647,7 +644,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", &UnknownEffectError{Reason: "unresolved provider or executor intent blocks continuation; automatic replay is unsafe"}
 	}
 	if conversation.Stopped {
-		return "interrupted", nil
+		return TurnInterrupted, nil
 	}
 	if err := r.store.CheckLiveCells(ctx, owner, live != nil); err != nil {
 		return "", err
@@ -671,7 +668,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []ResponsesContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			item := call.OutputItem(content)
-			intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call, "dispatched": false})
+			notDispatched := false
+			intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched})
 			if err != nil {
 				return "", err
 			}
@@ -682,12 +680,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
 				return "", err
 			}
-			return "cell", nil
+			return TurnCell, nil
 		}
 		if live == nil {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call})
+		intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call})
 		if err != nil {
 			return "", err
 		}
@@ -704,7 +702,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 				if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
 					return "", err
 				}
-				return "cell", nil
+				return TurnCell, nil
 			}
 			var known *KnownFailureError
 			if errors.As(err, &known) {
@@ -719,7 +717,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
 			return "", err
 		}
-		return "cell", nil
+		return TurnCell, nil
 	}
 	// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
 	// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
@@ -728,7 +726,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	if drained {
-		return "notification", nil
+		return TurnNotification, nil
 	}
 	// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
 	// input waits here for the sampling request to finish, because a cut stream leaves its intent
@@ -738,19 +736,19 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	if steered {
-		return "steer", nil
+		return TurnSteer, nil
 	}
 	if len(conversation.Items) > 0 {
 		last := conversation.Items[len(conversation.Items)-1]
 		if last.Type == ResponsesItemMessage && last.Role == "assistant" {
-			return "done", nil
+			return TurnDone, nil
 		}
 	}
 	if r.settings.AutoCompactTokens != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *r.settings.AutoCompactTokens && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
-		return "compact", nil
+		return TurnCompact, nil
 	}
 	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
 		return "", err
@@ -770,7 +768,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "sampling", "body": body})
+	intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentSampling, Body: &body})
 	if err != nil {
 		return "", err
 	}
@@ -828,7 +826,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err := r.store.Finish(ctx, owner, intentID, response.Audit(), response.Output, contextTokens); err != nil {
 		return "", err
 	}
-	return "sample", nil
+	return TurnSample, nil
 }
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error {
@@ -865,7 +863,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	intentID, err := r.store.BeginCompaction(ctx, owner, map[string]any{"kind": "compaction", "body": body}, original)
+	intentID, err := r.store.BeginCompaction(ctx, owner, IntentRequest{Kind: PendingIntentCompaction, Body: &body}, original)
 	if err != nil {
 		return err
 	}

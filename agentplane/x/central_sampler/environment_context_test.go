@@ -150,7 +150,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
+	intentID, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

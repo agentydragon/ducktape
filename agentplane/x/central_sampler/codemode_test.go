@@ -817,7 +817,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call ResponsesToolCall) (*Store, Ow
 
 func appendModelToolCall(t *testing.T, store *Store, owner Owner, call ResponsesToolCall) {
 	t.Helper()
-	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "response_id": call.CallID})
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 	if err != nil {
 		t.Fatal(err)
 	}

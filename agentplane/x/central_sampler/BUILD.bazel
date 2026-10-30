@@ -318,6 +318,7 @@ go_library(
         "schema/0003_unified_exec_sessions.sql",
         "schema/0004_environment_context.sql",
         "schema/0005_code_session_epoch.sql",
+        "schema/0006_status_checks.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
     deps = [
