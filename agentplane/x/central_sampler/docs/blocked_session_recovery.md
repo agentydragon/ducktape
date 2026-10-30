@@ -37,7 +37,10 @@ RecoverSession(session_id, expected_cursor=attached.last_cursor, operator_note=r
 The caller must be authenticated as the same account that opened the Session. Recovery requires an
 expired owner lease and the current attached cursor, so a stale review cannot clear a newer failure.
 It supports unresolved cell, nested tool, and executor intents, and lost live cells or process
-handles. Pending provider sampling, compaction, and setup failures remain blocked and require a new
+handles. It also repairs older pre-dispatch cell rejections that retained a pending pointer: the
+known rejected result is preserved, and the missing model output reports that no runtime operation
+was dispatched for that call. Other live handles are still abandoned under the same operator review.
+Pending provider sampling, compaction, and setup failures remain blocked and require a new
 Session.
 
 If the Sandbox's Pod was replaced, the operator may also provide

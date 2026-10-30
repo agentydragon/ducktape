@@ -533,8 +533,25 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if err := rows.Close(); err != nil {
 			return err
 		}
+		rejectedCallID, rejectionReason := "", ""
 		if !pendingIntentFound {
-			return ErrPrecondition
+			// Older input validation recorded a known rejection but retained Pending
+			// when other live work existed. Preserve that result during explicit recovery.
+			intent, err := intentFor(ctx, tx, conversation.Pending.ID)
+			if err != nil {
+				return err
+			}
+			dispatched, known := intent.Result["dispatched"].(bool)
+			call, isCall := intent.Request["call"].(map[string]any)
+			if intent.ConversationID != conversation.ID || stringValue(intent.Request["kind"]) != "cell" ||
+				stringValue(intent.Result["status"]) != "rejected" || !known || dispatched || !isCall {
+				return ErrPrecondition
+			}
+			rejectedCallID = stringValue(call["call_id"])
+			rejectionReason = stringValue(intent.Result["reason"])
+			if rejectedCallID == "" || rejectionReason == "" {
+				return ErrPrecondition
+			}
 		}
 
 		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
@@ -545,7 +562,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if err != nil {
 			return err
 		}
-		if len(unresolved) == 0 && !liveCell && !liveProcess {
+		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
 			return ErrPrecondition
 		}
 
@@ -576,8 +593,12 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abortedOutputs := make([]ResponsesItem, 0)
 		for _, call := range unansweredCalls(conversation.Items) {
+			message := "Aborted by operator recovery; remote effects may have occurred and were not replayed. The continuation uses a new JavaScript session, so prior store() and load() values are unavailable."
+			if call.CallID == rejectedCallID {
+				message = "Tool call rejected before dispatch: " + rejectionReason + ". No runtime or executor operation was dispatched for this call."
+			}
 			abortedOutputs = append(abortedOutputs, call.OutputItem([]ResponsesContentPart{{
-				Type: "input_text", Text: "Aborted by operator recovery; remote effects may have occurred and were not replayed. The continuation uses a new JavaScript session, so prior store() and load() values are unavailable.",
+				Type: "input_text", Text: message,
 			}}))
 		}
 		if len(abortedOutputs) > 0 {

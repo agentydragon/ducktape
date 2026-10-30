@@ -164,8 +164,15 @@ Graceful shutdown cancels execution and waits for ownership acquisition and rele
 a restarted replica can claim immediately without waiting for the old lease to expire.
 Executor failure leaves continuation and retained conversation outside the failed Sandbox.
 
-Explicit provider rejections, terminal provider failures and model-tool validation errors before
-JavaScript dispatch record a rejected intent. When no unresolved effects or live execution remain,
+Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
+error text in the matching model tool output without dispatching to the runtime or executor.
+The call intent is completed and the model may continue in the same turn, preserving JavaScript
+state and other live cells/processes. JavaScript syntax errors and exceptions likewise return the
+normal `Script failed` output. Internal store, host-protocol and transport failures are not
+classified as model input errors.
+
+Explicit provider rejections and terminal provider failures record a rejected intent.
+When no unresolved effects or live execution remain,
 the command and turn fail without blocking the Session; subsequent input may continue without replaying the failed
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 The original driver error is retained in command and turn failure reasons and, for blocked sessions,

@@ -313,6 +313,85 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 }
 
+func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ResponsesItem{Type: ResponsesItemFunctionCall, CallID: "invalid-cell", Name: "exec", Arguments: `{"cell_id":"native-session","terminate":true}`}
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, []ResponsesItem{call}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
+		t.Fatal(err)
+	}
+	cellIntent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell", "call": call})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const reason = "wait requires a known live cell_id"
+	// Reproduce the old failure path: Reject saves the known result but retains
+	// Pending because an unrelated process is still live.
+	if err := store.Reject(t.Context(), owner, cellIntent, &KnownFailureError{Evidence: map[string]any{"reason": reason, "dispatched": false}}); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blocked.Blocked {
+		t.Fatal("fixture did not reproduce the blocked rejection")
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed unrelated process", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Blocked {
+		t.Fatal("known rejected cell remained blocked")
+	}
+	result, err := intentResultForDB(t, store, cellIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "rejected" || result["dispatched"] != false || result["reason"] != reason {
+		t.Fatalf("known result changed: %v", result)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil || len(conversation.Items) != 3 || conversation.Items[1].CallID != call.CallID {
+		t.Fatalf("unsettled call: %+v", conversation)
+	}
+	output, err := json.Marshal(conversation.Items[1].Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), reason) || !strings.Contains(string(output), "No runtime or executor operation was dispatched") {
+		t.Fatalf("misleading output: %s", output)
+	}
+	var status string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE id='other-process'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "abandoned" {
+		t.Fatalf("other process status=%s", status)
+	}
+}
+
 func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T) {
 	for _, kind := range []string{"cell", "process"} {
 		t.Run(kind, func(t *testing.T) {

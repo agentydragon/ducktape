@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -58,6 +59,70 @@ func TestJSONExecRejectsMalformedArgumentsBeforeDispatch(t *testing.T) {
 				t.Fatal("accepted invalid JSON exec arguments")
 			}
 		})
+	}
+}
+
+func TestCodeModeInputErrorsReturnOutputWithoutAHostRequest(t *testing.T) {
+	for _, call := range []ResponsesToolCall{
+		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{}`},
+		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)","cell_id":"cell"}`},
+		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"cell_id":""}`},
+		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)","yield_time_ms":-1}`},
+		{Type: ResponsesItemCustomToolCall, Name: "exec", Input: ""},
+		{Type: ResponsesItemCustomToolCall, Name: "exec", Input: "// @exec: {\"unknown\":true}\ntext(1)"},
+		{Type: ResponsesItemFunctionCall, Name: "wait", Input: `{"cell_id":42}`},
+	} {
+		t.Run(string(call.Type)+"/"+call.Name+"/"+call.Input, func(t *testing.T) {
+			// A host request would dereference the absent manager/host. Invalid input
+			// must instead return ordinary output for the model's matching call.
+			runtime := &CodeMode{}
+			output, err := runtime.Execute(t.Context(), call)
+			if err != nil || len(output) != 1 || output[0].Type != "input_text" || !strings.HasPrefix(output[0].Text, "Error: ") {
+				t.Fatalf("input rejection output=%+v error=%v", output, err)
+			}
+		})
+	}
+}
+
+func TestCodeModeInvalidCellPreservesOtherLiveWork(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterModelProcess(t.Context(), owner, "existing-process", 77, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "existing-process", nil, "running", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, "fixture:live-cell", "live"); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
+	output, err := runtime.Execute(t.Context(), ResponsesToolCall{
+		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "bad-wait",
+		Input: `{"cell_id":"executor-session-id","terminate":true}`,
+	})
+	if err != nil || len(output) != 1 || !strings.Contains(output[0].Text, "known live cell_id") {
+		t.Fatalf("invalid cell output=%+v error=%v", output, err)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Cells) != 1 || state.Cells[0].Status != "live" || len(state.Processes) != 1 || state.Processes[0].Status != "running" {
+		t.Fatalf("invalid cell changed other live work: %+v", state)
+	}
+}
+
+func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.DB().Close(); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
+	output, err := runtime.Execute(t.Context(), ResponsesToolCall{
+		Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"cell_id":"fixture:cell"}`,
+	})
+	if err == nil || output != nil || errors.As(err, new(*toolError)) {
+		t.Fatalf("store failure became model output: output=%+v error=%v", output, err)
 	}
 }
 

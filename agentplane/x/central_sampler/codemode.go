@@ -438,7 +438,13 @@ func validateCodeModeResult(frame *codeWireResult) (json.RawMessage, error) {
 func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]ResponsesContentPart, error) {
 	prepared, err := r.prepareCall(ctx, call)
 	if err != nil {
-		return nil, &KnownFailureError{Evidence: map[string]any{"reason": err.Error(), "call": call, "dispatched": false}}
+		// Codex's FunctionCallError::RespondToModel returns input errors to the model;
+		// they do not stop the turn or abandon unrelated live cells and processes.
+		var inputError *toolError
+		if errors.As(err, &inputError) {
+			return []ResponsesContentPart{{Type: "input_text", Text: "Error: " + inputError.Error()}}, nil
+		}
+		return nil, err
 	}
 	started := time.Now()
 	value, err := r.request(ctx, prepared.operation, prepared.execute)
@@ -484,11 +490,11 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 		return r.prepareWait(ctx, call.Input)
 	}
 	if call.Name != "exec" || call.Type != ResponsesItemCustomToolCall {
-		return preparedCall{}, fmt.Errorf("unsupported model tool %q (%s)", call.Name, call.Type)
+		return preparedCall{}, &toolError{fmt.Sprintf("unsupported model tool %q (%s)", call.Name, call.Type)}
 	}
 	source, err := parseExecSource(call.Input)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareExecute(call.CallID, source)
 }
@@ -526,10 +532,10 @@ type jsonExecInput struct {
 func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
 	var input jsonExecInput
 	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	if (input.Code == nil) == (input.CellID == nil) {
-		return preparedCall{}, errors.New("exec requires exactly one of code or cell_id")
+		return preparedCall{}, &toolError{"exec requires exactly one of code or cell_id"}
 	}
 	if input.CellID != nil {
 		terminate := input.Terminate != nil && *input.Terminate
@@ -538,23 +544,23 @@ func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) 
 			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
 		})
 		if err != nil {
-			return preparedCall{}, err
+			return preparedCall{}, &toolError{err.Error()}
 		}
 		return r.prepareWaitArguments(ctx, arguments)
 	}
 	if input.Terminate != nil {
-		return preparedCall{}, errors.New("terminate requires cell_id")
+		return preparedCall{}, &toolError{"terminate requires cell_id"}
 	}
 	if strings.TrimSpace(*input.Code) == "" {
-		return preparedCall{}, errors.New("exec requires non-empty code")
+		return preparedCall{}, &toolError{"exec requires non-empty code"}
 	}
 	yieldMS, err := safeIntegerArgument("yield_time_ms", input.YieldTimeMS)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	maxTokens, err := safeIntegerArgument("max_output_tokens", input.MaxOutputTokens)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareExecute(call.CallID, execSource{code: *input.Code, yieldTimeMS: yieldMS, maxOutputTokens: maxTokens})
 }
@@ -599,7 +605,7 @@ func resolveWaitArguments(arguments waitInput) (waitArguments, error) {
 func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {
 	arguments, err := parseWaitArguments(input)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareWaitArguments(ctx, arguments)
 }
@@ -618,11 +624,11 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArgum
 		}
 	}
 	if !known {
-		return preparedCall{}, errors.New("wait requires a known live cell_id; process session_id is not accepted")
+		return preparedCall{}, &toolError{"wait requires a known live cell_id; process session_id is not accepted"}
 	}
 	nativeID, err := r.nativeCell(cellID)
 	if err != nil {
-		return preparedCall{}, err
+		return preparedCall{}, &toolError{err.Error()}
 	}
 	session := codeSessionOperation{Method: "session/wait", SessionID: r.sessionID}
 	if arguments.terminate {
