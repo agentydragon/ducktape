@@ -365,7 +365,7 @@ already divide by the service that enforces them:
 | Lasts as long as     | the Sandbox                                         | the history                                                                      |
 
 Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
-app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
+app, Notifications and the `orchestration_v1` executor), then serves any Session by ID; there is no per-Session or per-Sandbox check,
 and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/go/auth`). Writes are
 fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
 UID) and refuses any other (`ingress/ingress.go`). The archive therefore already holds an identity of its
