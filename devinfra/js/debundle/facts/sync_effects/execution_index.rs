@@ -26,7 +26,6 @@ use crate::facts::at_init_fallback::{
 };
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
-    ReturnedRecordCandidateFacts, ReturnedRecordFacts,
 };
 use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
@@ -1498,75 +1497,6 @@ fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
         [Stmt::Return(ret)] => ret.arg.as_deref(),
         _ => None,
     }
-}
-
-struct ReturnedRecordCandidate {
-    constructor: Id,
-    members: Vec<(String, Span)>,
-}
-
-/// An exact eager skeleton; all user code in the returned record is deferred.
-fn returned_record_candidate(function: &Function) -> Option<ReturnedRecordCandidate> {
-    if function.is_async
-        || function.is_generator
-        || !function.params.is_empty()
-        || !function.decorators.is_empty()
-    {
-        return None;
-    }
-    let [Stmt::Decl(Decl::Var(declaration)), Stmt::Return(returned)] =
-        function.body.as_ref()?.stmts.as_slice()
-    else {
-        return None;
-    };
-    let [binding] = declaration.decls.as_slice() else {
-        return None;
-    };
-    if declaration.declare || !matches!(binding.name, Pat::Ident(_)) {
-        return None;
-    }
-    let Expr::New(allocation) = binding.init.as_ref()?.unwrap_parens() else {
-        return None;
-    };
-    let Expr::Ident(constructor) = allocation.callee.unwrap_parens() else {
-        return None;
-    };
-    if constructor.sym != "Map" || !allocation.args.as_deref().unwrap_or_default().is_empty() {
-        return None;
-    }
-    let Expr::Object(record) = returned.arg.as_ref()?.unwrap_parens() else {
-        return None;
-    };
-    let mut members = Vec::new();
-    let mut names = BTreeSet::new();
-    for property in &record.props {
-        let PropOrSpread::Prop(property) = property else {
-            return None;
-        };
-        let (key, function) = match property.as_ref() {
-            Prop::Method(method) => (&method.key, &method.function),
-            Prop::Getter(getter) => (&getter.key, &getter.function),
-            _ => return None,
-        };
-        if matches!(key, PropName::Computed(_))
-            || !function.decorators.is_empty()
-            || function
-                .params
-                .iter()
-                .any(|param| !param.decorators.is_empty())
-        {
-            return None;
-        }
-        let name = static_property_name(key)?;
-        if name == "__proto__" || !names.insert(name.clone()) {
-            return None;
-        }
-        members.push((name, function.span));
-    }
-    (!members.is_empty()).then_some(ReturnedRecordCandidate {
-        constructor: constructor.to_id(),
-        members,
-    })
 }
 
 fn returned_function_span(expr: &Expr) -> Option<Span> {
@@ -5437,7 +5367,6 @@ struct ExecutionIndex {
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     returned_factory_candidates: BTreeMap<u32, Span>,
-    returned_record_candidates: BTreeMap<u32, ReturnedRecordCandidate>,
     returned_record_summaries: BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
     namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
@@ -5594,7 +5523,6 @@ impl Default for ExecutionIndex {
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
             returned_factory_candidates: BTreeMap::new(),
-            returned_record_candidates: BTreeMap::new(),
             returned_record_summaries: BTreeMap::new(),
             namespace_wrapper_summaries: BTreeMap::new(),
         }
@@ -5771,12 +5699,6 @@ impl ExecutionIndex {
             .values()
             .flatten()
             .map(|(binding, _)| binding.clone())
-            .chain(
-                callables
-                    .records
-                    .values()
-                    .map(|candidate| candidate.constructor.clone()),
-            )
             .chain(
                 callables
                     .namespace_wrappers
@@ -8860,15 +8782,6 @@ impl ExecutionIndex {
         )
     }
 
-    /// `new Map()` runs no user code: the census keeps `%Map%` intact.
-    fn map_integrity(&self) -> bool {
-        matches!(
-            self.integrity
-                .require(&[IntrinsicSlot::Global(NativeIntrinsic::Map)], None),
-            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
-        )
-    }
-
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
         mut locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
@@ -10103,10 +10016,6 @@ impl Visit for ExecutionIndex {
     fn visit_function(&mut self, function: &Function) {
         if let Some(candidate) = namespace_wrapper::candidate(function) {
             self.namespace_wrapper_candidates
-                .insert(function.span.lo.0, candidate);
-        }
-        if let Some(candidate) = returned_record_candidate(function) {
-            self.returned_record_candidates
                 .insert(function.span.lo.0, candidate);
         }
         if function.is_async {
@@ -11479,10 +11388,11 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
             })
 }
 
+/// A derived foreign call's fresh record result, with each member's provider
+/// captures for the report.
 pub(crate) struct InferredReturnedRecord {
-    pub facts: Arc<ReturnedRecordFacts>,
+    pub members: Vec<(String, u32, BTreeSet<String>)>,
     pub inference: crate::reports::schema::InferenceUse,
-    pub dependencies: ProofDependencies,
 }
 
 pub(crate) struct InferredNamespaceWrapper {
@@ -11497,7 +11407,6 @@ pub(crate) struct InferredCallbackFactory {
 }
 
 pub(crate) struct InferredCallableCapabilities {
-    pub map_integrity: bool,
     /// Exported local → derived call summary
     /// (`crate::facts::abstract_domain::foreign_call`).
     pub foreign_calls: BTreeMap<String, InferredForeignCall>,
@@ -11506,7 +11415,6 @@ pub(crate) struct InferredCallableCapabilities {
     pub intact_collections: BTreeSet<NativeIntrinsic>,
     pub stable_providers: BTreeSet<String>,
     pub callback_factories: BTreeMap<String, InferredCallbackFactory>,
-    pub returned_records: BTreeMap<String, InferredReturnedRecord>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
 
@@ -11514,6 +11422,7 @@ pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
     pub dependencies: ProofDependencies,
+    pub record: Option<InferredReturnedRecord>,
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -11802,12 +11711,10 @@ pub(crate) fn infer_callable_capabilities(
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
-        map_integrity: false,
         foreign_calls: BTreeMap::new(),
         intact_collections: BTreeSet::new(),
         stable_providers: BTreeSet::new(),
         callback_factories: BTreeMap::new(),
-        returned_records: BTreeMap::new(),
         namespace_wrappers: BTreeMap::new(),
     };
     let callback_candidate = |id: &Id, key: u32| {
@@ -11818,8 +11725,7 @@ pub(crate) fn infer_callable_capabilities(
             ||
         callback_candidate(id, *key)
             || (exported_locals.contains(id.0.as_ref())
-                && (index.returned_record_candidates.contains_key(key)
-                    || index.namespace_wrapper_candidates.contains_key(key)))
+                && index.namespace_wrapper_candidates.contains_key(key))
     }) || index.top_assignments.iter().flatten().any(|(id, value)| {
         matches!(value, ValueExpr::Alloc(Kind::Function, key) if callback_candidate(id, *key))
     });
@@ -11861,14 +11767,12 @@ pub(crate) fn infer_callable_capabilities(
             &exported_locals,
             index.semantic_facts.as_deref().unwrap(),
         );
-        result.returned_records = infer_returned_records(&index, &exported_locals);
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
         prepared_flow = Some(flow);
     }
     if derive_foreign_calls {
         result.foreign_calls = infer_foreign_calls(&index, body, &exported_locals, prepared_flow);
     }
-    result.map_integrity = index.map_integrity();
     result.intact_collections = [
         NativeIntrinsic::Map,
         NativeIntrinsic::Set,
@@ -11959,16 +11863,71 @@ fn infer_foreign_calls(
                     .expect("derivation checked the census for every construction"),
             );
         }
+        let record = derived
+            .record
+            .as_ref()
+            .map(|members| returned_record(index, members, &derived, &dependencies));
         inferred.insert(
             binding.sym.to_string(),
             InferredForeignCall {
                 derived,
                 declaration_start,
                 dependencies,
+                record,
             },
         );
     }
     inferred
+}
+
+/// Report projection of a derived record: each member's free provider
+/// bindings, and the rules the derivation used.
+fn returned_record(
+    index: &ExecutionIndex,
+    members: &[crate::facts::abstract_domain::foreign_call::RecordMember],
+    derived: &crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    dependencies: &ProofDependencies,
+) -> InferredReturnedRecord {
+    use crate::reports::schema::{InferenceRule, InferenceUse};
+    let members = members
+        .iter()
+        .map(|member| {
+            let callable = &index.callables[&member.function_start];
+            let parameters: BTreeSet<_> = callable
+                .params
+                .iter()
+                .filter_map(|param| param.binding.as_ref())
+                .collect();
+            let captures = callable
+                .reads
+                .difference(&callable.declared_locals)
+                .filter(|binding| !parameters.contains(binding))
+                .map(|binding| binding.0.to_string())
+                .collect();
+            (member.name.clone(), member.function_start, captures)
+        })
+        .collect();
+    let mut derivation_rules =
+        BTreeSet::from([InferenceRule::ReturnedRecord, InferenceRule::StableFunction]);
+    if !derived.native_constructions.is_empty() {
+        derivation_rules.extend([
+            InferenceRule::EmptyCollectionConstruction,
+            InferenceRule::NativeCallIdentity,
+            InferenceRule::NativeIntegrity,
+        ]);
+    }
+    InferredReturnedRecord {
+        members,
+        inference: InferenceUse {
+            conclusion: InferenceRule::ReturnedRecord,
+            derivation_rules,
+            value_input_refs: dependencies.value_inputs.clone(),
+            descriptor_copy_author_refs: BTreeSet::new(),
+            argument_input_refs: dependencies.argument_inputs.clone(),
+            argument_input_spec_locations: BTreeSet::new(),
+            native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+        },
+    }
 }
 
 fn namespace_wrapper_inputs(
@@ -12087,7 +12046,7 @@ fn callable_inference_inputs(
             },
         );
     }
-    let required_functions: BTreeSet<_> = inputs
+    inputs.callback_factories = inputs
         .functions
         .values()
         .flat_map(|facts| facts.values.iter())
@@ -12095,79 +12054,9 @@ fn callable_inference_inputs(
             Value::Alloc(Kind::Function, function) => Some(function),
             _ => None,
         })
+        .filter(|function| returned_callback_factory(index, *function))
         .collect();
-    inputs.callback_factories = required_functions
-        .iter()
-        .filter(|function| returned_callback_factory(index, **function))
-        .copied()
-        .collect();
-    for function in required_functions {
-        let Some(candidate) = index.returned_record_candidates.get(&function) else {
-            continue;
-        };
-        let members = candidate
-            .members
-            .iter()
-            .map(|(name, span)| {
-                let callable = &index.callables[&span.lo.0];
-                let parameters: BTreeSet<_> = callable
-                    .params
-                    .iter()
-                    .filter_map(|param| param.binding.clone())
-                    .collect();
-                let captures = callable
-                    .reads
-                    .difference(&callable.declared_locals)
-                    .filter(|binding| !parameters.contains(*binding))
-                    .map(|binding| binding.0.to_string())
-                    .collect();
-                (name.clone(), span.lo.0, captures)
-            })
-            .collect();
-        inputs.records.insert(
-            function,
-            ReturnedRecordCandidateFacts {
-                constructor: candidate.constructor.clone(),
-                members: Arc::new(ReturnedRecordFacts {
-                    function_start: function,
-                    members,
-                }),
-            },
-        );
-    }
     inputs
-}
-
-fn infer_returned_records(
-    index: &ExecutionIndex,
-    exported_locals: &BTreeSet<String>,
-) -> BTreeMap<String, InferredReturnedRecord> {
-    index
-        .hoisted_bindings
-        .iter()
-        .filter_map(|(binding, &function)| {
-            if !exported_locals.contains(binding.0.as_ref()) {
-                return None;
-            }
-            let key = SemanticKey::ReturnedRecord {
-                binding: binding.clone(),
-                function,
-            };
-            let semantic_facts = index.semantic_facts.as_ref()?;
-            let judgment = semantic_facts.judgment(&key)?;
-            let SemanticFact::ReturnedRecord(facts) = judgment.value() else {
-                return None;
-            };
-            Some((
-                binding.0.to_string(),
-                InferredReturnedRecord {
-                    facts: Arc::clone(facts),
-                    inference: semantic_facts.inference_use(&key)?,
-                    dependencies: judgment.dependencies().clone(),
-                },
-            ))
-        })
-        .collect()
 }
 
 fn infer_returned_callback_factories(

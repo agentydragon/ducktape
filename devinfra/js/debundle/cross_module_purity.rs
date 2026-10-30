@@ -1198,8 +1198,8 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    // Like a returned record's Map premise, a construction premise must hold
-    // in every analyzed chunk's census, including the importer's.
+    // A construction premise must hold in every analyzed chunk's census,
+    // including the importer's.
     let intact_collections = inferred
         .values()
         .map(|capabilities| &capabilities.intact_collections)
@@ -1230,44 +1230,6 @@ pub fn resolve_imported_callable_summaries(
             {
                 continue;
             }
-            export_summaries.entry(key).or_default().add(
-                CallableSummary::foreign_call(ForeignCallSummary {
-                    defining_module: module.clone(),
-                    export: export.clone(),
-                    local: local.clone(),
-                    source_location: facts.source.as_ref().and_then(|(path, index)| {
-                        let (line, column) =
-                            index.line_and_column_for_pos(BytePos(call.declaration_start))?;
-                        Some(SourceLocation {
-                            source_path: path.clone(),
-                            start_line: line,
-                            end_line: line,
-                            start_column: Some(column),
-                        })
-                    }),
-                    invocation: call.derived.invocation,
-                    returns: call.derived.returns.clone(),
-                    retained_arguments: call.derived.retained_arguments.clone(),
-                    native_constructions: call.derived.native_constructions.clone(),
-                    replacement_package: facts.replacement_packages.get(export).cloned(),
-                    dependencies: call.dependencies.clone(),
-                }),
-                call.dependencies.clone(),
-            );
-        }
-    }
-    let needs_map_integrity = inferred
-        .values()
-        .any(|summary| !summary.returned_records.is_empty());
-    // A source-composed native premise must survive every analyzed chunk's
-    // canonical intrinsic-write census, including the importing chunk.
-    if needs_map_integrity
-        && inferred
-            .values()
-            .all(|capabilities| capabilities.map_integrity)
-    {
-        for (module, facts) in modules {
-            let records = &inferred[module].returned_records;
             let locate = |start| {
                 facts.source.as_ref().and_then(|(path, index)| {
                     let (line, column) = index.line_and_column_for_pos(BytePos(start))?;
@@ -1279,25 +1241,14 @@ pub fn resolve_imported_callable_summaries(
                     })
                 })
             };
-            for (export, local) in &facts.exports {
-                let key = CallableExportKey {
-                    module: module.clone(),
-                    export: export.clone(),
-                };
-                if !required.contains(&key) {
-                    continue;
-                }
-                let Some(record) = records.get(local) else {
-                    continue;
-                };
-                export_summaries.entry(key).or_default().add(
+            if let Some(record) = &call.record {
+                export_summaries.entry(key.clone()).or_default().add(
                     CallableSummary::returned_record(ReturnedRecordSummary {
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
-                        source_location: locate(record.facts.function_start),
+                        source_location: locate(call.declaration_start),
                         members: record
-                            .facts
                             .members
                             .iter()
                             .map(|(name, start, captures)| DeferredRecordMember {
@@ -1308,9 +1259,24 @@ pub fn resolve_imported_callable_summaries(
                             .collect(),
                         inference: record.inference.clone(),
                     }),
-                    record.dependencies.clone(),
+                    call.dependencies.clone(),
                 );
             }
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::foreign_call(ForeignCallSummary {
+                    defining_module: module.clone(),
+                    export: export.clone(),
+                    local: local.clone(),
+                    source_location: locate(call.declaration_start),
+                    invocation: call.derived.invocation,
+                    returns: call.derived.returns.clone(),
+                    retained_arguments: call.derived.retained_arguments.clone(),
+                    native_constructions: call.derived.native_constructions.clone(),
+                    replacement_package: facts.replacement_packages.get(export).cloned(),
+                    dependencies: call.dependencies.clone(),
+                }),
+                call.dependencies.clone(),
+            );
         }
     }
     for (module, facts) in modules {

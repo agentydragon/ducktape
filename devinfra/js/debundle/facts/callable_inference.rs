@@ -9,7 +9,6 @@ use crate::facts::value_flow::Values;
 use crate::inference::CertificateContext;
 use crate::reports::schema::InferenceRule;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use swc_ecma_ast::Id;
 
 #[derive(Debug)]
@@ -18,18 +17,6 @@ pub(crate) struct FunctionBindingFacts {
     pub(crate) hoisted: bool,
     pub(crate) definite_initializer: bool,
     pub(crate) rebound: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct ReturnedRecordFacts {
-    pub(crate) function_start: u32,
-    pub(crate) members: Vec<(String, u32, BTreeSet<String>)>,
-}
-
-#[derive(Debug)]
-pub(crate) struct ReturnedRecordCandidateFacts {
-    pub(crate) constructor: Id,
-    pub(crate) members: Arc<ReturnedRecordFacts>,
 }
 
 #[derive(Debug)]
@@ -42,7 +29,6 @@ pub(crate) struct NamespaceWrapperCandidateFacts {
 pub(crate) struct CallableInferenceInputs {
     pub(crate) functions: BTreeMap<Id, FunctionBindingFacts>,
     pub(crate) callback_factories: BTreeSet<u32>,
-    pub(crate) records: BTreeMap<u32, ReturnedRecordCandidateFacts>,
     pub(crate) namespace_wrappers: BTreeMap<u32, NamespaceWrapperCandidateFacts>,
 }
 
@@ -68,12 +54,6 @@ impl CallableInferenceInputs {
                         function,
                     });
                 }
-                if self.records.contains_key(&function) {
-                    keys.push(SemanticKey::ReturnedRecord {
-                        binding: binding.clone(),
-                        function,
-                    });
-                }
                 if self.namespace_wrappers.contains_key(&function) {
                     keys.push(SemanticKey::NamespaceWrapper {
                         binding: binding.clone(),
@@ -86,7 +66,7 @@ impl CallableInferenceInputs {
     }
 
     /// Source candidates identify possible bodies. Only a required identity
-    /// judgment and, for a record, its native allocation can certify one.
+    /// judgment and the candidate's native premises can certify one.
     pub(crate) fn evaluate(
         &self,
         key: &SemanticKey,
@@ -128,28 +108,6 @@ impl CallableInferenceInputs {
                     && (source.hoisted || source.definite_initializer)
                     && self.callback_factories.contains(function))
                 .then_some(SemanticFact::CallbackFactory(*function))
-            }
-            SemanticKey::ReturnedRecord { binding, function } => {
-                let identity = context.require(SemanticKey::StableFunction {
-                    binding: binding.clone(),
-                    function: *function,
-                })?;
-                let SemanticFact::Function(identity) = identity else {
-                    return None;
-                };
-                let source = self.functions.get(binding)?;
-                if *identity != *function || !source.hoisted || source.rebound {
-                    return None;
-                }
-                let record = self.records.get(function)?;
-                native.require_empty_collection(
-                    collections.get(&record.constructor)?,
-                    &record.constructor,
-                    None,
-                    context,
-                    consulted,
-                )?;
-                Some(SemanticFact::ReturnedRecord(Arc::clone(&record.members)))
             }
             SemanticKey::NamespaceWrapper { binding, function } => {
                 let identity = context.require(SemanticKey::StableFunction {

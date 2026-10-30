@@ -11,6 +11,10 @@
 //! and literal evaluation). Anything else is `Havoc` and yields no summary,
 //! including any read of a provider binding: an importer may hold and mutate
 //! what that binding denotes.
+//!
+//! A returned object literal whose properties are all methods or getters gets
+//! a foreign record identity: none of its code runs until the importer reads
+//! or calls a member.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,6 +34,15 @@ pub(crate) struct DerivedForeignCall {
     pub(crate) returns: BTreeSet<ForeignReturn>,
     pub(crate) retained_arguments: BTreeSet<usize>,
     pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
+    /// Set for a parameterless call that always returns one fresh record.
+    pub(crate) record: Option<Vec<RecordMember>>,
+}
+
+/// A method or getter of a returned record literal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordMember {
+    pub(crate) name: String,
+    pub(crate) function_start: u32,
 }
 
 /// A value at one program point of the body.
@@ -41,6 +54,9 @@ struct Value {
     /// arguments may be reachable.
     fresh: Option<BTreeSet<usize>>,
     primitive: bool,
+    /// The value is exactly this fresh object literal of methods and getters,
+    /// in source order with distinct names.
+    record: Option<Vec<RecordMember>>,
 }
 
 impl Value {
@@ -154,6 +170,7 @@ fn derive_function(
         returns,
         retained_arguments,
         native_constructions: evaluator.native_constructions,
+        record: returned.record.filter(|_| parameters.is_empty()),
     })
 }
 
@@ -254,6 +271,7 @@ fn derive_class(
         returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
         retained_arguments: evaluator.this.unwrap_or_default(),
         native_constructions: evaluator.native_constructions,
+        record: None,
     })
 }
 
@@ -310,18 +328,27 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                         None => Some(Value::primitive()),
                     };
                 }
-                Stmt::Decl(Decl::Var(declaration))
-                    if matches!(declaration.kind, VarDeclKind::Const | VarDeclKind::Let) =>
-                {
+                Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
                     for declarator in &declaration.decls {
                         let Pat::Ident(binding) = &declarator.name else {
                             return None;
                         };
-                        let value = match &declarator.init {
-                            Some(init) => self.expr(init)?,
-                            None => Value::primitive(),
-                        };
-                        self.env.insert(binding.id.to_id(), value);
+                        let binding = binding.id.to_id();
+                        match &declarator.init {
+                            Some(init) => {
+                                let value = self.expr(init)?;
+                                self.env.insert(binding, value);
+                            }
+                            // A `var` redeclaration without an initializer
+                            // keeps the binding's value. A read before the
+                            // first declaration finds no entry and fails.
+                            None if declaration.kind == VarDeclKind::Var => {
+                                self.env.entry(binding).or_insert_with(Value::primitive);
+                            }
+                            None => {
+                                self.env.insert(binding, Value::primitive());
+                            }
+                        }
                     }
                 }
                 Stmt::Expr(ExprStmt { expr, .. }) if constructor => {
@@ -395,35 +422,60 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
             }
             Expr::Object(object) => {
                 let mut reaches = BTreeSet::new();
+                let mut members = Some(Vec::new());
                 for property in &object.props {
                     let PropOrSpread::Prop(property) = property else {
                         return None;
                     };
-                    match property.as_ref() {
+                    let member = match property.as_ref() {
                         Prop::Shorthand(binding) => {
                             reaches.extend(self.env.get(&binding.to_id())?.reaches());
+                            None
                         }
                         Prop::KeyValue(KeyValueProp { key, value }) => {
                             if !literal_key(key) {
                                 return None;
                             }
                             reaches.extend(self.expr(value)?.reaches());
+                            None
                         }
                         Prop::Method(MethodProp { key, function })
                             if literal_key(key) && function.decorators.is_empty() =>
                         {
                             reaches.extend(all_parameters(self.parameter_count()));
+                            Some((key, function.span.lo.0))
                         }
-                        Prop::Getter(GetterProp { key, .. })
-                        | Prop::Setter(SetterProp { key, .. })
-                            if literal_key(key) =>
-                        {
+                        Prop::Getter(GetterProp { key, function, .. }) if literal_key(key) => {
                             reaches.extend(all_parameters(self.parameter_count()));
+                            Some((key, function.span.lo.0))
+                        }
+                        Prop::Setter(SetterProp { key, .. }) if literal_key(key) => {
+                            reaches.extend(all_parameters(self.parameter_count()));
+                            None
                         }
                         _ => return None,
-                    }
+                    };
+                    members = match (members, member) {
+                        (Some(mut members), Some((key, function_start))) => {
+                            let name = key_name(key);
+                            (!members
+                                .iter()
+                                .any(|member: &RecordMember| member.name == name))
+                            .then(|| {
+                                members.push(RecordMember {
+                                    name,
+                                    function_start,
+                                });
+                                members
+                            })
+                        }
+                        _ => None,
+                    };
                 }
-                Some(Value::fresh(reaches))
+                Some(Value {
+                    record: members.filter(|members| !members.is_empty()),
+                    ..Value::fresh(reaches)
+                })
             }
             Expr::New(NewExpr { callee, args, .. })
                 if args.as_deref().is_none_or(<[ExprOrSpread]>::is_empty) =>
@@ -449,6 +501,15 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
             }
             _ => None,
         }
+    }
+}
+
+fn key_name(key: &PropName) -> String {
+    match key {
+        PropName::Ident(name) => name.sym.to_string(),
+        PropName::Str(name) => name.value.to_string_lossy().into_owned(),
+        PropName::Num(number) => number.value.to_string(),
+        _ => unreachable!("literal_key admitted the key"),
     }
 }
 
@@ -493,7 +554,18 @@ mod tests {
             returns: returns.iter().copied().collect(),
             retained_arguments: retained.iter().copied().collect(),
             native_constructions: BTreeSet::new(),
+            record: None,
         })
+    }
+
+    fn record_members(source: &str, export: &str) -> Option<Vec<String>> {
+        Some(
+            derive(source, export)?
+                .record?
+                .into_iter()
+                .map(|member| member.name)
+                .collect(),
+        )
     }
 
     #[test]
@@ -535,7 +607,51 @@ mod tests {
                     returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
                     retained_arguments: BTreeSet::from([0]),
                     native_constructions: BTreeSet::from([NativeIntrinsic::WeakMap]),
+                    record: None,
                 })
+            );
+        });
+    }
+
+    #[test]
+    fn returned_method_literals_are_records() {
+        js_ast::with_swc_globals(|| {
+            assert_eq!(
+                record_members(
+                    "function make() { var state = new Map, unused; var state; const r = { put(k, v) { state.set(k, v); }, get size() { return state.size; } }; return r; }",
+                    "make"
+                ),
+                Some(vec!["put".to_owned(), "size".to_owned()])
+            );
+            for (source, reason) in [
+                (
+                    "function make(e) { return { run() { return e; } }; }",
+                    "a parameter",
+                ),
+                (
+                    "function make() { return { run() {}, tag: 1 }; }",
+                    "a data property",
+                ),
+                (
+                    "function make() { return { set value(v) {} }; }",
+                    "a setter",
+                ),
+                (
+                    "function make() { return { run() {}, run() {} }; }",
+                    "a duplicate name",
+                ),
+                ("function make() { return {}; }", "no member"),
+                (
+                    "function make() { return [{ run() {} }]; }",
+                    "a nested record",
+                ),
+            ] {
+                assert_eq!(record_members(source, "make"), None, "{reason}");
+            }
+            assert_eq!(
+                derive("function read(e) { var e; return e; }", "read"),
+                call(&[ForeignReturn::Argument { index: 0 }], &[]),
+                "a `var` redeclaration keeps the parameter"
             );
         });
     }

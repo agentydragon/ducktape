@@ -5352,11 +5352,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         result
     }
 
+    /// The summary's native constructions hold in every analyzed chunk's
+    /// census, this one included.
     fn source_record_factory(&self, callee: &ValueExpr, args: &[ValueExpr]) -> bool {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
-            if self.inputs.index.returned_record_summaries.contains_key(id)
-                && self.inputs.index.map_integrity())
+            if self.inputs.index.returned_record_summaries.contains_key(id))
     }
 
     /// A single-execution imported call may carry a fresh ordinary descriptor
