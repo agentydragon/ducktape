@@ -668,7 +668,6 @@ HAIKU_API = Route(
     ANTHROPIC_API,
     publish_limits=True,
 )
-ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 # Current public Anthropic API models, checked against Anthropic's model overview and
 # per-model API documentation on 2026-10-30. These use fixed unversioned API IDs, adaptive
 # thinking, all five effort levels, and explicit model-level function calling. Context and
@@ -700,7 +699,7 @@ FABLE_5_1_API = Route(
     supports_function_calling=True,
 )
 ANTHROPIC_API_LATEST_ROUTES = (OPUS_5_5_API, SONNET_5_5_API, HAIKU_5_5_API, FABLE_5_1_API)
-ANTHROPIC_API_ROUTES = (*ANTHROPIC_API_ROUTES, *ANTHROPIC_API_LATEST_ROUTES)
+ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API, *ANTHROPIC_API_LATEST_ROUTES)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(
     _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS

@@ -196,6 +196,8 @@ py_test(
         "//agentplane/x/central_sampler:sampler_pb2",
         "//util/testing:sqlalchemy_engines",
         "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

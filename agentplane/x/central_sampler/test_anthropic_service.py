@@ -228,5 +228,8 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                 ), "an incomplete provider response was appended to canonical context"
 
 
+# gazelle:include_dep @pypi//grpcio
+# gazelle:include_dep @pypi//protobuf
+
 if __name__ == "__main__":
     pytest_bazel.main()
