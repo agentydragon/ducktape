@@ -689,6 +689,15 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                     operation.as_str().expect("unit variant")
                 )
             }
+            Self::UnsupportedConstruction { rejection } => {
+                let rejection = serde_json::to_value(rejection)
+                    .expect("construction rejections serialize as tagged objects");
+                write!(
+                    f,
+                    "`unsupported_construction` ({})",
+                    rejection["check"].as_str().expect("tagged by check")
+                )
+            }
             Self::RecursiveInvocation => f.write_str("`recursive_invocation`"),
             Self::InvocationDepthLimit { limit } => {
                 write!(f, "`invocation_depth_limit` (limit {limit})")
@@ -696,8 +705,8 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
             Self::InvocationExpansionLimit { limit } => {
                 write!(f, "`invocation_expansion_limit` (limit {limit})")
             }
-            Self::CallbackPoolLimit { limit } => {
-                write!(f, "`callback_pool_limit` (limit {limit})")
+            Self::CallbackPoolLimit { limit, pool_size } => {
+                write!(f, "`callback_pool_limit` (pool {pool_size}, limit {limit})")
             }
         }
     }

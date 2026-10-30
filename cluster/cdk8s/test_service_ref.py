@@ -2,7 +2,6 @@
 Cilium rules on both ends name the Pods' port, which Cilium matches after socket-LB translation;
 and a `Port` renders one agreeing container port and Service port in both builder tiers."""
 
-import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment, Service, k8s
@@ -15,27 +14,22 @@ _PODS = Pods(namespace="test-namespace", labels=(("app.kubernetes.io/name", "tes
 _SERVICE = ServiceRef(name="test-app", port=Port(name="http", number=80), pods=_PODS, target_port=8080)
 
 
-@pytest.fixture
-def chart() -> Chart:
-    return Cdk8sTesting.chart()
-
-
 def test_client_addresses_dial_the_service_port() -> None:
     assert _SERVICE.url == "http://test-app.test-namespace.svc:80"
     assert _SERVICE.fqdn == "test-app.test-namespace.svc.cluster.local"
 
 
-def test_cilium_rules_name_the_pods_port(chart: Chart) -> None:
+def test_cilium_rules_name_the_pods_port(scratch_chart: Chart) -> None:
     client = Pods(namespace="test-client", labels=())
     NetworkPolicy(
-        chart,
+        scratch_chart,
         "policy",
         metadata=ApiObjectMetadata(name="test-policy", namespace="test-namespace"),
         endpoint_selector=_PODS.selector,
         ingress=[client.admit(_SERVICE.pod_port)],
         egress=[_SERVICE.egress()],
     )
-    [policy] = Cdk8sTesting.synth(chart)
+    [policy] = Cdk8sTesting.synth(scratch_chart)
     tcp_8080 = [{"ports": [{"port": "8080", "protocol": "TCP"}]}]
     # No labels admits the whole namespace.
     assert policy["spec"]["ingress"] == [
@@ -56,15 +50,19 @@ def test_cilium_rules_name_the_pods_port(chart: Chart) -> None:
     ]
 
 
-def test_port_renders_one_container_and_service_port_in_both_tiers(chart: Chart) -> None:
+def test_port_renders_one_container_and_service_port_in_both_tiers(scratch_chart: Chart) -> None:
     port = Port(name="http", number=8080)
-    deployment = Deployment(chart, "deployment", metadata=ApiObjectMetadata(name="test-app"))
+    deployment = Deployment(scratch_chart, "deployment", metadata=ApiObjectMetadata(name="test-app"))
     deployment.add_container(image="app.test.invalid/app", ports=[port.container_port()])
     Service(
-        chart, "service", metadata=ApiObjectMetadata(name="test-app"), selector=deployment, ports=[port.service_port()]
+        scratch_chart,
+        "service",
+        metadata=ApiObjectMetadata(name="test-app"),
+        selector=deployment,
+        ports=[port.service_port()],
     )
     k8s.KubePod(
-        chart,
+        scratch_chart,
         "raw-pod",
         metadata=k8s.ObjectMeta(name="test-raw"),
         spec=k8s.PodSpec(
@@ -72,12 +70,12 @@ def test_port_renders_one_container_and_service_port_in_both_tiers(chart: Chart)
         ),
     )
     k8s.KubeService(
-        chart,
+        scratch_chart,
         "raw-service",
         metadata=k8s.ObjectMeta(name="test-raw"),
         spec=k8s.ServiceSpec(ports=[port.k8s_service_port()]),
     )
-    rendered, service, raw_pod, raw_service = Cdk8sTesting.synth(chart)
+    rendered, service, raw_pod, raw_service = Cdk8sTesting.synth(scratch_chart)
     container_port = {"name": "http", "containerPort": 8080, "protocol": "TCP"}
     service_port = {"name": "http", "port": 8080, "targetPort": 8080, "protocol": "TCP"}
     assert rendered["spec"]["template"]["spec"]["containers"][0]["ports"] == [container_port]

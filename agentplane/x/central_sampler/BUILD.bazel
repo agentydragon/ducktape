@@ -116,6 +116,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":settings",
         ":testing",
         ":testing_store",
         "//:conftest",
@@ -304,7 +305,7 @@ go_library(
     ],
     embedsrcs = [
         "codex/base_instructions.txt",
-        "codex/exec_description.txt",
+        "exec_description.txt",
         "codex/legacy_image_helper.txt",
         "codex/wait_description.txt",
         "schema/0001_sampler_state.sql",
@@ -328,6 +329,7 @@ go_library(
         "//agentplane/workload_auth/go/auth",
         "@com_github_coder_websocket//:websocket",
         "@com_github_google_uuid//:uuid",
+        "@com_github_invopop_jsonschema//:jsonschema",
         "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",

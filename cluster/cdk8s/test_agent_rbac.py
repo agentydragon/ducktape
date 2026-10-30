@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, cast
 
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
@@ -22,9 +22,9 @@ from cluster.cdk8s.public_coder import app as public_coder_app
 
 
 @pytest.fixture(scope="module")
-def model_resources() -> list[dict[str, Any]]:
+def model_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
-    app = Cdk8sTesting.app()
+    app = scratch_app_factory()
     charts = [
         agent_rbac_base.chart(app),
         agent_shared_rbac.chart(app),

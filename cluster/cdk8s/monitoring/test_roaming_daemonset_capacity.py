@@ -18,11 +18,15 @@ relation.
 from __future__ import annotations
 
 import operator
+from collections.abc import Callable
 from functools import reduce
 
 import pytest
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s import node_feature_discovery
@@ -47,11 +51,9 @@ _ROAMING_DAEMONSETS = (
 
 
 @pytest.fixture(scope="module")
-def release_manifests() -> list[dict]:
-    return [
-        *Cdk8sTesting.synth(loki.chart(Cdk8sTesting.app())),
-        *Cdk8sTesting.synth(node_feature_discovery.chart(Cdk8sTesting.app())),
-    ]
+def release_manifests(scratch_app_factory: Callable[[], App]) -> list[dict]:
+    app = scratch_app_factory()
+    return [*Cdk8sTesting.synth(loki.chart(app)), *Cdk8sTesting.synth(node_feature_discovery.chart(app))]
 
 
 @pytest.fixture(scope="module")

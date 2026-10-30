@@ -6,14 +6,15 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
 
 
 @pytest.fixture
-def gateway_routes_policy(tmp_path: Path) -> Path:
-    return policy("restrict-agent-gateway-routes", tmp_path)
+def gateway_routes_policy(scratch_app: App, tmp_path: Path) -> Path:
+    return policy(scratch_app, "restrict-agent-gateway-routes", tmp_path)
 
 
 class TestRestrictAgentGatewayRoutes:

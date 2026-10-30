@@ -56,36 +56,58 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 	}
 }
 
-func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState, config ModelConfig) (ResponsesRequest, error) {
+// ResponsesRequestParams contains the runtime inputs needed to build a complete wire request.
+// It is not serialized to the upstream API.
+type ResponsesRequestParams struct {
+	Model          string
+	Effort         string
+	Attribution    SessionAttribution
+	Items          []ResponsesItem
+	Instructions   *string
+	ExecutionState *ExecutionState
+}
+
+func BuildResponsesRequest(params ResponsesRequestParams, config ModelConfig) (ResponsesRequest, error) {
 	if err := config.Validate(); err != nil {
 		return ResponsesRequest{}, err
 	}
-	description, err := execToolDescription(toolDefinitions())
+	description, err := execToolDescription(toolDefinitions(), config)
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
-	strict := false
-	input := []ResponsesItem{{
-		Type: ResponsesItemAdditionalTools, Role: "developer", Tools: []ResponsesAdditionalTool{
+	var tools []ResponsesAdditionalTool
+	if config.ExecEncoding == ExecEncodingJSON {
+		tool, err := jsonExecToolDefinition(description)
+		if err != nil {
+			return ResponsesRequest{}, err
+		}
+		tools = []ResponsesAdditionalTool{tool}
+	} else {
+		strict := false
+		tools = []ResponsesAdditionalTool{
 			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
 			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
 			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
-		},
-	}}
-	if instructions != nil && *instructions != "" {
-		item, err := newResponsesMessage("developer", *instructions)
+		}
+	}
+	input := make([]ResponsesInput, 0, len(params.Items)+3)
+	if config.Responses.Dialect == ResponsesDialectLite {
+		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
+	}
+	if params.Instructions != nil && *params.Instructions != "" {
+		item, err := newResponsesMessage("developer", *params.Instructions)
 		if err != nil {
 			return ResponsesRequest{}, err
 		}
 		input = append(input, item)
 	}
-	if executionState != nil && (len(executionState.Processes) > 0 || len(executionState.Cells) > 0) {
-		cells := make([]ResponsesActiveCell, 0, len(executionState.Cells))
-		for _, cell := range executionState.Cells {
+	if params.ExecutionState != nil && (len(params.ExecutionState.Processes) > 0 || len(params.ExecutionState.Cells) > 0) {
+		cells := make([]ResponsesActiveCell, 0, len(params.ExecutionState.Cells))
+		for _, cell := range params.ExecutionState.Cells {
 			cells = append(cells, ResponsesActiveCell{CellID: cell.ID, Status: cell.Status})
 		}
-		processes := make([]ResponsesActiveProcess, 0, len(executionState.Processes))
-		for _, process := range executionState.Processes {
+		processes := make([]ResponsesActiveProcess, 0, len(params.ExecutionState.Processes))
+		for _, process := range params.ExecutionState.Processes {
 			if process.ModelSessionID == nil {
 				continue
 			}
@@ -103,13 +125,79 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		input = append(input, item)
 	}
-	input = append(input, items...)
-	return ResponsesRequest{
-		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		Reasoning: ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"},
-		Include:   []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
-		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
-	}, nil
+	adapted, err := buildResponsesInput(params.Items, config)
+	if err != nil {
+		return ResponsesRequest{}, err
+	}
+	input = append(input, adapted...)
+	body := ResponsesRequest{
+		Model: params.Model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
+		PromptCacheKey: params.Attribution.SessionID,
+	}
+	if config.Responses.Dialect == ResponsesDialectLite {
+		body.Reasoning = &ResponsesReasoningConfig{Effort: params.Effort, Summary: codexReasoningSummary, Context: "all_turns"}
+		body.Include = []string{"reasoning.encrypted_content"}
+		body.ClientMetadata = &ResponsesClientMetadata{SessionID: params.Attribution.SessionID, ThreadID: params.Attribution.ThreadID, TurnID: params.Attribution.TurnID}
+	} else {
+		body.Tools = tools
+		if params.Effort != "" {
+			body.Reasoning = &ResponsesReasoningConfig{Effort: params.Effort}
+			body.Include = []string{"reasoning.encrypted_content"}
+		}
+	}
+	return body, nil
+}
+
+func BuildResponsesCompactionRequest(params ResponsesRequestParams, config ModelConfig) (ResponsesRequest, error) {
+	if config.Responses.Dialect != ResponsesDialectLite {
+		return ResponsesRequest{}, &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
+	}
+	body, err := BuildResponsesRequest(params, config)
+	if err != nil {
+		return ResponsesRequest{}, err
+	}
+	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
+	return body, nil
+}
+
+// buildResponsesInput adapts durable observations before the wire request is serialized.
+// It retains native items, and converts notifications and public text tool results.
+func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]ResponsesInput, error) {
+	input := make([]ResponsesInput, 0, len(items))
+	answered := map[string]bool{}
+	adaptNotifications := config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON
+	for _, item := range items {
+		if adaptNotifications && item.IsToolOutput() {
+			if answered[item.CallID] {
+				texts := make([]string, 0, len(item.Output))
+				for _, part := range item.Output {
+					texts = append(texts, part.Text)
+				}
+				message, err := newResponsesMessage("developer", "Asynchronous output from exec call "+item.CallID+":\n"+strings.Join(texts, "\n"))
+				if err != nil {
+					return nil, err
+				}
+				input = append(input, message)
+				continue
+			}
+			answered[item.CallID] = true
+		}
+		if config.Responses.Dialect == ResponsesDialectStandard && item.Type == ResponsesItemFunctionOutput {
+			texts := make([]string, 0, len(item.Output))
+			for _, part := range item.Output {
+				if part.Type != "input_text" {
+					break
+				}
+				texts = append(texts, part.Text)
+			}
+			if len(texts) == len(item.Output) {
+				input = append(input, ResponsesTextToolOutput{Type: item.Type, ID: item.ID, CallID: item.CallID, Output: strings.Join(texts, "\n")})
+				continue
+			}
+		}
+		input = append(input, item)
+	}
+	return input, nil
 }
 
 type ResponsesExecutionState struct {
@@ -156,7 +244,9 @@ func Sample(ctx context.Context, client *http.Client, proxyURL, credential strin
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	if responses.Dialect == ResponsesDialectLite {
+		request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	}
 	for name, value := range attribution {
 		request.Header.Set(name, value)
 	}

@@ -94,16 +94,58 @@ See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results 
 
 ## Model contracts
 
-The top-level `models` map keys model route IDs to an API style, Responses dialect, exec encoding
-and allowed reasoning efforts. Agentplane owns this compatibility policy; the shared model catalog
-holds no sampler-specific fields. This service implements `api: responses`, `responses.dialect: lite`
-and `exec_encoding: freeform`. Unsupported values are rejected.
+Only `api: responses` is implemented. A future API adapter (such as Anthropic Messages) can add
+its own API-specific configuration alongside the shared exec encoding. Unsupported API values
+are rejected. Provider-native transcript and continuation handling still require that adapter;
+this configuration change does not implement cross-API session switching.
 
-The service uses one `llm_proxy_url` and credential source. Upstream routing belongs to the proxy.
-Sessions name only the sampler service. Model changes preserve API, dialect and exec encoding and
-require the target model to allow the current effort. Admission validates the projected model and
-effort after earlier queued commands under the Session transaction lock. Route contracts must stay
-fixed while retained Sessions exist.
+The top-level `models` map keys model route IDs to an API, tool encoding and allowed reasoning efforts.
+Agentplane deployment configuration owns these compatibility choices; the shared model catalog
+holds no sampler-specific fields. The service uses one top-level proxy connection; upstream
+routing belongs to the LLM proxy:
+
+```json
+{
+  "llm_proxy_url": "http://llm-proxy.invalid",
+  "credential_file": "/var/run/secrets/llm/token",
+  "models": {
+    "native-code-model": {
+      "api": "responses",
+      "responses": { "dialect": "lite" },
+      "exec_encoding": "freeform",
+      "reasoning_efforts": ["", "high"]
+    },
+    "function-calling-model": {
+      "api": "responses",
+      "responses": { "dialect": "standard" },
+      "exec_encoding": "json",
+      "reasoning_efforts": [""]
+    }
+  }
+}
+```
+
+`responses.dialect` and `exec_encoding` are independent; all four combinations are supported. `lite` uses Codex's
+Responses Lite header, `additional_tools` input item and all-turn reasoning context. `standard`
+declares top-level Responses `tools` and omits the private Lite header, reasoning context and
+client metadata. With no reasoning effort selected, standard requests omit reasoning configuration
+and encrypted-reasoning includes entirely.
+
+`freeform` exposes the native JavaScript `exec` custom tool and separate function `wait`.
+`json` exposes only a function `exec`: pass `{code, yield_time_ms?, max_output_tokens?}` to execute
+JavaScript, or `{cell_id, yield_time_ms?, max_output_tokens?, terminate?}` to resume or terminate a
+yielded cell. Both use the same JavaScript host, nested tools, output limits and effect journal.
+Standard requests send text-only function results as strings and multimodal results as content
+arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
+so the public API receives only one tool result per call.
+
+Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
+A model change within a Session must preserve API, dialect and exec encoding, and the target must
+allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
+use a new route ID to change it. Standard routes reject manual compaction, and reaching the
+configured automatic compaction threshold fails the turn before any private compaction request.
+Portable compaction is not implemented. Provider compatibility still needs live validation;
+scripted tests establish the sampler's protocol and execution behavior.
 
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
 allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a

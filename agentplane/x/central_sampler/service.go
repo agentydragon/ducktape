@@ -147,7 +147,9 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
 			return ErrInvalid
 		}
-
+		if command.GetCompact() != nil && currentConfig.Responses.Dialect == ResponsesDialectStandard {
+			return ErrPrecondition
+		}
 		return nil
 	}
 	entry, err := s.Store.Admit(ctx, sessionID, command, principal.ServiceAccountUID, validate)

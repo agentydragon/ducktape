@@ -17,7 +17,7 @@ func fixtureSettings() Settings {
 func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
 		"missing api":                {Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform},
-		"unsupported api":            {API: "anthropic_messages", Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform},
+		"unsupported api":            {API: "anthropic_messages", Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingJSON},
 		"missing responses config":   {API: APIStyleResponses, ExecEncoding: ExecEncodingFreeform},
 		"unsupported responses mode": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: "unknown"}, ExecEncoding: ExecEncodingFreeform},
 		"missing exec encoding":      {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}},

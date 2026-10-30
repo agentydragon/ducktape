@@ -502,14 +502,12 @@ fn timeline_between_two_fallback_effects_is_inertable() {
     assert!(!timelines.is_empty(), "no `state` timeline inerted");
     for cause in &timelines {
         for side in ["source", "target"] {
+            assert_eq!(cause[side]["kind"], "fallback", "{cause:#}");
             assert_eq!(
-                cause[side],
-                serde_json::json!({
-                    "kind": "fallback",
-                    "reason": {"code": "callback_pool_limit", "limit": 64},
-                }),
+                cause[side]["reason"]["code"], "callback_pool_limit",
                 "{cause:#}"
             );
+            assert_eq!(cause[side]["reason"]["limit"], 64, "{cause:#}");
         }
     }
 }

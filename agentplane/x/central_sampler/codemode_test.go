@@ -24,6 +24,43 @@ type fakeCodeModePeer struct {
 	acknowledge []string
 }
 
+func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
+	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
+	input := canonicalJSON(map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123})
+	runtime := &CodeMode{sessionID: "fixture"}
+	prepared, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Input: input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := prepared.operation.(codeExecuteOperation)
+	if operation.Request.Source != source || operation.Request.ToolCallID != "call" || operation.Request.YieldTimeMS != 0 || *operation.Request.MaxOutputTokens != 123 {
+		t.Fatalf("JSON source or options changed: %+v", operation.Request)
+	}
+	prepared, err = runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)"}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.operation.(codeExecuteOperation).Request.YieldTimeMS != defaultExecYieldTimeMS {
+		t.Fatal("JSON exec lost default yield time")
+	}
+}
+
+func TestJSONExecRejectsMalformedArgumentsBeforeDispatch(t *testing.T) {
+	runtime := &CodeMode{}
+	for _, input := range []string{
+		`{}`, `{"code":"text(1)","cell_id":"cell"}`, `{"code":null}`, `{"code":123}`,
+		`{"code":"text(1)","unknown":true}`, `{"code":"text(1)","terminate":false}`,
+		`{"code":"text(1)","yield_time_ms":-1}`, `{"code":"text(1)","max_output_tokens":9007199254740992}`,
+		`{"code":""}`, `{"cell_id":123}`, `{"cell_id":"cell","terminate":null}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", Input: input}); err == nil {
+				t.Fatal("accepted invalid JSON exec arguments")
+			}
+		})
+	}
+}
+
 func newFakeCodeModePeer(acknowledge []string) *fakeCodeModePeer {
 	input, hostInput := io.Pipe()
 	hostOutput, output := io.Pipe()

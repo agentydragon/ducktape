@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytest_bazel
 import yaml
-from cdk8s import Chart, Testing as Cdk8sTesting
+from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.runner_gateway.settings import Settings
@@ -40,8 +40,8 @@ def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]
     }
 
 
-def _gateway_objects() -> list[dict[str, Any]]:
-    chart = runner_gateway_workload.serving_chart(Cdk8sTesting.app(), env=staging.ENV)
+def _gateway_objects(app: App) -> list[dict[str, Any]]:
+    chart = runner_gateway_workload.serving_chart(app, env=staging.ENV)
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
@@ -65,9 +65,9 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     assert spec["privateKey"]["rotationPolicy"] == "Always"
 
 
-def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
-    docs = _gateway_objects()
-    root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
+def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
+    docs = _gateway_objects(scratch_app)
+    root = Chart(scratch_app, "root-services", disable_resource_name_hashes=True)
     runner_gateway_workload.add_stable_services(root, staging.ENV)
     root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
     assert not [doc for doc in docs if doc["kind"] == "Service"]
@@ -148,8 +148,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
-def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token() -> None:
-    docs = _gateway_objects()
+def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: App) -> None:
+    docs = _gateway_objects(scratch_app)
     pod = _resource(docs, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
     path = PurePosixPath(one(entry["value"] for entry in container["env"] if entry["name"] == Settings.config_file_env))

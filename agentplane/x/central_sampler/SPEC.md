@@ -85,14 +85,33 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
-A flat top-level `models` map allowlists model route IDs and per-model reasoning efforts. Each
-entry declares `api: responses`, `responses.dialect: lite` and `exec_encoding: freeform`; other
-values are rejected. A single top-level `llm_proxy_url` and credential source configure the
-connection; upstream routing belongs to the proxy. Sessions select only the configured service.
-Model changes preserve API, dialect and exec encoding, and require the target to allow the current
-effort. Effort changes must be allowed by the current model. Admission validates the projected model
-and effort after earlier queued commands under the Session transaction lock. Route contracts stay
-fixed for retained Sessions; changing a contract requires a new route ID.
+A flat top-level `models` map allowlists model route IDs. Each entry allows reasoning efforts,
+declares `api: responses`, and sets independent `responses.dialect` (`lite` or `standard`) and
+`exec_encoding` (`freeform` or `json`) settings. A single top-level `llm_proxy_url` and credential
+source configure the connection;
+upstream routing belongs to the proxy. Unsupported APIs and missing or unknown
+protocol settings are rejected. Only Responses is implemented; future adapters own their native
+wire and continuation formats. JSON encoding exposes a single
+function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
+is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
+variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
+validates arguments before dispatch and uses the same host operations, journal and recovery
+rules as freeform calls. Calls are accepted only with their configured name and item type.
+Model changes cannot change API, dialect or exec encoding within a Session. Route contracts must remain fixed
+for retained Sessions; changing a contract requires a new route ID. Model changes require the
+target to allow the current effort; effort changes must be allowed by the current model.
+Admission validates the projected model and effort after earlier queued commands under the
+Session transaction lock.
+
+Lite mode retains the Codex wire contract described below. Standard mode sends top-level `tools`,
+omits the Lite header, `additional_tools`, private client metadata and `reasoning.context`, and
+requests reasoning only when an effort is selected. The standard request adapter emits text-only
+function results as strings, preserving multimodal content arrays and opaque provider items.
+In standard mode or with JSON exec encoding, repeated `notify()` outputs for a completed call
+become asynchronous developer messages identifying the original call, without modifying the
+durable Codex transcript. Standard mode has no compaction
+implementation: explicit compaction is rejected at admission, and automatic compaction fails the
+turn before sending a private provider request.
 
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,

@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import Chart, Testing as Cdk8sTesting  # not collected by pytest
+from cdk8s import App, Chart, Testing as Cdk8sTesting  # not collected by pytest
 from cdk8s_plus_34 import k8s
 from more_itertools import one
 
@@ -37,12 +37,12 @@ def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> di
 
 def _runner_pod(
     *,
+    app: App,
     isolated_executor: bool,
     runner_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
     session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
-    app = Cdk8sTesting.app()
     chart = Chart(app, "runner-template-test")
     RunnerTemplate(
         chart,
@@ -155,7 +155,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert {"ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "LITELLM_URL"}.isdisjoint(executor_env)
 
 
-def test_runner_template_can_override_executor_resources_independently() -> None:
+def test_runner_template_can_override_executor_resources_independently(scratch_app: App) -> None:
     runner_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
@@ -164,7 +164,12 @@ def test_runner_template_can_override_executor_resources_independently() -> None
         requests={"cpu": k8s.Quantity.from_string("43m"), "memory": k8s.Quantity.from_string("509Mi")},
         limits={"cpu": k8s.Quantity.from_string("71m"), "memory": k8s.Quantity.from_string("997Mi")},
     )
-    pod = _runner_pod(isolated_executor=True, runner_resources=runner_resources, executor_resources=executor_resources)
+    pod = _runner_pod(
+        app=scratch_app,
+        isolated_executor=True,
+        runner_resources=runner_resources,
+        executor_resources=executor_resources,
+    )
     containers = {container["name"]: container for container in pod["containers"]}
     assert containers["runner"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
     assert containers["runner"]["resources"]["limits"] == {"cpu": "31m", "memory": "251Mi"}
@@ -172,20 +177,22 @@ def test_runner_template_can_override_executor_resources_independently() -> None
     assert containers["codex-executor"]["resources"]["limits"] == {"cpu": "71m", "memory": "997Mi"}
 
 
-def test_environment_can_keep_codex_execution_inside_the_runner() -> None:
+def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App) -> None:
     runner_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
-    pod = _runner_pod(isolated_executor=False, runner_resources=runner_resources, executor_resources=None)
+    pod = _runner_pod(
+        app=scratch_app, isolated_executor=False, runner_resources=runner_resources, executor_resources=None
+    )
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
     assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
-def test_runner_template_configures_session_reconcile_concurrency() -> None:
-    chart = Chart(Cdk8sTesting.app(), "runner-concurrency-test")
+def test_runner_template_configures_session_reconcile_concurrency(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-concurrency-test")
     RunnerTemplate(
         chart,
         "runner-template",
@@ -200,14 +207,14 @@ def test_runner_template_configures_session_reconcile_concurrency() -> None:
     assert config["session_reconcile_concurrency"] == 2048
 
 
-def test_environment_cannot_configure_resources_for_a_disabled_executor() -> None:
+def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
+        _runner_pod(app=scratch_app, isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
-def test_runner_template_renders_mtls_server_listener() -> None:
-    chart = Chart(Cdk8sTesting.app(), "runner-template-test")
+def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-template-test")
     RunnerTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")

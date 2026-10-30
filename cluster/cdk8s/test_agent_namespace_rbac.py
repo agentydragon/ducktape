@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Chart, Testing as Cdk8sTesting
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_namespace_rbac
@@ -11,10 +11,10 @@ from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.namespaces import Vpa, namespace
 
 
-def test_reader_reconciliation_depends_only_on_shared_roles() -> None:
+def test_reader_reconciliation_depends_only_on_shared_roles(scratch_app: App) -> None:
     # No namespace-owner or application constructs are needed, including on a
     # cold bootstrap. Namespace existence is checked by the API, not app health.
-    scope = kustomizations_chart(Cdk8sTesting.app())
+    scope = kustomizations_chart(scratch_app)
     roles = flux_kustomization(
         scope,
         "shared-roles",
@@ -37,12 +37,11 @@ def test_reader_reconciliation_depends_only_on_shared_roles() -> None:
         assert spec["wait"] is True
 
 
-def test_unapproved_namespaces_fail_closed() -> None:
+def test_unapproved_namespaces_fail_closed(scratch_chart: Chart, scratch_app: App) -> None:
     with pytest.raises(KeyError):
-        agent_namespace_rbac.chart(Cdk8sTesting.app(), "private-unreviewed")
-    scope = Cdk8sTesting.chart()
-    namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
-    labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
+        agent_namespace_rbac.chart(scratch_app, "private-unreviewed")
+    namespace(scratch_chart, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
+    labels = Cdk8sTesting.synth(scratch_chart)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)
 
 

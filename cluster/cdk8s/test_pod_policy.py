@@ -2,12 +2,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import (  # pytest auto-collects classes named Test*
-    ApiObject,
-    ApiObjectMetadata,
-    Chart,
-    Testing as Cdk8sTesting,
-)
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import ContainerSecurityContextProps, Deployment, k8s
 from keda_scaledjob_crds.sh import keda
 
@@ -18,8 +13,8 @@ _PLACEMENT = Placement(node_selector={"example.test/zone": "zone-a"})
 
 
 @pytest.fixture
-def chart() -> Chart:
-    return Chart(Cdk8sTesting.app(), "test")
+def chart(scratch_app: App) -> Chart:
+    return Chart(scratch_app, "test")
 
 
 def _deployment(chart: Chart) -> Deployment:

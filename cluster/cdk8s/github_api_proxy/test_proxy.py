@@ -5,17 +5,20 @@ from pathlib import Path
 
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s.github_api_proxy import proxy
 from util.bazel.runfiles import get_required_path
 
 
-def test_github_proxy_rules(tmp_path: Path) -> None:
+def test_github_proxy_rules(scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(proxy.app_chart(Cdk8sTesting.app()))
+        for manifest in Cdk8sTesting.synth(proxy.app_chart(scratch_app))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "github-proxy.yaml").write_text(yaml.safe_dump(manifest["spec"]))

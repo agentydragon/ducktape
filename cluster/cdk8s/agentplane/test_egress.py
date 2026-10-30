@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
@@ -348,7 +348,7 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     "target_namespace", binding_delegation.external_scopes(staging.ENV, staging.assignable_grants())
 )
 def test_external_delegation_binds_exactly_the_granted_roles(
-    target_namespace: str, staging_manifests: list[dict[str, Any]]
+    scratch_app: App, target_namespace: str, staging_manifests: list[dict[str, Any]]
 ) -> None:
     assignable_grants = [grant.model_dump(mode="json") for grant in staging.assignable_grants()]
     granted = {
@@ -359,7 +359,7 @@ def test_external_delegation_binds_exactly_the_granted_roles(
         and grant["role_ref"]["kind"] == "Role"
     }
     delegated = Cdk8sTesting.synth(
-        binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, target_namespace, staging.assignable_grants())
+        binding_delegation.chart(scratch_app, staging.ENV, target_namespace, staging.assignable_grants())
     )
     role = one(doc for doc in delegated if doc["kind"] == "Role")
     assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted

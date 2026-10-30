@@ -128,9 +128,11 @@ type ResponsesToolCall struct {
 	Input  string            `json:"input"`
 }
 
-// IsModelTool reports whether the call names a model-facing tool with its declared kind: freeform
-// `exec` and function `wait`.
-func (call ResponsesToolCall) IsModelTool() bool {
+// IsModelTool checks the exact tool surface declared for this model route.
+func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
+	if config.ExecEncoding == ExecEncodingJSON {
+		return call.Name == "exec" && call.Type == ResponsesItemFunctionCall
+	}
 	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||
 		call.Name == "wait" && call.Type == ResponsesItemFunctionCall
 }
@@ -214,16 +216,33 @@ type ResponsesJSONSchema struct {
 	AdditionalProperties *bool                          `json:"additionalProperties,omitempty"`
 }
 
+// ResponsesInput is a wire input item: a retained native item or a public text tool result.
+type ResponsesInput interface {
+	responsesInput()
+}
+
+func (ResponsesItem) responsesInput() {}
+
+type ResponsesTextToolOutput struct {
+	Type   ResponsesItemType `json:"type"`
+	ID     string            `json:"id,omitempty"`
+	CallID string            `json:"call_id"`
+	Output string            `json:"output"`
+}
+
+func (ResponsesTextToolOutput) responsesInput() {}
+
 type ResponsesRequest struct {
-	Model          string                   `json:"model"`
-	Instructions   string                   `json:"instructions"`
-	Input          []ResponsesItem          `json:"input"`
-	Stream         bool                     `json:"stream"`
-	Store          bool                     `json:"store"`
-	Include        []string                 `json:"include"`
-	PromptCacheKey string                   `json:"prompt_cache_key"`
-	ClientMetadata ResponsesClientMetadata  `json:"client_metadata"`
-	Reasoning      ResponsesReasoningConfig `json:"reasoning"`
+	Model          string                    `json:"model"`
+	Instructions   string                    `json:"instructions"`
+	Input          []ResponsesInput          `json:"input"`
+	Stream         bool                      `json:"stream"`
+	Store          bool                      `json:"store"`
+	Include        []string                  `json:"include,omitempty"`
+	PromptCacheKey string                    `json:"prompt_cache_key"`
+	ClientMetadata *ResponsesClientMetadata  `json:"client_metadata,omitempty"`
+	Reasoning      *ResponsesReasoningConfig `json:"reasoning,omitempty"`
+	Tools          []ResponsesAdditionalTool `json:"tools,omitempty"`
 	// Codex rust-v0.162.1 core/src/client.rs build_responses_request: Responses Lite disables
 	// parallel tool calls.
 	ParallelToolCalls bool `json:"parallel_tool_calls"`
@@ -240,7 +259,7 @@ type ResponsesReasoningConfig struct {
 	Summary string `json:"summary,omitempty"`
 	// Codex rust-v0.162.1 core/src/client.rs build_reasoning: the Responses Lite header
 	// (provider.go) requires `all_turns`; the provider rejects any other value.
-	Context string `json:"context"`
+	Context string `json:"context,omitempty"`
 }
 
 // Codex rust-v0.162.1 core/src/client.rs build_reasoning and session/step_settings.rs: the summary is

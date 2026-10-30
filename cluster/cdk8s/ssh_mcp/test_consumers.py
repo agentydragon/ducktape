@@ -6,6 +6,7 @@ relationships without reading committed generated YAML.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -13,7 +14,11 @@ from urllib.parse import urlsplit
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Chart,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
@@ -31,8 +36,10 @@ def ssh_config() -> ssh_mcp_config.SshMcpConfig:
 
 
 @pytest.fixture(scope="module")
-def ssh_resources(ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
-    chart = Cdk8sTesting.chart()
+def ssh_resources(
+    scratch_app_factory: Callable[[], App], ssh_config: ssh_mcp_config.SshMcpConfig
+) -> list[dict[str, Any]]:
+    chart = Chart(scratch_app_factory(), "test")
     ssh_mcp_backend.SshMcp(
         chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
     )

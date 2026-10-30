@@ -246,7 +246,7 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
             chunks: &[
                 (
                     "main",
-                    "const alias = import.meta.require; const dynamic = import.meta.require(name); const missing = import.meta.require('./missing.js'); const global = globalThis.require('./target.js'); const common = require('./target.js'); const meta = import.meta; const url = import.meta.url; const unknown = import.meta[key]; module.exports = alias; export { dynamic, missing, global, common, meta, url, unknown };\n",
+                    "const alias = import.meta.require; const dynamic = import.meta.require(name); const missing = import.meta.require('./missing.js'); const global = globalThis.require('./target.js'); const common = require('./target.js'); const meta = import.meta; const url = import.meta.url; const unknown = import.meta[key]; module.exports = alias; const parent = module.parent; export { dynamic, missing, global, common, meta, url, unknown };\n",
                 ),
                 ("target", "export const value = 1;\n"),
             ],
@@ -301,6 +301,7 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
         "global_this_require",
         "unbound_require",
         "unbound_module",
+        "unbound_module_exports",
         "import_meta_value",
         "import_meta_other_property",
         "import_meta_dynamic_property",

@@ -43,27 +43,18 @@ host_behavior:
   note: "Audited against Bun 1.3.10 standalone, revision …, sha256 …"
 ```
 
-Consistency is validated, not inferred: a loader key without
-`synchronous_module_loader: present` is rejected; `unknown` is accepted and
-yields nothing. Readers: `synchronous_module_loader: none` replaces
-`native_browser_esm`; the loader-closed fact (step 2) reads
-`loader_result_for_evaluating_module` and `reentry_free_builtin_modules`; the
-policy derivation reads `synchronous_load_runs_app_callbacks`;
-`reentry_free_operations` keeps its current readers.
+Landed through step 2: the keys, their validation, and the loader-closed
+derivation (SPEC.md § Loader-closed derivation). That derivation counts every
+loader site in every analyzed chunk. On the canonical Claude CLI input with
+hypothetical audited keys it keeps all 76 graphs conservative and leaves the
+ten conflicts unchanged: 1,204 dynamic `import()` sites, the exported loader
+alias and two `module` imports keep every target open; all 476 literal
+`import.meta.require` calls target application chunks, and their closures
+reach back into 46 of the 76 targets (9 of the 10 conflict chunks); `ws`
+remains an unresolved static request in 7 of them. Steps 3 and 4 narrow the
+sites to those that can run while the target evaluates.
 
 ## Steps
-
-### 2. Derive the policy
-
-`ExportReentryPolicy` becomes a derived per-chunk fact: `NoStaticImporterReentry`
-when the host declares `synchronous_load_runs_app_callbacks: never` and the
-chunk is loader-closed. Loader-closed: every host-loader request reachable
-during the chunk's initialization (literal `import.meta.require`, the existing
-interop census) resolves to a declared `reentry_free_builtin_modules` entry or
-to a CommonJS chunk that is itself loader-closed and whose closure does not
-reach back to the chunk. The census reports 476 resolved literal calls; this
-step alone may clear most of the 100 blockers if they are leaves.
-`export_reentry.json` names the exact request that fails.
 
 ### 3. Mandatory suspension
 

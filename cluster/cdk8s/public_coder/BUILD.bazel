@@ -84,6 +84,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:agent_rbac_base",
         "//cluster/cdk8s:agent_shared_rbac",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",

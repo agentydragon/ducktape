@@ -32,6 +32,14 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s/testing:scratch"],
+)
+
+py_library(
     name = "flux",
     srcs = ["flux.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -56,6 +64,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":artifact_generators",
+        ":conftest",
         ":flux",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -159,6 +168,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":helm",
         ":secret_ref",
         "@pypi//cdk8s",
@@ -188,6 +198,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
@@ -218,6 +229,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":helm",
         "//:conftest",
         "//cluster/cdk8s/providers/flux:git_repository",
@@ -264,6 +276,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":artifact_generators",
+        ":conftest",
         ":flux",
         ":generation",
         "@pypi//cdk8s",
@@ -331,6 +344,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":fleet_rules",
         ":namespaces",
         "@pypi//cdk8s",
@@ -379,6 +393,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":namespace_access",
         ":namespaces",
         "@pypi//cdk8s",
@@ -558,6 +573,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":settings_file",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -693,6 +709,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":node_scheduling",
         ":pod_policy",
         "//cluster/cdk8s/providers/keda:scaledjob",
@@ -1143,6 +1160,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":conftest",
         ":etcd",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
@@ -1982,6 +2000,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":agent_namespace_rbac",
+        ":conftest",
         ":flux",
         ":namespace_access",
         ":namespaces",
@@ -2010,6 +2029,7 @@ py_test(
         ":agent_rbac_base",
         ":agent_rbac_test_support",
         ":agent_shared_rbac",
+        ":conftest",
         ":ducktape_flux",
         ":loki_read_proxy",
         ":namespace_access",

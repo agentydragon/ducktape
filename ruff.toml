@@ -73,6 +73,7 @@ select = [
     "TRY203", # useless try-except (just re-raises)
     "TRY400", # logging.error in except → logging.exception
     "DTZ003", # datetime.utcnow() deprecated since Python 3.12
+    "TID251", # banned APIs ([lint.flake8-tidy-imports.banned-api])
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants
@@ -115,6 +116,10 @@ extend-ignore = ["COM812"]
 allowed-confusables = ["σ", "α", "β", "γ", "ε", "×"]
 
 # Enforce modern typing
+[lint.flake8-tidy-imports.banned-api]
+"cdk8s.Testing.app".msg = "mkdtemps a /tmp/cdk8s.outdir.* per call and never removes it; request the scratch_app fixture (scratch_app_factory in module/session-scoped fixtures; cluster/cdk8s/testing/scratch.py), or use App() outside pytest."
+"cdk8s.Testing.chart".msg = "mkdtemps a /tmp/cdk8s.outdir.* per call and never removes it; request the scratch_chart fixture (cluster/cdk8s/testing/scratch.py)."
+
 [lint.pyupgrade]
 # Target Python 3.12+ - no runtime typing imports needed
 keep-runtime-typing = false

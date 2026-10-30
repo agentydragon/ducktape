@@ -69,6 +69,7 @@ py_test(
         ":service_monitor",
         ":servicemonitor",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -83,6 +84,7 @@ py_test(
         ":pod_monitor",
         ":podmonitor",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -96,6 +98,7 @@ py_test(
     deps = [
         ":prometheus_rule",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

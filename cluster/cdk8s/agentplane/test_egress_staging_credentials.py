@@ -1,23 +1,22 @@
 """Staging's Forgejo credential reaches its credentials namespace through exact source access."""
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.clickhouse import client as clickhouse
 
 
-def _staging_credentials_resources() -> list[dict]:
-    chart = Cdk8sTesting.chart()
+def _staging_credentials_resources(chart: Chart) -> list[dict]:
     add_staging_egress_credentials(
         chart, namespace="agentplane-staging", credentials_namespace=STAGING_CREDENTIALS_NAMESPACE
     )
     return Cdk8sTesting.synth(chart)
 
 
-def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
-    objects = _staging_credentials_resources()
+def test_forgejo_password_has_one_reader_and_exact_source_access(scratch_chart: Chart) -> None:
+    objects = _staging_credentials_resources(scratch_chart)
     binding = next(obj for obj in objects if obj["kind"] == "RoleBinding")
     assert binding["subjects"] == [
         {
@@ -41,8 +40,8 @@ def test_forgejo_password_has_one_reader_and_exact_source_access() -> None:
     assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
 
 
-def test_clickhouse_history_password_has_one_exact_source_reader() -> None:
-    objects = _staging_credentials_resources()
+def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: Chart) -> None:
+    objects = _staging_credentials_resources(scratch_chart)
     secret = clickhouse.AIQUOTA_HISTORY_CREDENTIALS
     role_name = "agentplane-staging-aiquota-history-clickhouse-reader"
     store_name = "kubernetes-agentplane-staging-aiquota-history-clickhouse-secret-store"

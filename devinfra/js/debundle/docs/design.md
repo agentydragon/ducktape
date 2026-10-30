@@ -1121,8 +1121,9 @@ intrinsic call; creating a returned closure alone does not trigger it.
 
 During materialization, a target may omit those synthetic export roots only
 when the original static-import facts prove a closed ordinary-ESM dependency
-closure, with no top-level `await`, CJS interop, vendor rewrite, or pruned
-chunk, and the target belongs to a singleton static-import SCC. Ordinary ESM
+closure, with no top-level `await`, vendor rewrite, or pruned chunk, the
+target belongs to a singleton static-import SCC, and, under a synchronous host
+loader, the target is loader-closed (SPEC.md § Loader-closed derivation). Ordinary ESM
 importers cannot run their bodies until the dependency finishes evaluation; a
 cycle, including a self-import, is the only static route for an importer to
 call a hoisted export while that evaluation is paused. The proof is per target,
@@ -1134,9 +1135,10 @@ policy.
 
 For each selected chunk, materialization records the decision and every
 independently observed blocker in `export_reentry.json`, beside
-`dependency_graph.json`. `global_blockers` names artifact incompleteness, CJS
-interop, and nonordinary static requests across the artifact. The per-target
-`closure_blockers` names non-ESM, top-level-await, CJS, and vendor-affected
+`dependency_graph.json`. `loader` names the loader derivation and the first
+witness of each failure kind; `global_blockers` names artifact incompleteness
+and nonordinary static requests across the artifact. The per-target
+`closure_blockers` names non-ESM, top-level-await, and vendor-affected
 closure chunks; unsupported, unresolved, missing, or non-entry static
 requests; and a target cycle. Request blockers carry their source chunk and
 specifier, plus the resolved chunk/file when resolution succeeded. The report

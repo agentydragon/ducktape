@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s.monitoring import gateway_probe
@@ -27,10 +30,10 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(tmp_path: Path) -> None:
+def test_gateway_probe_rules(scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(gateway_probe.chart(Cdk8sTesting.app(), _MESH))
+        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))

@@ -88,6 +88,10 @@ class _HttpExchange:
         self._closed = asyncio.Event()
         self._action_waiters: set[asyncio.Future[None]] = set()
 
+    @property
+    def request_headers(self) -> Mapping[str, str]:
+        return self._request.headers
+
     async def submit(self, action: _Action) -> None:
         if self._closed.is_set():
             raise ConnectionError("the native harness already closed this model request")
@@ -159,6 +163,7 @@ class ModelExchange[RequestT: StreamableRequest]:
 
     def __init__(self, request: RequestT, http: _HttpExchange):
         self.request = request
+        self.headers = http.request_headers
         self._http = http
         self._settled_by: str | None = None
 

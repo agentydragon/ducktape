@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import cdk8s
 import pytest_bazel
+from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config import new_client_from_config
@@ -91,10 +92,9 @@ def _without(body: Body, path: Path) -> Body:
     return changed
 
 
-async def test_the_action_service_writes_only_launcher_shaped_grants() -> None:
-    chart = cdk8s.Testing.chart()
-    actions.add_launcher_admission(chart, NAMESPACE)
-    policy, binding = cdk8s.Testing.synth(chart)
+async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Chart) -> None:
+    actions.add_launcher_admission(scratch_chart, NAMESPACE)
+    policy, binding = cdk8s.Testing.synth(scratch_chart)
     async with kubernetes_apiserver() as server:
         await k8s_client.CoreV1Api(server.api).create_namespace(
             k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE))

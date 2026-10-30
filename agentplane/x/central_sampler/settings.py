@@ -10,7 +10,7 @@ from pydantic_settings import SettingsConfigDict
 class ResponsesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    dialect: Literal["lite"]
+    dialect: Literal["lite", "standard"]
 
 
 class ModelConfig(BaseModel):
@@ -18,7 +18,7 @@ class ModelConfig(BaseModel):
 
     api: Literal["responses"]
     responses: ResponsesConfig
-    exec_encoding: Literal["freeform"]
+    exec_encoding: Literal["freeform", "json"]
     reasoning_efforts: set[str] = Field(min_length=1)
 
     @field_serializer("reasoning_efforts")

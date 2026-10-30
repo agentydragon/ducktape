@@ -2893,9 +2893,9 @@ data:
         "antigravity/ant-messages/claude-opus-4-6-thinking": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2907,9 +2907,9 @@ data:
         "antigravity/ant-messages/claude-sonnet-4-6": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2921,9 +2921,9 @@ data:
         "antigravity/ant-messages/gemini-3-flash": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2935,9 +2935,9 @@ data:
         "antigravity/ant-messages/gemini-3.5-flash-lite": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2949,9 +2949,9 @@ data:
         "antigravity/ant-messages/gemini-3.8-flash-high": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2962,9 +2962,9 @@ data:
         "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             "",
             "high",
@@ -2975,9 +2975,9 @@ data:
         "ollama/oai-chat/gpt-oss-20b-128k": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             ""
           ]
@@ -2985,9 +2985,9 @@ data:
         "ollama/oai-chat/gpt-oss-120b-128k": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             ""
           ]
@@ -2995,9 +2995,9 @@ data:
         "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
           "api": "responses",
           "responses": {
-            "dialect": "lite"
+            "dialect": "standard"
           },
-          "exec_encoding": "freeform",
+          "exec_encoding": "json",
           "reasoning_efforts": [
             ""
           ]

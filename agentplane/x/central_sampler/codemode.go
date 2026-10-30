@@ -472,6 +472,9 @@ type preparedCall struct {
 }
 
 func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+	if call.Name == "exec" && call.Type == ResponsesItemFunctionCall {
+		return r.prepareJSONCall(ctx, call)
+	}
 	if call.Name == "wait" && call.Type == ResponsesItemFunctionCall {
 		return r.prepareWait(ctx, call.Input)
 	}
@@ -482,6 +485,10 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 	if err != nil {
 		return preparedCall{}, err
 	}
+	return r.prepareExecute(call.CallID, source)
+}
+
+func (r *CodeMode) prepareExecute(callID string, source execSource) (preparedCall, error) {
 	yieldMS := defaultExecYieldTimeMS
 	if source.yieldTimeMS != nil {
 		yieldMS = *source.yieldTimeMS
@@ -494,11 +501,57 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 	if err != nil {
 		return preparedCall{}, err
 	}
-	request := codeExecuteRequest{ToolCallID: call.CallID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
+	request := codeExecuteRequest{ToolCallID: callID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
 	return preparedCall{
 		operation: codeExecuteOperation{codeSessionOperation: codeSessionOperation{Method: "session/execute", SessionID: r.sessionID}, Request: request},
 		execute:   true, maxTokens: source.maxOutputTokens,
 	}, nil
+}
+
+type jsonExecInput struct {
+	Code            *string `json:"code,omitempty"`
+	CellID          *string `json:"cell_id,omitempty"`
+	YieldTimeMS     *uint64 `json:"yield_time_ms,omitempty" jsonschema:"minimum=0"`
+	MaxOutputTokens *uint64 `json:"max_output_tokens,omitempty" jsonschema:"minimum=0"`
+	Terminate       *bool   `json:"terminate,omitempty"`
+}
+
+// JSON exec uses the same host operations and journal as the native freeform contract.
+// Resuming through exec keeps the compatibility surface to one function.
+func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+	var input jsonExecInput
+	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
+		return preparedCall{}, err
+	}
+	if (input.Code == nil) == (input.CellID == nil) {
+		return preparedCall{}, errors.New("exec requires exactly one of code or cell_id")
+	}
+	if input.CellID != nil {
+		terminate := input.Terminate != nil && *input.Terminate
+		arguments, err := resolveWaitArguments(waitInput{
+			CellID: *input.CellID, YieldTimeMS: input.YieldTimeMS,
+			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
+		})
+		if err != nil {
+			return preparedCall{}, err
+		}
+		return r.prepareWaitArguments(ctx, arguments)
+	}
+	if input.Terminate != nil {
+		return preparedCall{}, errors.New("terminate requires cell_id")
+	}
+	if strings.TrimSpace(*input.Code) == "" {
+		return preparedCall{}, errors.New("exec requires non-empty code")
+	}
+	yieldMS, err := safeIntegerArgument("yield_time_ms", input.YieldTimeMS)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	maxTokens, err := safeIntegerArgument("max_output_tokens", input.MaxOutputTokens)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	return r.prepareExecute(call.CallID, execSource{code: *input.Code, yieldTimeMS: yieldMS, maxOutputTokens: maxTokens})
 }
 
 type waitArguments struct {
@@ -516,6 +569,10 @@ func parseWaitArguments(input string) (waitArguments, error) {
 	if err := decodeToolInput([]byte(input), &arguments); err != nil {
 		return waitArguments{}, err
 	}
+	return resolveWaitArguments(arguments)
+}
+
+func resolveWaitArguments(arguments waitInput) (waitArguments, error) {
 	if arguments.CellID == "" {
 		return waitArguments{}, errors.New("wait requires a string cell_id")
 	}
@@ -539,6 +596,10 @@ func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall,
 	if err != nil {
 		return preparedCall{}, err
 	}
+	return r.prepareWaitArguments(ctx, arguments)
+}
+
+func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArguments) (preparedCall, error) {
 	cellID := arguments.cellID
 	state, err := r.store.ExecutionState(ctx, r.owner)
 	if err != nil {

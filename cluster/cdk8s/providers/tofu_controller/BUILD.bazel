@@ -29,6 +29,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",

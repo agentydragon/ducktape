@@ -6,7 +6,10 @@ generated CR goes through `TerraformV1Alpha2`.
 """
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    Chart,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2,
     TerraformV1Alpha2Spec,
@@ -15,10 +18,9 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 
-def test_suffixed_class_renders_v1alpha2() -> None:
-    chart = Cdk8sTesting.chart()
+def test_suffixed_class_renders_v1alpha2(scratch_chart: Chart) -> None:
     TerraformV1Alpha2(
-        chart,
+        scratch_chart,
         "terraform",
         spec=TerraformV1Alpha2Spec(
             interval="15m",
@@ -27,7 +29,7 @@ def test_suffixed_class_renders_v1alpha2() -> None:
             ),
         ),
     )
-    (manifest,) = Cdk8sTesting.synth(chart)
+    (manifest,) = Cdk8sTesting.synth(scratch_chart)
     assert manifest["apiVersion"] == "infra.contrib.fluxcd.io/v1alpha2"
 
 

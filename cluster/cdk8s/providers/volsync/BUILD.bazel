@@ -49,6 +49,7 @@ py_test(
     deps = [
         ":replication_source",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/volsync:replicationsource",
         "@pypi//cdk8s",
         "@pypi//pytest",

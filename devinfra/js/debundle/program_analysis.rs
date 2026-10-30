@@ -860,6 +860,19 @@ impl Visit for ModuleScanVisitor {
         }
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
+            let literal = match node.args.first() {
+                Some(arg) if arg.spread.is_none() => match arg.expr.unwrap_parens() {
+                    Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            self.interop_uses.push((
+                self.item_index,
+                node.span,
+                InteropUseKind::DynamicImport,
+                literal,
+            ));
             if !self.has_rewritable_specifier && dynamic_import_relative_specifier(node).is_some() {
                 self.has_rewritable_specifier = true;
             }
@@ -876,6 +889,23 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
+        // `module.exports` names the export object, not the loader-capable
+        // `module` record (`module.require`, `module.parent`).
+        if let Expr::Ident(ident) = &*node.obj
+            && ident.sym == *"module"
+            && ident.ctxt == self.unresolved_context
+            && matches!(&node.prop, MemberProp::Ident(prop) if prop.sym == *"exports")
+        {
+            self.has_cjs_interop = true;
+            self.has_own_cjs_export_surface = true;
+            self.interop_uses.push((
+                self.item_index,
+                node.span,
+                InteropUseKind::UnboundModuleExports,
+                None,
+            ));
+            return;
+        }
         // Treat the loader reference itself as host interop even when it is
         // captured and called through an alias later.
         if is_host_require_member(node, self.unresolved_context) {

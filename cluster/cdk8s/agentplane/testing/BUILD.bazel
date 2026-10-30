@@ -9,6 +9,7 @@ py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
     deps = [
+        "//cluster/cdk8s:conftest",  # keep: staging_manifests requests the scratch_app_factory fixture by name
         "//cluster/cdk8s/agentplane:runner_gateway_workload",
         "//cluster/cdk8s/agentplane:staging",
         "@pypi//cdk8s",

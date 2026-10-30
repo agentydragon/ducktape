@@ -8,7 +8,7 @@ import (
 
 func TestExecDescriptionDeclaresEveryNestedToolInput(t *testing.T) {
 	definitions := toolDefinitions()
-	description, err := execToolDescription(definitions)
+	description, err := execToolDescription(definitions, ModelConfig{ExecEncoding: ExecEncodingFreeform})
 	if err != nil {
 		t.Fatal(err)
 	}

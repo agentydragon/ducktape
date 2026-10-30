@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_egress, fqdn_fence
@@ -10,9 +10,9 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 _DNS_LABELS = {"k8s-app": "test-dns"}
 
 
-def _policy(egress: list[CiliumNetworkPolicySpecEgress]) -> None:
+def _policy(chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]) -> None:
     NetworkPolicy(
-        Cdk8sTesting.chart(),
+        chart,
         "policy",
         metadata=ApiObjectMetadata(name="test-policy", namespace="test-namespace"),
         endpoint_selector={"app.kubernetes.io/name": "test-app"},
@@ -26,9 +26,11 @@ def _policy(egress: list[CiliumNetworkPolicySpecEgress]) -> None:
     "egress",
     [[dns_egress(_DNS_LABELS), EgressRule.to_fqdns("api.example.test")], [EgressRule.to_fqdns("api.example.test")]],
 )
-def test_fqdn_egress_without_dns_rule_is_refused(egress: list[CiliumNetworkPolicySpecEgress]) -> None:
+def test_fqdn_egress_without_dns_rule_is_refused(
+    scratch_chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]
+) -> None:
     with pytest.raises(ValueError, match="DNS rule"):
-        _policy(egress)
+        _policy(scratch_chart, egress)
 
 
 @pytest.mark.parametrize(
@@ -39,8 +41,10 @@ def test_fqdn_egress_without_dns_rule_is_refused(egress: list[CiliumNetworkPolic
         [dns_egress(_DNS_LABELS), EgressRule.to_entities(Entity.KUBE_APISERVER)],
     ],
 )
-def test_dns_rule_or_no_fqdn_egress_is_accepted(egress: list[CiliumNetworkPolicySpecEgress]) -> None:
-    _policy(egress)
+def test_dns_rule_or_no_fqdn_egress_is_accepted(
+    scratch_chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]
+) -> None:
+    _policy(scratch_chart, egress)
 
 
 if __name__ == "__main__":

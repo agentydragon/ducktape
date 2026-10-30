@@ -121,6 +121,14 @@ and Function call integrity. The caller retains an opaque result and its input
 callback graph, including possible cached aliases and throws. It gains no
 purity, fresh-result or exception-free guarantee.
 
+The loader-closed fact (`loader_closure.rs`, SPEC.md § Loader-closed
+derivation) is a program-level family in its own store: `Reach` grows each
+chunk's static and loader closure, and each target's verdict grows its failure
+witnesses with it. A target is closed only in the completed closure; no rule
+consumes an intermediate verdict. A closed verdict assumes the consumed
+`host_behavior` keys as typed `ProofDependencies`, so an author host assertion
+stays distinct from the source facts.
+
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from

@@ -596,7 +596,9 @@ a cached namespace. The query does not add calls through aliases, dynamic
 arguments, global `require`, or CommonJS exports as resolved edges. Direct
 loader-value references, dynamic direct calls, global loader uses, and
 CommonJS export uses remain as typed sites in the optional `--interop-census`;
-calls through an alias are not traced. The census counts every chunk and
+calls through an alias are not traced. The census also lists dynamic `import()`
+calls (`dynamic_import`) and separates `module.exports` (`unbound_module_exports`)
+from other `module` uses (`unbound_module`). The census counts every chunk and
 bounds detailed sites with `--max-interop-sites`. An absent path in the union
 graph excludes only paths through resolved ordinary static requests and these
 direct literal candidates; it does not clear any export-reentry blocker.
@@ -624,10 +626,10 @@ host_behavior:
 | Key                                   | Omitted   | Reader                                          |
 | ------------------------------------- | --------- | ----------------------------------------------- |
 | `synchronous_module_loader`           | `present` | Export-reentry proof (below)                    |
-| `loader_result_for_evaluating_module` | `unknown` | None yet; validated and echoed                  |
-| `synchronous_load_runs_app_callbacks` | `unknown` | None yet; validated and echoed                  |
+| `loader_result_for_evaluating_module` | `unknown` | Loader-closed derivation (below)                |
+| `synchronous_load_runs_app_callbacks` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_drains_microtasks`  | `unknown` | None yet; validated and echoed                  |
-| `reentry_free_builtin_modules`        | empty     | Export-reentry static closure (below)           |
+| `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
 
@@ -636,10 +638,11 @@ The three loader keys describe a loader, so each requires
 `unknown` is accepted and asserts nothing. `export_reentry.json` echoes the
 block as read.
 
-CLEANUP(added 2026-10-29): the three loader keys have no analysis reader until
-step 2 of `plans/host_behavior.md` derives the export-reentry policy from
-`loader_result_for_evaluating_module` and `synchronous_load_runs_app_callbacks`.
-Remove a key that step does not read.
+CLEANUP(added 2026-10-29): `synchronous_load_drains_microtasks` has no
+analysis reader; the loader-closed derivation does not need it because a
+drained reaction is application code whose loader sites the derivation
+already checks. Remove the key unless a step of `plans/host_behavior.md`
+gives it a reader.
 
 Every non-default value is an author assertion about the host. The author
 verifies it against the exact executable recorded in `note`, re-audits on every
@@ -674,8 +677,50 @@ or top-level await: generated facades lead only to that leaf, while residual
 pruning can delete original edges. Bundles with external requests, raw package
 swaps and full package swaps retain conservative export reentry. Boundary
 renames and suppressed chunks add no dependency edges. With a synchronous
-loader present, every CommonJS-interop chunk and every vendor-affected chunk
-blocks the proof.
+loader present, every vendor-affected chunk in the target's closure blocks the
+proof, and host-loader sites are admitted only by the loader-closed derivation
+below.
+
+### Loader-closed derivation
+
+With `synchronous_module_loader: present`, the export-reentry proof also needs
+the target to be loader-closed: no host loader can hand any code the target's
+namespace while the target evaluates. When no analyzed chunk has a host-loader
+site the derivation is `no_host_loader_sites` and reads no loader key, as with
+`synchronous_module_loader: none`. Otherwise the target is loader-closed when
+all of the following hold:
+
+- `synchronous_load_runs_app_callbacks: never` and
+  `loader_result_for_evaluating_module` is `throws` or
+  `returns_partial_namespace`. An omitted or `unknown` key keeps the target
+  open.
+- Every host-loader site in every analyzed chunk is a direct literal
+  `import.meta.require(...)` call (the census of SPEC.md § Static-import and
+  host-loader queries). A non-literal call, an `import.meta.require` reference
+  (an alias, including an exported loader value), `globalThis.require`, an
+  unbound `require` or `module` (other than `module.exports`), `import.meta` as
+  a value or with a computed key, a TypeScript `import =`, a dynamic `import()`,
+  and any request for the `module` builtin keep every target open.
+- Each literal request names a `reentry_free_builtin_modules` entry or resolves
+  to an analyzed chunk's entry file. A request for any other builtin or an
+  unresolved specifier keeps every target open.
+- For each request resolved to a chunk, that chunk's static and loader closure
+  excludes the target, and every chunk in it has only resolved ordinary static
+  requests to analyzed chunk entries or reentry-free builtins, no top-level
+  `await`, and no vendor replacement. Cycles through the target are therefore
+  open; a loaded chunk need not be ESM.
+
+Step 2 counts every site in every analyzed chunk as reachable during the
+target's initialization, wherever it is nested: a callback any chunk published
+earlier can run then, so the chunk holding a site does not bound when it
+executes; no site is narrowed to the target's initialization. A site the census does not see, such as a
+computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
+code, is outside this proof, as it is outside the census.
+
+The derivation is a judgment of the shared inference (<docs/inference.md>);
+`export_reentry.json` names its rule, the keys a closed certificate consumed,
+the resolved requests and loaded chunks, and the first witness and count of
+each failure kind (<docs/wire_format.md#export-reentry-diagnostics>).
 
 ### Reentry-free operations
 
@@ -718,8 +763,9 @@ author asserts that each selected builtin ID's explicitly recognized bare and
 `node:` static-import spellings resolve to the host builtin and cannot
 synchronously reenter an application chunk during module evaluation. Only
 ordinary static ESM requests that the artifact resolver did not resolve may use
-the closed Node builtin list. The export-reentry report records each consumed
-source chunk, specifier, builtin ID, and request count. Unselected names,
+the closed Node builtin list, and literal `import.meta.require` requests in the
+loader-closed derivation. The export-reentry report records each consumed
+static source chunk, specifier, builtin ID, and request count. Unselected names,
 unknown bare packages, and package replacements such as `ws` stay unresolved.
 This leaf rule grants no purity, call safety, return shape, or later callback
 fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and

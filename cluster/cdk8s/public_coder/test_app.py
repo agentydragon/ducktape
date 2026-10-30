@@ -33,8 +33,8 @@ _HAKU_SUBJECTS = {
 _READ = ["get", "list", "watch"]
 
 
-def _synth(build: Callable[[App], Chart]) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(build(Cdk8sTesting.app())))
+def _synth(chart: Chart) -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
 def _subjects(binding: dict[str, Any]) -> set[tuple[str, str, str | None]]:
@@ -54,32 +54,34 @@ def _one(objects: list[dict[str, Any]], kind: str, name: str | None = None) -> d
 
 
 @pytest.fixture(scope="module")
-def app_objects() -> list[dict[str, Any]]:
-    return _synth(public_coder_app.app_chart)
+def app_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(public_coder_app.app_chart(scratch_app_factory()))
 
 
 @pytest.fixture(scope="module")
-def rbac_objects() -> list[dict[str, Any]]:
-    return _synth(public_coder_app.rbac_chart)
+def rbac_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(public_coder_app.rbac_chart(scratch_app_factory()))
 
 
 @pytest.fixture(scope="module")
-def console_objects() -> list[dict[str, Any]]:
-    return _synth(console_chart)
+def console_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(console_chart(scratch_app_factory()))
 
 
 @pytest.fixture(scope="module")
-def clickhouse_diagnostics_objects() -> list[dict[str, Any]]:
-    return _synth(installation.agent_diagnostics_rbac_chart)
+def clickhouse_diagnostics_objects(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(installation.agent_diagnostics_rbac_chart(scratch_app_factory()))
 
 
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
+    scratch_app: App,
     console_objects: list[dict[str, Any]],
     rbac_objects: list[dict[str, Any]],
     clickhouse_diagnostics_objects: list[dict[str, Any]],
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
-    metadata_role = _one(_synth(agent_rbac_base.chart), "ClusterRole", "agent-readable-namespace-metadata")
+    base_objects = _synth(agent_rbac_base.chart(scratch_app))
+    metadata_role = _one(base_objects, "ClusterRole", "agent-readable-namespace-metadata")
     assert all(rule["verbs"] == _READ for rule in metadata_role["rules"])
     assert not {
         "secrets",
@@ -107,11 +109,11 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         assert not {"secrets", "pods/log", "pods/exec"} & _resources(role), source
 
     # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
-    shared_objects = _synth(agent_shared_rbac.chart)
+    shared_objects = _synth(agent_shared_rbac.chart(scratch_app))
     haku_cluster_binding = _one(shared_objects, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
 
-    diagnostics_role = _one(_synth(agent_rbac_base.chart), "ClusterRole", "cluster-diagnostics-reader")
+    diagnostics_role = _one(base_objects, "ClusterRole", "cluster-diagnostics-reader")
     assert {
         (api_group, resource, verb)
         for rule in diagnostics_role["rules"]

@@ -228,12 +228,16 @@ pub enum InteropUseKind {
     GlobalThisRequire,
     UnboundRequire,
     UnboundModule,
+    /// `module.exports`: the export object, which cannot load a module.
+    UnboundModuleExports,
     UnboundExports,
     ImportMetaDynamicProperty,
     ImportMetaOtherProperty,
     ImportMetaValue,
     TsImportEquals,
     TsExportAssignment,
+    /// `import(...)`; `specifier` is set for a string-literal argument.
+    DynamicImport,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

@@ -25,6 +25,7 @@ pub mod facts;
 pub mod graph;
 pub mod ids;
 mod inference;
+pub mod loader_closure;
 pub mod module_assignment;
 pub mod purity;
 pub mod reports;
