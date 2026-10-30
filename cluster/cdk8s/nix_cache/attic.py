@@ -102,13 +102,10 @@ ROTATOR_CONFIG = Config(
             name="ducktape CI attic reader",
             destination=KubernetesDestination(
                 secret=KubernetesSecretDestination(
-                    namespace=ci_token.READER.namespace,
-                    name=ci_token.READER.name,
-                    key=ci_token.READER_TOKEN.key,
+                    namespace=ci_token.READER.namespace, name=ci_token.READER.name, key=ci_token.READER_TOKEN.key
                 ),
                 notification=WorkspaceNotification(
-                    workspace=workspace.NAME,
-                    annotation_key="ducktape.allegedly.works/attic-reader-token-version",
+                    workspace=workspace.NAME, annotation_key="ducktape.allegedly.works/attic-reader-token-version"
                 ),
             ),
             sub="ducktape-ci-reader",
