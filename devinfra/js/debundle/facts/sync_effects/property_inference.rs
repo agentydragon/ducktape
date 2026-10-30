@@ -366,6 +366,7 @@ mod tests {
         let integrity = IntegrityFlags::new(
             true,
             BTreeSet::new(),
+            &[],
             ProofDependencies {
                 value_inputs: BTreeSet::from([value_input.clone()]),
                 ..Default::default()

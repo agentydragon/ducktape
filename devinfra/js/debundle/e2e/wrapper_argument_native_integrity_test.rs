@@ -1,8 +1,11 @@
 use debundle_e2e_support::*;
 
+// Each guarded write names `Map`, so through the unknown `globalThis.shared`
+// receiver it reaches the `%Map%` global slot `factory()` constructs from.
+
 const WRAPPER: &str = "export const wrap = (callback, cache) => () => (cache || callback((cache = { value: {} }).value, cache), cache.value);\n";
 const PROVIDER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
-const NAMESPACE: &str = "import { wrap } from './wrapper.js';\nexport const load = wrap(function(output, container) { (function(root, fill) { typeof output === 'object' && typeof container < 'u' ? fill(output) : (root = globalThis, root.shared = root.shared || {}, root.shared.walk = {}, fill(root.shared.walk)); })(output, function(value) { value.ready = true; }); });\nload();\n";
+const NAMESPACE: &str = "import { wrap } from './wrapper.js';\nexport const load = wrap(function(output, container) { (function(root, fill) { typeof output === 'object' && typeof container < 'u' ? fill(output) : (root = globalThis, root.shared = root.shared || {}, root.shared.Map = {}, fill(root.shared.Map)); })(output, function(value) { value.ready = true; }); });\nload();\n";
 
 fn opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
     FixtureOpts::new(
@@ -71,17 +74,17 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
 #[test]
 fn unsupported_or_escaping_callback_entries_keep_the_native_guard() {
     for namespace in [
-        "import { wrap } from './wrapper.js'; function initialize(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.walk = {}); } export const load = wrap(initialize); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function initialize(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { output = undefined; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { [output] = [undefined]; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { eval('output = undefined'); typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { globalThis.escape = () => arguments.callee; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'function' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? (globalThis.writer = function() { globalThis.shared.walk = {}; }) : (globalThis.shared.walk = {}); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.store = { get value() { globalThis.shared.walk = {}; } }); }); load();",
-        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.store = class { constructor() { globalThis.shared.walk = {}; } }); }); load();",
-        "import { wrap } from 'example:wrapper'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.walk = {}); });",
+        "import { wrap } from './wrapper.js'; function initialize(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.Map = {}); } export const load = wrap(initialize); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function initialize(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { output = undefined; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { [output] = [undefined]; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { eval('output = undefined'); typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { globalThis.escape = () => arguments.callee; typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'function' && typeof container < 'u' ? 0 : (globalThis.shared = {}, globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? (globalThis.writer = function() { globalThis.shared.Map = {}; }) : (globalThis.shared.Map = {}); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.store = { get value() { globalThis.shared.Map = {}; } }); }); load();",
+        "import { wrap } from './wrapper.js'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.store = class { constructor() { globalThis.shared.Map = {}; } }); }); load();",
+        "import { wrap } from 'example:wrapper'; export const load = wrap(function(output, container) { typeof output === 'object' && typeof container < 'u' ? 0 : (globalThis.shared.Map = {}); });",
     ] {
         let chunks = [
             ("static/peer", PROVIDER),

@@ -99,8 +99,9 @@ impl CallableInferenceInputs {
                     return None;
                 }
                 let candidate = self.namespace_wrappers.get(function)?;
+                let cache = collections.get(&candidate.weak_map)?;
                 native.require_empty_collection(
-                    collections.get(&candidate.weak_map)?,
+                    cache,
                     &candidate.weak_map,
                     None,
                     context,
@@ -112,15 +113,26 @@ impl CallableInferenceInputs {
                         global_this_qualified: false,
                     },
                     NativeIntrinsic::Object,
-                    &[IntrinsicSlot::Global(NativeIntrinsic::Object)],
+                    &[
+                        IntrinsicSlot::Global(NativeIntrinsic::Object),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "create"),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyNames"),
+                        IntrinsicSlot::Static(NativeIntrinsic::Object, "getPrototypeOf"),
+                    ],
                     None,
                     context,
                     consulted,
                 )?;
+                // The cache's `get` and `set`, `hasOwnProperty.call` and the
+                // `getOwnPropertyNames` result's iteration.
                 native.require_slots(
                     &[
-                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::Prototype(cache.family()?),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Object),
                         IntrinsicSlot::Prototype(NativeIntrinsic::Function),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::ArrayIteratorPrototype,
                     ],
                     None,
                     context,

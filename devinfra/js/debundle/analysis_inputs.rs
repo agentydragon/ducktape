@@ -318,6 +318,27 @@ impl NativeIntrinsic {
             _ => None,
         }
     }
+
+    /// The global object's own property holding the family's constructor or
+    /// namespace.
+    pub(crate) fn global_binding(self) -> Option<&'static str> {
+        match self {
+            Self::GlobalObject | Self::UnknownGlobalValue => None,
+            Self::Error => Some("Error"),
+            Self::FinalizationRegistry => Some("FinalizationRegistry"),
+            Self::Function => Some("Function"),
+            Self::Object => Some("Object"),
+            Self::Array => Some("Array"),
+            Self::Math => Some("Math"),
+            Self::RegExp => Some("RegExp"),
+            Self::Symbol => Some("Symbol"),
+            Self::Promise => Some("Promise"),
+            Self::Map => Some("Map"),
+            Self::Set => Some("Set"),
+            Self::WeakMap => Some("WeakMap"),
+            Self::WeakSet => Some("WeakSet"),
+        }
+    }
 }
 
 /// Stable reference to one exact author input in one provider chunk.

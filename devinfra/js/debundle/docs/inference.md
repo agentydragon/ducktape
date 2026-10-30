@@ -56,12 +56,14 @@ flowchart LR
 ```
 
 A slot is intact only when the census is closed (every analyzed chunk
-contributed, no dynamic scope) and neither its family nor the global object is
-mutated. The `Function` family is included so source-visible changes to
-`Function.prototype.call` can invalidate only proofs that consume that
-capability. Native prototype crossings, `Object.getPrototypeOf` result aliases
-and global-slot read-backs retain an opaque native root: a later write through
-one invalidates every slot rather than trusting the original receiver's family.
+contributed, no dynamic scope) and no census write reaches it (SPEC.md § Native
+integrity inputs): an own data slot by the write's receiver and key, a
+prototype slot by its family or the global object. The `Function` family is
+included so source-visible changes to `Function.prototype.call` can invalidate
+only proofs that consume that capability. Native prototype crossings,
+`Object.getPrototypeOf` result aliases and global-slot read-backs retain an
+opaque native root: a later write through one reaches its key on every native
+object rather than trusting the original receiver's family.
 An axiom covering every requested slot at the queried site is consumed instead
 of the census and recorded as that input's proof dependency.
 

@@ -5556,6 +5556,7 @@ impl ExecutionIndex {
         IntegrityFlags::new(
             self.dynamic_scope_owners.is_empty(),
             self.mutated_intrinsic_roots.clone(),
+            &self.native_integrity_witnesses,
             crate::analysis_inputs::ProofDependencies {
                 value_inputs: self.native_integrity_value_input_refs.clone(),
                 ..Default::default()
@@ -7739,8 +7740,17 @@ impl ExecutionIndex {
                     }
                     _ => {}
                 }
-                if let Some(root) = NativeIntrinsic::for_global_binding(id.0.as_ref())
-                    .filter(|root| *root != NativeIntrinsic::GlobalObject)
+                // Rebinding an unshadowed global-object alias
+                // (`globalThis = other`) leaves every write through that name,
+                // earlier or later, on an unknown receiver.
+                let root = NativeIntrinsic::for_global_binding(id.0.as_ref()).filter(|root| {
+                    *root != NativeIntrinsic::GlobalObject
+                        || index.global_object_names.contains(id.0.as_ref())
+                });
+                if root == Some(NativeIntrinsic::GlobalObject) {
+                    mutated_intrinsics.insert(NativeIntrinsic::GlobalObject);
+                }
+                if let Some(root) = root
                     && binding_write_sites.insert((owner, root))
                 {
                     unconditional_witnesses.push(NativeMutationWitness {
@@ -7751,7 +7761,12 @@ impl ExecutionIndex {
                         receiver_roots: BTreeSet::from([root]),
                         through_local_alias: false,
                         affected_roots: BTreeSet::from([root]),
-                        target_slots: if index.property_key_declarations.contains(id) {
+                        target_slots: if root == NativeIntrinsic::GlobalObject {
+                            BTreeSet::from([NativeWriteSlot {
+                                receiver: NativeReceiverPath::Unknown,
+                                key: NativePropertyKey::Unknown,
+                            }])
+                        } else if index.property_key_declarations.contains(id) {
                             BTreeSet::new()
                         } else {
                             BTreeSet::from([NativeWriteSlot {
@@ -11634,6 +11649,7 @@ pub(crate) fn infer_callable_capabilities(
         flow: mut prepared_flow,
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
+    index.native_integrity_witnesses = integrity.witnesses.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
