@@ -12,6 +12,7 @@ import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
+import { latestOn, reconnected, type ServedWatch, serveEventStreams } from "./testing/watch";
 
 const NO_NOTICES: Omit<InboxNoticeState, "inboxId" | "sessionId"> = { queued: 0, unacknowledged: 0 };
 
@@ -124,8 +125,14 @@ function inventory(sandboxes: Record<string, SandboxView>): SandboxesSnapshot {
   return { sandboxes: Object.values(sandboxes), watch: { healthy: true, failing: {} } };
 }
 
-async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot | SandboxesSnapshot): Promise<void> {
-  await act(async () => stream.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) })));
+/** The server's end of the streams on one path: it writes down the latest connection. */
+interface StreamEnd {
+  served: ServedWatch[];
+  pathname: string;
+}
+
+async function pushSnapshot(stream: StreamEnd, value: ThreadsSnapshot | SandboxesSnapshot): Promise<void> {
+  await act(async () => latestOn(stream.served, stream.pathname).event("snapshot", JSON.stringify(value)));
 }
 
 async function render(
@@ -140,52 +147,36 @@ async function render(
 ): Promise<{
   onOpenSettings: ReturnType<typeof vi.fn>;
   onClose: ReturnType<typeof vi.fn>;
-  stream: EventTarget;
-  sandboxStream: EventTarget;
+  stream: StreamEnd;
+  sandboxStream: StreamEnd;
   noticeUrls: string[];
 }> {
-  const streams: EventTarget[] = [];
-  const sandboxStreams: EventTarget[] = [];
   const noticeUrls: string[] = [];
-  vi.stubGlobal(
-    "EventSource",
-    class extends EventTarget {
-      // An error is the network's, which the browser retries: the source stays CONNECTING.
-      readyState = 0;
-      constructor(url: string) {
-        super();
-        const { pathname, searchParams } = new URL(url, "http://test");
-        if (pathname === "/threads/notices/stream") {
-          noticeUrls.push(url);
-          const inboxes = searchParams
-            .getAll("thread_id")
-            .filter((session) => session in (options.notices ?? {}))
-            .map((session) => ({
-              ...NO_NOTICES,
-              inboxId: session,
-              sessionId: session,
-              ...options.notices?.[session],
-            }));
-          const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes };
-          queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(states) })));
-          return;
-        }
-        if (pathname === "/live/sandboxes") {
-          sandboxStreams.push(this);
-          queueMicrotask(() =>
-            this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(inventory(sandboxes)) }))
-          );
-          return;
-        }
-        expect(pathname).toBe("/live/threads");
-        streams.push(this);
-        queueMicrotask(() =>
-          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, url)) }))
-        );
-      }
-      close(): void {}
+  const served = serveEventStreams((stream) => {
+    const { pathname, searchParams } = stream.url;
+    if (pathname === "/threads/notices/stream") {
+      noticeUrls.push(stream.url.href);
+      const inboxes = searchParams
+        .getAll("thread_id")
+        .filter((session) => session in (options.notices ?? {}))
+        .map((session) => ({
+          ...NO_NOTICES,
+          inboxId: session,
+          sessionId: session,
+          ...options.notices?.[session],
+        }));
+      const states: SessionNoticeStates = { observedAt: "2026-01-01T00:00:00Z", inboxes };
+      stream.event("snapshot", JSON.stringify(states));
+      return;
     }
-  );
+    if (reconnected(served, stream)) return;
+    if (pathname === "/live/sandboxes") {
+      stream.event("snapshot", JSON.stringify(inventory(sandboxes)));
+      return;
+    }
+    expect(pathname).toBe("/live/threads");
+    stream.event("snapshot", JSON.stringify(snapshot(threads, stream.url.href)));
+  });
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/models") {
@@ -223,7 +214,13 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onClose, stream: streams[0], sandboxStream: sandboxStreams[0], noticeUrls };
+  return {
+    onOpenSettings,
+    onClose,
+    stream: { served, pathname: "/live/threads" },
+    sandboxStream: { served, pathname: "/live/sandboxes" },
+    noticeUrls,
+  };
 }
 
 function rows(): HTMLElement[] {
@@ -314,7 +311,7 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) });
   const { stream } = await render(threads, sandboxes);
   // A drop shorter than the grace is a blip, and changes nothing on screen.
-  await act(async () => stream.dispatchEvent(new Event("error")));
+  await act(async () => latestOn(stream.served, stream.pathname).drop());
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));

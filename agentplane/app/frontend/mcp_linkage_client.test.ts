@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 import {
   disconnectMcpLinkage,
   followMcpLinkages,

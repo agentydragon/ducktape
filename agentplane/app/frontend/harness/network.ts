@@ -131,16 +131,20 @@ export function electricLive(handle: string, relation?: string, signal?: AbortSi
   return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
-interface PublishedWatch {
+interface PublishedStream {
   path: string;
   publish: () => void;
 }
 
-const publishedWatches = new Set<PublishedWatch>();
+const publishedStreams = new Set<PublishedStream>();
 
-/** Publish current delta frames to every open facade watch whose path ends with the suffix. */
-export function publishNdjsonWatch(pathSuffix: string): void {
-  for (const watch of publishedWatches) if (watch.path.endsWith(pathSuffix)) watch.publish();
+/** Publish current frames to every open stream whose path ends with the suffix. */
+export function publishStreams(pathSuffix: string): void {
+  for (const stream of publishedStreams) if (stream.path.endsWith(pathSuffix)) stream.publish();
+}
+
+function ndjson(results: readonly unknown[]): string {
+  return results.map((result) => `${JSON.stringify({ result })}\n`).join("");
 }
 
 /** A live facade watch: snapshot frames first, then delta frames when a fixture publishes. */
@@ -150,49 +154,89 @@ export function liveNdjsonWatch(
   updates: () => readonly unknown[],
   signal: AbortSignal | undefined
 ): Response {
-  return watchResponse(initial, signal, { path, updates });
+  return streamResponse(
+    "application/x-ndjson",
+    ndjson(initial),
+    signal,
+    {
+      path,
+      updates: () => ndjson(updates()),
+    },
+    false
+  );
 }
 
 /** A gRPC-Gateway stream sends `results` and stays open until its reader cancels or signal aborts. */
 export function ndjsonWatch(results: readonly unknown[], signal: AbortSignal | undefined): Response {
-  return watchResponse(results, signal, null);
+  return streamResponse("application/x-ndjson", ndjson(results), signal, null, false);
 }
 
-function watchResponse(
-  initial: readonly unknown[],
+/** One server-sent event; `data` goes as JSON. */
+export interface ServerSentEvent {
+  event: string;
+  data: unknown;
+}
+
+/**
+ * A live event stream: `events()` when it opens and again whenever a fixture publishes its path.
+ * With `drop`, the body fails once the first events are read, as on a dropped network.
+ */
+export function liveEventStream(
+  path: string,
+  events: () => readonly ServerSentEvent[],
   signal: AbortSignal | undefined,
-  publication: { path: string; updates: () => readonly unknown[] } | null
+  drop: boolean
+): Response {
+  const text = (): string =>
+    events()
+      .map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      .join("");
+  return streamResponse("text/event-stream", text(), signal, drop ? null : { path, updates: text }, drop);
+}
+
+function streamResponse(
+  contentType: string,
+  initial: string,
+  signal: AbortSignal | undefined,
+  publication: { path: string; updates: () => string } | null,
+  drop: boolean
 ): Response {
   let dispose = (): void => {};
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      const send = (results: readonly unknown[]): void => {
-        for (const result of results) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
+      const send = (text: string): void => {
+        if (text !== "") controller.enqueue(encoder.encode(text));
       };
-      const watch =
+      const stream =
         publication === null ? null : { path: publication.path, publish: () => send(publication.updates()) };
       const onAbort = (): void => {
         dispose();
-        controller.error(new DOMException("The watch request was aborted", "AbortError"));
+        controller.error(new DOMException("The stream request was aborted", "AbortError"));
       };
       dispose = (): void => {
         signal?.removeEventListener("abort", onAbort);
-        if (watch !== null) publishedWatches.delete(watch);
+        if (stream !== null) publishedStreams.delete(stream);
       };
       if (signal?.aborted) {
         onAbort();
         return;
       }
-      if (watch !== null) publishedWatches.add(watch);
+      if (stream !== null) publishedStreams.add(stream);
       signal?.addEventListener("abort", onAbort, { once: true });
       send(initial);
+    },
+    // Called once the reader has taken what `start` sent: erroring sooner would discard it.
+    pull(controller) {
+      if (!drop) return;
+      dispose();
+      controller.error(new TypeError("the harness dropped this stream"));
     },
     cancel() {
       dispose();
     },
   });
-  return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+  return new Response(body, { headers: { "content-type": contentType } });
 }
 
 /**

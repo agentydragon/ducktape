@@ -579,7 +579,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
     ],
 )
 
@@ -607,7 +607,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
     ],
 )
 
@@ -837,6 +837,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:sidebar",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 

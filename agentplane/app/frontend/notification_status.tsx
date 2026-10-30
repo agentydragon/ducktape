@@ -3,7 +3,8 @@ import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Te
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime, isoTime, timeAgo } from "./format_time";
-import { followStream, type StreamConnection } from "./live_stream";
+import { followStream } from "./live_stream";
+import { type StreamConnection } from "./stream_reader";
 import type {
   GitHubSubject,
   SandboxNotificationStatus,

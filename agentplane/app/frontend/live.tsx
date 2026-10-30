@@ -13,7 +13,8 @@
 import { useEffect, useState } from "react";
 
 import { ageAgo } from "./format_time";
-import { followStream, type StreamConnection } from "./live_stream";
+import { followStream } from "./live_stream";
+import { type StreamConnection } from "./stream_reader";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
 // The raw live streams use app/go's watchHealthView JSON shape.

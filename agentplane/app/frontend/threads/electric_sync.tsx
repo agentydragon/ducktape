@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { displayableError, fetchWithLogin } from "../client";
 import { threadScope, type ThreadScope } from "./client";
-import { backoff, type StreamConnection } from "../live_stream";
+import { backoff, type StreamConnection } from "../stream_reader";
 import {
   decimalBigInt,
   type Decimal,

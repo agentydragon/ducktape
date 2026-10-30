@@ -1,6 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
-import { type StreamConnection } from "../live_stream";
+import { type StreamConnection } from "../stream_reader";
 
 import { displayableError } from "../client";
 import { followActionGroups, type ActionGroupView, type ActionGroupWatchFrame } from "../actions/client";

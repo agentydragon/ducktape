@@ -9,7 +9,7 @@ import {
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { displayableError, fetchWithLogin } from "../client";
-import { type StreamConnection } from "../live_stream";
+import { type StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 
 const PUSH_PATH = "/upstream/actions/v1/operator/push";

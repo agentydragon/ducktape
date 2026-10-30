@@ -4,7 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 import {
   ConnectionIndicator,
   DEGRADED_AFTER_MS,

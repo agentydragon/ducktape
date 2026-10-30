@@ -65,8 +65,8 @@ ts_library(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
     ],
 )
@@ -103,7 +103,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
     ],
 )
@@ -210,8 +210,8 @@ ts_library(
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:time_ago",
