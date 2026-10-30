@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 type fakeCodeModePeer struct {
@@ -440,7 +442,370 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 	}
 }
 
-func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID string) int64 {
+func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testing.T) {
+	call := ResponsesToolCall{
+		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "rejected-call", Input: `{"code":"text(1)"}`,
+	}
+	store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
+	originalHost := code.host
+	unrelatedCell := code.cellHandle("unrelated-cell")
+	if err := store.CellResult(t.Context(), owner, unrelatedCell, "live"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
+		if err := peer.send(codeFrame{
+			Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host admission rejected"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if advanceErr != nil || result != "cell" {
+		t.Fatalf("rejected exec advance=(%q, %v), want model-visible tool output", result, advanceErr)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil || len(conversation.Items) < 2 {
+		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, conversation.Items)
+	}
+	if output := conversation.Items[len(conversation.Items)-1]; !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host admission rejected" {
+		t.Fatalf("rejected exec output=%+v", output)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Cells) != 1 || state.Cells[0].ID != unrelatedCell || state.Cells[0].Status != "live" {
+		t.Fatalf("unrelated live cell changed after rejection: %+v", state.Cells)
+	}
+	if code.Err() != nil || code.host != originalHost {
+		t.Fatalf("host binding changed after rejection: binding error=%v", code.Err())
+	}
+	assertToolResultSucceeded(t, store, owner, call.CallID, false)
+	var rejectedResultRaw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent
+		WHERE conversation_id=$1 AND request->>'kind'='cell'`, owner.ConversationID).Scan(&rejectedResultRaw); err != nil {
+		t.Fatal(err)
+	}
+	var rejectedResult map[string]any
+	if err := json.Unmarshal(rejectedResultRaw, &rejectedResult); err != nil {
+		t.Fatal(err)
+	}
+	hostResponse, ok := rejectedResult["code_mode_host_response"].(map[string]any)
+	if !ok || hostResponse["method"] != "session/execute" || hostResponse["phase"] != string(codeOperationResponsePhase) || hostResponse["execution_started"] != false {
+		t.Fatalf("rejection evidence=%+v", rejectedResult["code_mode_host_response"])
+	}
+
+	nextCall := ResponsesToolCall{
+		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "next-call", Input: `{"code":"text(load('retained'))"}`,
+	}
+	appendModelToolCall(t, store, owner, nextCall)
+	result, advanceErr = advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
+		started, err := json.Marshal(codeHostResponse{Type: "execution/started", CellID: "next-cell"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: started}}); err != nil {
+			t.Fatal(err)
+		}
+		observation := json.RawMessage(`{"Result":{"cell_id":"next-cell","content_items":[{"type":"input_text","text":"retained"}]}}`)
+		if err := peer.send(codeFrame{Type: codeInitialResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: observation}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if advanceErr != nil || result != "cell" {
+		t.Fatalf("next exec advance=(%q, %v), want successful tool output", result, advanceErr)
+	}
+	conversation, err = store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output := conversation.Items[len(conversation.Items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
+		t.Fatalf("next exec did not run through the retained logical session: %+v", output)
+	}
+	assertToolResultSucceeded(t, store, owner, nextCall.CallID, true)
+	if code.Err() != nil || live.code.sessionID != code.sessionID {
+		t.Fatalf("next exec replaced or failed the logical Code Mode session: err=%v", code.Err())
+	}
+}
+
+func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		input  string
+		method string
+	}{
+		{name: "wait", input: `{"cell_id":"cell"}`, method: "session/wait"},
+		{name: "terminate", input: `{"cell_id":"cell","terminate":true}`, method: "session/terminate"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "wait", CallID: "wait-call", Input: test.input}
+			store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
+			cell := code.cellHandle("cell")
+			if err := store.CellResult(t.Context(), owner, cell, "live"); err != nil {
+				t.Fatal(err)
+			}
+			result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, test.method, func(id int64) {
+				if err := peer.send(codeFrame{
+					Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host operation returned an error"},
+				}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			if advanceErr != nil || result != "cell" {
+				t.Fatalf("%s error advance=(%q, %v), want model-visible tool output", test.name, result, advanceErr)
+			}
+			conversation, err := store.Read(t.Context(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := conversation.Items[len(conversation.Items)-1]
+			if !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host operation returned an error" {
+				t.Fatalf("%s error output=%+v", test.name, output)
+			}
+			assertToolResultSucceeded(t, store, owner, call.CallID, false)
+			state, err := store.ExecutionState(t.Context(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(state.Cells) != 1 || state.Cells[0].ID != cell || state.Cells[0].Status != "live" {
+				t.Fatalf("%s error changed cell lifecycle: %+v", test.name, state.Cells)
+			}
+			if code.Err() != nil {
+				t.Fatalf("%s error failed its JavaScript binding: %v", test.name, code.Err())
+			}
+			var resultRaw []byte
+			if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent
+				WHERE conversation_id=$1 AND request->>'kind'='cell'`, owner.ConversationID).Scan(&resultRaw); err != nil {
+				t.Fatal(err)
+			}
+			var intentResult map[string]any
+			if err := json.Unmarshal(resultRaw, &intentResult); err != nil {
+				t.Fatal(err)
+			}
+			hostResponse, ok := intentResult["code_mode_host_response"].(map[string]any)
+			if !ok || hostResponse["method"] != test.method || hostResponse["phase"] != string(codeOperationResponsePhase) {
+				t.Fatalf("%s response evidence=%+v", test.name, intentResult["code_mode_host_response"])
+			}
+			if _, claimedStarted := hostResponse["execution_started"]; claimedStarted || intentResult["status"] == "terminated" {
+				t.Fatalf("%s error made an unverified lifecycle claim: %+v", test.name, intentResult)
+			}
+		})
+	}
+}
+
+func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		respond func(*testing.T, *fakeCodeModePeer, int64, Owner, *Store)
+	}{
+		{
+			name: "transport loss",
+			respond: func(t *testing.T, peer *fakeCodeModePeer, _ int64, _ Owner, _ *Store) {
+				peer.crash()
+			},
+		},
+		{
+			name: "unknown response status",
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "unexpected"}}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "empty host error message",
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error"}}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "initial response host error after execution started",
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+				started, err := json.Marshal(codeHostResponse{Type: "execution/started", CellID: "started-cell"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: started}}); err != nil {
+					t.Fatal(err)
+				}
+				if err := peer.send(codeFrame{Type: codeInitialResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "store journal failure",
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, owner Owner, store *Store) {
+				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET owner=$2 WHERE id=$1`, owner.ConversationID, "00000000-0000-4000-8000-000000000001"); err != nil {
+					t.Fatal(err)
+				}
+				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "exec-call", Input: `{"code":"text(1)"}`}
+			store, owner, runtime, live, _, peer := newCodeModeAdvanceFixture(t, call)
+			advanceDone := make(chan error, 1)
+			go func() {
+				_, err := runtime.advance(t.Context(), owner, live, nil, &Session{Model: "fixture-model"})
+				advanceDone <- err
+			}()
+			request := receiveCodeOperationRequest(t, peer, live.code.sessionID, "session/execute")
+			test.respond(t, peer, request.id, owner, store)
+			select {
+			case err := <-advanceDone:
+				if err == nil {
+					t.Fatal("operational host or journal failure became a tool output")
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("advance did not return after the operational failure")
+			}
+			var pending []byte
+			if err := store.DB().QueryRowContext(t.Context(), `SELECT pending FROM sampler_conversation WHERE id=$1`, owner.ConversationID).Scan(&pending); err != nil {
+				t.Fatal(err)
+			}
+			if len(pending) == 0 || string(pending) == "null" {
+				t.Fatalf("operational failure cleared the cell intent: %s", pending)
+			}
+		})
+	}
+}
+
+func assertToolResultSucceeded(t *testing.T, store *Store, owner Owner, callID string, want bool) {
+	t.Helper()
+	var sessionID string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT id FROM sampler_session WHERE conversation_id=$1`, owner.ConversationID).Scan(&sessionID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.Events(t.Context(), sessionID, 0, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		completed := entry.GetEvent().GetItemCompleted()
+		if completed == nil || completed.GetItemId() != callID {
+			continue
+		}
+		tool, ok := completed.GetOutcome().(*eventpb.ItemCompleted_Tool)
+		if !ok || tool.Tool.GetSucceeded() != want {
+			t.Fatalf("tool result for %q = %+v, want succeeded=%t", callID, completed.GetOutcome(), want)
+		}
+		return
+	}
+	t.Fatalf("no completed tool result for %q", callID)
+}
+
+func newCodeModeAdvanceFixture(t *testing.T, call ResponsesToolCall) (*Store, Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
+	t.Helper()
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, peers := newFakeCodeModeManager(t)
+	manager.store = store
+	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if call.Name == "wait" {
+		var input struct {
+			CellID    string `json:"cell_id"`
+			Terminate bool   `json:"terminate"`
+		}
+		if err := json.Unmarshal([]byte(call.Input), &input); err != nil {
+			t.Fatal(err)
+		}
+		input.CellID = code.cellHandle("cell")
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		call.Input = string(encoded)
+	}
+	appendModelToolCall(t, store, owner, call)
+	execEncoding := ExecEncodingJSON
+	if call.Name == "wait" {
+		execEncoding = ExecEncodingFreeform
+	}
+	settings := Settings{
+		Models: map[string]ModelConfig{
+			"fixture-model": {
+				API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite},
+				ExecEncoding: execEncoding, ReasoningEfforts: []string{""},
+			},
+		},
+		RPCTimeoutSeconds: 2,
+	}
+	runtime := NewRuntime(store, settings)
+	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
+}
+
+func appendModelToolCall(t *testing.T, store *Store, owner Owner, call ResponsesToolCall) {
+	t.Helper()
+	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "response_id": call.CallID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := ResponsesItem{Type: call.Type, CallID: call.CallID, Name: call.Name}
+	if call.Type == ResponsesItemFunctionCall {
+		item.Arguments = call.Input
+	} else {
+		item.Input = call.Input
+	}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []ResponsesItem{item}}, []ResponsesItem{item}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func advanceWithFakeOperation(
+	t *testing.T,
+	runtime *Runtime,
+	live *liveHost,
+	code *CodeMode,
+	peer *fakeCodeModePeer,
+	wantMethod string,
+	respond func(int64),
+) (string, error) {
+	t.Helper()
+	done := make(chan struct {
+		result string
+		err    error
+	}, 1)
+	go func() {
+		result, err := runtime.advance(t.Context(), code.owner, live, nil, &Session{Model: "fixture-model"})
+		done <- struct {
+			result string
+			err    error
+		}{result: result, err: err}
+	}()
+	request := receiveCodeOperationRequest(t, peer, code.sessionID, wantMethod)
+	respond(request.id)
+	select {
+	case result := <-done:
+		return result.result, result.err
+	case <-time.After(3 * time.Second):
+		t.Fatal("advance did not return after the host response")
+		return "", nil
+	}
+}
+
+type fakeCodeOperationRequest struct {
+	id        int64
+	method    string
+	sessionID string
+}
+
+func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID, method string) fakeCodeOperationRequest {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
 	for {
@@ -464,14 +829,19 @@ func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID str
 			if err := decodeProtocolObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Method == "session/wait" && request.SessionID == sessionID {
-				return envelope.ID
+			if request.Method == method && request.SessionID == sessionID {
+				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID}
 			}
 		case <-deadline:
-			t.Fatalf("session %q did not issue its operation request", sessionID)
-			return 0
+			t.Fatalf("session %q did not issue %s", sessionID, method)
+			return fakeCodeOperationRequest{}
 		}
 	}
+}
+
+func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID string) int64 {
+	t.Helper()
+	return receiveCodeOperationRequest(t, peer, sessionID, "session/wait").id
 }
 
 func assertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {

@@ -665,6 +665,19 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		content, err := live.code.Execute(ctx, *call)
 		if err != nil {
+			var hostError *codeModeHostResponseError
+			if errors.As(err, &hostError) && hostError.phase == codeOperationResponsePhase {
+				content = []ResponsesContentPart{{Type: "input_text", Text: hostError.message}}
+				item := call.OutputItem(content)
+				result := map[string]any{
+					"type": string(item.Type), "call_id": call.CallID, "output": content, "success": false,
+					"code_mode_host_response": hostError.evidence(),
+				}
+				if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
+					return "", err
+				}
+				return "cell", nil
+			}
 			var known *KnownFailureError
 			if errors.As(err, &known) {
 				if rejectErr := r.store.Reject(ctx, owner, intentID, known); rejectErr != nil {

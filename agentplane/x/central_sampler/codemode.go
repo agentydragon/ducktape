@@ -45,6 +45,36 @@ type codeJournalEvent struct {
 	done        chan error
 }
 
+type codeModeResponsePhase string
+
+const (
+	codeOperationResponsePhase codeModeResponsePhase = "operation_response"
+	codeInitialResponsePhase   codeModeResponsePhase = "execute_initial_response"
+)
+
+type codeModeHostResponseError struct {
+	method  string
+	phase   codeModeResponsePhase
+	message string
+}
+
+func (e *codeModeHostResponseError) Error() string {
+	return fmt.Sprintf("code-mode operation failed: %s", e.message)
+}
+
+func (e *codeModeHostResponseError) evidence() map[string]any {
+	evidence := map[string]any{
+		"status":  "error",
+		"method":  e.method,
+		"phase":   string(e.phase),
+		"message": e.message,
+	}
+	if e.method == "session/execute" && e.phase == codeOperationResponsePhase {
+		evidence["execution_started"] = false
+	}
+	return evidence
+}
+
 func newCodeModeBinding(parent context.Context, manager *CodeModeHost, host *Host, store *Store, owner Owner, executor *Executor, sessionID string) *CodeMode {
 	bindingCtx, cancel := context.WithCancel(parent)
 	runtime := &CodeMode{
@@ -319,7 +349,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 		}
 		return nil, err
 	}
-	value, err := validateCodeModeResult(resultFrame)
+	value, err := validateCodeModeResult(resultFrame, request.method(), codeOperationResponsePhase)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +377,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 		}
 		return nil, err
 	}
-	return validateCodeModeResult(initialFrame)
+	return validateCodeModeResult(initialFrame, request.method(), codeInitialResponsePhase)
 }
 
 // setForeground marks request id as the observation the model waits on and returns its reset.
@@ -424,15 +454,22 @@ func waitJournal(ctx context.Context, journaled <-chan error) error {
 	}
 }
 
-func validateCodeModeResult(frame *codeWireResult) (json.RawMessage, error) {
-	if frame.Status != "ok" {
-		return nil, fmt.Errorf("code-mode operation failed: %s", frame.Message)
+func validateCodeModeResult(frame *codeWireResult, method string, phase codeModeResponsePhase) (json.RawMessage, error) {
+	switch frame.Status {
+	case "error":
+		if frame.Message == "" {
+			return nil, errors.New("code-mode error response has no message")
+		}
+		return nil, &codeModeHostResponseError{method: method, phase: phase, message: frame.Message}
+	case "ok":
+		var object struct{}
+		if err := decodeProtocolObject(frame.Value, &object); err != nil {
+			return nil, err
+		}
+		return frame.Value, nil
+	default:
+		return nil, fmt.Errorf("unsupported code-mode response status %q", frame.Status)
 	}
-	var object struct{}
-	if err := decodeProtocolObject(frame.Value, &object); err != nil {
-		return nil, err
-	}
-	return frame.Value, nil
 }
 
 func (r *CodeMode) Execute(ctx context.Context, call ResponsesToolCall) ([]ResponsesContentPart, error) {

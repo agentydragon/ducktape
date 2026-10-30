@@ -133,6 +133,10 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, owner
 	}
 	if kind == "cell" && phase == "result" && isMap && (payloadMap["type"] == string(ResponsesItemCustomToolOutput) || payloadMap["type"] == string(ResponsesItemFunctionOutput)) {
 		callID, _ := payloadMap["call_id"].(string)
+		succeeded := true
+		if success, ok := payloadMap["success"].(bool); ok {
+			succeeded = success
+		}
 		output, err := json.Marshal(payloadMap["output"])
 		if err != nil {
 			return nil, err
@@ -140,7 +144,7 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, owner
 		_, err = appendEvent(ctx, tx, session, &eventpb.Event{
 			SourceSequences: sources,
 			Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
-				ItemId: callID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: DisplayText(string(output)), Succeeded: true}},
+				ItemId: callID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: DisplayText(string(output)), Succeeded: succeeded}},
 			}},
 		})
 		if err != nil {

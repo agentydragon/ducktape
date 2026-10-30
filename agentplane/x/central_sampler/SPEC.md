@@ -170,6 +170,13 @@ the command and turn fail without blocking the Session; subsequent input may con
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 The original driver error is retained in command and turn failure reasons and, for blocked sessions,
 in `GetSession.blocked_reason`.
+An explicit Code Mode `operation/response` with `status: "error"` is returned to the model as a failed
+tool result with the host message and method/phase evidence. For `session/execute`, the host's operation
+error is emitted before it starts a cell, so the result records that no execution started; errors in the
+later `execute/initialResponse` phase remain operational. An explicit wait or terminate error does not
+establish whether the request had effects: it leaves the observed cell state unchanged and reports neither
+a successful observation nor a confirmed termination. Missing replies, transport loss, malformed or
+unknown response statuses, missing error messages, and journal/store failures remain operational failures.
 Unresolved transport loss, streams without a terminal response and uncertain execution remain
 blocking failures. A transport failure in a nested executor call is instead returned as a rejected
 JavaScript tool promise with the exec-server method, intent ID and process ID where available. Its
