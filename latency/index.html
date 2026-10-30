@@ -1,15 +1,3150 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ducktape CI latency · 30 October 2026</title><style>
-:root{color-scheme:light;--ink:#192b3b;--muted:#4a6274;--line:#d5dfe5;--blue:#225b83;--pale:#eef5f8}*{box-sizing:border-box}body{margin:0;background:#fafcfd;color:var(--ink);font:16px/1.55 system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:36px 26px 70px}h1{font-size:clamp(27px,4vw,42px);line-height:1.15;max-width:960px;margin:.3em 0 .5em}h2{font-size:25px;margin-top:42px}h3{font-size:19px}a{color:#165b8c;text-underline-offset:3px}.eyebrow{color:var(--muted);font-weight:650;letter-spacing:.04em;font-size:13px}.lead{font-size:19px;max-width:960px}.note{color:var(--muted);font-size:14px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:25px 0}.card{padding:18px;border:1px solid var(--line);border-radius:10px;background:white}.card strong{display:block;font-size:27px;color:var(--blue)}.card span{font-size:14px}nav{display:flex;gap:18px;flex-wrap:wrap;margin:24px 0}section{scroll-margin-top:20px}.scroll{overflow:auto;border:1px solid var(--line);border-radius:8px;margin:15px 0}table{width:100%;border-collapse:collapse;font-size:14px;background:white}th,td{padding:12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}thead th{background:var(--pale)}tbody tr:last-child>*{border-bottom:0}.rank th{min-width:180px}.rank td{min-width:210px}code{background:#edf1f4;padding:1px 4px;border-radius:3px;overflow-wrap:anywhere;font-size:.9em}.callout{border-left:4px solid var(--blue);background:var(--pale);padding:14px 18px;margin:22px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:650}.timeline{display:grid;gap:10px;margin:16px 0}.track{display:grid;grid-template-columns:170px 1fr;align-items:center;gap:10px;font-size:14px}.bar{height:30px;background:var(--pale);border-radius:4px;overflow:hidden}.bar span{display:block;height:100%;background:#26688f;color:white;padding:3px 8px;min-width:75px}.form{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px;background:var(--pale);border-radius:8px}select,input{max-width:100%;font:inherit}output{font-weight:650}.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}footer{border-top:1px solid var(--line);margin-top:40px;padding-top:18px}@media(max-width:650px){main{padding:24px 17px 45px}.cards,.two{grid-template-columns:1fr}.cards{gap:9px}.card{padding:13px 16px}.track{grid-template-columns:100px 1fr}h2{font-size:22px}th,td{padding:10px}}
-@media(max-width:650px){.rank thead{display:none}.rank tbody,.rank tr,.rank th,.rank td{display:block;width:auto;min-width:0}.rank tr{border-bottom:2px solid var(--line)}.rank th{background:var(--pale)}.rank td{border:0;padding-top:4px}.rank td:nth-child(2)::before{content:"Expected effect";display:block;font-weight:700;margin-top:5px}.rank td:nth-child(3)::before{content:"Effort and validation";display:block;font-weight:700;margin-top:5px}}
-</style></head><body><main><header><div class="eyebrow">DUCKTAPE · CI LATENCY · 30 OCTOBER 2026</div><h1>The previous top fixes have landed. The next practical wins are tens of seconds.</h1><p class="lead">The symbol-stripped debundle test CLI has now merged. Avoiding repeated already race-enabled Go tests remains a small next candidate. Merge-base hash caching stays deferred after a matched experiment: only a small ideal-hit saving, with fleet net benefit unmeasured. System tests now need balanced improvements: Pod is longer than VM in the latest full CI run.</p><p class="note">Fresh run arrivals: <strong>29 October 20:50:01 → 30 October 19:30 UTC</strong> (22 h 40 m). Inspected devel <a href="https://github.com/agentydragon/ducktape/commit/9d2c145c9c28e36a015d4f250e90b0237dc20c76"><code>9d2c145c9c</code></a>. <a href="https://github.com/agentydragon/ducktape/blob/47abf0186a3f5c78e60cc9759345e77c95a936ba/latency/index.html">Previous reviewed report</a> · <a href="evidence.json">Measurements</a> · <a href="manifest.json">Source and window</a>.</p><div class="cards"><div class="card"><strong>189 / 792 s</strong><span>Required-check feedback proxy p50 / p90; 148 green same-repository heads. Historical comparison: 381 / 963 s, n=138.</span></div><div class="card"><strong>65 → 33 s</strong><span>Snapshot test process in a same-source, same-worker symbol-stripping pair. All six cases passed; fleet saving unmeasured.</span></div><div class="card"><strong>2 / 23 s</strong><span>PR Bazel-job queue p50 / p90. More GitHub runner capacity has little median headroom.</span></div></div><nav aria-label="Report sections"><a href="#recommend">Decisions</a><a href="#experience">PR feedback</a><a href="#paths">Critical paths</a><a href="#experiment">Experiment</a><a href="#landed">What landed</a><a href="#continuity">Prior work</a><a href="#method">Scope</a></nav></header>
-<section id="recommend"><h2>Recommended next interventions</h2><p>The symbol-stripping change has landed; the Go change remains a proposal. Estimates apply only when the removed work executes on the last required gate. Do not add them across workload classes. The ranges describe plausible engineering outcomes; they are not statistical confidence intervals.</p><div class="scroll"><table class="rank"><thead><tr><th>Priority / concrete change</th><th>Expected feedback effect</th><th>Effort, risk and validation</th></tr></thead><tbody>
-<tr><th>Landed · Symbol-stripped debundle CLI in e2e test runfiles</th><td><strong>About 20–35 s on debundle PRs that execute the snapshot test</strong> (roughly 6–11% of this class’s 314 s median). Zero when it is cached or another path wins. Subjective 90% range: 0–45 s. The bounded pair halves this test’s process and CPU cost; its next test competitor is ~29–31 s.</td><td><a href="https://github.com/agentydragon/ducktape/pull/13066">PR #13066 merged after this census window</a>, with required checks green. The change adds a test variant in <code>devinfra/js/debundle/BUILD.bazel</code> and updates e2e support’s binary selection. Keep the normal CLI’s symbols for debugging; use <code>-Cstrip=symbols</code> only on the test variant. All six snapshot relocation, verification and independent-edit cases passed. Full PR CI passed; its fleet feedback effect remains unmeasured.</td></tr>
-
-<tr><th>1 · Remove <code>race="on"</code> labels from the second Go sweep</th><td><strong>0–20 s on PRs whose Go scope is already entirely race-enabled</strong>; little benefit to debundle-only PRs. Mainline’s race invocation is 14.2 / 17.0 s p50/p90, so the historical 81–170 s promise no longer applies. Other Go labels still require the second sweep.</td><td>Small change to <code>_race_targets()</code> in <code>devinfra/ci/bazel_ci.py</code>: subtract explicitly race-enabled labels, and skip the invocation only if none remain. Runner and service rules already opt in individually. Compare selected labels and uncached race coverage; reject if aspect/configuration differences remove required checks. A source-level opportunity, not a measured treatment.</td></tr>
-</tbody></table></div><p><strong>Deferred: cross-run merge-base hash caching.</strong> The <a href="https://github.com/agentydragon/ducktape/blob/783d6b76b7173a10fb63b2392be7149599676c74/index.html">5 October investigation</a> already deferred it: the entire warm selection sequence (both revisions, checkout and target queries) took 16.46 s, and ten sampled jobs used eight distinct bases. No cross-run cache was implemented or benchmarked. The base query also warms shared Bazel/Skyframe state for the candidate and later commands; skipping it can move that work rather than remove it. The withdrawn 5–15 s saving was not supported by a matched comparison. The <a href="https://app.buildbuddy.io/invocation/69c90c0d-da56-4a01-a47e-c60b7e229d57">30 October matched full-driver experiment</a> now measures an ideal local hit: retained-JVM medians 17.616 → 12.219 s (four observations each; 5.397 s saving), and a later fresh-JVM pair 64.381 → 60.536 s (3.845 s saving). All 12 runs succeeded with identical 176-target selection and test query. The initial normal run fetched Rust tooling and is a warm-up confound, not a cache saving. The local-hit path excludes producer, storage and lookup costs; current hit frequency and fleet net benefit remain unmeasured. Keep this deferred unless the graph, runner reuse or transport changes and a matched net-benefit comparison justifies it. <a href="https://github.com/agentydragon/ducktape/pull/13078">The source comment and investigation record</a> preserve these revisit conditions.</p><div class="callout"><strong>For a larger system-test improvement, treat Pod, VM and MCP together.</strong> In the latest full CI case they finish in 458 / 434 / 407 s. Even eliminating 100 s from VM alone saves <strong>zero</strong> on that run’s test gate. A 100 s Pod cut alone reaches VM after just 24 s. Further cross-scenario concurrency needs explicit per-case clients/model routing and an exclusive phase for storage; it is not a ready blanket-sharding recommendation.</div><p><strong>No new runner purchase or retry-policy change is recommended.</strong> Retain one remote retry. One new-window PR log still loses a result during Firecracker pause with that setting; pass its execution evidence to BuildBuddy if escalation is chosen. Do not disable snapshots fleet-wide: that trades away measured warm-import reuse. No reliable time-saving estimate is available for a provider-side repair.</p></section>
-<section id="experience"><h2>What recent PR heads experienced</h2><p>292 distinct head SHAs appeared in direct PR core-workflow events. Of these, 90 use the separate trusted-fork route and are deliberately <em>unlinked</em> here; its base/synthetic run SHA must not be treated as the fork head. The other 202 heads include 148 green proxies, 31 failures and 23 cancelled/superseded heads. Start is the earliest core workflow creation for that SHA; stop is the last required-job completion when all three latest attempts succeeded. This is a survivor proxy, not push-to-green or full auto-merge eligibility.</p><div class="scroll"><table><thead><tr><th>Path class</th><th>Heads</th><th>Green</th><th>Feedback p50 / p90, s</th><th>Other outcomes</th></tr></thead><tbody><tr><th>Agentplane backend</th><td>15</td><td>12</td><td>685.0 / 822.0</td><td>fork-unlinked: 1, failed: 2</td></tr><tr><th>build/CI/tooling</th><td>49</td><td>27</td><td>147.0 / 705.0</td><td>fork-unlinked: 22</td></tr><tr><th>cdk8s</th><td>17</td><td>15</td><td>165.0 / 832.0</td><td>fork-unlinked: 2</td></tr><tr><th>debundle</th><td>26</td><td>25</td><td>314.0 / 399.0</td><td>fork-unlinked: 1</td></tr><tr><th>docs-only</th><td>21</td><td>18</td><td>90.0 / 189.0</td><td>fork-unlinked: 3</td></tr><tr><th>frontend</th><td>2</td><td>1</td><td>133.0 / 133.0</td><td>failed: 1</td></tr><tr><th>other code/config</th><td>9</td><td>9</td><td>104.0 / 140.0</td><td>—</td></tr><tr><th>system/runtime</th><td>30</td><td>16</td><td>727.0 / 1132.0</td><td>fork-unlinked: 13, failed: 1</td></tr><tr><th>unknown</th><td>123</td><td>25</td><td>138.0 / 413.0</td><td>cancelled/superseded: 23, failed: 27, fork-unlinked: 48</td></tr></tbody></table></div><p class="note">Mixed changes use first match: docs → system/runtime → cdk8s → debundle → build/CI → frontend → backend → other. “System/runtime” includes runner/controller code, so it differs from the prior report’s narrower system-test class. Debundle is now separated from build/CI. Unknown paths are retained, not silently discarded. These descriptive populations cannot establish a causal speedup.</p><p>Bazel finishes last on <strong>118 / 148</strong> green heads; artifacts on 26, pre-commit on 4. Cutting artifact checks by 30 s saves a conditional mean of only 2.7 s/head; pre-commit by 30 s saves 0.2 s/head.</p><details><summary>Explore the observed headroom of a required gate</summary><p class="note">Holds all other completion clocks fixed. This is an upper-bound sensitivity, not an implementation effect. Only heads containing the changed work can realize a cut.</p><div class="form"><label>Gate <select id="gate"><option value="bazel-ci / Test &amp; Build">Bazel</option><option value="Build artifacts + imports check">Artifacts</option><option value="Pre-commit checks">Pre-commit</option></select></label><label>Reduction <input id="cut" type="range" min="0" max="180" step="5" value="30"> <output id="cutValue">30 s</output></label><output id="saving" aria-live="polite"></output></div></details><div class="scroll"><table><thead><tr><th>Bazel job event</th><th>Attempts</th><th>Outcomes</th><th>Queue p50 / p90, s</th><th>Runtime p50 / p90, s</th></tr></thead><tbody><tr><th>pull_request</th><td>208</td><td>{&#x27;failure&#x27;: 35, &#x27;success&#x27;: 148, &#x27;cancelled&#x27;: 25}</td><td>2 / 23</td><td>175 / 789</td></tr><tr><th>push</th><td>182</td><td>{&#x27;cancelled&#x27;: 49, &#x27;success&#x27;: 125, &#x27;failure&#x27;: 8}</td><td>17 / 193</td><td>166 / 602</td></tr><tr><th>pull_request_target</th><td>89</td><td>{&#x27;success&#x27;: 59, &#x27;failure&#x27;: 13, &#x27;cancelled&#x27;: 17}</td><td>2 / 38</td><td>287 / 899</td></tr></tbody></table></div><p class="note">Runtime/queue include only completed jobs assigned a positive runner ID; invalid negative queue clocks are excluded. Cancellations are terminal without a verdict. Fork job times are observable; exact-head readiness and agent receipt are not.</p></section>
-<section id="paths"><h2>Where the remaining time goes</h2><div class="scroll"><table><thead><tr><th>Successful linked jobs</th><th>n</th><th>Test step → inner test creation p50 / p90, s</th><th>Inner test p50 / p90, s</th><th>Inner test end → step end p50 / p90, s</th></tr></thead><tbody><tr><th>pull_request</th><td>108</td><td>53.9 / 70.6</td><td>172.2 / 662.3</td><td>8.2 / 89.9</td></tr><tr><th>push</th><td>122</td><td>25.2 / 40.2</td><td>69.1 / 427.0</td><td>45.3 / 52.2</td></tr><tr><th>pull_request_target</th><td>47</td><td>48.5 / 74.5</td><td>255.4 / 820.7</td><td>38.1 / 105.4</td></tr></tbody></table></div><p>PR selection adds ~29 s at the median relative to pushes, but that difference contains more than just the reusable base hashes. The median source-matched debundle case exposes two base query invocations of 2.1 and 2.7 s and two head queries of 2.2 and 2.5 s, plus Java hashing, checkout and other selection calls. Its selection script begins at 04:11:15; the inner test starts at 04:11:47. Buffered log arrival timestamps are <em>not</em> per-command clocks. Those query timings and the PR/push gap do not measure a cache intervention. Base and candidate share in-memory state; a cache-hit path must still pay any candidate warm-up that the base query previously supplied. Neither the historical full-selection ceiling nor these current per-command durations establish the marginal saving.</p><h3>Three exact linked cases</h3><div class="scroll"><table><thead><tr><th>Case / source</th><th>Observed serial timeline</th><th>Confirmed critical path</th></tr></thead><tbody><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/41001431442/job/123886482043">Typical debundle PR job</a><br>Head <code>d86495315586</code>; tested merge <code>80bc626bfc1f</code></td><td>Workflow 04:10:42 → job 04:10:43–04:15:51. Job setup precedes test step 04:10:55; ~52.1 s to inner test, 236.5 s test, 6.4 s tail. Whole job 308 s; workflow→job end 309 s.</td><td><a href="https://app.buildbuddy.io/invocation/41503584-4cb7-549c-a0f6-49fe33b3d1b7">41503584</a> · 182.44 s path: 63.75 s snapshot action behind ~118 s compile chain, including 21.41 s CLI link and 17.59 s analysis metadata compile. Remote queue 0.40%.</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/41094952603/job/124198245900">Fast debundle counterexample</a><br>Head <code>96344a244b9c</code>; tested <code>fbe439192775</code></td><td>52.5 s pre-test, 97.2 s inner test, 6.3 s tail; whole job 186 s.</td><td><a href="https://app.buildbuddy.io/invocation/aa204367-92b3-58d2-a518-b58397231066">aa204367</a> · 78.97 s path, dominated by 78.73 s compiling <code>syntactic_holes_test</code>; no originating test process. Stripping snapshot bytes saves nothing here.</td></tr><tr><td><a href="https://github.com/agentydragon/ducktape/actions/runs/41114840856/job/124266248144">Latest full devel test</a><br>Source <code>341ad2b2b8b7</code></td><td>Workflow 19:23:18; test step→inner test 26.6 s; inner test 508.3 s; 47.1 s subsequent build/race/finalization; job 618 s. Release/image jobs are separate.</td><td><a href="https://app.buildbuddy.io/invocation/392ed617-a750-527d-993a-6db292b2257c">392ed617</a> · 462.31 s path, including a 459.45 s Pod action (~458 s process). Remote queue 0.01%; the rest is process work, not executor scheduling.</td></tr></tbody></table></div><p class="note">A separate slow debundle case <a href="https://app.buildbuddy.io/invocation/35f0e416-1f16-5716-a39f-84f9c9b057a3">35f0e416</a> has a 216.68 s path and 67.41 s snapshot action. Source <code>4eb980116ee2</code>. Typical/slow cases were selected from resolved debundle heads by inner-invocation duration; the fast case was retained as a counterexample. “Median” here refers to that selected class, not all PRs.</p><h3>Latest full CI: longest fresh suites</h3><div class="timeline" role="img" aria-label="Pod 458 seconds, VM 434 seconds, MCP 407 seconds, Dispatcher 180 seconds"><div class="track"><span>Pod</span><div class="bar"><span style="width:100%">458 s</span></div></div><div class="track"><span>VM</span><div class="bar"><span style="width:94.8%">434 s</span></div></div><div class="track"><span>MCP</span><div class="bar"><span style="width:88.9%">407 s</span></div></div><div class="track"><span>Dispatcher</span><div class="bar"><span style="width:39.3%">180 s</span></div></div></div><p>The Pod suite has 13 sequential pytest cases; its first messaging case is 124 s <em>including</em> ~64 s stack startup. MCP’s launcher isolation case is 110 s. VM now runs six independent guests together; startup is ~111 s and its concurrent scenario group ~273 s, with Codex OOM ~252 s through assertions. Fresh Pod launch readiness spans are 8–18 s; 3–13 s is before Pod scheduling, followed by 1–4 s to authenticated connection. The old “15–20 s after credentials” diagnosis is no longer a current fixed-wait conclusion; certificate watches have landed. VM’s 94–115 s readiness remains substantially slower.</p><p>Across 52 recent target-history candidate invocations, GetExecution exposed 20 originating suite processes in eight invocations. Cached histories only located candidates; they did not supply fresh costs. The evidence lists those process, CPU and queue clocks. One 293 s VM process belongs to a failed source run and must not enter a passing-duration comparison. Most candidates reuse results. No fleet-wide causal effect is assigned to six-guest concurrency or imports.</p><details><summary>Runner and remote-compute units</summary><p>Completed core jobs occupied <strong>106.2 runner-hours</strong> in 22.7 hours: mean 4.7 busy, peak 20. At least 18 jobs were busy for 32.4 minutes. This excludes other repositories, noncore workflows, pre-window completed arrivals and still-running intervals; it is a lower bound, not account utilization. Mainline queue also includes its explicit concurrency group.</p><p>Remote process-seconds and CPU-seconds are independent resource measures; neither is added to runner time or gate offsets. In the latest full case the four fresh suites sum to ~1,478 process-seconds while their longest process is 458 s. Pipelining and concurrency can lower wall time while increasing action count or allocated worker size. The six-guest change doubles the VM action’s requested units; similar CPU use is not proof of equal allocated cost.</p></details></section>
-<section id="experiment"><h2>A tested recommendation, with a failed variant retained</h2><p>Hypothesis: repeated snapshot creation/verification hashes and copies the CLI executable, so symbol-table bytes increase e2e cost. <code>cli/snapshot.rs</code> streams SHA-256 during copying and independently verifies the stored engine. The experiment changes only the CLI’s <code>rustc_flags</code>; it keeps all inputs, six tests, integrity checks and relocation assertions. Commands: <code>bbr test //devinfra/js/debundle/e2e:delegation_snapshot_cli_test --nocache_test_results --test_output=errors</code>, on source <code>9d2c145c9c28</code>. Bazel profiles and originating execution metadata provide the clocks; no ad hoc timing code was added.</p><div class="scroll"><table><thead><tr><th>Variant</th><th>Invocation</th><th>Test process, s</th><th>CPU, s</th><th>Remote queue, s</th></tr></thead><tbody><tr><th>baseline</th><td><a href="https://app.buildbuddy.io/invocation/0c7fa8f3-5aea-4b78-8d06-4cca11e53b96">0c7fa8f3</a></td><td>64.93</td><td>209.10</td><td>0.08</td></tr><tr><th>stripped</th><td><a href="https://app.buildbuddy.io/invocation/32582e01-d6bc-4bd9-b207-8fa53512dd94">32582e01</a></td><td>79.13</td><td>247.01</td><td>0.06</td></tr><tr><th>symbols</th><td><a href="https://app.buildbuddy.io/invocation/fe6c385c-7e9b-45f2-98c1-66478e33d225">fe6c385c</a></td><td>32.64</td><td>107.80</td><td>0.06</td></tr><tr><th>baseline-repeat</th><td><a href="https://app.buildbuddy.io/invocation/15ac37fa-f0c4-4781-9e01-f02dbeba69ac">15ac37fa</a></td><td>69.27</td><td>239.10</td><td>0.06</td></tr></tbody></table></div><p>Baseline, debug-only strip and symbol strip used the same executor identity. Debug-only stripping was slower and is rejected. Symbol stripping reduced the process by <strong>32.3 s (49.7%)</strong> and CPU by <strong>101.3 s (48.4%)</strong> in the initial pair; both ran all six cases. Whole inner invocations were 88.94 s and 56.65 s. That is feasibility evidence on one test, not a measured full-PR speedup. Cache state, host load and order remain uncontrolled. The normal-symbol repeat took 69.27 s of test process and 239.10 CPU-s, with all six cases passing again; this supports the direction of the gain while leaving the candidate with only one observation. Profiling symbols would be lost on this variant; preserve the normal executable and profiling path.</p></section>
-<section id="landed"><h2>Remove completed work from the recommendation queue</h2><div class="scroll"><table><thead><tr><th>Prior recommendation</th><th>Current disposition and evidence</th></tr></thead><tbody><tr><th>Restore bounded retries</th><td><a href="https://github.com/agentydragon/ducktape/pull/12896">#12896</a> sets <code>--remote_retries=1</code>. All 129 observed devel test invocations contain this commit: 122 success, 7 source/test failures, zero REMOTE_ERROR. Among PR/fork invocations, three REMOTE_ERROR logs include two stale zero-retry trees (one cancellation) and one pause failure with one retry. The earlier 47/225 figure is historical, with different cancellation/source classifications; no causal percentage is claimed.</td></tr><tr><th>Remove per-launch certificate polling</th><td><a href="https://github.com/agentydragon/ducktape/pull/12901">#12901</a> watches Certificates and their Secrets. Keep authenticated-contact and ownership correctness. Do not continue offering the old 150–210 s MCP estimate as available work.</td></tr><tr><th>Concurrent VM / credential scenarios</th><td><a href="https://github.com/agentydragon/ducktape/pull/12938">#12938</a>, <a href="https://github.com/agentydragon/ducktape/pull/12942">#12942</a>, <a href="https://github.com/agentydragon/ducktape/pull/12972">#12972</a>, <a href="https://github.com/agentydragon/ducktape/pull/12999">#12999</a>, <a href="https://github.com/agentydragon/ducktape/pull/13011">#13011</a> and <a href="https://github.com/agentydragon/ducktape/pull/13031">#13031</a> landed concurrent scenarios, shared stacks, cleanup overlap and prebuilt hwdb. Preserve six distinct guests and shutdown receipts. A documented warm VM action was 417.1 → 325.3 s across different worker shapes; scenario phase 271.0 → 196.3 s. It is not a matched whole-CI treatment.</td></tr><tr><th>Pod and MCP harness overlap</th><td><a href="https://github.com/agentydragon/ducktape/pull/12981">#12981</a> landed. Focused affected-case sums improved 8.7% / 5.2%; most of the larger apparent MCP action improvement came from unequal startup. Framework replacement probes failed fixture-lifetime/Python-compatibility prerequisites; keep current TaskGroups. Further blanket concurrency is not already validated.</td></tr><tr><th>Rust pipelining</th><td><a href="https://github.com/agentydragon/ducktape/pull/12929">#12929</a> landed. Controlled cold builds: 682 → 653 s; first-party path 266 → 251 s, +14% actions. Expected warm debundle gain was revised to ~10–20 s; the old 45–90 s recommendation was overstated. Current profiles contain metadata compiles, confirming the pipeline is used in inspected cases.</td></tr><tr><th>Scale regression off common CI</th><td><a href="https://github.com/agentydragon/ducktape/pull/12934">#12934</a> made the full scale workload manual; retain coverage as an explicit regression workload. Snapshot verification is now the repeat offender in the selected debundle paths.</td></tr><tr><th>Publication gating</th><td><a href="https://github.com/agentydragon/ducktape/pull/12899">#12899</a> and subsequent publication-evidence work landed selective reuse/suppression of already failed tests. Blanket workflow skipping is superseded: unrelated publishable outputs can still need their own checks. Do not report the old 3–4 runner-hour estimate as a measured saving.</td></tr><tr><th>Overlap imports with setup</th><td><a href="https://github.com/agentydragon/ducktape/pull/13049">#13049</a> landed. A fixed-order, same-worker cold-store pair: 424.6 → 408.4 s VM action, stack 181.9 → 166.2 s; six guests/assertions retained. The earlier 44.1 s pair had unequal import work. Retain the conservative 16.2 s observation, not a 30% CI claim.</td></tr><tr><th>Retry/capacity and hash cache</th><td>Provider-side Firecracker repair remains conditional, with one residual pause example. Self-hosted GitHub runners remain low priority. Merge-base hash caching remains unimplemented and deferred; the added 30 October matched experiment measures only a small ideal local-hit saving, while fleet net benefit is unmeasured. The prior explicit deferral is restored.</td></tr></tbody></table></div></section>
-<section id="continuity"><h2>Continuity with the earlier investigation</h2><p>The complete latest HTML and manifest were read, including disclosures and calculator; its substantive JSON findings, three critical-path cases, regression and retry evidence were inspected. The prior 28 October report’s inventory and focused 28 October Rust/browser experiments supplied older context. Historical values retain their original windows. This refresh does not claim a fresh before/after cdk8s deployment comparison.</p><details><summary>Disposition of the remaining tracks and promised follow-ups</summary><div class="scroll"><table><thead><tr><th>Track</th><th>Disposition / next decision</th></tr></thead><tbody><tr><th>Readiness, exporters, guest shutdown, image/MCP reuse</th><td>#12513/#12495/#12496 and #12333/#12498/#12380 stay landed. Earlier detection, cleanup and ~22 s import overlap retain their measured scope. New suite layout supersedes old absolute target rankings. No historical phase saving is counted again.</td></tr><tr><th>Proof once and VM boot</th><td>#12769 is complete; later supervision consolidation moves its assertions into an independent Claude guest boot. Guest hwdb and concurrent six-guest work are measured in their owning debug notes. Domain/runner startup profiling remains a separate lower-priority lead because Pod is now often longer.</td></tr><tr><th>Journal / cancellation invariants</th><td>#12504/#12702/#12703 and diagnostics #12244/#12586 remain. CI-SOAK-2’s seven-day journal horizon is still 4 November 06:19 UTC; this latency-only run does not close it. New cancellation/source errors are not attributed to old journal failures. One retry is adopted; physical hosted-VM shutdown was never proven by producer cancellation.</td></tr><tr><th>Browser shard tradeoff / optimized scale CLI</th><td>Earlier 48-case eight-shard pair saved 603 process-s / 1,281 CPU-s while the longest shard grew 132 → 196 s; keep it a compute-only, unadopted tradeoff. Earlier optimized scale probe 74.0 → 18.7 s is superseded for ordinary CI by moving that scale workload manual. Symbol stripping here is a different, narrower experiment; it does not revive whole-closure opt mode.</td></tr><tr><th>Image reuse / workspace / import experiments</th><td>Keep #11769 recycling key and the historical 198.0 → 11.7 s pair; extra Pod key did not help. Full-tree workspace ~10.18 s remained much smaller than the unreproduced 91 s stall. ctr-local/parallel/no-unpack and prepared Nix check-container rejections stand. Tmpfs VM layers are not adopted: repeat lost an executor and warm benefit is unproved.</td></tr><tr><th>Fixture graph, selection and prior implementations</th><td>API split #11506, renderer variants #11746/#11747, DCR #12601, bridge sharding, PostgreSQL templates, Props prefetch, shallow checkout, warm Bazel, parse-once YAML, Gazelle and marker caches retain their original proofs. Cross-run base-hash caching retains the 5 October deferral (whole warm selection 16.46 s, eight bases in ten jobs); it was wrongly promoted during this refresh without a new matched experiment. New shared-suite selection is coarser: scenario changes rerun a whole suite. Any narrower selector still needs both-revision graph proof and a full fallback.</td></tr><tr><th>Infrastructure and source-only risks</th><td>iptables #12248, wait deadline/replay #12189/#12254, activation #12167 and merge-parent #12270 stay landed. Casino waits, grader debounce and FreeCAD fixed-port leads remain deferred because no fresh evidence makes them the common gate. Account/executor capacity and immutable seeds remain conditional. Identity test #12832 was removed; old rates do not apply to the replacement.</td></tr><tr><th>Agent feedback and monitoring</th><td>Live status #11827/#11851/#11854 and subsequent publication retries stay landed. GitHub server timestamps, API/log availability, webhook delivery, inbox admission and agent receipt remain different clocks. No receipt percentile, monitoring schedule, Mimir metric or Shapley attribution was created. CI-SOAK-1/3/4’s older windows elapsed, but this run does not substitute for their reliability acceptance review.</td></tr></tbody></table></div><p class="note">Pinned details: <a href="https://github.com/agentydragon/ducktape/blob/47abf0186a3f5c78e60cc9759345e77c95a936ba/latency/index.html">29 October</a>, <a href="https://github.com/agentydragon/ducktape/blob/b999a55d98db41feb5d5fcee10cdaea32e289746/latency/index.html">28 October inventory</a>, <a href="https://github.com/agentydragon/ducktape/blob/cf412e5155c3d25368a708cebcf9300347555466/latency/index.html">focused Rust/browser experiments</a>. Owning current source notes: <a href="https://github.com/agentydragon/ducktape/blob/9d2c145c9c28e36a015d4f250e90b0237dc20c76/agentplane/system_tests/k3s/debug/stack_timings.md">suite consolidation</a>, <a href="https://github.com/agentydragon/ducktape/blob/9d2c145c9c28e36a015d4f250e90b0237dc20c76/agentplane/system_tests/debug/vm_suite_concurrency.md">six guests / tmpfs rejection</a>, <a href="https://github.com/agentydragon/ducktape/blob/9d2c145c9c28e36a015d4f250e90b0237dc20c76/agentplane/system_tests/k3s/debug/import_overlap.md">import pipeline</a>, <a href="https://github.com/agentydragon/ducktape/blob/9d2c145c9c28e36a015d4f250e90b0237dc20c76/devinfra/debug/2026_10_29_rust_pipelined_compilation.md">Rust experiment</a>.</p></details></section>
-<section id="method"><h2>Policy, evidence and limits</h2><p>Current devel rules require <code>Build artifacts + imports check</code>, <code>Pre-commit checks</code> and <code>bazel-ci / Test &amp; Build</code>. Zero review approvals are required, with extra approval for unattributed changes; linear history applies and strict up-to-date checking is off. Draft/conflict/eligibility history is unavailable. CodeQL default setup remains not configured; scheduled CodeQL is separate. No workflow, ruleset or scanning policy was changed.</p><p>4,684 workflow runs arrived in the fixed window; the collection adds 20 older unfinished records. Four core workflows’ jobs are paginated across all attempts; 5,661 job rows include pre-window active runs. Collection began 19:34 UTC and finished 19:41:54 UTC, with two resumptions after transient API failures. Successfully saved pages were retained. It is a sweep, not an atomic state. The stock <code>evidence.sh</code> recipes ran on this snapshot. Job outcome summaries use run arrivals in the fixed window. Completed-job occupancy clips actual runner intervals to it.</p><p>The longer baseline consists of the reviewed adjacent 27–28 and 28–29 October snapshots; only 29–30 October is freshly collected here. Workload mix and classes changed, so 381 → 189 s same-repository median feedback is descriptive, not the sum of optimization effects. Synthetic PR merge objects often no longer exist locally; source-presence checks are reported as unavailable rather than inferred from time. Effective retry flags were checked in the three error logs; mainline source ancestry is verified.</p><p>GitHub resolves timestamps to one second; cross-host skew is uncalibrated. Nearest-rank percentiles throughout. Exact push clocks, full auto-merge eligibility, first log/API availability and webhook/inbox/agent receipt are unavailable; no p50/p90 is fabricated for them. The report publishes reviewed aggregates, source SHAs, selected execution clocks and public links. Raw logs, payloads, worker identities and profiles remain local. Attribution: not collected.</p></section><footer><p><a href="evidence.json">Reviewed evidence</a> · <a href="manifest.json">Manifest</a> · <a href="../">CI reports</a> · <a href="../reliability/">Reliability snapshot (independent window)</a></p><p class="note">Standalone HTML with no external assets. This proposed snapshot updates only latency/. GitHub Pages at <a href="https://agentydragon.github.io/ducktape/latency/">the published report</a> redeploys after the ci-reports PR merges.</p></footer></main><script type="application/json" id="heads">[{"id":"06338afdf9d61eff443ea368da8805ad6b75ae00","class":"docs-only","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":84.0}},{"id":"08eb66546cadb3409f5723c1ac44886e61270871","class":"system/runtime","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":667.0}},{"id":"095ac3e4b57d9ca3d5ea3aa6685eb1645b9fe624","class":"cdk8s","gates":{"Build artifacts + imports check":80.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":742.0}},{"id":"0b194a1f6a8782ab277b9b75d65eee07881e3d63","class":"debundle","gates":{"Build artifacts + imports check":108.0,"Pre-commit checks":121.0,"bazel-ci / Test & Build":425.0}},{"id":"0dd6d803a20776eda994321b2693f1baf25d2698","class":"unknown","gates":{"Build artifacts + imports check":94.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":171.0}},{"id":"0ee5ce86caf6eee0df4a402a6df45e7b7005e1d0","class":"Agentplane backend","gates":{"Build artifacts + imports check":88.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":455.0}},{"id":"11ecf1f145d41a2482376fc17a4c37aaefa86021","class":"unknown","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":336.0}},{"id":"1321d7a9fd94feb92ef857b09dc0c19f055ee722","class":"docs-only","gates":{"Build artifacts + imports check":80.0,"Pre-commit checks":87.0,"bazel-ci / Test & Build":160.0}},{"id":"1549556361a5807c29fe8bfa4350489462919d04","class":"frontend","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":73.0,"bazel-ci / Test & Build":133.0}},{"id":"16a8a3df9c00e37230bbb26a9a9c6d37f05b8cb5","class":"system/runtime","gates":{"Build artifacts + imports check":81.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":1056.0}},{"id":"16c42fb4be2b32eb98683ccee303e6c903ae79ee","class":"debundle","gates":{"Build artifacts + imports check":75.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":392.0}},{"id":"17393bab75a37fe36f4412f9e8b9a90472b93068","class":"cdk8s","gates":{"Build artifacts + imports check":93.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":1346.0}},{"id":"18a30f742c3568bd30c0f3465aacf74b778e854c","class":"build/CI/tooling","gates":{"Build artifacts + imports check":165.0,"Pre-commit checks":167.0,"bazel-ci / Test & Build":140.0}},{"id":"1ab27cc436b1b35f3c9de5d3e4d898990100702e","class":"system/runtime","gates":{"Build artifacts + imports check":88.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":977.0}},{"id":"1b42821ffc0d82d54a0460ec7f0bbcb053601210","class":"unknown","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":61.0,"bazel-ci / Test & Build":93.0}},{"id":"1dbcb50dab40c673bb4f8d024fd9e988b80f51be","class":"other code/config","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":139.0}},{"id":"1ea1124d3317b81b04d1a6ffddb0af06a563f9ae","class":"system/runtime","gates":{"Build artifacts + imports check":102.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":688.0}},{"id":"213afd9dd777e2d33b706f1f46eba1a1e3454154","class":"unknown","gates":{"Build artifacts + imports check":88.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":93.0}},{"id":"21e17cbdc7df1157c1b83d2450ae2c94a7a8b9ba","class":"debundle","gates":{"Build artifacts + imports check":104.0,"Pre-commit checks":81.0,"bazel-ci / Test & Build":318.0}},{"id":"24fc773581891096e1c0dba969dd767ba694a997","class":"docs-only","gates":{"Build artifacts + imports check":72.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":84.0}},{"id":"2584542a688178708bfbbfa4cad1001337fd148a","class":"build/CI/tooling","gates":{"Build artifacts + imports check":1953.0,"Pre-commit checks":60.0,"bazel-ci / Test & Build":48.0}},{"id":"25b6f2fa2bbd3bdc4b7cda74018ef97ed60992f9","class":"debundle","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":70.0,"bazel-ci / Test & Build":207.0}},{"id":"25dc89e54dd1a69ca64e277a66a2240ee271ee30","class":"build/CI/tooling","gates":{"Build artifacts + imports check":192.0,"Pre-commit checks":145.0,"bazel-ci / Test & Build":273.0}},{"id":"260721c7af2bc39fde9242e5cdc78dab043280cf","class":"debundle","gates":{"Build artifacts + imports check":81.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":322.0}},{"id":"2628fa97f91ced4e1423867bf91d7439b76e8d0c","class":"unknown","gates":{"Build artifacts + imports check":109.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":184.0}},{"id":"26c3aa8b6bd8db372be1a3f57bf52e5a47f6cec6","class":"docs-only","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":107.0}},{"id":"28025548ca00b04ad40e867acd0944af8782dc3d","class":"cdk8s","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":61.0,"bazel-ci / Test & Build":832.0}},{"id":"29b16ae450928a4ca4b0c2614e47b8f650b7bf44","class":"build/CI/tooling","gates":{"Build artifacts + imports check":75.0,"Pre-commit checks":70.0,"bazel-ci / Test & Build":1229.0}},{"id":"308c08afedba3d3e3761cd9ebc15a37170f06eea","class":"system/runtime","gates":{"Build artifacts + imports check":101.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":792.0}},{"id":"317c1a53afc88c8b2584cf767184b76e84340b4e","class":"unknown","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":158.0}},{"id":"33c3fb2a14d261b2dff61437d179147c57bcc79d","class":"cdk8s","gates":{"Build artifacts + imports check":84.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":159.0}},{"id":"340ad355595e48e8826ec058d5e0c6a1b89087c1","class":"debundle","gates":{"Build artifacts + imports check":84.0,"Pre-commit checks":69.0,"bazel-ci / Test & Build":173.0}},{"id":"3450aaedbae0499f19def264bf5e0fea61f3fb43","class":"build/CI/tooling","gates":{"Build artifacts + imports check":136.0,"Pre-commit checks":76.0,"bazel-ci / Test & Build":51.0}},{"id":"3633909c84e9b9790c9e1424c0a185bed6d8465e","class":"build/CI/tooling","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":73.0,"bazel-ci / Test & Build":135.0}},{"id":"38f24bb4143d8afde1ff4bf0ce8ebec29ad3c117","class":"unknown","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":71.0,"bazel-ci / Test & Build":468.0}},{"id":"3942f62857e064912f94796987970fa917e4ba42","class":"other code/config","gates":{"Build artifacts + imports check":107.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":140.0}},{"id":"3bf05c7bcb6065b760008f3747d161772acbb687","class":"cdk8s","gates":{"Build artifacts + imports check":110.0,"Pre-commit checks":91.0,"bazel-ci / Test & Build":166.0}},{"id":"3c2fc7c553d5d6b0517ff6bf6c5b7c59db33f54d","class":"cdk8s","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":343.0}},{"id":"3cab89d2727076734789ea5db2e17be39b1b16aa","class":"unknown","gates":{"Build artifacts + imports check":85.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":78.0}},{"id":"3f89cd21a4cf6ba93888cb70fdf0fb6622779f59","class":"unknown","gates":{"Build artifacts + imports check":97.0,"Pre-commit checks":197.0,"bazel-ci / Test & Build":322.0}},{"id":"3fe8cdb828509a64cca082b08a5f5ec7453d5cfe","class":"other code/config","gates":{"Build artifacts + imports check":81.0,"Pre-commit checks":70.0,"bazel-ci / Test & Build":104.0}},{"id":"4196de374a54fb8ba39a94b6726f7ad5cc174ead","class":"build/CI/tooling","gates":{"Build artifacts + imports check":137.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":112.0}},{"id":"457484fb1b99b52e00569aec7bfd30878ae4c748","class":"unknown","gates":{"Build artifacts + imports check":99.0,"Pre-commit checks":106.0,"bazel-ci / Test & Build":76.0}},{"id":"4583540f8e5a5bbc6602d4b896a4951fac598457","class":"debundle","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":316.0}},{"id":"4808e7529814dd2cec9e8ca25b98d383ff3d6c98","class":"build/CI/tooling","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":87.0}},{"id":"4891df6b1f16a2ce5e5702a37116c488ebbed222","class":"debundle","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":616.0}},{"id":"495d3e6f8ae7fd857ca9f7a13ac5db261a13ddf5","class":"system/runtime","gates":{"Build artifacts + imports check":380.0,"Pre-commit checks":109.0,"bazel-ci / Test & Build":763.0}},{"id":"4b12ffc040b9affe072aff63d4db5ffdbe611725","class":"Agentplane backend","gates":{"Build artifacts + imports check":78.0,"Pre-commit checks":71.0,"bazel-ci / Test & Build":237.0}},{"id":"4b9e536dba34f9117d4f6385881d45944afc4750","class":"cdk8s","gates":{"Build artifacts + imports check":88.0,"Pre-commit checks":71.0,"bazel-ci / Test & Build":148.0}},{"id":"4c6847a80a8ad2109f20762ddbd1835179df4152","class":"Agentplane backend","gates":{"Build artifacts + imports check":84.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":685.0}},{"id":"4c9f1888424d37e8746c34fb33346e5ce7c35df0","class":"build/CI/tooling","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":251.0}},{"id":"4ccd36d23ef33a991fe702cec86630c314a17e99","class":"other code/config","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":102.0,"bazel-ci / Test & Build":89.0}},{"id":"4f17b9adad0bd7a6c4273b0f5009825cc74e32d3","class":"system/runtime","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":583.0}},{"id":"5046ff04412cdcc5caf3e10714d6ef9e6313d46c","class":"other code/config","gates":{"Build artifacts + imports check":95.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":72.0}},{"id":"53ffd6be38169f99f2f1f1f684d9ee140bb036d8","class":"build/CI/tooling","gates":{"Build artifacts + imports check":95.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":125.0}},{"id":"5412d6996032b4b73c78085a32054124f9313805","class":"unknown","gates":{"Build artifacts + imports check":81.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":168.0}},{"id":"5557595f1801ad825165acb20c042cfb3814c205","class":"other code/config","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":114.0}},{"id":"56bf7c5913e69a5155761cef816d69880c43d402","class":"build/CI/tooling","gates":{"Build artifacts + imports check":92.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":550.0}},{"id":"59573900fe74dc5b7f12ceb9daf49e73e8d74a62","class":"cdk8s","gates":{"Build artifacts + imports check":91.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":156.0}},{"id":"5b46c73462909240a33a8741cccf6002d0d1d9ef","class":"unknown","gates":{"Build artifacts + imports check":85.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":413.0}},{"id":"5c828b284e0d45229282818f56499f90c146c5fd","class":"debundle","gates":{"Build artifacts + imports check":94.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":210.0}},{"id":"5c9a54ac84fe0dcbed85fdef4de30095759f3a2d","class":"debundle","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":105.0}},{"id":"5ead901a819e549dffcdbaca47a777728bb52c78","class":"docs-only","gates":{"Build artifacts + imports check":97.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":76.0}},{"id":"6074920b3269f5969264643d45aaca7246e49b74","class":"docs-only","gates":{"Build artifacts + imports check":72.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":86.0}},{"id":"6077e4dbbdce6fbe1e83b5702a80bbcdec66e898","class":"debundle","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":249.0}},{"id":"62ec433808d1e09943f6accb5841d2b56c212023","class":"docs-only","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":76.0}},{"id":"661a2b0f65b85fcda4ec68d0d35142801d9bd257","class":"debundle","gates":{"Build artifacts + imports check":170.0,"Pre-commit checks":119.0,"bazel-ci / Test & Build":399.0}},{"id":"66def0832002a377a2f6dc99e47750ffbb1d973e","class":"Agentplane backend","gates":{"Build artifacts + imports check":91.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":822.0}},{"id":"68fdc5a8eb5a6d6da5911e12633a345536adfada","class":"debundle","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":74.0,"bazel-ci / Test & Build":302.0}},{"id":"69d24621667b9dc33170bedced8e32ac3d486a43","class":"build/CI/tooling","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":451.0}},{"id":"6b38d9a2fa883694b3e2eabf1e13abadd8b0edc4","class":"cdk8s","gates":{"Build artifacts + imports check":98.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":82.0}},{"id":"6ce28ea92301ee995181eef72ce861e6be0d03d2","class":"debundle","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":73.0,"bazel-ci / Test & Build":350.0}},{"id":"6eee2883594982f7d53dec7217109fb693df574d","class":"docs-only","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":75.0}},{"id":"6f683c9192789613da5ac309f4b728ac61df4c2b","class":"system/runtime","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":881.0}},{"id":"707bc4e36d91747f71018892cc3c0a4082f2a04f","class":"Agentplane backend","gates":{"Build artifacts + imports check":92.0,"Pre-commit checks":61.0,"bazel-ci / Test & Build":642.0}},{"id":"7232c440d57304b0abf940754ea6440eca302a1f","class":"debundle","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":208.0}},{"id":"7264d38848b5e5e385ff89fe00b28b1dd35161d1","class":"other code/config","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":60.0,"bazel-ci / Test & Build":105.0}},{"id":"740d469ff38b5c1fd60c5c8bfa02e964812837cf","class":"cdk8s","gates":{"Build artifacts + imports check":121.0,"Pre-commit checks":103.0,"bazel-ci / Test & Build":145.0}},{"id":"74e25d8dfbd52228e20be4f905df4953e5896154","class":"build/CI/tooling","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":301.0}},{"id":"77f55bb764625b2478d9f11d00aba0119365ad45","class":"other code/config","gates":{"Build artifacts + imports check":98.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":99.0}},{"id":"79497cb1dca58337b9ca20f93402f3c0675aa2fb","class":"docs-only","gates":{"Build artifacts + imports check":78.0,"Pre-commit checks":68.0,"bazel-ci / Test & Build":71.0}},{"id":"7bf3f6fff58e32f21f500251a31656d027119fb5","class":"system/runtime","gates":{"Build artifacts + imports check":73.0,"Pre-commit checks":73.0,"bazel-ci / Test & Build":521.0}},{"id":"7c33a012fc13c5bfacad50b7c41e021753157c9a","class":"docs-only","gates":{"Build artifacts + imports check":85.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":68.0}},{"id":"7ec9b1abea89b3784921e22a013c9a1ae7aa1b5d","class":"docs-only","gates":{"Build artifacts + imports check":72.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":91.0}},{"id":"7fa0a6465aeda535b4e062badc73e703b92e7016","class":"build/CI/tooling","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":323.0}},{"id":"828a39c50003c65043d42c42547d0ea7568b4bbb","class":"debundle","gates":{"Build artifacts + imports check":190.0,"Pre-commit checks":210.0,"bazel-ci / Test & Build":337.0}},{"id":"832ff1fef197d7080bbd46347cb5cc5afdb5e643","class":"system/runtime","gates":{"Build artifacts + imports check":88.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":723.0}},{"id":"837b2acdc38aef73654e247157499ca04df007d1","class":"other code/config","gates":{"Build artifacts + imports check":77.0,"Pre-commit checks":59.0,"bazel-ci / Test & Build":72.0}},{"id":"83f1f7c137bf8b5a5e426af30ee7fb96d6237c8d","class":"build/CI/tooling","gates":{"Build artifacts + imports check":92.0,"Pre-commit checks":73.0,"bazel-ci / Test & Build":147.0}},{"id":"8568143297abbc059a519680821995a55ab23a59","class":"build/CI/tooling","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":71.0,"bazel-ci / Test & Build":97.0}},{"id":"8c406daef3030eeec9f2ba0b4b792cf85a9d28de","class":"cdk8s","gates":{"Build artifacts + imports check":82.0,"Pre-commit checks":111.0,"bazel-ci / Test & Build":162.0}},{"id":"8ceb80605a335ed51d99a5ebcf2ec06b6445a7d9","class":"debundle","gates":{"Build artifacts + imports check":95.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":314.0}},{"id":"8d6cfb7dc5c91972ee085a2c5fc95a6fe4c25ec4","class":"docs-only","gates":{"Build artifacts + imports check":130.0,"Pre-commit checks":137.0,"bazel-ci / Test & Build":200.0}},{"id":"906b52bea269db53f5f6c0244b11ed7b09d53d7b","class":"unknown","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":68.0}},{"id":"90936c028f0aa3c1610e2c9638a5e761c3bd2b9d","class":"build/CI/tooling","gates":{"Build artifacts + imports check":80.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":94.0}},{"id":"90c5734a1083b235d401afb6746a6f71e128c0f5","class":"build/CI/tooling","gates":{"Build artifacts + imports check":106.0,"Pre-commit checks":102.0,"bazel-ci / Test & Build":101.0}},{"id":"96344a244b9c27690e958d674cd3d148b08c61a9","class":"debundle","gates":{"Build artifacts + imports check":91.0,"Pre-commit checks":77.0,"bazel-ci / Test & Build":195.0}},{"id":"965bbca08241efcb260d6d317ef2acb1bd1d8af9","class":"docs-only","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":63.0}},{"id":"9785a14e06b49dce7543b7c6e8f84a4ba5be7f89","class":"docs-only","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":92.0}},{"id":"97a3221b015974ceed9d79c5d192c3bb81203a13","class":"debundle","gates":{"Build artifacts + imports check":73.0,"Pre-commit checks":57.0,"bazel-ci / Test & Build":247.0}},{"id":"98339c2fc68ade6ac9f9827dcbf984b3c74f964f","class":"build/CI/tooling","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":101.0,"bazel-ci / Test & Build":91.0}},{"id":"98f1db76ca222d85872ea644f5a67123067acc2a","class":"docs-only","gates":{"Build artifacts + imports check":103.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":87.0}},{"id":"9ad29e488ef208e5c095384a25730d83e63b63e9","class":"unknown","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":109.0}},{"id":"9b056e8783e93734823338ff614c2dd23e863e37","class":"system/runtime","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":1132.0}},{"id":"a2fe6438833154fa279f3df9c03f966e1b69896c","class":"docs-only","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":66.0}},{"id":"a72d8fe4e5ad2420963fa0c880e5e1f021845fbe","class":"Agentplane backend","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":732.0}},{"id":"a77453714a51ca97512b3686b42d09d3f03c55d9","class":"docs-only","gates":{"Build artifacts + imports check":189.0,"Pre-commit checks":105.0,"bazel-ci / Test & Build":153.0}},{"id":"a8768f3a67d46ca9fa7b1869cfc9f0cd4465b7d8","class":"system/runtime","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":60.0,"bazel-ci / Test & Build":1212.0}},{"id":"aa247a105ef416f6f7d2499518193466b4d182fd","class":"unknown","gates":{"Build artifacts + imports check":85.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":80.0}},{"id":"acbcc2b2f6539a07cae9af3e85498631a8215646","class":"build/CI/tooling","gates":{"Build artifacts + imports check":259.0,"Pre-commit checks":85.0,"bazel-ci / Test & Build":110.0}},{"id":"b344648578e02a96e7a8d8b3b42770975072c2d4","class":"cdk8s","gates":{"Build artifacts + imports check":121.0,"Pre-commit checks":94.0,"bazel-ci / Test & Build":164.0}},{"id":"b6759b7cdda0685e90abb89e9a6f2494f34291c5","class":"unknown","gates":{"Build artifacts + imports check":104.0,"Pre-commit checks":69.0,"bazel-ci / Test & Build":122.0}},{"id":"bb98daf958f231fd0af24708a95e88a16032e568","class":"docs-only","gates":{"Build artifacts + imports check":102.0,"Pre-commit checks":90.0,"bazel-ci / Test & Build":89.0}},{"id":"bc2b239bccbf476f34bbe2acda5ec314cc2c1ffb","class":"debundle","gates":{"Build artifacts + imports check":65.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":238.0}},{"id":"bcd9649efb3e907534ebc019239137e36afaa2a9","class":"Agentplane backend","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":75.0,"bazel-ci / Test & Build":708.0}},{"id":"bd0a1bb25dbac6d902d8c699b188143d49d98642","class":"system/runtime","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":74.0,"bazel-ci / Test & Build":86.0}},{"id":"bd0a51731d8a41786a27d8918b0c892178fb57bc","class":"cdk8s","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":165.0}},{"id":"be5fd445c8f71d600cb331cef943ae49485879c1","class":"unknown","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":196.0}},{"id":"c03764d3b8a84841c6f454cf9728bc16b0023c39","class":"Agentplane backend","gates":{"Build artifacts + imports check":82.0,"Pre-commit checks":70.0,"bazel-ci / Test & Build":557.0}},{"id":"c1a5c02c533ddba5b2efe423b508efdf46653e1b","class":"unknown","gates":{"Build artifacts + imports check":109.0,"Pre-commit checks":84.0,"bazel-ci / Test & Build":91.0}},{"id":"ce0e43b973a0c5a3451211072364dbcb692f91e4","class":"build/CI/tooling","gates":{"Build artifacts + imports check":147.0,"Pre-commit checks":89.0,"bazel-ci / Test & Build":239.0}},{"id":"ce7c5fb0c1b2e653b33a98202b2c86961e7821df","class":"build/CI/tooling","gates":{"Build artifacts + imports check":128.0,"Pre-commit checks":99.0,"bazel-ci / Test & Build":115.0}},{"id":"d08b19afcb75f42350b4303e37fa3536333850a7","class":"build/CI/tooling","gates":{"Build artifacts + imports check":90.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":99.0}},{"id":"d5a7fe449fbff67950bc284c9dc0ba3107e29d38","class":"system/runtime","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":67.0,"bazel-ci / Test & Build":897.0}},{"id":"d733e26dd058f20530b865c84b7d36fc5e4e4329","class":"unknown","gates":{"Build artifacts + imports check":101.0,"Pre-commit checks":70.0,"bazel-ci / Test & Build":93.0}},{"id":"d864953155868ad4f704a0a21c53f62c2756632d","class":"debundle","gates":{"Build artifacts + imports check":91.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":311.0}},{"id":"da0df0624265fbb85997079e01da520a3934b167","class":"build/CI/tooling","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":87.0,"bazel-ci / Test & Build":705.0}},{"id":"da82ede3a05e1c081f909e12128465f38ea29cf1","class":"system/runtime","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":69.0,"bazel-ci / Test & Build":151.0}},{"id":"db4d91c49f91242829a6e983cccb8366c8229928","class":"build/CI/tooling","gates":{"Build artifacts + imports check":79.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":81.0}},{"id":"dd41ff57a1b56ee4d04b10fdf017d4dcdd756759","class":"debundle","gates":{"Build artifacts + imports check":89.0,"Pre-commit checks":200.0,"bazel-ci / Test & Build":338.0}},{"id":"df541cca69b9db453daf0c8b3cee42f0c1cbd543","class":"unknown","gates":{"Build artifacts + imports check":107.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":126.0}},{"id":"df59f1c2d1ebac4b2836c76eddfda31c1772b9c5","class":"unknown","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":69.0,"bazel-ci / Test & Build":138.0}},{"id":"dfd1380cbc31fb44a963fdacddcc4d888598f32f","class":"unknown","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":63.0,"bazel-ci / Test & Build":177.0}},{"id":"e013424f9259ccec2acb05b8934f4a5bfafeb4c7","class":"Agentplane backend","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":69.0,"bazel-ci / Test & Build":465.0}},{"id":"e09f830c6b7e619bbbcaefdc1dfc0b9c23968ed5","class":"debundle","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":230.0}},{"id":"e12ddb2f256d1e40755ead6898a8ea4a22f3c2f1","class":"Agentplane backend","gates":{"Build artifacts + imports check":96.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":815.0}},{"id":"e73e4f8d7e0d8a766fb86f052e756a4c4bfa1f61","class":"system/runtime","gates":{"Build artifacts + imports check":93.0,"Pre-commit checks":72.0,"bazel-ci / Test & Build":727.0}},{"id":"e86f9171e970c8bbf711698d8b4df75ecfc4fdd9","class":"unknown","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":64.0,"bazel-ci / Test & Build":127.0}},{"id":"e94860d6f58bb3b2266b05d6b367fa5cd0f4f564","class":"unknown","gates":{"Build artifacts + imports check":83.0,"Pre-commit checks":61.0,"bazel-ci / Test & Build":933.0}},{"id":"ec58866c60ca3e50b198b49bd632fbfbe03492a4","class":"build/CI/tooling","gates":{"Build artifacts + imports check":95.0,"Pre-commit checks":89.0,"bazel-ci / Test & Build":146.0}},{"id":"ecea68bc73ffa1e05ab99f69a9c80312f623ddbe","class":"Agentplane backend","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":60.0,"bazel-ci / Test & Build":699.0}},{"id":"ed8a00a6e0e9c08f1e93cdcd4ed7106e70567ed8","class":"Agentplane backend","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":62.0,"bazel-ci / Test & Build":1159.0}},{"id":"edced443ca5fa0416a723e3f508f9e70896a3161","class":"cdk8s","gates":{"Build artifacts + imports check":87.0,"Pre-commit checks":65.0,"bazel-ci / Test & Build":166.0}},{"id":"ee5134283faf8bd3d127edd195a60a3eaf7f6190","class":"debundle","gates":{"Build artifacts + imports check":86.0,"Pre-commit checks":61.0,"bazel-ci / Test & Build":329.0}},{"id":"eea66e2041281db58f820456a655864c228c1353","class":"debundle","gates":{"Build artifacts + imports check":78.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":329.0}},{"id":"f170c56861a1fdb6669d062c765d1d38418235e4","class":"cdk8s","gates":{"Build artifacts + imports check":92.0,"Pre-commit checks":75.0,"bazel-ci / Test & Build":231.0}},{"id":"ff21b24ac82bda1efb2650401c89e8fb9c831950","class":"build/CI/tooling","gates":{"Build artifacts + imports check":94.0,"Pre-commit checks":76.0,"bazel-ci / Test & Build":470.0}},{"id":"ffea45f7caaa3be69330bf6629c974d37a1e02af","class":"unknown","gates":{"Build artifacts + imports check":85.0,"Pre-commit checks":66.0,"bazel-ci / Test & Build":339.0}}]</script><script>const heads=JSON.parse(document.getElementById('heads').textContent);function calculate(){const gate=document.getElementById('gate').value,cut=+document.getElementById('cut').value;const saved=heads.map(h=>Math.max(...Object.values(h.gates))-Math.max(...Object.entries(h.gates).map(([g,s])=>Math.max(0,s-(g===gate?cut:0))))).sort((a,b)=>a-b);const n=saved.length,mean=saved.reduce((a,b)=>a+b,0)/n;document.getElementById('cutValue').value=cut+' s';document.getElementById('saving').value=n+' heads · mean '+mean.toFixed(1)+' s saved · p50 / p90 '+saved[Math.ceil(n*.5)-1]+' / '+saved[Math.ceil(n*.9)-1]+' s';}document.getElementById('gate').addEventListener('change',calculate);document.getElementById('cut').addEventListener('input',calculate);calculate();</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ducktape CI latency · 30 October 2026</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #132d38;
+        --muted: #526772;
+        --accent: #006c67;
+        --line: #d5e0e3;
+        --paper: #fff;
+        --ground: #f3f6f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font:
+          16px/1.65 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1140px;
+        margin: auto;
+        padding: 36px 28px 64px;
+      }
+      header {
+        padding: 28px;
+        background: var(--paper);
+        border-top: 6px solid var(--accent);
+        border-radius: 5px;
+      }
+      h1 {
+        font-size: clamp(1.8rem, 4vw, 2.65rem);
+        line-height: 1.15;
+        max-width: 30ch;
+        margin: 0.3em 0 0.65em;
+      }
+      h2 {
+        font-size: 1.45rem;
+        line-height: 1.25;
+        margin: 0 0 18px;
+      }
+      h3 {
+        font-size: 1.12rem;
+        margin: 26px 0 9px;
+      }
+      p {
+        margin: 10px 0 17px;
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 0.76rem;
+        font-weight: 750;
+        color: var(--accent);
+      }
+      .lede {
+        font-size: 1.08rem;
+        max-width: 90ch;
+      }
+      .meta,
+      .note,
+      footer {
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+      a {
+        color: #00645f;
+        text-underline-offset: 3px;
+        overflow-wrap: anywhere;
+      }
+      a:focus-visible,
+      summary:focus-visible,
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 3px solid #e9a219;
+        outline-offset: 4px;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px 18px;
+        margin: 22px 0;
+      }
+      nav a {
+        font-weight: 650;
+      }
+      section {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 26px;
+        margin: 20px 0;
+        scroll-margin-top: 16px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+        gap: 14px;
+        margin: 24px 0 6px;
+      }
+      .card {
+        padding: 15px 18px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: #f8fbfb;
+      }
+      .card strong {
+        display: block;
+        font-size: 1.7rem;
+        line-height: 1.3;
+        color: var(--accent);
+      }
+      .card span {
+        display: block;
+        font-size: 0.88rem;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .scroll {
+        overflow-x: auto;
+        max-width: 100%;
+        margin: 16px 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.92rem;
+        text-align: left;
+      }
+      th,
+      td {
+        vertical-align: top;
+        overflow-wrap: anywhere;
+        padding: 12px 13px;
+        border-bottom: 1px solid var(--line);
+        min-width: 115px;
+      }
+      th {
+        background: #ecf3f3;
+        font-size: 0.84rem;
+      }
+      th:first-child,
+      td:first-child {
+        padding-left: 9px;
+      }
+      td p {
+        margin: 0 0 8px;
+      }
+      code {
+        font:
+          0.83em/1.5 ui-monospace,
+          monospace;
+        overflow-wrap: anywhere;
+        white-space: normal;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding: 15px 0;
+        margin-top: 16px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      details[open] > summary {
+        margin-bottom: 14px;
+      }
+      .callout {
+        border-left: 4px solid var(--accent);
+        padding: 12px 18px;
+        background: #eef7f5;
+        margin: 18px 0;
+      }
+      .caution {
+        border-left-color: #b87719;
+        background: #fff7e8;
+      }
+      label {
+        display: block;
+        font-weight: 650;
+        margin: 12px 0 5px;
+      }
+      input[type="range"] {
+        width: min(100%, 420px);
+        display: block;
+      }
+      select,
+      input[type="search"] {
+        font: inherit;
+        max-width: 100%;
+        padding: 7px;
+        border: 1px solid #93acb4;
+        background: white;
+        border-radius: 3px;
+      }
+      output {
+        display: block;
+        margin-top: 12px;
+        font-weight: 650;
+      }
+      .row-count {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .bar {
+        height: 16px;
+        background: #b2d9d1;
+        border-radius: 3px;
+        margin-top: 4px;
+        width: var(--w);
+      }
+      footer {
+        margin-top: 24px;
+      }
+      li {
+        margin: 9px 0;
+      }
+      ul {
+        padding-left: 22px;
+      }
+      @media (max-width: 600px) {
+        main {
+          padding: 16px 12px 36px;
+        }
+        header,
+        section {
+          padding: 19px 16px;
+        }
+        h1 {
+          font-size: 1.95rem;
+        }
+        th,
+        td {
+          padding: 9px;
+          font-size: 0.88rem;
+        }
+        .cards {
+          gap: 9px;
+        }
+        .card {
+          padding: 12px 14px;
+        }
+        nav {
+          gap: 8px 14px;
+        }
+        .meta {
+          overflow-wrap: anywhere;
+        }
+        table,
+        tbody,
+        tr,
+        td {
+          display: block;
+          width: 100%;
+        }
+        thead {
+          display: none;
+        }
+        tr {
+          padding: 10px 0 18px;
+          border-bottom: 1px solid var(--line);
+        }
+        td {
+          min-width: 0;
+          border: 0;
+          padding: 9px 0 !important;
+          font-size: 0.92rem;
+        }
+        td::before {
+          content: attr(data-label);
+          display: block;
+          color: var(--muted);
+          font-size: 0.75rem;
+          line-height: 1.3;
+          font-weight: 750;
+          margin: 0 0 7px;
+          text-transform: uppercase;
+          letter-spacing: 0.025em;
+        }
+        .scroll {
+          overflow: visible;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">Ducktape · CI latency · 30 October 2026</div>
+        <h1>
+          Cold setup, native startup and whole-run retries drive the slow cases.
+        </h1>
+        <p class="lede">
+          System tests spend minutes doing real integration work. Independent
+          cleanup has modest headroom; splitting stacks adds cost. A separate
+          CLI log-retry mechanism explains multi-minute tails and misleading
+          invocation clocks.
+        </p>
+        <p class="meta">
+          Run arrivals 29 Oct 20:50:01 → 30 Oct 22:10 UTC · inspected devel
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/49475cae74abd6a669879908f63c04fa78f41242"
+            ><code>49475cae74ab</code></a
+          >. <a href="evidence.json">Reviewed measurements</a> ·
+          <a href="manifest.json">Source and window</a>.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <strong>301 / 933 s</strong
+            ><span>Required-check proxy p50/p90; 222 green exact heads</span>
+          </div>
+          <div class="card">
+            <strong>0–20 s</strong
+            ><span
+              >Evidence-bounded Pod cleanup candidate; no proven CI saving</span
+            >
+          </div>
+          <div class="card">
+            <strong>3 restarts</strong
+            ><span>Selected slow PR jobs; not a fleet frequency</span>
+          </div>
+        </div>
+      </header>
+      <nav aria-label="Report sections">
+        <a href="#decisions">Decisions</a><a href="#experience">PR feedback</a
+        ><a href="#work">Test work & waits</a
+        ><a href="#native-work">Native startup</a
+        ><a href="#experiments">Experiments</a><a href="#retry">Log retries</a
+        ><a href="#adoption">Landed changes</a
+        ><a href="#continuity">Prior work</a><a href="#scope">Scope</a
+        ><a href="#live-view">Active invocations</a>
+      </nav>
+      <section id="decisions">
+        <h2>Decisions supported by the deeper investigation</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Change and owner</th>
+                <th>Effect supported by evidence</th>
+                <th>Disposition / coverage to preserve</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Change and owner">
+                  Reconnect a dropped <code>bb remote</code> log stream to the
+                  same outer run; handle transient INTERNAL alongside
+                  UNAVAILABLE in the observer retry path.
+                </td>
+                <td data-label="Effect supported by evidence">
+                  Three selected slow PRs restarted their remote run after 5.9,
+                  9.4 and 14.1 minutes of elapsed first-attempt work. These are
+                  observed restart intervals, not proven savings. Fleet
+                  frequency and net saving remain unmeasured.
+                </td>
+                <td data-label="Disposition / coverage to preserve">
+                  High confidence in resubmission mechanism; repair not
+                  implemented here. Keep bounded reconnection, deadlines,
+                  cancellation and real execution-failure recovery. Do not
+                  disable Bazel action retries or outer retries globally.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change and owner">
+                  Overlap independent UID-owned Sandbox cleanup within a case:
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/sandbox.py"
+                    ><code>agentplane/system_tests/sandbox.py</code></a
+                  >
+                </td>
+                <td data-label="Effect supported by evidence">
+                  A six-case integration probe passed. Messaging cleanup
+                  makespan 19.6 → 11.4 s, scenario 65.2 → 57.0 s. Old full-Pod
+                  trace bounds ideal fixture overlap at 20.2 s; current
+                  full-gate upper bound is 36.6 s before VM wins.
+                </td>
+                <td data-label="Disposition / coverage to preserve">
+                  Candidate for a focused implementation: approximately 0–20 s
+                  on affected system-test feedback, not a measured CI gain.
+                  Preserve suspension acknowledgement, finalizer/volume release,
+                  failure drainage and cancellation. Whole probe action became
+                  15 s slower on a colder worker.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change and owner">
+                  Keep the single race-enabled test pass; evaluate a per-Go-test
+                  default instead of a global command configuration switch.
+                </td>
+                <td data-label="Effect supported by evidence">
+                  The separate race sweep is gone. A current ordinary full build
+                  takes 50.6 s despite no remote process execution and warns
+                  that changing the race option discards analysis cache. Matched
+                  mode-placement investigation is recorded below.
+                </td>
+                <td data-label="Disposition / coverage to preserve">
+                  Do not advertise the old 0–20 s race-deduplication estimate as
+                  a measured gain. Preserve race coverage and ordinary
+                  production artifacts; do not turn the detector off to improve
+                  a chart.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Change and owner">
+                  Retain current suite sharing and six independent VM scenarios;
+                  do not prioritize a second Pod stack.
+                </td>
+                <td data-label="Effect supported by evidence">
+                  All 13 cases passed in a 6+7 split, but the extra stack was
+                  cold (179.3 s) and the split used 1,444.6 CPU-s. Its full-gate
+                  headroom is much smaller than its isolated duration reduction.
+                </td>
+                <td data-label="Disposition / coverage to preserve">
+                  Rejected as a ready recommendation: duplicated setup, worker
+                  allocation and selectivity cost need a matched case before
+                  adoption. One faster isolated action is not proof of faster
+                  full CI.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          Ranges are conditional engineering headroom, not confidence intervals.
+          Effects overlap and must not be summed. Already-landed symbol
+          stripping, certificate watches, import overlap and six-guest
+          concurrency are excluded from the work queue.
+        </p>
+      </section>
+      <section id="experience">
+        <h2>Current feedback, with the clocks kept separate</h2>
+        <p>
+          The fixed run-arrival window contains 406 distinct direct-PR head
+          SHAs. Of these, 222 have all three latest required jobs green, 50
+          failed, 42 cancelled/superseded, 90 use an unlinked fork/trust route
+          and two are incomplete/missing. Start is earliest core workflow
+          creation for that exact SHA; stop is last required-job completion.
+          This is a survivor feedback proxy, not push-to-green or full
+          auto-merge readiness.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Path class</th>
+                <th>Heads / green</th>
+                <th>Proxy p50 / p90, s</th>
+                <th>Other outcomes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Path class">Agentplane backend</td>
+                <td data-label="Heads / green">19 / 16</td>
+                <td data-label="Proxy p50 / p90, s">685.0 / 1284.0</td>
+                <td data-label="Other outcomes">fork-unlinked: 1, failed: 2</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">build/CI/tooling</td>
+                <td data-label="Heads / green">60 / 38</td>
+                <td data-label="Proxy p50 / p90, s">239.0 / 1014.0</td>
+                <td data-label="Other outcomes">fork-unlinked: 22</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">cdk8s</td>
+                <td data-label="Heads / green">17 / 15</td>
+                <td data-label="Proxy p50 / p90, s">165.0 / 832.0</td>
+                <td data-label="Other outcomes">fork-unlinked: 2</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">debundle</td>
+                <td data-label="Heads / green">37 / 36</td>
+                <td data-label="Proxy p50 / p90, s">311.0 / 441.0</td>
+                <td data-label="Other outcomes">fork-unlinked: 1</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">docs-only</td>
+                <td data-label="Heads / green">39 / 36</td>
+                <td data-label="Proxy p50 / p90, s">160.0 / 534.0</td>
+                <td data-label="Other outcomes">fork-unlinked: 3</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">frontend</td>
+                <td data-label="Heads / green">2 / 1</td>
+                <td data-label="Proxy p50 / p90, s">133.0 / 133.0</td>
+                <td data-label="Other outcomes">failed: 1</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">other code/config</td>
+                <td data-label="Heads / green">9 / 9</td>
+                <td data-label="Proxy p50 / p90, s">104.0 / 140.0</td>
+                <td data-label="Other outcomes">—</td>
+              </tr>
+              <tr>
+                <td data-label="Path class">system/runtime</td>
+                <td data-label="Heads / green">38 / 24</td>
+                <td data-label="Proxy p50 / p90, s">727.0 / 1212.0</td>
+                <td data-label="Other outcomes">
+                  fork-unlinked: 13, failed: 1
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Path class">unknown</td>
+                <td data-label="Heads / green">185 / 47</td>
+                <td data-label="Proxy p50 / p90, s">197.0 / 1063.0</td>
+                <td data-label="Other outcomes">
+                  cancelled/superseded: 42, failed: 46, fork-unlinked: 48,
+                  incomplete/missing: 2
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Bazel was last on 176/222 green heads, artifacts on 37 and pre-commit
+          on nine. A hypothetical 30 s artifact-gate cut saves a conditional
+          mean 3.0 s/head. The current 301/933 s overall proxy differs from the
+          prior 189/792 s (148 green heads); the enlarged window adds a burst of
+          queued work and remote-run restarts, with a different workload mix.
+          This does not establish a regression caused by one landed
+          optimization.
+        </p>
+        <details>
+          <summary>Explore conditional required-gate headroom</summary>
+          <label for="gate">Gate to shorten</label
+          ><select id="gate">
+            <option value="bazel-ci / Test &amp; Build">Bazel</option>
+            <option value="Build artifacts + imports check">Artifacts</option>
+            <option value="Pre-commit checks">Pre-commit</option></select
+          ><label for="cut"
+            >Assumed reduction: <span id="cutValue">30 s</span></label
+          ><input
+            id="cut"
+            type="range"
+            min="0"
+            max="180"
+            step="10"
+            value="30"
+          /><output id="saving" aria-live="polite"></output>
+          <p class="note">
+            Holds every other exact-head completion clock fixed. Work must
+            actually execute on the changed gate. This is upper-bound
+            sensitivity, not an intervention effect.
+          </p>
+        </details>
+      </section>
+      <section id="work">
+        <h2>What the expensive tests are actually doing</h2>
+        <p>
+          Each suite keeps one real k3s stack for its cases: OCI imports,
+          PKI/CRDs and services, workload readiness, authenticated Runner
+          contact, scenarios, then owned suspension and deletion. The stack is a
+          tested integration boundary; replacing it with mocks would change
+          coverage.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/defs.bzl"
+            ><code>agentplane/system_tests/defs.bzl</code></a
+          >
+          makes the environments and image sets explicit.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Phase / real guarantee</th>
+                <th>Observed cost and wait mechanism</th>
+                <th>Equivalent change or reason to retain</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Phase / real guarantee">
+                  Pod setup and 13 cases
+                </td>
+                <td data-label="Observed cost and wait mechanism">
+                  Older stack-ready 64.4 s; newer 94.1 s. First messaging case
+                  124.0 s includes setup; its actual scenario is ~59.6 s. Four
+                  Pods exercise identity/egress, delivery, inbox reads and
+                  acknowledgement; sequential cleanup totals ~12 s in that
+                  trace.
+                </td>
+                <td data-label="Equivalent change or reason to retain">
+                  Keep the distinct end-to-end assertions.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/sandbox.py#L108"
+                    ><code>agentplane/system_tests/sandbox.py:108</code></a
+                  >
+                  polls a Ready predicate every 2 s: this introduces observer
+                  quantization, not the entire 10–18 s producer boot cost. Reuse
+                  the existing snapshot stream only after preserving
+                  initial-state checks and deadlines; no polling-removal gain is
+                  measured here.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Phase / real guarantee">
+                  MCP launcher and authorization
+                </td>
+                <td data-label="Observed cost and wait mechanism">
+                  Eight cases on one stack; launcher isolation 110.5 s, BFF
+                  decisions 38.9 s, sampler 37.3 s. The launcher
+                  opens/reads/submits/waits through the real Action service and
+                  tests caller, UID, session and revoked-grant denials.
+                </td>
+                <td data-label="Equivalent change or reason to retain">
+                  The deliberate 1 s pending-result observation buys a negative
+                  assertion. The 30 s wait is a deadline that returns on
+                  completion. Do not delete either as an arbitrary sleep. OAuth
+                  cases remain sequential because they mutate the same
+                  operator/server linkage.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/scenarios/mcp.py#L547"
+                    ><code
+                      >agentplane/system_tests/scenarios/mcp.py:547</code
+                    ></a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Phase / real guarantee">
+                  VM setup versus scenario work
+                </td>
+                <td data-label="Observed cost and wait mechanism">
+                  Newer VM action 504.6 s includes 218.1 s stack readiness
+                  (older 110.7 s), cold guest-root import 45.4 s, virt-launcher
+                  27.0 s, virt-handler 13.7 s. Six-scenario group fell 272.8 →
+                  248.5 s across these different runs.
+                </td>
+                <td data-label="Equivalent change or reason to retain">
+                  The larger action is cold setup, not evidence that scenarios
+                  became slower. Preserve six independent boots and the
+                  disk-backed image store. Prior tmpfs repeat lost an executor
+                  and did not prove a warm benefit.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/debug/vm_suite_concurrency.md"
+                    ><code
+                      >agentplane/system_tests/debug/vm_suite_concurrency.md</code
+                    ></a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Phase / real guarantee">VM OOM containment</td>
+                <td data-label="Observed cost and wait mechanism">
+                  Newest longest scenario 228.6 s: Ready 87.6 s, first native
+                  memory command 77.5 s, actual tool OOM 43.0 s, follow-up 12.0
+                  s, cleanup 19.6 s (some phase clocks overlap). The guest
+                  allocates to its real limit and the kernel kills the tool.
+                </td>
+                <td data-label="Equivalent change or reason to retain">
+                  Keep leaf-cgroup kill, Runner/native Session survival and
+                  follow-up command assertions. A fake exit code or shared boot
+                  would lose failure coverage. Its 0.1 s loop waits for a new
+                  cgroup observation with a 5 s deadline; it is not the
+                  explanation for minutes of runtime.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/scenarios/vm_sandbox.py#L211"
+                    ><code
+                      >agentplane/system_tests/scenarios/vm_sandbox.py:211</code
+                    ></a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Phase / real guarantee">Owned teardown</td>
+                <td data-label="Observed cost and wait mechanism">
+                  Suspend must be acknowledged as SUSPENDED; deletion must
+                  complete with finalizer/volume release. VM scenarios already
+                  overlap cleanup. Within Pod cases multiple owned Sandbox
+                  callbacks are serial.
+                </td>
+                <td data-label="Equivalent change or reason to retain">
+                  Overlap only independent ownership scopes. Keep manual causal
+                  launch/revoke/delete sequencing in the MCP launcher test. A
+                  focused failure-drainage control and six-case integration
+                  spike passed; cancellation and full-suite resource comparison
+                  are still acceptance work.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section id="native-work">
+        <h2>A 77.5-second memory probe mostly waits outside the shell</h2>
+        <p>
+          The newest VM OOM case provides a sharper example than target duration
+          alone: its <code>memory-before</code> span runs
+          22:00:01.290–22:01:18.817 UTC, but the native command reports only 988
+          ms of execution. The follow-up memory probe reports 156 ms. Existing
+          native JSONL, guest service logs and OTel spans identify cold executor
+          startup and first-turn handling, rather than a costly shell memory
+          read.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Observed boundary, UTC</th>
+                <th>Time since test span start, approximate</th>
+                <th>What is established</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Observed boundary, UTC">
+                  Input admitted 22:00:11.008
+                </td>
+                <td data-label="Time since test span start, approximate">
+                  9.7 s
+                </td>
+                <td data-label="What is established">
+                  Admission precedes lazy native service initialization. The
+                  initial 9.7 s is outside the shell.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observed boundary, UTC">
+                  Exec-server readiness refused 22:00:16.126; ready 22:00:24.484
+                </td>
+                <td data-label="Time since test span start, approximate">
+                  14.8 →23.2 s
+                </td>
+                <td data-label="What is established">
+                  Cold service startup is visible. Ready does not mean the
+                  thread/turn has completed initialization.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observed boundary, UTC">
+                  thread/start sent 22:00:38.636; response 22:00:48.969
+                </td>
+                <td data-label="Time since test span start, approximate">
+                  37.3 →47.7 s
+                </td>
+                <td data-label="What is established">
+                  ~14 s after ready before send, then ~10 s request/response.
+                  Processing, scheduling and transport shares remain unassigned.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observed boundary, UTC">
+                  Turn starts 22:00:54.609; shell starts 22:01:07.370
+                </td>
+                <td data-label="Time since test span start, approximate">
+                  53.3 →66.1 s
+                </td>
+                <td data-label="What is established">
+                  First-turn work and scripted model/tool handoff precede actual
+                  command execution.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Observed boundary, UTC">
+                  Shell complete 22:01:09.527; turn complete 22:01:18.251
+                </td>
+                <td data-label="Time since test span start, approximate">
+                  68.2 →77.0 s
+                </td>
+                <td data-label="What is established">
+                  Native command duration 988 ms; protocol observation and turn
+                  completion extend the enclosing wall span. Cross-host clocks
+                  are not calibrated.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The actual OOM allocation command reports 31,938 ms of native
+          execution inside its 43 s enclosing turn.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/system_tests/scenarios/vm_sandbox.py#L72"
+            ><code>agentplane/system_tests/scenarios/vm_sandbox.py:72</code></a
+          >
+          uses Busybox awk to allocate and touch distinct 64 KiB blocks above
+          the leaf limit and prefers the tool as the kernel victim. That is real
+          work, unlike the surrounding admission gaps. A faster allocator is a
+          test-implementation candidate only if it still faults real pages,
+          exceeds the same cgroup limit and preserves victim/survival
+          assertions; no allocator variant was profiled or timed here.
+        </p>
+        <p>
+          The useful next observation is a real native-process profile and
+          existing guest CPU/memory-pressure evidence over the
+          ready→thread-start→first-response gaps. There is no measured 77 s
+          optimization here, and the unassigned gaps should not be renamed
+          “sleep”. Keep cold startup and same-native-Session/exec-server-leaf
+          guarantees; sharing one prewarmed Session across isolated VM cases
+          would change coverage. The phase trace narrows where an equivalent
+          faster implementation must work. VM shortening also competes with the
+          later-finishing Pod suite, so target seconds do not translate directly
+          to gate seconds.
+        </p>
+      </section>
+      <section id="experiments">
+        <h2>Two suite experiments, including the unsuccessful tradeoff</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Variant</th>
+                <th>Observed result</th>
+                <th>What it establishes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Variant">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/d0545697-ef4e-4c32-ad00-bb1c94cf2b85"
+                    >Split Pod, 6 + 7 disjoint cases</a
+                  >
+                </td>
+                <td data-label="Observed result">
+                  Both targets passed all 13 cases. Processes 274.5 / 397.1 s;
+                  stacks 68.6 / 179.3 s; whole Bazel 409.4 s; CPU 511.9 + 932.7
+                  s; two ordinary 4-unit stacks.
+                </td>
+                <td data-label="What it establishes">
+                  The assertions can run on separate stacks. Different
+                  workers/cache warmth prevent a causal comparison with unsplit
+                  ~497 s. Extra setup and only 36.6 s observed gate headroom
+                  make this a poor ready priority.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Variant">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/320bb8b0-83ce-4c15-953d-5fbe4a2f51de"
+                    >Parallel cleanup, same six cases</a
+                  >
+                </td>
+                <td data-label="Observed result">
+                  Cases passed. Messaging cleanup 19.6 → 11.4 s and scenario
+                  65.2 → 57.0 s. Whole process 274.5 → 289.4 s; stack 68.6 →
+                  89.1 s, CPU 511.9 → 589.4 s on a different worker.
+                </td>
+                <td data-label="What it establishes">
+                  Phase evidence supports feasibility. The whole action got
+                  slower, so do not call this a measured speedup. Old full-Pod
+                  trace gives 20.2 s ideal overlap ceiling; MCP fixture-only
+                  ceiling ~5.5 s, rather than overlapping causally ordered
+                  manual deletions.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The focused failure test drains every owned resource even when one
+          cleanup fails; see its exact invocation and caveats in
+          <a href="evidence.json">evidence</a>. No production cleanup source was
+          changed. Passing the subset does not establish unchanged long-run
+          flakiness or cancellation behavior.
+        </p>
+      </section>
+      <section id="paths">
+        <h2>Execution, starts and finishing order</h2>
+        <p>
+          New full mainline test
+          <a
+            href="https://app.buildbuddy.io/invocation/87dab0cc-af8e-53e6-8cbb-d96324c9f544"
+            >87dab0cc</a
+          >
+          on <code>e744e2cd0bb0</code>: VM 504.6 s/2,322.6 CPU-s, Pod 497.2
+          s/916.0 CPU-s, MCP 391.2 s/681.7 CPU-s, Dispatcher 219.8 s. Each
+          inspected remote queue is about 0.06 s. Pod starts 44 s later and ends
+          36.6 s after VM, so removing 100 s of Pod work cannot save 100 s on
+          this gate. Bazel’s computed dependency-chain path is 510.0 s through
+          VM; it is not the full 624.9 s invocation clock or proof that Pod has
+          no finishing-order effect.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Linked case</th>
+                <th>Observed timeline, seconds unless UTC</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Linked case">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/87dab0cc-af8e-53e6-8cbb-d96324c9f544"
+                    >87dab0cc</a
+                  ><br /><a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41133810615/job/124331160831"
+                    >GitHub job</a
+                  ><br /><code>e744e2cd0bb0</code>
+                </td>
+                <td data-label="Observed timeline, seconds unless UTC">
+                  Job 21:52:14–22:05:22 UTC; step to indexed test 22.5; inner
+                  test 624.9; remaining step 108.7.
+                </td>
+                <td data-label="Interpretation">
+                  Full mainline, cold setup dominates.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Linked case">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/abc9e9be-a5e6-59a3-bfa0-b1760db0cd7e"
+                    >abc9e9be</a
+                  ><br /><a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41131611099/job/124323657468"
+                    >GitHub job</a
+                  ><br /><code>683047e6a280</code>
+                </td>
+                <td data-label="Observed timeline, seconds unless UTC">
+                  Job 21:31:02–21:34:24 UTC; step to indexed test 30.0; inner
+                  test 128.7; remaining step 10.3.
+                </td>
+                <td data-label="Interpretation">
+                  Debundle source includes symbol stripping; 16.6 s snapshot
+                  process.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Linked case">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/e8300134-a6ec-5339-86f1-c674bf3a4949"
+                    >e8300134</a
+                  ><br /><a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41126571106/job/124306532391"
+                    >GitHub job</a
+                  ><br /><code>1fa108fb8469</code>
+                </td>
+                <td data-label="Observed timeline, seconds unless UTC">
+                  Job 20:52:26–20:54:00 UTC; step to indexed test 51.4; inner
+                  test 3.6; remaining step 6.0.
+                </td>
+                <td data-label="Interpretation">
+                  All test results reused; stripping saves zero fresh test work.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Linked case">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/e7f965db-489d-582d-abff-477a08a7b276"
+                    >e7f965db</a
+                  ><br /><a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41129977412/job/124318119119"
+                    >GitHub job</a
+                  ><br /><code>d4f7d19faba3</code>
+                </td>
+                <td data-label="Observed timeline, seconds unless UTC">
+                  Job 21:18:21–21:42:26 UTC; step to indexed test 902.2; inner
+                  test 284.8; remaining step 219.9.
+                </td>
+                <td data-label="Interpretation">
+                  Whole remote run restarted after log transport failure;
+                  first-attempt work is inside the apparent pre-test gap.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          The precise cause of Pod’s delayed start is unassigned: runfiles were
+          prepared at ~59 s and TestRunner submitted at ~126 s in the Bazel
+          profile. A tiny executor queue does not prove the target was runnable
+          earlier or explain the intervening Bazel work.
+        </p>
+      </section>
+      <section id="retry">
+        <h2>A log observer can restart the entire remote build</h2>
+        <p>
+          Three selected slow successful PR jobs logged a transient
+          <code>RST_STREAM INTERNAL_ERROR</code>, then a new outer runner ID and
+          a repeat of the same deterministic inner Bazel ID. The original outer
+          invocations are DISCONNECTED, so their final test outcomes cannot be
+          reconstructed from the later target index. This recurrence was
+          previously documented in
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/devinfra/buildbuddy/debug/ci_remote_cancellation/vm_shutdown_retry.md"
+            ><code
+              >devinfra/buildbuddy/debug/ci_remote_cancellation/vm_shutdown_retry.md</code
+            ></a
+          >; the new evidence establishes current long-tail examples, not a
+          newly discovered class or a fleet rate.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Original / retry outer runs</th>
+                <th>Observed first-attempt elapsed to resync</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Job">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41128236821/job/124312184823"
+                    >124312184823</a
+                  >
+                </td>
+                <td data-label="Original / retry outer runs">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/a16a58c3-f5a8-4d0a-9605-c162f7a93705"
+                    >a16a58c3</a
+                  >
+                  →
+                  <a
+                    href="https://app.buildbuddy.io/invocation/bb2a9277-f80e-4a2c-875c-0818bab6d6d7"
+                    >bb2a9277</a
+                  >
+                </td>
+                <td data-label="Observed first-attempt elapsed to resync">
+                  564.5 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Job">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41129977412/job/124318119119"
+                    >124318119119</a
+                  >
+                </td>
+                <td data-label="Original / retry outer runs">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/b840a7e7-6a7d-4662-b01a-503dc573fac9"
+                    >b840a7e7</a
+                  >
+                  →
+                  <a
+                    href="https://app.buildbuddy.io/invocation/71feb3e9-a33f-443e-a68d-8da417c241d9"
+                    >71feb3e9</a
+                  >
+                </td>
+                <td data-label="Observed first-attempt elapsed to resync">
+                  847.5 s
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Job">
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41133628417/job/124330549416"
+                    >124330549416</a
+                  >
+                </td>
+                <td data-label="Original / retry outer runs">
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7d8c0f28-42f1-4975-8dbc-ca209a54445b"
+                    >7d8c0f28</a
+                  >
+                  →
+                  <a
+                    href="https://app.buildbuddy.io/invocation/66fefcc2-0255-4e62-a5a9-423ea8460313"
+                    >66fefcc2</a
+                  >
+                </td>
+                <td data-label="Observed first-attempt elapsed to resync">
+                  353.6 s
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The documented pinned CLI source retries UNAVAILABLE inside its
+          log-stream observer, but propagates INTERNAL out of that loop;
+          <code>attemptRun</code> then requests cancellation and the outer loop
+          submits <code>Run</code> again. The fault-injection control uses the
+          actual pinned 5.0.466 binary against a fake gRPC service. It
+          reproduces <strong>INTERNAL → two Run requests</strong>, versus
+          <strong>UNAVAILABLE → one Run and two log observations</strong>;
+          <a
+            href="https://app.buildbuddy.io/invocation/ae03f45a-6124-412d-a845-9ca4fc76e66f"
+            >both controls passed</a
+          >. The control proves the client mechanism, not that a log-only
+          reconnect would complete each production build or identify the hosted
+          transport failure’s cause.
+        </p>
+        <p>
+          Concrete repair candidate: bounded reconnect of the read-only log
+          stream on transient INTERNAL at the existing invocation/cursor;
+          confirm execution failure with existing Run/WaitExecution status
+          before resubmission. Preserve cancellation and terminal-error
+          handling. Switching all retries off is not equivalent. The
+          source/protocol control and archived reproduction details are in
+          evidence.
+        </p>
+      </section>
+      <section id="adoption">
+        <h2>What landed, and what remains unmeasured</h2>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/13066"
+            >#13066</a
+          >
+          is present by Git ancestry in six recent originating snapshot
+          executions:
+          <a
+            href="https://app.buildbuddy.io/invocation/12ef8a50-4db4-5b65-b769-0cab0c88e2cb"
+            >26.2 s</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/abc9e9be-a5e6-59a3-bfa0-b1760db0cd7e"
+            >16.6 s</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/e794b7ae-75e1-5cee-84d7-7b9576458b17"
+            >19.5 s</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/c5335dc3-74c5-568d-b060-8a9f01bb0730"
+            >20.8 s</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/1ac21b07-93fc-52f6-abae-cee4a467c5c9"
+            >38.8 s</a
+          >,
+          <a
+            href="https://app.buildbuddy.io/invocation/0f2b5a1b-aaa4-5282-9867-7c5982849d53"
+            >36.7 s</a
+          >. A contemporaneous older-base PR still lacked the fix and took 60.2
+          s. Exact synthetic source commits were fetched before classifying
+          adoption. These different-source/cache/worker cases support
+          post-adoption behavior, not a matched fleet treatment. The prior
+          same-source pair (64.9 → 32.6 s, repeated baseline 69.3 s) remains the
+          bounded causal experiment.
+        </p>
+        <p>
+          Snapshot work is repeated executable copying/hashing, relocation and
+          independent-edit integrity checks. Keep those checks. The 14-case
+          modules-refine target normally used 5–11 process-s in six inspected
+          executions, with one 113.4 s outlier at 19.9 CPU-s. It exercises real
+          graph edits, metadata preservation, negative no-write outcomes and
+          emitted execution through CLI/Node; there is no fixed sleep in that
+          test. The outlier’s blocking/host-pressure share is not attributed
+          without off-CPU evidence; do not delete coverage or claim an
+          algorithmic regression from that wall clock alone.
+        </p>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/13087"
+            >#13087</a
+          >
+          removes the race sweep. Before adoption, 131 successful mainline
+          builds had normal-build p50 11.2 s and separate race p50 14.2 s; six
+          post-adoption builds had normal-build p50 50.6 s and no race
+          invocation. Different workloads prevent causal attribution. The
+          representative
+          <a
+            href="https://app.buildbuddy.io/invocation/f21e1743-2f14-5541-8f39-ac5432a3adb3"
+            >50.6 s build</a
+          >
+          explicitly discards analysis on the race-option change, configures
+          206,782 targets, executes no remote processes and has a 7.83 s
+          computed path. Do not equate configured-target count with all
+          recomputation; the warning/profile are the direct evidence.
+        </p>
+      </section>
+      <section id="race-placement">
+        <h2>
+          Preserve race coverage without toggling the whole build configuration
+        </h2>
+        <p>
+          A bounded same-rule test→build sequence confirms the mechanism:
+          <a
+            href="https://app.buildbuddy.io/invocation/e4f59834-65d3-4f47-8218-8398c6b4a19d"
+            >global-mode test</a
+          >
+          and
+          <a
+            href="https://app.buildbuddy.io/invocation/cc69b985-3840-48f9-9293-c0600b203f87"
+            >normal build</a
+          >
+          passed, with the build warning that the race option changed and
+          analysis cache was discarded. Removing the global test flag while
+          retaining <code>race="on"</code> on the rule made
+          <a
+            href="https://app.buildbuddy.io/invocation/d1d7ee1e-77a3-4300-a0ad-a35d6649f404"
+            >the test</a
+          >
+          and
+          <a
+            href="https://app.buildbuddy.io/invocation/c30a9e0c-73c7-4e29-8c08-7e68b348a8c7"
+            >following normal build</a
+          >
+          pass without that warning. Tiny-graph build elapsed was 2.670 versus
+          2.355 s on differently warmed runners; this is a mechanism control,
+          not a full-CI treatment.
+        </p>
+        <p>
+          For previously implicit
+          <code>//agentplane/runner/harness:harness_test</code>, an explicit
+          race attribute
+          <a
+            href="https://app.buildbuddy.io/invocation/4807a94f-a3f7-4cf4-a5e7-22e25923a2d2"
+            >passed on RBE</a
+          >; actual aquery actions have the same
+          <code>linux_amd64_race</code> and <code>-race</code> instrumentation
+          as the original global test setting. The normal journal library
+          remains <code>linux_amd64</code> without race. Inventory: 161 direct
+          Go tests, 19 already explicit race, 4 explicit pure fixtures, 138 with
+          neither attribute. A repository implementation must migrate every
+          eligible rule, preserve pure fixture behavior and verify full target
+          selection/instrumentation. No such coverage-wide migration was made
+          here.
+        </p>
+        <p>
+          Recommendation: implement this placement change as a focused source
+          PR, then run same-source full-selection test→normal-build pairs with
+          real Bazel profiles. The full current build has 43.098 s in Skyframe
+          build-driver evaluation, but that span overlaps analysis/execution and
+          is not all recoverable time. Budgeted savings remain unknown until the
+          full paired comparison; do not turn race coverage off or infer 40 s
+          savings from the cross-revision medians.
+        </p>
+      </section>
+      <section id="continuity">
+        <h2>Prior work: retain the measurements, retire the recommendations</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Track</th>
+                <th>Current disposition</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Track">Merge-base hashes</td>
+                <td data-label="Current disposition">
+                  Still deferred. The matched complete-driver ideal local-hit
+                  experiment saved 5.397 s warm and 3.845 s with a fresh JVM;
+                  production, lookup and hit-frequency costs remain unmeasured.
+                  Base/head share Skyframe state.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/devinfra/ci/debug/bazel_diff_base_hash_cache.md"
+                    ><code
+                      >devinfra/ci/debug/bazel_diff_base_hash_cache.md</code
+                    ></a
+                  >
+                  and adjacent source comments define revisit conditions. No
+                  cache proposal is revived.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Track">Startup and six guests</td>
+                <td data-label="Current disposition">
+                  Certificate watches
+                  <a href="https://github.com/agentydragon/ducktape/pull/12901"
+                    >#12901</a
+                  >, VM/shared-stack work
+                  <a href="https://github.com/agentydragon/ducktape/pull/12938"
+                    >#12938</a
+                  >/<a
+                    href="https://github.com/agentydragon/ducktape/pull/12942"
+                    >#12942</a
+                  >/<a
+                    href="https://github.com/agentydragon/ducktape/pull/12972"
+                    >#12972</a
+                  >/<a
+                    href="https://github.com/agentydragon/ducktape/pull/12999"
+                    >#12999</a
+                  >/<a
+                    href="https://github.com/agentydragon/ducktape/pull/13011"
+                    >#13011</a
+                  >/<a
+                    href="https://github.com/agentydragon/ducktape/pull/13031"
+                    >#13031</a
+                  >, harness overlap
+                  <a href="https://github.com/agentydragon/ducktape/pull/12981"
+                    >#12981</a
+                  >
+                  and import overlap
+                  <a href="https://github.com/agentydragon/ducktape/pull/13049"
+                    >#13049</a
+                  >
+                  remain landed. Retain the conservative 16.2 s import pair, not
+                  older unequal-input or whole-CI claims. Current cold/warm
+                  phases are separated above.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Track">Rust, browser sharding and scale</td>
+                <td data-label="Current disposition">
+                  Rust pipelining
+                  <a href="https://github.com/agentydragon/ducktape/pull/12929"
+                    >#12929</a
+                  >
+                  and scale-manual
+                  <a href="https://github.com/agentydragon/ducktape/pull/12934"
+                    >#12934</a
+                  >
+                  remain landed. Prior cold Rust 682→653 s and browser
+                  eight-shard tradeoff (603 process-s saved, longest
+                  shard132→196 s) retain their original populations. Do not
+                  promote compute savings as latency wins.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Track">
+                  Fixture graph and prior implementation
+                </td>
+                <td data-label="Current disposition">
+                  API split, renderer variants, DCR, bridge sharding, PostgreSQL
+                  templates, Props prefetch, shallow checkout, warm Bazel,
+                  YAML/Gazelle/marker caching retain their prior dispositions.
+                  No new evidence reverses rejected ctr/no-unpack, prepared
+                  check-container or extra Pod recycling-key experiments.
+                  Full-tree input overhead ~10.18 s still did not reproduce the
+                  old91 s stall.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Track">Reliability and clocks</td>
+                <td data-label="Current disposition">
+                  Bounded retries
+                  <a href="https://github.com/agentydragon/ducktape/pull/12896"
+                    >#12896</a
+                  >
+                  remain; cancellation/physical VM-stop and server admission are
+                  distinct unresolved boundaries. Old identity target was
+                  removed. Journal soak remains open to4 Nov06:19UTC with
+                  fresh-execution denominator uncollected. Deferred
+                  casino/grader/FreeCAD source risks have no new causal
+                  evidence. Agent webhook/inbox receipt and complete auto-merge
+                  readiness remain unobserved.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Complete previous report and supporting evidence:
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/9baa4e498267bd726c7028b4ef036d53b2c033f5/latency/index.html"
+            >30 October baseline</a
+          >. Older source-specific experiments remain commit-pinned there. This
+          refresh read all three latest reports and manifests; historical
+          results are retained with their original scope, not counted again as
+          available savings.
+        </p>
+      </section>
+      <section id="scope">
+        <h2>Sampling, resources and policy</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Bazel job event</th>
+                <th>Attempts</th>
+                <th>Queue p50/p90,s</th>
+                <th>Runtime p50/p90,s</th>
+                <th>Outcomes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Bazel job event">pull_request</td>
+                <td data-label="Attempts">332</td>
+                <td data-label="Queue p50/p90,s">3 / 138</td>
+                <td data-label="Runtime p50/p90,s">225 / 815</td>
+                <td data-label="Outcomes">
+                  {&#x27;failure&#x27;: 59, &#x27;success&#x27;: 223,
+                  &#x27;cancelled&#x27;: 48, &#x27;in_progress&#x27;: 2}
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Bazel job event">push</td>
+                <td data-label="Attempts">233</td>
+                <td data-label="Queue p50/p90,s">27 / 183</td>
+                <td data-label="Runtime p50/p90,s">173 / 627</td>
+                <td data-label="Outcomes">
+                  {&#x27;cancelled&#x27;: 85, &#x27;success&#x27;: 139,
+                  &#x27;failure&#x27;: 8, &#x27;in_progress&#x27;: 1}
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Bazel job event">pull_request_target</td>
+                <td data-label="Attempts">89</td>
+                <td data-label="Queue p50/p90,s">2 / 38</td>
+                <td data-label="Runtime p50/p90,s">287 / 899</td>
+                <td data-label="Outcomes">
+                  {&#x27;success&#x27;: 59, &#x27;failure&#x27;: 13,
+                  &#x27;cancelled&#x27;: 17}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          6,141 workflow runs arrived in the fixed 25 h 20 m window. The sweep
+          retained 34 older unfinished runs, paginated 2,367 core runs and 7,370
+          job rows across attempts. Terminal prior job pages were reused only
+          when the current run attempt matched; mutable records were fetched.
+          Completed core jobs occupied 132.9 runner-hours, mean 5.25 busy and
+          peak 20, with ≥18 busy for 39.6 min and 20 for 9.2 min. This excludes
+          other workflows/repos and unfinished jobs: a lower bound, not account
+          utilization. Higher queue tails merit attention, but this does not
+          identify an account plan or prove extra capacity is the best fix.
+        </p>
+        <p>
+          Required contexts remain <code>Build artifacts + imports check</code>,
+          <code>Pre-commit checks</code>,
+          <code>bazel-ci / Test &amp; Build</code>; zero ordinary approvals and
+          no strict up-to-date requirement. CodeQL default setup is not
+          configured. Exact push timestamps, draft/conflict/review history,
+          first API/log availability and webhook/inbox/agent receipt are
+          unavailable. GitHub clocks resolve to one second; cross-host skew is
+          uncalibrated. Nearest-rank percentiles; cancellation is not a
+          red/green verdict. Worker-seconds, CPU-seconds, runner-hours and gate
+          wall time are not added together.
+        </p>
+        <p>
+          Broad BuildBuddy invocation search timed out at 120 s; exact
+          deterministic invocation IDs and target history supplied the usable
+          evidence. Several new diagnostic attempts failed before test execution
+          on pooled outer-runner snapshot restore. A bounded
+          <code>recycle-runner=false</code> override on the outer diagnostic
+          runner reached Bazel; RBE and action caches remained enabled. This was
+          not a production-policy change.
+        </p>
+      </section>
+      <section id="live-view">
+        <h2>Follow-up: what BuildBuddy can show about active work</h2>
+        <p>
+          A separate live API follow-up on 30 October 23:10–23:13 UTC is outside
+          the run-arrival cohort above and contains mixed current source
+          revisions. Status-filtered <code>SearchInvocation</code> supports a
+          selected-organization view and pagination. The canonical-repo query
+          returned 95 partial invocation rows; 76 had not updated in over 24
+          hours, some for months. A later organization-scoped query returned 92
+          rows including other repositories. These are moving metadata
+          snapshots, not 95 or 92 running VMs.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Live view / timing sample</th>
+                <th>Observed result</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Live view / timing sample">
+                  Per-invocation GetExecution
+                </td>
+                <td data-label="Observed result">
+                  19 recently updated partial invocations plus two old examples;
+                  eight unique EXECUTING actions, 1,288 completed actions, no
+                  QUEUED action observed.
+                </td>
+                <td data-label="Interpretation">
+                  Deduplicated execution IDs, not invocation count. Four live
+                  actions are outer RemoteBazelRun, four are inner TestRunner.
+                  Selected scope, concurrent sweep; not atomic or
+                  account-complete.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Live view / timing sample">
+                  Live phase timestamps
+                </td>
+                <td data-label="Observed result">
+                  All eight noncompleted records returned epoch
+                  queued/worker/execution timestamps.
+                </td>
+                <td data-label="Interpretation">
+                  Unavailable, not zero wait. EXECUTING can include preparation;
+                  cannot use those sentinels to separate VM allocation, input
+                  preparation and actual command work.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Live view / timing sample">
+                  Completed-action queued→worker-start
+                </td>
+                <td data-label="Observed result">
+                  1,288 valid completed rows: p50~0.062 s, p90~0.068 s, maximum
+                  4.815 s.
+                </td>
+                <td data-label="Interpretation">
+                  A selected completed-action sample from the looked-up
+                  invocations. It does not measure pre-invocation admission, all
+                  outer allocation waits or the whole account.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Live view / timing sample">
+                  Cross-invocation SearchExecution
+                </td>
+                <td data-label="Observed result">
+                  Filtering to IN_PROGRESS returned no rows despite the
+                  per-invocation lookup finding live actions.
+                </td>
+                <td data-label="Interpretation">
+                  The broad search is not an adequate live action census on this
+                  server. Use the per-invocation lookup and retain this
+                  visibility boundary.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Live view / timing sample">
+                  Executor/capacity endpoint
+                </td>
+                <td data-label="Observed result">
+                  GetExecutionNodes returned 403 Forbidden.
+                </td>
+                <td data-label="Interpretation">
+                  No provider VM-slot quota or usable capacity figure was
+                  obtained. No conclusion about the configured throttle limit.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          There is no observed queued backlog in this bounded follow-up, so it
+          supplies no evidence of VM-allocation throttling. It cannot rule that
+          out at other times or before these records exist. The useful next
+          measurement is repeated, timestamped organization/parent-child
+          snapshots with action queue/preparation states and actual provider
+          capacity/quota evidence, correlated with GitHub queue clocks. Do not
+          treat stale IN_PROGRESS or cached results as live resource use. The
+          CLI status/group/pagination work and an offline snapshot analyzer make
+          that view reproducible.
+        </p>
+      </section>
+      <footer>
+        <p>
+          <a href="evidence.json">Evidence</a> ·
+          <a href="manifest.json">Manifest</a> ·
+          <a href="../latency/">Latency</a> ·
+          <a href="../reliability/">CI reliability</a> ·
+          <a href="../visual-reliability/">Visual reliability</a> ·
+          <a href="../">All reports</a>
+        </p>
+        <p>
+          Latest-only snapshot; historical measurements remain in Git. Source
+          and policy are frozen for this investigation. GitHub Pages updates
+          after the report PR merges. No production test, workflow or retry
+          policy was changed; experiments used isolated source patches and
+          remote execution.
+        </p>
+      </footer>
+    </main>
+    <script type="application/json" id="head-data">
+      [
+        {
+          "gates": {
+            "Build artifacts + imports check": 357.0,
+            "Pre-commit checks": 152.0,
+            "bazel-ci / Test & Build": 164.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 142.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 336.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 188.0,
+            "Pre-commit checks": 487.0,
+            "bazel-ci / Test & Build": 507.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 84.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 667.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 80.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 742.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 108.0,
+            "Pre-commit checks": 121.0,
+            "bazel-ci / Test & Build": 425.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 94.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 171.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 88.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 455.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 138.0,
+            "Pre-commit checks": 115.0,
+            "bazel-ci / Test & Build": 570.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 336.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 80.0,
+            "Pre-commit checks": 87.0,
+            "bazel-ci / Test & Build": 160.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 133.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 81.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 1056.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 75.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 392.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 93.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 1346.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 165.0,
+            "Pre-commit checks": 167.0,
+            "bazel-ci / Test & Build": 140.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 113.0,
+            "Pre-commit checks": 126.0,
+            "bazel-ci / Test & Build": 424.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 104.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 91.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 88.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 977.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 261.0,
+            "Pre-commit checks": 217.0,
+            "bazel-ci / Test & Build": 333.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 93.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 179.0,
+            "Pre-commit checks": 113.0,
+            "bazel-ci / Test & Build": 226.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 139.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 225.0,
+            "Pre-commit checks": 347.0,
+            "bazel-ci / Test & Build": 1422.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 139.0,
+            "Pre-commit checks": 80.0,
+            "bazel-ci / Test & Build": 1060.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 102.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 688.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 88.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 93.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 104.0,
+            "Pre-commit checks": 81.0,
+            "bazel-ci / Test & Build": 318.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 72.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 84.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 1953.0,
+            "Pre-commit checks": 60.0,
+            "bazel-ci / Test & Build": 48.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 207.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 192.0,
+            "Pre-commit checks": 145.0,
+            "bazel-ci / Test & Build": 273.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 81.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 322.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 109.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 184.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 107.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 832.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 189.0,
+            "Pre-commit checks": 104.0,
+            "bazel-ci / Test & Build": 180.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 75.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 1229.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 101.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 792.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 158.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 716.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 84.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 159.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 387.0,
+            "Pre-commit checks": 496.0,
+            "bazel-ci / Test & Build": 109.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 84.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 173.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 136.0,
+            "Pre-commit checks": 76.0,
+            "bazel-ci / Test & Build": 51.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 135.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 134.0,
+            "Pre-commit checks": 113.0,
+            "bazel-ci / Test & Build": 719.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 71.0,
+            "bazel-ci / Test & Build": 468.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 107.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 140.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 94.0,
+            "Pre-commit checks": 106.0,
+            "bazel-ci / Test & Build": 295.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 110.0,
+            "Pre-commit checks": 91.0,
+            "bazel-ci / Test & Build": 166.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 343.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 78.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 160.0,
+            "Pre-commit checks": 300.0,
+            "bazel-ci / Test & Build": 441.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 97.0,
+            "Pre-commit checks": 197.0,
+            "bazel-ci / Test & Build": 322.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 81.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 104.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 116.0,
+            "Pre-commit checks": 113.0,
+            "bazel-ci / Test & Build": 818.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 159.0,
+            "Pre-commit checks": 96.0,
+            "bazel-ci / Test & Build": 941.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 137.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 112.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 99.0,
+            "Pre-commit checks": 106.0,
+            "bazel-ci / Test & Build": 76.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 316.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 154.0,
+            "Pre-commit checks": 307.0,
+            "bazel-ci / Test & Build": 1097.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 95.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 389.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 87.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 616.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 380.0,
+            "Pre-commit checks": 109.0,
+            "bazel-ci / Test & Build": 763.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 626.0,
+            "Pre-commit checks": 412.0,
+            "bazel-ci / Test & Build": 467.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 78.0,
+            "Pre-commit checks": 71.0,
+            "bazel-ci / Test & Build": 237.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 88.0,
+            "Pre-commit checks": 71.0,
+            "bazel-ci / Test & Build": 148.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 84.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 685.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 251.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 102.0,
+            "bazel-ci / Test & Build": 89.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 75.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 86.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 583.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 95.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 72.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 95.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 125.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 81.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 168.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 456.0,
+            "Pre-commit checks": 169.0,
+            "bazel-ci / Test & Build": 545.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 243.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 114.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 92.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 550.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 91.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 156.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 82.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 110.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 413.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 94.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 210.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 105.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 97.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 76.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 72.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 86.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 249.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 76.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 200.0,
+            "Pre-commit checks": 175.0,
+            "bazel-ci / Test & Build": 858.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 233.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 170.0,
+            "Pre-commit checks": 119.0,
+            "bazel-ci / Test & Build": 399.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 91.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 822.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 190.0,
+            "Pre-commit checks": 103.0,
+            "bazel-ci / Test & Build": 285.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 608.0,
+            "Pre-commit checks": 133.0,
+            "bazel-ci / Test & Build": 242.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 74.0,
+            "bazel-ci / Test & Build": 302.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 451.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 99.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 2380.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 98.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 82.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 350.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 92.0,
+            "Pre-commit checks": 74.0,
+            "bazel-ci / Test & Build": 404.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 149.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 75.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 881.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 92.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 642.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 208.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 60.0,
+            "bazel-ci / Test & Build": 105.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 78.0,
+            "bazel-ci / Test & Build": 375.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 121.0,
+            "Pre-commit checks": 103.0,
+            "bazel-ci / Test & Build": 145.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 413.0,
+            "Pre-commit checks": 91.0,
+            "bazel-ci / Test & Build": 442.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 301.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 91.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 642.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 98.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 99.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 78.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 71.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 59.0,
+            "bazel-ci / Test & Build": 658.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 103.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 90.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 149.0,
+            "Pre-commit checks": 110.0,
+            "bazel-ci / Test & Build": 554.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 73.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 521.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 68.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 99.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 658.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 72.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 91.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 323.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 93.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 122.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 190.0,
+            "Pre-commit checks": 210.0,
+            "bazel-ci / Test & Build": 337.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 88.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 723.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 77.0,
+            "Pre-commit checks": 59.0,
+            "bazel-ci / Test & Build": 72.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 92.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 147.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 114.0,
+            "Pre-commit checks": 68.0,
+            "bazel-ci / Test & Build": 1468.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 71.0,
+            "bazel-ci / Test & Build": 97.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 105.0,
+            "Pre-commit checks": 257.0,
+            "bazel-ci / Test & Build": 160.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 408.0,
+            "Pre-commit checks": 129.0,
+            "bazel-ci / Test & Build": 121.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 82.0,
+            "Pre-commit checks": 111.0,
+            "bazel-ci / Test & Build": 162.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 95.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 314.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 130.0,
+            "Pre-commit checks": 137.0,
+            "bazel-ci / Test & Build": 200.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 68.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 80.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 94.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 106.0,
+            "Pre-commit checks": 102.0,
+            "bazel-ci / Test & Build": 101.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 720.0,
+            "Pre-commit checks": 340.0,
+            "bazel-ci / Test & Build": 403.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 136.0,
+            "Pre-commit checks": 149.0,
+            "bazel-ci / Test & Build": 146.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 91.0,
+            "Pre-commit checks": 77.0,
+            "bazel-ci / Test & Build": 195.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 63.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 204.0,
+            "Pre-commit checks": 368.0,
+            "bazel-ci / Test & Build": 534.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 92.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 73.0,
+            "Pre-commit checks": 57.0,
+            "bazel-ci / Test & Build": 247.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 101.0,
+            "bazel-ci / Test & Build": 91.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 103.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 87.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 109.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 1132.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 60.0,
+            "bazel-ci / Test & Build": 290.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 290.0,
+            "Pre-commit checks": 160.0,
+            "bazel-ci / Test & Build": 897.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 66.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 249.0,
+            "Pre-commit checks": 327.0,
+            "bazel-ci / Test & Build": 134.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 732.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 189.0,
+            "Pre-commit checks": 105.0,
+            "bazel-ci / Test & Build": 153.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 60.0,
+            "bazel-ci / Test & Build": 1212.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 80.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 75.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 953.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 259.0,
+            "Pre-commit checks": 85.0,
+            "bazel-ci / Test & Build": 110.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 108.0,
+            "Pre-commit checks": 129.0,
+            "bazel-ci / Test & Build": 858.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 121.0,
+            "Pre-commit checks": 94.0,
+            "bazel-ci / Test & Build": 164.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 104.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 122.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 129.0,
+            "Pre-commit checks": 75.0,
+            "bazel-ci / Test & Build": 401.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 189.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 1014.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 162.0,
+            "Pre-commit checks": 86.0,
+            "bazel-ci / Test & Build": 1284.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 99.0,
+            "Pre-commit checks": 80.0,
+            "bazel-ci / Test & Build": 1239.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 102.0,
+            "Pre-commit checks": 90.0,
+            "bazel-ci / Test & Build": 89.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 178.0,
+            "Pre-commit checks": 159.0,
+            "bazel-ci / Test & Build": 496.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 65.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 238.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 75.0,
+            "bazel-ci / Test & Build": 708.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 74.0,
+            "bazel-ci / Test & Build": 86.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 165.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 196.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 328.0,
+            "Pre-commit checks": 335.0,
+            "bazel-ci / Test & Build": 468.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 82.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 557.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 71.0,
+            "bazel-ci / Test & Build": 482.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 109.0,
+            "Pre-commit checks": 84.0,
+            "bazel-ci / Test & Build": 91.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 115.0,
+            "Pre-commit checks": 145.0,
+            "bazel-ci / Test & Build": 316.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 692.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 106.0,
+            "Pre-commit checks": 73.0,
+            "bazel-ci / Test & Build": 1362.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 147.0,
+            "Pre-commit checks": 89.0,
+            "bazel-ci / Test & Build": 239.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 128.0,
+            "Pre-commit checks": 99.0,
+            "bazel-ci / Test & Build": 115.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 99.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 247.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 67.0,
+            "bazel-ci / Test & Build": 897.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 1812.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 101.0,
+            "Pre-commit checks": 70.0,
+            "bazel-ci / Test & Build": 93.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 80.0,
+            "bazel-ci / Test & Build": 1673.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 91.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 311.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 87.0,
+            "bazel-ci / Test & Build": 705.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 151.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 79.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 81.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 177.0,
+            "Pre-commit checks": 212.0,
+            "bazel-ci / Test & Build": 933.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 89.0,
+            "Pre-commit checks": 200.0,
+            "bazel-ci / Test & Build": 338.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 107.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 126.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 138.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 177.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 69.0,
+            "bazel-ci / Test & Build": 465.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 230.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 96.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 815.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 90.0,
+            "Pre-commit checks": 63.0,
+            "bazel-ci / Test & Build": 205.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 156.0,
+            "Pre-commit checks": 99.0,
+            "bazel-ci / Test & Build": 830.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 118.0,
+            "Pre-commit checks": 127.0,
+            "bazel-ci / Test & Build": 78.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 93.0,
+            "Pre-commit checks": 72.0,
+            "bazel-ci / Test & Build": 727.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 818.0,
+            "Pre-commit checks": 410.0,
+            "bazel-ci / Test & Build": 282.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 240.0,
+            "Pre-commit checks": 830.0,
+            "bazel-ci / Test & Build": 1063.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 127.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 150.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 129.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 83.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 933.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 261.0,
+            "Pre-commit checks": 231.0,
+            "bazel-ci / Test & Build": 316.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 95.0,
+            "Pre-commit checks": 89.0,
+            "bazel-ci / Test & Build": 146.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 60.0,
+            "bazel-ci / Test & Build": 699.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 62.0,
+            "bazel-ci / Test & Build": 1159.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 87.0,
+            "Pre-commit checks": 65.0,
+            "bazel-ci / Test & Build": 166.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 86.0,
+            "Pre-commit checks": 61.0,
+            "bazel-ci / Test & Build": 329.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 78.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 329.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 132.0,
+            "Pre-commit checks": 64.0,
+            "bazel-ci / Test & Build": 324.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 92.0,
+            "Pre-commit checks": 75.0,
+            "bazel-ci / Test & Build": 231.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 197.0,
+            "Pre-commit checks": 120.0,
+            "bazel-ci / Test & Build": 110.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 94.0,
+            "Pre-commit checks": 76.0,
+            "bazel-ci / Test & Build": 470.0
+          }
+        },
+        {
+          "gates": {
+            "Build artifacts + imports check": 85.0,
+            "Pre-commit checks": 66.0,
+            "bazel-ci / Test & Build": 339.0
+          }
+        }
+      ]
+    </script>
+    <script>
+      const hs = JSON.parse(document.querySelector("#head-data").textContent);
+      function calc() {
+        const g = document.querySelector("#gate").value,
+          c = +document.querySelector("#cut").value;
+        const s = hs
+          .map(
+            (h) =>
+              Math.max(...Object.values(h.gates)) -
+              Math.max(
+                ...Object.entries(h.gates).map(([k, v]) =>
+                  Math.max(0, v - (k === g ? c : 0)),
+                ),
+              ),
+          )
+          .sort((a, b) => a - b);
+        document.querySelector("#cutValue").textContent = c + " s";
+        document.querySelector("#saving").textContent =
+          s.length +
+          " heads · mean " +
+          (s.reduce((a, b) => a + b, 0) / s.length).toFixed(1) +
+          " s · p50 / p90 " +
+          s[Math.ceil(s.length * 0.5) - 1] +
+          " / " +
+          s[Math.ceil(s.length * 0.9) - 1] +
+          " s";
+      }
+      document.querySelector("#gate").addEventListener("change", calc);
+      document.querySelector("#cut").addEventListener("input", calc);
+      calc();
+    </script>
+  </body>
+</html>

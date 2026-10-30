@@ -1,8 +1,7 @@
 {
-  "source_devel_commit": "ee3ffa76a8f899be9a35a776374d2a4fd94198c1",
-  "window_start_utc": "2026-10-15T12:43:39Z",
-  "window_end_utc": "2026-10-16T05:14:26Z",
-  "published_at_utc": "2026-10-16T09:36:41+00:00",
-  "attribution": "not collected",
-  "fleet_evidence_updated_at_utc": "2026-10-16T09:36:41Z"
+  "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+  "window_start_utc": "2026-10-30T09:29:41Z",
+  "window_end_utc": "2026-10-30T22:09:35Z",
+  "published_at_utc": "2026-10-30T23:27:37.619468+00:00",
+  "attribution": "not collected"
 }
