@@ -12,7 +12,7 @@
 //! scan, before purity runs (plan § 5 pipeline order). It is flow-insensitive:
 //! a write anywhere in the chunk taints the allocation for every read.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use swc_common::Spanned;
 use swc_ecma_ast::*;
@@ -92,6 +92,12 @@ impl ObjectState {
     fn is_plain(self) -> bool {
         self.escape == Escape::Private && self.taint == Taint::Clean
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NestedBodies {
+    Follow,
+    Skip,
 }
 
 #[derive(Clone, Copy)]
@@ -496,7 +502,7 @@ fn body_key(span: swc_common::Span) -> BodyKey {
 /// that mentions `arguments` can hand out itself through `arguments.callee`.
 fn in_chunk_callables(body: &[TopLevelItemView<'_>]) -> BTreeSet<BodyKey> {
     let mut declarations: BTreeMap<Id, usize> = BTreeMap::new();
-    let mut named: BTreeMap<Id, BodyKey> = BTreeMap::new();
+    let mut named: HashMap<Id, BodyKey> = HashMap::new();
     for item in body {
         let item = item.as_module_item();
         for id in collect_declared_names(item) {
@@ -527,7 +533,7 @@ fn in_chunk_callables(body: &[TopLevelItemView<'_>]) -> BTreeSet<BodyKey> {
     named.retain(|id, _| declarations.get(id) == Some(&1));
     let mut references = CalleeOnlyReferences {
         named: &named,
-        escaped: BTreeSet::new(),
+        escaped: HashSet::new(),
         inline: BTreeSet::new(),
     };
     for item in body {
@@ -573,8 +579,8 @@ fn mentions_arguments(function: &Function) -> bool {
 /// Marks a candidate binding escaped at any reference other than a direct
 /// callee or an export, and at any rebinding.
 struct CalleeOnlyReferences<'a> {
-    named: &'a BTreeMap<Id, BodyKey>,
-    escaped: BTreeSet<Id>,
+    named: &'a HashMap<Id, BodyKey>,
+    escaped: HashSet<Id>,
     inline: BTreeSet<BodyKey>,
 }
 
@@ -843,16 +849,43 @@ impl HeapScan<'_> {
 
     /// Apply `effect` to every root value flow says `expr` can reach.
     fn apply_to_reachable(&mut self, expr: &Expr, effect: HeapEffect) {
+        self.apply_to_reachable_from(expr, effect, NestedBodies::Follow);
+    }
+
+    /// `NestedBodies::Skip` leaves out what function and class bodies inside
+    /// `expr` reference: a returned closure exposes those values only through
+    /// its own returns and calls, which the scan visits in that body.
+    fn apply_to_reachable_from(&mut self, expr: &Expr, effect: HeapEffect, nested: NestedBodies) {
         let Some(flow) = self.value_flow else {
             return;
         };
+        // Duplicates only repeat an idempotent root lookup.
         struct ReferencedIds<'a> {
-            ids: BTreeSet<Id>,
+            ids: Vec<Id>,
             primitive_members: &'a BTreeMap<Id, BTreeSet<String>>,
+            nested: NestedBodies,
         }
         impl Visit for ReferencedIds<'_> {
             fn visit_ident(&mut self, ident: &Ident) {
-                self.ids.insert(ident.to_id());
+                self.ids.push(ident.to_id());
+            }
+
+            fn visit_function(&mut self, node: &Function) {
+                if self.nested == NestedBodies::Follow {
+                    node.visit_children_with(self);
+                }
+            }
+
+            fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+                if self.nested == NestedBodies::Follow {
+                    node.visit_children_with(self);
+                }
+            }
+
+            fn visit_class(&mut self, node: &Class) {
+                if self.nested == NestedBodies::Follow {
+                    node.visit_children_with(self);
+                }
             }
 
             fn visit_member_expr(&mut self, member: &MemberExpr) {
@@ -870,8 +903,9 @@ impl HeapScan<'_> {
             }
         }
         let mut referenced = ReferencedIds {
-            ids: BTreeSet::new(),
+            ids: Vec::new(),
             primitive_members: &self.primitive_members,
+            nested,
         };
         expr.visit_with(&mut referenced);
         let index = self
@@ -962,7 +996,7 @@ impl HeapScan<'_> {
                 value.visit_with(self);
             }
         } else {
-            self.apply_to_reachable(value, HeapEffect::Publish);
+            self.apply_to_reachable_from(value, HeapEffect::Publish, NestedBodies::Skip);
             value.visit_with(self);
         }
     }

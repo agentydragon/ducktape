@@ -647,13 +647,15 @@ impl ValuesBuilder {
 /// results to the roots requested by one consumer.
 pub(crate) struct CandidateObjectIndex<'a> {
     flow: &'a ChunkValueFlow,
-    mask: Vec<u64>,
+    /// The nonzero words of the requested-root mask, by word index: a lookup
+    /// costs the requested roots, not every candidate object in the chunk.
+    mask: Vec<(usize, u64)>,
 }
 
 impl CandidateObjectIndex<'_> {
     fn visit_bits(&self, bits: &[u64], mut visit: impl FnMut(Value)) {
-        for (word_index, word) in bits.iter().copied().enumerate() {
-            let mut remaining = word & self.mask.get(word_index).copied().unwrap_or_default();
+        for &(word_index, mask) in &self.mask {
+            let mut remaining = bits.get(word_index).copied().unwrap_or_default() & mask;
             while remaining != 0 {
                 let bit = remaining.trailing_zeros() as usize;
                 visit(self.flow.candidate_objects[word_index * 64 + bit]);
@@ -758,6 +760,11 @@ impl ChunkValueFlow {
                 .expect("candidate roots must be registered before value-flow solving");
             mask[index / 64] |= 1 << (index % 64);
         }
+        let mask = mask
+            .into_iter()
+            .enumerate()
+            .filter(|(_, word)| *word != 0)
+            .collect();
         CandidateObjectIndex { flow: self, mask }
     }
 
