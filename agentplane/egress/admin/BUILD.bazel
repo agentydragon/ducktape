@@ -38,6 +38,7 @@ go_test(
         "//agentplane/egress/history",
         "//agentplane/egress/policy",
         "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/go/auth",
