@@ -1311,6 +1311,18 @@ conservative. Private truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
+**Builtin member rows.** `MEMBER_ROWS` in `facts/abstract_domain/builtins.rs`
+summarizes host methods selected by property name on any receiver. A call
+`x.addEventListener("type", listener)` with a string-literal type and no spread
+selects the `addEventListener` row, which invokes no argument at call time: the
+fallback takes no roots and no inline-callback closure from the call, and the
+synchronous summary leaves its arguments out of the callback pool it runs at
+the call. The listener still becomes globally reachable, so later opaque code
+may invoke it. The receiver's identity is not proved; the row is a host
+assumption about every same-named method. Known gap: an object `options`
+argument's dictionary conversion reads `capture`, `once`, `passive` and
+`signal` through `[[Get]]`, which the row does not list.
+
 **Inherited class effects.** When an opaque use can invoke a class's
 constructor, field initializers, methods, or accessors, promotion follows the
 class's retained superclass value too. For a top-level class declaration with
@@ -1329,8 +1341,9 @@ summaries; the call also remains impure for S-chain ordering unless a
 separate purity hint applies. The hint suppresses the conservative
 "the callback may have run now" edge for inline functions, object
 literals containing functions, and first-order argument callbacks.
-The synchronous value-flow summary honors the same argument exemption for
-static event-listener registrations. Neither exemption suppresses reentry
+The synchronous value-flow summary honors the same argument exemption, and
+both honor it for calls a builtin member row admits with no `invokes` (below).
+Neither exemption suppresses reentry
 through callbacks already escaped to host code or available exports.
 Purity annotations alone do not assert that callback arguments are deferred.
 The separate exact-signature `no_reentry_callback_exports` author contract

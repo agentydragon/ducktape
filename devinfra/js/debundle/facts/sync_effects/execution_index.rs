@@ -22,7 +22,7 @@ use crate::facts::abstract_domain::integrity::{
 };
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::at_init_fallback::{
-    is_no_sync_callback_member_call, is_static_event_listener_registration,
+    is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
 use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
@@ -11205,7 +11205,7 @@ impl Visit for ExecutionIndex {
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
                     &self.no_sync_callback_members,
-                ) || is_static_event_listener_registration(callee, &call.args),
+                ) || member_row_invokes_no_argument(callee, &call.args),
                 caller: self.current,
                 owner: self.owner,
                 plain_object_sources: call.args.len() > 1

@@ -187,11 +187,11 @@ impl StatementFactsCollector {
         let Callee::Expr(callee) = &node.callee else {
             return false;
         };
-        is_static_event_listener_registration(callee, &node.args)
+        member_row_invokes_no_argument(callee, &node.args)
     }
 
     fn is_known_event_listener_registration_opt_call(&self, node: &OptCall) -> bool {
-        is_static_event_listener_registration(&node.callee, &node.args)
+        member_row_invokes_no_argument(&node.callee, &node.args)
     }
 
     fn is_async_direct_function_call(&self, call: &CallExpr) -> bool {
