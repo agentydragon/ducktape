@@ -52,9 +52,36 @@ revisions; BuildBuddy supplies invocation, target, shard, and attempt outcomes.
 - Use invocation details or checkout/job evidence for the actual tested full SHA.
   A PR head and its synthetic merge commit are not interchangeable.
 
-BuildBuddy's flake statistics are useful leads. Report the service's heuristic
-separately from independently verified recoveries and document its sample window.
-Unavailable historical logs limit diagnosis; they do not erase recorded outcomes.
+### Query BuildBuddy's Flakes APIs
+
+Use `GetTargetStats` to discover candidates and `GetTargetFlakeSamples` to inspect
+the important candidates, alongside ordinary failure history and non-green merges.
+The corresponding CLI commands are:
+
+```bash
+bbapi target stats --repo https://github.com/agentydragon/ducktape --json > target-stats.json
+bbapi target flakes "$TARGET_LABEL" --repo https://github.com/agentydragon/ducktape --json > flake-samples.json
+```
+
+Select the canonical repository explicitly. Local `file://` checkout URLs and
+forks have separate histories; automatic repo detection or a remembered UI
+selection can query the wrong one. Verify the organization, recorded repository,
+branch and time filters before interpreting an empty response. A missing branch
+name in recorded invocations cannot match `devel`. These APIs default to seven
+days when no window is supplied; use supported CLI filters or the RPC's
+`started_after`/`started_before` fields for a different window, and record it.
+Follow sample `nextPageToken` values; one page is not a complete sample set.
+
+Keep Bazel-reported `FLAKY` verdicts separate from BuildBuddy's `likely_flaky_runs`
+heuristic: an isolated failure/timeout bracketed by passing runs of the target.
+That heuristic does not require the same commit or configuration and excludes
+cached rows. It can miss repeated failures and does not establish a cause.
+Check whether CI target tracking includes the relevant invocations (`ROLE=CI`
+and target tracking enabled); this repository deliberately excludes PR invocations
+from that mainline tracker, so reconcile the results with GitHub PR checks and
+exact target histories. Report API candidates separately from independently
+verified recoveries. Unavailable historical logs limit diagnosis; they do not
+erase recorded outcomes.
 
 ### Find PRs merged without green checks
 
