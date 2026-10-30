@@ -73,7 +73,7 @@ The live `litellm/key-buildbuddy-live-tests` resource
 per 30 days. This verifies the managed resource, not BuildBuddy secret delivery or
 remaining spend. No secret value was retrieved.
 
-Add a compaction-capable paid API route, such as
+For the initially evaluated LiteLLM-based acceptance option, add a compaction-capable paid API route, such as
 `anthropic-api/ant-messages/claude-sonnet-5`, specifically to the BuildBuddy key.
 Changing the shared `cheap_experiments_models` lane would also widen the separate
 `cheap-experiments` key and is unnecessary for this acceptance test.
@@ -83,9 +83,9 @@ Changing the shared `cheap_experiments_models` lane would also widen the separat
 1. Keep on-demand server compaction as the preferred primitive for both explicit
    `Compact` and sampler-triggered automatic compaction. It has no 50,000-token
    trigger minimum and permits a small real-model acceptance conversation.
-2. First add verified LiteLLM support for its top-level request parameter. A newer
-   release is a candidate only after the same request-path check passes; no upgrade
-   target was established in this investigation.
+2. A proxy-based route would need verified LiteLLM support for its top-level request
+   parameter. The selected direct Anthropic adapter bypasses this filter; a LiteLLM
+   upgrade is not a prerequisite for that route.
 3. Preserve the signed block exactly, replace the summarized input, and send the
    on-demand beta on subsequent requests. Compact only after outstanding tool calls
    are settled. Preserve standing instructions and retained History independently.
@@ -99,7 +99,32 @@ and [threshold compaction](https://platform.claude.com/docs/en/build-with-claude
 The two protocols use different history placement and cannot be combined on one
 request. Threshold compaction's supported trigger minimum is 50,000 input tokens.
 
-No generation or compaction request was sent to a real model. This investigation
-confirms live model capabilities and installed proxy transformation behavior; it
-does not establish end-to-end compaction, streaming accounting, or BuildBuddy live-test
-success. No deployment or credential policy was changed.
+The compatibility probe above sent no generation or compaction request. It established model
+capabilities and installed proxy behavior only. The subsequent implementation acceptance below
+establishes end-to-end generation, compaction and BuildBuddy live-test behavior. No deployment was
+changed during either stage.
+
+## Implementation acceptance
+
+[PR #13085](https://github.com/agentydragon/ducktape/pull/13085) implements direct organization-paid
+Anthropic Messages in the sampler. No staging deployment or subscription cutover was performed.
+The existing organization key was authorized for bounded tests, injected only through ephemeral
+redacted BuildBuddy headers. Persistent provisioning remains [#13063](https://github.com/agentydragon/ducktape/issues/13063).
+
+- [All three real Haiku cases pass](https://app.buildbuddy.io/invocation/107cb976-2b78-440e-8b55-70265d3a6c61):
+  JSON exec and actual nested shell execution; manual signed compaction with unchanged retained
+  thinking, strict prefix validation, empty response transformations, sampler restart, fact recall
+  and another tool call; cache creation then reads across a per-message effort change; automatic
+  compaction followed by resumed sampling and recall. The target uses `claude-haiku-5-5`.
+- [All six sampler test targets pass](https://app.buildbuddy.io/invocation/ac606445-cd9d-455e-91d2-5c4b02cb90da),
+  including existing Responses behavior and real-Postgres native truncation/compaction atomicity.
+- [The Go target passes with database fault injection](https://app.buildbuddy.io/invocation/08ff7386-7508-4568-87d8-335329726658):
+  failed request evidence prevents provider dispatch; failed response evidence after a durable
+  prefix leaves the dispatched intent unresolved without executable output.
+- [Six chart/catalog/manifest/render targets pass](https://app.buildbuddy.io/invocation/1e3edcd3-2d1c-4ac7-b72d-4559fc323fa3).
+  Changed-file pre-commit hooks pass. Generated manifests match the chart.
+
+Live fixture configs now refer to private temporary credential files outside uploaded artifacts;
+provider records omit authentication. The service stores native request/response content in its
+own DB without requiring the integration app or a Langfuse exporter. Direct usage is billed to the
+organization and does not inherit LiteLLM virtual-key budgets.

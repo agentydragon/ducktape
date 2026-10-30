@@ -566,8 +566,8 @@ flowchart LR
     CENTRAL_SAMPLER_V1 --> CENTRAL_SAMPLER_PRODUCTION_IMPL[Unscheduled: production sampler implementation, Go preferred]
     CENTRAL_SAMPLER_PRODUCTION_IMPL --> CENTRAL_SAMPLER_DEPLOYMENT[Unscheduled: opt-in deployment]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: model-compatible tools and request features]
-    CENTRAL_SAMPLER_ANTHROPIC_ROUTING[In progress: direct Anthropic connections and credentials]
-    CENTRAL_SAMPLER_ANTHROPIC_ROUTING --> CENTRAL_SAMPLER_ANTHROPIC_MESSAGES[In progress: Messages, durable exchanges and compaction]
+    CENTRAL_SAMPLER_ANTHROPIC_ROUTING[In review: direct Anthropic connections and credentials]
+    CENTRAL_SAMPLER_ANTHROPIC_ROUTING --> CENTRAL_SAMPLER_ANTHROPIC_MESSAGES[In review: Messages, durable exchanges and compaction]
     CENTRAL_SAMPLER_ANTHROPIC_MESSAGES --> CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_ANTHROPIC_MESSAGES --> CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
@@ -694,8 +694,9 @@ rollout is scheduled by this entry.
 
 ### `CENTRAL_SAMPLER_ANTHROPIC_ROUTING` — direct provider connections and credentials
 
-**In progress; operator accepted direct routing and the named-connection config sketch,
-2026-10-30 PDT.**
+**In review; [PR #13085](https://github.com/agentydragon/ducktape/pull/13085), Codex,
+2026-10-30 PDT.** Named connections, sampler-only organization credential wiring, direct TLS egress
+and the independent central-sampler model roster are implemented. No deployment has changed.
 [Component plan](../x/central_sampler/plans/anthropic.md#provider-route-and-credentials).
 Implement server-owned connection/model bindings for direct organization Anthropic access, with
 request/response content owned by the sampler DB. Wire the declarative credential source, direct
@@ -707,7 +708,12 @@ reviewable chart/credential wiring for the selected route; no deployed cutover h
 
 ### `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES` — Messages, durable exchanges and compaction
 
-**In progress with `CENTRAL_SAMPLER_ANTHROPIC_ROUTING`; requested scope, 2026-10-30 PDT.**
+**In review with `CENTRAL_SAMPLER_ANTHROPIC_ROUTING`;
+[PR #13085](https://github.com/agentydragon/ducktape/pull/13085), Codex, 2026-10-30 PDT.**
+Implementation and bounded real Haiku acceptance are complete; retained thinking, manual/automatic
+compaction, restart, tools and cache reads through an effort change pass.
+[Validation evidence](../debug/2026-10-30-anthropic-compaction-compatibility.md#implementation-acceptance).
+Review and rollout remain distinct; no live staging cutover has occurred.
 [Component plan](../x/central_sampler/plans/anthropic.md#messages-and-ordinary-compaction).
 Support organization-paid Anthropic models with the shared code-mode host/executor, native
 continuation and full request/response content in the sampler DB. Include manual and automatic

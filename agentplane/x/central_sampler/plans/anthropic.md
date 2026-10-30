@@ -8,6 +8,9 @@ database. Langfuse export can follow independently. The implementation adds name
 The chart wires the existing organization credential supplier; usage is billed to that organization
 directly, outside LiteLLM virtual-key budgets. No deployment has changed.
 
+Implementation is in review in [PR #13085](https://github.com/agentydragon/ducktape/pull/13085).
+Bounded direct Haiku acceptance covers the selected features; see
+[the validation record](../../../debug/2026-10-30-anthropic-compaction-compatibility.md#implementation-acceptance).
 Status and dependencies belong in the [task DAG](../../../plans/task_dag.md#central_sampler_anthropic_routing--direct-provider-connections-and-credentials).
 
 ## Provider route and credentials
