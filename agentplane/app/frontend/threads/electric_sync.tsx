@@ -62,6 +62,8 @@ const stateSchema = z.union([
       applied_reasoning_effort: z.string().nullable(),
       active_turn_id: z.string().nullable(),
       harness_state: z.string().nullable(),
+      // Older projection epochs omit this field until History replays the retained events.
+      blocked_reason: z.string().nullable().default(null),
     }),
     operational: z.object({
       status: z.enum(["active", "ended", "failed"]),

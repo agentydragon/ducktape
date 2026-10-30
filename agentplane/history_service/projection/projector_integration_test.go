@@ -51,6 +51,14 @@ func harnessExited(cursor uint64) *eventlogpb.EventEntry {
 	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_HarnessExited{HarnessExited: &eventpb.HarnessExited{}}})
 }
 
+func blockedProgress(cursor uint64) *eventlogpb.EventEntry {
+	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
+		ExecutionProgress: &eventpb.ExecutionProgress{
+			Kind: "session", Phase: "blocked", PayloadJson: `{"reason":"provider unavailable"}`,
+		},
+	}})
+}
+
 // completedTurn is one turn whose reply streams as deltas for more than a page.
 func completedTurn(first uint64) []*eventlogpb.EventEntry {
 	const deltas = testPageSize + 2
@@ -198,6 +206,110 @@ func TestProjectBatchFoldsAPageAtATimeUntilCaughtUp(t *testing.T) {
 		!sameTime(summary.firstEventAt, sql.NullTime{Time: at(1), Valid: true}) ||
 		!sameTime(summary.lastEventAt, sql.NullTime{Time: at(total), Valid: true}) {
 		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestProjectBatchResetsFoldEpochFromRetainedEvents(t *testing.T) {
+	f := newProjectorFixture(t)
+	const oldEpoch = "history-v1"
+	f.projector.Epoch = oldEpoch
+	input := &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{
+		Command: &commandpb.Command{
+			CommandId: "owner-input",
+			Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "keep this input"}},
+		},
+	}}}
+	sessionID := f.retained(t, f.history, entry(1, input), blockedProgress(2))
+	if _, err := f.db.Exec(`UPDATE session_history SET sandbox_namespace = 'operator-owned-namespace',
+		sandbox_name = 'operator-owned-sandbox' WHERE id = $1`, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	lease := f.acquire(t, sessionID)
+	if got := f.fold(t, sessionID, lease); got.ThroughCursor != 2 {
+		t.Fatalf("initial projection = %+v, want cursor 2", got)
+	}
+
+	// A prior epoch has no blocked_reason field; model its view row as that older writer did.
+	if _, err := f.db.Exec(`UPDATE thread_entity SET state = jsonb_set(state, '{controls,blocked_reason}', 'null'::jsonb, true)
+		WHERE thread_id = $1 AND projection_epoch = $2 AND entity_kind = 'view_state'`, sessionID, oldEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if old, _ := viewStateOf(t, f.db, sessionID); old.Controls.BlockedReason != nil {
+		t.Fatalf("old epoch unexpectedly has blocked reason %v", old.Controls.BlockedReason)
+	}
+	var rawBefore string
+	if err := f.db.QueryRow(`SELECT string_agg(encode(payload, 'hex'), ',' ORDER BY cursor)
+		FROM session_event WHERE session_id = $1`, sessionID).Scan(&rawBefore); err != nil {
+		t.Fatal(err)
+	}
+	var metadataBefore [2]string
+	if err := f.db.QueryRow("SELECT sandbox_namespace, sandbox_name FROM session_history WHERE id = $1", sessionID).
+		Scan(&metadataBefore[0], &metadataBefore[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	f.projector.Epoch = FoldEpoch
+	if got := f.fold(t, sessionID, lease); got.ThroughCursor != 2 || got.CommittedCursor != 2 {
+		t.Fatalf("reprojected page = %+v, want cursor 2", got)
+	}
+	var epoch string
+	var through uint64
+	if err := f.db.QueryRow("SELECT projection_epoch, through_cursor FROM thread_checkpoint WHERE thread_id = $1", sessionID).
+		Scan(&epoch, &through); err != nil {
+		t.Fatal(err)
+	}
+	if epoch != FoldEpoch || through != 2 {
+		t.Fatalf("new checkpoint = %s/%d, want %s/2", epoch, through, FoldEpoch)
+	}
+	if got, _ := viewStateOf(t, f.db, sessionID); got.Controls.BlockedReason == nil || *got.Controls.BlockedReason != "provider unavailable" {
+		t.Fatalf("reprojected blocked reason = %v", got.Controls.BlockedReason)
+	}
+	var inputRef []byte
+	if err := f.db.QueryRow(`SELECT input_ref FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2
+		AND entity_kind = 'command' AND entity_id = 'owner-input'`, sessionID, FoldEpoch).Scan(&inputRef); err != nil {
+		t.Fatal(err)
+	}
+	reference, err := threadfold.ParseReference(inputRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bodyOf(t, f.db, sessionID, reference); got != "keep this input" {
+		t.Fatalf("reprojected user input = %q", got)
+	}
+	var rawAfter string
+	if err := f.db.QueryRow(`SELECT string_agg(encode(payload, 'hex'), ',' ORDER BY cursor)
+		FROM session_event WHERE session_id = $1`, sessionID).Scan(&rawAfter); err != nil {
+		t.Fatal(err)
+	}
+	if rawAfter != rawBefore {
+		t.Fatal("raw Session history changed during the epoch reset")
+	}
+	var metadataAfter [2]string
+	if err := f.db.QueryRow("SELECT sandbox_namespace, sandbox_name FROM session_history WHERE id = $1", sessionID).
+		Scan(&metadataAfter[0], &metadataAfter[1]); err != nil {
+		t.Fatal(err)
+	}
+	if metadataAfter != metadataBefore {
+		t.Fatalf("Session metadata changed during reset: before %v, after %v", metadataBefore, metadataAfter)
+	}
+	if count(t, f.db, "SELECT count(*) FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2", sessionID, oldEpoch) != 0 {
+		t.Fatal("old derived projection rows survived the epoch reset")
+	}
+
+	f.projector.Epoch = oldEpoch
+	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, lease); err == nil {
+		t.Fatal("an old projector downgraded the new fold epoch")
+	} else {
+		var replicationError *ReplicationError
+		if !errors.As(err, &replicationError) {
+			t.Fatalf("old projector error = %v, want replication error", err)
+		}
+	}
+	if err := f.db.QueryRow("SELECT projection_epoch FROM thread_checkpoint WHERE thread_id = $1", sessionID).Scan(&epoch); err != nil {
+		t.Fatal(err)
+	}
+	if epoch != FoldEpoch {
+		t.Fatalf("old projector changed checkpoint epoch to %s", epoch)
 	}
 }
 

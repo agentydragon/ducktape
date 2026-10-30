@@ -53,6 +53,8 @@ class ThreadControlsState(BaseModel):
     applied_reasoning_effort: str | None = None
     active_turn_id: str | None
     harness_state: str | None
+    # history-v1 rows omit this field while replicas replay into history-v2.
+    blocked_reason: str | None = None
 
 
 class ThreadFeedErrorState(BaseModel):

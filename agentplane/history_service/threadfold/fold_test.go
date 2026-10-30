@@ -1,6 +1,7 @@
 package threadfold
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -24,6 +26,12 @@ func entry(cursor uint64, event *eventpb.Event, sourceSequences ...uint64) *even
 		Origin: &eventlogpb.EventOrigin{SourceId: testSource, Sequence: cursor},
 		Event:  event,
 	}
+}
+
+func executionProgress(cursor uint64, kind, phase, payload string) *eventlogpb.EventEntry {
+	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
+		ExecutionProgress: &eventpb.ExecutionProgress{Kind: kind, Phase: phase, PayloadJson: payload},
+	}})
 }
 
 func textDelta(cursor uint64, itemID, text string) *eventlogpb.EventEntry {
@@ -259,6 +267,78 @@ func TestEffortChangeSettlesItsCommandAndUpdatesControls(t *testing.T) {
 	}
 	if got := result.LifecycleUpserts[0].Observation; got != "reasoning_effort_changed" {
 		t.Errorf("first lifecycle segment = %q", got)
+	}
+}
+
+func TestSessionBlockedProgressIsSilentAndSurvivesCheckpointPaging(t *testing.T) {
+	store := newMemory(t)
+	blocked := store.apply(t, executionProgress(1, "session", "blocked", `{"reason":"provider unavailable"}`))
+	if got := store.state.Controls.BlockedReason; got == nil || *got != "provider unavailable" {
+		t.Fatalf("blocked reason = %v, want provider unavailable", got)
+	}
+	if len(blocked.LifecycleUpserts) != 0 {
+		t.Fatalf("blocked progress created lifecycle rows: %+v", blocked.LifecycleUpserts)
+	}
+
+	rows, err := OrderedEntityRows(uuid.New(), blocked, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].EntityKind != KindViewState {
+		t.Fatalf("blocked progress rows = %+v, want only view state", rows)
+	}
+	var encoded struct {
+		Controls map[string]json.RawMessage `json:"controls"`
+	}
+	if err := json.Unmarshal(rows[0].State, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(encoded.Controls["blocked_reason"]); got != `"provider unavailable"` {
+		t.Fatalf("serialized blocked reason = %s", got)
+	}
+	stored, err := ReadViewState(rows[0].State)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Restore the state from the stored checkpoint before folding the next page.
+	restored := ViewState{
+		Position: store.state.Position,
+		Controls: Controls{
+			AppliedModel: stored.Controls.AppliedModel, AppliedReasoningEffort: stored.Controls.AppliedReasoningEffort,
+			ActiveTurnID: stored.Controls.ActiveTurnID, HarnessState: stored.Controls.HarnessState,
+			BlockedReason: stored.Controls.BlockedReason,
+		},
+	}
+	continued, err := Advance(restored, EventBatch{
+		SourceID: testSource, AfterCursor: 1,
+		Entries: []*eventlogpb.EventEntry{
+			executionProgress(2, "session", "failed", `{"reason":"ordinary failure"}`),
+			executionProgress(3, "provider", "blocked", `{"reason":"nested operation blocked"}`),
+			entry(4, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
+				TurnCompleted: &eventpb.TurnCompleted{TurnId: "failed-turn", Status: eventpb.TurnStatus_TURN_STATUS_FAILED},
+			}}),
+			entry(5, &eventpb.Event{Observation: &eventpb.Event_HarnessExited{HarnessExited: &eventpb.HarnessExited{}}}),
+		},
+	}, PriorEntities{Items: map[string]*Item{}, Commands: map[string]*CommandSummary{}, Bodies: map[PayloadRef]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := continued.State.Controls.BlockedReason; got == nil || *got != "provider unavailable" {
+		t.Fatalf("blocked reason after restore and ordinary progress = %v", got)
+	}
+	if got := []string{continued.LifecycleUpserts[0].Observation, continued.LifecycleUpserts[1].Observation}; !reflect.DeepEqual(got, []string{"turn_completed", "harness_exited"}) {
+		t.Fatalf("lifecycle rows = %v, want only turn completion and harness exit", got)
+	}
+
+	ordinary := newMemory(t)
+	ordinary.apply(
+		t,
+		executionProgress(1, "session", "failed", `{"reason":"turn failed"}`),
+		executionProgress(2, "provider", "blocked", `{"reason":"operation blocked"}`),
+	)
+	if ordinary.state.Controls.BlockedReason != nil {
+		t.Fatalf("ordinary progress set blocked reason %v", ordinary.state.Controls.BlockedReason)
 	}
 }
 

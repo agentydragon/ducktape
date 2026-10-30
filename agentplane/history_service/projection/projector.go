@@ -35,7 +35,7 @@ type Projector struct {
 // ProjectBatch resumes from the fold's checkpoint. A failed fold leaves that checkpoint unchanged, and
 // history the fold cannot apply is retained as the feed's failed operational state.
 func (p *Projector) ProjectBatch(ctx context.Context, threadID uuid.UUID, lease Lease) (Progress, error) {
-	after, err := checkpointCursor(ctx, p.DB, threadID)
+	after, err := checkpointPosition(ctx, p.DB, threadID, p.Epoch)
 	if err != nil {
 		return Progress{}, err
 	}
@@ -111,11 +111,24 @@ func (p *Projector) projectPrefix(ctx context.Context, threadID uuid.UUID, lease
 		if err := FenceLease(ctx, tx, lease, threadID); err != nil {
 			return err
 		}
-		current, err := checkpointCursor(ctx, tx, threadID)
+		current, err := lockCheckpoint(ctx, tx, threadID)
 		if err != nil {
 			return err
 		}
-		if current != after {
+		if current != nil && current.projectionEpoch != p.Epoch {
+			if after != 0 {
+				return errCheckpointAdvanced
+			}
+			if _, err := resetThreadFoldEpoch(ctx, tx, threadID, p.Epoch); err != nil {
+				return err
+			}
+			current, err = lockCheckpoint(ctx, tx, threadID)
+			if err != nil {
+				return err
+			}
+		}
+		if (current == nil && after != 0) || (current != nil &&
+			(current.projectionEpoch != p.Epoch || current.throughCursor != after)) {
 			return errCheckpointAdvanced
 		}
 		summary, err := loadSummary(ctx, tx, threadID)
@@ -219,14 +232,25 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// checkpointCursor is how far the fold has folded the Session; zero before its first batch.
-func checkpointCursor(ctx context.Context, db querier, threadID uuid.UUID) (uint64, error) {
+// checkpointPosition returns the current prefix or zero when the one supported fold epoch transition needs replay.
+func checkpointPosition(ctx context.Context, db querier, threadID uuid.UUID, projectionEpoch string) (uint64, error) {
+	var currentEpoch string
 	var through uint64
-	err := db.QueryRowContext(ctx, "SELECT through_cursor FROM thread_checkpoint WHERE thread_id = $1", threadID).Scan(&through)
+	err := db.QueryRowContext(ctx, "SELECT projection_epoch, through_cursor FROM thread_checkpoint WHERE thread_id = $1", threadID).
+		Scan(&currentEpoch, &through)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
-	return through, err
+	if err != nil {
+		return 0, err
+	}
+	if currentEpoch == projectionEpoch {
+		return through, nil
+	}
+	if currentEpoch == previousFoldEpoch && projectionEpoch == FoldEpoch {
+		return 0, nil
+	}
+	return 0, replication(nil, "thread fold epoch %q cannot reset to %q", currentEpoch, projectionEpoch)
 }
 
 func inTransaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {

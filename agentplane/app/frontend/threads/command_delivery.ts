@@ -38,7 +38,7 @@ interface ThreadCommands {
   store: LocalCommands;
 }
 
-export function useThreadCommands(threadId: string, entities: ThreadEntity[]): ThreadCommands {
+export function useThreadCommands(threadId: string, entities: ThreadEntity[], deliveryAllowed = true): ThreadCommands {
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
@@ -59,7 +59,7 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
   const deliver = useCallback(
     async (value: LocalCommand): Promise<void> => {
       const id = value.command.commandId;
-      if (active.current.has(id)) return;
+      if (!deliveryAllowed || active.current.has(id)) return;
       active.current.add(id);
       const settle = (issue: CommandIssue | null) => {
         if (issue === null)
@@ -110,7 +110,7 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
         active.current.delete(id);
       }
     },
-    [store, threadId]
+    [deliveryAllowed, store, threadId]
   );
   // Deliver each retained command with no server receipt once on mount. An exact retry is safe after
   // a lost reply because the Dispatcher deduplicates by command ID.
@@ -147,6 +147,10 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
     return watchDispatches(store, threadId, watched.split(","));
   }, [store, threadId, watched]);
   function submit(value: PendingCommand): boolean {
+    if (!deliveryAllowed) {
+      setSubmissionError("This session is not accepting commands.");
+      return false;
+    }
     try {
       void deliver(store.remember(value));
       setSubmissionError(null);

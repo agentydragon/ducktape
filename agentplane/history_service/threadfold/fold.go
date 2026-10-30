@@ -2,6 +2,7 @@ package threadfold
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -19,7 +20,7 @@ import (
 // silentObservations advance the projection without a row.
 var silentObservations = map[string]bool{
 	"native": true, "harness_stderr": true, "debug_checkpoint": true, "journal_reopened": true,
-	"boundary_record": true, "execution_progress": true,
+	"boundary_record": true,
 }
 
 // lifecycleObservations are kept whole as lifecycle segments.
@@ -575,6 +576,19 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 	case "command_noop":
 		noop := event.GetCommandNoop()
 		return f.settle(entry, noop.GetCommandId(), OutcomeNoop, proto.String(noop.GetReason()))
+	case "execution_progress":
+		progress := event.GetExecutionProgress()
+		if progress.GetKind() == "session" && progress.GetPhase() == "blocked" {
+			var payload struct {
+				Reason *string `json:"reason"`
+			}
+			if err := json.Unmarshal([]byte(progress.GetPayloadJson()), &payload); err != nil || payload.Reason == nil {
+				return &ContractError{Cursor: cursor, Message: "session blocked progress has no JSON reason"}
+			}
+			controls := f.state.Controls
+			controls.BlockedReason = payload.Reason
+			f.state.Controls = controls
+		}
 	default:
 		switch {
 		case lifecycleObservations[observation]:

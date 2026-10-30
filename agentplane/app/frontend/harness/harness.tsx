@@ -1475,7 +1475,8 @@ function viewState(
   throughCursor: number,
   activeTurn: string | null,
   operational: Record<string, unknown> = {},
-  appliedModel: string | null = "harness-claude-model"
+  appliedModel: string | null = "harness-claude-model",
+  blockedReason: string | null = null
 ): Record<string, unknown> {
   return entity(
     "view_state",
@@ -1487,6 +1488,7 @@ function viewState(
         applied_reasoning_effort: null,
         active_turn_id: activeTurn,
         harness_state: activeTurn === null ? "stopped" : "running",
+        blocked_reason: blockedReason,
       },
       operational: {
         status: "active",
@@ -1662,8 +1664,11 @@ function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
-function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
-  const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
+function failedRows(
+  threadId: string,
+  afterContent: boolean,
+  error = "Test model request failed: HTTP 429. Quota exhausted for this fixture."
+): Record<string, unknown>[] {
   const event = toJson(
     EventSchema,
     create(EventSchema, {
@@ -3545,6 +3550,14 @@ const visualHarness = {
   failedTurn(afterContent: boolean): void {
     mapThread = withFailedTurn;
     threadEntityRows = (id) => failedRows(id, afterContent);
+  },
+  blockedSession(reason: string): void {
+    mapThread = (thread) =>
+      thread.id === IDLE_THREAD ? { ...withFailedTurn(thread), name: "Blocked session" } : thread;
+    threadEntityRows = (id) => [
+      { ...viewState(8, null, {}, "harness-claude-model", reason), thread_id: id },
+      ...failedRows(id, false, reason).filter((row) => row.entity_kind !== "view_state"),
+    ];
   },
   dormantSession(): void {
     mapThread = withDormantSession;

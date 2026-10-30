@@ -20,7 +20,8 @@ import (
 const (
 	// FoldEpoch is on every fold row, so a reader holding rows of another epoch sees a scope reset.
 	// The app's tests read rows by it: keep `FOLD_EPOCH` in `fold/models.py` equal.
-	FoldEpoch = "history-v1"
+	FoldEpoch         = "history-v2"
+	previousFoldEpoch = "history-v1"
 	// LeaseDuration is how long a Session's lease outlives the cycle that took or renewed it.
 	LeaseDuration = 30 * time.Second
 	// FoldHealthService is the `grpc.health.v1` service whose status says whether this replica's fold is

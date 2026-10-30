@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # The projection epoch the Go fold stamps its rows with (`FoldEpoch` in `projection/runner.go`).
-FOLD_EPOCH = "history-v1"
+FOLD_EPOCH = "history-v2"
 
 
 class Base(DeclarativeBase):
