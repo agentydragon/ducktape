@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//agentplane/app/go/bridge",
         "//agentplane/app/go/historydata",
+        "//agentplane/app/go/httperror",
         "//agentplane/app/go/threads",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

@@ -11,6 +11,7 @@ import (
 
 	appbridge "github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
+	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -263,6 +264,10 @@ func protoJSONMap(message proto.Message) (map[string]any, error) {
 }
 
 func commandHTTPError(err error, commandID string) error {
+	return httperror.LogServerError(classifyCommandError(err, commandID), err)
+}
+
+func classifyCommandError(err error, commandID string) error {
 	var timeout *appbridge.DispatcherRequestTimeoutError
 	var requestTimeout *appbridge.RequestTimeoutError
 	var threadMissing *appbridge.ThreadNotFoundError

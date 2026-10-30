@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
@@ -306,6 +307,10 @@ func sandboxPhaseView(phase sandboxespb.SandboxPhase) string {
 }
 
 func sandboxHTTPError(err error) error {
+	return httperror.LogServerError(classifySandboxError(err), err)
+}
+
+func classifySandboxError(err error) error {
 	var notFound *sandboxes.SandboxNotFoundError
 	var invalid *sandboxes.InvalidSandboxError
 	var conflict *sandboxes.SandboxConflictError
