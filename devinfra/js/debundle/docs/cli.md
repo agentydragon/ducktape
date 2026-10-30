@@ -376,13 +376,6 @@ and `truncated` after filtering; `limits.limit` is the cap, or `0` with
 `--all`. The selected binding/source-unit/group/proposal/diagnostic row comes
 first in its matching section so it remains available under a small limit.
 
-For native-integrity diagnosis, `describe` includes `native_receiver_certificates`
-for selected local units and for discharged roots relevant to evaluated failed
-premises. Each certificate identifies the receiver write, dominating initializer,
-and ordinary constructor/wrapper producers. These are identity proofs; they do
-not assert purity or explain every remaining rejection. This section follows
-the same `--limit` / `--all` and truncation metadata rules as mutation witnesses.
-
 `--direction incoming|outgoing|both` selects edge direction relative to the
 query and defaults to `both`. It filters dependency, atomic-group, and
 module-quotient edges; neighbor source units are derived from the remaining

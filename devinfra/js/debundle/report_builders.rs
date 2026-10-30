@@ -111,18 +111,6 @@ pub(crate) fn build_dependency_graph_report(
             witness.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
         }
     }
-    let mut native_receiver_certificates = assignment_analysis
-        .inputs()
-        .dependency_graph()
-        .iter_nodes()
-        .next()
-        .map(|source_unit| source_unit.native_receiver_certificates.as_ref().clone())
-        .unwrap_or_default();
-    for certificate in &mut native_receiver_certificates {
-        if certificate.chunk_id.is_empty() {
-            certificate.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
-        }
-    }
     let mut native_prototype_mutations = assignment_analysis
         .inputs()
         .dependency_graph()
@@ -138,7 +126,6 @@ pub(crate) fn build_dependency_graph_report(
     DependencyGraphReport {
         native_prototype_mutations,
         native_integrity_witnesses,
-        native_receiver_certificates,
         provenance: None,
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,

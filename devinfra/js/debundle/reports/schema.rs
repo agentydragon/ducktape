@@ -86,9 +86,6 @@ pub struct DependencyGraphReport {
     pub native_integrity_witnesses: Vec<NativeMutationWitness>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_prototype_mutations: Vec<NativePrototypeMutation>,
-    /// Whole-program receiver identity certificates that explain local receiver provenance.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub native_receiver_certificates: Vec<NativeReceiverCertificate>,
     /// Imported callable summaries whose callback-factory capability was used.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_callable_summaries: Vec<ImportedCallableSummaryReport>,
@@ -341,52 +338,6 @@ pub struct NativeUnreachableBranch {
     pub(crate) wrapper_call_span: swc_common::Span,
     #[serde(skip)]
     pub(crate) callback_span: swc_common::Span,
-}
-
-/// Source-derived identity evidence for a receiver binding that previously
-/// affected native intrinsic roots.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NativeReceiverCertificate {
-    pub chunk_id: String,
-    pub statement_ordinal: SourceUnitOrdinal,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
-    pub receiver_binding: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initializer_location: Option<SourceLocation>,
-    pub previously_affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub origins: Vec<NativeReceiverOrigin>,
-    #[serde(skip)]
-    pub(crate) span: swc_common::Span,
-    #[serde(skip)]
-    pub(crate) initializer_span: swc_common::Span,
-}
-
-/// Supported source shapes that establish the receiver identity.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum NativeReceiverOrigin {
-    ObjectLiteral,
-    Constructor {
-        binding: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source_location: Option<SourceLocation>,
-        #[serde(skip)]
-        span: swc_common::Span,
-    },
-    Wrapper {
-        binding: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source_location: Option<SourceLocation>,
-        constructor: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        constructor_location: Option<SourceLocation>,
-        #[serde(skip)]
-        span: swc_common::Span,
-        #[serde(skip)]
-        constructor_span: swc_common::Span,
-    },
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]

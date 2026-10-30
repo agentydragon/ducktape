@@ -7832,7 +7832,6 @@ impl Executor<'_, '_> {
                 });
         }
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
-        outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         self.state.top_env = top_env;
         self.state.top_captures = top_captures;
         self.clear_invocation_memos();

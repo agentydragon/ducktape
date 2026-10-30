@@ -27,11 +27,8 @@ adding a more precise inference.
 ## Next implementation boundary
 
 Failed native premises now expose their defining mutation witnesses, including
-cross-chunk and computed-key dependencies. A bounded source-only local proof
-also records direct receiver certificates with initializer/producer provenance;
-its supported boundary is in the [spec](../SPEC.md#inferred-local-receiver-identity).
-These do not certify ordinary global-slot read-back or clear independent native
-mutations. Failed premises are not claims that one write caused every loss.
+cross-chunk and computed-key dependencies. Failed premises are not claims that
+one write caused every loss.
 
 For an ordinary source-owned global slot, a new certificate must establish:
 

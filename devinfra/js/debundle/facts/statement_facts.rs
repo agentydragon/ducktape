@@ -234,8 +234,6 @@ pub(crate) struct SynchronousCalls {
     pub inference_uses: Vec<crate::reports::schema::InferenceUse>,
     pub native_integrity_witnesses:
         std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
-    pub native_receiver_certificates:
-        std::sync::Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
