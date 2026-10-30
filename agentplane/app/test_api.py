@@ -26,7 +26,7 @@ async def test_go_app_serves_a_parent_owned_listener(db_url: str, sandbox: Sandb
         async with spawn_go_app(config, listener=listener) as app:
             assert app.url == f"http://{listener.host}:{listener.port}"
             async with httpx.AsyncClient() as client:
-                assert (await client.get(app.url + "/readyz")).status_code == 200
+                assert (await client.get(app.url + "/readyz")).status_code == 204
             with socket.socket() as competing:
                 with pytest.raises(OSError, match="Address already in use") as occupied:
                     competing.bind((listener.host, listener.port))
