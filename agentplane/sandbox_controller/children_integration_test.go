@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -168,15 +167,13 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		}
 	}
 	const ns = "child-ssa"
-	selector, err := labels.Parse(sandboxapi.SandboxLabel)
+	byObject, err := CacheByObject(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
-		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: map[client.Object]cache.ByObject{
-			&corev1.ServiceAccount{}: {Label: selector}, &policyapi.PolicyBinding{}: {Label: selector},
-		}},
+		Cache: cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}, ByObject: byObject},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -373,6 +370,41 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 			t.Fatal(err)
 		}
 		eventually(t, func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
+	})
+	t.Run("cache-holds-only-labeled-objects", func(t *testing.T) {
+		for _, test := range []struct {
+			kind      string
+			unlabeled client.Object
+			labeled   client.Object
+		}{
+			{
+				"Secret",
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cache-unlabeled-secret", Namespace: ns}},
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cache-labeled-secret", Namespace: ns, Labels: map[string]string{sandboxapi.SandboxLabel: "no-such-sandbox"}}},
+			},
+			{
+				"ConfigMap",
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cache-unlabeled-configmap", Namespace: ns}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cache-labeled-configmap", Namespace: ns, Labels: map[string]string{sandboxapi.SandboxLabel: "no-such-sandbox"}}},
+			},
+		} {
+			t.Run(test.kind, func(t *testing.T) {
+				// The unlabeled object is created first, so once the labeled one is cached the
+				// informer has seen the earlier event too.
+				if err := objects.Create(ctx, test.unlabeled); err != nil {
+					t.Fatal(err)
+				}
+				if err := objects.Create(ctx, test.labeled); err != nil {
+					t.Fatal(err)
+				}
+				eventually(t, func() bool {
+					return mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.labeled), test.labeled.DeepCopyObject().(client.Object)) == nil
+				})
+				if err := mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.unlabeled), test.unlabeled.DeepCopyObject().(client.Object)); !apierrors.IsNotFound(err) {
+					t.Fatalf("cache holds the unlabeled %s: %v", test.kind, err)
+				}
+			})
+		}
 	})
 	vmTemplate := template.DeepCopy()
 	vmTemplate.ObjectMeta = metav1.ObjectMeta{Namespace: ns, Name: "vm-runner"}

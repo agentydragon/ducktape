@@ -42,8 +42,11 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
   conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
-- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
-  it creates, to objects carrying the Sandbox label.
+- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
+- [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (Secrets,
+  ConfigMaps, Services, Certificates and the other kinds it creates or watches) plus Pod Events
+  and the Gateway's connection Leases. RBAC cannot select by label, so the Role still grants
+  `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership
 check. Creation is exclusive, so a same-name collision cannot adopt a foreign resource. PVCs
