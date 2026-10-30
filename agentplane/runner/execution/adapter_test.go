@@ -299,8 +299,11 @@ func TestTypedMappingAndExactNativeEvidence(t *testing.T) {
 	completed(t, closed.Status, closed.NativeFrames, "fs/close")
 }
 
-func TestEmptyEnvironmentValuesUseNativeEmptyJSONShapes(t *testing.T) {
+func TestEmptyValuesUseNativeJSONShapes(t *testing.T) {
 	p := &peer{handle: func(ctx context.Context, ws *websocket.Conn, r nativeRequest) bool {
+		if r.Method == "process/write" {
+			return nativeResult(ctx, ws, r, `{"status":"accepted"}`)
+		}
 		return nativeResult(ctx, ws, r, `{"processId":"p"}`)
 	}}
 	_, client := fixture(t, p)
@@ -322,6 +325,14 @@ func TestEmptyEnvironmentValuesUseNativeEmptyJSONShapes(t *testing.T) {
 		if len(response.NativeFrames) != 2 || !bytes.Equal(response.NativeFrames[0].Payload, want[i]) {
 			t.Fatalf("start %d native request=%s, want %s", i, response.NativeFrames[0].Payload, want[i])
 		}
+	}
+	written, err := client.WriteProcess(t.Context(), &executionpb.WriteProcessRequest{Scope: scope, ExecutionSessionId: opened.ExecutionSessionId, RequestId: "write-empty", ProcessId: "p", WriteId: "w"})
+	if err != nil || written.Status.GetOutcome() != executionpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("write response=%v err=%v", written, err)
+	}
+	wantWrite := []byte(`{"id":"write-empty","method":"process/write","params":{"processId":"p","chunk":"","writeId":"w"}}`)
+	if len(written.NativeFrames) != 2 || !bytes.Equal(written.NativeFrames[0].Payload, wantWrite) {
+		t.Fatalf("write native request=%s, want %s", written.NativeFrames[0].Payload, wantWrite)
 	}
 }
 

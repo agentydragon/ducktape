@@ -77,7 +77,11 @@ func (a *Adapter) WriteProcess(ctx context.Context, r *executionpb.WriteProcessR
 	}
 	response := new(executionpb.WriteProcessResponse)
 	outcome, frames, err := a.execute(ctx, r.Scope, r.RequestId, r.ExecutionSessionId, func(c *connection, frames *[]*executionpb.ExecutionNativeFrame) error {
-		native, err := rpcResult[executorWriteResult](c, r.RequestId, "process/write", executorWrite{ProcessID: r.ProcessId, Chunk: r.Data, WriteID: r.WriteId}, frames)
+		data := r.Data
+		if data == nil {
+			data = []byte{}
+		}
+		native, err := rpcResult[executorWriteResult](c, r.RequestId, "process/write", executorWrite{ProcessID: r.ProcessId, Chunk: data, WriteID: r.WriteId}, frames)
 		if err != nil {
 			return err
 		}

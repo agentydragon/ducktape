@@ -794,7 +794,7 @@ func responseObject(method string, response proto.Message) (map[string]any, erro
 	case *executionpb.ReadProcessResponse:
 		chunks := make([]executorChunk, 0, len(r.Chunks))
 		for _, c := range r.Chunks {
-			chunks = append(chunks, executorChunk{Seq: c.Seq, Stream: c.Stream, Chunk: c.Data})
+			chunks = append(chunks, executorChunk{Seq: c.Seq, Stream: c.Stream, Chunk: append([]byte{}, c.Data...)})
 		}
 		var code *int
 		if r.ExitCode != nil {
@@ -813,7 +813,7 @@ func responseObject(method string, response proto.Message) (map[string]any, erro
 	case *executionpb.OpenFileResponse:
 		return map[string]any{"handleId": r.HandleId}, nil
 	case *executionpb.ReadFileResponse:
-		return protocolObject(executorFSBlock{Chunk: r.Data, EOF: r.Eof})
+		return protocolObject(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
 	case *executionpb.CloseFileResponse:
 		return map[string]any{}, nil
 	default:

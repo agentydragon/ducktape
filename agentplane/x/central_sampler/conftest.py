@@ -23,7 +23,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 @pytest.fixture
 async def execution_target(executor_server: ExecutorServer) -> AsyncIterator[str]:
     """Run the production typed adapter around the pinned native Codex exec-server."""
-    adapter = get_required_path(own_repo_rlocation("agentplane/runner/execution/testing/adapter_bin"))
+    adapter = get_required_path(own_repo_rlocation("agentplane/runner/execution/testing/adapter_bin_/adapter_bin"))
     with (undeclared_outputs_dir() / "sampler-execution-adapter.log").open("wb") as log:
         process = await asyncio.create_subprocess_exec(
             str(adapter),

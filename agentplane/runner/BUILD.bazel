@@ -517,6 +517,7 @@ py_proto_library_with_mypy_stubs(
 
 py_grpc_service_library(
     name = "runner_exec_pb2_grpc",
+    async_only = True,
     proto = ":runner_exec_proto",
     py_proto = ":runner_exec_pb2",
     visibility = ["//agentplane:__subpackages__"],

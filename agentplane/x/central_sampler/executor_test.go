@@ -60,6 +60,27 @@ func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 	}
 }
 
+func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
+	readProcess, err := responseObject("process/read", &executionpb.ReadProcessResponse{
+		Status: completedExecutionStatus(),
+		Chunks: []*executionpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chunks, ok := readProcess["chunks"].([]any); !ok || len(chunks) != 1 || chunks[0].(map[string]any)["chunk"] != "" {
+		t.Fatalf("empty process output chunk=%+v, want base64 empty string", readProcess["chunks"])
+	}
+
+	readFile, err := responseObject("fs/readBlock", &executionpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readFile["chunk"] != "" {
+		t.Fatalf("empty file block=%+v, want base64 empty string", readFile)
+	}
+}
+
 func TestReadFileReturnsBytesWhileJournalingOnlyDigest(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	chunk := []byte("opaque image block")

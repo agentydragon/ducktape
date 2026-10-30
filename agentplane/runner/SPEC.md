@@ -192,6 +192,8 @@ budget remains authoritative across all of its native services.
   `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
   the whole workload incarnation as refusing work. `RunnerExec.OpenSession` holds one local Codex
   connection per server stream, with typed unary process and file RPCs bound to its session ID.
+  Each Runner admits at most eight execution sessions. Native frames are bounded to 1 MiB;
+  notifications wait for bounded send capacity, so a brief output burst does not close the session.
   JSON-RPC initialization, framing and notifications stay in the Runner adapter. Native frames
   return as evidence for the sampler's existing journal; the adapter adds no persistence or
   operation receipts. Request IDs correlate calls without promising deduplication. Lost replies

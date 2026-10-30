@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, override
+from typing import Any, TypeVar, override
 
 import grpc
 import pytest
@@ -24,6 +24,8 @@ from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_reques
 from agentplane.x.central_sampler.testing_store import Store
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+ResponseT = TypeVar("ResponseT")
 
 
 @pytest.fixture
@@ -100,8 +102,8 @@ async def faulting_executor_proxy(
             name: str,
             request: Any,
             context: grpc.aio.ServicerContext,
-            upstream_call: Callable[..., Awaitable[Any]],
-        ) -> Any:
+            upstream_call: Callable[..., Awaitable[ResponseT]],
+        ) -> ResponseT:
             request_value = {"method": name, **as_dict(request)}
             observed.requests.append(request_value)
             response = await upstream_call(request)
