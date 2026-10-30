@@ -200,6 +200,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		_ = owner.Close()
 		t.Fatal(err)
 	}
+	r.configureServing()
 	go lifecycle.run()
 	if err := r.store.AdoptIncarnation("codex-synctest"); err != nil {
 		t.Fatal(err)

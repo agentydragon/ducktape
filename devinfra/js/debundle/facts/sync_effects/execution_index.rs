@@ -17,6 +17,8 @@ use crate::analysis_inputs::{
     ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
+use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
+use crate::facts::abstract_domain::value::Kind;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
@@ -984,7 +986,12 @@ enum CallKind {
 fn native_call_identity_key(
     kind: CallKind,
     callee: &ValueExpr,
-) -> Option<(native_calls::NativeCallModel, SemanticKey)> {
+) -> Option<(&'static Row, SemanticKey)> {
+    let invocation = match kind {
+        CallKind::Call => Invocation::Call,
+        CallKind::New => Invocation::Construct,
+        _ => return None,
+    };
     let (binding, receiver, member, global_this_qualified) = match callee {
         ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
         ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
@@ -1007,12 +1014,12 @@ fn native_call_identity_key(
         },
         _ => return None,
     };
-    let model = native_calls::native_call_model(receiver, member, kind)?;
+    let row = builtins::lookup(receiver, member, invocation)?;
     Some((
-        model,
+        row,
         SemanticKey::NativeCallIdentity {
             binding: binding.clone(),
-            intrinsic: model.intrinsic,
+            intrinsic: row.requires,
             global_this_qualified,
         },
     ))
@@ -5603,13 +5610,12 @@ impl ExecutionIndex {
                     .map(|candidate| candidate.weak_map.clone()),
             );
         for binding in constructors {
-            let Some(model) =
-                native_calls::native_call_model(binding.0.as_ref(), None, CallKind::New)
+            let Some(row) = builtins::lookup(binding.0.as_ref(), None, Invocation::Construct)
             else {
                 continue;
             };
-            if model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation {
-                collection_bindings.insert(binding, model.intrinsic);
+            if row.allocates.is_some_and(Kind::is_keyed_collection) {
+                collection_bindings.insert(binding, row.requires);
             }
         }
 
@@ -6791,13 +6797,13 @@ impl ExecutionIndex {
                         "has an unsupported Symbol call shape; use one ordinary direct call with zero or one syntactically primitive argument and no spread",
                     );
                 }
-                let Some((model, _)) = native_call_identity_key(CallKind::Call, callee) else {
-                    return Some("does not resolve through the exact native Symbol call model");
+                let Some((row, _)) = native_call_identity_key(CallKind::Call, callee) else {
+                    return Some("does not resolve through the exact native Symbol call row");
                 };
-                (model.intrinsic == NativeIntrinsic::Symbol)
+                (row.requires == NativeIntrinsic::Symbol)
                     .then_some(())
                     .is_none()
-                    .then_some("selected an unsupported native Symbol call model")
+                    .then_some("selected an unsupported native Symbol call row")
             }
             NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
                 let ValueExpr::Member(receiver, Some(member), true) = callee else {
@@ -6994,12 +7000,8 @@ impl ExecutionIndex {
         {
             return None;
         }
-        let (model, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
-        (model.intrinsic == NativeIntrinsic::Object
-            && matches!(model.inputs, native_calls::CallInputs::FreshDataRecord)
-            && matches!(model.returns, native_calls::CallReturn::Argument(0))
-            && model.heap_effect == native_calls::NativeHeapEffect::Opaque)
-            .then(|| call.clone())
+        let (row, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
+        (row.op == IntrinsicOp::ObjectFreeze).then(|| call.clone())
     }
 
     fn private_empty_set_field_call(
@@ -12208,6 +12210,3 @@ mod runtime_inference;
 mod runtime_callbacks;
 #[path = "runtime_models.rs"]
 mod runtime_models;
-
-#[path = "native_calls.rs"]
-mod native_calls;

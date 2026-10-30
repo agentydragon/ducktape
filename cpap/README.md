@@ -4,6 +4,8 @@ Nightly sync of ResMed CPAP data from the ez Share WiFi SD card into the
 private Forgejo repo `cpap-data/cpap-data`, plus the `cpap` analysis skill
 (`skill/`).
 
+For direct AirSense 11 Bluetooth access from wyrm2, see [Bluetooth pairing](bluetooth.md).
+
 ## Status
 
 The CronJob runs on the always-on `optiplex` Talos worker. KubeVirt runs a small

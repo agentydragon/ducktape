@@ -106,6 +106,7 @@ the shared resolver and gate rather than their own acceptance rules.
 | Match, synthesize, and diagnose selectors                                       | `selectors/{matching,authoring,diagnostics}/`                       |
 | Analyze statement effects, dependencies, and structural atoms                   | `facts/`, `purity/`, `graph/`, `chunk_analysis/`                    |
 | Model synchronous values, collect callable execution facts, and interpret calls | `facts/sync_effects/{value_model,execution_index,interpreter}.rs`   |
+| Summarize what each builtin coerces, allocates, mutates and returns             | `facts/abstract_domain/builtins.rs`                                 |
 | Assemble assignments and validate realizability                                 | `assignment_assembly.rs`, `gate.rs`, `realizability/`               |
 | Lower accepted assignments to entry and logical-module files                    | `lowering/`                                                         |
 | Plan/apply vendor substitution and finalize emitted files                       | `vendor/`, `artifacts/emission_files.rs`                            |

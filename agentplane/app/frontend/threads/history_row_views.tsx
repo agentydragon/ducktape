@@ -1,7 +1,6 @@
 import { Box, Flex, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { ItemKind } from "../../../proto/event_pb";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { type ThreadEntity, useThreadSync } from "./thread_sync";
 import {
@@ -262,13 +261,7 @@ export function HistoryRowView({
 }: HistoryRowViewProps): JSX.Element {
   const [first] = row.entities;
   if (row.kind === "setup") return <SetupView threadId={threadId} entities={row.entities} live={live} />;
-  // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
-  // summary, so every tool call reads the same. A lone lifecycle observation has nothing to
-  // group with, so it reads exactly as it always has.
-  const lone =
-    row.kind === "entity" ||
-    (row.entities.length === 1 &&
-      (row.kind === "lifecycle_group" || ("kind" in first.state && first.state.kind === ItemKind.REASONING)));
+  const lone = row.kind === "entity" || row.entities.length === 1;
   if (lone) {
     const echoCommandId = pendingSentMessage(first)
       ? first.entityId

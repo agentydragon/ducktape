@@ -1994,7 +1994,7 @@ func (s *Store) blockQueue(ctx context.Context, tx *sql.Tx, session *Session, re
 	return nil
 }
 
-func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string, commandID *string, failure *KnownFailureError) error {
+func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string, commandID *string, failure error) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -2045,7 +2045,7 @@ func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, 
 }
 
 func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
-	commandID *string, failure *KnownFailureError,
+	commandID *string, failure error,
 ) error {
 	var command *Command
 	confirmedInput := false
@@ -2078,7 +2078,9 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if err != nil {
 		return err
 	}
-	session.Blocked = failure == nil || conversation.Pending != nil || unresolved || liveCell || liveProcess
+	var knownFailure *KnownFailureError
+	known := errors.As(failure, &knownFailure) && knownFailure != nil
+	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
 	// an unresolved intent whose output must precede it, so queued notify() outputs are discarded.

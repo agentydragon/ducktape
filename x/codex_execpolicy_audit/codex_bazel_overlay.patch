@@ -2,7 +2,7 @@ diff --git a/codex-rs/execpolicy/BUILD.bazel b/codex-rs/execpolicy/BUILD.bazel
 index 79c73b7..ee8bd1f 100644
 --- a/codex-rs/execpolicy/BUILD.bazel
 +++ b/codex-rs/execpolicy/BUILD.bazel
-@@ -1,6 +1,32 @@
+@@ -1,6 +1,33 @@
 -load("//:defs.bzl", "codex_rust_crate")
 +load("@rules_rust//rust:defs.bzl", "rust_library")
  
@@ -17,6 +17,7 @@ index 79c73b7..ee8bd1f 100644
      name = "execpolicy",
      crate_name = "codex_execpolicy",
 +    edition = "2024",
++    disable_pipelining = True,
 +    srcs = glob(
 +        ["src/**/*.rs"],
 +        exclude = [
@@ -60,7 +61,7 @@ diff --git a/codex-rs/shell-command/BUILD.bazel b/codex-rs/shell-command/BUILD.b
 index 9eaa137..4dcd419 100644
 --- a/codex-rs/shell-command/BUILD.bazel
 +++ b/codex-rs/shell-command/BUILD.bazel
-@@ -1,7 +1,29 @@
+@@ -1,7 +1,30 @@
 -load("//:defs.bzl", "codex_rust_crate")
 +load("@rules_rust//rust:defs.bzl", "rust_library")
  
@@ -75,6 +76,7 @@ index 9eaa137..4dcd419 100644
 +    name = "shell_command",
      crate_name = "codex_shell_command",
 +    edition = "2024",
++    disable_pipelining = True,
 +    srcs = glob(["src/**/*.rs"]),
 +    compile_data = ["src/command_safety/powershell_parser.ps1"],
 +    deps = [
@@ -98,7 +100,7 @@ diff --git a/codex-rs/utils/absolute-path/BUILD.bazel b/codex-rs/utils/absolute-
 index 4464e10..d8201f7 100644
 --- a/codex-rs/utils/absolute-path/BUILD.bazel
 +++ b/codex-rs/utils/absolute-path/BUILD.bazel
-@@ -1,6 +1,20 @@
+@@ -1,6 +1,21 @@
 -load("//:defs.bzl", "codex_rust_crate")
 +load("@rules_rust//rust:defs.bzl", "rust_library")
  
@@ -112,6 +114,7 @@ index 4464e10..d8201f7 100644
 +    name = "absolute_path",
      crate_name = "codex_utils_absolute_path",
 +    edition = "2024",
++    disable_pipelining = True,
 +    srcs = glob(["src/**/*.rs"]),
 +    deps = [
 +        "@crates//:dirs",

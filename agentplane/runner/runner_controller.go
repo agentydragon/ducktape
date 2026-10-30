@@ -177,7 +177,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	// Relay admission closes with Runner intent. Drain accepted channels before
 	// publishing the stage that permits the exec-server component to fence.
-	if err := c.l.runner.closeExecutorRelays(ctx); err != nil {
+	if err := c.l.runner.executorRelay.Drain(ctx); err != nil {
 		return fmt.Errorf("drain Codex executor relays: %w", err)
 	}
 	if current.Stage < runnerlifecycle.Fencing {

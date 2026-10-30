@@ -70,12 +70,9 @@ Synchronous callback analysis excludes an exact `new Map()`, `new Set()`,
 `new WeakMap()` or `new WeakSet()` when the callee is the undeclared,
 unshadowed global identifier and there are no arguments. Under A11 intrinsic
 integrity, each constructor allocates its empty internal collection and
-returns before looking up an adder or invoking iterator/user code. See the
-[Map](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
-[Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable),
-[WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable)
-and [WeakSet](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakset-iterable)
-constructor algorithms. The shared intrinsic-write census disables this
+returns before looking up an adder or invoking iterator/user code; the
+constructors' rows in `facts/abstract_domain/builtins.rs` cite the algorithms.
+The shared intrinsic-write census disables this
 shortcut after a visible write to the corresponding global constructor or
 global-object property, including writes through aliases and unknown computed
 global properties. Program analysis shares its resolved census across all
@@ -271,63 +268,52 @@ No member precision, purity or exception-free execution is asserted.
 
 ## Guarded native call summaries
 
-The synchronous interpreter uses one model lookup for both returned values and
-callback timing. Models describe the operation after callee and argument
-evaluation, preserving those evaluations' effects and throws. All require an
-undeclared, unshadowed intrinsic, no spread, no dynamic scope, and no visible
-mutation of the intrinsic/global family through direct, aliased, or reflective
-writes. They do not change purity classification or ordinary source ordering.
+The synchronous interpreter uses one builtin summary table,
+`facts/abstract_domain/builtins.rs`, for both returned values and callback
+timing. Each row names one intrinsic operation and its ECMA-262 section
+(`cite`), the argument counts it admits, the coercion and internal-method steps
+it performs on each operand (`coerces`), the operands it invokes, the fresh
+allocation it creates, the writes it performs (`mutates`) and its successful
+completion value (`returns`). A row describes the operation after callee and
+argument evaluation, preserving those evaluations' effects and throws; it does
+not classify the call as pure, certify exception freedom, or change ordinary
+source ordering. The summarized operations are the table's rows; this document
+does not repeat them.
 
-Under A11 intrinsic integrity, the unary numeric methods `Math.round`, `floor`,
-`ceil`, `trunc`, `abs`, and `sign` perform `ToNumber` followed by numeric work;
-see [Math](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math-object).
-One primitive-valued argument cannot invoke a conversion hook. Successful
-results are primitive too, so subsequent conversions can use the same fact.
-Object and unknown arguments retain opaque-call analysis. Argument evaluation
+A row applies only after the native call identity judgment (<inference.md>):
+an undeclared, unshadowed intrinsic or its direct static `globalThis.…` path,
+no spread, no dynamic scope, and no visible mutation of the row's intrinsic
+family or the global object through direct, aliased or reflective writes. The
+interpreter then proves every `mutates` entry on the call's operands and every
+`coerces` step silent:
+
+- A coercion of a primitive operand runs no user code. `ToString` of a Symbol
+  or pattern compilation may still throw; the throw stays represented.
+- `Integrity` (`Object.freeze`) is proved only on the fresh plain-data object
+  literal itself; `SetIntegrityLevel` never invokes the stored data values.
+- `DefineProperties` needs an untainted, currently empty fresh ordinary target,
+  the live descriptor carrier from `Object.getOwnPropertyDescriptors`, and the
+  ordinary `Object.prototype` guard (§ Ordinary own-property inspection and
+  descriptor application).
+- The fresh-allocation writes of `Object.getOwnPropertyNames` and
+  `Object.getOwnPropertyDescriptors` need that section's own-property
+  projection proof.
+- `FreshRetains` (`FinalizationRegistry`) needs exactly one known ordinary
+  function origin or closure. The constructor checks callability and stores the
+  callback through `HostMakeJobCallback` without invoking it; the default host
+  operation and the
+  [HTML host operation](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+  both only record it. The result is opaque and retains the callback graph for
+  the ordinary retained-value analysis.
+
+Any other operand shape falls back to opaque-call analysis. Argument evaluation
 may still reenter, including a sequence whose final value is primitive.
 
-Direct [Symbol](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol-description)
-and [Symbol.for](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.for)
-calls allow zero or one primitive-valued argument. Description/key conversion
-cannot invoke a user-defined hook for those values, and successful results are
-primitive Symbols. Registry effects and conversion errors keep their ordinary
-ordering. Symbol mutation uses the shared intrinsic census, including for the
-existing frozen-namespace proof; it has no separate alias analysis.
-
-Direct `RegExp` calls and construction allow zero to two primitive arguments.
-[RegExp construction](https://tc39.es/ecma262/multipage/text-processing.html#sec-regexp-pattern-flags)
-cannot take its object-pattern/property-inspection branch for a primitive input;
-conversion and compilation need no user code under A11. The result remains
-opaque, and syntax/type errors remain observable. The existing fresh-record
-`Object.freeze` proof below uses this same model projection, returning argument
-zero without losing its object identity or callbacks.
-
-Direct construction of an unmodified `FinalizationRegistry` with exactly one
-known ordinary function origin or closure stores that callback through
-[`HostMakeJobCallback`](https://tc39.es/ecma262/2025/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback)
-and returns an opaque value retaining its callback graph. The
-[constructor algorithm](https://tc39.es/ecma262/2025/multipage/managing-memory.html#sec-finalization-registry-constructor)
-checks callability and does not invoke the cleanup callback. The default host
-operation for non-browser runtimes records the callback; the
-[HTML host operation](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
-records the callback and execution context without invoking it. Later access or
-opaque consumption continues through the existing retained-value callback analysis.
-The call remains impure and uses `NativeHeapEffect::Opaque`; this supplies no
-purity, throw-freedom, or heap-locality claim.
-
-Direct static dot callees rooted at the unshadowed builtin `globalThis` use the
-same native identity and mutation guard as bare builtin callees. This includes
-qualified constructors and one-method namespace chains such as
-`globalThis.Object.freeze`. Local aliases, computed and optional access,
-dynamic scope, and visible writes to `GlobalObject` or the target intrinsic
-remain conservative. The canonical global-object index provides the root and
-write facts; this path does not perform a second syntax scan.
-
-`native_call_summary_test` covers all six numeric methods followed by another
-conversion, both RegExp call forms, object coercion, global-constructor
-replacement, Symbol calls/coercion, FinalizationRegistry retention, qualified
-native callees, and syntax errors. `math_round_timing_test` retains effectful
-argument, shadowing, aliased method mutation, and getter controls;
+`native_call_summary_test` covers the unary `Math` rows followed by another
+conversion, both `RegExp` invocation forms, object coercion, global-constructor
+replacement, `Symbol` calls/coercion, `FinalizationRegistry` retention,
+qualified native callees, and syntax errors. `math_round_timing_test` retains
+effectful argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
 
 ### Source-selected native-call identity inputs

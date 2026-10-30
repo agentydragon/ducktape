@@ -8,7 +8,7 @@ import { ActionsSidebarSection } from "./actions/sidebar";
 import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
 import "./sidebar.css";
 import { ThreadList } from "./threads/thread_list";
-import { ScrollDebugTools } from "./threads/scroll_debug_tools";
+import { ThreadViewRecorderTools } from "./threads/thread_view_recorder_tools";
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";
@@ -97,8 +97,8 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
         {actionsPage === null && <ActionsSidebarSection onNavigate={closeIfPhone} />}
       </div>
       <div className="agentplane-sidebar-footer">
-        <div className="agentplane-sidebar-debug">
-          <ScrollDebugTools />
+        <div className="agentplane-sidebar-recorder">
+          <ThreadViewRecorderTools />
         </div>
         <Tooltip label="Sandboxes" withArrow>
           <ActionIcon

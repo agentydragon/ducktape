@@ -28,10 +28,12 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.types import Lifespan
 
 from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.deps import SettingsDep
 from haku.console.identity import agent_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
@@ -97,6 +99,54 @@ def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
     )
 
 
+def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
+    """The production route graph on a bare ``FastAPI``.
+
+    Every handler and guard reaches settings, stores and the OAuth registry through ``app.state`` at
+    request time, so the routes register without any runtime resource; ``create_app`` attaches
+    those plus the middleware, and ``export_schema`` reads ``app.openapi()`` off this alone.
+    """
+    app = FastAPI(title="Haku console", lifespan=lifespan)
+
+    @app.get("/healthz")
+    async def healthz() -> Response:
+        return JSONResponse({"status": "ok"})
+
+    # Prometheus scrape target. Deliberately absent from default.conf.template's proxied
+    # `location`s: nginx serves the public origin, so an unproxied /metrics stays reachable only
+    # on the pod's own API port, which is what the ServiceMonitor's `metrics` port targets.
+    # A route, not app.mount(): a Mount only matches paths *under* its prefix, so bare /metrics
+    # would fall through to the SPA catch-all and return the app shell.
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    # The browser API is operator-only and recognizes the Operator session.
+    operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
+    app.include_router(capabilities.router, dependencies=operator_only)
+    app.include_router(agent_routes.router, dependencies=operator_only)
+
+    @app.get("/api/deployment", dependencies=operator_only)
+    async def deployment(settings: SettingsDep) -> DeploymentInfo:
+        # The static shell is an independent Deployment. Its Flux-selected tag is
+        # read from a projected ConfigMap on every request so a frontend-only roll
+        # does not need to restart this API pod merely to update Settings metadata.
+        return build_deployment_info(
+            image_tag=settings.image_tag,
+            static_image_tag=settings.static_image_tag,
+            static_image_tag_file=settings.static_image_tag_file,
+        )
+
+    @app.get("/api/config", dependencies=operator_only)
+    async def config(settings: SettingsDep) -> ConfigResponse:
+        """Static config for the SPA."""
+        launch = settings.launch_routine
+        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
+
+    app.include_router(operator_auth.router)
+    return app
+
+
 def create_app(settings: Settings) -> FastAPI:
     # Deploy-time Console config file (non-secret): Agent access profiles.
     # Postgres is required for operator identity and login-flow state. Construction is lazy (no
@@ -126,8 +176,8 @@ def create_app(settings: Settings) -> FastAPI:
             await stack.enter_async_context(agent_authority.expiry_maintenance())
             yield
 
-    app = FastAPI(title="Haku console", lifespan=_lifespan)
-    # The capability router reads settings off app.state (see haku.console.capabilities).
+    app = build_app(lifespan=_lifespan)
+    # The routers and guards read settings off app.state (see haku.console.deps).
     app.state.settings = settings
     # Expose the shared database resources to internal dependencies and diagnostics; every store
     # above uses these same objects rather than creating a second pool.
@@ -136,6 +186,8 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
+    # Operator browser auth is mandatory; the /auth router drives the registry per request.
+    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -154,45 +206,8 @@ def create_app(settings: Settings) -> FastAPI:
         response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
         return response
 
-    @app.get("/healthz")
-    async def healthz() -> Response:
-        return JSONResponse({"status": "ok"})
-
-    # Prometheus scrape target. Deliberately absent from default.conf.template's proxied
-    # `location`s: nginx serves the public origin, so an unproxied /metrics stays reachable only
-    # on the pod's own API port, which is what the ServiceMonitor's `metrics` port targets.
-    # A route, not app.mount(): a Mount only matches paths *under* its prefix, so bare /metrics
-    # would fall through to the SPA catch-all and return the app shell.
-    @app.get("/metrics")
-    async def metrics() -> Response:
-        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-    # The browser API is operator-only and recognizes the Operator session.
-    operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
-    app.include_router(capabilities.router, dependencies=operator_only)
-    app.include_router(agent_routes.router, dependencies=operator_only)
-
-    @app.get("/api/deployment", dependencies=operator_only)
-    async def deployment() -> DeploymentInfo:
-        # The static shell is an independent Deployment. Its Flux-selected tag is
-        # read from a projected ConfigMap on every request so a frontend-only roll
-        # does not need to restart this API pod merely to update Settings metadata.
-        return build_deployment_info(
-            image_tag=settings.image_tag,
-            static_image_tag=settings.static_image_tag,
-            static_image_tag_file=settings.static_image_tag_file,
-        )
-
-    @app.get("/api/config", dependencies=operator_only)
-    async def config() -> ConfigResponse:
-        """Static config for the SPA."""
-        launch = settings.launch_routine
-        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
-
-    # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
-    # router guards read; https_only follows the canonical public origin.
-    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
-    app.include_router(operator_auth.router)
+    # SessionMiddleware establishes request.session, which the router guards read; https_only
+    # follows the canonical public origin.
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.operator_oidc.session_secret.get_secret_value(),

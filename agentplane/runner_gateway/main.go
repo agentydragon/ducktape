@@ -29,8 +29,10 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -156,6 +158,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -210,6 +215,15 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}()
 	if !catalog.WaitSynced(ctx) {
 		return errors.New("Sandbox inventory did not synchronize")
+	}
+	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
+		informer, err := inventory.GetInformer(ctx, watched)
+		if err != nil {
+			return err
+		}
+		if _, err := informer.AddEventHandler(g.RunnerDiscoveryHandler()); err != nil {
+			return err
+		}
 	}
 	if err := g.WatchConnectionLeases(ctx, kube); err != nil {
 		return err

@@ -56,6 +56,7 @@ go_library(
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
+        "//util/netlistener",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_go_logr_logr//:logr",

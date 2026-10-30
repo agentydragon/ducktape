@@ -2,13 +2,21 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 
 go_binary(
     name = "agentplane-runner",
-    srcs = ["main.go"],
+    srcs = [
+        "cli.go",
+        "internal_modes.go",
+        "main.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/cmd",
     pure = "on",
     visibility = ["//visibility:public"],
     deps = [
         "//agentplane/observability",
         "//agentplane/runner",
+        "//agentplane/runner/configuration",
+        "//agentplane/runner/executor",
+        "//agentplane/runner/supervision",
+        "//agentplane/runner/workspace",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",
     ],

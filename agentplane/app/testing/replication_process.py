@@ -7,7 +7,7 @@ import signal
 import socket
 import ssl
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -35,7 +35,7 @@ from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service import notifications_operator_pb2_grpc
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import Listener, listen_tcp
 from util.testing.asgi import serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -217,7 +217,11 @@ def fixture_config() -> dict[str, object]:
 
 @asynccontextmanager
 async def spawn_go_app(
-    config: dict[str, object], *, oidc: OIDCSettings | None = None, env: dict[str, str] | None = None
+    config: dict[str, object],
+    *,
+    oidc: OIDCSettings | None = None,
+    env: dict[str, str] | None = None,
+    listener: Listener | None = None,
 ) -> AsyncIterator[AppProcess]:
     configured = fixture_config() | config
     configured["database_url"] = (
@@ -225,11 +229,14 @@ async def spawn_go_app(
         .set(drivername="postgresql", query={"sslmode": "disable"})
         .render_as_string(hide_password=False)
     )
-    configured.setdefault("host", "127.0.0.1")
-    configured.setdefault("port", pick_free_port())
-    url = f"http://{configured['host']}:{configured['port']}"
     stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
-    with TemporaryDirectory(prefix="go-app-") as directory:
+    with (
+        nullcontext(listener) if listener is not None else listen_tcp() as endpoint,
+        TemporaryDirectory(prefix="go-app-") as directory,
+    ):
+        url = f"http://{endpoint.host}:{endpoint.port}"
+        listener_fd = endpoint.socket.fileno()
+        configured["listen_address"] = f"fd:{listener_fd}"
         config_file = Path(directory) / "config.json"
         config_file.write_text(json.dumps(configured))
         process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
@@ -242,6 +249,7 @@ async def spawn_go_app(
         with stderr.open("wb") as log:
             process = await asyncio.create_subprocess_exec(
                 get_required_path("_main/agentplane/app/go/agentplane-app_/agentplane-app"),
+                pass_fds=(listener_fd,),
                 env=process_env,
                 stdout=log,
                 stderr=log,
@@ -474,8 +482,8 @@ async def app_process(
     config_for_oidc_issuer: Callable[[str], dict[str, object]] | None = None,
     oidc_env: dict[str, str] | None = None,
 ) -> AsyncIterator[AppProcess]:
-    with TemporaryDirectory(prefix="app-oidc-") as directory:
-        port = pick_free_port()
+    with TemporaryDirectory(prefix="app-oidc-") as directory, listen_tcp() as listener:
+        port = listener.port
         token = Path(directory) / "unused-token"
         token.write_text("test-unused-token")
         notices = grpc.aio.server()
@@ -487,7 +495,6 @@ async def app_process(
             serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
         ):
             settings: dict[str, object] = {
-                "port": port,
                 "database_url": database_url,
                 "kubeconfig": str(sandboxes.kubeconfig),
                 "sandbox_namespace": sandboxes.namespace,
@@ -519,7 +526,9 @@ async def app_process(
             if config_for_oidc_issuer is not None:
                 configured |= config_for_oidc_issuer(issuer)
             configured |= config or {}
-            async with spawn_go_app(configured, oidc=oidc, env={"SSL_CERT_FILE": str(ca)} | (oidc_env or {})) as app:
+            async with spawn_go_app(
+                configured, oidc=oidc, env={"SSL_CERT_FILE": str(ca)} | (oidc_env or {}), listener=listener
+            ) as app:
                 app.public_url = oidc.public_base_url
                 app.login_ca = ssl.create_default_context(cafile=str(ca))
                 app.oidc_issuer = issuer

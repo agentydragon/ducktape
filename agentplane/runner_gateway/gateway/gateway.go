@@ -81,6 +81,8 @@ type Gateway struct {
 	records         *connectionRecords
 	controller      *auth.Account
 	objects         client.Reader
+	// runnerWake makes RunRunnerObservers rescan now rather than at its next tick; see RunnerDiscoveryHandler.
+	runnerWake chan struct{}
 }
 
 func New(
@@ -139,7 +141,7 @@ func New(
 	return &Gateway{
 		config: config, callerAuth: callerAuth, callers: callers, executorCallers: executorCallers, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(), records: records,
-		controller: controller,
+		controller: controller, runnerWake: make(chan struct{}, 1),
 	}, nil
 }
 

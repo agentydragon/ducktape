@@ -121,6 +121,11 @@ common --incompatible_default_to_explicit_init_py
 common:quiet --curses=no
 common:quiet --show_progress_rate_limit=30
 
+# rustc emits .rmeta first so dependent crates start before codegen finishes. Measured
+# 2026-10-29 on the debundle chain: cold critical path 610 -> 536 s, elapsed 682 -> 653 s,
+# +14% actions; devinfra/debug/2026_10_29_rust_pipelined_compilation.md.
+build --@rules_rust//rust/settings:pipelined_compilation=True
+
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc

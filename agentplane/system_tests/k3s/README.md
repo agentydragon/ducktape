@@ -162,9 +162,11 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-`test_vm_sandbox_vm` also drives the real Codex app-server to run a memory-exhausting shell command
-through its isolated exec-server. The allocator touches memory beyond the configured executor
-limit, with a raised `oom_score_adj` to select that tool as the victim. The test checks a single
+`test_vm_sandbox_vm` starts three VM Sandboxes concurrently in one stack: one per harness for the
+scripted turn and one for Codex tool OOM containment. The OOM scenario drives the real Codex
+app-server to run a memory-exhausting shell command through its isolated exec-server. The allocator
+touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that
+tool as the victim. The test checks a single
 `memory.events` OOM kill with `memory.oom.group=0`, a tool result reporting exit 137, and a failed
 native command item with that exit code; the turn itself completes normally. Runner boot identity
 and app-server process identity/PID stay unchanged before and after the OOM and a successful

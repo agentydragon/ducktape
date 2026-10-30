@@ -45,6 +45,7 @@ pub(crate) use crate::purity::{
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 
+pub mod abstract_domain;
 mod analyze;
 mod array_content_effects;
 mod array_spreads;

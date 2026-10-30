@@ -191,7 +191,8 @@ budget remains authoritative across all of its native services.
   observer's readiness. Calls with stale boot or observer metadata fail before admission with
   `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
   the whole workload incarnation as refusing work. `RunnerExec.Connect` carries one executor relay per stream and applies the
-  per-Runner stream and message limits. Closing one stream leaves other executor relays running.
+  per-Runner stream and message limits. Executor output waits for bounded send capacity while the stream is active;
+  a brief output burst does not close the stream. Closing one stream leaves other executor relays running.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session

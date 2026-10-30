@@ -8,6 +8,7 @@ rust_library(
     name = "codex_protocol_stub",
     srcs = ["lib.rs"],
     crate_name = "codex_protocol",
+    disable_pipelining = True,
     edition = "2024",
     rustc_flags = ["--cap-lints=allow"],
 )

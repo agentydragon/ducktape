@@ -24,6 +24,8 @@ from agentplane.system_tests.conftest import (
     VM_TEMPLATE,
     VM_WORKING_DIRECTORY,
     Sandboxes,
+    models_offered_for,
+    traced_vm_scenario,
     wait_until_running,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -246,10 +248,7 @@ async def test_pod_mtls_session_survives_replacement_and_keeps_history(
     assert len(history_after) > len(history_before)
 
 
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_vm_mtls_certificate_authenticates_a_session(
+async def _run_vm_mtls_certificate_authenticates_a_session(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     view = await sandbox(f"systest-runner-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
@@ -271,6 +270,29 @@ async def test_vm_mtls_certificate_authenticates_a_session(
     assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
     current_pod_uid, current_credential_id = await _identity(view.pod.name)
     assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
+
+
+@pytest.mark.vm_sandboxes
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_vm_mtls_certificates_authenticate_both_harnesses(
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+) -> None:
+    # pytest-asyncio serializes parametrized cases; explicit tasks overlap the independent boots
+    # while sharing this stack and its Pod-routed scripted server.
+    harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
+    offered_models = await models_offered_for(client, harnesses)
+    async with asyncio.TaskGroup() as scenarios:
+        for harness in harnesses:
+            name = f"runner-vm-mtls-{runner_pb2.Harness.Name(harness).lower()}"
+            scenarios.create_task(
+                traced_vm_scenario(
+                    name,
+                    _run_vm_mtls_certificate_authenticates_a_session(
+                        client, sandbox, harness, offered_models[harness], scripted
+                    ),
+                )
+            )
 
 
 if __name__ == "__main__":

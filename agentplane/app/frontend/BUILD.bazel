@@ -637,8 +637,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
-        "//agentplane/app/frontend/threads:scroll_debug_tools",
         "//agentplane/app/frontend/threads:thread_list",
+        "//agentplane/app/frontend/threads:thread_view_recorder_tools",
         "//util/frontend:resize_handle",
     ],
 )
@@ -663,9 +663,9 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
-        "//agentplane/app/frontend/threads:scroll_diagnostics",
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
     ],
 )
 

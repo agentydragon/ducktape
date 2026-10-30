@@ -29,6 +29,34 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testi
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+@DESKTOP_AND_MOBILE
+async def test_single_tool_expansion_reserves_height(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(RUNNING_THREAD)
+    page = view.page
+    row = page.locator('[data-thread-anchor="7"]')
+    following = page.locator('[data-thread-anchor="10"]')
+    await expect(row.locator(".agentplane-disclosure-summary")).to_have_count(1)
+    control = row.locator(
+        ".agentplane-step-details > .agentplane-disclosure-item > .agentplane-disclosure-heading > .agentplane-disclosure-summary"
+    ).first
+    await expect(control).to_contain_text("git branch -d stale")
+    await control.scroll_into_view_if_needed()
+    await view.capture(name="single-tool-collapsed")
+    before = await row.bounding_box()
+    assert before is not None
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    await expect(row.get_by_text("fatal: branch 'stale' not found.", exact=True)).to_be_visible()
+    await wait_for_stable(page)
+    after = await row.bounding_box()
+    next_box = await following.bounding_box()
+    assert after is not None
+    assert next_box is not None
+    assert after["height"] > before["height"]
+    assert next_box["y"] >= after["y"] + after["height"] - 1
+    await view.capture(name="single-tool-expanded")
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"),
     [(DESKTOP, "light"), (MOBILE, "light"), (DESKTOP, "dark")],

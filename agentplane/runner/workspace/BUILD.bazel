@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/workspace",
     visibility = [
         "//agentplane/runner:__pkg__",
+        "//agentplane/runner/cmd:__pkg__",
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [

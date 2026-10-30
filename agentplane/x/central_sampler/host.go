@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -22,6 +23,12 @@ type Host struct {
 	mu        sync.Mutex
 	closeOnce sync.Once
 	closeErr  error
+	// capabilities are the optional protocol capabilities the host acknowledged at handshake.
+	capabilities []string
+}
+
+func (h *Host) acknowledged(capability string) bool {
+	return slices.Contains(h.capabilities, capability)
 }
 
 func StartHost(ctx context.Context, binary, logPath string) (*Host, error) {

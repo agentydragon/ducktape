@@ -24,10 +24,18 @@ timing:
   and observes the last 2,000 scroll and layout decisions. It exposes
   `window.__threadViewTiming.events()` **in tests only**. A failing test prints the relevant slice;
   every browser test saves `<test>-thread-view-marks.jsonl`.
-- In the production UI, Debug tools > Start recording enables the same `agentplane:thread-view:*`
+- In the production UI, Thread view recorder > Start recording enables the same `agentplane:thread-view:*`
   `performance.mark()` calls in the browser Performance timeline, plus supported browser timing
   entries. Stop and download writes JSON for analysis, **not** an importable Chrome profile.
-  Nothing is uploaded. Row keys in mark details may be sensitive; review before sharing.
+  Version 3 also records bounded layout snapshots at virtual-size changes, React commits, before
+  and after component scroll writes, and animation frames whose geometry changed. Each snapshot
+  identifies the Thread and mounted view, compares planned row keys with virtualizer positions,
+  estimates and measurements, and captures mounted row rectangles plus viewport/content geometry.
+  Snapshot arrays retain the first 128 rows, with `rowCount` identifying larger histories. Capture
+  stops adding layouts at 1,000 snapshots; `droppedLayouts` reports skipped snapshot attempts.
+  Frame callbacks run before paint; these are layout observations, not proof that a frame painted.
+  Nothing is uploaded. Message bodies, tool arguments and output are excluded. Thread and row IDs
+  may be sensitive; review before sharing.
 
 For deeper layout investigations, set `--test_env=AGENTPLANE_HISTORY_PROBE=1` to inject
 `agentplane/app/testing/history_probe.js` and write `<test>-history-probe.json` to the

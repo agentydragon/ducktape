@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "./schema";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live";
 import { Sidebar } from "./sidebar";
-import { scrollCapture } from "./threads/scroll_diagnostics";
+import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import type { InboxNoticeState, SessionNoticeStates } from "./notification_types";
 
@@ -777,11 +777,13 @@ it("closes the phone-width overlay, but leaves the desktop column open, on openi
 });
 
 it("keeps the scroll recorder in the lower-left sidebar across a threadless route", async () => {
-  const startRecording = vi.spyOn(scrollCapture, "startRecording").mockImplementation(() => {});
-  const stopRecording = vi.spyOn(scrollCapture, "stopRecording").mockReturnValue(null);
+  const startRecording = vi.spyOn(threadViewRecorder, "startRecording").mockImplementation(() => {});
+  const stopRecording = vi.spyOn(threadViewRecorder, "stopRecording").mockReturnValue(null);
   await render([], {}, { initialPath: "/sandboxes", open: true });
   const footer = container.querySelector(".agentplane-sidebar-footer");
-  const debug = footer?.querySelector<HTMLButtonElement>('.agentplane-sidebar-debug button[aria-label="Debug tools"]');
+  const debug = footer?.querySelector<HTMLButtonElement>(
+    '.agentplane-sidebar-recorder button[aria-label="Thread view recorder"]'
+  );
   expect(debug).toBeTruthy();
   expect(debug?.querySelector("svg.tabler-icon-bug")).toBeTruthy();
   const clickMenu = async (text: string) => {
@@ -795,11 +797,11 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
   await clickMenu("Start recording");
   expect(startRecording).toHaveBeenCalledOnce();
   await act(async () =>
-    footer?.querySelector<HTMLButtonElement>('button[aria-label="Debug tools (recording)"]')?.click()
+    footer?.querySelector<HTMLButtonElement>('button[aria-label="Thread view recorder (recording)"]')?.click()
   );
   await clickMenu("Mark a jump");
   await act(async () =>
-    footer?.querySelector<HTMLButtonElement>('button[aria-label="Debug tools (recording)"]')?.click()
+    footer?.querySelector<HTMLButtonElement>('button[aria-label="Thread view recorder (recording)"]')?.click()
   );
   await clickMenu("Stop and download recording");
   expect(stopRecording).toHaveBeenCalledOnce();

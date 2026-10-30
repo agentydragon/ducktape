@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -963,6 +964,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				leaseTransitions(previous) != leaseTransitions(current) ||
 				sandboxlease.FactsChanged(previous.Annotations, current.Annotations)
 		}}))
+	// A starting workload waits for cert-manager to mark its Certificate Ready and write the leaf
+	// Secret. Both are read uncached, so without these watches that readiness is only noticed on
+	// the runnerCredentialRetry requeue, which the watches now merely back up.
+	runnerCertificate := &unstructured.Unstructured{}
+	runnerCertificate.SetGroupVersionKind(runnerCertificateGVK)
+	setup = setup.
+		Watches(runnerCertificate, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{})).
+		Watches(&corev1.Secret{}, bySandboxLabel)
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}

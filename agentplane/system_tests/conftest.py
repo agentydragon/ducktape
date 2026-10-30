@@ -192,11 +192,24 @@ def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
 @pytest.fixture
 async def offered_model(client: Client, harness: runner_pb2.Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
+    return (await models_offered_for(client, [harness]))[harness]
+
+
+async def models_offered_for(client: Client, harnesses: Sequence[runner_pb2.Harness]) -> dict[runner_pb2.Harness, str]:
+    """Select one model offered by the deployment for each requested harness."""
     catalog = await client.models()
-    config_harness = Harness(runner_pb2.Harness.Name(harness))
-    offered = catalog.harnesses[config_harness]
-    assert offered, f"the deployment offers no model for {harness}"
-    return offered[0]
+    offered_models: dict[runner_pb2.Harness, str] = {}
+    for harness in harnesses:
+        config_harness = Harness(runner_pb2.Harness.Name(harness))
+        offered = catalog.harnesses[config_harness]
+        assert offered, f"the deployment offers no model for {harness}"
+        offered_models[harness] = offered[0]
+    return offered_models
+
+
+async def traced_vm_scenario(name: str, scenario: Coroutine[Any, Any, None]) -> None:
+    with tracer.start_as_current_span("vm.scenario", attributes={"scenario": name}):
+        await scenario
 
 
 @pytest.fixture

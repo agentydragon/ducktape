@@ -26,6 +26,12 @@ controller's first unmet barrier and its resource/process identity, available ad
 journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
 to an older generation, it is labeled as last progress and its blocker and error are withheld.
 
+## Tool calls
+
+A lone tool call renders its compact tool summary directly. Only runs of multiple steps have an
+additional group summary. Expanding a tool call reserves room for its arguments and output before
+the next history row.
+
 ## Thread history scrolling
 
 A thread's conversation can grow long, include messages of different heights, and change while
@@ -70,3 +76,11 @@ browser on desktop and phone.
   portion currently on screen.
 - None of the above ever produces a visible flash of blank space or a scrollbar that visibly jumps
   and then corrects.
+
+## Thread view recorder
+
+Thread view recorder can record scrolling across Thread switches and download the recording locally.
+The recording includes Thread/view identities, bounded row geometry and virtualizer state, and
+before/after geometry for component scroll corrections. It excludes message bodies and tool
+payloads. Layout sampling runs only while recording; the export reports truncation when its
+snapshot limit is reached.

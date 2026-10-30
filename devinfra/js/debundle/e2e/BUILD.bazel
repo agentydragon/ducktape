@@ -277,21 +277,34 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
-# Keep the full scale workloads: unoptimized RBE runs approach a minute even
-# without a regression, so the short deadline leaves too little margin.
+# These synthetic scale regressions are opt-in: `manual` keeps them out of CI,
+# while `scale` groups them for targeted runs. Unoptimized RBE runs approach a
+# minute even without a regression, so larger cases need a moderate timeout.
 debundle_e2e_test(
     name = "opaque_callback_scale_test",
     timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(
     name = "cross_module_purity_scale_test",
     timeout = "short",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(
     name = "conflict_diagnostics_scale_test",
     timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
     deps = ["//devinfra/js/debundle:spec"],
 )
 
@@ -299,7 +312,10 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "value_flow_sharing_scale_test",
     timeout = "moderate",
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
@@ -312,6 +328,10 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "plain_data_escape_scale_test",
     timeout = "short",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(

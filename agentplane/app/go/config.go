@@ -42,24 +42,21 @@ type Config struct {
 	RunnerGatewayTokenFile              string                   `mapstructure:"runner_gateway_token_file"`
 	SessionDispatcherTokenFile          string                   `mapstructure:"session_dispatcher_token_file"`
 	SessionDispatcherRequestTimeoutSecs float64                  `mapstructure:"session_dispatcher_request_timeout_s"`
-	// CLEANUP(added 2026-10-27): Delete after this image is deployed and cluster/cdk8s/agentplane/app.py drops session_dispatcher_http_url.
-	SessionDispatcherHTTPURL            string            `mapstructure:"session_dispatcher_http_url"`
-	HistoryServiceTokenFile             string            `mapstructure:"history_service_token_file"`
-	HistoryServiceRequestTimeoutSeconds float64           `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64           `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64           `mapstructure:"runner_gateway_lifecycle_timeout_s"`
-	LogLevels                           map[string]string `mapstructure:"log_levels"`
-	Host                                string            `mapstructure:"host"`
-	Port                                int               `mapstructure:"port"`
-	Kubeconfig                          string            `mapstructure:"kubeconfig"`
-	DatabaseURL                         string            `mapstructure:"database_url"`
-	ElectricURL                         string            `mapstructure:"electric_url"`
-	EgressAdminTokenFile                string            `mapstructure:"egress_admin_token_file"`
-	EgressAdminTimeoutSeconds           float64           `mapstructure:"egress_admin_timeout"`
-	ShutdownTimeoutSeconds              int               `mapstructure:"shutdown_timeout"`
-	ResyncSeconds                       int               `mapstructure:"resync_seconds"`
-	TokenAudience                       string            `mapstructure:"token_audience"`
-	TokenSubjects                       []string          `mapstructure:"token_subjects"`
+	HistoryServiceTokenFile             string                   `mapstructure:"history_service_token_file"`
+	HistoryServiceRequestTimeoutSeconds float64                  `mapstructure:"history_service_request_timeout_s"`
+	RunnerGatewayRequestTimeoutSeconds  float64                  `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs   float64                  `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	LogLevels                           map[string]string        `mapstructure:"log_levels"`
+	ListenAddress                       string                   `mapstructure:"listen_address"`
+	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
+	DatabaseURL                         string                   `mapstructure:"database_url"`
+	ElectricURL                         string                   `mapstructure:"electric_url"`
+	EgressAdminTokenFile                string                   `mapstructure:"egress_admin_token_file"`
+	EgressAdminTimeoutSeconds           float64                  `mapstructure:"egress_admin_timeout"`
+	ShutdownTimeoutSeconds              int                      `mapstructure:"shutdown_timeout"`
+	ResyncSeconds                       int                      `mapstructure:"resync_seconds"`
+	TokenAudience                       string                   `mapstructure:"token_audience"`
+	TokenSubjects                       []string                 `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
 }
 
@@ -208,14 +205,12 @@ func defaultConfig() Config {
 		RunnerGatewayTokenFile:              "/var/run/secrets/agentplane-runner-gateway/token",
 		SessionDispatcherTokenFile:          "/var/run/secrets/agentplane-session-dispatcher/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
-		SessionDispatcherHTTPURL:            "",
 		HistoryServiceTokenFile:             "/var/run/secrets/agentplane-history-service/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
 		RunnerGatewayRequestTimeoutSeconds:  20,
 		RunnerGatewayLifecycleTimeoutSecs:   310,
 		LogLevels:                           map[string]string{},
-		Host:                                "127.0.0.1",
-		Port:                                8080,
+		ListenAddress:                       "127.0.0.1:8080",
 		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
@@ -324,7 +319,7 @@ func loadConfigWithArgs(args []string) (Config, error) {
 }
 
 // applyCommandLineOverrides accepts the kebab-case flag for every exported Config field. Values
-// use YAML scalars or JSON/YAML objects, matching the Python settings CLI's structured values.
+// are literal for strings and YAML scalars or JSON/YAML objects for other field types.
 // Call it after YAML and environment decoding so CLI values have the highest precedence.
 func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []string, error) {
 	flags := flag.NewFlagSet("agentplane-app", flag.ContinueOnError)
@@ -366,7 +361,9 @@ func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []stri
 			continue
 		}
 		var decoded any
-		if err := yaml.Unmarshal([]byte(*configured.value), &decoded); err != nil {
+		if configType.Field(configured.index).Type.Kind() == reflect.String {
+			decoded = *configured.value
+		} else if err := yaml.Unmarshal([]byte(*configured.value), &decoded); err != nil {
 			return nil, nil, fmt.Errorf("invalid --%s value: %w", configured.name, err)
 		}
 		cliSettings[configured.key] = decoded
@@ -577,8 +574,8 @@ func (c Config) validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if c.Port < 0 || c.Port > 65535 {
-		return errors.New("port must be between 0 and 65535")
+	if strings.TrimSpace(c.ListenAddress) == "" {
+		return errors.New("listen_address is required")
 	}
 	if seconds := c.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil && *seconds < 60 {
 		return errors.New("new_sandbox_defaults.idle_suspend_after_seconds must be at least 60")
@@ -604,11 +601,6 @@ func (c Config) validate() error {
 		"egress_admin_url":                  c.EgressAdminURL,
 	} {
 		if err := validateHTTPURL(name, raw); err != nil {
-			return err
-		}
-	}
-	if c.SessionDispatcherHTTPURL != "" {
-		if err := validateHTTPURL("session_dispatcher_http_url", c.SessionDispatcherHTTPURL); err != nil {
 			return err
 		}
 	}

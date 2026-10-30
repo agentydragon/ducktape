@@ -14,10 +14,11 @@ and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; i
 marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and only those, as
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
 ([VM Sandboxes](k3s/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
-`test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
-launcher's egress relay, verifies real systemd PID 1, service containment and unprivileged
-manager access denial, and verifies Codex tool OOM containment and a successful follow-up
-command with the same Runner and app-server. `test_runner_systemd_vm` boots one VM with
+`test_vm_sandbox_vm` starts three VM Sandboxes concurrently in one stack: one scripted turn per
+harness through the launcher's egress relay, plus Codex tool OOM containment and its successful
+follow-up command with the same Runner and app-server. The turns verify real systemd PID 1, service
+containment and unprivileged manager access denial. `test_runner_credentials_vm` concurrently
+authenticates Claude and Codex sessions in separate VM Sandboxes. `test_runner_systemd_vm` boots one VM with
 `vm_systemd_proof = True` and gates all native supervision subtests against its real manager,
 covering lost launch replies, detached children, Runner death and startup fencing. Ordinary VM
 guests omit that proof binary and startup override.
@@ -86,7 +87,8 @@ k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these 
 
 The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
 scenario execution. `test_vm_sandbox_vm` also separates the scripted turn and each OOM command
-(`memory-before`, `tool-oom`, `memory-after`). Cleanup events distinguish suspend acknowledgement,
+(`memory-before`, `tool-oom`, `memory-after`); each grouped Sandbox scenario has its own `vm.scenario`
+span so their overlap is visible. Cleanup events distinguish suspend acknowledgement,
 observed effective suspension, delete acknowledgement, and observed deletion. Nested spans overlap;
 do not add a scenario's duration to its child turn/command durations. Use `test.xml` for the final
 pytest verdict; a case span includes fixture lifetime and is not itself a pass verdict.

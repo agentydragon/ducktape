@@ -125,6 +125,7 @@ py_library(
         ":capabilities",
         ":database_migrate",
         ":deployment",
+        ":deps",
         ":models",
         ":settings",
         "//haku/console/identity:agent_routes",
@@ -152,12 +153,7 @@ py_binary(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":app",
-        ":config",
-        ":settings",
-        "@pypi//pydantic",
-    ],
+    deps = [":app"],
 )
 
 # Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.

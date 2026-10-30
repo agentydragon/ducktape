@@ -37,6 +37,17 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # AirSense BLE application credentials, portable between user workstations.
+  - path_regex: secrets/cpap-ble\.sops\.json$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # LiteLLM's instance master key and encryption salt are Flux-only Secrets.
   # The master key is mirrored into selected runtime namespaces after Flux
   # decrypts it; neither consumer needs the age private key.

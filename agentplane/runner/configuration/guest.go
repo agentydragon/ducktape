@@ -1,4 +1,4 @@
-package runner
+package configuration
 
 import (
 	"bufio"
@@ -71,7 +71,7 @@ func (r guestResources) Validate() error {
 // guestResourceSystemdProperties reads and validates the shared configuration before returning
 // systemd properties. The VM applies these before starting the runner, so this
 // path must reject malformed limits before systemctl is invoked.
-func guestResourceSystemdProperties(configPath string) ([]string, error) {
+func GuestResourceSystemdProperties(configPath string) ([]string, error) {
 	return guestResourceSystemdPropertiesWithMeminfo(configPath, "/proc/meminfo")
 }
 

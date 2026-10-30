@@ -33,7 +33,6 @@ func validTestConfig() Config {
 		RunnerGatewayTokenFile:              "/var/run/runner/token",
 		SessionDispatcherTokenFile:          "/var/run/dispatcher/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
-		SessionDispatcherHTTPURL:            "http://dispatcher:8080",
 		HistoryServiceTokenFile:             "/var/run/history/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
 		RunnerGatewayRequestTimeoutSeconds:  20,
@@ -47,7 +46,7 @@ func validTestConfig() Config {
 				Issuer: "https://actions.example.test", Audience: "agentplane", JWKsURI: "https://actions.example.test/jwks", TokenProfile: "authentik",
 			}, Scope: "actions:operator",
 		},
-		Port: 8080, EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
+		ListenAddress: "127.0.0.1:8080", EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
 	}
 }
 
@@ -59,11 +58,31 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	}
 }
 
-func TestConfigValidateAllowsMissingLegacySessionDispatcherHTTPURL(t *testing.T) {
+func TestListenAddressConfig(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:8080", "[::1]:8080", "fd:7"} {
+		config := validTestConfig()
+		if _, _, err := applyCommandLineOverrides(&config, []string{"--listen-address=" + address}); err != nil {
+			t.Fatal(err)
+		}
+		if config.ListenAddress != address {
+			t.Fatalf("listen address = %q, want %q", config.ListenAddress, address)
+		}
+		if err := config.validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	config := validTestConfig()
-	config.SessionDispatcherHTTPURL = ""
-	if err := config.validate(); err != nil {
-		t.Fatalf("config without legacy Session Dispatcher HTTP URL rejected: %v", err)
+	config.ListenAddress = ""
+	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "listen_address") {
+		t.Fatalf("empty listener validation = %v, want rejection", err)
+	}
+}
+
+func TestApplyCommandLineOverridesRejectsRetiredSessionDispatcherHTTPURLFlag(t *testing.T) {
+	config := validTestConfig()
+	if _, _, err := applyCommandLineOverrides(&config, []string{"--session-dispatcher-http-url=http://dispatcher:8080"}); err == nil ||
+		!strings.Contains(err.Error(), "session-dispatcher-http-url") {
+		t.Fatalf("retired Session Dispatcher HTTP URL flag error = %v", err)
 	}
 }
 
@@ -133,7 +152,6 @@ runner_gateway_control_target: '{sandbox}-control.{namespace}.svc:8080'
 history_service_target: history:9090
 notifications_url: http://notifications:9090
 database_url: postgresql://app@postgres/agentplane
-session_dispatcher_http_url: http://dispatcher:8080
 `
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -246,11 +264,9 @@ runner_gateway_control_target: 'yaml-{sandbox}-control.{namespace}.svc:8080'
 runner_gateway_token_file: /yaml/runner-token
 history_service_target: yaml-history:9090
 session_dispatcher_target: yaml-dispatcher:9090
-session_dispatcher_http_url: http://yaml-dispatcher:8080/
 notifications_url: http://yaml-notifications:9090
 notifications_token_file: /yaml/notifications-token
-host: 127.0.0.1
-port: 8080
+listen_address: 127.0.0.1:8080
 database_url: postgresql://app@postgres/agentplane
 log_levels: {}
 `
@@ -273,11 +289,9 @@ log_levels: {}
 		"--runner-gateway-token-file=/cli/runner-token",
 		"--history-service-target=cli-history:9090",
 		"--session-dispatcher-target=cli-dispatcher:9090",
-		"--session-dispatcher-http-url=http://cli-dispatcher:8080/",
 		"--notifications-url=http://cli-notifications:9090",
 		"--notifications-token-file=/cli/notifications-token",
-		"--host=0.0.0.0",
-		"--port=9091",
+		"--listen-address=0.0.0.0:9091",
 		"--shutdown-timeout=7",
 	})
 	if err != nil {
@@ -300,7 +314,7 @@ log_levels: {}
 	if views := c.PresetViews(); len(views) != 1 || views[0].Name != "CLI Sandbox" || views[0].SessionDefaults.Harness != "HARNESS_CLAUDE" {
 		t.Fatalf("CLI SandboxPreset order/defaults were not applied: %+v", views)
 	}
-	if c.SessionDispatcherTarget != "cli-dispatcher:9090" || c.SessionDispatcherHTTPURL != "http://cli-dispatcher:8080/" {
+	if c.SessionDispatcherTarget != "cli-dispatcher:9090" {
 		t.Fatalf("CLI Session Dispatcher values were not applied: %+v", c)
 	}
 	if c.NotificationsURL != "http://cli-notifications:9090" || c.NotificationsTokenFile != "/cli/notifications-token" {
@@ -309,14 +323,14 @@ log_levels: {}
 	if c.RunnerGatewayTokenFile != "/cli/runner-token" {
 		t.Fatalf("CLI should override environment and YAML: %q", c.RunnerGatewayTokenFile)
 	}
-	if c.Host != "0.0.0.0" || c.Port != 9091 {
-		t.Fatalf("CLI bind values were not applied: host=%q port=%d", c.Host, c.Port)
+	if c.ListenAddress != "0.0.0.0:9091" {
+		t.Fatalf("CLI listen address was not applied: %q", c.ListenAddress)
 	}
 	if c.ShutdownTimeoutSeconds != 7 {
 		t.Fatalf("CLI shutdown timeout was not applied: %d", c.ShutdownTimeoutSeconds)
 	}
 
-	envWins, err := loadConfigWithArgs([]string{"--host=0.0.0.0"})
+	envWins, err := loadConfigWithArgs([]string{"--listen-address=0.0.0.0:8080"})
 	if err != nil {
 		t.Fatalf("load config with environment override: %v", err)
 	}

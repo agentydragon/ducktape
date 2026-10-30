@@ -25,9 +25,10 @@ the conversation, a `HarnessUserMessageConfirmed` with the active turn's ID and 
 command outcome, in one transaction, so it is recorded exactly once. A turn whose model just
 answered continues instead of ending. Input admitted behind another kind of command waits for a later
 turn, and a pending interrupt of the turn takes precedence. While the model waits on a running
-`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`, negotiated
-as the required `yield-observation` capability) so the cell keeps running and the model reads the
-input at once. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
+`exec` or `wait` observation, queued input asks the host to yield it (`operation/yield`) so the cell
+keeps running and the model reads the input at once. As in Codex, `yield-observation` is offered as an
+optional capability and used only when the host acknowledges it; otherwise the input waits for the
+observation to return. **Deviation:** Codex also cuts an in-flight provider stream for new input; the sampler
 lets the sampling request finish, because a cut stream leaves its intent uncertain. Codex keeps
 `notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
 `notify()` outputs before its steering input.
@@ -126,6 +127,8 @@ Explicit provider rejections, terminal provider failures and model-tool validati
 JavaScript dispatch record a rejected intent. When no unresolved effects or live execution remain,
 the command and turn fail without blocking the Session; subsequent input may continue without replaying the failed
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
+The original driver error is retained in command and turn failure reasons and, for blocked sessions,
+in `GetSession.blocked_reason`.
 Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
 executor failures remain conservative because the surrounding JavaScript may already have caused
 effects. Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
@@ -142,6 +145,13 @@ releases driver/host capacity without a model poll. Unread output per handle rem
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
 including after the old executor session expires. Unknown outcomes block continuation without
 advancing the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
+
+A transport failure during cursor-based `process/read` permits one reconnect and retry
+within the call's deadline. The sampler resumes the retained exec-server session under the same
+Sandbox incarnation fence and reuses the read intent, process ID and cursor. The read does not
+consume remote output; only its durable result advances the sampler's cursor. An expired session,
+changed session ID, failed reconnect or second transport failure remains blocking. Process starts,
+stdin writes, signals and other effectful operations are never automatically retried.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor

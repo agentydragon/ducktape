@@ -148,21 +148,15 @@ class Settings(AppSettingsConfig):
         description="The rotating projected ServiceAccount token for the Session Dispatcher audience.",
     )
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    # CLEANUP(added 2026-10-27): Remove after the Python gRPC app image is deployed and
-    #   `cluster/cdk8s/agentplane/app.py` stops supplying this compatibility argument.
-    session_dispatcher_http_url: HttpEndpointUrl | None = Field(
-        default=None,
-        description="Unused compatibility setting accepted while the deployed app manifest still supplies it. "
-        "Remove from the manifest after this app image is deployed, then remove this field.",
-    )
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
     log_levels: LogLevels
-    host: str = Field(default="127.0.0.1", description="Bind address.")
-    port: int = Field(default=8080, description="Bind port.")
+    listen_address: str = Field(
+        default="127.0.0.1:8080", min_length=1, description="HTTP TCP bind address or inherited listening socket fd:N."
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="PostgreSQL connection URI of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(

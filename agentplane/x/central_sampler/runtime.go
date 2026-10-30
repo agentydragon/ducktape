@@ -185,7 +185,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 			slog.Error("central sampler execution stopped", "session_id", sessionID, "error", executionErr)
 		}
 		failCtx, cancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
-		if err := r.store.FailExecution(failCtx, owner, sessionID, activeCommand, known); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.store.FailExecution(failCtx, owner, sessionID, activeCommand, executionErr); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("central sampler could not record execution failure", "session_id", sessionID, "error", err)
 		}
 		cancel()
@@ -688,6 +688,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "cell", nil
 	}
+	// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
+	// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
 	drained, err := r.store.DrainNotifications(ctx, owner)
 	if err != nil {
 		return "", err
@@ -695,6 +697,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if drained {
 		return "notification", nil
 	}
+	// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
+	// input waits here for the sampling request to finish, because a cut stream leaves its intent
+	// uncertain and blocks the Session (SPEC.md deviation); cutting needs a way to settle that intent.
 	steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
 	if err != nil {
 		return "", err

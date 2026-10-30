@@ -69,8 +69,8 @@ imports in `config_files` and imported runtime packages in `config_deps`. The co
 API's config-file API with the declared schema path; plugin settings stay in the config.
 
 Both OpenAPI launchers use the shared remote-reference guard. They fail closed if a generator
-attempts HTTP resolution during the build. The production packages expose the conversion interfaces;
-generator-specific fixtures and no-fetch proof live in the separate schema spike PR #12342.
+attempts HTTP resolution during the build. The repository-wide map of schema mechanisms and when to
+pick each is <../docs/schema_codegen.md>.
 
 Remote references are disabled during generation. Schema exporters remain responsible for their
 source contract and serialization choices; this rule does not normalize schema dialects or merge

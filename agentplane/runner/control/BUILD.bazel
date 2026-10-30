@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "control",
+    srcs = ["server.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/control",
+    deps = [
+        "//agentplane/grpc/streaming",
+        "//agentplane/proto:runner_state_go_proto",
+        "//agentplane/runner:runner_exec_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner_transport",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "control_test",
+    srcs = ["server_test.go"],
+    embed = [":control"],
+    race = "on",
+    deps = [
+        "//agentplane/proto:runner_state_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner_transport",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

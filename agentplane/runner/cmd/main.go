@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runner "github.com/agentydragon/ducktape/agentplane/runner"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -38,7 +37,7 @@ func run() int {
 	zap.ReplaceGlobals(logger)
 	defer func() { _ = logger.Sync() }()
 
-	if handled, code := runner.InternalMode(os.Args[1:]); handled {
+	if handled, code := internalMode(os.Args[1:]); handled {
 		return code
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -49,7 +48,7 @@ func run() int {
 		return 1
 	}
 	defer shutdownTracing()
-	err = runner.CLI(ctx, os.Args[1:])
+	err = runService(ctx, os.Args[1:])
 	if err != nil {
 		zap.L().Error("runner stopped", zap.Error(err))
 		return 1

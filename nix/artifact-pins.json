@@ -17,8 +17,8 @@
       "sha256": "FmdSPA1kmwLUkgJ1r0XO+I6E8PAuigCTxQAttIfVQM8="
     },
     "ducktape-git-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-375cf297180b/ducktape_git_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "N1zylxgLqtJedeVDNHcHbHITdeoSSV6444lGpANYRhg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-a9b4c275cab7/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "qbTCdcq3oiZQKP+ypuzFvfG5L3ux9XC6B7hBlUJivJA="
     },
     "ducktape-util": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-33bcf877421f/ducktape_util-0.1.0-py3-none-any.whl",
@@ -61,8 +61,8 @@
       "sha256": "J2E2fqhq1Z0WMxgz9sCKm8wYhLv17Ud9J4VNiteKJiU="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-0bfbb78a1166/debundle",
-      "sha256": "C/u3ihFmoGO2VJpxJrA2JWbQwQiJuT2bKfGrY4vF3NM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-b83a38a858ea/debundle",
+      "sha256": "uDo4qFjqU7W8Pj1Jo7xjKmzu647MdO9sJo1M17r5LNo="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
@@ -81,8 +81,8 @@
       "sha256": "75Z20KluoDj4kwQanWM2WZb5G9qC06JMRKJrrx/HieM="
     },
     "skill-cpap": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-fd95b3c97664/cpap.skill",
-      "sha256": "/ZWzyXZkg0HNtNYcX85JXHd1zumDUN4LA+OQjz1TSO8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-cfcc08d6c631/cpap.skill",
+      "sha256": "z8wI1sYxxb5X6/jQGuFOH6PSfPqATbGsNX3WtHSjQp8="
     },
     "skill-buildbuddy_api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-eae9e9f4d7d9/buildbuddy_api.skill",
@@ -101,36 +101,36 @@
       "sha256": "+6DO8VXXpah/xHqj4C4ztkdc2LJePbRlQoArZD5LHoA="
     },
     "skill-debundle_architect": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-fba50095617a/debundle_architect.skill",
-      "sha256": "+6UAlWF6gQkFim/2srQ0FnNM+ODdrtdiKMJKHKPRxDM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-85e24e525c73/debundle_architect.skill",
+      "sha256": "heJOUlxzlCD5TfHJQGTi8srwIs7VEzRx8M5pKQYVyy0="
     },
     "skill-debundle_intake": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_intake-d06a0a0d138c/debundle_intake.skill",
-      "sha256": "0GoKDROMzq2o1cJUvgXmYm2f0i3/9/3YdpNYPIbtGIM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_intake-04c938ff78da/debundle_intake.skill",
+      "sha256": "BMk4/3jayuHgsVKHIEbVASxpxoX+A/1SLwYFd7ngabM="
     },
     "skill-debundle_integrator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-f18f14107002/debundle_integrator.skill",
-      "sha256": "8Y8UEHACrRpXbPT0L3kZMmH35FiTWDOfzXvvYlOEEr0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-fe0a6a73e9c1/debundle_integrator.skill",
+      "sha256": "/gpqc+nBhOC6x+OHU9i4iHmu+Ll5gwMeqsM9ev49zzA="
     },
     "skill-debundle_lane_worker": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_lane_worker-65920abfa11a/debundle_lane_worker.skill",
-      "sha256": "ZZIKv6EaREb3a5KAXCA8kJ92I1ufaQVyus9P4Ftbim8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_lane_worker-c045d0c9a304/debundle_lane_worker.skill",
+      "sha256": "wEXQyaMEnyZmUAtKGZ9SBuS7nD2hp/UGZWyX9yKrVqU="
     },
     "skill-debundle_mint_names": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-6c3fa95d74d4/debundle_mint_names.skill",
-      "sha256": "bD+pXXTU9WzRYEnCXZicdGo8IuoVNSRuGNO6BZQUVCQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-f118bb6bf22f/debundle_mint_names.skill",
+      "sha256": "8Ri7a/IvDhLS5Q7Iww2D23M36DZpU8Ivg6e208Ayq2A="
     },
     "skill-debundle_orchestrator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_orchestrator-7e5f7368601f/debundle_orchestrator.skill",
-      "sha256": "fl9zaGAfKayE2xmvRYKrjXjHHu+gInNYdA4rOrudZwI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_orchestrator-a5da39b1faa7/debundle_orchestrator.skill",
+      "sha256": "pdo5sfqnIaX1BjIzo8vK5LIrONPMVcI2WReLa131yL4="
     },
     "skill-debundle_plan_work": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_plan_work-f4265376e76c/debundle_plan_work.skill",
-      "sha256": "9CZTdudsGxBTD+ChjEjZQQityvmQH+ElYxj2onvGFxM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_plan_work-1d9951152eca/debundle_plan_work.skill",
+      "sha256": "HZlRFS7KZD4tBmwWgufIrNSNlkm9efKkJ+jWOgpjhJQ="
     },
     "skill-debundle_stabilize": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_stabilize-07cd5d6ed372/debundle_stabilize.skill",
-      "sha256": "B81dbtNym/npfqZjdfj8wi2Y4Dhin6pPe0dBwb3YbWk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_stabilize-a1d657aab9f1/debundle_stabilize.skill",
+      "sha256": "odZXqrnx3zLRQbWDlzvbnrzQl4hni2qrayrgYcKIJh0="
     },
     "skill-backtrace": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-backtrace-e1705cd4aef3/backtrace.skill",
@@ -265,8 +265,8 @@
       "sha256": "WNc7Gnfc+3meTMG2vUuPqm3P+SmOfh/zohmspWfne6c="
     },
     "skill-debundle_explain": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-c2a59cf18c69/debundle_explain.skill",
-      "sha256": "wqWc8Yxp+HxJC65ZmrsudNVkmU9Uwitr0FTFzCbfB+4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-17e9fba6470f/debundle_explain.skill",
+      "sha256": "F+n7pkcPlM/HK+Vh2tSjP+7/zwSxg8fjRIAi+ebnGqw="
     },
     "agentplane-cli": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-c17f3172d5ae/agentplane-cli",

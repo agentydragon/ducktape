@@ -51,8 +51,11 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `forward.go`: the gRPC listener with explicit transport security, epoch-fenced state watch, direct
-  Runner RPCs, standard gRPC health service, and bounded executor stream relay.
+- `control/`: the gRPC listener, explicit transport security, state observer epochs, RPC fencing,
+  state watch and standard gRPC health service. Runner supplies domain RPCs and facts.
+- `executorrelay/`: executor stream admission limits, relay registry, bounded forwarding queues,
+  WebSocket channels and cancellation/join ownership. Runner supplies its admission barrier and
+  executor readiness; aggregate shutdown drains relays before fencing the exec-server.
 - `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
   authentication and discovery worker scheduling. It keeps ingress available while Runner shutdown
   flushes final acknowledgements. Runner retains one
@@ -80,11 +83,13 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   and derived Events retain their sources.
   Native argument payloads remain as received; runner-constructed projections use standard
   JSON encoding rather than reproducing the former Python runner's formatting.
-- `config.go`, `guest.go` and `cli.go`: explicit child environment and launch
-  configuration. `cmd/main.go` dispatches the executor and other private process modes before
-  Runner, COSI and telemetry startup.
-  Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments. The [Runner configuration inventory](CONFIGURATION.md)
-  documents the public flags, configuration sources and VM paths for Pod and VM deployments.
+- `configuration/`: deployment JSON parsing, explicit child environments, launch
+  settings, TLS identity validation, and VM resource validation/systemd properties.
+- `cmd/`: executable startup, flags, private process modes, and translation of
+  resolved deployment settings into the Runner runtime `Config`.
+- `config.go`: runtime dependencies and model configuration lookup.
+  Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments.
+  The [Runner configuration inventory](CONFIGURATION.md) documents the configuration sources and VM paths.
 
 The production executable is `//agentplane/runner/cmd:agentplane-runner`, shipped with the `agentplane`
 CLI in `//agentplane/runner:disk_image`. The runner and executor modes share the same executable;

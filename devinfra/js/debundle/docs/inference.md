@@ -103,6 +103,16 @@ Namespace-wrapper source checks can request the same ordinary prefix-state
 fact without a native call key; the consumer composes that origin with its
 separately guarded provider proof.
 
+Native call identity feeds the builtin summary table,
+`facts/abstract_domain/builtins.rs`. Once the judgment holds for a call's
+callee, the interpreter looks up the operation's row and admits the call only
+when the row's arity holds, it invokes nothing, every write it lists is proved
+on the call's operands, and every coercion it lists lands on a primitive or
+proven ordinary operand. The row's `returns` and `allocates` columns then give
+the value lane its result, and the keyed-collection rows give empty collection
+construction its allocation model. The table is the only place that states
+what a builtin does; the judgment establishes only which builtin it is.
+
 The namespace summary is conditional on an ordinary input and an exact literal
 `true` second argument. Its source shape preserves the private WeakMap cache,
 default reference and deferred forwarding getters. Shared rules establish the

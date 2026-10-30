@@ -37,15 +37,10 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
-    subgraph APP_FOLLOW_UPS[Integration app follow-ups]
-        APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
-        APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
-    end
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
-    APP_FOLLOW_UPS -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
 
 ## 2. Service-owned command admission and later notification presentation
@@ -570,6 +565,7 @@ flowchart LR
     CENTRAL_SAMPLER_V1[In review: standalone central code-mode sampler]
     CENTRAL_SAMPLER_V1 --> CENTRAL_SAMPLER_PRODUCTION_IMPL[Unscheduled: production sampler implementation, Go preferred]
     CENTRAL_SAMPLER_PRODUCTION_IMPL --> CENTRAL_SAMPLER_DEPLOYMENT[Unscheduled: opt-in deployment]
+    CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: model-compatible tools and request features]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
@@ -667,6 +663,30 @@ operation. Validate the shared chart through k3s and trusted Session attribution
 fixtures alone do not establish live endpoint/model compaction support. Existing Sessions are not
 converted and new central Sessions remain explicitly selected. Exit: bounded acceptance for
 concurrent logical Sessions and data-preserving rollback.
+
+### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — model-compatible tools and request features
+
+**Unscheduled; operator requested 2026-10-29 PDT after a concrete provider rejection.** The route
+`ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k` returned HTTP 400 through LiteLLM:
+`input[0]: unknown input item type: "additional_tools"`. This establishes rejection of that request
+item, not absence of all tool support. An OpenAI-shaped endpoint alone does not establish support
+for Code-mode extensions or every Responses API feature.
+
+Make sampler requests match the selected model/provider route's declared capabilities. Determine
+which tool representation and request features the route accepts, including Code-mode items/flags,
+ordinary function tools, reasoning controls, and compaction. Choose and document a supported path
+for models without native Code-mode extensions: ordinary function-tool calls with suitable Code-mode
+instructions where supported, or an explicit incompatible-model refusal before starting a turn.
+Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
+payloads, or replay already dispatched effects. Keep capability ownership explicit between the
+model catalog, LLM ingress, and sampler; model changes must revalidate the selected path.
+
+Exit: compatible models can complete a tool-using turn without unsupported items/flags; existing
+Code-mode-capable routes retain their behavior. Deterministic provider fixtures cover both paths,
+incompatible selections, and capability changes, preserving truthful command/turn failure and
+uncertain-effect handling. Capture a bounded check against the reported route to establish its
+actual accepted wire contract. Independent of the deferred Claude backend; no implementation or
+rollout is scheduled by this entry.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 
@@ -1871,39 +1891,6 @@ Do not delete retained runner stores, native conversations or History. Confirm e
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
 
-## 14. Integration app follow-ups
-
-The [app README](../app/README.md) documents the deployed Go API and Goose migrator, the remaining
-Python settings and test support, and the Alembic rollback bridge. This section tracks the remaining
-Dispatcher setting and TypeScript cleanup.
-
-```mermaid
-flowchart LR
-    APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
-    APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
-```
-
-### `APP_DISPATCHER_HTTP_SETTING_CLEANUP` — remove the retired Dispatcher URL setting
-
-**In flight (assigned by Codex, 2026-10-29).** The Go app is deployed on staging. The app configuration still
-supplies `session_dispatcher_http_url`, and its settings parsers accept it. Remove the value from
-the manifest, then remove parser fields after that configuration rolls out.
-
-Exit: neither the manifest nor app settings schema contains `session_dispatcher_http_url`.
-
-### `APP_DISPATCHER_TS_TYPES` — generate Dispatcher TypeScript types and remove duplicated message shapes
-
-**In flight (assigned by Codex, 2026-10-29).** Generate TypeScript messages from
-`runner_gateway/dispatcher/session_dispatcher.proto` and use their ProtoJSON codecs for `Dispatch` and
-`InterruptTurnResponse`. Replace the handwritten `DispatchReceipt` and `InterruptResult` shapes and
-their repeated parsing/serialization in `app/frontend/threads/client.ts` and `local_commands.ts`. Keep
-the app-owned submission union and admission checks; preserve locally retained, unconfirmed commands
-and lost-response recovery.
-
-Exit: the frontend consumes generated Dispatcher messages instead of duplicated wire shapes, and
-focused Bazel tests cover submission receipts, local persistence, reconnects and immutable-command
-recovery. No browser transport or backend protocol change is required.
-
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
@@ -1935,3 +1922,24 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 second implementation of `runner/vm.nix`'s guest boot contract (disks by serial, workspace format,
 harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.
+
+## 16. Runner lifecycle follow-up
+
+The [Runner lifecycle ownership probe](../runner/plans/lifecycle_ownership_probe.md) maps current
+state ownership, admission locking, shutdown order, and worker joins. This decision is a narrow
+follow-up; it does not reopen the implemented lifecycle contract.
+
+```mermaid
+flowchart LR
+    RUNNER_ADMISSION_STATUS_DESIGN[Decision: aggregate status in command admission]
+```
+
+### `RUNNER_ADMISSION_STATUS_DESIGN` — decide whether aggregate status is part of command admission
+
+**Decision, unscheduled.** `Runner.admit` rejects its local close latch under `Runner.mu`, then reads
+aggregate status only to test a `Closed` predicate that normal Runner writes make unreachable. The
+read also makes a failed COSI status read fatal. Recommendation: remove it from command admission;
+keep admission on the local close latch and desired mode, and let status and shutdown paths own
+aggregate-status failure observation. Question: is a command admission intentionally a health check
+for aggregate status? If so, retain an explicit named health observation and remove only the dead
+`Closed` predicate. Any runtime change waits for this decision and the Runner race-test gate.

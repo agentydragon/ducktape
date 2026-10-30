@@ -18,6 +18,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -106,8 +109,60 @@ func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+		case <-g.runnerWake:
 		}
 	}
+}
+
+// RunnerDiscoveryHandler wakes RunRunnerObservers when a Sandbox gains an incarnation or a Sandbox
+// Pod becomes Ready or addressable, so a new runner is dialed as soon as it can be reached rather
+// than at the next HeartbeatInterval tick: with the ticker alone every runner start waited up to a
+// full interval before its first connection attempt. Other Pod churn does not wake the scan.
+func (g *Gateway) RunnerDiscoveryHandler() toolscache.ResourceEventHandler {
+	wake := func() {
+		select {
+		case g.runnerWake <- struct{}{}:
+		default:
+		}
+	}
+	return toolscache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			if runnerDiscoveryChanged(nil, obj) {
+				wake()
+			}
+		},
+		UpdateFunc: func(previous, obj any) {
+			if runnerDiscoveryChanged(previous, obj) {
+				wake()
+			}
+		},
+	}
+}
+
+// runnerDiscoveryChanged is whether obj, replacing previous (nil on add), can make a runner newly
+// reachable: a Sandbox whose incarnation changed, or a Sandbox Pod whose readiness or IP changed.
+func runnerDiscoveryChanged(previous, obj any) bool {
+	switch current := obj.(type) {
+	case *sandboxapi.Sandbox:
+		before, ok := previous.(*sandboxapi.Sandbox)
+		return !ok || !equality.Semantic.DeepEqual(before.Status.Incarnation, current.Status.Incarnation)
+	case *corev1.Pod:
+		if _, labelled := current.Labels[sandboxapi.SandboxLabel]; !labelled {
+			return false
+		}
+		before, ok := previous.(*corev1.Pod)
+		return !ok || before.Status.PodIP != current.Status.PodIP || podReady(before) != podReady(current)
+	}
+	return false
+}
+
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
 
 type observedState struct {

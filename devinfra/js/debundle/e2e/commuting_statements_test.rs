@@ -74,6 +74,46 @@ fn valid_pairs_resolve_through_every_selector_form() {
     );
 }
 
+/// A repeated `var` is one binding with several declaration sites. A
+/// `source_match` endpoint selects the site its template matched, not the
+/// binding's first (representative) site that member selectors canonicalize
+/// to.
+#[test]
+fn repeated_var_endpoint_selects_the_matched_declaration_site() {
+    const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nvar shared = (globalThis.record(\"one\"), 1);\nglobalThis.record(\"boot\");\nvar shared = (globalThis.record(\"two\"), 2);\nconsole.log(shared, trace.slice().sort().join(\",\"));\nexport { shared };\n";
+    const SECOND_SITE: &str = "var shared = (globalThis.record(\"two\"), 2);";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module_with_anon(
+                "all",
+                &[Member::new("trace"), Member::new("shared")],
+                &[RECORD_INSTALL],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_commuting_statements(
+            "static/app",
+            vec![commuting_pair(
+                anonymous_source_unit("globalThis.record(\"boot\");"),
+                declared_source_unit(SECOND_SITE, "shared"),
+            )],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "2 boot,one,two\n");
+    let graph = fixture.dependency_graph();
+    let [entry] = graph.commuting_statements.as_slice() else {
+        panic!("{:#?}", graph.commuting_statements);
+    };
+    let second_site = graph
+        .nodes
+        .iter()
+        .filter(|node| node.declared_bindings.iter().any(|b| b.binding == "shared"))
+        .max_by_key(|node| node.statement_ordinal)
+        .expect("a declaration site of `shared`");
+    assert_eq!(entry.b, second_site.id, "{graph:#?}");
+}
+
 #[test]
 fn unresolved_endpoint_names_the_entry_and_endpoint() {
     expect_rejected(
