@@ -31,9 +31,3 @@ enforcement half moving into the Pod the enforcement is against.
 
 Neither is obviously right. Settle it before a third credential source picks a side by accident,
 and fold the answer into the SPEC rather than leaving both shapes described.
-
-## Drop the unused `invopop/jsonschema` module
-
-Nothing imports it since the rules route became a generated facade, so its direct `require` in
-`third_party/go.mod` becomes `// indirect` and its `use_repo` entry in `MODULE.bazel` goes. Both are
-graph-wide edits: batch them with the next Go dependency change.
