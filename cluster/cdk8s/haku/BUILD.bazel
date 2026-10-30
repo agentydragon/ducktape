@@ -239,7 +239,7 @@ py_test(
     deps = [
         ":mailbox",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

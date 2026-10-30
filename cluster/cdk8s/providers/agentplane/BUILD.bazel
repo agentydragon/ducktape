@@ -29,7 +29,7 @@ py_test(
         ":egress_credential",
         "//:conftest",
         "//agentplane/crds:egresscredential",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],

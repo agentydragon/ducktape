@@ -57,7 +57,7 @@ py_test(
     deps = [
         ":proxy",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

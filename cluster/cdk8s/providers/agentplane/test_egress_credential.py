@@ -1,22 +1,21 @@
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest_bazel
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.testing.scratch import scratch_chart
 
 _TARGETS = [
     EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
 ]
 
 
-def test_source_secret_ref(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_source_secret_ref(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     EgressCredential(
         chart,
         "test",
@@ -29,10 +28,10 @@ def test_source_secret_ref(tmp_path: Path) -> None:
     assert manifest["spec"]["source"] == {"secretRef": {"name": "my-secret", "key": "token"}}
 
 
-def test_source_authenticated_workload_token(tmp_path: Path) -> None:
+def test_source_authenticated_workload_token(scratch_chart: Callable[[], Chart]) -> None:
     # The schema's `maxProperties: 0` branch: selecting it means an explicit empty object, not an
     # absent field.
-    chart = scratch_chart(tmp_path)
+    chart = scratch_chart()
     EgressCredential(
         chart,
         "test",
@@ -45,8 +44,8 @@ def test_source_authenticated_workload_token(tmp_path: Path) -> None:
     assert manifest["spec"]["source"] == {"authenticatedWorkloadToken": {}}
 
 
-def test_source_projected_workload_token(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_source_projected_workload_token(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     EgressCredential(
         chart,
         "test",

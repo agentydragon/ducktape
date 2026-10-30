@@ -1,6 +1,7 @@
 """Exercise the PrometheusRule expressions with upstream promtool."""
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest_bazel
@@ -11,7 +12,6 @@ from cdk8s import (
 )
 
 from cluster.cdk8s.monitoring import rules
-from cluster.cdk8s.testing.scratch import scratch_app
 from util.bazel.runfiles import get_required_path
 
 
@@ -30,25 +30,21 @@ def _promtool_test_rules(app: App, tmp_path: Path, rule_files: dict[str, str], t
     )
 
 
-def test_github_quota_rules(tmp_path: Path) -> None:
+def test_github_quota_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
     _promtool_test_rules(
-        scratch_app(tmp_path),
+        scratch_app(),
         tmp_path,
         {"github-quota-alerts": "github-quota.yaml", "roaming-node-alerts": "roaming-node.yaml"},
         "github_quota_rules.yaml",
     )
 
 
-def test_disk_usage_rules(tmp_path: Path) -> None:
-    _promtool_test_rules(
-        scratch_app(tmp_path), tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml"
-    )
+def test_disk_usage_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+    _promtool_test_rules(scratch_app(), tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml")
 
 
-def test_io_pressure_rules(tmp_path: Path) -> None:
-    _promtool_test_rules(
-        scratch_app(tmp_path), tmp_path, {"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml"
-    )
+def test_io_pressure_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+    _promtool_test_rules(scratch_app(), tmp_path, {"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml")
 
 
 if __name__ == "__main__":

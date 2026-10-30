@@ -1,22 +1,21 @@
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObject, ApiObjectMetadata, Chart  # pytest auto-collects classes named Test*
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import ContainerSecurityContextProps, Deployment, k8s
 from keda_scaledjob_crds.sh import keda
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.node_scheduling import Placement
-from cluster.cdk8s.testing.scratch import scratch_app
 
 _PLACEMENT = Placement(node_selector={"example.test/zone": "zone-a"})
 
 
 @pytest.fixture
-def chart(tmp_path: Path) -> Chart:
-    return Chart(scratch_app(tmp_path), "test")
+def chart(scratch_app: Callable[[], App]) -> Chart:
+    return Chart(scratch_app(), "test")
 
 
 def _deployment(chart: Chart) -> Deployment:

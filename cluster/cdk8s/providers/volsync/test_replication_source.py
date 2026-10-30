@@ -1,8 +1,8 @@
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecRsyncTls,
@@ -11,11 +11,10 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
-from cluster.cdk8s.testing.scratch import scratch_chart
 
 
-def test_rsync_tls_mover_sets_rsync_tls_field(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_rsync_tls_mover_sets_rsync_tls_field(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     ReplicationSource(
         chart,
         "test",
@@ -29,8 +28,8 @@ def test_rsync_tls_mover_sets_rsync_tls_field(tmp_path: Path) -> None:
     assert "restic" not in manifest["spec"]
 
 
-def test_restic_mover_sets_restic_field(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_restic_mover_sets_restic_field(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     ReplicationSource(
         chart,
         "test",
@@ -44,8 +43,8 @@ def test_restic_mover_sets_restic_field(tmp_path: Path) -> None:
     assert "rsyncTLS" not in manifest["spec"]
 
 
-def test_unsupported_mover_raises(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_unsupported_mover_raises(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     with pytest.raises(ValueError, match="unsupported mover"):
         ReplicationSource(
             chart,

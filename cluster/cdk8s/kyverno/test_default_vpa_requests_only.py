@@ -11,20 +11,21 @@ VPA never sets a limit.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
 from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION
-from cluster.cdk8s.testing.scratch import scratch_app
 
 
 @pytest.fixture
-def vpa_policy(tmp_path: Path) -> Path:
-    return policy(scratch_app(tmp_path), "default-vpa-requests-only", tmp_path)
+def vpa_policy(scratch_app: Callable[[], App], tmp_path: Path) -> Path:
+    return policy(scratch_app(), "default-vpa-requests-only", tmp_path)
 
 
 def _declared_policy(ns: dict) -> dict | None:

@@ -1,6 +1,6 @@
 """`NetworkPolicy` refuses toFQDNs egress that Cilium's DNS proxy cannot see resolve."""
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 import pytest_bazel
@@ -8,7 +8,6 @@ from cdk8s import ApiObjectMetadata, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_egress, fqdn_fence
-from cluster.cdk8s.testing.scratch import scratch_chart
 
 _DNS_LABELS = {"k8s-app": "test-dns"}
 
@@ -29,9 +28,11 @@ def _policy(chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]) -> None:
     "egress",
     [[dns_egress(_DNS_LABELS), EgressRule.to_fqdns("api.example.test")], [EgressRule.to_fqdns("api.example.test")]],
 )
-def test_fqdn_egress_without_dns_rule_is_refused(tmp_path: Path, egress: list[CiliumNetworkPolicySpecEgress]) -> None:
+def test_fqdn_egress_without_dns_rule_is_refused(
+    scratch_chart: Callable[[], Chart], egress: list[CiliumNetworkPolicySpecEgress]
+) -> None:
     with pytest.raises(ValueError, match="DNS rule"):
-        _policy(scratch_chart(tmp_path), egress)
+        _policy(scratch_chart(), egress)
 
 
 @pytest.mark.parametrize(
@@ -42,8 +43,10 @@ def test_fqdn_egress_without_dns_rule_is_refused(tmp_path: Path, egress: list[Ci
         [dns_egress(_DNS_LABELS), EgressRule.to_entities(Entity.KUBE_APISERVER)],
     ],
 )
-def test_dns_rule_or_no_fqdn_egress_is_accepted(tmp_path: Path, egress: list[CiliumNetworkPolicySpecEgress]) -> None:
-    _policy(scratch_chart(tmp_path), egress)
+def test_dns_rule_or_no_fqdn_egress_is_accepted(
+    scratch_chart: Callable[[], Chart], egress: list[CiliumNetworkPolicySpecEgress]
+) -> None:
+    _policy(scratch_chart(), egress)
 
 
 if __name__ == "__main__":

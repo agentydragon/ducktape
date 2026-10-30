@@ -8,12 +8,13 @@ The ClickHouse reader's hand-written Secret is checked in
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
 import pytest_bazel
 from cdk8s import (
+    App,
     Chart,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
@@ -23,7 +24,6 @@ from cluster.cdk8s import agent_rbac_base, agent_shared_rbac
 from cluster.cdk8s.clickhouse import client, installation
 from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.public_coder import app as public_coder_app, egress as public_coder_egress
-from cluster.cdk8s.testing.scratch import scratch_app
 
 _HAKU_SUBJECTS = {
     ("Group", "oidc-ksbx-groups:haku", None),
@@ -54,34 +54,34 @@ def _one(objects: list[dict[str, Any]], kind: str, name: str | None = None) -> d
 
 
 @pytest.fixture(scope="module")
-def app_objects(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
-    return _synth(public_coder_app.app_chart(scratch_app(tmp_path_factory.mktemp("cdk8s"))))
+def app_objects(scratch_app: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(public_coder_app.app_chart(scratch_app()))
 
 
 @pytest.fixture(scope="module")
-def rbac_objects(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
-    return _synth(public_coder_app.rbac_chart(scratch_app(tmp_path_factory.mktemp("cdk8s"))))
+def rbac_objects(scratch_app: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(public_coder_app.rbac_chart(scratch_app()))
 
 
 @pytest.fixture(scope="module")
-def console_objects(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
-    return _synth(console_chart(scratch_app(tmp_path_factory.mktemp("cdk8s"))))
+def console_objects(scratch_app: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(console_chart(scratch_app()))
 
 
 @pytest.fixture(scope="module")
-def clickhouse_diagnostics_objects(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
-    return _synth(installation.agent_diagnostics_rbac_chart(scratch_app(tmp_path_factory.mktemp("cdk8s"))))
+def clickhouse_diagnostics_objects(scratch_app: Callable[[], App]) -> list[dict[str, Any]]:
+    return _synth(installation.agent_diagnostics_rbac_chart(scratch_app()))
 
 
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
-    tmp_path: Path,
+    scratch_app: Callable[[], App],
     console_objects: list[dict[str, Any]],
     rbac_objects: list[dict[str, Any]],
     clickhouse_diagnostics_objects: list[dict[str, Any]],
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
     metadata_role = _one(
-        _synth(agent_rbac_base.chart(scratch_app(tmp_path))), "ClusterRole", "agent-readable-namespace-metadata"
+        _synth(agent_rbac_base.chart(scratch_app())), "ClusterRole", "agent-readable-namespace-metadata"
     )
     assert all(rule["verbs"] == _READ for rule in metadata_role["rules"])
     assert not {
@@ -110,13 +110,11 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         assert not {"secrets", "pods/log", "pods/exec"} & _resources(role), source
 
     # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
-    shared_objects = _synth(agent_shared_rbac.chart(scratch_app(tmp_path)))
+    shared_objects = _synth(agent_shared_rbac.chart(scratch_app()))
     haku_cluster_binding = _one(shared_objects, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
 
-    diagnostics_role = _one(
-        _synth(agent_rbac_base.chart(scratch_app(tmp_path))), "ClusterRole", "cluster-diagnostics-reader"
-    )
+    diagnostics_role = _one(_synth(agent_rbac_base.chart(scratch_app())), "ClusterRole", "cluster-diagnostics-reader")
     assert {
         (api_group, resource, verb)
         for rule in diagnostics_role["rules"]

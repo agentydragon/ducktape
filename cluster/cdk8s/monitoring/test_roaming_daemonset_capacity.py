@@ -18,16 +18,19 @@ relation.
 from __future__ import annotations
 
 import operator
+from collections.abc import Callable
 from functools import reduce
 
 import pytest
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s import node_feature_discovery
 from cluster.cdk8s.monitoring import loki
-from cluster.cdk8s.testing.scratch import scratch_app
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
@@ -48,10 +51,10 @@ _ROAMING_DAEMONSETS = (
 
 
 @pytest.fixture(scope="module")
-def release_manifests(tmp_path_factory: pytest.TempPathFactory) -> list[dict]:
+def release_manifests(scratch_app: Callable[[], App]) -> list[dict]:
     return [
-        *Cdk8sTesting.synth(loki.chart(scratch_app(tmp_path_factory.mktemp("cdk8s")))),
-        *Cdk8sTesting.synth(node_feature_discovery.chart(scratch_app(tmp_path_factory.mktemp("cdk8s")))),
+        *Cdk8sTesting.synth(loki.chart(scratch_app())),
+        *Cdk8sTesting.synth(node_feature_discovery.chart(scratch_app())),
     ]
 
 

@@ -1,23 +1,22 @@
 """Static namespace readers wait only on the shared roles, and an unreviewed namespace gets none."""
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Chart, Testing as Cdk8sTesting
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_namespace_rbac
 from cluster.cdk8s.flux import flux_kustomization, kustomizations_chart
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.namespaces import Vpa, namespace
-from cluster.cdk8s.testing.scratch import scratch_app, scratch_chart
 
 
-def test_reader_reconciliation_depends_only_on_shared_roles(tmp_path: Path) -> None:
+def test_reader_reconciliation_depends_only_on_shared_roles(scratch_app: Callable[[], App]) -> None:
     # No namespace-owner or application constructs are needed, including on a
     # cold bootstrap. Namespace existence is checked by the API, not app health.
-    scope = kustomizations_chart(scratch_app(tmp_path))
+    scope = kustomizations_chart(scratch_app())
     roles = flux_kustomization(
         scope,
         "shared-roles",
@@ -40,10 +39,10 @@ def test_reader_reconciliation_depends_only_on_shared_roles(tmp_path: Path) -> N
         assert spec["wait"] is True
 
 
-def test_unapproved_namespaces_fail_closed(tmp_path: Path) -> None:
+def test_unapproved_namespaces_fail_closed(scratch_chart: Callable[[], Chart], scratch_app: Callable[[], App]) -> None:
     with pytest.raises(KeyError):
-        agent_namespace_rbac.chart(scratch_app(tmp_path), "private-unreviewed")
-    scope = scratch_chart(tmp_path)
+        agent_namespace_rbac.chart(scratch_app(), "private-unreviewed")
+    scope = scratch_chart()
     namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
     labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)

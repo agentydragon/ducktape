@@ -15,10 +15,16 @@ py_binary(
 py_test(
     name = "test_render_diff",
     srcs = ["test_render_diff.py"],
-    data = ["@multitool//tools/kustomize"],
+    data = [
+        "@multitool//tools/kustomize",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    # //cluster/cdk8s:conftest imports cdk8s, whose jsii runtime starts Node at collection.
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":render_diff",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

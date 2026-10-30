@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
-from cluster.cdk8s.testing.scratch import scratch_app
 
 
 @pytest.fixture
-def service_links_policy(tmp_path: Path) -> Path:
-    return policy(scratch_app(tmp_path), "default-disable-service-links", tmp_path)
+def service_links_policy(scratch_app: Callable[[], App], tmp_path: Path) -> Path:
+    return policy(scratch_app(), "default-disable-service-links", tmp_path)
 
 
 class TestDefaultDisableServiceLinks:

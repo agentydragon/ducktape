@@ -231,7 +231,7 @@ py_test(
     deps = [
         ":grafana_instance",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -301,8 +301,8 @@ py_test(
     deps = [
         ":loki",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:node_feature_discovery",
-        "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
@@ -326,7 +326,7 @@ py_test(
     deps = [
         ":rules",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
@@ -346,7 +346,7 @@ py_test(
     deps = [
         ":gateway_probe",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
@@ -432,6 +432,7 @@ py_test(
         ":blackbox_exporter",
         ":home_application_probes",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//third_party/containers:blackbox_exporter",
         "//util:oci",
         "//util/testing:container_logs",
@@ -501,6 +502,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

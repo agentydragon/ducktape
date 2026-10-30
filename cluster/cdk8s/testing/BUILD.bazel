@@ -6,5 +6,8 @@ py_library(
     name = "scratch",
     srcs = ["scratch.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
 )

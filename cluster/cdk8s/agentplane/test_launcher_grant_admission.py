@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import copy
-import pathlib
+from collections.abc import Callable
 from typing import Any, cast
 
 import cdk8s
 import pytest_bazel
+from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config import new_client_from_config
@@ -16,7 +17,6 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 from cluster.cdk8s.agentplane import actions
-from cluster.cdk8s.testing.scratch import scratch_chart
 
 NAMESPACE = "test-launcher-admission"
 
@@ -93,8 +93,8 @@ def _without(body: Body, path: Path) -> Body:
     return changed
 
 
-async def test_the_action_service_writes_only_launcher_shaped_grants(tmp_path: pathlib.Path) -> None:
-    chart = scratch_chart(tmp_path)
+async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     actions.add_launcher_admission(chart, NAMESPACE)
     policy, binding = cdk8s.Testing.synth(chart)
     async with kubernetes_apiserver() as server:

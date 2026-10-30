@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -18,7 +18,6 @@ from more_itertools import one
 
 from agentplane.runner.configuration import Configuration, VMEnvironment
 from cluster.cdk8s.agentplane import runner_sandbox, runner_vm, staging
-from cluster.cdk8s.testing.scratch import scratch_app
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -57,33 +56,31 @@ def _runner_vm_manifests(
 
 @pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, False)])
 def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
-    tmp_path: Path, console_autologin: bool, rendered: bool
+    scratch_app: Callable[[], App], console_autologin: bool, rendered: bool
 ) -> None:
     config = Configuration.model_validate(
-        _runner_vm_manifests(app=scratch_app(tmp_path), console_autologin=console_autologin)["runner"]
+        _runner_vm_manifests(app=scratch_app(), console_autologin=console_autologin)["runner"]
     )
     assert isinstance(config.environment, VMEnvironment)
     assert config.environment.console_autologin == rendered
 
 
-def test_harness_env_reaches_the_vm_environment(tmp_path: Path) -> None:
-    rendered = _runner_vm_manifests(app=scratch_app(tmp_path), console_autologin=False)
+def test_harness_env_reaches_the_vm_environment(scratch_app: Callable[[], App]) -> None:
+    rendered = _runner_vm_manifests(app=scratch_app(), console_autologin=False)
     runner = Configuration.model_validate(rendered["runner"])
     assert all(runner.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
     assert runner.session_reconcile_concurrency is None
     assert isinstance(runner.environment, VMEnvironment)
 
 
-def test_session_reconcile_concurrency_reaches_vm_runner_configuration(tmp_path: Path) -> None:
-    rendered = _runner_vm_manifests(
-        app=scratch_app(tmp_path), console_autologin=False, session_reconcile_concurrency=2048
-    )
+def test_session_reconcile_concurrency_reaches_vm_runner_configuration(scratch_app: Callable[[], App]) -> None:
+    rendered = _runner_vm_manifests(app=scratch_app(), console_autologin=False, session_reconcile_concurrency=2048)
     config = Configuration.model_validate(rendered["runner"])
     assert config.session_reconcile_concurrency == 2048
 
 
-def test_vm_size_and_runner_configuration_share_resource_policy(tmp_path: Path) -> None:
-    rendered = _runner_vm_manifests(app=scratch_app(tmp_path), console_autologin=False)
+def test_vm_size_and_runner_configuration_share_resource_policy(scratch_app: Callable[[], App]) -> None:
+    rendered = _runner_vm_manifests(app=scratch_app(), console_autologin=False)
     config = rendered["runner"]["environment"]
     vm = rendered["sandbox_template"]["spec"]["vm"]
     domain = vm["template"]["spec"]["domain"]
@@ -93,8 +90,8 @@ def test_vm_size_and_runner_configuration_share_resource_policy(tmp_path: Path) 
     assert int(memory.removesuffix("Mi")) * 1024 * 1024 == config["resources"]["guest_memory_bytes"]
 
 
-def test_vm_workspace_is_a_controller_attached_block_filesystem(tmp_path: Path) -> None:
-    template = _runner_vm_manifests(app=scratch_app(tmp_path), console_autologin=False)["sandbox_template"]["spec"]
+def test_vm_workspace_is_a_controller_attached_block_filesystem(scratch_app: Callable[[], App]) -> None:
+    template = _runner_vm_manifests(app=scratch_app(), console_autologin=False)["sandbox_template"]["spec"]
     assert template["workspaceVolume"] == {
         "name": "workspace",
         "claim": {"storageClassName": "test-storage", "volumeMode": "Block"},
@@ -150,8 +147,8 @@ def test_vm_storage_class_requires_vm_sandboxes() -> None:
         replace(staging.ENV, vm_sandboxes=False, vm_storage_class="example-storage")
 
 
-def test_vm_template_renders_mtls_server_listener(tmp_path: Path) -> None:
-    rendered = _runner_vm_manifests(app=scratch_app(tmp_path), console_autologin=False)
+def test_vm_template_renders_mtls_server_listener(scratch_app: Callable[[], App]) -> None:
+    rendered = _runner_vm_manifests(app=scratch_app(), console_autologin=False)
     runner = rendered["runner"]
     template = rendered["sandbox_template"]["spec"]
 

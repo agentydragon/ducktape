@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s.haku_ci import runner
-from cluster.cdk8s.testing.scratch import scratch_app
 
 
-def test_keda_authentication_and_scaled_job_are_wired(tmp_path: Path) -> None:
-    resources = Cdk8sTesting.synth(runner.chart(scratch_app(tmp_path)))
+def test_keda_authentication_and_scaled_job_are_wired(scratch_app: Callable[[], App]) -> None:
+    resources = Cdk8sTesting.synth(runner.chart(scratch_app()))
 
     authentication = next(resource for resource in resources if resource["kind"] == "TriggerAuthentication")
     assert authentication["metadata"]["name"] == "forgejo"

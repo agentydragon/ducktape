@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s.haku import mailbox
-from cluster.cdk8s.testing.scratch import scratch_app
 from util.bazel.runfiles import get_required_path
 
 
-def test_mailbox_initialization_is_serialized_and_init_only(tmp_path: Path) -> None:
-    deployment = one(
-        obj for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app(tmp_path))) if obj["kind"] == "Deployment"
-    )
+def test_mailbox_initialization_is_serialized_and_init_only(scratch_app: Callable[[], App]) -> None:
+    deployment = one(obj for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app())) if obj["kind"] == "Deployment")
 
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod_spec = deployment["spec"]["template"]["spec"]
@@ -27,10 +27,10 @@ def test_mailbox_initialization_is_serialized_and_init_only(tmp_path: Path) -> N
     assert "STALWART_RECOVERY_ADMIN" not in initialize_env | production_env
 
 
-def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(tmp_path: Path) -> None:
+def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(scratch_app: Callable[[], App]) -> None:
     smtp_service = one(
         obj
-        for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app(tmp_path)))
+        for obj in Cdk8sTesting.synth(mailbox.chart(scratch_app()))
         if obj["kind"] == "Service" and obj["metadata"]["name"] == "smtp"
     )
     smtp_service_port = one(smtp_service["spec"]["ports"])

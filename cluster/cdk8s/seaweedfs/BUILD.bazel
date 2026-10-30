@@ -224,7 +224,7 @@ py_test(
         ":namespace",
         ":s3",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -239,8 +239,8 @@ py_test(
     deps = [
         ":cluster",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:stateful_infra",
-        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",

@@ -5,10 +5,13 @@ version's class plainly (`Terraform` is v1alpha1) and suffixes the rest, so ever
 generated CR goes through `TerraformV1Alpha2`.
 """
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    Chart,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2,
     TerraformV1Alpha2Spec,
@@ -16,11 +19,9 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecSourceRefKind,
 )
 
-from cluster.cdk8s.testing.scratch import scratch_chart
 
-
-def test_suffixed_class_renders_v1alpha2(tmp_path: Path) -> None:
-    chart = scratch_chart(tmp_path)
+def test_suffixed_class_renders_v1alpha2(scratch_chart: Callable[[], Chart]) -> None:
+    chart = scratch_chart()
     TerraformV1Alpha2(
         chart,
         "terraform",

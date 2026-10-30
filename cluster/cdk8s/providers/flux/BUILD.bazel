@@ -163,8 +163,8 @@ py_test(
     deps = [
         ":image_policy",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/flux:imagepolicy",
-        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -203,8 +203,8 @@ py_test(
     deps = [
         ":helm_release",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/testing:scratch",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

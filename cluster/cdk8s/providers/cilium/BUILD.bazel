@@ -61,7 +61,7 @@ py_test(
         ":ciliumnetworkpolicy",
         ":network_policy",
         "//:conftest",
-        "//cluster/cdk8s/testing:scratch",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,15 +1,18 @@
 """Exercise the gateway probe's alert expressions with upstream promtool."""
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest_bazel
 import yaml
-from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import (
+    App,
+    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
+)
 from more_itertools import one
 
 from cluster.cdk8s.monitoring import gateway_probe
-from cluster.cdk8s.testing.scratch import scratch_app
 from cluster.scripts.nebula_mesh import Host, Mesh
 from util.bazel.runfiles import get_required_path
 
@@ -28,10 +31,10 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(tmp_path: Path) -> None:
+def test_gateway_probe_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app(tmp_path), _MESH))
+        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app(), _MESH))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
-from cluster.cdk8s.testing.scratch import scratch_app
 
 
 @pytest.fixture
-def secret_store_conditions_policy(tmp_path: Path) -> Path:
-    return policy(scratch_app(tmp_path), "require-secret-store-conditions", tmp_path)
+def secret_store_conditions_policy(scratch_app: Callable[[], App], tmp_path: Path) -> Path:
+    return policy(scratch_app(), "require-secret-store-conditions", tmp_path)
 
 
 class TestRequireSecretStoreConditions:

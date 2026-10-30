@@ -2,7 +2,7 @@
 Cilium rules on both ends name the Pods' port, which Cilium matches after socket-LB translation;
 and a `Port` renders one agreeing container port and Service port in both builder tiers."""
 
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 import pytest_bazel
@@ -11,7 +11,6 @@ from cdk8s_plus_34 import Deployment, Service, k8s
 
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.testing.scratch import scratch_chart
 
 _PODS = Pods(namespace="test-namespace", labels=(("app.kubernetes.io/name", "test-app"),))
 # A Helm chart's shape: Service port 80 in front of Pods listening on 8080.
@@ -19,8 +18,8 @@ _SERVICE = ServiceRef(name="test-app", port=Port(name="http", number=80), pods=_
 
 
 @pytest.fixture
-def chart(tmp_path: Path) -> Chart:
-    return scratch_chart(tmp_path)
+def chart(scratch_chart: Callable[[], Chart]) -> Chart:
+    return scratch_chart()
 
 
 def test_client_addresses_dial_the_service_port() -> None:
