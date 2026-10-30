@@ -1942,7 +1942,7 @@ emulation, and point the k3s VM scenarios at that guest.
 
 From the 2026-10-30 idiom audit; problems, targets and exits are in
 [standard idioms](standard_idioms.md). Operator selection, 2026-10-30 PDT: all nodes below are
-accepted; `SAMPLER_JOURNAL_DIET` and `CREDENTIAL_BINDING_LOCATION` await the operator's view.
+accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 
 ```mermaid
 flowchart LR
@@ -1967,8 +1967,7 @@ flowchart LR
     RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    CREDENTIAL_BINDING_LOCATION[Decision: where the runner credential binding lives]
-    CREDENTIAL_BINDING_LOCATION --> CREDENTIAL_BINDING_STATUS[Blocked: move the binding out of annotations]
+    CREDENTIAL_BINDING_STATUS[Candidate: runner credential binding in status]
     RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
@@ -1999,12 +1998,11 @@ tests unchanged.
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
 
-### `CREDENTIAL_BINDING_LOCATION` — where the runner credential binding lives
+### `CREDENTIAL_BINDING_STATUS` — the runner credential binding moves to status
 
-**Decision.** Annotations are writable by every Sandbox `patch` holder. Recommendation: a typed
-`status.runnerCredential` under the `/status` subresource; alternative: a separate controller-owned
-resource. CRDs have no custom subresource names. `CREDENTIAL_BINDING_STATUS` implements the choice with
-a one-release read fallback.
+**Candidate; operator, 2026-10-30 PDT: a typed `status.runnerCredential` under `/status`.** Annotations
+are writable by every Sandbox `patch` holder; the `/status` subresource is controller-owned. Migrate with
+a one-release read fallback, then drop the annotations.
 
 ### Blocked
 

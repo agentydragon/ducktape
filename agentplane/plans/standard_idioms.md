@@ -102,22 +102,16 @@ cert-manager `secretTemplate` already sets the label) or use `WatchesMetadata`, 
 match. Exit: the README's "cache holds only labeled objects" is true; RBAC no longer lists all
 Secrets.
 
-### `CREDENTIAL_BINDING_LOCATION` (decision) and `CREDENTIAL_BINDING_STATUS`
+### `CREDENTIAL_BINDING_STATUS`
 
 The runner credential binding (`runner-credential`, `-kind`, `-accepted-id`, `-pod-uid`,
 `-last-vmi-uid`) is written as Sandbox annotations with `Update` (`sandbox_controller/runner_credential.go`,
 `vm.go`), so the app and Runner Gateway, which hold `patch` on Sandboxes, can overwrite an identity
-binding the security model relies on. Alternatives:
-
-- **`/status`** (recommended): the only subresource a CRD has besides `/scale`; RBAC on
-  `sandboxes/status` already separates it from spec writers, and the controller already keeps
-  `status.volumes` and `status.quiesceAttempt` there. A typed `status.runnerCredential` struct gives
-  the specific name.
-- **A separate controller-owned resource** (for example `SandboxRunnerCredential`, owned by the
-  Sandbox): its own RBAC and name, at the cost of a new CRD and an extra read.
-- A custom subresource name is not available to CRDs; it needs an aggregated API server.
-
-Implementation: migrate with a read fallback to the annotations for one release, then drop them.
+binding the security model relies on. Operator, 2026-10-30: move it to a typed `status.runnerCredential`
+under the `/status` subresource, which RBAC already separates from spec writers and where the controller
+already keeps `status.volumes` and `status.quiesceAttempt`. (CRDs have no custom subresource names; a
+separate controller-owned resource was the alternative.) Migrate with a read fallback to the
+annotations for one release, then drop them.
 
 ### `LEASE_OBSERVED_TIME`
 
