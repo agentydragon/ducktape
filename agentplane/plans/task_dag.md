@@ -2009,16 +2009,10 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 
 ```mermaid
 flowchart LR
-    KUBERNETES_NATIVE_WATCH_HEALTH[In review: Kubernetes-native informer health, #13060]
-    EGRESS_SIDECAR_STDLIB_HTTP[Candidate: sidecar parses HTTP with the stdlib]
-    GRPC_AUTH_INTERCEPTORS[Candidate: one authorization interceptor per service]
-    LLM_INGRESS_REVERSE_PROXY[Candidate: LLM ingress on httputil.ReverseProxy]
+    KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
     APP_PROXY_REVERSE_PROXY[Candidate: app proxies on httputil.ReverseProxy]
-    SANDBOX_CONTROLLER_SECRET_CACHE[Candidate: label-filtered Secret cache]
     APP_LIVE_FRAME_BROADCAST[Candidate: build live frames once and broadcast]
-    MCP_EDGE_TOKEN_CACHE[Candidate: cache minted ServiceAccount tokens]
     CONDITION_REASONS_NOT_STATE[Candidate: no code branches on condition reasons]
-    SANDBOX_LEASE_PREDICATE[Candidate: Lease predicate instead of 5 s polls]
     GATEWAY_OBSERVER_RECONCILER[Candidate: Gateway observers as a cached reconciler]
     HISTORY_FOLD_DIRTY_QUEUE[Candidate: fold only changed Sessions]
     SAMPLER_EXPORTER_WORKQUEUE[Candidate: sampler exporter on a rate-limited queue]
@@ -2030,42 +2024,35 @@ flowchart LR
     RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    CREDENTIAL_BINDING_STATUS[Candidate: runner credential binding in status]
     RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
 
-### `KUBERNETES_NATIVE_WATCH_HEALTH` — informer health instead of watch-cycle freshness
+### `KUBERNETES_NATIVE_WATCH_HEALTH` — informer health on staging
 
-**In review: #13060, reported by the coordinating agent 2026-10-30.** Every service reading Kubernetes
-lets client-go own watch timeouts; readiness is `HasSynced` and health comes from watch errors. Exit:
-merged and observed on staging, including egress failing closed while a kind's watch errors (no system
-test covers that path).
+**Staging check; #13060 merged 2026-10-30.** Egress, the Action Service, the MCP edge and notifications
+now go unavailable on any list or watch failure until client-go's next success, instead of after about
+15 minutes. Fail-closed behaviour while a kind's watch errors is covered against a real kube-apiserver
+(egress gate, proxy and bridge; Action Service admission); the deployment-specific uncertainty is
+staging's RBAC and API server behaviour. Check once Flux applies it: those Pods and the app become
+Ready and stay Ready without readiness flapping, egress admin `GetHealth` reports `available` with an
+empty `failing` map, and the app shows no watch warning. Delete this node once observed.
 
 ### Candidates
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
-`EGRESS_SIDECAR_STDLIB_HTTP`, `GRPC_AUTH_INTERCEPTORS`, `LLM_INGRESS_REVERSE_PROXY`,
-`APP_PROXY_REVERSE_PROXY`, `SANDBOX_CONTROLLER_SECRET_CACHE`, `APP_LIVE_FRAME_BROADCAST`,
-`MCP_EDGE_TOKEN_CACHE`, `CONDITION_REASONS_NOT_STATE`, `SANDBOX_LEASE_PREDICATE`,
+`APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `CONDITION_REASONS_NOT_STATE`,
 `GATEWAY_OBSERVER_RECONCILER`, `HISTORY_FOLD_DIRTY_QUEUE`, `SAMPLER_EXPORTER_WORKQUEUE`,
 `POSTGRES_LEASE_HELPER`, `LEASE_OBSERVED_TIME`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
-`RUNNERCLIENT_PER_RPC_CREDENTIALS`, `RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`. The security-boundary ones
-(`EGRESS_SIDECAR_STDLIB_HTTP`, `GRPC_AUTH_INTERCEPTORS`) come first. `CONDITION_REASONS_NOT_STATE`
-needs the roll-safe order in its plan section; `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing
-tests unchanged.
+`RUNNERCLIENT_PER_RPC_CREDENTIALS`, `RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`.
+`CONDITION_REASONS_NOT_STATE` needs the roll-safe order in its plan section;
+`GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
-
-### `CREDENTIAL_BINDING_STATUS` — the runner credential binding moves to status
-
-**Candidate; operator, 2026-10-30 PDT: a typed `status.runnerCredential` under `/status`.** Annotations
-are writable by every Sandbox `patch` holder; the `/status` subresource is controller-owned. Migrate with
-a one-release read fallback, then drop the annotations.
 
 ### Blocked
 

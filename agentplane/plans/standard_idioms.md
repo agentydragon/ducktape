@@ -8,28 +8,9 @@ dependencies. Items the audit judged justified are not listed: the central egres
 sampler's Responses stream parser, runner supervision, Electric sync, the local command outbox, CRD
 validation, the Policy Controller and gRPC health.
 
-Line references are to `devel` at the time of the audit; re-check before starting.
+File references are to `devel` at the time of the audit; re-check before starting.
 
 ## HTTP
-
-### `EGRESS_SIDECAR_STDLIB_HTTP`
-
-The sidecar relay parses and rewrites HTTP/1 request heads byte by byte (`egress/sidecar/relay.go`
-`readHead`, `isConnectRequest`, `rewriteRequestHead`, `responseStatus`, `writeBytes`) at the point
-where it strips and injects `Proxy-Authorization` and the workload token, and splices the rest of a
-plain-HTTP connection raw, relying on a forced `Connection: close` to stop a pipelined request from
-bypassing the rewrite. Use `http.ReadRequest`/`http.ReadResponse` with `Header.Del`/`Set` and
-`Request.Write`, or an `http.Server` with `httputil.ReverseProxy` and `Transport.Proxy` /
-`ProxyConnectHeader` toward the central proxy. Exit: existing relay tests pass; tests for duplicate,
-folded and pipelined headers at the token-injection point.
-
-### `LLM_INGRESS_REVERSE_PROXY`
-
-`llm_ingress/server.go` forwards by hand: path joining, an unbounded `io.ReadAll` of every request
-body only to optionally log it, a manual copy/flush loop, hop-by-hop header stripping and
-`Connection` token parsing. Use `httputil.ReverseProxy` (`Rewrite`/`SetURL`, `FlushInterval: -1`,
-`ModifyResponse`, `ErrorHandler`), keeping the semaphore and dial timeout; log bodies by wrapping, with
-a size bound. Exit: streaming and header tests pass; no unbounded buffering.
 
 ### `APP_PROXY_REVERSE_PROXY`
 
@@ -38,15 +19,6 @@ flush and override `Cache-Control` by hand. Express the response-header allowlis
 `ModifyResponse` on `httputil.ReverseProxy`. Exit: tests prove no header beyond the allowlist leaks.
 
 ## gRPC
-
-### `GRPC_AUTH_INTERCEPTORS`
-
-Caller authorization is a `RequireAccount` call inside each handler in the Gateway proxy and executor
-relay, egress admin, History API, Notification operator API and Dispatcher API, while the Action
-Service, MCP edge and Runner control server use interceptors. A new RPC that forgets the call is
-unauthenticated. Use one server interceptor per service with a per-`FullMethod` allowlist that fails
-closed for unlisted methods (for example go-grpc-middleware v2 `auth` with `selector`). Exit: each
-service rejects an unlisted method; per-method tests replace per-handler ones.
 
 ### `GRPC_NATIVE_LISTENER`
 
@@ -84,34 +56,6 @@ the API conventions. Expose the state as a typed status field (the CRD already h
 `suspendedBy`, `quiesceAttempt`) or a dedicated condition type, move every reader to it, then stop
 depending on reasons. Roll-safe: write the new field before any reader requires it. Exit: no code
 compares a condition reason; renaming a reason changes only display.
-
-### `SANDBOX_LEASE_PREDICATE`
-
-The Sandbox controller's Lease predicate drops renew-only updates (`controller.go`), so a lapsed
-connection that resumes renewing is never enqueued, and `RequeueAfter: runnerLapsedPoll` (5 s) polls
-for `ConnectionLost` and `ConnectionPending` instead. Enqueue when liveness crosses the boundary (old
-Lease lapsed, new one live) and drop the polls; `ConnectionPending` already reacts to the boot-ID fact
-change. Exit: tests show reconnect and lapse observed without a periodic requeue.
-
-### `SANDBOX_CONTROLLER_SECRET_CACHE`
-
-The controller watches Secrets and owns ConfigMaps and Services with no label selector in its cache
-options, so it caches every Secret in the namespace under namespace-wide list/watch RBAC, while
-reading Secrets and Certificates uncached. Restrict the cache with `cache.ByObject{Label: …}` (the
-cert-manager `secretTemplate` already sets the label) or use `WatchesMetadata`, and narrow RBAC to
-match. Exit: the README's "cache holds only labeled objects" is true; RBAC no longer lists all
-Secrets.
-
-### `CREDENTIAL_BINDING_STATUS`
-
-The runner credential binding (`runner-credential`, `-kind`, `-accepted-id`, `-pod-uid`,
-`-last-vmi-uid`) is written as Sandbox annotations with `Update` (`sandbox_controller/runner_credential.go`,
-`vm.go`), so the app and Runner Gateway, which hold `patch` on Sandboxes, can overwrite an identity
-binding the security model relies on. Operator, 2026-10-30: move it to a typed `status.runnerCredential`
-under the `/status` subresource, which RBAC already separates from spec writers and where the controller
-already keeps `status.volumes` and `status.quiesceAttempt`. (CRDs have no custom subresource names; a
-separate controller-owned resource was the alternative.) Migrate with a read fallback to the
-annotations for one release, then drop them.
 
 ### `LEASE_OBSERVED_TIME`
 
@@ -211,14 +155,6 @@ when only a Pod changed (`app/go/streamapi.go`). The same Sandbox inventory also
 three streams, and the thread page reads the top-bar status and the composer state from different ones.
 Compute each frame once per change and broadcast its bytes (a hub or `singleflight`), re-query threads
 only on thread changes, and give each entity one client-side source.
-
-### `MCP_EDGE_TOKEN_CACHE`
-
-`mcp_edge/core_client.go` mints a fresh 600 s ServiceAccount token with TokenRequest, and does live
-ServiceAccount GETs, on every Action call and on every received stream frame, which also defeats the
-Action Service's TokenReview cache keyed by token, while `callers.go` already runs an informer over
-those ServiceAccounts. Cache minted tokens per account and ServiceAccount UID, refresh at about 80% of
-lifetime (as the kubelet's token manager does), and read UID and labels from the informer.
 
 ### `FRONTEND_SSE_CLIENT`
 
