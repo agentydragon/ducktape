@@ -1542,11 +1542,11 @@ also records the callback and execution context without invoking it.
 
 ## Inferred returned-record construction timing
 
-For a stable directly exported hoisted zero-argument function declaration that allocates one fresh
-empty Map and returns only noncomputed methods/getters, source analysis may
-certify that construction cannot synchronously reenter importer code. This is
-independent of purity and possible throws. The proof requires an exact defining
-entry/export and the shared intrinsic-integrity checks across analyzed modules.
+A parameterless export with a derived foreign call summary (§ Derived foreign
+call summaries) whose result is always one fresh object literal of
+noncomputed, distinctly named methods and getters is a returned-record factory.
+An argument-free direct call cannot synchronously reenter importer
+code. This is independent of purity and possible throws.
 The returned record retains opaque deferred capabilities: later access,
 invocation and opaque consumption conservatively preserve importer live-cell
 reads and callback effects. The summary and provider member/capture provenance
@@ -1556,8 +1556,9 @@ Used certificates also appear in the dependency graph's
 `synchronous_execution.returned_record_uses` separately records `call_timing`
 and `return_capability` consumption with the call-site location and a summary
 reference. Callback-input factory evidence and uses retain their own fields.
-The summary's `inference` records the composing source-identity, empty-collection
-and native-integrity rules and their captured-input dependencies. Actual use
+The summary's `inference` records the composing source-identity rule, and the
+empty-collection and native-integrity rules when the body constructs a
+collection, with their captured-input dependencies. Actual use
 also appears in `synchronous_execution.inference_uses`; the dependency set is
 propagated from required premises rather than reconstructed by each consumer.
 
@@ -1590,7 +1591,8 @@ the provider derivation and the caller's own-property derivation in
 A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs
 no other code. The body may read only its parameters and its own `const`/`let`
-bindings. It may create primitives, closures, and object or array literals with
+bindings (`var` included; a read before the first declaration has no
+summary). It may create primitives, closures, and object or array literals with
 literal keys other than `__proto__`. It may construct an argument-free
 `Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
 chunk's census. A class may also define instance fields and write its declared

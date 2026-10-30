@@ -9,9 +9,7 @@
 use super::abstract_domain::builtins::Row;
 use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use super::abstract_domain::value::{Kind, Value};
-use super::callable_inference::{
-    CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordFacts,
-};
+use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
@@ -29,7 +27,6 @@ use spec::DescriptorCopyFactorySignature;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
-use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
@@ -56,10 +53,6 @@ pub(crate) enum SemanticKey {
         binding: Id,
         function: u32,
     },
-    ReturnedRecord {
-        binding: Id,
-        function: u32,
-    },
     NamespaceWrapper {
         binding: Id,
         function: u32,
@@ -78,7 +71,6 @@ impl SemanticKey {
             Self::StableProvider { .. } => InferenceRule::StableProvider,
             Self::ArgumentNoEscape { .. } => InferenceRule::ArgumentNoEscape,
             Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
-            Self::ReturnedRecord { .. } => InferenceRule::ReturnedRecord,
             Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
             Self::DescriptorCopyProvider(_) => InferenceRule::DescriptorCopyProvider,
             Self::DescriptorCopyCall(_) => InferenceRule::DescriptorCopyFactory,
@@ -93,7 +85,6 @@ pub(crate) enum SemanticFact {
     Certificate,
     Function(u32),
     CallbackFactory(u32),
-    ReturnedRecord(Arc<ReturnedRecordFacts>),
     NamespaceWrapper(u32),
 }
 
@@ -415,7 +406,6 @@ impl SemanticRules {
             SemanticKey::StableFunction { .. }
             | SemanticKey::StableProvider { .. }
             | SemanticKey::CallbackFactory { .. }
-            | SemanticKey::ReturnedRecord { .. }
             | SemanticKey::NamespaceWrapper { .. } => {
                 if self.dynamic_scope {
                     return None;
