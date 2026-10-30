@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -185,12 +186,11 @@ func TestRelayFlushesSmallLiveUpdatesAndCancelsUpstreamOnDisconnect(t *testing.T
 				t.Fatal(err)
 			}
 			relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				response, err := proxy.OpenRequest(r.Context(), http.MethodGet, "watch", "", "", nil, nil)
-				if err != nil {
-					t.Errorf("open upstream: %v", err)
-					return
-				}
-				_ = relayResponse(w, response, map[string]struct{}{"content-type": {}}, nil)
+				proxy.Relay(w, r, RelayRequest{
+					Method: http.MethodGet, Path: "watch", Header: http.Header{},
+					ResponseHeaders: map[string]struct{}{"content-type": {}}, CacheControl: "no-store",
+					OnError: func(http.ResponseWriter, *http.Request, error) { t.Error("relay failed") },
+				})
 			}))
 			defer relay.Close()
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, relay.URL, nil)
@@ -228,68 +228,111 @@ func TestRelayFlushesSmallLiveUpdatesAndCancelsUpstreamOnDisconnect(t *testing.T
 	}
 }
 
-type boundedRelayBody struct {
-	remaining int
-	reads     int
-	closed    bool
-}
-
-func (b *boundedRelayBody) Read(buffer []byte) (int, error) {
-	b.reads++
-	if b.remaining == 0 {
-		return 0, io.EOF
+func TestRelayExposesOnlyAllowlistedHeadersAndForcesCacheControl(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", "</early>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Link")
+		w.Header().Add("Vary", "Accept")
+		w.Header().Add("Vary", "Origin")
+		w.Header().Set("ETag", `"shape"`)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Set-Cookie", "upstream=session")
+		w.Header().Set("Location", "https://internal.invalid/")
+		w.Header().Set("X-Internal", "secret")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Trailer", "X-Trailer-Secret")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "body")
+		w.Header().Set("X-Trailer-Secret", "secret")
+	}))
+	defer upstream.Close()
+	proxy, err := NewUpstreamProxy(upstream.Client(), upstream.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	n := min(len(buffer), b.remaining)
-	clear(buffer[:n])
-	b.remaining -= n
-	return n, nil
-}
-
-func (b *boundedRelayBody) Close() error {
-	b.closed = true
-	return nil
-}
-
-type blockedRelayWriter struct {
-	http.ResponseWriter
-	writing chan struct{}
-	dropped chan struct{}
-}
-
-func (w blockedRelayWriter) Write([]byte) (int, error) {
-	close(w.writing)
-	<-w.dropped
-	return 0, io.ErrClosedPipe
-}
-
-func (w blockedRelayWriter) Flush() {}
-
-func TestRelayBackpressureBoundsReadsAndWriteFailureClosesUpstream(t *testing.T) {
-	body := &boundedRelayBody{remaining: 1 << 20}
-	writer := blockedRelayWriter{
-		ResponseWriter: httptest.NewRecorder(), writing: make(chan struct{}), dropped: make(chan struct{}),
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.Relay(w, r, RelayRequest{
+			Method: http.MethodGet, Path: "v1/x", Header: http.Header{},
+			ResponseHeaders: map[string]struct{}{"content-type": {}, "etag": {}, "vary": {}, "cache-control": {}},
+			CacheControl:    "private, no-cache",
+			OnError:         func(http.ResponseWriter, *http.Request, error) { t.Error("relay failed") },
+		})
+	}))
+	defer relay.Close()
+	response, err := relay.Client().Get(relay.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() {
-		done <- relayResponse(writer, &http.Response{
-			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: body,
-		}, map[string]struct{}{"content-type": {}}, nil)
-	}()
-	select {
-	case <-writer.writing:
-	case <-time.After(5 * time.Second):
-		t.Fatal("relay never started the browser write")
+	defer response.Body.Close()
+	if body, _ := io.ReadAll(response.Body); string(body) != "body" {
+		t.Fatalf("body = %q", body)
 	}
-	close(writer.dropped)
-	select {
-	case err := <-done:
-		if err != io.ErrClosedPipe {
-			t.Fatalf("relay write failure = %v", err)
+	got := make(map[string]string)
+	for name, values := range response.Header {
+		got[name] = strings.Join(values, ",")
+	}
+	// Date and Transfer-Encoding are set by this server, not relayed.
+	delete(got, "Date")
+	delete(got, "Content-Length")
+	want := map[string]string{
+		"Content-Type": "application/json", "Etag": `"shape"`, "Vary": "Accept", "Cache-Control": "private, no-cache",
+	}
+	if !maps.Equal(got, want) {
+		t.Fatalf("response headers = %v, want %v", got, want)
+	}
+	if len(response.Trailer) != 0 {
+		t.Fatalf("upstream trailers leaked: %v", response.Trailer)
+	}
+}
+
+func TestRelayMapsUpstreamFailureToErrorHandler(t *testing.T) {
+	closed := httptest.NewServer(http.NotFoundHandler())
+	proxy, err := NewUpstreamProxy(closed.Client(), closed.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	var relayErr error
+	recorder := httptest.NewRecorder()
+	proxy.Relay(recorder, httptest.NewRequest(http.MethodGet, "/", nil), RelayRequest{
+		Method: http.MethodGet, Path: "v1/x", Header: http.Header{},
+		OnError: func(w http.ResponseWriter, _ *http.Request, err error) {
+			relayErr = err
+			w.WriteHeader(http.StatusServiceUnavailable)
+		},
+	})
+	if relayErr == nil || recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("error=%v status=%d", relayErr, recorder.Code)
+	}
+}
+
+func TestRelayForwardsOnlyDeclaredRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/x" || r.URL.RawQuery != "a=b" || string(body) != "payload" {
+			t.Errorf("request = %s %s?%s %q", r.Method, r.URL.Path, r.URL.RawQuery, body)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("relay did not stop after the browser write failed")
+		if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" || r.Header.Get("X-Forwarded-For") != "" {
+			t.Errorf("inbound headers leaked: %v", r.Header)
+		}
+		if r.Header.Get("X-Declared") != "yes" || r.Header.Get("Accept-Encoding") != "identity" {
+			t.Errorf("declared headers = %v", r.Header)
+		}
+	}))
+	defer upstream.Close()
+	proxy, err := NewUpstreamProxy(upstream.Client(), upstream.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if body.reads != 1 || body.remaining == 0 || !body.closed {
-		t.Fatalf("upstream reads=%d remaining=%d closed=%t", body.reads, body.remaining, body.closed)
-	}
+	inbound := httptest.NewRequest(http.MethodGet, "/ignored?c=d", strings.NewReader("ignored"))
+	inbound.Header.Set("Cookie", "browser")
+	inbound.Header.Set("Authorization", "browser")
+	inbound.Header.Set("Accept-Encoding", "gzip")
+	proxy.Relay(httptest.NewRecorder(), inbound, RelayRequest{
+		Method: http.MethodPost, Path: "v1/x", Query: "a=b", Body: []byte("payload"),
+		Header:  http.Header{"X-Declared": {"yes"}},
+		OnError: func(http.ResponseWriter, *http.Request, error) { t.Error("relay failed") },
+	})
 }

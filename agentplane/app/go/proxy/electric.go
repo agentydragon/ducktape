@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -244,7 +243,7 @@ func (p *ElectricProxy) forward(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var body io.Reader
+	var body []byte
 	method := http.MethodGet
 	if subset != nil {
 		encoded, err := json.Marshal(subset)
@@ -252,7 +251,7 @@ func (p *ElectricProxy) forward(
 			writeError(w, http.StatusBadRequest, "invalid subset")
 			return
 		}
-		body = bytes.NewReader(encoded)
+		body = encoded
 		method = http.MethodPost
 	}
 	headers := make(http.Header)
@@ -269,18 +268,15 @@ func (p *ElectricProxy) forward(
 	if subset != nil {
 		headers.Set("Content-Type", "application/json")
 	}
-	allowed := map[string]struct{}{
-		"accept": {}, "content-type": {}, "electric-protocol-version": {}, "if-none-match": {},
-	}
-	response, err := p.upstream.openRequest(r.Context(), method, "v1/shape", query, "", headers, body, allowed)
-	if err != nil {
-		if r.Context().Err() != nil {
-			return
-		}
-		writeError(w, http.StatusServiceUnavailable, "thread sync is unavailable")
-		return
-	}
-	_ = relayResponse(w, response, responseHeaders, http.Header{"Cache-Control": []string{"private, no-cache"}})
+	p.upstream.Relay(w, r, RelayRequest{
+		Method: method, Path: "v1/shape", Query: query, Header: headers, Body: body,
+		ResponseHeaders: responseHeaders, CacheControl: "private, no-cache",
+		OnError: func(w http.ResponseWriter, r *http.Request, _ error) {
+			if r.Context().Err() == nil {
+				writeError(w, http.StatusServiceUnavailable, "thread sync is unavailable")
+			}
+		},
+	})
 }
 
 func shapeQuery(r *http.Request, table, columns, where string, params map[string]string) (string, error) {
