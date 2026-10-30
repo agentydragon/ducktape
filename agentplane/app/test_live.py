@@ -50,7 +50,7 @@ async def seeded(namespace: SandboxNamespace) -> None:
 
 @pytest.fixture
 def event_logs(history: History, namespace: SandboxNamespace) -> SessionHistory:
-    return SessionHistory(history, sandbox_namespaces={"runner-1": namespace.name})
+    return SessionHistory(history, sandbox_namespaces={"runner-1": namespace.name, "shelved": namespace.name})
 
 
 @pytest.fixture
@@ -167,7 +167,8 @@ async def test_global_thread_stream_follows_replica_commits(
             initial = await _next_threads(stream)
             assert initial.threads == []
             assert initial.updates_connected
-            thread_id = await event_logs.seed("runner-1", "test-global-thread")
+            # A Thread of a Sandbox without a Pod archives without asking a runner.
+            thread_id = await event_logs.seed("shelved", "test-global-thread")
             seeded = await _next_threads(stream, lambda frame: bool(frame.threads))
             assert [thread.id for thread in seeded.threads] == [thread_id]
             await store.rename(thread_id, "Renamed in another app replica")
