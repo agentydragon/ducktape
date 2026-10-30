@@ -10,7 +10,8 @@ use artifact::FileRole;
 use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
     ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord, InteropUse,
-    InteropUseKind, KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
+    InteropUseKind, KeptTopLevelDeclarationRecord, LoaderBinding, LoaderBindingUse,
+    LoaderBindingUses, NamespaceRequest, SitePhase, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };
 use binding_targets::{
@@ -21,6 +22,7 @@ use binding_targets::{
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
 mod loader_phase;
+mod loader_reach;
 
 /// True when a specifier string is a relative module path that the
 /// pass-through emission rewriter could canonicalize (any `.` / `/`
@@ -401,13 +403,66 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
     }
 
+    let census_sites = interop_uses
+        .iter()
+        .map(|(_, span, _, _)| loader_phase::site_key(*span))
+        .collect();
+    let reach = loader_reach::loader_reach(&parsed.module, &census_sites, dynamic_scope);
     let suspended = loader_phase::mandatorily_suspended_sites(
         &parsed.module,
-        &interop_uses
-            .iter()
-            .map(|(_, span, _, _)| loader_phase::site_key(*span))
+        &census_sites
+            .union(&loader_reach::tracked_use_keys(&reach))
+            .copied()
             .collect(),
     );
+    let phase = |key: loader_phase::SiteKey| {
+        if reach.unreachable.contains(&key) {
+            SitePhase::Unreachable
+        } else if suspended.contains(&key) {
+            SitePhase::MandatorilySuspended
+        } else {
+            SitePhase::Synchronous
+        }
+    };
+    let key_line = |(lo, hi): loader_phase::SiteKey| {
+        line_index.line_for_span(Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)))
+    };
+    let loader_bindings = reach
+        .tracked
+        .into_iter()
+        .map(|tracked| LoaderBindingUses {
+            binding: match tracked.binding {
+                loader_reach::TrackedBinding::Import { source, imported } => {
+                    LoaderBinding::Import { source, imported }
+                }
+                loader_reach::TrackedBinding::LoaderAlias {
+                    definition: (lo, hi),
+                } => LoaderBinding::LoaderAlias {
+                    definition: Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)),
+                    exported_as: tracked.exported_as,
+                },
+            },
+            uses: tracked
+                .uses
+                .into_iter()
+                .map(|tracked_use| LoaderBindingUse {
+                    item_index: tracked_use.item_index,
+                    line: key_line(tracked_use.key),
+                    literal: tracked_use.literal,
+                    call: tracked_use.call,
+                    phase: phase(tracked_use.key),
+                })
+                .collect(),
+        })
+        .collect();
+    let namespace_requests = reach
+        .namespace_sources
+        .into_iter()
+        .map(|(item_index, specifier)| NamespaceRequest {
+            item_index,
+            specifier,
+        })
+        .collect();
     let mut runtime_facts = ChunkRuntimeFacts {
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
@@ -429,9 +484,11 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 span,
                 kind,
                 specifier,
-                mandatory_suspension: suspended.contains(&loader_phase::site_key(span)),
+                phase: phase(loader_phase::site_key(span)),
             })
             .collect(),
+        loader_bindings,
+        namespace_requests,
         ..ChunkRuntimeFacts::default()
     };
 

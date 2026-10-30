@@ -723,10 +723,34 @@ field initializers and static blocks are never suspended, and a site the walk
 finds on no path stays unsuspended. The derivation then consumes the key and
 reports the excluded `suspended_sites`.
 
-Every other site in every analyzed chunk counts as reachable during the
-target's initialization, wherever it is nested: a callback any chunk published
-earlier can run then, so the chunk holding a site does not bound when it
-executes; no site is narrowed to the target's initialization. A site the census does not see, such as a
+A site no reachable code can enter is excluded and counted in
+`unreachable_sites`. Top-level code is reachable. A function expression, arrow,
+method, accessor, constructor, class field initializer or static block is
+reachable when its enclosing code is. A function declaration, or a binding
+initialized with a function expression or arrow, is reachable when its
+enclosing code is and either its binding escapes (any reference other than a
+direct call, including an export, `new`, `.call` or a repeated declaration) or
+a reachable function calls it directly. Lexical nesting proves nothing either
+way: a site in a nested function counts when that function is reachable.
+Direct `eval` or `with` makes every function of the module reachable. The
+analysis is per module: an imported function is an export, hence an escape, of
+its defining module.
+
+A top-level binding initialized with exactly `import.meta.require` is a loader
+alias. Its definition is classified through its uses instead of as an opaque
+reference. Each use of the alias, in its own module or through a named or
+default import of a name it is exported under, is classified like a census
+site: a direct call with one string literal is a literal request resolved
+against the defining module (whose `import.meta` the loader belongs to);
+any other call or reference, including a re-export through a local binding,
+keeps every target open. A namespace import, `export *` or
+`export { … } from` of a module exporting a loader alias, and a literal loader
+request or reachable dynamic `import()` of one, expose the alias and keep every
+target open.
+
+Every remaining site counts as reachable during the target's initialization:
+a callback any chunk published earlier can run then, so the chunk holding a
+site does not bound when it executes. A site the census does not see, such as a
 computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
 code, is outside this proof, as it is outside the census.
 

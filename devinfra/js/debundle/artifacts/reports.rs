@@ -207,6 +207,8 @@ pub struct ChunkRuntimeFacts {
     pub static_requests: Vec<StaticModuleRequest>,
     /// Source-only host interop sites from the canonical shallow SWC walk.
     pub interop_uses: Vec<InteropUse>,
+    pub loader_bindings: Vec<LoaderBindingUses>,
+    pub namespace_requests: Vec<NamespaceRequest>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,9 +219,61 @@ pub struct InteropUse {
     pub span: Span,
     pub kind: InteropUseKind,
     pub specifier: Option<String>,
+    pub phase: SitePhase,
+}
+
+/// When a source site can run relative to the stack that enters its function
+/// (SPEC.md § Loader-closed derivation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SitePhase {
+    Synchronous,
     /// The site follows an `await` on every path of its innermost async
     /// function, so it never runs on the stack that invoked that function.
-    pub mandatory_suspension: bool,
+    MandatorilySuspended,
+    /// No reachable code can enter the site's innermost function.
+    Unreachable,
+}
+
+/// Uses of a binding that may hold the host loader: an import binding, or a
+/// top-level binding initialized with exactly `import.meta.require`.
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUses {
+    pub binding: LoaderBinding,
+    /// Uses in reachable code; unreachable uses are dropped.
+    pub uses: Vec<LoaderBindingUse>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoaderBinding {
+    Import {
+        source: String,
+        imported: String,
+    },
+    LoaderAlias {
+        /// The `import.meta.require` census site that initializes it.
+        definition: Span,
+        /// Names a local export publishes it under.
+        exported_as: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUse {
+    pub item_index: usize,
+    pub line: Option<usize>,
+    /// `Some` for a direct call whose only argument is a string literal.
+    pub literal: Option<String>,
+    /// A direct call, literal or not.
+    pub call: bool,
+    pub phase: SitePhase,
+}
+
+/// A request exposing its target's whole export surface: `import * as`,
+/// `export * from`, `export { … } from`.
+#[derive(Debug, Clone)]
+pub struct NamespaceRequest {
+    pub item_index: usize,
+    pub specifier: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]

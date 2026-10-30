@@ -638,11 +638,7 @@ fn loader_derivations(
             .map(|(target, closure)| {
                 (
                     target,
-                    ExportReentryLoaderDerivation::from_closure(
-                        &closure,
-                        &surfaces.requests,
-                        artifact,
-                    ),
+                    ExportReentryLoaderDerivation::from_closure(&closure, &surfaces, artifact),
                 )
             })
             .collect(),

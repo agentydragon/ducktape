@@ -375,3 +375,117 @@ fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
         assert!(derivation.get("suspended_sites").is_none(), "{sidecar}");
     }
 }
+
+fn accepted_provider_report(extra: &[(&'static str, &'static str)]) -> Value {
+    let mut extra_chunks = vec![("static/helper", HELPER), ("static/provider", PROVIDER)];
+    extra_chunks.extend_from_slice(extra);
+    let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
+    let fixture = run_fixture(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&provider_modules)
+            .with_host_behavior(audited_host()),
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
+        "ready\n",
+    );
+    report
+}
+
+/// No reachable code enters `loadNamed`: neither a call nor an escape.
+#[test]
+fn site_in_a_function_no_reachable_code_enters_does_not_hold_the_target_open() {
+    let sidecar = r#"function loadNamed(name) { return import.meta.require(name); }
+function unused() { return loadNamed("./provider.js"); }
+export const ready = 1;
+"#;
+    let report = accepted_provider_report(&[("static/sidecar", sidecar)]);
+    assert_eq!(report["loader"]["unreachable_sites"], 1);
+}
+
+#[test]
+fn entered_or_escaping_functions_keep_their_sites() {
+    for sidecar in [
+        "function loadNamed(name) { return import.meta.require(name); }\nexport const ready = loadNamed;\n",
+        "function loadNamed(name) { return import.meta.require(name); }\nfunction start() { return loadNamed('x'); }\nstart();\n",
+        "const loadNamed = (name) => import.meta.require(name);\nsetTimeout(() => loadNamed('x'));\n",
+    ] {
+        let derivation = rejected_loader_derivation(
+            PROVIDER,
+            &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+            audited_host(),
+        );
+        let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
+        assert_eq!(first["source_chunk"], "static/sidecar", "{sidecar}");
+    }
+}
+
+const RUNTIME: &str = "const load = import.meta.require;\nexport { load };\n";
+
+/// Every use of the exported loader is a literal call: each is a request
+/// resolved against the module whose `import.meta` the loader came from.
+#[test]
+fn exported_loader_alias_with_literal_calls_is_classified() {
+    let user = r#"import { load } from "./runtime.js";
+export function readPath() { return load("node:path"); }
+"#;
+    let report = accepted_provider_report(&[("static/runtime", RUNTIME), ("static/user", user)]);
+    let requests = report["loader"]["requests"].as_array().unwrap();
+    assert!(
+        requests
+            .iter()
+            .any(|request| request["source_chunk"] == "static/user"
+                && request["target"] == json!({ "builtin": "path" })),
+        "{requests:#?}"
+    );
+}
+
+#[test]
+fn unclassifiable_uses_of_an_exported_loader_keep_the_target_open() {
+    for (user, reason, form) in [
+        (
+            "import { load } from \"./runtime.js\";\nexport function readNamed(name) { return load(name); }\n",
+            "opaque_loader_site",
+            "loader_binding_use",
+        ),
+        (
+            "import { load } from \"./runtime.js\";\nexport const loader = load;\n",
+            "opaque_loader_site",
+            "loader_binding_use",
+        ),
+        (
+            "import * as runtime from \"./runtime.js\";\nexport { runtime };\n",
+            "opaque_loader_site",
+            "namespace_request",
+        ),
+        (
+            "export { load } from \"./runtime.js\";\n",
+            "opaque_loader_site",
+            "namespace_request",
+        ),
+        // Resolved against the runtime module: `./provider.js` is the target.
+        (
+            "import { load } from \"./runtime.js\";\nexport function back() { return load(\"./provider.js\"); }\n",
+            "loader_request_reaches_target",
+            "loader_binding_use",
+        ),
+    ] {
+        let derivation = rejected_loader_derivation(
+            PROVIDER,
+            &[
+                ("static/helper", HELPER),
+                ("static/runtime", RUNTIME),
+                ("static/user", user),
+            ],
+            audited_host(),
+        );
+        let first = &failure(&derivation, reason)["first"]["site"];
+        assert_eq!(first["source_chunk"], "static/user", "{user}");
+        assert_eq!(first["form"], form, "{user}");
+    }
+}

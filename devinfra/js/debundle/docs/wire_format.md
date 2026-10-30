@@ -73,12 +73,16 @@ the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
 (resolved literal requests per source chunk, specifier and `target`
 `{"builtin": id}` or `{"chunk": {"chunk", "file"}}`, with `request_count`),
 `loaded_chunks`, `suspended_sites` (mandatorily suspended sites excluded under
-`synchronous_load_drains_microtasks: never`), and `failures`. Each failure has a `reason`, its
+`synchronous_load_drains_microtasks: never`), `unreachable_sites` (sites no
+reachable code can enter), and `failures`. Each failure has a `reason`, its
 `occurrences`, and the `first` witness in chunk-name then site order: either
 `{"host_behavior": key}` or `{"site": {...}}`, a site naming its
 `source_chunk` and `form` (`interop` with the census `kind`, `item`, `line`,
 `specifier` and `resolved_target`; `static_request` with `specifier` and
-`resolved_target`; `top_level_await`; `vendor_chunk`).
+`resolved_target`; `loader_binding_use` with `item`, `line`, `call`,
+`specifier` and `resolved_target` for a use of an exported loader alias;
+`namespace_request` with `item`, `specifier` and `resolved_target`;
+`top_level_await`; `vendor_chunk`).
 `host_builtin_leaves`, when nonempty, lists each consumed
 `reentry_free_builtin_modules` static request. The typed
 `global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk

@@ -298,6 +298,7 @@ export { readLater };
 #[test]
 fn import_meta_require_member_alias_keeps_export_fallback() {
     let provider = r#"const load = import.meta.require;
+globalThis.loader = load;
 const prefix = new globalThis.Error();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
