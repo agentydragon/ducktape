@@ -69,6 +69,10 @@ pub struct ReturnedRecordSummary {
     pub members: Vec<DeferredRecordMember>,
     /// Composed source/native proof, including its captured-input dependencies.
     pub inference: crate::reports::schema::InferenceUse,
+    /// As on `ForeignCallSummary`: the swap's replacement package when the
+    /// emitted program runs it instead of this body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

@@ -11697,7 +11697,9 @@ pub(crate) fn infer_callable_capabilities(
                     crate::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
             },
-            |_| true,
+            // Only a declaration is published as `foreign_call` or a record;
+            // an initializer can only be a callback factory.
+            |call| call.hoisted || call.callback_factory,
         );
     }
     result.intact_collections = [

@@ -1268,6 +1268,7 @@ pub fn resolve_imported_callable_summaries(
                             })
                             .collect(),
                         inference: record.inference.clone(),
+                        replacement_package: facts.replacement_packages.get(export).cloned(),
                     }),
                     call.dependencies.clone(),
                 );
@@ -1675,6 +1676,7 @@ mod tests {
                 argument_input_spec_locations: BTreeSet::new(),
                 native_operation_input_refs: BTreeSet::new(),
             },
+            replacement_package: None,
         });
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
         let mut export = CallableExportProof::default();
