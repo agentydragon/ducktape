@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from ipaddress import ip_network
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import aiohttp
@@ -314,8 +315,57 @@ def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[U
             ]
 
 
+@dataclass
+class SeverableProxy:
+    """A TCP pass-through to an API server, whose open connections a test can cut as a dropped network path does."""
+
+    url: str
+    open: set[asyncio.StreamWriter] = field(default_factory=set)
+
+    def sever(self) -> None:
+        """Cuts every open connection; new ones are still accepted."""
+        for writer in self.open:
+            writer.transport.abort()
+        self.open.clear()
+
+
+async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    try:
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+    except ConnectionError:
+        pass  # The other half was severed or closed; aborting this one below is all that is left to do.
+    finally:
+        writer.transport.abort()
+
+
+@asynccontextmanager
+async def severable_proxy(kubeconfig: Path) -> AsyncIterator[SeverableProxy]:
+    """A `SeverableProxy` in front of the API server `kubeconfig` reaches; TLS passes through untouched."""
+    target = urlsplit(
+        one(yaml.safe_load(await asyncio.to_thread(kubeconfig.read_text))["clusters"])["cluster"]["server"]
+    )
+
+    async def forward(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter) -> None:
+        upstream_reader, upstream_writer = await asyncio.open_connection(target.hostname, target.port)
+        proxy.open |= {client_writer, upstream_writer}
+        await asyncio.gather(_pipe(client_reader, upstream_writer), _pipe(upstream_reader, client_writer))
+        proxy.open -= {client_writer, upstream_writer}
+
+    server = await asyncio.start_server(forward, "127.0.0.1", 0)
+    # The API server's certificate names its IP, not its port, so it verifies through this one too.
+    proxy = SeverableProxy(url=f"https://127.0.0.1:{server.sockets[0].getsockname()[1]}")
+    try:
+        yield proxy
+    finally:
+        proxy.sever()
+        server.close()
+        await server.wait_closed()
+
+
 # The second replica reads as this user. Taking its grant in the rules namespace makes that replica's
-# API server refuse its lists and watches there, so its view goes stale while it still reviews tokens.
+# API server refuse its lists and watches there, so its view fails while it still reviews tokens.
 _REPLICA_USER = "test-egress-replica"
 _RBAC = "rbac.authorization.k8s.io"
 
@@ -331,8 +381,8 @@ async def grant_replica(server: KubernetesApiServer, namespace: str) -> None:
     )
 
 
-async def revocable_kubeconfig(server: KubernetesApiServer, path: Path) -> Path:
-    """`server`'s kubeconfig acting as `_REPLICA_USER`, who may review tokens and read what the proxy reads."""
+async def revocable_kubeconfig(server: KubernetesApiServer, path: Path, via: SeverableProxy) -> Path:
+    """`server`'s kubeconfig acting as `_REPLICA_USER`, who may review tokens and read what the proxy reads, through `via`."""
     rbac = k8s_client.RbacAuthorizationV1Api(server.api)
     await rbac.create_cluster_role(
         k8s_client.V1ClusterRole(
@@ -362,6 +412,7 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path) -> Path:
     config = yaml.safe_load(await asyncio.to_thread(server.kubeconfig.read_text))
     for entry in config["users"]:
         entry["user"]["as"] = _REPLICA_USER
+    one(config["clusters"])["cluster"]["server"] = via.url
     await asyncio.to_thread(path.write_text, yaml.safe_dump(config))
     return path
 
@@ -374,6 +425,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
     async with (
         kubernetes_apiserver() as first_api,
         kubernetes_apiserver() as second_api,
+        severable_proxy(second_api.kubeconfig) as second_path,
         recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
         # Each replica reviews tokens with its own API server, so each is sent one that server issued.
@@ -383,7 +435,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             replica_settings(api_config=api_config, ca=(cert, key), database_url=history_db_url)
             for api_config in (
                 first_api.kubeconfig,
-                await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml"),
+                await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml", via=second_path),
             )
         ]
         async with (
@@ -409,10 +461,12 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 with attempt:
                     await get(first, first_token, "revoked", 403)
             await get(second, second_token, "still-current", 200)
-            # Its API server now refuses the second replica's relists of the rules namespace.
+            # Its API server now refuses the second replica's lists and watches of the rules namespace. RBAC
+            # is checked only when a request starts, so cut the watches already open to make them restart.
             await k8s_client.RbacAuthorizationV1Api(second_api.api).delete_namespaced_role_binding(
                 _REPLICA_USER, NAMESPACE
             )
+            second_path.sever()
             await second.health(serving=False)
             before = len(upstream.requests)
             await get(second, second_token, "stale-existing-connection", 502)
