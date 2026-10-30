@@ -1,5 +1,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::abstract_domain::effect::{Effect, HavocCause, InvokeSite};
+use crate::purity::Effects;
 use source_identity::SourceUnitOrdinal;
 
 /// Everything a statement's purity transfer reads besides the statement's own
@@ -24,7 +26,7 @@ pub(crate) struct StatementPurityContext<'a> {
 impl StatementPurityContext<'_> {
     pub(crate) fn statement_purity(&self, fact: &StatementFacts) -> Purity {
         let item = self.body[fact.ordinal.0].as_module_item();
-        let mut purity = item_purity(
+        let mut effects = item_purity(
             item,
             fact.kind,
             self.shadowed,
@@ -34,8 +36,8 @@ impl StatementPurityContext<'_> {
             !fact.local_effects.is_empty(),
         );
         if !fact.var_initializers.is_disjoint(self.shared_vars) {
-            purity = purity.worst(Purity::from_reason_with_detail(
-                PurityRule::AssignOrUpdate,
+            effects = effects.then(Effects::of_detail(
+                Effect::Write,
                 item.span(),
                 "initializer writes a shared var binding".to_string(),
             ));
@@ -50,12 +52,12 @@ impl StatementPurityContext<'_> {
             .into_iter()
             .flatten()
         {
-            purity = match dependencies {
-                Some(dependencies) => purity.with_dependencies(dependencies),
-                None => purity.worst(Purity::from_reason(PurityRule::UnknownMember, *span)),
+            effects = match dependencies {
+                Some(dependencies) => effects.with_dependencies(dependencies),
+                None => effects.then(Effects::of(Effect::Invoke(InvokeSite::MemberRead), *span)),
             };
         }
-        purity
+        effects.project()
     }
 }
 
@@ -72,9 +74,9 @@ pub(crate) fn item_purity(
     graph: &ChunkCodeGraph,
     proofs: &ItemPurityProofs<'_>,
     has_local_effect: bool,
-) -> Purity {
+) -> Effects {
     match kind {
-        StatementKind::Import | StatementKind::FnDecl => Purity::pure(),
+        StatementKind::Import | StatementKind::FnDecl => Effects::none(),
         // `export { ... }` / `export * from ...` / `export default
         // function` run no code at init — but `export default <expr>`
         // evaluates the expression and `export default class` runs
@@ -98,18 +100,18 @@ pub(crate) fn item_purity(
                     &hints.assumptions.declared_pure,
                     graph,
                 ),
-                None => Purity::pure(),
+                None => Effects::none(),
             },
-            _ => Purity::pure(),
+            _ => Effects::none(),
         },
-        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Purity::pure(),
-        StatementKind::VarDecl if has_local_effect => Purity::pure(),
+        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Effects::none(),
+        StatementKind::VarDecl if has_local_effect => Effects::none(),
         // Top-level (non-function-body) scope: a chunk-top read of a
         // PlainData const is legitimately pure, so no PlainData name is
         // lexically shadowed here.
         StatementKind::VarDecl => {
             if let Some(input) = symbol_for_literal_initializer(item, proofs.native_operations) {
-                return Purity::pure().with_dependencies(
+                return Effects::none().with_dependencies(
                     &crate::analysis_inputs::ProofDependencies {
                         native_operation_inputs: BTreeSet::from([input.evidence.reference.clone()]),
                         ..Default::default()
@@ -127,7 +129,7 @@ pub(crate) fn item_purity(
                         proofs.fresh_record_destructuring,
                     )
                 })
-                .unwrap_or(Purity::pure())
+                .unwrap_or(Effects::none())
         }
         StatementKind::ClassDecl => match class_of_item(item) {
             Some(class) => classify_class_static_purity(
@@ -137,9 +139,9 @@ pub(crate) fn item_purity(
                 &hints.assumptions.declared_pure,
                 graph,
             ),
-            None => Purity::pure(),
+            None => Effects::none(),
         },
-        StatementKind::SideEffect if has_local_effect => Purity::pure(),
+        StatementKind::SideEffect if has_local_effect => Effects::none(),
         StatementKind::SideEffect => match item {
             ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(
                 &expr.expr,
@@ -149,7 +151,7 @@ pub(crate) fn item_purity(
                 graph,
             ),
             // Bare blocks, control flow, loops, etc. — soundness-first.
-            _ => Purity::from_reason(PurityRule::BareControlFlow, item.span()),
+            _ => Effects::of(Effect::Havoc(HavocCause::ControlFlow), item.span()),
         },
     }
 }

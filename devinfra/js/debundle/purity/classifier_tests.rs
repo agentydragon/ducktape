@@ -29,6 +29,7 @@ fn classify(src: &str) -> Purity {
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
+    .project()
 }
 
 /// Parse `{prefix}\nconst _ = {expr_src};` and hand `classify` the chunk-top item
@@ -59,7 +60,7 @@ fn classify_with_graph(
 ) -> Purity {
     classify_last_const(prefix, expr_src, |body, shadowed, init| {
         let graph = build(body, shadowed);
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).project()
     })
 }
 
@@ -152,6 +153,7 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
+        .project()
     })
 }
 
@@ -167,6 +169,7 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
             &declared_pure,
             &ChunkCodeGraph::default(),
         )
+        .project()
     })
 }
 
@@ -721,6 +724,7 @@ fn shadowed_proxy_constructor_falls_back_to_unknown() {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
+        .project()
     });
     assert!(
         !purity.is_pure(),
@@ -884,6 +888,7 @@ fn class_observable(src: &str) -> bool {
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
+    .project()
     .is_pure()
 }
 
@@ -1183,6 +1188,7 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &string_set(&["k"]),
             );
             classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
+                .project()
         },
     );
     assert!(!purity.is_pure());
@@ -1384,6 +1390,7 @@ fn classify_built(prefix: &str, expr_src: &str) -> Purity {
         &BTreeSet::new(),
         &graph,
     )
+    .project()
 }
 
 #[test]
@@ -1544,7 +1551,7 @@ fn classify_with_imported_purities(
 }
 
 fn impure_verdict() -> Purity {
-    Purity::from_reason(PurityRule::UnknownCall, swc_common::DUMMY_SP)
+    Effects::of(Effect::Invoke(InvokeSite::Call), swc_common::DUMMY_SP).project()
 }
 
 #[test]
@@ -1585,6 +1592,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
             &BTreeSet::new(),
             &graph,
         )
+        .project()
         .dependencies(),
         Some(&dependencies),
         "safe eager class fields must retain their conditioned proof premise"
@@ -1605,7 +1613,8 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
     assert_eq!(
         classify_var_decl_purity(
@@ -1620,6 +1629,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
                 rebindings: &BTreeSet::new(),
             },
         )
+        .project()
         .dependencies(),
         Some(&dependencies),
         "the declaration-level binding initializer retains its premise"
@@ -1646,7 +1656,8 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert_eq!(certified.dependencies(), Some(&dependencies));
 
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(independent))) = &module.body[1] else {
@@ -1658,7 +1669,8 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert!(independent.is_pure());
     assert_eq!(
         independent.dependencies(),
@@ -1702,6 +1714,7 @@ fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
             expression,
             |_, _, init| {
                 classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+                    .project()
             },
         );
         assert!(purity.is_pure(), "{expression} remains pure");
@@ -1770,7 +1783,8 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
-    );
+    )
+    .project();
     assert!(purity.is_pure());
     assert_eq!(purity.dependencies(), Some(&dependencies));
 }

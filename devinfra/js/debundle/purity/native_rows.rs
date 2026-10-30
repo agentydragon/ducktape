@@ -194,7 +194,7 @@ pub(crate) fn native_call_purity(
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Option<Purity> {
+) -> Option<Effects> {
     if shadowed.contains(global) || local_shadowed.contains(global) {
         return None;
     }
@@ -211,13 +211,13 @@ pub(crate) fn native_call_purity(
     if operands.iter().any(|operand| operand.spread.is_some()) && !admits_any_operands(row) {
         return None;
     }
-    let mut verdict = Purity::pure();
+    let mut verdict = Effects::none();
     for (operand, requirement) in operands.iter().zip(requirements) {
         let evaluation = || {
-            let spread = operand.spread.map_or_else(Purity::pure, |span| {
-                Purity::from_reason(PurityRule::ArraySpread, span)
+            let spread = operand.spread.map_or_else(Effects::none, |span| {
+                Effects::of(Effect::Coerce(CoerceSite::ArraySpread), span)
             });
-            spread.worst(classify_expr_purity(
+            spread.then(classify_expr_purity(
                 operand.expr,
                 shadowed,
                 local_shadowed,
@@ -232,8 +232,8 @@ pub(crate) fn native_call_purity(
                 if is_result_primitive(operand.expr, &graph.primitive_bindings, local_shadowed) {
                     purity
                 } else {
-                    purity.worst(Purity::from_reason_with_detail(
-                        PurityRule::CoercingOperator,
+                    purity.then(Effects::of_detail(
+                        Effect::Coerce(CoerceSite::Operator),
                         operand.expr.span(),
                         format!("{spelling} runs ToString on a possibly-object operand"),
                     ))
@@ -247,8 +247,8 @@ pub(crate) fn native_call_purity(
                 ) {
                     purity
                 } else {
-                    purity.worst(Purity::from_reason_with_detail(
-                        PurityRule::CoercingOperator,
+                    purity.then(Effects::of_detail(
+                        Effect::Coerce(CoerceSite::Operator),
                         operand.expr.span(),
                         format!("{spelling} runs ToNumber on a possibly-object or BigInt operand"),
                     ))
@@ -278,7 +278,7 @@ pub(crate) fn native_call_purity(
                 )?
             }
         };
-        verdict = verdict.worst(purity);
+        verdict = verdict.then(purity);
     }
     Some(verdict)
 }
@@ -292,13 +292,13 @@ fn plain_data_operand(
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Option<Purity> {
+) -> Option<Effects> {
     match expr.unwrap_parens() {
         // A local binding of the same name is a different value.
         Expr::Ident(ident) => (graph.is_plain_data(ident.sym.as_ref())
             && !local_shadowed.contains(ident.sym.as_ref()))
         .then(|| {
-            let purity = Purity::pure();
+            let purity = Effects::none();
             match graph.plain_data_dependencies(ident.sym.as_ref()) {
                 Some(dependencies) => purity.with_dependencies(dependencies),
                 None => purity,
@@ -344,7 +344,7 @@ fn fresh_array_elements(
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Option<Purity> {
+) -> Option<Effects> {
     array
         .elems
         .iter()
@@ -361,8 +361,8 @@ fn fresh_array_elements(
                 graph,
             )
         })
-        .try_fold(Purity::pure(), |verdict, purity| {
-            Some(verdict.worst(purity?))
+        .try_fold(Effects::none(), |verdict, purity| {
+            Some(verdict.then(purity?))
         })
 }
 
@@ -376,7 +376,7 @@ pub(crate) fn iterable_element(
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Option<Purity> {
+) -> Option<Effects> {
     if let Some(spread) = element.spread {
         return Some(
             classify_fresh_array_spread_source(
@@ -387,7 +387,7 @@ pub(crate) fn iterable_element(
                 declared_pure,
                 graph,
             )
-            .unwrap_or_else(|| Purity::from_reason(PurityRule::ArraySpread, spread)),
+            .unwrap_or_else(|| Effects::of(Effect::Coerce(CoerceSite::ArraySpread), spread)),
         );
     }
     let Elements::Entries { keyed } = elements else {
@@ -409,7 +409,7 @@ pub(crate) fn iterable_element(
         return None;
     }
     let mut purity =
-        classify_expr_purity(&key.expr, shadowed, local_shadowed, declared_pure, graph).worst(
+        classify_expr_purity(&key.expr, shadowed, local_shadowed, declared_pure, graph).then(
             classify_expr_purity(&value.expr, shadowed, local_shadowed, declared_pure, graph),
         );
     if keyed
@@ -421,8 +421,8 @@ pub(crate) fn iterable_element(
             &graph.symbol_const_bindings,
         )
     {
-        purity = purity.worst(Purity::from_reason_with_detail(
-            PurityRule::ToPropertyKeyCoercion,
+        purity = purity.then(Effects::of_detail(
+            Effect::Coerce(CoerceSite::PropertyKey),
             key.expr.span(),
             format!("{spelling} runs ToPropertyKey on a possibly-object entry key"),
         ));
