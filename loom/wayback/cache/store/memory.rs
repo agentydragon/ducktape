@@ -17,7 +17,6 @@ use crate::util::sha256_hex;
 pub struct MemoryArchiveStore {
     replays: Mutex<HashMap<ReplayKey, StoredReplay>>,
     metadata: Mutex<HashMap<MetadataKey, StoredMetadata>>,
-    leases: Mutex<HashMap<FillLeaseKey, MemoryLease>>,
     fills: Mutex<HashMap<FillLeaseKey, MemoryFill>>,
     fill_notify: Notify,
 }
@@ -147,38 +146,6 @@ impl ArchiveStore for MemoryArchiveStore {
 
     async fn wait_for_fill_queue_change(&self, wait: Duration) -> Result<bool> {
         Ok(timeout(wait, self.fill_notify.notified()).await.is_ok())
-    }
-
-    async fn try_acquire_fill_lease(
-        &self,
-        key: &FillLeaseKey,
-        owner: &str,
-        ttl: Duration,
-    ) -> Result<bool> {
-        let mut leases = self.leases.lock().await;
-        let now = Instant::now();
-        if leases
-            .get(key)
-            .is_some_and(|lease| lease.expires_at > now && lease.owner != owner)
-        {
-            return Ok(false);
-        }
-        leases.insert(
-            key.clone(),
-            MemoryLease {
-                owner: owner.to_string(),
-                expires_at: now + ttl,
-            },
-        );
-        Ok(true)
-    }
-
-    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()> {
-        let mut leases = self.leases.lock().await;
-        if leases.get(key).is_some_and(|lease| lease.owner == owner) {
-            leases.remove(key);
-        }
-        Ok(())
     }
 }
 

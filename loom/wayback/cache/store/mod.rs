@@ -34,13 +34,6 @@ pub trait ArchiveStore: Send + Sync {
     ) -> Result<()>;
     async fn wait_for_fill_queue_change(&self, timeout: Duration) -> Result<bool>;
     async fn wait_for_fill_change(&self, key: &FillLeaseKey, timeout: Duration) -> Result<bool>;
-    async fn try_acquire_fill_lease(
-        &self,
-        key: &FillLeaseKey,
-        owner: &str,
-        ttl: Duration,
-    ) -> Result<bool>;
-    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
