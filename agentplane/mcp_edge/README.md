@@ -65,6 +65,9 @@ migration; do not use rollback as a reason to restart a writer after the edge ac
 empty-source transfer needs no copy, but recheck state at handoff rather than relying on an earlier
 inventory.
 
+The operator accepts database-stored secrets without application-level encryption; issued opaque
+tokens are stored only as hashes.
+
 ## Configuration rollout sequencing
 
 The generated Action Service settings still include `integrated_connection_service: false` and
