@@ -49,6 +49,5 @@ func sandboxQuiescedIncarnation(s *sandboxapi.Sandbox, uid string) bool {
 // runner that has entered lameduck refuses every Session for good, so a Sandbox resumed meanwhile
 // still waits for the quiesce to finish and replaces the incarnation, as for one resumed after it.
 func sandboxQuiescing(s *sandboxapi.Sandbox) bool {
-	running := meta.FindStatusCondition(s.Status.Conditions, sandboxapi.ConditionRunning)
-	return running != nil && running.Reason == "Quiescing"
+	return s.Status.StopStage == sandboxapi.StopStageQuiescing
 }

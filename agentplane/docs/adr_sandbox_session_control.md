@@ -483,7 +483,7 @@ stateDiagram-v2
 
 `Starting`, `Stopped`, `Stopping`, `PodEnded`, `VMEnded`, `Sealing` and the conflict reasons exist today
 (`sandbox_controller/SPEC.md` § Status); this design adds `Booting`, `Degraded`, `Draining`, `Flushing`, `NeverRan`,
-`NotQuiesced` and `SuspendPending`. `_phase` keys `QUIESCING` on the `Running` reasons `Quiescing` and `Sealing`, not on
+`NotQuiesced` and `SuspendPending`. `_phase` keys `QUIESCING` on `status.stopStage: Quiescing`, not on
 `Quiesced`.
 
 `QUIESCING` covers a suspend drain as well as a deletion drain; the enum's comment claiming deletion only is wrong. A

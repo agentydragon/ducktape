@@ -30,6 +30,7 @@ func sandboxObject() *sandboxapi.Sandbox {
 			OperatingMode:             sandboxapi.OperatingModeSuspended,
 			SuspendedBy:               &suspendedBy,
 			SuspendedAtWakeGeneration: &suspendedAt,
+			StopStage:                 sandboxapi.StopStageStopped,
 			Conditions: []metav1.Condition{{
 				Type: sandboxapi.ConditionReady, Status: metav1.ConditionFalse, Reason: "Stopped", Message: "idle",
 			}},

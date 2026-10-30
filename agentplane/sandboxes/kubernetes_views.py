@@ -16,7 +16,7 @@ from agentplane.proto.sandboxes_pb2 import (
     SandboxPod,
     ServiceAccount,
 )
-from agentplane.sandbox_resource import OperatingMode
+from agentplane.sandbox_resource import OperatingMode, StopStage
 
 # Must equal CreateIntentAnnotation in agentplane/sandboxes/api/constants.go.
 CREATE_INTENT = f"{GROUP}/create-intent"
@@ -57,10 +57,11 @@ def sandbox_view(
 
 
 def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
-    """The `Running` reasons `Quiescing` and `Deleting` are the Sandbox
-    Controller's: it holds a stop or a deletion for the seal, whoever seals, then deletes the workload."""
+    """The Sandbox Controller's `status.stopStage` holds a stop or a deletion at `Quiescing` for the seal,
+    whoever seals, then at `Deleting` while it deletes the workload."""
+    stop_stage = sandbox.status.stop_stage
     if sandbox.metadata.deletion_timestamp is not None:
-        sealed = sandbox.sessions_sealed or sandbox.running_reason() == "Deleting"
+        sealed = sandbox.sessions_sealed or stop_stage is StopStage.DELETING
         return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sealed else SandboxPhase.SANDBOX_PHASE_QUIESCING
     if sandbox.operating_mode is None:
         return SandboxPhase.SANDBOX_PHASE_UNSPECIFIED
@@ -71,7 +72,7 @@ def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
         return SandboxPhase.SANDBOX_PHASE_SUSPENDED
     return (
         SandboxPhase.SANDBOX_PHASE_QUIESCING
-        if sandbox.running_reason() == "Quiescing"
+        if stop_stage is StopStage.QUIESCING
         else SandboxPhase.SANDBOX_PHASE_SUSPENDING
     )
 
