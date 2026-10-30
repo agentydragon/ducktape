@@ -6,7 +6,7 @@
 # SOPS_AGE_KEY lets privileged CI decrypt CI-only credentials from git.
 # BUILDBUDDY_API_KEY is synchronized separately so build/test jobs can receive
 # only the BuildBuddy capability instead of the broader CI decryption identity.
-# The Forgejo registry credentials are synchronized to gaffer-private from the
+# The Forgejo registry credentials are synchronized to both repositories from the
 # same Kubernetes Secret used by the Forgejo tenant and its pull consumers.
 #
 # Auth: fine-grained GitHub PAT stored as K8s Secret (SOPS-deployed by Flux).
@@ -70,6 +70,18 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   repository      = "gaffer-private"
   secret_name     = "SOPS_AGE_KEY"
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+}
+
+resource "github_actions_secret" "forgejo_images_username" {
+  repository      = "ducktape"
+  secret_name     = "FORGEJO_IMAGES_USERNAME"
+  plaintext_value = data.kubernetes_secret.forgejo_images_creds.data["username"]
+}
+
+resource "github_actions_secret" "forgejo_images_password" {
+  repository      = "ducktape"
+  secret_name     = "FORGEJO_IMAGES_PASSWORD"
+  plaintext_value = data.kubernetes_secret.forgejo_images_creds.data["password"]
 }
 
 resource "github_actions_secret" "forgejo_images_username_gaffer_private" {
@@ -137,7 +149,8 @@ import {
 
 # Where props CI pushes agent images: the standalone props registry proxy, which
 # records agent definitions and forwards to Forgejo's registry. CI authenticates
-# as the evaluator Postgres role (secrets/ci/props-registry.sops.yaml).
+# as the evaluator Postgres role. Props is disabled; provision its GitHub Actions
+# credentials from the cluster before re-enabling the publish job.
 resource "github_actions_variable" "props_registry_url" {
   repository    = "ducktape"
   variable_name = "PROPS_REGISTRY_URL"

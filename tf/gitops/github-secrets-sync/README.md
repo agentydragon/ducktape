@@ -12,14 +12,14 @@ The token should be scoped to selected repositories:
 
 Required repository permissions:
 
-| Permission     | Access     | Why                                                                                                                                                                                                                                                                     |
-| -------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                 |
-| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for `gaffer-private`, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI. |
-| Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                    |
-| Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, GitHub returns `403 Resource not accessible by personal access token`.     |
-| Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                  |
-| Webhooks       | Read/write | `tf/gitops/flux-webhook-token` manages the `ducktape` repository webhook used by the Flux GitHub receiver.                                                                                                                                                              |
+| Permission     | Access     | Why                                                                                                                                                                                                                                                                      |
+| -------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                  |
+| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for both repositories, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI. |
+| Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                     |
+| Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, GitHub returns `403 Resource not accessible by personal access token`.      |
+| Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                   |
+| Webhooks       | Read/write | `tf/gitops/flux-webhook-token` manages the `ducktape` repository webhook used by the Flux GitHub receiver.                                                                                                                                                               |
 
 `Metadata: read` is implicit for fine-grained PATs.
 
@@ -38,7 +38,7 @@ ExternalSecret; Reflector is not part of this credential's distribution path.
 present in the `github_secrets_sync` remote state.
 
 The `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` secrets for
-`gaffer-private` come from the canonical `forgejo-images/forgejo-images-creds`
+`ducktape` and `gaffer-private` come from the canonical `forgejo-images/forgejo-images-creds`
 Secret. Do not copy those values into GitHub manually. The Terraform reads that
 Secret through `data "kubernetes_secret"`; until it exists the plan fails and
 the Crossplane Workspace retries.
