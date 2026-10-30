@@ -258,6 +258,10 @@ whether the page can open a new one; it does not determine whether a retained Hi
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
+Each `/live/sandboxes`, `/live/sandboxes/{name}` and `/live/threads` snapshot is computed once per change for every
+stream with the same parameters and sent to all of them; a stream skips a snapshot identical to its last one.
+Only the Action policy list, which depends on the viewer, is computed per stream.
+
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Every frame
 carries the server's watch health: `healthy` once its informers have synced and while no kind's
@@ -309,7 +313,8 @@ time on request; a search (name, Sandbox, or the start of the ID) and the archiv
 on the server, and the Thread a page has open rides along wherever it falls, so every Thread on
 screen stays current without the browser holding the whole list. `GET /threads` pages the same list
 under opaque tokens bound to their filters. Kubernetes watch invalidations and
-the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
+the existing PostgreSQL thread notifications both refresh that snapshot; only a thread notification
+rereads the Thread window, so a Kubernetes change re-projects just the Sandboxes. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 
