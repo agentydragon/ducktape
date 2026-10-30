@@ -137,3 +137,12 @@ output "observed_marker" {
   value = nonsensitive(data.kubernetes_secret.input.data["marker"])
 }
 ```
+
+## In-place adoption check
+
+Before the production implementation, a second disposable Workspace was created
+and made Ready without a composite owner. A WatchProbe then adopted it through
+the same Composition. Its UID and spec hash stayed unchanged. A subsequent
+Secret update reached its annotations in 0.452 seconds and OpenTofu output in
+3.506 seconds, with a one-hour function TTL. This checked adoption independently
+of the earlier create-from-scratch proof. The second canary was removed too.

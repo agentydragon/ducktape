@@ -10,9 +10,6 @@
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
-# gazelle:resolve py crossplane_function_crds //cluster/cdk8s/providers/crossplane:function
-# gazelle:resolve py crossplane_composition_crds //cluster/cdk8s/providers/crossplane:composition
-# gazelle:resolve py crossplane_xrd_crds //cluster/cdk8s/providers/crossplane:xrd
 # gazelle:resolve py crossplane_deploymentruntimeconfig_crds //cluster/cdk8s/providers/crossplane:deploymentruntimeconfig
 # gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 # gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
@@ -1317,7 +1314,6 @@ py_library(
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/crossplane:function",
         "//cluster/cdk8s/providers/crossplane:provider",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

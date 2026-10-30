@@ -6,7 +6,6 @@ from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from crossplane_function_crds.io.crossplane.pkg import Function, FunctionSpec
 from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     Provider,
     ProviderSpec,
@@ -37,18 +36,9 @@ LITELLM_PROVIDER_PACKAGE = "git.allegedly.works/ducktape-ci/provider-litellm:v2.
 OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
 OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
 OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
-FUNCTION_GO_TEMPLATING_KUSTOMIZATION_NAME = "crossplane-function-go-templating"
-FUNCTION_GO_TEMPLATING_OUTPUT_DIR = f"{GENERATED_ROOT}/{FUNCTION_GO_TEMPLATING_KUSTOMIZATION_NAME}"
-FUNCTION_GO_TEMPLATING_PACKAGE = "xpkg.crossplane.io/crossplane-contrib/function-go-templating:v0.13.2"
 _PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="pkg.crossplane.io/v1",
     kind="Provider",
-    current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
-    failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
-)
-_FUNCTION_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="pkg.crossplane.io/v1",
-    kind="Function",
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
 )
@@ -89,33 +79,6 @@ def crossplane(chart: Chart, directory: RenderedDirectory, kyverno: Kustomizatio
         prune=False,
         depends_on=[flux_kustomization_depends_on(kyverno)],
         description="Crossplane core controller; provider packages and managed resources reconcile separately.",
-    )
-
-
-def function_go_templating_chart(app: App) -> Chart:
-    """Install the pinned function used by native Crossplane compositions."""
-    chart = Chart(app, FUNCTION_GO_TEMPLATING_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
-    Function(
-        chart,
-        "function-go-templating",
-        metadata=ApiObjectMetadata(name="function-go-templating"),
-        spec=FunctionSpec(package=FUNCTION_GO_TEMPLATING_PACKAGE),
-    )
-    return chart
-
-
-def function_go_templating(chart: Chart, directory: RenderedDirectory, crossplane: Kustomization) -> Kustomization:
-    """Install and health-check the templating Function before any Composition references it."""
-    return flux_kustomization(
-        chart,
-        FUNCTION_GO_TEMPLATING_KUSTOMIZATION_NAME,
-        directory,
-        timeout="15m",
-        prune=False,
-        wait=True,
-        health_check_exprs=[_FUNCTION_HEALTH],
-        depends_on=[flux_kustomization_depends_on(crossplane)],
-        description="Install the Crossplane go-templating Function before Compositions reference it.",
     )
 
 

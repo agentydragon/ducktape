@@ -376,14 +376,6 @@ def generate_manifests(root: Path) -> None:
     crossplane_kustomization = crossplane.crossplane(
         flux_chart, write_directory(root, crossplane_artifact, crossplane.chart), kyverno_kustomization
     )
-    crossplane_function_go_templating_artifact = artifact(
-        crossplane.FUNCTION_GO_TEMPLATING_KUSTOMIZATION_NAME, crossplane.FUNCTION_GO_TEMPLATING_OUTPUT_DIR
-    )
-    crossplane.function_go_templating(
-        flux_chart,
-        write_directory(root, crossplane_function_go_templating_artifact, crossplane.function_go_templating_chart),
-        crossplane_kustomization,
-    )
     monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
     grafana_helmrepository_artifact = artifact("grafana-helmrepository", grafana_helmrepository.OUTPUT_DIR)
     grafana_helmrepository.grafana_helmrepository(
@@ -1972,7 +1964,6 @@ def generate_manifests(root: Path) -> None:
             cert_manager_environment_artifact,
             cnpg_artifact,
             crossplane_artifact,
-            crossplane_function_go_templating_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
             route53_domain_delegation_artifact,

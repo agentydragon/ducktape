@@ -87,14 +87,23 @@ factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
 Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 `preconditions` has a typed factory built from the real `any`/`all` shape.
 
-## Watch GitHub secret inputs declaratively
+## Watch GitHub secret inputs declaratively (deferred)
 
-Evaluate a Crossplane Secret watch for `github-secrets-sync`, replacing the Attic
-rotator's explicit Workspace annotation patch. `provider-kubernetes` supports
-`Object.spec.watch` and references; the pinned OpenTofu provider only watches
-Workspaces and cannot discover Kubernetes dependencies inside Terraform modules.
+Keep the current polling and Attic rotator Workspace notification for now.
+The deployed provider-opentofu v1.1.10 defaults to a 10-minute poll interval
+with plus-or-minus one minute of jitter, so unrelated Secret changes normally
+propagate on the next poll, plus OpenTofu execution time.
 
-Done: changing or recreating the input Secret promptly reconciles the Workspace,
-including changes outside the rotator; retries survive controller restarts, the
-notification exposes only Secret identity/version, and the rotator no longer
-needs Workspace patch permission. Keep OpenTofu as the sole GitHub secret owner.
+Before adding production watch infrastructure, evaluate native Secret dependency
+watches in provider-opentofu. Its Secret references currently supply values at
+reconcile time without triggering reconciliation; dependencies read inside HCL
+would need an explicit declaration. A Crossplane required-resource Composition
+watch with Workspace UID/resourceVersion annotations is a verified alternative;
+see [the spike](../debug/native_secret_watch.md). The production implementation
+is deferred by decision on 2026-10-30.
+
+Done: changing or recreating any input Secret promptly reconciles the Workspace,
+including changes outside the rotator; retries survive controller restarts, no
+credential values are copied into Workspace metadata/spec, and the rotator no
+longer needs Workspace patch permission. Keep OpenTofu as the sole GitHub secret
+owner and preserve the existing Workspace identity and state during migration.
