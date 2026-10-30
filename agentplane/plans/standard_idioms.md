@@ -51,15 +51,6 @@ the API conventions. Expose the state as a typed status field (the CRD already h
 depending on reasons. Roll-safe: write the new field before any reader requires it. Exit: no code
 compares a condition reason; renaming a reason changes only display.
 
-### `LEASE_OBSERVED_TIME`
-
-The Gateway's per-Sandbox connection claim (`runner_gateway/gateway/records.go`) decides expiry by
-comparing the other replica's `RenewTime` with the local clock; client-go `leaderelection` measures
-expiry from a locally observed renewal instead, so writer clock skew cannot break it. Neither
-client-go nor controller-runtime offers per-key leases, so keep a small helper with observed-time
-semantics. The Dispatcher's `dispatcher-<uid>` Lease has the same flaw but retires with the
-[Dispatcher and Gateway merge](dispatcher_gateway_merge.md).
-
 ## Work queues
 
 Hand-rolled full-scan loops where a keyed, rate-limited work queue (client-go `workqueue`, or a
