@@ -266,6 +266,42 @@ multi-threaded emission):
 devel interpreter spends its time enumerating and invoking candidate
 callbacks.
 
+### Vendor-chunk value flow (`prepare_cross_module_purity`)
+
+The provider chunk is prepared once (one marker pair, one `ModulePurityFacts::prepare`
+call per provider module that has any required export): `prepare` runs
+`complete_chunk_structural_with_inputs` over the whole provider body (the full
+value-flow fixpoint) and then `prepare_synchronous_call_index_with_source_facts`,
+whatever the number of exports the importer needs and however many importers
+there are. So the +218 s is one whole-chunk value-flow solve of the vendor
+provider, not a per-export or per-importer re-solve; the main chunk's own
+value flow (in `startup`/structural facts) is small on both engines. Inclusive
+cost of the devel solve, share of all samples:
+
+| Path under `IterativeInference<FlowRules>::solve_values` (37.8%) | Devel |
+| ---------------------------------------------------------------- | ----: |
+| `FlowRules::evaluate` (rule bodies)                              | 19.4% |
+| ↳ `FlowRules::propose_candidate_values`                          | 13.0% |
+| `BTreeSet<FlowRule>::insert` (dependents of a key)               |  9.0% |
+| B-tree node insert keyed by `FlowRule`                           |  8.3% |
+| `IterativeContext<FlowRules> as FactContext` (reads, scheduling) |  7.9% |
+| B-tree node insert keyed by `FlowKey` → `BTreeSet<FlowRule>`     |  6.1% |
+| `FlowRules::merge` (join of value sets)                          |  5.5% |
+| B-tree search keyed by `FlowKey` → `Judgment` (fact lookup)      |  5.4% |
+| `append_value_expr` / `values_of_expr_tracking`                  |  4.6% |
+| `BTreeSet<FlowKey>::insert` (reads of a rule)                    |  3.2% |
+
+The pin's solver (`FlowSolver::run_event`, 29.7% of a 3.4× smaller sample
+set) keyed its work by `FlowDependency` with `append_value_expr_tracking`
+(12.8%) and `merge_property` (3.5%) as the only other hot paths. On devel the
+cost is the dependency bookkeeping of the generic worklist: every rule
+evaluation records its reads as `FlowKey` entries and re-registers itself as
+a dependent `FlowRule` of each key, both in ordered B-trees compared with
+`memcmp`/`Atom::cmp`; `propose_candidate_values` is the one rule body that
+dominates. `#12792` (values-only solve) and `#12799` (separate reachability
+producers) already removed part of this: the bisect below shows the solve
+took more than 3 h before them.
+
 ## Edge growth
 
 Per-kind edge counts (both graphs, same 9,709 units):
@@ -323,6 +359,59 @@ construction is rejected (`construction`). That closure also forms the
 conflict. Wall growth does not track these edges (§ Stage attribution); peak
 RSS partially does.
 
+### The 331 barrier statements
+
+Loss reasons that appeared on devel for the 331 units with more than 500 new
+promoted eager edges (each unit may carry several): `callback_pool_limit` 297,
+`unsupported_operation: construction` 192, `member_read` 74,
+`unknown_call_target` 31, `array_spread` 3, `membership_protocol` 1. Overlap:
+192 have both `callback_pool_limit` and `construction`, 105 have
+`callback_pool_limit` without `construction`, 34 have neither (their
+synchronous execution was already incomplete on the pin; their closure grew
+because the units they read grew). By statement shape: 132 are declarations
+initialized by one local record-factory call with an object-literal argument
+(the `construction` group, ordinals 2,629–5,600), 71 are
+`Object.defineProperty` / `Object.getOwnPropertyDescriptor` alias chains
+(ordinals 2,800 and 9,200–9,671, `callback_pool_limit` + `member_read`), 20
+are `new Map()` / `new Set()` registries (`callback_pool_limit` +
+`unknown_call_target`), 6 are `Object.freeze(...)` records, 102 other.
+Representative ordinals: 2629, 2695, 2706 (factory calls); 9203, 9216, 9217
+(alias chains); 3743, 3917, 4683 (registries).
+
+The budgets are unchanged between the engines:
+`MAX_SYNCHRONOUS_CALLBACK_POOL = 64`, `MAX_SYNCHRONOUS_INVOCATIONS = 256`,
+`MAX_SYNCHRONOUS_INVOCATION_DEPTH = 64` in `facts/sync_effects/interpreter.rs`
+on both the pin and devel. `callback_pool_limit` fires in the callback-call
+path when the pool of possible callbacks at a call exceeds 64 entries; the
+pin completed the same 286 statements under the same limit, so devel is
+collecting larger pools (deferred-callback inference from stable factories,
+`FinalizationRegistry`, retained arrays and constructor fallbacks: #12517,
+#12582, #12656, #12819, #12849), not hitting an older limit sooner. The
+report records only the limit, not the pool size reached, so how far the
+limit would have to move is not measurable from the output; the source
+comment at the constant warns that handing every callback the whole pool is a
+quadratic value cross product, which is the cost of lifting it.
+`construction` fires when `new` of a local class cannot be modelled:
+`construct_local_class_transfer` returns nothing when the class has no
+eligible local constructor for the arity, when a constructor
+property-read argument is not an untainted plain-data object, or when the
+class's construction certificate (#12631, #12633) fails; the record-factory
+statements take the `new` inside the factory body with the object literal as
+the argument.
+
+What would remove the promoted edges: for the 105 pool-only units, completing
+the callback enumeration (a larger pool, or fewer candidate callbacks per
+call) would restore completeness and drop their promoted closures; for the
+192 pool+construction units the budget alone does nothing, the construction
+shape must be modelled (or asserted by the spec author via the existing
+`chunk_export_purity` callback-factory / no-reentry assertions on the
+factory) as well. Since these closures are what forms the 1,833-module SCC
+and the 210-unit conflict, fixing both groups is what flips the gate back;
+the remaining 34 were incomplete on the pin too and did not block acceptance
+there. The cost of either change was not measured here (no engine edit); a
+cheap first step is to record the pool size in the `callback_pool_limit` loss
+so the next run says how far over 64 the pools are.
+
 ## Candidate causes, ranked
 
 Commit ranges are in `git log ecb4a734..4377a57bae -- devinfra/js/debundle`
@@ -347,7 +436,10 @@ family and the commits that introduced the mechanism; none is bisected.
    #12842, `b797753e91` #12828, `f078087076` #12855) adds more rules to the
    same solver.
 2. **Deferred-callback enumeration in the synchronous interpreter (chunk
-   analysis, +150 s, +1.2 GiB; and the source of the edge growth).**
+   analysis, +150 s, +1.2 GiB; and the source of the edge growth).** The
+   bisect splits this cause: the edge flood is in place by `e78dd6eeb6`
+   (#12685), while 123 of the 150 s arrive with the 2026-10-29 batch
+   (#12828–#12878) on top of the same graph.
    `callback_values`, `promote_deferred_callbacks`, `invoke_possible_callbacks`
    and `bounded_invocation_fallback` grew from 0.8 / 6.5 / 7.2 / 1.2% to
    16.7 / 11.9 / 10.8 / 6.9% inclusive, the
@@ -379,13 +471,21 @@ family and the commits that introduced the mechanism; none is bisected.
 
 Not a cause: graph construction, the module quotient, SCC/realizability and
 report serialization together are under 2% of samples on either engine, and
-the devel run spends less wall after the last marker than the pin.
+the devel run spends less wall after the last marker than the pin. The
+bisect (below) confirms the two large causes are independent: B1 has the
+full edge flood at the pin's value-flow cost, B3 has the full value-flow cost
+at a third of devel's interpreter cost.
 
-## Bisect proposal (not run)
+## Bisect
 
-Three cold `-c opt` engine builds (about 100 min each on RBE, parallelizable)
-plus one local control run each (2–8 min with the harness) would split the two
-large causes from the 2026-10-29 batch:
+Three intermediate `-c opt` engines, built from the ducktape root on RBE
+(`bbr build -c opt --config=nolint //devinfra/js/debundle:debundle`, all
+action-cache warm so minutes rather than the budgeted 100 min: invocations
+`acd6a865` B1, `6f5b1960` B2 after one `pnpm install` abort retry, `3f37a245`
+B3) and run once each through the same harness as the control runs. Unlike
+the pin and devel engines these are the root module's target-configuration
+binaries, not the consumer's `ducktape+` exec-configuration build; same
+source, same `-c opt`.
 
 | Point | Commit       | Why                                                                                             |
 | ----- | ------------ | ----------------------------------------------------------------------------------------------- |
@@ -393,11 +493,46 @@ large causes from the 2026-10-29 batch:
 | B2    | `2dc4cc3768` | #12762, end of the migration, before the performance follow-ups #12792/#12799                   |
 | B3    | `13de00c36e` | #12799, after the follow-ups, before the 10-29 native-input / Set / heap-frontier batch         |
 
-B1 against the pin isolates cause 2's edge growth (deferred callbacks) from
-cause 1; B3 against B2 measures what #12792/#12799 recovered; B3 against the
-head measures the 10-29 batch. If B1 already shows the 331 incomplete units,
-the `callback_pool_limit` work is in #12517–#12656 and the stage bisect can
-stop there.
+Control runs (wall s; HWM at stage end in GiB):
+
+| Engine             | Verdict  |    Wall |       Peak RSS |  Vendor purity stage | Main chunk analysis |     Edges | Eager / sequenced     |
+| ------------------ | -------- | ------: | -------------: | -------------------: | ------------------: | --------: | --------------------- |
+| pin `ecb4a734`     | accepted |    87.5 |           3.24 |                 31.0 |                29.3 | 2,163,669 | 1,109,226 / 1,033,882 |
+| B1 `e78dd6eeb6`    | rejected |   106.6 |           3.92 |                 32.1 |                49.8 | 2,900,020 | 1,480,941 / 1,398,518 |
+| B2 `2dc4cc3768`    | killed   | >11,572 | >9.1 (growing) | >11,560 (unfinished) |                   – |         – | –                     |
+| B3 `13de00c36e`    | rejected |   262.6 |           4.77 |                184.5 |                56.9 | 2,900,020 | 1,480,941 / 1,398,518 |
+| devel `4377a57bae` | rejected |   444.5 |           4.98 |                249.2 |               179.7 | 3,146,382 | 1,605,183 / 1,520,638 |
+
+B2 was stopped by hand after 3.2 h, still inside the vendor purity stage it
+had entered at 11 s, with RSS at 9.1 GiB and rising (the run's partial
+`markers.tsv` and `rss_timeline.tsv` are kept); #12799's own message reports
+a 2,237 s canonical replay on its parent, so this is the expected state of
+the shared-inference solver before #12792/#12799, not a hang. What the three
+points say:
+
+- **Cause 1 (vendor value flow) is the shared-inference migration**
+  `39daf9f536`…`2dc4cc3768` (#12705–#12762): B1 is at the pin's 32 s, B2 does
+  not finish in 3 h, B3 recovers to 184 s after #12792/#12799, and the 10-29
+  batch adds the last 65 s (184 → 249 s).
+- **Cause 2's wall (main-chunk interpreter) is the 2026-10-29 batch**
+  `b797753e91`…`884df2512d` (#12828–#12878): B3 spends 57 s there against
+  devel's 180 s (pin 29 s).
+- **The edge flood and the gate rejection are in place by B3**: 2.90M edges
+  (+372k of the +496k eager), 990 `callback_pool_limit` and 379
+  `construction` losses (devel 1,107 and 357), 1,195 incomplete units (devel
+  1,306), the same five conflict groups (211, 7, 9, 2, 3 members). **And
+  already by B1**: B1's graph is edge-for-edge the same size as B3's
+  (1,480,941 / 1,398,518), with the same 990 / 379 losses, 1,195 incomplete
+  units and the same five groups, so the barrier flood and the rejection
+  come from `ecb4a734`…`e78dd6eeb6` (#12486–#12685: deferred-callback
+  inference #12517/#12582/#12656, construction validation #12631/#12633,
+  heap-content ordering #12598), before the solver migration. The 10-29
+  batch then adds the last +124k eager edges, +117 `callback_pool_limit`
+  losses and +111 incomplete units.
+- **B1's wall is 107 s against the pin's 88 s**: +20 s in the main-chunk
+  interpreter (49.8 vs 29.3 s) and +11 s before the purity stage, with no
+  value-flow change. The engine that first rejects this corpus is only 1.2×
+  slower than the one that accepts it; the 4–5× comes later and separately.
 
 ## Not measured
 
@@ -410,8 +545,8 @@ stop there.
   profile frames.
 - Peak RSS by stage is `VmHWM` at marker boundaries; allocation sites were not
   profiled (no heaptrack/massif run).
-- The intermediate engine builds above were not built; cause ranking is by
-  stage, profile family and mechanism, not by bisection.
+- The bisect engines ran once each, unprofiled; B2 was stopped before
+  completing, so its edge counts and later stages are unknown.
 
 Private detail (statement text, unit ordinals, module paths, conflict members)
 is in the private repository's `tana/re/web/debug/2026-10-29-pin-vs-devel-perf.md`.
