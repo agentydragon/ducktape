@@ -279,6 +279,7 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
@@ -811,6 +812,7 @@ ts_library(
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 
@@ -834,6 +836,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:sidebar",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
     ],
 )
 

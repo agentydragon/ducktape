@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./schema";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./threads/live";
+import { SandboxesLiveProvider, type SandboxesSnapshot } from "./sandboxes/live";
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
@@ -98,11 +99,7 @@ function LocationProbe(): JSX.Element {
 
 /** What the server would push for this listing: the newest `limit` of the threads it matches, then
  * the open thread if it is not among them. */
-function snapshot(
-  threads: ThreadView[],
-  sandboxes: Record<string, SandboxView>,
-  url = "/live/threads"
-): ThreadsSnapshot {
+function snapshot(threads: ThreadView[], url = "/live/threads"): ThreadsSnapshot {
   const query = new URL(url, "http://test").searchParams;
   const search = query.get("search")?.toLowerCase();
   const limit = Number(query.get("limit") ?? threads.length);
@@ -117,13 +114,17 @@ function snapshot(
     threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
     more: matching.length > limit,
     archived_count: threads.filter((candidate) => candidate.archived).length,
-    sandboxes: Object.values(sandboxes),
     updates_connected: true,
     watch: { healthy: true, failing: {} },
   };
 }
 
-async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promise<void> {
+/** What the server would push on /live/sandboxes. */
+function inventory(sandboxes: Record<string, SandboxView>): SandboxesSnapshot {
+  return { sandboxes: Object.values(sandboxes), watch: { healthy: true, failing: {} } };
+}
+
+async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot | SandboxesSnapshot): Promise<void> {
   await act(async () => stream.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) })));
 }
 
@@ -140,9 +141,11 @@ async function render(
   onOpenSettings: ReturnType<typeof vi.fn>;
   onClose: ReturnType<typeof vi.fn>;
   stream: EventTarget;
+  sandboxStream: EventTarget;
   noticeUrls: string[];
 }> {
   const streams: EventTarget[] = [];
+  const sandboxStreams: EventTarget[] = [];
   const noticeUrls: string[] = [];
   vi.stubGlobal(
     "EventSource",
@@ -167,10 +170,17 @@ async function render(
           queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(states) })));
           return;
         }
+        if (pathname === "/live/sandboxes") {
+          sandboxStreams.push(this);
+          queueMicrotask(() =>
+            this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(inventory(sandboxes)) }))
+          );
+          return;
+        }
         expect(pathname).toBe("/live/threads");
         streams.push(this);
         queueMicrotask(() =>
-          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes, url)) }))
+          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, url)) }))
         );
       }
       close(): void {}
@@ -196,22 +206,24 @@ async function render(
       <MantineProvider env="test">
         <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
           <RoutedThreadsLiveProvider>
-            <ConnectionIndicator />
-            <Sidebar
-              settingsOpen={options.settingsOpen ?? false}
-              onOpenSettings={onOpenSettings}
-              open={options.open ?? false}
-              onClose={onClose}
-            />
-            <Routes>
-              <Route path="*" element={<LocationProbe />} />
-            </Routes>
+            <SandboxesLiveProvider>
+              <ConnectionIndicator />
+              <Sidebar
+                settingsOpen={options.settingsOpen ?? false}
+                onOpenSettings={onOpenSettings}
+                open={options.open ?? false}
+                onClose={onClose}
+              />
+              <Routes>
+                <Route path="*" element={<LocationProbe />} />
+              </Routes>
+            </SandboxesLiveProvider>
           </RoutedThreadsLiveProvider>
         </MemoryRouter>
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onClose, stream: streams[0], noticeUrls };
+  return { onOpenSettings, onClose, stream: streams[0], sandboxStream: sandboxStreams[0], noticeUrls };
 }
 
 function rows(): HTMLElement[] {
@@ -236,13 +248,14 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
     harness_state: "HARNESS_STATE_RUNNING",
   });
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
-  const { stream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
+  const { stream, sandboxStream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
   const renamed = { ...running, name: "Renamed in another replica" };
+  await pushSnapshot(stream, snapshot([renamed]));
   await pushSnapshot(
-    stream,
-    snapshot([renamed], {
+    sandboxStream,
+    inventory({
       "test-sandbox": sandbox("test-sandbox", {
         operating_mode: "Suspended",
         phase: "Suspended",
@@ -260,7 +273,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
 
-  await pushSnapshot(stream, snapshot([renamed], {}));
+  await pushSnapshot(sandboxStream, inventory({}));
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
@@ -279,7 +292,7 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
   expect(indicator?.getAttribute("data-status")).toBe("running");
   expect(indicator?.querySelector("svg")).not.toBeNull();
 
-  const stale = snapshot([active], { "test-sandbox": sandbox("test-sandbox") });
+  const stale = snapshot([active]);
   stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
   await pushSnapshot(stream, stale);
   const staleIndicator = container.querySelector(
@@ -311,19 +324,19 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
+  await pushSnapshot(stream, { ...snapshot(threads), updates_connected: false });
   expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
     "thread updates disconnected"
   );
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  const stale = snapshot(threads, sandboxes);
+  const stale = snapshot(threads);
   stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
   await pushSnapshot(stream, stale);
   expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain("watch failing");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));
+  await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }]));
   expect(container.textContent).not.toContain("Retained thread");
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);

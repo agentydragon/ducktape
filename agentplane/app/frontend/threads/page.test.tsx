@@ -183,7 +183,10 @@ beforeEach(() => {
           this.dispatchEvent(
             new MessageEvent("snapshot", {
               data: JSON.stringify({
-                sandboxes,
+                // The server still sends its own copy of the Sandboxes on /live/threads. The page reads only
+                // /live/sandboxes, so this copy contradicts it.
+                sandboxes:
+                  new URL(url, "http://test").pathname === "/live/threads" ? [inventorySandbox("Running")] : sandboxes,
                 ...(new URL(url, "http://test").pathname === "/live/threads"
                   ? {
                       threads: threadRows ?? [
@@ -863,6 +866,14 @@ it.each([
   expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
   expect(indicator?.getAttribute("aria-label")).toBe(label);
   expect(indicator?.getAttribute("data-status")).toBe(kind);
+});
+
+it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
+  sandboxes = [{ ...inventorySandbox("Suspended", true), suspended_by: "Requested" }];
+  const container = await render();
+  const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("data-status")).toBe("suspended");
+  expect(composer(container).placeholder).toMatch(/^Sandbox is suspended \(on request\)\./);
 });
 
 it("shows the thread's unprocessed notification count in its topbar status indicator", async () => {

@@ -121,7 +121,6 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
@@ -283,6 +282,7 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":list",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

@@ -164,7 +164,7 @@ function AppRoutes(): JSX.Element {
             {/* The sidebar carries the queue while it is open, and the Actions pages are the queue. */}
             <ActionsAttentionBar visible={!sidebarOpen && actionsRoute === null} />
             <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-              {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
+              {routes}
             </div>
           </div>
           <Settings
@@ -184,7 +184,9 @@ export default function App(): JSX.Element {
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
         <RoutedThreadsLiveProvider>
-          <AppRoutes />
+          <SandboxesLiveProvider>
+            <AppRoutes />
+          </SandboxesLiveProvider>
         </RoutedThreadsLiveProvider>
       </HashRouter>
     </ThreadSyncContext.Provider>

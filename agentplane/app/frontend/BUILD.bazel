@@ -661,6 +661,7 @@ agentplane_vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:thread_groups",

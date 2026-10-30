@@ -9,13 +9,13 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { api } from "../client";
 import { SandboxList } from "./list";
+import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
 
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
 
 vi.mock("../live", () => ({
-  liveSandboxesUrl: () => "/live/sandboxes",
   useLive: () => liveSandboxData,
 }));
 
@@ -97,7 +97,9 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     root.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <SandboxList onOpen={onOpen} />
+          <SandboxesLiveProvider>
+            <SandboxList onOpen={onOpen} />
+          </SandboxesLiveProvider>
         </MemoryRouter>
       </MantineProvider>
     )

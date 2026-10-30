@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "../schema";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
+import { SandboxesLiveProvider, type SandboxesSnapshot } from "../sandboxes/live";
 import type { SessionNoticeStates } from "../notification_types";
 import { Sidebar } from "../sidebar";
 
@@ -85,6 +86,11 @@ async function render(): Promise<string[]> {
           queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(states) })));
           return;
         }
+        if (pathname === "/live/sandboxes") {
+          const inventory: SandboxesSnapshot = { sandboxes: [SANDBOX], watch: { healthy: true, failing: {} } };
+          queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(inventory) })));
+          return;
+        }
         expect(pathname).toBe("/live/threads");
         threadStreams.push(url);
         const search = searchParams.get("search")?.toLowerCase();
@@ -94,7 +100,6 @@ async function render(): Promise<string[]> {
           ),
           more: false,
           archived_count: 0,
-          sandboxes: [SANDBOX],
           updates_connected: true,
           watch: { healthy: true, failing: {} },
         };
@@ -111,8 +116,10 @@ async function render(): Promise<string[]> {
       <MantineProvider env="test">
         <MemoryRouter>
           <RoutedThreadsLiveProvider>
-            <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
-            <Home />
+            <SandboxesLiveProvider>
+              <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
+              <Home />
+            </SandboxesLiveProvider>
           </RoutedThreadsLiveProvider>
         </MemoryRouter>
       </MantineProvider>
