@@ -40,6 +40,7 @@ type Executor struct {
 	processMu         sync.Mutex
 	processLocks      map[string]*sync.Mutex
 	rpcTimeout        time.Duration
+	initializeTimeout time.Duration
 	lifetime          context.Context
 	sessionStream     executorSessionStream
 	sessionCancel     context.CancelFunc
@@ -93,7 +94,8 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		},
 		lifetime: ctx, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
 		environment: map[string]string{"AGENTPLANE_DESTINATION": string(env)}, processLocks: map[string]*sync.Mutex{},
-		rpcTimeout: time.Duration(settings.RPCTimeoutSeconds) * time.Second,
+		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
+		initializeTimeout: settings.ExecutorInitializeTimeout(),
 	}
 	state, err := store.ExecutionState(ctx, owner)
 	if err != nil {

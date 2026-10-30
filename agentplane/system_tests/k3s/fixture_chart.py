@@ -209,6 +209,7 @@ def environment(
             max_live_sessions=2,
             turn_timeout_seconds=60,
             rpc_timeout_seconds=10,
+            executor_initialize_timeout_seconds=120 if vm_sandboxes else 30,
             lease_seconds=60,
         )
     catalog = app_settings.model_catalog(routes, central_sampler_enabled=central_sampler)

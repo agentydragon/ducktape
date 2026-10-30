@@ -145,13 +145,7 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 }
 
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
-	handshakeCtx := ctx
-	var cancelHandshake context.CancelFunc
-	if e.rpcTimeout > 0 {
-		handshakeCtx, cancelHandshake = context.WithTimeout(ctx, e.rpcTimeout)
-	} else {
-		handshakeCtx, cancelHandshake = context.WithCancel(ctx)
-	}
+	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
 	request := map[string]any{"kind": "executor", "method": "initialize", "resume_session_id": resume}
 	intent, err := e.store.RecordNested(ctx, e.owner, request)

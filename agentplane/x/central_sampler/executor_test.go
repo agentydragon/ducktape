@@ -41,6 +41,83 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 	}
 }
 
+func TestExecutorInitializationWaitIsIndependentOfGeneralRPCTimeout(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	stream := &gatedExecutorStream{
+		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+		response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"},
+	}
+	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		stream.ctx = ctx
+		return stream, nil
+	}
+	executor := newFakeExecutor(t, store, owner, client)
+	executor.rpcTimeout = 5 * time.Millisecond
+	executor.initializeTimeout = time.Minute
+	result := make(chan error, 1)
+	go func() { result <- executor.openSession(t.Context(), nil) }()
+	<-stream.started
+	select {
+	case err := <-result:
+		t.Fatalf("executor initialization ended at the general RPC timeout: %v", err)
+	case <-stream.ctx.Done():
+		t.Fatalf("executor initialization stream ended at the general RPC timeout: %v", stream.ctx.Err())
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(stream.release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	<-stream.finished
+	if err := executor.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	stream := &gatedExecutorStream{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
+	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+		stream.ctx = ctx
+		return stream, nil
+	}
+	executor := newFakeExecutor(t, store, owner, client)
+	executor.rpcTimeout = time.Minute
+	executor.initializeTimeout = 5 * time.Millisecond
+	result := make(chan error, 1)
+	go func() { result <- executor.openSession(t.Context(), nil) }()
+	<-stream.started
+	var transport *executorTransportError
+	select {
+	case err := <-result:
+		if !errors.As(err, &transport) || transport.phase != "receive" {
+			t.Fatalf("executor initialization error=%v, want unknown receive outcome", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("executor initialization did not honor its configured timeout")
+	}
+	close(stream.release)
+	<-stream.finished
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(raw, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false || evidence["phase"] != "receive" {
+		t.Fatalf("initialization timeout evidence=%+v", evidence)
+	}
+	if err := executor.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
 func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 	response := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}
 	value, err := responseObject("process/read", response)
@@ -568,6 +645,36 @@ type fakeExecutionStream struct {
 	once    sync.Once
 }
 
+type gatedExecutorStream struct {
+	ctx      context.Context
+	started  chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+	response *executorpb.OpenSessionResponse
+	mu       sync.Mutex
+	first    bool
+}
+
+func (s *gatedExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
+	s.mu.Lock()
+	if s.first {
+		s.mu.Unlock()
+		<-s.ctx.Done()
+		return nil, s.ctx.Err()
+	}
+	s.first = true
+	s.mu.Unlock()
+	close(s.started)
+	select {
+	case <-s.release:
+	case <-s.ctx.Done():
+		close(s.finished)
+		return nil, s.ctx.Err()
+	}
+	close(s.finished)
+	return s.response, nil
+}
+
 func (s *fakeExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) {
 	var response *executorpb.OpenSessionResponse
 	s.once.Do(func() { response = s.initial })
@@ -594,7 +701,7 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 
 func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
 	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}}
+	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute}
 }
 
 func completedExecutionStatus() *executorpb.ExecutionStatus {

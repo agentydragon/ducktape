@@ -59,6 +59,7 @@ class CentralSamplerProps:
     turn_timeout_seconds: int
     rpc_timeout_seconds: int
     lease_seconds: int
+    executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     auto_compact_tokens: int | None = None
 
 

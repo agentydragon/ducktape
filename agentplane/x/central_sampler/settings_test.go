@@ -6,11 +6,58 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fixtureSettings() Settings {
 	return Settings{
 		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorTarget: "127.0.0.1:4501", DirectExecutorInsecureLocaltest: true, MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+	}
+}
+
+func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *testing.T) {
+	settings := fixtureSettings()
+	if got := settings.ExecutorInitializeTimeout(); got != 30*time.Second {
+		t.Fatalf("default executor initialization timeout=%s, want 30s", got)
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeSettings(strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.ExecutorInitializeTimeout(); got != 30*time.Second {
+		t.Fatalf("omitted executor initialization timeout=%s, want 30s", got)
+	}
+
+	configured := 120
+	settings.ExecutorInitializeTimeoutSeconds = &configured
+	if got := settings.ExecutorInitializeTimeout(); got != 120*time.Second {
+		t.Fatalf("configured executor initialization timeout=%s, want 120s", got)
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	maximum := int(maxExecutorInitializeTimeoutSeconds)
+	settings.ExecutorInitializeTimeoutSeconds = &maximum
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("rejected maximum representable timeout: %v", err)
+	}
+	if got := settings.ExecutorInitializeTimeout(); got <= 0 {
+		t.Fatalf("maximum representable timeout overflowed: %s", got)
+	}
+
+	for _, invalid := range []int{0, -1, maximum + 1} {
+		settings.ExecutorInitializeTimeoutSeconds = &invalid
+		if err := settings.Validate(); err == nil {
+			t.Fatalf("accepted invalid executor_initialize_timeout_seconds=%d", invalid)
+		}
 	}
 }
 

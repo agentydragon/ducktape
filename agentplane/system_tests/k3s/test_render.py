@@ -7,9 +7,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import bcrypt
+import pytest
 import pytest_bazel
 import yaml
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, ValidationError
 
 from agentplane.app.model_catalog import ModelCatalog
 
@@ -25,7 +26,10 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.vm_configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.x.central_sampler.settings import Settings as CentralSamplerSettings
+from agentplane.x.central_sampler.settings import (
+    MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+    Settings as CentralSamplerSettings,
+)
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
@@ -465,6 +469,16 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         )
         assert settings.llm_proxy_url == llm_ingress.proxied_url(NAMESPACE)
         assert str(settings.credential_file) == "/var/run/secrets/central-sampler/llm"
+        assert settings.rpc_timeout_seconds == 10
+        assert settings.executor_initialize_timeout_seconds == (120 if vm else 30)
+        without_initialize_timeout = CentralSamplerSettings.model_validate(
+            settings.model_dump(exclude={"executor_initialize_timeout_seconds"})
+        )
+        assert without_initialize_timeout.executor_initialize_timeout_seconds == 30
+        invalid_timeout = settings.model_dump()
+        invalid_timeout["executor_initialize_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1
+        with pytest.raises(ValidationError):
+            CentralSamplerSettings.model_validate(invalid_timeout)
         assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
         assert any(
             mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"

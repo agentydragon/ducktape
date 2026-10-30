@@ -178,6 +178,7 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//bcrypt",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
