@@ -259,10 +259,13 @@ impl ChunkHeap {
         // A key holding a binding is this-free when every function value flow
         // gives the binding is.
         let this_free_binding = |binding: &Ident| {
-            let values = value_flow.values_of_binding(&binding.to_id());
+            let values: Vec<Value> = value_flow
+                .values_of_binding(&binding.to_id())
+                .iter()
+                .collect();
             !values.is_empty()
                 && values.iter().all(|value| {
-                    matches!(value, Value::Alloc(Kind::Function, function) if this_free.0.contains(&function))
+                    matches!(value, Value::Alloc(Kind::Function, function) if this_free.0.contains(function))
                 })
         };
         scan.this_methods = inits_by_name
