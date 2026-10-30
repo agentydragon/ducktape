@@ -315,13 +315,31 @@ Canonical replays (hours at `-c opt`, both corpora) are required only for the
 steps that change what the gates can prove: 2, 5a–5d and 6. Steps 3, 4, 7
 and 8 are covered by the public controls and the e2e suite.
 
-Pipeline order: `facts/analyze.rs::analyze_chunk_with_policy_and_sync` runs
-purity (`ChunkCodeGraph`) → heap-content effects → the interpreter
-(`annotate_synchronous_calls`), and the interpreter consumes the purity graph
-and statement facts. The vendor-prune path (`analyze_vendor_prune_chunk`)
-never runs the interpreter. A step that derives from the interpreter a fact
-purity or heap-content effects consume lands after 4c and 6, or owns that
-reorder and measures its cost.
+Pipeline order today: `facts/analyze.rs::analyze_chunk_with_policy_and_sync`
+runs purity (`ChunkCodeGraph`) → heap-content effects → the interpreter
+(`annotate_synchronous_calls`). <../docs/inference.md> § Dependency regions
+and barriers makes this a one-way barrier: completed static function facts
+feed execution-prefix interpretation, and prefix execution does not update
+function-purity caches. The vendor-prune path (`analyze_vendor_prune_chunk`)
+never runs the interpreter.
+
+Target, delivered by 4c: no pass order.
+
+- Purity is the empty-effect projection of effect facts in the same
+  `IterativeInference` context as the interpreter's transfers. Purity,
+  heap-content and interpreter consumers all read growing effect facts
+  through watchers, not a completed pre-pass.
+- Effect sets only grow, and every transfer is monotone in its effect inputs,
+  so the fixpoint is least and needs no optimistic purity seed (as
+  inference § Scheduling already requires for recursive purity).
+- Evaluation stays demand-driven: a fact is computed when a consumer reads
+  it, never by an eager sweep over every site.
+- Open for 4c: how the vendor-prune path gets the same facts without a full
+  prefix execution.
+
+Consequence: 5a's certificates, and any other fact purity or heap-content
+effects consume, become interpreter facts read through the shared context
+once 4c lands.
 
 ### Step 0 — baseline
 
@@ -366,7 +384,7 @@ taint = Clean ∧ props ⊆ Prim`. Delete `whitelists.rs`, `builtin_calls.rs`,
   `classifier.rs`; keep `purity_type.rs` as the projection and
   `effect_inference.rs` as the cross-module worklist over summaries.
 - Stack: 4a whitelists → rows; 4b PlainData → heap state; 4c classifier →
-  projection.
+  projection, which removes the purity → interpreter barrier (§ 5 preamble).
 - Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
   `initializer_purity`, `export_default_purity`, `pure_members`,
   `cross_module_purity_scale`, `dependency_graph_purity_reason`,
@@ -391,8 +409,8 @@ taint = Clean ∧ props ⊆ Prim`. Delete `whitelists.rs`, `builtin_calls.rs`,
   `Iterate` resolution on `Clean` dense arrays; the interval co-location check
   stays in `graph/build.rs`. Tests `set_iterable_reentry`,
   `stable_array_spread`, `native_operation_input`. Depends on 4b, 4c and 6:
-  purity and heap-content effects consume these certificates before the
-  interpreter runs (§ 5 pipeline order); the domain has no heap
+  purity and heap-content effects consume these certificates, so they need
+  4c's barrier removal and 6's effect-set frontier (§ 5 preamble); the domain has no heap
   `escape`/`taint`/`dense` state before 4b; and a flow-insensitive
   derivation from `ChunkValueFlow` loses per-prefix precision, since
   `array_spreads.rs` accepts producers mutated or escaping after the spread.
