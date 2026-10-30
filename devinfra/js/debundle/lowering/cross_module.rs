@@ -38,7 +38,7 @@ use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_identity::{SourceUnitOrdinal, StatementId};
 use source_match::source_match_claim_member_selectors;
-use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
+use spec::{ChunkExportPurity, DependencyGraphOptions, PartialSwapSymbol, SourceUnitSelector};
 use swc_common::Spanned;
 use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat, Stmt, VarDeclarator};
 
@@ -283,6 +283,9 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    /// A partially swapped provider is analyzed with these symbols opaque.
+    pub(super) partially_swapped_symbols:
+        &'a BTreeMap<ChunkId, &'a BTreeMap<String, PartialSwapSymbol>>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -300,6 +303,7 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         explicit_binding_destinations,
         resolved_member_sites,
+        partially_swapped_symbols,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -351,6 +355,28 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
+
+    // A partially swapped provider is analyzed as the emitted program runs it:
+    // swapped symbols are replacement code, opaque to every inference here.
+    let opaque_swap_bodies: BTreeMap<ChunkId, Module> = artifact
+        .chunks
+        .iter()
+        .filter(|chunk| {
+            chunk_allowed(chunk.chunk_id, chunk_filter)
+                && !excluded_chunks.contains(&chunk.chunk_id)
+        })
+        .filter_map(|chunk| {
+            let symbols = partially_swapped_symbols.get(&chunk.chunk_id)?;
+            let module = match chunk.js.get_file(&chunk.analysis.entry_file)?.ast() {
+                Some(ast) => &ast.module,
+                None => &reparsed.get(&chunk.chunk_id)?.parsed.module,
+            };
+            Some((
+                chunk.chunk_id,
+                vendor::module_with_opaque_swapped_symbols(module, symbols),
+            ))
+        })
+        .collect();
 
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
@@ -434,7 +460,6 @@ pub(super) fn collect_cross_module_imported_purities(
                 );
             }
         }
-        let body = &parsed.module.body;
         let mut imports = BTreeMap::new();
         for import in import_records {
             // Same artifact-output resolution the specifier rewriter uses;
@@ -488,7 +513,7 @@ pub(super) fn collect_cross_module_imported_purities(
                     .map(|local| (alias.exported.clone(), local))
             })
             .collect();
-        for item in body {
+        for item in &parsed.module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item {
                 for name in exported_decl_names(&export_decl.decl) {
                     exports.entry(name.clone()).or_insert(name);
@@ -498,7 +523,9 @@ pub(super) fn collect_cross_module_imported_purities(
         modules.insert(
             chunk_name.to_string(),
             ModulePurityFacts {
-                body,
+                body: opaque_swap_bodies
+                    .get(&chunk_artifact.chunk_id)
+                    .map_or(&parsed.module.body, |module| &module.body),
                 imports,
                 exports,
                 source: Some((
@@ -1712,6 +1739,7 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    partially_swapped_symbols: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
                 &BTreeSet::new(),
@@ -1769,6 +1797,7 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    partially_swapped_symbols: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
                 &BTreeSet::new(),

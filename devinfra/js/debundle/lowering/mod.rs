@@ -456,6 +456,7 @@ pub fn materialize_logical_modules(
             graph_provenance: options.graph_provenance.as_ref(),
             explicit_binding_destinations: &explicit_binding_destinations,
             resolved_member_sites: &resolved_member_sites,
+            partially_swapped_symbols: &vendor_plan.partially_swapped_symbols(),
         },
         &declared_pure_new,
         &full_swap_chunk_ids,

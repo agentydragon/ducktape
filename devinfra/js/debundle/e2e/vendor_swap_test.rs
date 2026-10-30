@@ -1887,6 +1887,138 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
 }
 
+// ─── analysis of swapped implementations ────────────────────────────────
+//
+// The emitted program runs replacement code for every swapped symbol, so
+// facts derived from the original implementation must not justify a split.
+// Each fixture's original callee defers its callback and its replacement runs
+// it at once. Splitting `wrapped` into its own module hoists its initializer
+// above `globalThis.mode = "ready"`; with the replacement that read throws,
+// where the swapped program in source order prints 5.
+
+const REPLACED_CALLEE_CALLER: &str = "globalThis.mode = \"ready\";\n\
+     const wrapped = factory(() => globalThis.mode.length);\n\
+     console.log(wrapped());\n";
+
+/// Spec keys splitting `wrapped` out of `static/app`, with reports under
+/// `report_root`.
+fn split_wrapped_spec(report_root: &Path) -> Value {
+    json!({
+        "logical_modules": {
+            "static/app": {
+                "callbacks/wrapped": {
+                    "members": [
+                        { "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } },
+                    ],
+                },
+            },
+        },
+        "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+            "report_out_dir": report_root,
+        },
+    })
+}
+
+/// The split is refused: `wrapped`'s initializer is impure, so it stays
+/// ordered after the global write.
+fn assert_wrapped_split_refused(result: &CommandResult, report_root: &Path) {
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "expected the split to be refused\nstdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    let cycles: Vec<Value> = read_json(&report_root.join("static/app/cycles.json"));
+    let unit = cycles
+        .iter()
+        .flat_map(|cycle| cycle["cut"].as_array().expect("cycle cut"))
+        .find(|cut| cut["from_binding"] == "wrapped")
+        .map(|cut| &cut["sequenced_source_unit"])
+        .unwrap_or_else(|| panic!("no cut from `wrapped`: {cycles:#?}"));
+    assert_eq!(unit["purity"]["kind"], "not_pure", "{unit:#}");
+}
+
+#[test]
+fn partial_swap_split_does_not_trust_swapped_export_body() {
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-replaced-export-",
+        "export function factory(callback) { return () => callback(); }\n\
+         export const keep = () => 7;\n",
+        &format!("import {{ factory }} from \"./megachunk.js\";\n{REPLACED_CALLEE_CALLER}"),
+        "fac",
+        "1.0.0",
+        "lib/index.mjs",
+        "export function factory(callback) { callback(); return () => callback(); }\n",
+    );
+    let report_root = ws.out_root.join("reports").join("tree");
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/megachunk.js": partial_swap_vendor(
+            "replaced export fixture",
+            &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
+            &[("factory", swap_symbol("fac", PartialSwapKind::Member, Some("factory"), None))],
+        )}),
+        Some(split_wrapped_spec(&report_root)),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    assert_wrapped_split_refused(&result, &report_root);
+}
+
+#[test]
+fn bundled_partial_swap_split_does_not_trust_swapped_local_helper_body() {
+    // The residual `factory` export survives; its call to the swapped
+    // `local` helper is retargeted to the facade.
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-replaced-helper-",
+        "fac.esbuilt.js",
+        "const Fac = { defer: callback => { callback(); return () => callback(); } };\n\
+         export { Fac };\n",
+        &[
+            (
+                "static/vendor.js",
+                "function nY(callback) { return () => callback(); }\n\
+                 const factory = callback => nY(callback);\n\
+                 export { factory as keep };\n",
+            ),
+            (
+                "static/app.js",
+                &format!(
+                    "import {{ keep as factory }} from \"./vendor.js\";\n{REPLACED_CALLEE_CALLER}"
+                ),
+            ),
+        ],
+    );
+    let package_root = ws.write_upstream_package(
+        "upstream/fac",
+        "fac",
+        "1.0.0",
+        "index.js",
+        "export const defer = callback => { callback(); return () => callback(); };\n",
+    );
+    let report_root = ws.out_root.join("reports").join("tree");
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/vendor.js": bundled_vendor(
+            "replaced local helper fixture",
+            &bundle_path,
+            &[("fac", bundled_package("1.0.0", "index.js", "Fac", Some("Fac")))],
+            &[("facDefer", swap_symbol("fac", PartialSwapKind::Named, Some("defer"), Some("nY")))],
+        )}),
+        Some(split_wrapped_spec(&report_root)),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    assert_wrapped_split_refused(&result, &report_root);
+}
+
 // ─── partial-swap consumer soundness ────────────────────────────────────
 //
 // The per-symbol rewrite handles `ImportDecl` consumers. Two other consumer
