@@ -76,8 +76,6 @@ pub struct SourceUnit {
         std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub native_integrity_witnesses:
         std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
-    pub native_receiver_certificates:
-        std::sync::Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
     pub callback_factory_uses: Vec<crate::facts::CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<crate::facts::ReturnedRecordUseFact>,
 }
@@ -213,7 +211,6 @@ impl DependencyGraph {
                 synchronous_execution: None,
                 native_prototype_mutations: std::sync::Arc::default(),
                 native_integrity_witnesses: std::sync::Arc::default(),
-                native_receiver_certificates: std::sync::Arc::default(),
                 callback_factory_uses: Vec::new(),
                 returned_record_uses: Vec::new(),
             })

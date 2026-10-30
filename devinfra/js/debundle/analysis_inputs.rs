@@ -506,7 +506,6 @@ pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
-    pub certificates: Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
     /// Validated inputs by stable reference. Consumers report a dependency only
     /// when a receiver refinement was actually used.
     pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,

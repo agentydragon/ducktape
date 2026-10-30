@@ -513,7 +513,6 @@ rust_library(
         "facts/sync_effects/interpreter.rs",
         "facts/sync_effects/namespace_wrapper.rs",
         "facts/sync_effects/property_inference.rs",
-        "facts/sync_effects/receiver_identity.rs",
         "facts/sync_effects/runtime_callbacks.rs",
         "facts/sync_effects/runtime_heap.rs",
         "facts/sync_effects/runtime_inference.rs",

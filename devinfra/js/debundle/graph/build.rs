@@ -335,11 +335,6 @@ pub fn build_dependency_graph_with(
                 .as_ref()
                 .map(|calls| calls.native_integrity_witnesses.clone())
                 .unwrap_or_default(),
-            native_receiver_certificates: stmt
-                .synchronous_calls
-                .as_ref()
-                .map(|calls| calls.native_receiver_certificates.clone())
-                .unwrap_or_default(),
             callback_factory_uses: stmt
                 .synchronous_calls
                 .as_ref()

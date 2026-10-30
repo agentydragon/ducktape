@@ -300,14 +300,6 @@ impl ExecutionIndex {
             }) {
                 continue;
             }
-            if self.dynamic_scope_owners.is_empty()
-                && self
-                    .receiver_identity
-                    .receiver(write.receiver_callable, &write.receiver, write.span)
-                    .is_some()
-            {
-                continue;
-            }
             let kind = match write.operation {
                 NativeMutationOperation::PropertyAssignment | NativeMutationOperation::Update => {
                     NativePrototypeMutationKind::Write

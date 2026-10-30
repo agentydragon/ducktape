@@ -15,7 +15,7 @@ plans and evidence live here:
   diagnostic workflows.
 - <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
-- <plans/native_receiver_identity.md> — native receiver certificates and their
+- <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
