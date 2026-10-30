@@ -1031,6 +1031,7 @@ flowchart TD
     SANDBOX_AUTODISKFUL[Decision, unscheduled: auto-diskful storage for Sandboxes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
+    AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -1332,6 +1333,20 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
+
+### `AGENT_EXECUTOR_LOSS_NOTICE` — tell agents when executor restarts or kills lose their processes
+
+**Unscheduled; operator, 2026-10-29 PDT: nice to have.** Notify affected agents when an executor
+container/process restarts or an observed kill invalidates their commands, background jobs or
+terminals, even if the Runner and Sandbox stay up. The Qwen CI collector thread
+`68f0e6ea-d4cf-4dab-8d39-0aa479843c9a` lost processes across repeated executor-container OOMs while
+its files survived; the model had to infer what happened from missing processes and transport errors.
+Report the observed cause (OOM, restart, or unknown), scope and lost process handles, and what state
+survived. Account for multiple Sessions sharing an executor. Choose the event/delivery owner and
+deduplication semantics before implementation; do not replay uncertain commands automatically.
+Exit evidence: a controlled executor restart or kill produces a notice for affected Sessions without
+claiming a whole-Pod restart, lost files or a cause that was not observed. Related to
+`AGENT_RESUME_NOTICE`, but not blocked on Sandbox suspend/resume work.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
