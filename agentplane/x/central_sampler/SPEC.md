@@ -103,7 +103,12 @@ function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume
 is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
 variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
 validates arguments before dispatch and uses the same host operations, journal and recovery
-rules as freeform calls. Calls are accepted only with their configured name and item type.
+rules as freeform calls. Configured calls are dispatched only when both their name and item type
+match the selected route. A syntactically valid call using a name not exposed by that route is
+retained in provider history and answered with the matching function or custom tool output and an
+unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
+unsupported output items, duplicate call IDs, and configured names used with the wrong item type
+remain validation failures.
 Model changes cannot change API, dialect or exec encoding within a Session. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.

@@ -197,7 +197,7 @@ async def faulting_executor_proxy(
             yield observed
 
 
-@pytest.mark.parametrize("failure", ["failed", "429", "503", "unsupported", "invalid_wait", "partial"])
+@pytest.mark.parametrize("failure", ["failed", "429", "503", "invalid_wait", "partial"])
 async def test_turn_outcomes_preserve_safe_continuation(
     store: Store,
     database_url: str,
@@ -227,12 +227,6 @@ async def test_turn_outcomes_preserve_safe_continuation(
                         "response": {"status": "failed", "error": {"code": "rate_limit_exceeded"}},
                     }
                     await exchange.send(SseEvent("response.failed", ("data: " + json.dumps(payload) + "\n\n").encode()))
-                elif failure == "unsupported":
-                    await exchange.send(
-                        *response_stream(
-                            [CustomToolCall("unsupported", "invalid", "text(1)")], model="test-model"
-                        ).events
-                    )
                 elif failure == "invalid_wait":
                     await exchange.send(
                         *response_stream(

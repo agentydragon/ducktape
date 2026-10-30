@@ -776,6 +776,188 @@ def tool_outputs(body: dict[str, Any]) -> list[tuple[str, list[str]]]:
     ]
 
 
+async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        request = open_request(tmp_path)
+        release = tmp_path / "release-unknown-custom-process"
+        process_id: int | None = None
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="unknown-custom", text="Continue after an unknown tool."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            try:
+                async with await endpoint.next() as exchange:
+                    command = {
+                        "cmd": f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf retained-output",
+                        "yield_time_ms": 1,
+                    }
+                    source = (
+                        'store("unknown-tool-state", "kept"); '
+                        f"const started = await tools.exec_command({json.dumps(command)}); "
+                        'store("unknown-tool-process", String(started.session_id)); '
+                        "text(JSON.stringify(started));"
+                    )
+                    await exchange.send(
+                        *response_stream([CustomToolCall("start-process", "exec", source)], model="test-model").events
+                    )
+
+                async with await endpoint.next() as exchange:
+                    started = dict(tool_outputs(exchange.request.body))["start-process"]
+                    process_id = json.loads(started[-1])["session_id"]
+                    process = await store.process(process_id)
+                    assert process is not None
+                    assert process.status == "running"
+                    source = (
+                        'if (load("unknown-tool-state") !== "kept") throw new Error("JavaScript state was lost"); '
+                        'const process = await tools.write_stdin({session_id: Number(load("unknown-tool-process")), yield_time_ms: 1}); '
+                        'text(JSON.stringify({state: load("unknown-tool-state"), process}));'
+                    )
+                    await exchange.send(
+                        *response_stream(
+                            [
+                                CustomToolCall("missing-custom", "missing_custom_tool", "unused input"),
+                                CustomToolCall("known-sibling", "exec", source),
+                            ],
+                            model="test-model",
+                        ).events
+                    )
+
+                async with await endpoint.next() as exchange:
+                    items = exchange.request.body["input"]
+                    unknown_output = next(
+                        item
+                        for item in items
+                        if item.get("call_id") == "missing-custom" and item["type"].endswith("_output")
+                    )
+                    assert unknown_output["type"] == "custom_tool_call_output"
+                    unknown_text = "\n".join(part["text"] for part in unknown_output["output"])
+                    assert unknown_text == "unsupported custom tool call: missing_custom_tool"
+                    sibling = dict(tool_outputs(exchange.request.body))["known-sibling"]
+                    sibling_result = json.loads(sibling[-1])
+                    assert sibling_result["state"] == "kept"
+                    process = await store.process(process_id)
+                    assert process is not None
+                    assert process.status == "running"
+                    session = await stub.GetSession(
+                        sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+                    )
+                    assert not session.blocked
+                    unknown_intents = [
+                        intent
+                        for intent in await store.intents()
+                        if intent.request.get("call", {}).get("call_id") == "missing-custom"
+                    ]
+                    assert len(unknown_intents) == 1
+                    assert unknown_intents[0].result is not None
+                    assert unknown_intents[0].result["success"] is False
+                    assert unknown_intents[0].result["dispatched"] is False
+                    await exchange.send(*response_stream([Message("continued")], model="test-model").events)
+
+                assert (
+                    await completed(stub, "unknown-custom", request.session_id)
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+            finally:
+                release.write_text("")
+
+        events = await store.events(request.session_id, 0, limit=10000)
+        failed_results = [
+            entry.event.item_completed.tool
+            for entry in events
+            if entry.event.HasField("item_completed") and entry.event.item_completed.item_id == "missing-custom"
+        ]
+        assert len(failed_results) == 1
+        assert not failed_results[0].succeeded
+        assert "unsupported custom tool call: missing_custom_tool" in failed_results[0].output
+
+
+@pytest.mark.parametrize("dialect", ["lite", "standard"])
+@pytest.mark.parametrize("function_name", ["missing_function", "wait"])
+async def test_unknown_json_function_call_returns_function_output(
+    database_url: str,
+    execution_target: str,
+    codex_binary: str,
+    code_mode_host: str,
+    tmp_path: Path,
+    dialect: Literal["lite", "standard"],
+    function_name: str,
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        config = config.model_copy(
+            update={
+                "models": {
+                    "test-model": ModelConfig(
+                        reasoning_efforts={"", "high"},
+                        api="responses",
+                        responses=ResponsesConfig(dialect=dialect),
+                        exec_encoding="json",
+                    )
+                }
+            }
+        )
+        request = open_request(tmp_path)
+        request.spec.reasoning_effort = ""
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id,
+                    command_id="unknown-function",
+                    text="Continue after an unknown function.",
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream([FunctionCall("missing-function", function_name, {})], model="test-model").events
+                )
+
+            async with await endpoint.next() as exchange:
+                output = next(
+                    item
+                    for item in exchange.request.body["input"]
+                    if item.get("call_id") == "missing-function" and item["type"].endswith("_output")
+                )
+                assert output["type"] == "function_call_output"
+                if isinstance(output["output"], str):
+                    output_text = output["output"]
+                else:
+                    output_text = "\n".join(part["text"] for part in output["output"])
+                assert output_text == f"unsupported call: {function_name}"
+                await exchange.send(*response_stream([Message("continued")], model="test-model").events)
+
+            assert (
+                await completed(stub, "unknown-function", request.session_id)
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            session = await stub.GetSession(
+                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+            )
+            assert not session.blocked
+
+        failed_results = [
+            entry.event.item_completed.tool
+            for entry in await store.events(request.session_id, 0, limit=10000)
+            if entry.event.HasField("item_completed") and entry.event.item_completed.item_id == "missing-function"
+        ]
+        assert len(failed_results) == 1
+        assert not failed_results[0].succeeded
+
+
 @pytest.mark.parametrize("dialect", ["lite", "standard"])
 async def test_json_exec_runs_shell_resumes_and_recovers(
     database_url: str,

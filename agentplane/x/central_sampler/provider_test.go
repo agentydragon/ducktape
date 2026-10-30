@@ -259,6 +259,10 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					if call.IsModelTool(config) != want {
 						t.Fatalf("wrong tool validation: %+v", call)
 					}
+					wantConfiguredName := call.Name == "exec" || encoding == ExecEncodingFreeform && call.Name == "wait"
+					if call.IsConfiguredToolName(config) != wantConfiguredName {
+						t.Fatalf("wrong configured-name validation: %+v", call)
+					}
 				}
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.URL.Path != "/v1/responses" {
@@ -304,6 +308,57 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	}
 	if items[2].Type != ResponsesItemCustomToolOutput {
 		t.Fatal("request encoding mutated durable context")
+	}
+}
+
+func TestResponsesToolCallShapeSeparatesUnknownNamesFromMalformedItems(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		item      string
+		wantValid bool
+		wantType  ResponsesItemType
+	}{
+		{
+			name:      "unknown custom tool has an answerable shape",
+			item:      `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom","input":"{}"}`,
+			wantValid: true,
+			wantType:  ResponsesItemCustomToolCall,
+		},
+		{
+			name:      "unknown function has an answerable shape",
+			item:      `{"type":"function_call","call_id":"function-1","name":"missing_function","arguments":"{}"}`,
+			wantValid: true,
+			wantType:  ResponsesItemFunctionCall,
+		},
+		{
+			name: "custom call without input is malformed",
+			item: `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom"}`,
+		},
+		{
+			name: "custom call with null input is malformed",
+			item: `{"type":"custom_tool_call","call_id":"custom-1","name":"missing_custom","input":null}`,
+		},
+		{
+			name: "function call without arguments is malformed",
+			item: `{"type":"function_call","call_id":"function-1","name":"missing_function"}`,
+		},
+		{
+			name: "tool call without call ID is malformed",
+			item: `{"type":"function_call","name":"missing_function","arguments":"{}"}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var item ResponsesItem
+			if err := json.Unmarshal([]byte(test.item), &item); err != nil {
+				t.Fatal(err)
+			}
+			if got := item.HasValidToolCallShape(); got != test.wantValid {
+				t.Fatalf("HasValidToolCallShape()=%t, want %t", got, test.wantValid)
+			}
+			if test.wantValid && item.Type != test.wantType {
+				t.Fatalf("item type=%s, want %s", item.Type, test.wantType)
+			}
+		})
 	}
 }
 

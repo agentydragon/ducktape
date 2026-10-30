@@ -101,6 +101,37 @@ func (item ResponsesItem) ToolCall() (ResponsesToolCall, bool) {
 	}
 }
 
+// HasValidToolCallShape checks the fields required to answer a Responses tool call. Tool names
+// are intentionally not part of this check; an unknown name still has a valid call/output pair.
+func (item ResponsesItem) HasValidToolCallShape() bool {
+	call, ok := item.ToolCall()
+	if !ok || !call.HasValidShape() {
+		return false
+	}
+	if len(item.Raw) == 0 {
+		return true
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(item.Raw, &fields); err != nil || fields == nil {
+		return false
+	}
+	inputField := "input"
+	if item.Type == ResponsesItemFunctionCall {
+		inputField = "arguments"
+	}
+	for _, field := range []string{"call_id", "name", inputField} {
+		encoded, present := fields[field]
+		if !present {
+			return false
+		}
+		var value *string
+		if err := json.Unmarshal(encoded, &value); err != nil || value == nil {
+			return false
+		}
+	}
+	return true
+}
+
 // IsToolOutput reports whether the item answers a model tool call.
 func (item ResponsesItem) IsToolOutput() bool {
 	return item.Type == ResponsesItemCustomToolOutput || item.Type == ResponsesItemFunctionOutput
@@ -128,6 +159,18 @@ type ResponsesToolCall struct {
 	Input  string            `json:"input"`
 }
 
+func (call ResponsesToolCall) HasValidShape() bool {
+	return (call.Type == ResponsesItemCustomToolCall || call.Type == ResponsesItemFunctionCall) &&
+		strings.TrimSpace(call.CallID) != "" && strings.TrimSpace(call.Name) != ""
+}
+
+func (call ResponsesToolCall) IsConfiguredToolName(config ModelConfig) bool {
+	if config.ExecEncoding == ExecEncodingJSON {
+		return call.Name == "exec"
+	}
+	return call.Name == "exec" || call.Name == "wait"
+}
+
 // IsModelTool checks the exact tool surface declared for this model route.
 func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
 	if config.ExecEncoding == ExecEncodingJSON {
@@ -144,6 +187,13 @@ func (call ResponsesToolCall) OutputItem(content []ResponsesContentPart) Respons
 		outputType = ResponsesItemFunctionOutput
 	}
 	return ResponsesItem{Type: outputType, CallID: call.CallID, Output: content}
+}
+
+func unsupportedToolCallMessage(call ResponsesToolCall) string {
+	if call.Type == ResponsesItemCustomToolCall {
+		return "unsupported custom tool call: " + call.Name
+	}
+	return "unsupported call: " + call.Name
 }
 
 type ResponsesContentPart struct {

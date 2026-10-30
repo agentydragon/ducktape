@@ -337,16 +337,25 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 					err = readErr
 					break
 				}
-				if live == nil && conversation.Pending == nil && pendingCall(conversation.Items) != nil {
-					interrupts, interruptErr := r.store.PendingInterrupts(turnCtx, owner)
-					if interruptErr != nil {
-						err = interruptErr
+				if live == nil && conversation.Pending == nil {
+					state, stateErr := r.store.ExecutionState(turnCtx, owner)
+					if stateErr != nil {
+						err = stateErr
 						break
 					}
-					if len(interrupts) == 0 {
-						live, err = r.connectHost(ctx, sessionID, owner)
-						if err != nil {
+					call := pendingCall(conversation.Items)
+					needsHost := len(state.Cells) > 0 || call != nil && call.IsModelTool(r.settings.Models[session.Model])
+					if needsHost {
+						interrupts, interruptErr := r.store.PendingInterrupts(turnCtx, owner)
+						if interruptErr != nil {
+							err = interruptErr
 							break
+						}
+						if len(interrupts) == 0 || len(state.Cells) > 0 {
+							live, err = r.connectHost(ctx, sessionID, owner)
+							if err != nil {
+								break
+							}
 						}
 					}
 				}
@@ -654,7 +663,26 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	if call := pendingCall(conversation.Items); call != nil {
 		if !call.IsModelTool(r.settings.Models[session.Model]) {
-			return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "call": call}}
+			if !call.HasValidShape() {
+				return "", &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "call": call}}
+			}
+			if call.IsConfiguredToolName(r.settings.Models[session.Model]) {
+				return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "call": call}}
+			}
+			content := []ResponsesContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
+			item := call.OutputItem(content)
+			intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "cell", "call": call, "dispatched": false})
+			if err != nil {
+				return "", err
+			}
+			result := map[string]any{
+				"type": string(item.Type), "call_id": call.CallID, "output": content,
+				"success": false, "dispatched": false,
+			}
+			if err := r.store.Finish(ctx, owner, intentID, result, []ResponsesItem{item}, nil); err != nil {
+				return "", err
+			}
+			return "cell", nil
 		}
 		if live == nil {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
@@ -761,6 +789,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "", err
 	}
+	seenCallIDs := make(map[string]struct{})
 	for _, item := range response.Output {
 		call, isCall := item.ToolCall()
 		if item.Type != ResponsesItemMessage && item.Type != ResponsesItemReasoning && !isCall {
@@ -770,12 +799,29 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", failure
 		}
-		if isCall && !call.IsModelTool(r.settings.Models[session.Model]) {
-			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "response": response.Audit(), "item": item}}
-			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
-				return "", err
+		if isCall {
+			if !item.HasValidToolCallShape() {
+				failure := &KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "response": response.Audit(), "item": item}}
+				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
+					return "", err
+				}
+				return "", failure
 			}
-			return "", failure
+			if _, exists := seenCallIDs[call.CallID]; exists {
+				failure := &KnownFailureError{Evidence: map[string]any{"reason": "duplicate model tool call ID", "response": response.Audit(), "item": item}}
+				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
+					return "", err
+				}
+				return "", failure
+			}
+			seenCallIDs[call.CallID] = struct{}{}
+			if call.IsConfiguredToolName(r.settings.Models[session.Model]) && !call.IsModelTool(r.settings.Models[session.Model]) {
+				failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "response": response.Audit(), "item": item}}
+				if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
+					return "", err
+				}
+				return "", failure
+			}
 		}
 	}
 	contextTokens := response.Terminal.TotalTokens()
