@@ -1916,7 +1916,6 @@ flowchart LR
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    RUNNER_MTLS_GO_SPIFFE[Candidate: go-spiffe peer verification]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
@@ -1935,7 +1934,7 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
 `APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `GATEWAY_OBSERVER_RECONCILER`,
-`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`, `RUNNER_MTLS_GO_SPIFFE`,
+`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
 `FRONTEND_SSE_CLIENT`. `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
