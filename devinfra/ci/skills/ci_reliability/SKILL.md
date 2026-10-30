@@ -196,6 +196,20 @@ can be distinguished. Identify the violated invariant and ordering or resource
 condition that permits it. A timeout, idle period or racy-looking source pattern
 does not by itself identify the cause.
 
+When the test emits spans, inspect the exact failed physical attempt's trace
+before adding diagnostics. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
+describe `test.outputs/vm-phases.jsonl`, its parallel/nested spans and the
+separate k3s timeline. Use the
+[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands)
+to list test outputs and download the trace for the failing result and a
+comparable pass; retain each artifact's source SHA, target, and shard/run/attempt.
+Find the earliest causal span/event, then correlate it with native, service and
+guest logs to distinguish a slow producer, a late observer and queueing from the
+final timeout. Do not sum nested or parallel spans: they are wall-time intervals,
+not CPU or native-command durations. Account for host clock skew and tracing/export
+overhead; use a real profiler if CPU or off-CPU time remains unexplained. The trace
+helps explain the failure, while the test result/log establishes its verdict.
+
 Inspect sleep/poll loops, read/subscribe gaps, wrong-stage readiness, stale reads,
 shared mutable state, resource/port ownership, leaked processes and teardown that
 overlaps the next case. Distinguish a slow producer from a late observer and an

@@ -212,6 +212,23 @@ expensive or unexplained phases into subprocesses, services and dependencies.
 Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
+When a selected test emits spans, use them as the primary phase evidence before
+adding instrumentation. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
+document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
+traces relate to fixture and scenario lifetimes. Follow the
+[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
+list the physical invocation's test artifacts first, then download the trace
+for the relevant target and shard/run/attempt. Tie it to the tested source SHA
+and a physical execution; do not infer a trace from a cached target summary.
+
+Reconstruct parent/child spans and concurrent intervals as a critical path;
+never sum nested or overlapping spans. Correlate their wall-time intervals with
+the test action, native command evidence, and service/guest logs. A span is not
+CPU time or a native command duration. Account for clock skew across hosts and
+the test time spent exporting spans. For a long wait, identify the queued work,
+the state producer and the observer that notices it. If CPU or off-CPU time is
+still unexplained, use a real profiler; do not add ad hoc timers.
+
 - Reconstruct setup, readiness, scenario execution, assertions, diagnostics and
   teardown. Use existing phase artifacts, logs, traces and real CPU/off-CPU or
   sampling profilers as appropriate. Attribute elapsed time as well as CPU:
@@ -304,6 +321,11 @@ where possible; note unknown and overlapping intervals explicitly:
    reasons for a cold start (pool/instance, isolation, concurrency, image changes,
    idle expiration), but do not claim reuse failed without evidence that reuse was
    possible. Avoid confusing a GitHub runner with a BuildBuddy VM or an RBE action.
+   For live diagnosis, compare the sampled BuildBuddy Active view and per-invocation
+   execution/queue timestamps with GitHub job queuing and outer VM preparation.
+   Deduplicate workflow and child invocation IDs. `IN_PROGRESS` can outlive its VM;
+   absent or epoch timestamps are unknown. Infer throttling only when observed
+   queueing coincides with backlog and exhausted capacity.
 3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
    downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
    tool log, cache scorecard, target and execution records as needed (see the
