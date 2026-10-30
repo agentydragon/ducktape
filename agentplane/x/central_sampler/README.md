@@ -16,8 +16,15 @@ The service, sampling loop, persistence and exporter are implemented in Go. The 
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
 [The API](sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
-recovery and evidence; the [sampling plan](../../plans/sampling_outside_sandboxes.md) records the
-placement decision and deferred follow-ups.
+recovery and evidence.
+
+The sampler is a service Agentplane owns rather than upstream Codex's app-server moved out of the
+Sandbox: owning the provider loop puts every request, response and tool effect in its database
+([spike evidence](../../debug/postgres_codex_spike.md)). Wrapped harnesses Agentplane does not own,
+official Claude and native Codex, stay independently usable backends; no sampler success is a
+reason to retire them or migrate their state. Backends expose different facts, so History keeps
+each backend's raw evidence and opaque continuation without inventing absent details; normalized
+Events extend the shared projection and do not claim a lossless transcript.
 
 For a blocked Session, use the [recovery guide](docs/blocked_session_recovery.md) to inspect its
 reason and linked evidence without replaying an uncertain operation.
