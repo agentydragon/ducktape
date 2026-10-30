@@ -352,8 +352,8 @@ creation_rules:
   # ducktape-automation GitHub App private key (RSA PEM, SOPS binary).
   # Decryptable by admin, in-cluster Flux, and CI. Ducktape and gaffer-private
   # currently share the CI age key, so either repository can decrypt the
-  # remaining gaffer writer file and this App key. TODO: split CI recipients
-  # by repository and encrypt each credential only to its actual consumers.
+  # App key. TODO: retire the shared CI recipient after all remaining
+  # CI decryption consumers have migrated.
   - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
     store_type: binary
     key_groups:

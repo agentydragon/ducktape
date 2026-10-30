@@ -38,7 +38,6 @@ from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
     KubernetesSecretDestination,
-    MirroredDestination,
     SopsDestination,
     Token,
     WorkspaceNotification,
@@ -120,8 +119,7 @@ ROTATOR_CONFIG = Config(
             validity="1 year",
             pull=["gaffer"],
             push=["gaffer"],
-            destination=MirroredDestination(
-                sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml"),
+            destination=KubernetesDestination(
                 secret=KubernetesSecretDestination(
                     namespace=ci_token.GAFFER_WRITER.namespace,
                     name=ci_token.GAFFER_WRITER.name,

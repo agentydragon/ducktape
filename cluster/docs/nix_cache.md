@@ -132,13 +132,14 @@ JWTs auto-rotated by the cluster (1-year validity; re-mint on <24h remaining
 or on pull/push scope drift vs. `ROTATOR_CONFIG` in
 `cluster/cdk8s/nix_cache/attic.py`):
 
-| Repo           | Workflow                               | Cache            | Reads token from                                                         |
-| -------------- | -------------------------------------- | ---------------- | ------------------------------------------------------------------------ |
-| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | Actions secret `ATTIC_TOKEN`, propagated from Kubernetes                 |
-| gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer`         | `secrets/ci/attic-gaffer-writer.sops.yaml` (sparse-cloned from ducktape) |
+| Repo           | Workflow                               | Cache            | Reads token from                                         |
+| -------------- | -------------------------------------- | ---------------- | -------------------------------------------------------- |
+| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | Actions secret `ATTIC_TOKEN`, propagated from Kubernetes |
+| gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer`         | Actions secret `ATTIC_TOKEN`, propagated from Kubernetes |
 
-The gaffer-private file is encrypted with its CI age key (`SOPS_AGE_KEY`).
-Ducktape CI receives its token directly from Actions secrets.
+The rotator publishes each writer only to its Kubernetes Secret. OpenTofu
+propagates each token to the corresponding repository Actions secret; CI does
+not decrypt a SOPS token file.
 
 ## Private-binary isolation (drivefs/drivectl)
 

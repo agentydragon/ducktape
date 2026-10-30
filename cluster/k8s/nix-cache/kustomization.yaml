@@ -145,8 +145,7 @@ configMapGenerator:
               notification:
                 workspace: github-secrets-sync
                 annotation_key: gaffer.allegedly.works/attic-token-version
-              storage: mirrored
-              sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
+              storage: kubernetes
         attic_namespace: nix-cache
         attic_deployment: deploy/attic
         server_config: /config/server.toml

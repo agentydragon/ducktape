@@ -72,12 +72,9 @@ recovery path.
 
 All three Secrets are declared without data so Flux owns their identities and
 the rotator owns their token data. Its RBAC names those Secrets and the shared
-Workspace; the sync Workspace has read access to each Secret. Gaffer's writer
-token stays mirrored to its existing SOPS file during the consumer cutover.
-On first deployment, the gaffer Actions-secret data source is unavailable until
-the rotator has written `attic-gaffer-ci-writer`; the Workspace retries until
-that first rotation succeeds. Verify the mirrored Secret and Actions secret
-before removing any SOPS recipient or source.
+Workspace; the sync Workspace has read access to each Secret. Both repositories
+consume Actions secrets provisioned by OpenTofu. CI writer tokens are published
+only to Kubernetes; the rotator does not write a SOPS mirror for either writer.
 
 The reader token can pull from `main` and `gaffer` but cannot push. Workflows
 that only substitute from Attic use `ATTIC_READ_TOKEN`; upload jobs use
