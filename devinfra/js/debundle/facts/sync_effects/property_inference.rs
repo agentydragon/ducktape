@@ -8,8 +8,8 @@ use super::value_model::{
     AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::facts::semantic_inference::{SemanticFact, SemanticFacts, SemanticKey};
+use crate::analysis_inputs::ProofDependencies;
+use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,11 +21,12 @@ pub(super) enum OwnPropertyRequest {
     AuditedDescriptorCopy {
         semantic_call: SemanticKey,
     },
+    /// The census-proved identity of the native inspecting the object.
     Names {
-        native_call_identity: SemanticKey,
+        native_call: NativePremise,
     },
     Descriptors {
-        native_call_identity: SemanticKey,
+        native_call: NativePremise,
     },
 }
 
@@ -217,15 +218,9 @@ pub(super) fn infer_own_property_projection(
             InferenceRule::OwnPropertyPrefixState,
             OwnPropertyProjection::Ordinary { source_object },
         ),
-        OwnPropertyRequest::Names {
-            native_call_identity,
-        } => {
-            require_native_certificate(
-                semantic_facts,
-                &native_call_identity,
-                &mut dependencies,
-                &mut derivation_rules,
-            )?;
+        OwnPropertyRequest::Names { native_call } => {
+            dependencies.extend(&native_call.dependencies);
+            derivation_rules.extend(native_call.inference_use.derivation_rules);
             derivation_rules.insert(InferenceRule::OwnPropertyNamesProjection);
             (
                 InferenceRule::OwnPropertyNamesProjection,
@@ -249,21 +244,11 @@ pub(super) fn infer_own_property_projection(
                 OwnPropertyProjection::Descriptors(projection),
             )
         }
-        OwnPropertyRequest::Descriptors {
-            native_call_identity,
-        } => {
-            for key in [
-                native_call_identity,
-                SemanticKey::NativeIntegrity(NativeIntrinsic::GlobalObject),
-                SemanticKey::NativeIntegrity(NativeIntrinsic::Object),
-            ] {
-                require_native_certificate(
-                    semantic_facts,
-                    &key,
-                    &mut dependencies,
-                    &mut derivation_rules,
-                )?;
-            }
+        // The `%Object.getOwnPropertyDescriptors%` identity already holds
+        // the Object family and global object intact.
+        OwnPropertyRequest::Descriptors { native_call } => {
+            dependencies.extend(&native_call.dependencies);
+            derivation_rules.extend(native_call.inference_use.derivation_rules);
             let projection =
                 descriptor_projection(source_object, &ordered_names, shape, prefix_properties)?;
             derivation_rules.insert(InferenceRule::OwnPropertyDescriptorProjection);
@@ -289,12 +274,13 @@ mod tests {
     };
     use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
     use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
-    use crate::facts::semantic_inference::{SemanticFacts, SemanticKey, SemanticRules};
+    use crate::facts::abstract_domain::integrity::{
+        IntegrityFlags, IntrinsicSlot, PrototypeWrites,
+    };
+    use crate::facts::semantic_inference::{SemanticFacts, native_premise};
     use crate::facts::value_flow::ValueOrigin;
     use crate::reports::schema::InferenceRule;
     use std::collections::{BTreeMap, BTreeSet};
-    use swc_common::SyntaxContext;
-    use swc_ecma_ast::Id;
 
     #[test]
     fn own_name_order_matches_ecmascript_integer_index_boundary() {
@@ -356,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn native_projection_imports_completed_judgment_provenance() {
+    fn native_projection_imports_the_call_premise_provenance() {
         let source_object = 7;
         let source_values =
             Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
@@ -368,25 +354,30 @@ mod tests {
             Some("field".to_owned()),
             Values::from([AbstractValue::NonCallable]),
         )]);
-        let native_call_identity = SemanticKey::NativeCallIdentity {
-            binding: Id::from(("Object".into(), SyntaxContext::empty())),
-            intrinsic: NativeIntrinsic::Object,
-            global_this_qualified: false,
-        };
         let value_input = ValueInputRef {
             defining_chunk: "native-census".to_owned(),
             input_index: 3,
         };
-        let semantic_facts = SemanticFacts::solve(SemanticRules {
-            native_census_complete: true,
-            native_dependencies: ProofDependencies {
+        let integrity = IntegrityFlags::new(
+            true,
+            BTreeSet::new(),
+            ProofDependencies {
                 value_inputs: BTreeSet::from([value_input.clone()]),
                 ..Default::default()
             },
-            native_call_identity_candidates: BTreeSet::from([native_call_identity.clone()]),
-            ..SemanticRules::default()
-        });
-        assert!(semantic_facts.judgment(&native_call_identity).is_some());
+            BTreeMap::new(),
+            PrototypeWrites::default(),
+        );
+        let native_call = native_premise(
+            &integrity,
+            &[
+                IntrinsicSlot::Global(NativeIntrinsic::Object),
+                IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyNames"),
+            ],
+            None,
+            InferenceRule::NativeCallIdentity,
+        )
+        .expect("intact census");
 
         let proof = infer_own_property_projection(
             source_object,
@@ -394,9 +385,9 @@ mod tests {
             &shape,
             &prefix_properties,
             false,
-            &semantic_facts,
+            &SemanticFacts::default(),
             OwnPropertyRequest::Names {
-                native_call_identity: native_call_identity.clone(),
+                native_call: native_call.clone(),
             },
         )
         .expect("completed native and property certificates");
@@ -417,20 +408,7 @@ mod tests {
             inference_use.value_input_refs,
             BTreeSet::from([value_input.clone()])
         );
-        assert_eq!(
-            proof.dependencies,
-            semantic_facts
-                .judgment(&native_call_identity)
-                .expect("native call identity judgment")
-                .dependencies()
-                .clone()
-        );
-
-        // Runtime consumers must use the typed proof premise. A diagnostic is
-        // serializable report data and may differ without changing the proof.
-        let mut reported_dependencies = proof.inference_use().value_input_refs;
-        reported_dependencies.clear();
-        assert_ne!(reported_dependencies, proof.dependencies.value_inputs);
+        assert_eq!(proof.dependencies, native_call.dependencies);
         assert_eq!(
             proof.dependencies.value_inputs,
             BTreeSet::from([value_input])

@@ -82,3 +82,33 @@ fn class_field_native_premises_include_other_analyzed_chunks() {
         );
     }
 }
+
+/// A global slot's value may be any native, so a write through its read-back
+/// leaves every intrinsic slot unknown, not only a family it names. The
+/// control writes the same property on a fresh local object.
+#[test]
+fn global_slot_read_back_write_poisons_every_native_slot() {
+    let source = "import './holder.js';\nconst a = (() => 1)();\nclass Registry { field = new Set(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
+    let split = |holder: &'static [(&'static str, &'static str)]| {
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "registry",
+                &[Member::new("Registry"), Member::new("b")],
+            )],
+        )
+        .with_extra_chunks(holder)
+    };
+    let fixture = run_fixture(split(&[(
+        "static/holder",
+        "const box = {};\nexport function mutate() { box.add = function () { return this; }; }\n",
+    )]));
+    assert_preserved_entry_output(&fixture, "1\n");
+    expect_sequenced_cycle_rejection(
+        split(&[(
+            "static/holder",
+            "const box = globalThis.holder;\nexport function mutate() { box.add = function () { return this; }; }\n",
+        )]),
+        &["registry", "residual"],
+    );
+}

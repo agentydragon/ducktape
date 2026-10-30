@@ -1,9 +1,12 @@
 //! Callable conclusions composed from canonical identity and body candidates.
 
 use crate::analysis_inputs::NativeIntrinsic;
-use crate::facts::semantic_inference::{SemanticFact, SemanticKey};
+use crate::facts::abstract_domain::builtins::Row;
+use crate::facts::abstract_domain::integrity::IntrinsicSlot;
+use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
 use crate::facts::value_flow::{ValueOrigin, Values};
 use crate::inference::CertificateContext;
+use crate::reports::schema::InferenceRule;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_ecma_ast::Id;
@@ -87,6 +90,9 @@ impl CallableInferenceInputs {
         &self,
         key: &SemanticKey,
         context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
+        native: &NativePremises,
+        collections: &BTreeMap<Id, &'static Row>,
+        consulted: &mut BTreeSet<InferenceRule>,
     ) -> Option<SemanticFact> {
         match key {
             SemanticKey::StableFunction { binding, function } => self
@@ -135,7 +141,13 @@ impl CallableInferenceInputs {
                     return None;
                 }
                 let record = self.records.get(function)?;
-                context.require(SemanticKey::EmptyCollection(record.constructor.clone()))?;
+                native.require_empty_collection(
+                    collections.get(&record.constructor)?,
+                    &record.constructor,
+                    None,
+                    context,
+                    consulted,
+                )?;
                 Some(SemanticFact::ReturnedRecord(Arc::clone(&record.members)))
             }
             SemanticKey::NamespaceWrapper { binding, function } => {
@@ -151,14 +163,33 @@ impl CallableInferenceInputs {
                     return None;
                 }
                 let candidate = self.namespace_wrappers.get(function)?;
-                context.require(SemanticKey::EmptyCollection(candidate.weak_map.clone()))?;
-                context.require(SemanticKey::NativeCallIdentity {
-                    binding: candidate.object.clone(),
-                    intrinsic: NativeIntrinsic::Object,
-                    global_this_qualified: false,
-                })?;
-                context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Array))?;
-                context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Function))?;
+                native.require_empty_collection(
+                    collections.get(&candidate.weak_map)?,
+                    &candidate.weak_map,
+                    None,
+                    context,
+                    consulted,
+                )?;
+                native.require_binding(
+                    &NativeCallee {
+                        binding: candidate.object.clone(),
+                        global_this_qualified: false,
+                    },
+                    NativeIntrinsic::Object,
+                    &[IntrinsicSlot::Global(NativeIntrinsic::Object)],
+                    None,
+                    context,
+                    consulted,
+                )?;
+                native.require_slots(
+                    &[
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Function),
+                    ],
+                    None,
+                    context,
+                    consulted,
+                )?;
                 Some(SemanticFact::NamespaceWrapper(*function))
             }
             _ => None,

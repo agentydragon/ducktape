@@ -9,6 +9,7 @@
 
 use super::effect::CoerceOp;
 use super::heap::Mutation;
+use super::integrity::IntrinsicSlot;
 use super::value::Kind;
 use crate::analysis_inputs::NativeIntrinsic;
 use std::ops::RangeInclusive;
@@ -109,9 +110,17 @@ pub struct Row {
     pub allocates: Option<Kind>,
     pub mutates: &'static [Mutation],
     pub returns: Return,
-    /// Intrinsic family whose integrity the native call identity judgment
-    /// requires together with the global object.
-    pub requires: NativeIntrinsic,
+    /// Slots the callee's identity reads: its global binding and, for a
+    /// static member, that data property. The row applies only when every
+    /// slot's integrity flag is intact or author-asserted at the call site.
+    pub requires: &'static [IntrinsicSlot],
+}
+
+impl Row {
+    /// The census family of the callee; every required slot belongs to it.
+    pub fn family(&self) -> NativeIntrinsic {
+        self.requires[0].family()
+    }
 }
 
 const PRIMITIVE_UNARY_MATH: Row = Row {
@@ -124,7 +133,10 @@ const PRIMITIVE_UNARY_MATH: Row = Row {
     allocates: None,
     mutates: &[],
     returns: Return::Primitive,
-    requires: NativeIntrinsic::Math,
+    requires: &[
+        IntrinsicSlot::Global(NativeIntrinsic::Math),
+        IntrinsicSlot::Static(NativeIntrinsic::Math, "round"),
+    ],
 };
 
 const EMPTY_KEYED_COLLECTION: Row = Row {
@@ -137,7 +149,7 @@ const EMPTY_KEYED_COLLECTION: Row = Row {
     allocates: Some(Kind::Map),
     mutates: &[],
     returns: Return::Fresh,
-    requires: NativeIntrinsic::Map,
+    requires: &[IntrinsicSlot::Global(NativeIntrinsic::Map)],
 };
 
 pub const ROWS: &[Row] = &[
@@ -151,7 +163,7 @@ pub const ROWS: &[Row] = &[
         allocates: None,
         mutates: &[],
         returns: Return::Primitive,
-        requires: NativeIntrinsic::Symbol,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::Symbol)],
     },
     // The GlobalSymbolRegistry is agent-local and unobservable from source.
     Row {
@@ -164,7 +176,10 @@ pub const ROWS: &[Row] = &[
         allocates: None,
         mutates: &[],
         returns: Return::Primitive,
-        requires: NativeIntrinsic::Symbol,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+            IntrinsicSlot::Static(NativeIntrinsic::Symbol, "for"),
+        ],
     },
     // Without an iterable, each constructor allocates its empty collection
     // and returns before looking up an adder or touching the iterator protocol.
@@ -173,21 +188,21 @@ pub const ROWS: &[Row] = &[
         op: IntrinsicOp::Set,
         cite: "sec-set-iterable",
         allocates: Some(Kind::Set),
-        requires: NativeIntrinsic::Set,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::Set)],
         ..EMPTY_KEYED_COLLECTION
     },
     Row {
         op: IntrinsicOp::WeakMap,
         cite: "sec-weakmap-iterable",
         allocates: Some(Kind::WeakMap),
-        requires: NativeIntrinsic::WeakMap,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::WeakMap)],
         ..EMPTY_KEYED_COLLECTION
     },
     Row {
         op: IntrinsicOp::WeakSet,
         cite: "sec-weakset-iterable",
         allocates: Some(Kind::WeakSet),
-        requires: NativeIntrinsic::WeakSet,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::WeakSet)],
         ..EMPTY_KEYED_COLLECTION
     },
     // Checks callability, then stores the callback through
@@ -202,32 +217,52 @@ pub const ROWS: &[Row] = &[
         allocates: Some(Kind::Registry),
         mutates: &[Mutation::FreshRetains(ArgSel::Arg(0))],
         returns: Return::Fresh,
-        requires: NativeIntrinsic::FinalizationRegistry,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::FinalizationRegistry)],
     },
     PRIMITIVE_UNARY_MATH,
     Row {
         op: IntrinsicOp::MathFloor,
         cite: "sec-math.floor",
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Math),
+            IntrinsicSlot::Static(NativeIntrinsic::Math, "floor"),
+        ],
         ..PRIMITIVE_UNARY_MATH
     },
     Row {
         op: IntrinsicOp::MathCeil,
         cite: "sec-math.ceil",
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Math),
+            IntrinsicSlot::Static(NativeIntrinsic::Math, "ceil"),
+        ],
         ..PRIMITIVE_UNARY_MATH
     },
     Row {
         op: IntrinsicOp::MathTrunc,
         cite: "sec-math.trunc",
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Math),
+            IntrinsicSlot::Static(NativeIntrinsic::Math, "trunc"),
+        ],
         ..PRIMITIVE_UNARY_MATH
     },
     Row {
         op: IntrinsicOp::MathAbs,
         cite: "sec-math.abs",
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Math),
+            IntrinsicSlot::Static(NativeIntrinsic::Math, "abs"),
+        ],
         ..PRIMITIVE_UNARY_MATH
     },
     Row {
         op: IntrinsicOp::MathSign,
         cite: "sec-math.sign",
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Math),
+            IntrinsicSlot::Static(NativeIntrinsic::Math, "sign"),
+        ],
         ..PRIMITIVE_UNARY_MATH
     },
     Row {
@@ -243,7 +278,10 @@ pub const ROWS: &[Row] = &[
         allocates: Some(Kind::Object),
         mutates: &[Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
-        requires: NativeIntrinsic::Object,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyDescriptors"),
+        ],
     },
     Row {
         op: IntrinsicOp::ObjectGetOwnPropertyNames,
@@ -255,7 +293,10 @@ pub const ROWS: &[Row] = &[
         allocates: Some(Kind::Array),
         mutates: &[Mutation::FreshOwnKeysOf(ArgSel::Arg(0))],
         returns: Return::Fresh,
-        requires: NativeIntrinsic::Object,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "getOwnPropertyNames"),
+        ],
     },
     // ObjectDefineProperties reads every enumerable own descriptor of the
     // record, converts it with ToPropertyDescriptor, then defines it on the
@@ -278,7 +319,10 @@ pub const ROWS: &[Row] = &[
             descriptors: ArgSel::Arg(1),
         }],
         returns: Return::Arg(ArgSel::Arg(0)),
-        requires: NativeIntrinsic::Object,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperties"),
+        ],
     },
     // SetIntegrityLevel(frozen): the stored data values are never invoked.
     Row {
@@ -296,7 +340,10 @@ pub const ROWS: &[Row] = &[
         allocates: None,
         mutates: &[Mutation::Integrity(ArgSel::Arg(0))],
         returns: Return::Arg(ArgSel::Arg(0)),
-        requires: NativeIntrinsic::Object,
+        requires: &[
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
+        ],
     },
     // IsRegExp reads `@@match` only from an object pattern; a called `RegExp`
     // returns an object pattern itself when its `constructor` is `%RegExp%`,
@@ -316,7 +363,7 @@ pub const ROWS: &[Row] = &[
         allocates: Some(Kind::RegExp),
         mutates: &[],
         returns: Return::Unknown,
-        requires: NativeIntrinsic::RegExp,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::RegExp)],
     },
 ];
 
@@ -355,6 +402,14 @@ mod tests {
                 "{:?} uses a fresh allocation it does not declare",
                 row.op
             );
+            // The identity premise reads exactly the callee's spelling.
+            let (global, member) = row.op.callee();
+            let mut expected = vec![IntrinsicSlot::Global(
+                NativeIntrinsic::for_global_binding(global).expect("callee is a native global"),
+            )];
+            expected
+                .extend(member.map(|member| IntrinsicSlot::Static(expected[0].family(), member)));
+            assert_eq!(row.requires, expected.as_slice(), "{:?}", row.op);
         }
     }
 }

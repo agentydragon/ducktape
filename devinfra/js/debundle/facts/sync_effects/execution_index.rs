@@ -18,6 +18,9 @@ use crate::analysis_inputs::{
     ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
+use crate::facts::abstract_domain::integrity::{
+    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
+};
 use crate::facts::abstract_domain::value::Kind;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -32,7 +35,8 @@ use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use crate::facts::semantic_inference::{
     DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
-    SemanticFact, SemanticFacts, SemanticKey, SemanticRules,
+    NativeCallee, NativePremise, NativePremises, SemanticFact, SemanticFacts, SemanticKey,
+    SemanticRules, native_premise,
 };
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
@@ -983,10 +987,12 @@ enum CallKind {
     DeepDestructuringProtocol,
 }
 
+/// The builtin row a direct call or construction names, with its callee
+/// spelling. Identity and slot integrity are proved separately.
 fn native_call_identity_key(
     kind: CallKind,
     callee: &ValueExpr,
-) -> Option<(&'static Row, SemanticKey)> {
+) -> Option<(&'static Row, NativeCallee)> {
     let invocation = match kind {
         CallKind::Call => Invocation::Call,
         CallKind::New => Invocation::Construct,
@@ -1017,9 +1023,8 @@ fn native_call_identity_key(
     let row = builtins::lookup(receiver, member, invocation)?;
     Some((
         row,
-        SemanticKey::NativeCallIdentity {
+        NativeCallee {
             binding: binding.clone(),
-            intrinsic: row.requires,
             global_this_qualified,
         },
     ))
@@ -1989,10 +1994,12 @@ fn source_slot_overlap<'a>(
     }
 }
 
+/// The own-data property of the unshadowed global `Object` an exact member
+/// read names, as the `%Object.<property>%` slot spells it.
 pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
-) -> Option<&str> {
+) -> Option<&'static str> {
     let ValueExpr::Member(receiver, Some(property), true) = value else {
         return None;
     };
@@ -2004,8 +2011,8 @@ pub(super) fn object_own_data_read_property(
     }
     crate::purity::PURE_STATIC_FUNCTION_REFS
         .iter()
-        .any(|&(root, member)| root == "Object" && member == property)
-        .then_some(property.as_str())
+        .find(|&&(root, member)| root == "Object" && member == property)
+        .map(|&(_, member)| member)
 }
 
 fn receiver_uses_intrinsic_alias(
@@ -5231,6 +5238,12 @@ struct ExecutionIndex {
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,
+    /// Slot flags of the completed census and validated inputs; set with
+    /// `semantic_facts`.
+    integrity: IntegrityFlags,
+    /// Exact top-level own-data reads of the global `Object` by initializer
+    /// start, with the property each reads.
+    native_own_data_reads: BTreeMap<u32, &'static str>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -5404,6 +5417,8 @@ impl Default for ExecutionIndex {
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
+            integrity: IntegrityFlags::default(),
+            native_own_data_reads: BTreeMap::new(),
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -5567,15 +5582,127 @@ impl ExecutionIndex {
     /// identity and integrity proofs as local-class fields.
     fn completed_native_rules(&self) -> SemanticRules {
         SemanticRules {
-            native_census_complete: true,
-            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
+            native: NativePremises {
+                integrity: self.integrity.clone(),
+                bindings: NativeBindingContext::default(),
+            },
             dynamic_scope: !self.dynamic_scope_owners.is_empty(),
-            native_dependencies: crate::analysis_inputs::ProofDependencies {
+            ..SemanticRules::default()
+        }
+    }
+
+    /// The completed census as slot flags, with the `IntrinsicIntact` axioms
+    /// of every validated native input.
+    pub(super) fn integrity_flags(&self) -> IntegrityFlags {
+        IntegrityFlags::new(
+            self.dynamic_scope_owners.is_empty(),
+            self.mutated_intrinsic_roots.clone(),
+            crate::analysis_inputs::ProofDependencies {
                 value_inputs: self.native_integrity_value_input_refs.clone(),
                 ..Default::default()
             },
-            ..SemanticRules::default()
-        }
+            self.intrinsic_axioms(),
+            PrototypeWrites::new(
+                self.native_prototype_mutations
+                    .iter()
+                    .map(|mutation| mutation.properties.as_ref()),
+            ),
+        )
+    }
+
+    /// Each validated input asserts the slots its operation reads, at the
+    /// exact site its consumer queries: the call for a callee identity, the
+    /// constructor for a Set, the member read for an own-data read and the
+    /// initializer for an array spread.
+    fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
+        use IntrinsicSlot::{
+            ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype, Static,
+        };
+        use NativeIntrinsic::{Array, Object, Promise, Set, Symbol};
+        use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
+        const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
+            Global(Set),
+            Prototype(Set),
+            Prototype(Array),
+            ArrayIteratorPrototype,
+        ];
+        self.resolved_native_operation_inputs
+            .iter()
+            .filter_map(|input| {
+                let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
+                    // The builtin `Symbol` / `Symbol.for` rows at the call. A
+                    // single literal-string `Symbol.for` argument also makes
+                    // the source unit pure (`symbol_for_literal_proof`).
+                    NativeInputKind::Operation(Operation::Symbol) => {
+                        (input.call_span, vec![Global(Symbol)])
+                    }
+                    NativeInputKind::Operation(Operation::SymbolFor) => {
+                        (input.call_span, vec![Global(Symbol), Static(Symbol, "for")])
+                    }
+                    // The host Promise timing check, only with the matching
+                    // `reentry_free_operations` entry.
+                    NativeInputKind::Operation(Operation::PromiseResolve) => (
+                        input.call_span,
+                        vec![Global(Promise), Static(Promise, "resolve")],
+                    ),
+                    // A fresh Set value-flow origin and Set-content allocation
+                    // cell at the constructor, and constructor purity. A
+                    // spread additionally needs the certified seed interval
+                    // (`certify_stable_set_spreads`). Later Set methods and
+                    // iteration keep their own checks.
+                    NativeInputKind::Operation(Operation::SetFromPrimitiveArray) => {
+                        (input.call_span, SET_FROM_ARRAY.to_vec())
+                    }
+                    NativeInputKind::Operation(Operation::SetFromSetSpread) => (
+                        input.call_span,
+                        [SET_FROM_ARRAY, &[SetIteratorPrototype]].concat(),
+                    ),
+                    // Purity, timing and heap ordering at the read; calling the
+                    // read function keeps ordinary call analysis.
+                    NativeInputKind::Operation(Operation::ObjectOwnDataFunctionRead) => {
+                        let [declaration] = self
+                            .binding_declaration_writes
+                            .get(&input.binding)?
+                            .as_slice()
+                        else {
+                            return None;
+                        };
+                        let property = object_own_data_read_property(
+                            declaration.initializer.as_ref()?,
+                            |id| self.declared_bindings().contains(id),
+                        )?;
+                        (
+                            input.initializer_span,
+                            vec![Global(Object), Static(Object, property)],
+                        )
+                    }
+                    // The spread of the co-located primitive-array interval.
+                    NativeInputKind::Operation(Operation::ArraySpreadFromPrimitiveArrays) => (
+                        input.initializer_span,
+                        vec![Prototype(Array), ArrayIteratorPrototype],
+                    ),
+                    // The `Object.freeze` row at that call. A fresh plain-data
+                    // literal argument also drops the call's opaque heap
+                    // barrier; the returned value gains no value-flow origin.
+                    NativeInputKind::CallIdentity(Callee::ObjectFreeze) => (
+                        input.call_span,
+                        vec![Global(Object), Static(Object, "freeze")],
+                    ),
+                    // The empty-collection premise of the local-class proof;
+                    // `Set.prototype` methods are not asserted.
+                    NativeInputKind::CallIdentity(Callee::SetEmptyPrivateField) => {
+                        (input.call_span, vec![Global(Set)])
+                    }
+                };
+                Some((
+                    site.lo.0,
+                    IntrinsicIntact {
+                        slots: slots.into_iter().collect(),
+                        reference: input.evidence.reference.clone(),
+                    },
+                ))
+            })
+            .collect()
     }
 
     pub(crate) fn prepare_semantic_facts(
@@ -5615,126 +5742,36 @@ impl ExecutionIndex {
                 continue;
             };
             if row.allocates.is_some_and(Kind::is_keyed_collection) {
-                collection_bindings.insert(binding, row.requires);
+                collection_bindings.insert(binding, row);
             }
         }
-
-        let native_call_identity_candidates: BTreeSet<_> = self
-            .top_calls
-            .iter()
-            .flatten()
-            .chain(self.callables.values().flat_map(|callable| &callable.calls))
-            .filter_map(|call| {
-                native_call_identity_key(call.kind, &call.callee).map(|(_, key)| key)
-            })
-            .chain(callables.records.values().filter_map(|candidate| {
-                native_call_identity_key(
-                    CallKind::New,
-                    &ValueExpr::Binding(candidate.constructor.clone()),
-                )
-                .map(|(_, key)| key)
-            }))
-            .chain(collection_bindings.iter().map(|(binding, intrinsic)| {
-                SemanticKey::NativeCallIdentity {
-                    binding: binding.clone(),
-                    intrinsic: *intrinsic,
-                    global_this_qualified: false,
-                }
-            }))
-            .chain(callables.namespace_wrappers.values().map(|candidate| {
-                SemanticKey::NativeCallIdentity {
-                    binding: candidate.object.clone(),
-                    intrinsic: NativeIntrinsic::Object,
-                    global_this_qualified: false,
-                }
-            }))
-            .collect();
-        let declared_bindings = native_call_identity_candidates
-            .iter()
-            .filter_map(|key| match key {
-                SemanticKey::NativeCallIdentity { binding, .. } => Some(binding.clone()),
-                _ => None,
-            })
-            .chain(collection_bindings.keys().cloned())
+        // Rules read binding identity only for these candidate callees.
+        let declared_bindings = collection_bindings
+            .keys()
+            .chain(
+                callables
+                    .namespace_wrappers
+                    .values()
+                    .map(|candidate| &candidate.object),
+            )
             .filter(|binding| flow.is_declared(binding))
+            .cloned()
             .collect();
-        let author_empty_set_fields = self
-            .native_operation_input_evidence
-            .iter()
-            .filter(|(_, evidence)| {
-                evidence.operation
-                    == NativeInputKind::CallIdentity(
-                        spec::NativeCallIdentityKind::SetEmptyPrivateField,
-                    )
-            })
-            .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
-            .collect();
-        let native_own_data_reads = self
-            .binding_declaration_writes
-            .values()
-            .filter(|writes| writes.len() == 1)
-            .flat_map(|writes| writes.iter())
-            .filter(|write| write.direct_top_level && write.simple_identifier)
-            .filter_map(|write| {
-                object_own_data_read_property(write.initializer.as_ref()?, |id| {
-                    flow.is_declared(id)
-                })?;
-                let span = write.initializer_span?;
-                let premise = self
-                    .native_operation_input_evidence
-                    .get(&CallSite::from(span))
-                    .filter(|evidence| {
-                        evidence.operation
-                            == NativeInputKind::Operation(
-                                spec::NativeOperationKind::ObjectOwnDataFunctionRead,
-                            )
-                    })
-                    .map(|evidence| {
-                        super::super::semantic_inference::NativeOwnDataReadPremise::Author(
-                            evidence.reference.clone(),
-                        )
-                    })
-                    .unwrap_or(
-                        super::super::semantic_inference::NativeOwnDataReadPremise::SourceIntegrity,
-                    );
-                // The candidate is an exact original own-data slot. The
-                // inference rule decides whether source integrity or the
-                // selected author premise establishes its runtime identity.
-                Some((span.lo.0, premise))
-            })
-            .collect();
-
+        let completed = self.completed_native_rules();
         Arc::new(SemanticFacts::solve_with_source(
             SemanticRules {
                 classes,
                 sets,
                 array_spreads: array_spreads.by_initializer.keys().copied().collect(),
-                array_spread_inputs: self
-                    .resolved_native_operation_inputs
-                    .iter()
-                    .filter_map(|input| {
-                        (input.evidence.operation
-                            == NativeInputKind::Operation(
-                                spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                            )
-                            && array_spreads
-                                .by_initializer
-                                .contains_key(&input.initializer_span.lo.0))
-                        .then_some((
-                            input.initializer_span.lo.0,
-                            input.evidence.reference.clone(),
-                        ))
-                    })
-                    .collect(),
                 collection_bindings,
-                author_empty_set_fields,
-                binding_context: NativeBindingContext {
-                    declared_bindings,
-                    shadowed_globals: shadowed.clone(),
-                    global_object_names: self.global_object_names.clone(),
+                native: NativePremises {
+                    bindings: NativeBindingContext {
+                        declared_bindings,
+                        shadowed_globals: shadowed.clone(),
+                        global_object_names: self.global_object_names.clone(),
+                    },
+                    ..completed.native
                 },
-                native_call_identity_candidates,
-                native_own_data_reads,
                 descriptor_copy_providers: self.descriptor_copy_factories.clone(),
                 descriptor_copy_calls: self
                     .descriptor_copy_calls
@@ -5770,7 +5807,8 @@ impl ExecutionIndex {
                     })
                     .collect(),
                 callables,
-                ..self.completed_native_rules()
+                dynamic_scope: completed.dynamic_scope,
+                ..SemanticRules::default()
             },
             source_facts,
         ))
@@ -6800,7 +6838,7 @@ impl ExecutionIndex {
                 let Some((row, _)) = native_call_identity_key(CallKind::Call, callee) else {
                     return Some("does not resolve through the exact native Symbol call row");
                 };
-                (row.requires == NativeIntrinsic::Symbol)
+                (row.family() == NativeIntrinsic::Symbol)
                     .then_some(())
                     .is_none()
                     .then_some("selected an unsupported native Symbol call row")
@@ -8803,10 +8841,29 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    fn native_integrity_is_proven(&self, root: NativeIntrinsic) -> bool {
-        self.semantic_facts
-            .as_ref()
-            .is_some_and(|facts| facts.fact(&SemanticKey::NativeIntegrity(root)).is_some())
+    /// An exact top-level `Object.<property>` own-data read: the original
+    /// `%Object%` binding and `%Object.<property>%` slot, intact or asserted at
+    /// that read.
+    fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
+        let property = self.native_own_data_reads.get(&span.lo.0)?;
+        native_premise(
+            &self.integrity,
+            &[
+                IntrinsicSlot::Global(NativeIntrinsic::Object),
+                IntrinsicSlot::Static(NativeIntrinsic::Object, property),
+            ],
+            Some(span.lo.0),
+            crate::reports::schema::InferenceRule::NativeOwnDataRead,
+        )
+    }
+
+    /// `new Map()` runs no user code: the census keeps `%Map%` intact.
+    fn map_integrity(&self) -> bool {
+        matches!(
+            self.integrity
+                .require(&[IntrinsicSlot::Global(NativeIntrinsic::Map)], None),
+            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+        )
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
@@ -11821,6 +11878,7 @@ pub(crate) fn infer_callable_capabilities(
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
+    index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
         map_integrity: false,
         stable_providers: BTreeSet::new(),
@@ -11879,12 +11937,8 @@ pub(crate) fn infer_callable_capabilities(
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
-    } else {
-        index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
-            index.completed_native_rules(),
-        )));
     }
-    result.map_integrity = index.native_integrity_is_proven(NativeIntrinsic::Map);
+    result.map_integrity = index.map_integrity();
     result
 }
 

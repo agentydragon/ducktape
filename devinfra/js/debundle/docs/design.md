@@ -116,7 +116,9 @@ source location. Projection onto the importer's local name preserves this eviden
 the execution index uses the capability only for eligible call shapes. Inline-only,
 retained-signature, and namespace-member author contracts remain distinct.
 `native_operation_inputs` and `native_call_identity_inputs` are distinct
-author premises resolved through the same canonical selector and call index.
+author premises resolved through the same canonical selector and call index;
+each validated entry becomes an `IntrinsicIntact(slots, site)` axiom that sets
+those slots' integrity flags at its site (SPEC § Native integrity inputs).
 The first certifies selected initializer operations; the second certifies only
 the original callee at a selected direct call in a top-level function body or
 at the zero-argument Set constructor in a checked private class field.

@@ -16,12 +16,13 @@ use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{ArgSel, IntrinsicOp, Return, Row};
 use crate::facts::abstract_domain::heap::Mutation;
+use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::semantic_inference::{
-    NativeOwnDataReadPremise, SemanticFact, SemanticFacts, SemanticKey,
+    NativePremise, SemanticFacts, SemanticKey, names_intrinsic, native_premise,
 };
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
@@ -41,7 +42,7 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
-    ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
+    ExecutionPrecisionLossReason, InferenceRule, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrefixObservation, NativePrototypePropertyCheck,
 };
 use imbl::OrdMap;
@@ -54,7 +55,7 @@ use swc_ecma_ast::*;
 
 enum NativeIdentitySource {
     Inferred {
-        semantic_key: SemanticKey,
+        premise: Box<NativePremise>,
     },
     AuthorInput {
         evidence: Box<crate::analysis_inputs::NativeOperationInputEvidence>,
@@ -530,36 +531,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[NativeIntrinsic]) -> bool {
+    /// Every slot census-intact. A failure records the mutated families.
+    fn native_guard_intact(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) -> bool {
         self.observe_native_prefix(guard, None);
-        let Some(facts) = self.inputs.index.semantic_facts.as_ref() else {
-            return false;
-        };
-        let mut intact = true;
-        for root in roots {
-            let key = SemanticKey::NativeIntegrity(*root);
-            if let Some(judgment) = facts.judgment(&key)
-                && let Some(proof) = facts.inference_use(&key)
-            {
-                self.record_inference_use(guard, proof, judgment.dependencies());
-            } else {
-                intact = false;
-            }
-        }
-        if intact {
+        let integrity = &self.inputs.index.integrity;
+        if let Some(premise) =
+            native_premise(integrity, slots, None, InferenceRule::NativeIntegrity)
+        {
+            self.record_inference_use(guard, premise.inference_use, &premise.dependencies);
             return true;
         }
-        let affected_roots: BTreeSet<_> = roots
-            .iter()
-            .filter(|root| self.inputs.index.mutated_intrinsic_roots.contains(root))
-            .copied()
-            .collect();
         self.state
             .native_integrity_checks
             .borrow_mut()
             .insert(NativeIntegrityCheck {
                 guard,
-                affected_roots,
+                affected_roots: integrity.mutated_roots(slots),
             });
         false
     }
@@ -618,22 +605,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let mut checks = self.state.native_prototype_property_checks.borrow_mut();
         let check = checks.entry(property.to_owned()).or_insert_with(|| {
-            let blocking_mutation_count = self
+            let (intact, blocking_mutation_count) = self
                 .inputs
                 .index
-                .native_prototype_mutations
-                .iter()
-                .filter(|mutation| {
-                    mutation
-                        .properties
-                        .as_ref()
-                        .is_none_or(|properties| properties.contains(property))
-                })
-                .count();
+                .integrity
+                .object_prototype_property(property);
             NativePrototypePropertyCheck {
                 property: property.to_owned(),
-                intact: blocking_mutation_count == 0
-                    && self.inputs.index.dynamic_scope_owners.is_empty(),
+                intact,
                 blocking_mutation_count,
             }
         });
@@ -711,7 +690,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.inputs.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(
                 NativeIntegrityGuard::OrdinaryObjectPrototype,
-                &[NativeIntrinsic::GlobalObject, NativeIntrinsic::Object],
+                &[IntrinsicSlot::Prototype(NativeIntrinsic::Object)],
             )
     }
 
@@ -905,40 +884,56 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// Return a builtin row only after proving the source-level intrinsic
-    /// identity. Operand eligibility is checked separately.
+    /// identity: the callee names the original global and the row's slots are
+    /// intact, or asserted at this exact call. Operand eligibility is checked
+    /// separately.
     fn exact_native_call_row(
         &self,
         kind: CallKind,
         callee: &ValueExpr,
         site: CallSite,
     ) -> Option<(&'static Row, NativeIdentitySource)> {
-        let (row, key) = super::native_call_identity_key(kind, callee)?;
-        if kind == CallKind::Call
-            && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
-            && ((row.requires == NativeIntrinsic::Symbol
-                && super::selected_symbol_binding(callee, evidence.operation).is_some())
-                || (row.op == IntrinsicOp::ObjectFreeze
-                    && evidence.operation
-                        == NativeInputKind::CallIdentity(
-                            spec::NativeCallIdentityKind::ObjectFreeze,
-                        )))
-        {
+        let (row, callee) = super::native_call_identity_key(kind, callee)?;
+        if !names_intrinsic(
+            &callee,
+            row.family(),
+            self.inputs.flow.is_declared(&callee.binding),
+            self.inputs.shadowed,
+            &self.inputs.index.global_object_names,
+        ) {
+            return None;
+        }
+        let premise = native_premise(
+            &self.inputs.index.integrity,
+            row.requires,
+            Some(site.allocation_id()),
+            InferenceRule::NativeCallIdentity,
+        )?;
+        if !premise.census {
+            let evidence = self
+                .inputs
+                .index
+                .native_operation_input_evidence
+                .get(&site)?
+                .clone();
             return Some((
                 row,
                 NativeIdentitySource::AuthorInput {
-                    evidence: Box::new(evidence.clone()),
+                    evidence: Box::new(evidence),
                 },
             ));
         }
-        let facts = self.inputs.index.semantic_facts.as_ref()?;
-        let judgment = facts.judgment(&key)?;
-        let proof = facts.inference_use(&key)?;
         self.record_inference_use(
             NativeIntegrityGuard::NativeCallIdentity,
-            proof,
-            judgment.dependencies(),
+            premise.inference_use.clone(),
+            &premise.dependencies,
         );
-        Some((row, NativeIdentitySource::Inferred { semantic_key: key }))
+        Some((
+            row,
+            NativeIdentitySource::Inferred {
+                premise: Box::new(premise),
+            },
+        ))
     }
 
     /// An admitted row certifies the operation after its inputs have
@@ -981,8 +976,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !row.arity.contains(&args.len()) || !row.invokes.is_empty() {
             return None;
         }
-        let native_call_identity = match &source {
-            NativeIdentitySource::Inferred { semantic_key } => Some(semantic_key.clone()),
+        let native_call = match &source {
+            NativeIdentitySource::Inferred { premise } => Some(premise.as_ref().clone()),
             NativeIdentitySource::AuthorInput { .. } => None,
         };
         let mut ordinary_operands = BTreeSet::new();
@@ -1028,7 +1023,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     own_property_projection = Some(self.own_property_projection(
                         args.get(index)?,
                         OwnPropertyRequest::Descriptors {
-                            native_call_identity: native_call_identity.clone()?,
+                            native_call: native_call.clone()?,
                         },
                     )?);
                     ordinary_operands.insert(index);
@@ -1037,7 +1032,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     own_property_projection = Some(self.own_property_projection(
                         args.get(index)?,
                         OwnPropertyRequest::Names {
-                            native_call_identity: native_call_identity.clone()?,
+                            native_call: native_call.clone()?,
                         },
                     )?);
                     ordinary_operands.insert(index);
@@ -1141,7 +1136,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     });
                 let native_integrity_intact = self.native_guard_intact(
                     NativeIntegrityGuard::HostPromiseResolve,
-                    &[NativeIntrinsic::Promise, NativeIntrinsic::GlobalObject],
+                    &[
+                        IntrinsicSlot::Global(NativeIntrinsic::Promise),
+                        IntrinsicSlot::Static(NativeIntrinsic::Promise, "resolve"),
+                    ],
                 );
                 if !native_integrity_intact && native_input.is_none() {
                     return false;
@@ -1333,9 +1331,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.native_guard_intact(
                 NativeIntegrityGuard::ArrayIntrinsics,
                 &[
-                    NativeIntrinsic::GlobalObject,
-                    NativeIntrinsic::Array,
-                    NativeIntrinsic::Object,
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                    IntrinsicSlot::ArrayIteratorPrototype,
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Object),
                 ],
             )
     }
@@ -1704,19 +1702,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.inputs.shadowed.contains("Object")
             || self.inputs.flow.is_declared(&array_intrinsic)
             || self.inputs.shadowed.contains("Array")
-            || self
-                .inputs
-                .index
-                .mutated_intrinsic_roots
-                .iter()
-                .any(|root| {
-                    matches!(
-                        root,
-                        NativeIntrinsic::GlobalObject
-                            | NativeIntrinsic::Object
-                            | NativeIntrinsic::Array
-                    )
-                })
+            || !matches!(
+                self.inputs.index.integrity.require(
+                    &[
+                        IntrinsicSlot::Global(NativeIntrinsic::Object),
+                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                    ],
+                    None,
+                ),
+                Integrity::Intact(_)
+            )
         {
             return None;
         }
@@ -2026,19 +2021,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !self.inputs.index.top_exported_values[fact.ordinal.0].is_empty()
             || self.inputs.shadowed.contains("Object")
             || self.inputs.shadowed.contains("Symbol")
-            || self
-                .inputs
-                .index
-                .mutated_intrinsic_roots
-                .iter()
-                .any(|root| {
-                    matches!(
-                        root,
-                        NativeIntrinsic::GlobalObject
-                            | NativeIntrinsic::Object
-                            | NativeIntrinsic::Symbol
-                    )
-                })
+            || !matches!(
+                self.inputs.index.integrity.require(
+                    &[
+                        IntrinsicSlot::Global(NativeIntrinsic::Object),
+                        IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                    ],
+                    None,
+                ),
+                Integrity::Intact(_)
+            )
         {
             return None;
         }
@@ -4707,7 +4699,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
             if self.inputs.index.returned_record_summaries.contains_key(id)
-                && self.inputs.index.native_integrity_is_proven(NativeIntrinsic::Map))
+                && self.inputs.index.map_integrity())
     }
 
     /// A single-execution imported call may carry a fresh ordinary descriptor
@@ -5896,9 +5888,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 && self
                     .inputs
                     .index
-                    .semantic_facts
-                    .as_ref()
-                    .and_then(|facts| facts.fact(&SemanticKey::NativeOwnDataRead(call.span.lo.0)))
+                    .native_own_data_read_premise(call.span)
                     .is_none()
             {
                 let selected = self.evaluate(&call.callee, env, captures);
@@ -6661,30 +6651,18 @@ impl PreparedSynchronousCallIndex {
         Option<crate::analysis_inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
-        let key = SemanticKey::NativeOwnDataRead(span.lo.0);
-        let facts = self.index.semantic_facts.as_ref()?;
-        let proof = facts.inference_use(&key)?;
-        let dependencies = facts.dependencies(&key)?.clone();
-        let evidence = self
-            .index
-            .native_operation_input_evidence
-            .get(&CallSite::from(span))
-            .filter(|evidence| {
-                evidence.operation
-                    == NativeInputKind::Operation(
-                        spec::NativeOperationKind::ObjectOwnDataFunctionRead,
-                    )
-            })
-            .cloned();
-        match (facts.fact(&key)?, &evidence) {
-            (SemanticFact::NativeOwnDataRead(NativeOwnDataReadPremise::SourceIntegrity), None) => {}
-            (
-                SemanticFact::NativeOwnDataRead(NativeOwnDataReadPremise::Author(reference)),
-                Some(evidence),
-            ) if reference == &evidence.reference => {}
-            _ => return None,
-        }
-        Some((proof, evidence, dependencies))
+        let premise = self.index.native_own_data_read_premise(span)?;
+        let evidence = if premise.census {
+            None
+        } else {
+            Some(
+                self.index
+                    .native_operation_input_evidence
+                    .get(&CallSite::from(span))?
+                    .clone(),
+            )
+        };
+        Some((premise.inference_use, evidence, premise.dependencies))
     }
 }
 
@@ -6744,6 +6722,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     );
     // The census is now complete. Publish its binding and mutation premises
     // into one immutable context shared by timing, purity and heap consumers.
+    index.integrity = index.integrity_flags();
     let classes = std::mem::take(&mut index.local_class_construction_shapes);
     let facts = index.prepare_semantic_facts(
         flow,
@@ -6782,20 +6761,24 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     });
     let mut native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<Span>> =
         BTreeMap::new();
+    let mut native_own_data_reads = BTreeMap::new();
     for writes in index.binding_declaration_writes.values() {
         if let [write] = writes.as_slice()
             && write.direct_top_level
             && write.simple_identifier
             && let Some(initializer) = &write.initializer
-            && object_own_data_read_property(initializer, |id| flow.is_declared(id)).is_some()
+            && let Some(property) =
+                object_own_data_read_property(initializer, |id| flow.is_declared(id))
             && let Some(span) = write.initializer_span
         {
             native_own_data_read_candidates
                 .entry(write.owner)
                 .or_default()
                 .push(span);
+            native_own_data_reads.insert(span.lo.0, property);
         }
     }
+    index.native_own_data_reads = native_own_data_reads;
     PreparedSynchronousCallIndex {
         index,
         set_iterable_proof,
