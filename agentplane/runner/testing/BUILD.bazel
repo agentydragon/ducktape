@@ -6,11 +6,6 @@ package(
 )
 
 py_library(
-    name = "claude_transcript",
-    srcs = ["claude_transcript.py"],
-)
-
-py_library(
     name = "config",
     srcs = ["config.py"],
     deps = ["//agentplane/sandboxes:launch"],

@@ -1,7 +1,5 @@
 """Read-only projections of persisted Sandbox/Pod resources, shared with UI informers."""
 
-from collections.abc import Iterable, Mapping
-
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -22,25 +20,6 @@ from agentplane.sandbox_resource import OperatingMode
 
 # Must equal CreateIntentAnnotation in agentplane/sandboxes/api/constants.go.
 CREATE_INTENT = f"{GROUP}/create-intent"
-
-
-def sandbox_views(
-    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, api_client: k8s_client.ApiClient
-) -> list[Sandbox]:
-    """One row per Sandbox, each joined to its incarnation's Pod."""
-    pods_by_name = {pod.metadata.name: pod for pod in pods}
-    return [
-        sandbox_view(parsed, incarnation_pod(parsed, pods_by_name), api_client=api_client)
-        for parsed in map(sandbox_resource.Sandbox.model_validate, sandboxes)
-    ]
-
-
-def incarnation_pod(
-    sandbox: sandbox_resource.Sandbox, pods_by_name: Mapping[str, k8s_client.V1Pod]
-) -> k8s_client.V1Pod | None:
-    """The Sandbox's incarnation among `pods_by_name`, if it is there."""
-    incarnation = sandbox.status.incarnation
-    return None if incarnation is None else pods_by_name.get(incarnation.name)
 
 
 def sandbox_view(

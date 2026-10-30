@@ -401,10 +401,6 @@ does not keep its own copy of the list. It lives here because adding a series to
 the edit that invalidates one — and a caller that missed the edit fails at load, not at fetch."""
 
 
-MACRO_HISTORY_WITH_EX_US_SOURCES = (*MACRO_HISTORY_SOURCES, sources.FRENCH_INTERNATIONAL_INDICES)
-"""What `load_macro_history_with_ex_us` reads."""
-
-
 def load_macro_history(evidence_dir: Path) -> MacroHistory:
     """Assemble the century-long record the historical-window sampler replays.
 
