@@ -1,7 +1,6 @@
 package centralsampler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"

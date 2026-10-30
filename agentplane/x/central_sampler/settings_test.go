@@ -195,23 +195,23 @@ func copyAnthropicMessages(config *anthropic.Config) *anthropic.Config {
 }
 
 func TestModelConfigCompatibilityTracksWireSemantics(t *testing.T) {
-	responses := fixtureSettings().Models["test-model"]
-	if !responses.Compatible(responses) {
+	responsesModel := fixtureSettings().Models["test-model"]
+	if !responsesModel.Compatible(responsesModel) {
 		t.Fatal("identical Responses routes should be compatible")
 	}
-	incompatibleResponses := responses
+	incompatibleResponses := responsesModel
 	incompatibleResponses.Responses.Dialect = responses.DialectStandard
-	if responses.Compatible(incompatibleResponses) {
+	if responsesModel.Compatible(incompatibleResponses) {
 		t.Fatal("different Responses dialects should not be compatible")
 	}
-	incompatibleResponses = responses
+	incompatibleResponses = responsesModel
 	incompatibleResponses.Connection = "other-provider"
-	if responses.Compatible(incompatibleResponses) {
+	if responsesModel.Compatible(incompatibleResponses) {
 		t.Fatal("different provider connections should not be compatible")
 	}
-	changedProviderModel := responses
+	changedProviderModel := responsesModel
 	changedProviderModel.ProviderModel = "other-model"
-	if !responses.Compatible(changedProviderModel) {
+	if !responsesModel.Compatible(changedProviderModel) {
 		t.Fatal("Responses routes with the same wire semantics may change provider model")
 	}
 

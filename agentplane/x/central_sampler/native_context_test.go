@@ -88,11 +88,17 @@ func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
 				if err := json.Unmarshal(records[len(records)-1], &last); err != nil {
 					t.Fatal(err)
 				}
-				if api == protocol.APIStyleAnthropicMessages && rawString(last, "role") != "user" {
-					t.Fatalf("Anthropic tool result was not a native user message: %s", records[len(records)-1])
+				if api == protocol.APIStyleAnthropicMessages {
+					var role string
+					if err := json.Unmarshal(last["role"], &role); err != nil || role != "user" {
+						t.Fatalf("Anthropic tool result was not a native user message: %s (role %q, err %v)", records[len(records)-1], role, err)
+					}
 				}
-				if api == protocol.APIStyleResponses && rawString(last, "type") != "function_call_output" {
-					t.Fatalf("Responses result has wrong native type: %s", records[len(records)-1])
+				if api == protocol.APIStyleResponses {
+					var itemType string
+					if err := json.Unmarshal(last["type"], &itemType); err != nil || itemType != "function_call_output" {
+						t.Fatalf("Responses result has wrong native type: %s (type %q, err %v)", records[len(records)-1], itemType, err)
+					}
 				}
 			}
 		})
