@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -21,9 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -102,12 +99,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	connection, err := grpc.NewClient(strings.TrimPrefix(service.url, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	_, err = web_push_servicepb.NewWebPushServiceClient(connection).GetPushConfig(
+	_, err = service.push.GetPushConfig(
 		metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), &web_push_servicepb.GetPushConfigRequest{},
 	)
 	if status.Code(err) != codes.Unauthenticated {

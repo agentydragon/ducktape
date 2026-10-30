@@ -3,6 +3,7 @@ package graceful_test
 import (
 	"context"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,14 +38,28 @@ type call struct {
 	err      error
 }
 
+// closeSignalingListener reports its first Close on closed.
+type closeSignalingListener struct {
+	net.Listener
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (l *closeSignalingListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return l.Listener.Close()
+}
+
 // stopping serves a blocking Check, starts one call and returns once the handler holds it and Stop(ctx) has closed
-// the listener; the channels carry the call's result and Stop's return.
-func stopping(t *testing.T, ctx context.Context) (*blockingHealth, <-chan call, <-chan struct{}) {
+// the listener; the channels carry the call's result, Stop's return and Serve's result, which grpc-go sends only once
+// the server has stopped.
+func stopping(t *testing.T, ctx context.Context) (*blockingHealth, <-chan call, <-chan struct{}, <-chan error) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	tcp, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	listener := &closeSignalingListener{Listener: tcp, closed: make(chan struct{})}
 	health := &blockingHealth{entered: make(chan struct{}), release: make(chan struct{})}
 	server := grpc.NewServer()
 	healthpb.RegisterHealthServer(server, health)
@@ -70,20 +85,28 @@ func stopping(t *testing.T, ctx context.Context) (*blockingHealth, <-chan call, 
 
 	stopped := make(chan struct{})
 	go func() { graceful.Stop(ctx, server); close(stopped) }()
-	// Serve returns once stopping has closed the listener.
 	select {
-	case err := <-served:
-		if err != nil {
-			t.Fatalf("Serve() = %v, want nil once stopping", err)
-		}
+	case <-listener.closed:
 	case <-time.After(waitLimit):
 		t.Fatal("stopping did not close the listener")
 	}
-	return health, result, stopped
+	return health, result, stopped, served
+}
+
+func waitServed(t *testing.T, served <-chan error) {
+	t.Helper()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("Serve() = %v, want nil once stopped", err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("Serve did not return once the server stopped")
+	}
 }
 
 func TestStopLetsTheCallInFlightFinish(t *testing.T) {
-	health, result, stopped := stopping(t, t.Context())
+	health, result, stopped, served := stopping(t, t.Context())
 	select {
 	case <-stopped:
 		t.Fatal("Stop returned with a call in flight")
@@ -104,11 +127,12 @@ func TestStopLetsTheCallInFlightFinish(t *testing.T) {
 	case <-time.After(waitLimit):
 		t.Fatal("Stop did not return once the call finished")
 	}
+	waitServed(t, served)
 }
 
 func TestStopEndsTheCallsLeftWhenItsContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	_, result, stopped := stopping(t, ctx)
+	_, result, stopped, served := stopping(t, ctx)
 	cancel()
 	select {
 	case <-stopped:
@@ -123,4 +147,5 @@ func TestStopEndsTheCallsLeftWhenItsContextEnds(t *testing.T) {
 	case <-time.After(waitLimit):
 		t.Fatal("the call left open did not end")
 	}
+	waitServed(t, served)
 }

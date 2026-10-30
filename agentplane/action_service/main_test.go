@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
@@ -78,6 +79,7 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
+	push      web_push_servicepb.WebPushServiceClient
 	// connections targets the retired service to assert that it is no longer registered.
 	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the service's HTTP routes.
@@ -156,6 +158,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		push:        web_push_servicepb.NewWebPushServiceClient(connection),
 		connections: connection_servicepb.NewConnectionServiceClient(connection),
 		url:         "http://" + httpListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
