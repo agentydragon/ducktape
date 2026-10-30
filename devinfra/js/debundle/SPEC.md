@@ -840,7 +840,10 @@ effects and loader behavior. Analysis derives facts from the bundled body and
 applies them to the emitted program, which runs the replacement. The author
 owns the promise. A different build of the same package version (down-levelled
 syntax, lowered decorators, another bundler's helpers) or a wrong version pin
-can break it without any visible change to the spec.
+can break it without any visible change to the spec. The promise covers the
+replacement's behavior as the bundled code exhibits it; global or intrinsic
+changes a replacement package makes while initializing remain the author's A11
+obligation (<docs/design.md> § Conditions on the input chunk).
 
 A swapped export's derived foreign call summary names the replacement in
 `modules.json` as `imported_callables.*.foreign_call.replacement_package`, so
