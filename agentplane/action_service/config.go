@@ -10,14 +10,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -49,9 +47,6 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyResyncSeconds is how long the API server holds each policy watch open; nothing auto-decides once a
-	// watch has missed reader.StaleAfterCycles of these.
-	PolicyResyncSeconds int `mapstructure:"policy_resync_seconds"`
 	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
 	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
@@ -91,7 +86,7 @@ type gitHubVisibility struct {
 
 func defaultConfig() config {
 	return config{
-		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(), PolicyResyncSeconds: 300,
+		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
@@ -186,9 +181,6 @@ func (c *config) validate() error {
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
 	}
-	if c.policyWatchPeriod() < reader.MinWatchPeriod {
-		return fmt.Errorf("policy_resync_seconds must be at least %v", reader.MinWatchPeriod.Seconds())
-	}
 	if c.GitHubVisibility.CacheTTLSeconds < 0 {
 		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
 	}
@@ -246,10 +238,6 @@ func (c *config) validateOrchestration() error {
 		}
 	}
 	return nil
-}
-
-func (c *config) policyWatchPeriod() time.Duration {
-	return time.Duration(c.PolicyResyncSeconds) * time.Second
 }
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.

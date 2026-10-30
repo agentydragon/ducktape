@@ -112,8 +112,6 @@ def replica_settings(
         ca_key=key,
         token_audience=AUDIENCE,
         upstream_ca_file=upstream_ca_file,
-        # The Go informer's watch period is whole seconds, two at the least.
-        resync_seconds=2,
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
     )

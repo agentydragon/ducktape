@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "watchhealth",
+    srcs = ["health.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/watchhealth",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/cache",
+    ],
+)
+
+go_test(
+    name = "watchhealth_test",
+    srcs = ["health_test.go"],
+    embed = [":watchhealth"],
+    deps = [
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/cache",
+    ],
+)

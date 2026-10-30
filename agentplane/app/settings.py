@@ -172,11 +172,6 @@ class Settings(AppSettingsConfig):
         description="Seconds the HTTP server waits after SIGTERM for open requests and streams before cancelling "
         "them; the rest of the Deployment's grace period is stopping Session openings and closing the database.",
     )
-    resync_seconds: int = Field(
-        default=300,
-        description="Watch lifetime; every kind the live stream pushes renews its watch this often, and a "
-        "kind that misses several cycles is what the stream reports as stale.",
-    )
     token_audience: str = Field(
         default="agentplane",
         description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",

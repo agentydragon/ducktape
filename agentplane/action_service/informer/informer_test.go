@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
@@ -81,7 +80,7 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 	}
 }
 
-func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceIsStale(t *testing.T) {
+func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	caller := auth.Account{Namespace: f.moreCallers, Name: "test-workload"}
@@ -91,33 +90,23 @@ func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceIsStale(t *testing.T) {
 	f.create(f.policyBinding(f.policy, "test-grant", subject, "test-set"))
 	f.start()
 
-	held := serviceAccounts(f.callers)
-	f.eventually("every kind to complete a watch period", func() bool {
-		status := f.index.Freshness.Status(time.Now())
-		for _, kind := range []reader.Kind{reader.PolicySets, reader.PolicyBindings, held, serviceAccounts(f.moreCallers)} {
-			// A completed cycle is at least a period old by the time it is recorded; the seed is not.
-			if age, recorded := status.Ages[kind]; !recorded || age > time.Since(f.started)-watchPeriod/2 {
-				return false
-			}
-		}
-		return status.Available
-	})
+	f.eventually("the index to sync", f.available)
 	if !f.index.Admits(caller) || len(f.index.ResolveBindings(subject)) != 1 {
-		t.Fatal("a fresh index does not admit the caller or resolve its binding")
+		t.Fatal("a synced index does not admit the caller or resolve its binding")
 	}
 
-	// The watches of one caller namespace stop returning while every other kind's keep completing.
-	release := f.held.hold("/api/v1/namespaces/" + f.callers + "/serviceaccounts")
+	// The requests of one caller namespace fail while every other kind's keep succeeding.
+	restore := f.faults.fail("/api/v1/namespaces/" + f.callers + "/serviceaccounts")
 	f.eventually("the index to turn unavailable", func() bool { return !f.available() })
-	status := f.index.Freshness.Status(time.Now())
-	if status.Ages[held] <= status.StaleAfter || status.Ages[serviceAccounts(f.moreCallers)] > status.StaleAfter {
-		t.Errorf("unavailable for something else than the stalled namespace: %+v", status)
+	status := f.index.Health.Status()
+	if _, failing := status.Failing[serviceAccounts(f.callers)]; !failing || len(status.Failing) != 1 {
+		t.Errorf("unavailable for something else than the failing namespace: %+v", status)
 	}
 	if listed, available := f.index.CallerServiceAccounts(); f.index.Admits(caller) || f.index.ResolveBindings(subject) != nil || available || listed != nil {
-		t.Error("a stale index admits a caller, resolves its bindings or lists the callers")
+		t.Error("an unavailable index admits a caller, resolves its bindings or lists the callers")
 	}
 
-	release()
+	restore()
 	f.eventually("the index to recover", f.available)
 	if !f.index.Admits(caller) {
 		t.Error("the recovered index does not admit the caller")

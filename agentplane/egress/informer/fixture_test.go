@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,11 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	// watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
-	watchPeriod = reader.MinWatchPeriod
-	host        = "api.informer-test.invalid"
-)
+const host = "api.informer-test.invalid"
 
 var (
 	fixtures atomic.Int32
@@ -61,7 +56,6 @@ type fixture struct {
 	t        *testing.T
 	index    *policy.Index
 	informer *Informer
-	started  time.Time
 
 	rules, credentials, elsewhere string
 }
@@ -81,11 +75,16 @@ func newFixture(t *testing.T) *fixture {
 // start runs an Informer over the fixture's namespaces until the test ends.
 func (f *fixture) start() {
 	f.t.Helper()
-	f.started = time.Now()
-	f.index = policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
+	f.startThrough(apiConfig)
+}
+
+// startThrough runs an Informer that reaches the API server through base.
+func (f *fixture) startThrough(base *rest.Config) {
+	f.t.Helper()
+	f.index = policy.NewIndex()
 	var err error
-	f.informer, err = New(apiConfig, Config{
-		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials, WatchPeriod: watchPeriod,
+	f.informer, err = New(base, Config{
+		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials,
 	})
 	if err != nil {
 		f.t.Fatal(err)

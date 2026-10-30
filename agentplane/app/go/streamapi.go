@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -125,10 +126,16 @@ type streamingRoutes struct {
 	deps   StreamingDependencies
 }
 
+// watchHealthView is the live inventory's health: healthy once its informers have synced and while no watched kind
+// fails to list or watch, and each failing kind with its error and since when.
 type watchHealthView struct {
-	Fresh               bool               `json:"fresh"`
-	StaleAfterSeconds   float64            `json:"stale_after_seconds"`
-	RefreshedSecondsAgo map[string]float64 `json:"refreshed_seconds_ago"`
+	Healthy bool                       `json:"healthy"`
+	Failing map[string]kindFailureView `json:"failing"`
+}
+
+type kindFailureView struct {
+	Error string    `json:"error"`
+	Since time.Time `json:"since"`
 }
 
 type sandboxListFrame struct {
@@ -600,8 +607,12 @@ func snapshotSandbox(snapshot liveinventory.Snapshot, name string) (*sandboxapi.
 	return resource, nil
 }
 
-func healthView(health liveinventory.WatchHealth) watchHealthView {
-	return watchHealthView{Fresh: health.Fresh, StaleAfterSeconds: health.StaleAfterSeconds, RefreshedSecondsAgo: health.RefreshedSecondsAgo}
+func healthView(health watchhealth.Status) watchHealthView {
+	failing := make(map[string]kindFailureView, len(health.Failing))
+	for kind, failure := range health.Failing {
+		failing[string(kind)] = kindFailureView{Error: failure.Error, Since: failure.Since}
+	}
+	return watchHealthView{Healthy: health.Available, Failing: failing}
 }
 
 func nonNilBindingViews(values []policyaccess.BindingView) []policyaccess.BindingView {

@@ -119,7 +119,7 @@ function snapshot(
     archived_count: threads.filter((candidate) => candidate.archived).length,
     sandboxes: Object.values(sandboxes),
     updates_connected: true,
-    watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+    watch: { healthy: true, failing: {} },
   };
 }
 
@@ -280,7 +280,7 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
   expect(indicator?.querySelector("svg")).not.toBeNull();
 
   const stale = snapshot([active], { "test-sandbox": sandbox("test-sandbox") });
-  stale.watch.fresh = false;
+  stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
   await pushSnapshot(stream, stale);
   const staleIndicator = container.querySelector(
     '.agentplane-thread-status-indicator[aria-label="No live harness confirmed"]'
@@ -318,11 +318,9 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
   const stale = snapshot(threads, sandboxes);
-  stale.watch.fresh = false;
+  stale.watch = { healthy: false, failing: { pods: { error: "test-failure", since: new Date().toISOString() } } };
   await pushSnapshot(stream, stale);
-  expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
-    "watch stopped moving"
-  );
+  expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain("watch failing");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
   await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));

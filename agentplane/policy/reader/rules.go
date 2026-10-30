@@ -28,7 +28,7 @@ type rules[R any] struct {
 
 // WatchRules keeps index equal to the PolicySets and PolicyBindings in namespace, and keeps the
 // condition on each binding once both have listed: before then a set not yet seen would read as
-// missing. The Freshness of w covers PolicySets and PolicyBindings.
+// missing. The Health of w covers PolicySets and PolicyBindings.
 func WatchRules[R any](w *Watches, index *Index[R], namespace string, condition Condition) error {
 	_, err := watchRules(w, index, namespace, condition)
 	return err
@@ -45,7 +45,7 @@ func watchRules[R any](w *Watches, index *Index[R], namespace string, condition 
 		bindingsClient: policies.AgentplaneV1alpha1().PolicyBindings(namespace),
 		queue:          workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}
-	bindings := policyinformers.NewTypedFilteredPolicyBindingInformer(policies, namespace, 0, nil, w.TweakListOptions)
+	bindings := policyinformers.NewTypedFilteredPolicyBindingInformer(policies, namespace, 0, nil, nil)
 	// The generated typed lister queries the namespace index with metav1.ObjectMeta.
 	if err := bindings.AddIndexers(cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}); err != nil {
 		return nil, err
@@ -53,8 +53,8 @@ func watchRules[R any](w *Watches, index *Index[R], namespace string, condition 
 	// The condition uses the generated cache lister, never an extra API read.
 	r.bindings = policylisters.NewPolicyBindingLister(bindings.GetIndexer()).PolicyBindings(namespace)
 	if err := errors.Join(
-		Watch(w, bindings, r.putBinding, index.DeleteBinding),
-		Watch(w, policyinformers.NewTypedFilteredPolicySetInformer(policies, namespace, 0, nil, w.TweakListOptions), r.putSet, r.deleteSet),
+		Watch(w, PolicyBindings, bindings, r.putBinding, index.DeleteBinding),
+		Watch(w, PolicySets, policyinformers.NewTypedFilteredPolicySetInformer(policies, namespace, 0, nil, nil), r.putSet, r.deleteSet),
 	); err != nil {
 		return nil, err
 	}

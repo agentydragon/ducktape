@@ -3,8 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "reader",
     srcs = [
-        "cycles.go",
-        "freshness.go",
         "index.go",
         "readiness.go",
         "rules.go",
@@ -19,6 +17,7 @@ go_library(
         "//agentplane/policy/client:listers",
         "//agentplane/policy/client:typed",
         "//agentplane/policy/client/apply",
+        "//agentplane/watchhealth",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/labels",
@@ -33,9 +32,7 @@ go_library(
 go_test(
     name = "reader_test",
     srcs = [
-        "cycles_test.go",
         "fixture_test.go",
-        "freshness_test.go",
         "index_test.go",
         "readiness_test.go",
         "rules_test.go",
@@ -44,6 +41,7 @@ go_test(
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/testing/kubeapiserver",
+        "//agentplane/watchhealth",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

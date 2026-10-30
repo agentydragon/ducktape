@@ -24,6 +24,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -61,11 +62,11 @@ func TestWriteSSEPreservesEventIDAndJSONData(t *testing.T) {
 }
 
 func TestLiveWatchHealthOmitsCacheSyncImplementationDetail(t *testing.T) {
-	got := healthView(liveinventory.WatchHealth{
-		Fresh: true, Synced: true, StaleAfterSeconds: 30,
-		RefreshedSecondsAgo: map[string]float64{"pods": 0.1},
+	since := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	got := healthView(watchhealth.Status{
+		Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{"pods": {Error: "test-failure", Since: since}},
 	})
-	if !got.Fresh || got.StaleAfterSeconds != 30 || got.RefreshedSecondsAgo["pods"] != 0.1 {
+	if got.Healthy || got.Failing["pods"] != (kindFailureView{Error: "test-failure", Since: since}) {
 		t.Fatalf("health projection = %#v", got)
 	}
 	encoded, err := json.Marshal(got)
@@ -134,12 +135,12 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 					{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
 					{Reason: sandboxapi.AutosuspendBlockerBootstrap},
 				}},
-			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
+			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
 			{Sandboxes: []sandboxapi.Sandbox{{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
 				Status:     sandboxapi.SandboxStatus{IdleSuspendAt: &deadline, IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{}},
-			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
-			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: liveinventory.WatchHealth{Fresh: false, StaleAfterSeconds: 30}},
+			}}, Watch: watchhealth.Status{Available: true, Synced: true}},
+			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: watchhealth.Status{Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{"sandboxes": {Error: "test-failure"}}}},
 		},
 		changes: make(chan struct{}, 1),
 	}
@@ -159,7 +160,7 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 	waitForStreamText(t, response, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
 	waitForStreamText(t, response, `"autosuspend_blockers":[]`)
 	live.changes <- struct{}{}
-	waitForStreamText(t, response, `"fresh":false`)
+	waitForStreamText(t, response, `"healthy":false`)
 	waitForStreamText(t, response, `"idle_suspend_at":null`)
 	cancel()
 	select {

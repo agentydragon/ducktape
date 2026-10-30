@@ -16,6 +16,7 @@ import (
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,9 +26,6 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
-const watchPeriod = MinWatchPeriod
 
 // testRuleType is a real rule type, so the API server admits the sets these tests create. What its
 // reader makes of the rules is not under test here.
@@ -60,23 +58,26 @@ func TestMain(m *testing.M) {
 	}))
 }
 
-// faults is a transport under the informer's own, where a test can hold back a kind's requests, cut
-// the watches a kind has open, and make its next watch answer that the point it resumes from is gone.
+// faults is a transport under the informer's own, where a test can hold back a kind's requests, fail
+// them, cut the watches a kind has open, and make its next watch answer that the point it resumes
+// from is gone.
 type faults struct {
 	mu      sync.Mutex
-	held    map[Kind]chan struct{}
-	expired map[Kind]bool
-	open    map[Kind][]io.Closer
+	held    map[watchhealth.Kind]chan struct{}
+	failing map[watchhealth.Kind]bool
+	expired map[watchhealth.Kind]bool
+	open    map[watchhealth.Kind][]io.Closer
 	// lists counts how many times each kind was read in full, by LIST or by a streaming list.
-	lists map[Kind]int
+	lists map[watchhealth.Kind]int
 	// patches counts the writes to each binding's status.
 	patches map[string]int
 }
 
 func newFaults() *faults {
 	return &faults{
-		held: map[Kind]chan struct{}{}, expired: map[Kind]bool{}, open: map[Kind][]io.Closer{},
-		lists: map[Kind]int{}, patches: map[string]int{},
+		held: map[watchhealth.Kind]chan struct{}{}, failing: map[watchhealth.Kind]bool{},
+		expired: map[watchhealth.Kind]bool{}, open: map[watchhealth.Kind][]io.Closer{},
+		lists: map[watchhealth.Kind]int{}, patches: map[string]int{},
 	}
 }
 
@@ -88,10 +89,13 @@ func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
 			f.mu.Unlock()
 			return next.RoundTrip(request)
 		}
-		kind := Kind(path.Base(request.URL.Path))
+		kind := watchhealth.Kind(path.Base(request.URL.Path))
 		f.mu.Lock()
-		gate := f.held[kind]
+		gate, failing := f.held[kind], f.failing[kind]
 		f.mu.Unlock()
+		if failing {
+			return nil, errors.New("test fault: the API server is unreachable")
+		}
 		if gate != nil {
 			select {
 			case <-gate:
@@ -126,7 +130,7 @@ func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
 }
 
 // hold makes every request for kind wait until the returned release is called.
-func (f *faults) hold(kind Kind) (release func()) {
+func (f *faults) hold(kind watchhealth.Kind) (release func()) {
 	gate := make(chan struct{})
 	f.mu.Lock()
 	f.held[kind] = gate
@@ -139,8 +143,20 @@ func (f *faults) hold(kind Kind) (release func()) {
 	}
 }
 
+// fail makes every request for kind fail until the returned restore is called.
+func (f *faults) fail(kind watchhealth.Kind) (restore func()) {
+	f.mu.Lock()
+	f.failing[kind] = true
+	f.mu.Unlock()
+	return func() {
+		f.mu.Lock()
+		delete(f.failing, kind)
+		f.mu.Unlock()
+	}
+}
+
 // sever cuts the watches kind has open, as a lost connection does.
-func (f *faults) sever(kind Kind) {
+func (f *faults) sever(kind watchhealth.Kind) {
 	f.mu.Lock()
 	streams := f.open[kind]
 	delete(f.open, kind)
@@ -151,13 +167,13 @@ func (f *faults) sever(kind Kind) {
 }
 
 // expire makes the next watch of kind resuming from a version answer that it is too old.
-func (f *faults) expire(kind Kind) {
+func (f *faults) expire(kind watchhealth.Kind) {
 	f.mu.Lock()
 	f.expired[kind] = true
 	f.mu.Unlock()
 }
 
-func (f *faults) listCount(kind Kind) int {
+func (f *faults) listCount(kind watchhealth.Kind) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.lists[kind]
@@ -173,10 +189,9 @@ func (f *faults) patchCount(binding string) int {
 type fixture struct {
 	t         *testing.T
 	faults    *faults
-	freshness *Freshness
+	health    *watchhealth.Health
 	index     *Index[[]string]
 	reader    *rules[[]string]
-	started   time.Time
 	namespace string
 }
 
@@ -190,15 +205,12 @@ func newFixture(t *testing.T) *fixture {
 // start runs a reader of the fixture's namespace until the test ends.
 func (f *fixture) start() {
 	f.t.Helper()
-	f.started = time.Now()
-	f.freshness = NewFreshness(StaleAfterCycles*watchPeriod, PolicySets, PolicyBindings)
+	f.health = watchhealth.New()
 	f.index = NewIndex(testRuleType, parseHosts)
 	base := rest.CopyConfig(apiConfig)
 	base.Wrap(f.faults.wrap)
-	watches, err := NewWatches(base, f.freshness, watchPeriod)
-	if err != nil {
-		f.t.Fatal(err)
-	}
+	watches := NewWatches(base, f.health)
+	var err error
 	if f.reader, err = watchRules(watches, f.index, f.namespace, testCondition); err != nil {
 		f.t.Fatal(err)
 	}

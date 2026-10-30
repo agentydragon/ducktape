@@ -7,14 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -42,9 +41,9 @@ type HistoryHealth interface {
 	Health() history.Health
 }
 
-// Index is read once per call, so the verdict and the ages it rests on agree.
+// Index is read once per call, so the verdict and the failures it rests on agree.
 type Index interface {
-	Status(now time.Time) reader.Status
+	Status() watchhealth.Status
 }
 
 // Service is the admin gRPC API. Every RPC admits only the allowed callers, each proving a
@@ -55,7 +54,6 @@ type Service struct {
 	changes       Changes
 	historyHealth HistoryHealth
 	index         Index
-	clock         func() time.Time
 	resolver      *auth.Resolver
 	callers       map[auth.Account]struct{}
 	lease         time.Duration
@@ -69,7 +67,6 @@ type ServiceOptions struct {
 	Changes       Changes
 	HistoryHealth HistoryHealth
 	Index         Index
-	Clock         func() time.Time
 	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver
 	// reviews, and the ServiceAccount must be one of Callers.
 	Resolver *auth.Resolver
@@ -87,7 +84,7 @@ func NewService(options ServiceOptions) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
 		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
-		index: options.Index, clock: options.Clock, resolver: options.Resolver, callers: allowed,
+		index: options.Index, resolver: options.Resolver, callers: allowed,
 		lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -104,18 +101,17 @@ func historyFailure(err error) error {
 	return errHistoryUnavailable
 }
 
-// GetHealth is ready only while the index is both complete and still moving. `synced` alone says only
-// that every kind has listed once, so a proxy whose watches had since wedged would go on reporting
-// ready while serving a frozen snapshot of the rules; the ages are the facts and `ready` the verdict.
+// GetHealth is ready only while the index has synced and no watched kind is failing. `synced` alone
+// says only that every kind has listed once; the failing kinds are the facts and `ready` the verdict.
 func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
 	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
 		return nil, err
 	}
-	index := s.index.Status(s.clock())
+	index := s.index.Status()
 	counters := s.historyHealth.Health()
-	ages := make(map[string]float64, len(index.Ages))
-	for kind, age := range index.Ages {
-		ages[string(kind)] = math.Round(age.Seconds()*10) / 10
+	failing := make(map[string]*egressadminpb.KindFailure, len(index.Failing))
+	for kind, failure := range index.Failing {
+		failing[string(kind)] = &egressadminpb.KindFailure{Error: failure.Error, Since: timestamppb.New(failure.Since)}
 	}
 	return &egressadminpb.GetHealthResponse{
 		Ready: index.Available, Synced: index.Synced, Draining: index.Draining,
@@ -126,7 +122,7 @@ func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthReque
 			WriteFailures: int64(counters.WriteFailures), CleanupFailures: int64(counters.CleanupFailures),
 			Available: counters.Available, Queued: int64(counters.Queued), WriterRunning: counters.WriterRunning,
 		},
-		StaleAfterSeconds: index.StaleAfter.Seconds(), RefreshedSecondsAgo: ages,
+		Failing: failing,
 	}, nil
 }
 

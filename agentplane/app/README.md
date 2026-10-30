@@ -259,13 +259,13 @@ in the table. Session creation displays progress and prevents duplicate clicks w
 runs.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
-`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
-one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
-nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
-against the same three-cycle bound the egress proxy's readiness uses, and a page whose data has
-stopped moving says so rather than showing it as live: the browser's connection and that verdict
-both feed the one connection indicator in the topbar, a spinner whose tooltip names each stream
-that is not current and why. Every stream, and the server's watch behind it, retries by itself.
+`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. Every frame
+carries the server's watch health: `healthy` once its informers have synced and while no kind's
+list or watch is failing, and each failing kind with its error and since when -- the same rule the
+egress proxy's readiness uses. A page whose server watch is failing says so rather than showing
+its data as live: the browser's connection and that verdict both feed the one connection
+indicator in the topbar, a spinner whose tooltip names each stream that is not current and why.
+Every stream, and the server's watch behind it, retries by itself.
 
 ## Authentication and authorization
 

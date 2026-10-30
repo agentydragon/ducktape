@@ -3205,31 +3205,26 @@ routes.push(
   ]
 );
 
-const FRESH: WatchHealth = {
-  fresh: true,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 4.2,
-    pods: 3.1,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
-  },
-};
+const HEALTHY: WatchHealth = { healthy: true, failing: {} };
 
-/** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
-const WEDGED: WatchHealth = {
-  fresh: false,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 2417.4,
-    pods: 2417.4,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
+/** A watch whose requests are failing: what the `_stale` scenarios have to show rather than hide. */
+const FAILING: WatchHealth = {
+  healthy: false,
+  failing: {
+    sandboxes: {
+      error:
+        'Get "https://kubernetes.default.svc/apis/agentplane.allegedly.works/v1alpha1/namespaces/agentplane/sandboxes": dial tcp: connection refused',
+      since: "2026-10-30T11:20:00Z",
+    },
+    pods: {
+      error: 'Get "https://kubernetes.default.svc/api/v1/namespaces/agentplane/pods": dial tcp: connection refused',
+      since: "2026-10-30T11:20:00Z",
+    },
   },
 };
 
 function watch(): WatchHealth {
-  return flags.has("watchStale") ? WEDGED : FRESH;
+  return flags.has("watchStale") ? FAILING : HEALTHY;
 }
 
 /** Live inventory remains EventSource; Action facade watches and projected threads use fetch streams. */

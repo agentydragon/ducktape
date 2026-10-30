@@ -2,7 +2,9 @@ package informer
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -21,13 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
-
-// watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
-const watchPeriod = reader.MinWatchPeriod
 
 var (
 	fixtures atomic.Int32
@@ -53,10 +51,9 @@ func TestMain(m *testing.M) {
 
 // fixture is one test's namespaces, its Index, and an Informer against the shared API server.
 type fixture struct {
-	t       *testing.T
-	index   *Index
-	held    *heldPaths
-	started time.Time
+	t      *testing.T
+	index  *Index
+	faults *failingPaths
 	// policy holds the PolicySets and PolicyBindings, callers and moreCallers the callers, and elsewhere is a
 	// namespace the Informer does not read.
 	policy, callers, moreCallers, elsewhere string
@@ -66,7 +63,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
-		t: t, held: &heldPaths{gates: map[string]chan struct{}{}},
+		t: t, faults: &failingPaths{failing: map[string]bool{}, open: map[string][]io.Closer{}},
 		policy: prefix + "-policy", callers: prefix + "-callers", moreCallers: prefix + "-more-callers", elsewhere: prefix + "-elsewhere",
 	}
 	for _, namespace := range []string{f.policy, f.callers, f.moreCallers, f.elsewhere} {
@@ -78,11 +75,10 @@ func newFixture(t *testing.T) *fixture {
 // start runs an Informer over the fixture's namespaces until the test ends.
 func (f *fixture) start() {
 	f.t.Helper()
-	f.started = time.Now()
-	f.index = NewIndex(reader.StaleAfterCycles*watchPeriod, []string{f.callers, f.moreCallers})
+	f.index = NewIndex([]string{f.callers, f.moreCallers})
 	base := rest.CopyConfig(server.Config)
-	base.Wrap(f.held.wrap)
-	informer, err := New(base, f.index, f.policy, watchPeriod)
+	base.Wrap(f.faults.wrap)
+	informer, err := New(base, f.index, f.policy)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -111,7 +107,7 @@ func (f *fixture) eventually(what string, condition func() bool, lastSeen ...fun
 	}
 }
 
-func (f *fixture) available() bool { return f.index.Freshness.Available(time.Now()) }
+func (f *fixture) available() bool { return f.index.Health.Available() }
 
 func (f *fixture) create(object client.Object) {
 	f.t.Helper()
@@ -193,44 +189,56 @@ func (f *fixture) eventuallyActionsReady(name string, accept func(*metav1.Condit
 	return condition
 }
 
-// heldPaths is a transport under the Informer's own, where a test can hold back the requests under a path.
-type heldPaths struct {
-	mu    sync.Mutex
-	gates map[string]chan struct{}
+// failingPaths is a transport under the Informer's own, where a test can make the requests under a path fail, as an
+// unreachable API server does.
+type failingPaths struct {
+	mu      sync.Mutex
+	failing map[string]bool
+	// open holds each watch's response body by path, so failing a path can cut the watches already open under it.
+	open map[string][]io.Closer
 }
 
-func (h *heldPaths) wrap(next http.RoundTripper) http.RoundTripper {
+func (p *failingPaths) wrap(next http.RoundTripper) http.RoundTripper {
 	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		h.mu.Lock()
-		var gate chan struct{}
-		for prefix, held := range h.gates {
-			if strings.HasPrefix(request.URL.Path, prefix) {
-				gate = held
-			}
+		p.mu.Lock()
+		failing := false
+		for prefix := range p.failing {
+			failing = failing || strings.HasPrefix(request.URL.Path, prefix)
 		}
-		h.mu.Unlock()
-		if gate != nil {
-			select {
-			case <-gate:
-			case <-request.Context().Done():
-				return nil, request.Context().Err()
-			}
+		p.mu.Unlock()
+		if failing {
+			return nil, errors.New("test fault: the API server is unreachable")
 		}
-		return next.RoundTrip(request)
+		response, err := next.RoundTrip(request)
+		if err == nil && request.URL.Query().Get("watch") == "true" {
+			p.mu.Lock()
+			p.open[request.URL.Path] = append(p.open[request.URL.Path], response.Body)
+			p.mu.Unlock()
+		}
+		return response, err
 	})
 }
 
-// hold makes every request under the path wait until the returned release is called.
-func (h *heldPaths) hold(prefix string) (release func()) {
-	gate := make(chan struct{})
-	h.mu.Lock()
-	h.gates[prefix] = gate
-	h.mu.Unlock()
+// fail makes every request under the path fail, and cuts the watches open under it, until the returned restore is
+// called.
+func (p *failingPaths) fail(prefix string) (restore func()) {
+	p.mu.Lock()
+	p.failing[prefix] = true
+	var cut []io.Closer
+	for path, bodies := range p.open {
+		if strings.HasPrefix(path, prefix) {
+			cut = append(cut, bodies...)
+			delete(p.open, path)
+		}
+	}
+	p.mu.Unlock()
+	for _, body := range cut {
+		_ = body.Close()
+	}
 	return func() {
-		h.mu.Lock()
-		delete(h.gates, prefix)
-		h.mu.Unlock()
-		close(gate)
+		p.mu.Lock()
+		delete(p.failing, prefix)
+		p.mu.Unlock()
 	}
 }
 

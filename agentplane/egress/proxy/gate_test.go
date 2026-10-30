@@ -138,8 +138,8 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 			},
 			403, decision.AddressForbidden, true,
 		},
-		"stale policy": {
-			bearerHeader, "/allowed", func(l *lab) { l.index.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*staleAfter)) },
+		"failing policy watch": {
+			bearerHeader, "/allowed", func(l *lab) { failWatch(l, reader.PolicyBindings) },
 			502, decision.Unavailable, true,
 		},
 	} {
@@ -340,7 +340,7 @@ func TestDrainWaitsForRequestsInFlightButNotForIdleTunnels(t *testing.T) {
 
 	drained := make(chan error, 1)
 	go func() { drained <- l.proxy.Drain(context.Background()) }()
-	for ctx := bounded(t); l.index.Freshness.Available(time.Now()) && ctx.Err() == nil; {
+	for ctx := bounded(t); l.index.Health.Available() && ctx.Err() == nil; {
 		runtime.Gosched()
 	}
 	// Admission stops at once, while the request already in flight is left to finish.
@@ -441,8 +441,8 @@ func TestConnectRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		"review that fails":    {validBearer, "", func(l *lab) { l.hop.unreachable.Store(true) }, 502, decision.Unavailable, false},
 		"no binding":           {validBearer, "", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true},
 		"no rule for the host": {validBearer, "other.test", nil, 403, decision.NoRule, true},
-		"stale policy": {
-			validBearer, "", func(l *lab) { l.index.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*staleAfter)) },
+		"failing policy watch": {
+			validBearer, "", func(l *lab) { failWatch(l, reader.PolicyBindings) },
 			502, decision.Unavailable, true,
 		},
 		"private address under an exact-host rule": {validBearer, "", privateAddress, 403, decision.AddressForbidden, true},

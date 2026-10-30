@@ -13,9 +13,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -116,14 +116,12 @@ func serveGRPC(t *testing.T, options ServiceOptions) (egressadminpb.EgressAdminC
 	return egressadminpb.NewEgressAdminClient(connection), service
 }
 
-func clockAtStart() time.Time { return started }
-
 // unreadIndex fails the test when it is read.
 type unreadIndex struct{ t *testing.T }
 
-func (i unreadIndex) Status(time.Time) reader.Status {
+func (i unreadIndex) Status() watchhealth.Status {
 	i.t.Error("index read before the caller was admitted")
-	return reader.Status{}
+	return watchhealth.Status{}
 }
 
 func bearing(token string) context.Context {
@@ -147,7 +145,7 @@ func TestEveryRPCAdmitsOnlyAllowedCallersBeforeReadingAnything(t *testing.T) {
 		return nil
 	})
 	client, _ := serveGRPC(t, ServiceOptions{
-		Decisions: store, Changes: changes, Index: unreadIndex{t}, HistoryHealth: fakeHistory{}, Clock: clockAtStart, WatchLease: time.Hour,
+		Decisions: store, Changes: changes, Index: unreadIndex{t}, HistoryHealth: fakeHistory{}, WatchLease: time.Hour,
 	})
 
 	for _, test := range []struct {

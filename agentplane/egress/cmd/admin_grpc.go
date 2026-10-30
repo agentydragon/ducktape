@@ -53,7 +53,7 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 // audience from c. options holds what the services read.
 func mountAdminGRPC(adminServer *http.Server, c config, reviews auth.TokenReviews, options admin.ServiceOptions) (shutdowner, error) {
 	grpcServer := grpc.NewServer(observability.GRPCServerOption())
-	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index, options.Clock))
+	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
 	var shutdown shutdowner = adminServer
 	if c.adminGRPCEnabled() {
 		service, err := newAdminService(c, reviews, options)

@@ -33,7 +33,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -184,9 +183,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	defer actionsConnection.Close()
-	watchPeriod := time.Duration(c.PolicyWatchPeriodSeconds) * time.Second
-	sendPolicy := inboxaccess.NewPolicy(reader.StaleAfterCycles * watchPeriod)
-	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, watchPeriod)
+	sendPolicy := inboxaccess.NewPolicy()
+	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace)
 	if err != nil {
 		return err
 	}

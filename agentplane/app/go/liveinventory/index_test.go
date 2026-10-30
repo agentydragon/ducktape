@@ -46,9 +46,12 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	index, err := New(kube.Config, namespace, WithWatchPeriod(2*time.Second))
+	index, err := New(kube.Config, namespace)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if index.health.Available() {
+		t.Fatal("the index is available before its informers have synced")
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	runDone := make(chan error, 1)
@@ -68,17 +71,9 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !empty.Watch.Synced || !empty.Watch.Fresh || len(empty.Sandboxes)+len(empty.Pods)+len(empty.PolicyBindings)+len(empty.PolicySets)+len(empty.EgressCredentials) != 0 {
+	if !empty.Watch.Synced || !empty.Watch.Available || len(empty.Sandboxes)+len(empty.Pods)+len(empty.PolicyBindings)+len(empty.PolicySets)+len(empty.EgressCredentials) != 0 {
 		t.Fatalf("initial snapshot = %+v", empty)
 	}
-	index.mu.RLock()
-	for _, kind := range watchedKinds {
-		if index.listRuns[kind] == 0 {
-			index.mu.RUnlock()
-			t.Fatalf("initial List for %q was not observed", kind)
-		}
-	}
-	index.mu.RUnlock()
 
 	first, unsubscribeFirst := index.Subscribe()
 	defer unsubscribeFirst()
@@ -142,8 +137,8 @@ func TestIndexSnapshotsWatchesAndBroadcastsChanges(t *testing.T) {
 	if index.PolicyGeneration() != snapshot.PolicyGeneration {
 		t.Fatalf("policy generation accessor = %d, snapshot = %d", index.PolicyGeneration(), snapshot.PolicyGeneration)
 	}
-	if len(snapshot.Watch.RefreshedSecondsAgo) != len(watchedKinds) {
-		t.Fatalf("watch ages = %#v", snapshot.Watch.RefreshedSecondsAgo)
+	if !snapshot.Watch.Available {
+		t.Fatalf("watch health = %+v", snapshot.Watch)
 	}
 
 	gotSandbox, gotPod, err := index.GetSandbox(ctx, sandbox.Name)

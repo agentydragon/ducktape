@@ -10,7 +10,7 @@ import (
 	"time"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	uniqueauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
@@ -35,13 +35,13 @@ var (
 )
 
 func testCallerIndex(admitted bool) *callerIndex {
-	freshness := reader.NewFreshness(time.Hour)
-	freshness.MarkSynced()
+	health := watchhealth.New()
+	health.MarkSynced()
 	accounts := sets.New[auth.Account]()
 	if admitted {
 		accounts.Insert(testAccount)
 	}
-	return &callerIndex{freshness: freshness, mintable: sets.New(testAccount), accounts: accounts}
+	return &callerIndex{health: health, mintable: sets.New(testAccount), accounts: accounts}
 }
 
 func testServiceAccount(uid string) *corev1.ServiceAccount {

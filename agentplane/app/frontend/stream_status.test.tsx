@@ -108,12 +108,15 @@ it("shows nothing within the grace, then a spinner naming the stream, amber once
   expect(page.textContent).toBe("");
 });
 
-it("counts a connected stream stale at once when the server says its data has stopped moving", async () => {
+it("counts a connected stream stale at once when the server says its watch is failing", async () => {
   const indicator = mount(<ConnectionIndicator />);
   mount(
-    <Page connection={{ phase: "live", since: Date.now() }} stalled="watch stopped moving (pods last updated 2m ago)" />
+    <Page
+      connection={{ phase: "live", since: Date.now() }}
+      stalled="watch failing (pods failing since 2m ago: test-failure)"
+    />
   );
   const spinner = indicator.querySelector("[data-connection]");
   expect(spinner?.getAttribute("data-connection")).toBe("stale");
-  expect(spinner?.getAttribute("aria-label")).toContain("watch stopped moving (pods last updated 2m ago)");
+  expect(spinner?.getAttribute("aria-label")).toContain("watch failing (pods failing since 2m ago: test-failure)");
 });

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -182,8 +183,7 @@ func TestRevokingAGrantRefusesNewMessagesButKeepsTheSentOnes(t *testing.T) {
 func TestASendIsRefusedWhileTheGrantsMayBeOutOfDate(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
-	// The policy goes stale an hour after its last cycle.
-	server.policy.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*time.Hour))
+	server.policy.Health.RecordFailure(reader.PolicyBindings, errors.New("test: the watch failed"))
 	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("stale"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)

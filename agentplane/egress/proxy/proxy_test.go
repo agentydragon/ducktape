@@ -30,8 +30,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"golang.org/x/net/http2"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -43,7 +43,6 @@ const (
 	fixtureHost       = "upstream.test"
 	hopAudience       = "test-egress"
 	projectedAudience = "https://kubernetes.test.invalid"
-	staleAfter        = time.Hour
 )
 
 var (
@@ -178,22 +177,24 @@ var keyCredential = resources.Credential{
 	Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}},
 }
 
+// failWatch makes kind's list or watch fail, as an unreachable API server does.
+func failWatch(l *lab, kind watchhealth.Kind) {
+	l.index.Health.RecordFailure(kind, errors.New("test: the watch failed"))
+}
+
 func newLab(t *testing.T) *lab {
 	t.Helper()
 	intercept, interceptRoot := makeCA(t, "interception")
 	upstreamCA, upstreamRoot := makeCA(t, "upstream")
 	l := &lab{
-		index:      policy.NewIndex(staleAfter),
+		index:      policy.NewIndex(),
 		hop:        &hopReviews{TokenReviews: kube.TokenReviews()},
 		records:    &records{},
 		roots:      interceptRoot,
 		upstreamCA: upstreamCA,
 		lookup:     func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
 	}
-	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
-		l.index.Freshness.RecordCycle(kind, time.Now())
-	}
-	l.index.Freshness.MarkSynced()
+	l.index.Health.MarkSynced()
 	l.index.PutCredential(keyCredential)
 	l.index.PutSecret(resources.NewSecret("keys", map[string]string{"key": "real-secret"}))
 	l.allow(policyapi.Rule{
@@ -626,7 +627,7 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 		first, later decision.Reason
 	}{
 		"binding":             {http.StatusForbidden, decision.NoBinding, decision.NoBinding},
-		"stale":               {http.StatusBadGateway, decision.Unavailable, decision.Unavailable},
+		"failing watch":       {http.StatusBadGateway, decision.Unavailable, decision.Unavailable},
 		"invalid-replacement": {http.StatusForbidden, decision.TokenMissing, decision.TokenMissing},
 		"changed-principal":   {http.StatusForbidden, decision.PodMismatch, decision.TokenMissing},
 	} {
@@ -641,8 +642,8 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 			switch change {
 			case "binding":
 				l.index.Rules.DeleteBinding("runner")
-			case "stale":
-				l.index.Freshness.RecordCycle(policy.Secrets, time.Now().Add(-2*staleAfter))
+			case "failing watch":
+				failWatch(l, policy.Secrets)
 			case "changed-principal":
 				l.hop.rebound.Store(true)
 			}

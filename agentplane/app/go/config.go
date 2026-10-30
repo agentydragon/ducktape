@@ -53,7 +53,6 @@ type Config struct {
 	EgressAdminTokenFile                string                   `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                  `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                      `mapstructure:"shutdown_timeout"`
-	ResyncSeconds                       int                      `mapstructure:"resync_seconds"`
 	TokenAudience                       string                   `mapstructure:"token_audience"`
 	TokenSubjects                       []string                 `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
@@ -200,7 +199,6 @@ func defaultConfig() Config {
 		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
-		ResyncSeconds:                       300,
 		TokenAudience:                       "agentplane",
 	}
 }

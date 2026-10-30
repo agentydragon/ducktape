@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
@@ -102,7 +104,7 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 	} {
 		namespace.binding(t, binding, account, "test-set")
 	}
-	index, _ := namespace.watch(t)
+	index := namespace.watch(t)
 	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	for name, tc := range map[string]struct {
 		token string
@@ -183,7 +185,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 		},
 	}
 	create(t, binding)
-	index, _ := namespace.watch(t)
+	index := namespace.watch(t)
 	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	// The informer judges the binding once it has listed every kind, so its first ActionsReady is its last.
 	var ready *metav1.Condition
@@ -257,18 +259,17 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	}
 }
 
-func TestAPolicyIndexThatGoesStaleShowsNothingAutoDecided(t *testing.T) {
+func TestAPolicyIndexWhoseWatchFailsShowsNothingAutoDecided(t *testing.T) {
 	namespace := newPolicyNamespace(t)
 	namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	namespace.binding(t, "test-binding", callerAccount, "test-set")
-	index, stop := namespace.watch(t)
+	index := namespace.watch(t)
 	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	if got, err := s.readPolicy(t, callerToken, nil); err != nil || !got.GetSynced() || len(got.GetAutoApproveIf()) != 1 {
 		t.Fatalf("the caller's policy while the index is available: %v, %v", got, err)
 	}
 
-	stop()
-	eventually(t, "the policy index to go stale", func() bool { return !index.Freshness.Available(time.Now()) })
+	index.Health.RecordFailure(reader.PolicyBindings, errors.New("test: the watch failed"))
 	// The binding and its set are still on the API server, but nothing auto-decides.
 	unsynced := &action_servicepb.CallerActionPolicy{Subject: accountView(callerAccount)}
 	for name, tc := range map[string]struct {
@@ -289,7 +290,7 @@ func TestTheHTTPFacadeAnswersActionPolicyAsTheRPC(t *testing.T) {
 	namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	namespace.binding(t, "test-caller-binding", callerAccount, "test-set")
 	namespace.binding(t, "test-other-binding", otherAccount, "test-set")
-	index, _ := namespace.watch(t)
+	index := namespace.watch(t)
 	s := serveWithPolicy(t, kube.TokenReviews(), &catalog.Catalog{}, namespace, index)
 	named := fmt.Sprintf("?subject.namespace=%s&subject.name=%s", otherAccount.Namespace, otherAccount.Name)
 	for name, tc := range map[string]struct {

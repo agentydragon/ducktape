@@ -35,7 +35,6 @@ go_test(
         "//agentplane/egress/resources",
         "//agentplane/egress/x/iron_proxy/bridge/proto:transform_go_proto",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/policy/reader",
         "//agentplane/workload_auth/go/auth",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//authentication/v1:authentication",

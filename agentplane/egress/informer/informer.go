@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"time"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	egressclient "github.com/agentydragon/ducktape/agentplane/egress/client/clientset/versioned"
@@ -23,16 +22,13 @@ import (
 // EgressReady is the condition this proxy keeps on each PolicyBinding.
 var EgressReady = reader.Condition{Type: "EgressReady", FieldManager: "agentplane-egress", Rules: "egress rules", Reason: "Enforced"}
 
-// Config says what to watch and for how long.
+// Config says what to watch.
 type Config struct {
 	Index *policy.Index
 	// RulesNamespace holds the PolicySets, PolicyBindings and EgressCredentials this proxy enforces.
 	RulesNamespace string
 	// CredentialsNamespace holds the Secrets those credentials read.
 	CredentialsNamespace string
-	// WatchPeriod is how long the server holds each watch open; see reader.NewWatches. The index's
-	// staleness bound is reader.StaleAfterCycles of these.
-	WatchPeriod time.Duration
 }
 
 // Informer fills the Index from the API server and keeps EgressReady on the bindings.
@@ -43,10 +39,7 @@ type Informer struct {
 
 // New returns an Informer that is idle until Run. The API server is reached only from Run.
 func New(base *rest.Config, config Config) (*Informer, error) {
-	watches, err := reader.NewWatches(base, config.Index.Freshness, config.WatchPeriod)
-	if err != nil {
-		return nil, err
-	}
+	watches := reader.NewWatches(base, config.Index.Health)
 	credentials, err := egressclient.NewForConfig(watches.Config())
 	if err != nil {
 		return nil, err
@@ -58,8 +51,8 @@ func New(base *rest.Config, config Config) (*Informer, error) {
 	i := &Informer{index: config.Index, watches: watches}
 	if err := errors.Join(
 		reader.WatchRules(watches, config.Index.Rules, config.RulesNamespace, EgressReady),
-		reader.Watch(watches, egressinformers.NewTypedFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, nil, watches.TweakListOptions), i.putCredential, i.index.DeleteCredential),
-		reader.Watch(watches, coreinformers.NewTypedFilteredSecretInformer(core, config.CredentialsNamespace, 0, nil, watches.TweakListOptions), i.putSecret, i.index.DeleteSecret),
+		reader.Watch(watches, policy.Credentials, egressinformers.NewTypedFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, nil, nil), i.putCredential, i.index.DeleteCredential),
+		reader.Watch(watches, policy.Secrets, coreinformers.NewTypedFilteredSecretInformer(core, config.CredentialsNamespace, 0, nil, nil), i.putSecret, i.index.DeleteSecret),
 	); err != nil {
 		return nil, err
 	}

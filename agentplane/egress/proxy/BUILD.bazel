@@ -40,6 +40,7 @@ go_test(
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "//agentplane/testing/kubeapiserver",
+        "//agentplane/watchhealth",
         "//agentplane/workload_auth/go/auth",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",

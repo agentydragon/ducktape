@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 )
 
@@ -32,20 +32,22 @@ type fakeHistory history.Health
 
 func (f fakeHistory) Health() history.Health { return history.Health(f) }
 
-type fakeIndex reader.Status
+type fakeIndex watchhealth.Status
 
-func (f fakeIndex) Status(time.Time) reader.Status { return reader.Status(f) }
+func (f fakeIndex) Status() watchhealth.Status { return watchhealth.Status(f) }
 
 func healthyIndex() fakeIndex {
-	return fakeIndex{Available: true, Synced: true, StaleAfter: 15 * time.Minute, Ages: map[reader.Kind]time.Duration{policy.Secrets: 0}}
+	return fakeIndex{Available: true, Synced: true}
 }
 
-func staleIndex() fakeIndex {
-	return fakeIndex{Synced: true, StaleAfter: 15 * time.Minute, Ages: map[reader.Kind]time.Duration{policy.Secrets: 20 * time.Minute}}
+func failingIndex() fakeIndex {
+	return fakeIndex{Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{
+		policy.Secrets: {Error: "test-failure", Since: started},
+	}}
 }
 
 func drainingIndex() fakeIndex {
-	return fakeIndex{Synced: true, Draining: true, StaleAfter: time.Minute}
+	return fakeIndex{Synced: true, Draining: true}
 }
 
 func record(subject *decision.Subject) decision.Record {

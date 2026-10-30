@@ -288,9 +288,9 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. Notifications implements this for sends
-([`policy_watch_period_s`](../notification_service/README.md#running-and-deployment)), following the
-egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
+Independent overlapping grants still apply. Notifications implements this for sends (refused while its
+policy informers are unsynced or failing; [README](../notification_service/README.md#running-and-deployment)),
+following the egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
 barrier is required for v1.
 
 ### Alternatives if the tentative direction needs revision

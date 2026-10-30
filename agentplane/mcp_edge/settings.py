@@ -31,7 +31,6 @@ class Settings(YamlFileSettings):
     oauth: OAuthSettings | None = None
     max_wait_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
     direct_wait_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
-    caller_watch_seconds: int = Field(default=300, ge=2)
 
     @model_validator(mode="after")
     def validate_mintable_accounts(self) -> Settings:

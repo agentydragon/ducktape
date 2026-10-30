@@ -129,7 +129,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: U
             async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
                 async for snapshot in snapshots:
                     last_snapshot = snapshot
-                    if not snapshot.watch.fresh:
+                    if not snapshot.watch.healthy:
                         continue
                     view = next((view for view in snapshot.sandboxes if view.name == name), None)
                     if view is None:

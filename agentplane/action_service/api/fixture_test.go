@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -171,7 +169,7 @@ func serve(t *testing.T) *served {
 func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, servers ...linkage.Server) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
-	index, _ := namespace.watch(t)
+	index := namespace.watch(t)
 	return serveWithPolicy(t, reviews, groups, namespace, index, servers...)
 }
 
@@ -188,12 +186,11 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 	return policyNamespace(name)
 }
 
-// watch runs a policy informer of the namespace and returns its index once the index is available, with what stops
-// the informer. The informer runs until stopped or the test ends.
-func (n policyNamespace) watch(t *testing.T) (*informer.Index, func()) {
+// watch runs a policy informer of the namespace until the test ends, and returns its index once the index is available.
+func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
-	index := informer.NewIndex(reader.StaleAfterCycles*reader.MinWatchPeriod, []string{testNamespace})
-	policyInformer, err := informer.New(kube.Config, index, string(n), reader.MinWatchPeriod)
+	index := informer.NewIndex([]string{testNamespace})
+	policyInformer, err := informer.New(kube.Config, index, string(n))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,16 +200,12 @@ func (n policyNamespace) watch(t *testing.T) (*informer.Index, func()) {
 		defer close(done)
 		policyInformer.Run(ctx)
 	}()
-	var stopped sync.Once
-	stop := func() {
-		stopped.Do(func() {
-			cancel()
-			<-done
-		})
-	}
-	t.Cleanup(stop)
-	eventually(t, "the policy index to be available", func() bool { return index.Freshness.Available(time.Now()) })
-	return index, stop
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	eventually(t, "the policy index to be available", index.Health.Available)
+	return index
 }
 
 // eventually waits for the condition, and fails the test once callDeadline passes without it.
