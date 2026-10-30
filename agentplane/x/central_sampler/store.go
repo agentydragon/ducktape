@@ -619,7 +619,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		previousIncarnationUID := ""
 		if replacementIncarnationUID != "" {
 			configuration := new(samplerpb.OpenSessionRequest)
-			if err := unmarshalProto(session.Configuration, configuration); err != nil {
+			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(session.Configuration, configuration); err != nil {
 				return err
 			}
 			previousIncarnationUID = configuration.GetExpectedIncarnationUid()
