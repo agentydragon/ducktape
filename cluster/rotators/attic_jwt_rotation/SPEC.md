@@ -9,7 +9,8 @@ config validation.
 
 For Kubernetes-backed variants, the Secret is canonical. The rotator checks the
 JWT subject and expiry claim plus pull and push scope annotations. The Secret
-must be provisioned first; an empty Secret forces minting. It patches Secret
+must be provisioned first; an empty Secret forces minting. Its Flux SSA policy
+is `Merge`, preserving data and annotations written by the rotator. It patches Secret
 data and metadata through stdin, then reads `metadata.uid` and
 `metadata.resourceVersion` and patches the Workspace annotation to
 `<uid>/<resourceVersion>`. It retries this notification on every run. Secret

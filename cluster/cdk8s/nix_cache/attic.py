@@ -265,17 +265,25 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
 
 def _rotation(scope: Construct) -> None:
     # Flux owns the Secret's identity; only the rotator owns its data. Omitting
-    # data avoids overwriting the runtime token on subsequent Flux reconciles.
+    # data and using Merge preserve rotator-owned fields on Flux reconciles.
     k8s.KubeSecret(
         scope,
         "ci-writer-token",
-        metadata=k8s.ObjectMeta(name=ci_token.WRITER.name, namespace=ci_token.WRITER.namespace),
+        metadata=k8s.ObjectMeta(
+            name=ci_token.WRITER.name,
+            namespace=ci_token.WRITER.namespace,
+            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
+        ),
         type="Opaque",
     )
     k8s.KubeSecret(
         scope,
         "ci-reader-token",
-        metadata=k8s.ObjectMeta(name=ci_token.READER.name, namespace=ci_token.READER.namespace),
+        metadata=k8s.ObjectMeta(
+            name=ci_token.READER.name,
+            namespace=ci_token.READER.namespace,
+            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
+        ),
         type="Opaque",
     )
     notification_role = ClusterRole(

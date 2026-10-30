@@ -340,6 +340,8 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
   name: attic-ducktape-ci-writer
   namespace: nix-cache
 type: Opaque
@@ -347,6 +349,8 @@ type: Opaque
 apiVersion: v1
 kind: Secret
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
   name: attic-ducktape-ci-reader
   namespace: nix-cache
 type: Opaque
