@@ -14,13 +14,16 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"k8s.io/client-go/util/workqueue"
 )
 
 const (
 	exportPageSize     = 16
 	exportPagesPerTurn = 16
 	exportConcurrency  = 8
-	exportRetry        = time.Second
+	exportListPage     = 256
+	exportRetryBase    = time.Second
+	exportRetryMax     = 5 * time.Minute
 )
 
 func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string) error {
@@ -29,19 +32,21 @@ func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFi
 		return err
 	}
 	defer channel.Close()
-	return exportSession(ctx, store, sessionID, target, channel)
+	_, err = exportSession(ctx, store, sessionID, target, channel)
+	return err
 }
 
-func exportSession(ctx context.Context, store *Store, sessionID, target string, channel grpc.ClientConnInterface) error {
+// exportSession sends at most one scheduling quantum and reports whether History has caught up.
+func exportSession(ctx context.Context, store *Store, sessionID, target string, channel grpc.ClientConnInterface) (bool, error) {
 	pages := 0
 	for refresh := 0; refresh < exportPagesPerTurn; refresh++ {
 		session, err := store.GetSession(ctx, sessionID, "")
 		if err != nil {
-			return err
+			return false, err
 		}
 		snapshot, err := Describe(session)
 		if err != nil {
-			return err
+			return false, err
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
@@ -117,21 +122,22 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 		}()
 		cancel()
 		if err != nil {
-			return err
+			return false, err
 		}
 		current, err := store.GetSession(ctx, sessionID, "")
 		if err != nil {
-			return err
+			return false, err
 		}
 		checkpoint, err := store.Checkpoint(ctx, sessionID, target)
 		if err != nil {
-			return err
+			return false, err
 		}
-		if pages == exportPagesPerTurn || (checkpoint != nil && *checkpoint == current.Cursor && session.Cursor == current.Cursor) {
-			return nil
+		caughtUp := checkpoint != nil && *checkpoint == current.Cursor && session.Cursor == current.Cursor
+		if caughtUp || pages == exportPagesPerTurn {
+			return caughtUp, nil
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func sendExportPage(call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb.Acknowledgement], entries []*eventlogpb.EventEntry) error {
@@ -160,9 +166,62 @@ func acknowledgeExportPage(ctx context.Context, store *Store, sessionID, target 
 	return after, nil
 }
 
-type exportResult struct {
-	sessionID string
-	err       error
+// exportQueue schedules Sessions with pending outbox entries. One worker at a
+// time exports a Session; one that exhausts its quantum goes to the back of
+// the queue, and one that fails waits out a per-Session exponential backoff
+// that resets on success.
+type exportQueue struct {
+	queue  workqueue.TypedRateLimitingInterface[string]
+	export func(ctx context.Context, sessionID string) (caughtUp bool, err error)
+}
+
+func newExportQueue(config workqueue.TypedRateLimitingQueueConfig[string], export func(context.Context, string) (bool, error)) *exportQueue {
+	return &exportQueue{
+		queue:  workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax), config),
+		export: export,
+	}
+}
+
+func (q *exportQueue) enqueuePending(ctx context.Context, store *Store, target string) error {
+	after := ""
+	for {
+		ids, err := store.PendingSessionIDs(ctx, target, after, exportListPage)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			// Add would cut a failing Session's backoff short; its AddRateLimited already holds it.
+			if q.queue.NumRequeues(id) == 0 {
+				q.queue.Add(id)
+			}
+		}
+		if len(ids) < exportListPage {
+			return nil
+		}
+		after = ids[len(ids)-1]
+	}
+}
+
+// processNext exports one queued Session; it returns false once the queue shuts down.
+func (q *exportQueue) processNext(ctx context.Context) bool {
+	id, shutdown := q.queue.Get()
+	if shutdown {
+		return false
+	}
+	defer q.queue.Done(id)
+	caughtUp, err := q.export(ctx, id)
+	switch {
+	case ctx.Err() != nil:
+	case err != nil:
+		slog.Warn("History export failed; retaining outbox for replay", "session_id", id, "error", err, "failures", q.queue.NumRequeues(id)+1)
+		q.queue.AddRateLimited(id)
+	case caughtUp:
+		q.queue.Forget(id)
+	default:
+		q.queue.Forget(id)
+		q.queue.Add(id)
+	}
+	return true
 }
 
 func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hub *wakeups.Hub) error {
@@ -176,78 +235,32 @@ func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hu
 		return err
 	}
 	defer channel.Close()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(ctx context.Context, sessionID string) (bool, error) {
+		return exportSession(ctx, store, sessionID, target, channel)
+	})
 	tasks, taskCtx := errgroup.WithContext(ctx)
-	completed := make(chan exportResult, exportConcurrency)
-	running := map[string]struct{}{}
-	retries := map[string]time.Time{}
-	after := ""
-	defer func() { cancel(); _ = tasks.Wait() }()
-	for {
-		now := time.Now()
-		excluded := make([]string, 0, len(running)+len(retries))
-		var retryAt time.Time
-		for id := range running {
-			excluded = append(excluded, id)
-		}
-		for id, until := range retries {
-			if !until.After(now) {
-				delete(retries, id)
-				continue
+	for range exportConcurrency {
+		tasks.Go(func() error {
+			for queue.processNext(taskCtx) {
 			}
-			excluded = append(excluded, id)
-			if retryAt.IsZero() || until.Before(retryAt) {
-				retryAt = until
-			}
-		}
-		if len(running) < exportConcurrency {
-			sessions, err := store.PendingSessions(taskCtx, target, excluded, after, exportConcurrency-len(running))
-			if err != nil {
+			return nil
+		})
+	}
+	tasks.Go(func() error {
+		defer queue.queue.ShutDown()
+		for {
+			if err := queue.enqueuePending(taskCtx, store, target); err != nil {
 				if taskCtx.Err() != nil {
 					return taskCtx.Err()
 				}
-				cancel()
 				return err
 			}
-			for _, session := range sessions {
-				id := session.ID
-				after = id
-				running[id] = struct{}{}
-				tasks.Go(func() error {
-					err := exportSession(taskCtx, store, id, target, channel)
-					select {
-					case completed <- exportResult{id, err}:
-					case <-taskCtx.Done():
-					}
-					return nil
-				})
+			select {
+			case <-taskCtx.Done():
+				return taskCtx.Err()
+			case <-changed:
 			}
 		}
-		var retry <-chan time.Time
-		var timer *time.Timer
-		if !retryAt.IsZero() {
-			timer = time.NewTimer(time.Until(retryAt))
-			retry = timer.C
-		}
-		select {
-		case <-ctx.Done():
-			if timer != nil {
-				timer.Stop()
-			}
-			cancel()
-			return ctx.Err()
-		case <-changed:
-		case result := <-completed:
-			delete(running, result.sessionID)
-			if result.err != nil {
-				slog.Warn("History export failed; retaining outbox for replay", "session_id", result.sessionID, "error_type", fmt.Sprintf("%T", result.err))
-				retries[result.sessionID] = time.Now().Add(exportRetry)
-			}
-		case <-retry:
-		}
-		if timer != nil {
-			timer.Stop()
-		}
-	}
+	})
+	return tasks.Wait()
 }
