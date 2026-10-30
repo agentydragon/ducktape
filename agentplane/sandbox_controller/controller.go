@@ -47,9 +47,6 @@ const (
 	// repeated. Runner facts enqueue the Sandbox on progress; this deadline recovers a lost event or a
 	// stuck runner without polling.
 	quiesceDeadline = time.Minute
-	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
-	// Lease watch enqueues on.
-	runnerLapsedPoll = 5 * time.Second
 	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
 	// drops every connection at once and the new Gateway replicas reconnect to the runners.
 	runnerDisconnectGrace = time.Minute
@@ -748,7 +745,8 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 // runnerConnectedCondition is True while the Runner Gateway's Lease names this incarnation's Pod and
 // was renewed within its duration plus the grace, so a connection from an earlier incarnation never
 // counts and a brief drop does not. It also says when to look again, since no watch event marks time:
-// the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
+// the moment a live connection would lapse. A lapsed one needs none: the Lease watch enqueues when a
+// renewal revives it (`leaseRevived`).
 func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod, lease *coordinationv1.Lease, now time.Time) (metav1.Condition, time.Duration) {
 	condition := metav1.Condition{Type: sandboxapi.ConditionRunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
@@ -765,20 +763,42 @@ func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condi
 	}
 	if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] == "" {
 		condition.Reason, condition.Message = "ConnectionPending", "the Runner Gateway is waiting for the runner's first state message; connectivity and authentication are not yet confirmed"
-		return condition, runnerLapsedPoll
+		return condition, 0
 	}
-	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+	lapse, renewed := connectionLapse(lease)
+	if !renewed {
 		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
-		return condition, runnerLapsedPoll
+		return condition, 0
 	}
-	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
 	if remaining := lapse.Sub(now); remaining > 0 {
 		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
 		condition.Message = fmt.Sprintf("the Runner Gateway is connected to Pod %s's runner", incarnation.Name)
 		return condition, remaining
 	}
 	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("the Runner Gateway has not renewed the connection Lease for Pod %s's runner since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
-	return condition, runnerLapsedPoll
+	return condition, 0
+}
+
+// connectionLapse is when a connection Lease stops counting as live: its last renewal plus its
+// duration and the grace. It is false for a Lease that records no renewal.
+func connectionLapse(lease *coordinationv1.Lease) (time.Time, bool) {
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		return time.Time{}, false
+	}
+	return lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace), true
+}
+
+// connectionLive is whether `runnerConnectedCondition` counts the Lease's renewals as recent at now.
+func connectionLive(lease *coordinationv1.Lease, now time.Time) bool {
+	lapse, renewed := connectionLapse(lease)
+	return renewed && lapse.After(now)
+}
+
+// leaseRevived is whether an update takes a lapsed connection Lease to a live one, a change only
+// renewal time moves. The reconciler requeues at the moment a live connection lapses, so the Lease
+// watch only has to enqueue the reverse crossing.
+func leaseRevived(previous, current *coordinationv1.Lease, now time.Time) bool {
+	return !connectionLive(previous, now) && connectionLive(current, now)
 }
 
 // bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
@@ -954,15 +974,16 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Event{}, byPodEvent).
 		Watches(&sandboxapi.SandboxTemplate{}, byTemplate)
 	// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
-	// so only a different runner Pod, a new connection or a change in the facts the runner
-	// publishes enqueues.
+	// so only a different runner Pod, a new connection, a change in the facts the runner publishes
+	// or a renewal that revives a lapsed connection enqueues.
 	setup = setup.Watches(&coordinationv1.Lease{},
 		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{}),
 		builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 			previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
 			return previous.Annotations[sandboxlease.PodUIDAnnotation] != current.Annotations[sandboxlease.PodUIDAnnotation] ||
 				leaseTransitions(previous) != leaseTransitions(current) ||
-				sandboxlease.FactsChanged(previous.Annotations, current.Annotations)
+				sandboxlease.FactsChanged(previous.Annotations, current.Annotations) ||
+				leaseRevived(previous, current, r.Now())
 		}}))
 	// A starting workload waits for cert-manager to mark its Certificate Ready and write the leaf
 	// Secret. Both are read uncached, so without these watches that readiness is only noticed on
