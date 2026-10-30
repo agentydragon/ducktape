@@ -56,6 +56,29 @@ BuildBuddy's flake statistics are useful leads. Report the service's heuristic
 separately from independently verified recoveries and document its sample window.
 Unavailable historical logs limit diagnosis; they do not erase recorded outcomes.
 
+### Find PRs merged without green checks
+
+Enumerate PRs merged during the window, including those opened earlier, and find
+ones merged while required checks were failing, timed out, cancelled or still
+pending. In this repository, the owner sometimes force-merges because of flakes:
+these are priority discovery leads even when the PR or mainline is now green.
+
+Reconstruct check state **at merge time** from the PR's merged head, merge
+timestamp, associated check/status and workflow-attempt history, and the actual
+tested revisions. A later passing rerun must not erase a failure or pending check
+at merge. Keep synthetic merge runs and PR heads correctly associated; record
+missing historical state as unknown. Current rollups alone cannot establish what
+was green when the PR merged. Call a merge an explicit bypass/force-merge only
+when timeline/audit evidence or owner commentary supports it.
+
+Inspect the failed targets and logs, bypass explanations and PR discussion for
+each candidate. Correlate with same-source fresh recoveries and recurring failure
+signatures, then investigate the mechanism. A non-green merge is evidence of
+operator friction and a strong flake lead, not proof that the failure was flaky
+rather than a source regression, infrastructure fault or an unrelated gate.
+Report this candidate population separately from verified flakes and recoveries,
+with PR links, merge-time check states and the diagnosis or visibility limit.
+
 ### Verify cache exposure and physical executions
 
 Do not infer an uncached test run from target-history `startTime` versus invocation
