@@ -12,27 +12,28 @@ rendering, scroll anchoring, sending commands — is shared.
 
 Electric sits behind one module on each side:
 
-- **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
-  which `api.py` always mounts; `electric_url` is an optional setting. Its only read of the fold is
-  `ContentStore.current_scope`, which any implementation needs for **P7**.
+- **Backend:** `agentplane/app/go/proxy/electric.go` holds `ElectricProxy` and the
+  `/threads/{thread_id}/sync/*` routes, which `runtime.go` mounts only when `electric_url` is set.
+  Its only read of the fold is `ThreadScopeStore.CurrentScope` (`historydata.Store.CurrentScope`),
+  which any implementation needs for **P7**.
 - **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `page.tsx`
   reads only that, from a context `app.tsx` fills. `electric_sync.tsx` implements it as
   `electricThreadSync`, on the raw `@electric-sql/client`.
 
 ## Backend
 
-- **Shared, below the seam:** the fold tables; `ContentStore`;
-  `ThreadStore`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel`, the replica-local signal that a thread was written — what
+- **Shared, below the seam:** the fold tables; `historydata.Store`;
+  `threads.Store`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel`, the replica-local signal that a thread was written — what
   a long poll or a push waits on. The `/threads` routes for thread metadata and commands
   (the five typed command POST routes under `/threads/{thread_id}`) stay shared: commands are writes,
   not sync.
 - **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and
   the delta — rows in a range with `revision_cursor > since`. It is a read of the fold rather than a
-  protocol, so it belongs in `threads/view/`.
-- **Per implementation:** a package `agentplane/app/thread_sync/<name>/` owning a router mounted at
-  `/threads/{thread_id}/sync/<name>/…` behind the same `require_caller` dependency (**C2**), and its
-  own settings. Electric moves there.
-  There is no Python interface to implement: each implementation is a router over the shared stores.
+  protocol, so it belongs beside `historydata.Store`.
+- **Per implementation:** a package `agentplane/app/go/threadsync/<name>/` owning handlers mounted at
+  `/threads/{thread_id}/sync/<name>/…` through the same `HTTPServer.RegisterRawRoute` authorization
+  (**C2**), and its own settings. Electric moves there.
+  There is no Go interface to implement: each implementation is a set of handlers over the shared stores.
 
 Which implementations are mounted is a deployment setting (§ Choosing one).
 
@@ -78,7 +79,7 @@ in what has to change to try another.
 | Deploy: an app setting                      | change the setting in the manifest | none beyond the setting; testing and staging can run different ones                         |
 | Browser: `?sync=`, else the deploy default  | reload with a parameter            | the deployment mounts every configured implementation                                       |
 
-**The deploy-time setting is the one to build.** It is an ordinary `Settings` field, set by the
+**The deploy-time setting is the one to build.** It is an ordinary app config field, set by the
 cdk8s app like `electric_url` is today. The backend mounts the chosen implementation's routes, and
 the frontend reads the choice from the app at start, so one image serves any choice. A per-browser
 override can be added on top later, for comparing two implementations on one deployment. Picking
@@ -115,7 +116,7 @@ a dynamic `import()` already keeps it off the page.
 
 Each step ships alone, and the first changes no behaviour.
 
-1. Move `electric.py` into `thread_sync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
+1. Move `proxy/electric.go` into `threadsync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
    change.
 2. The deployment setting that picks an implementation, which the frontend reads at start.
 3. A second implementation, with the shared range and delta read. The cheapest is the window poll,

@@ -1,8 +1,9 @@
 # Option: the app pushes, over SSE or WebSocket
 
 A1's delta, but the server keeps the connection and writes to it rather than answering a re-issued
-poll. The app already does exactly this for the inventory: `/live/sandboxes` is SSE, `LiveIndex`
-holds the state, and `database_updates.py` is the Postgres wake-up behind it.
+poll. The app already does exactly this for the inventory: `/live/sandboxes` is SSE, and
+`liveinventory` holds the state from a Kubernetes watch cache. A thread push would wait on the
+`wakeups.Hub` subscription to `threads.UpdatesChannel` instead.
 
 The reader opens one stream and declares its interest — a cursor window and a content selection.
 The app watches the fold and writes the entities and bodies that fall inside it.
