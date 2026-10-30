@@ -99,7 +99,7 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 		Type: corev1.SecretTypeTLS,
 		Data: map[string][]byte{"tls.crt": []byte("certificate"), "tls.key": []byte("private key")},
 	}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(certificate, secret).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(certificate, secret).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	if pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID); err != nil || pending != nil {
 		t.Fatalf("matching Ready Certificate and Secret: pending=%v err=%v", pending, err)
@@ -140,16 +140,9 @@ func TestPodRunnerTLSVolumeUsesCredentialSpecificSecret(t *testing.T) {
 func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	ctx := context.Background()
 	sandbox := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
-			Annotations: map[string]string{
-				RunnerCredentialIDAnnotation:         runnerCredentialTestID,
-				RunnerCredentialKindAnnotation:       "vm",
-				RunnerCredentialLastVMIUIDAnnotation: "vmi-old",
-				RunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
-			},
-		},
-		Spec: sandboxapi.SandboxSpec{Running: true},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"},
+		Spec:       sandboxapi.SandboxSpec{Running: true},
+		Status:     sandboxapi.SandboxStatus{RunnerCredential: acceptedVMRunnerCredential("vmi-old")},
 	}
 	vm := &kubevirtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
@@ -171,7 +164,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{{APIVersion: kubevirtv1.GroupVersion.String(), Kind: "VirtualMachine", Name: vm.Name, UID: vm.UID, Controller: runnerCredentialTestPtr(true)}},
 		},
 	}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm, vmi).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm, vmi).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil {
@@ -201,8 +194,8 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &gotSandbox); err != nil {
 		t.Fatal(err)
 	}
-	if gotSandbox.Annotations[RunnerCredentialIDAnnotation] != newID {
-		t.Fatalf("Sandbox binding %q does not match replacement credential %q", gotSandbox.Annotations[RunnerCredentialIDAnnotation], newID)
+	if got := gotSandbox.Status.RunnerCredential; got == nil || got.ID != newID || len(gotSandbox.Annotations) != 0 {
+		t.Fatalf("Sandbox binding %#v (annotations %v) is not the status-only replacement credential %q", gotSandbox.Status.RunnerCredential, gotSandbox.Annotations, newID)
 	}
 	var newCertificate unstructured.Unstructured
 	newCertificate.SetGroupVersionKind(runnerCertificateGVK)
@@ -217,15 +210,10 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 
 func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	ctx := context.Background()
-	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
-		Annotations: map[string]string{
-			RunnerCredentialIDAnnotation:         runnerCredentialTestID,
-			RunnerCredentialKindAnnotation:       "vm",
-			RunnerCredentialLastVMIUIDAnnotation: "vmi-current",
-			RunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
-		},
-	}}
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"},
+		Status:     sandboxapi.SandboxStatus{RunnerCredential: acceptedVMRunnerCredential("vmi-current")},
+	}
 	vm := &kubevirtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
@@ -244,7 +232,7 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
 	certificate.SetUID(types.UID("certificate-uid"))
 	certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm, vmi, certificate, runnerCredentialTestSecret(sandbox, runnerCredentialTestID)).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm, vmi, certificate, runnerCredentialTestSecret(sandbox, runnerCredentialTestID)).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil || pending != nil {
@@ -257,15 +245,10 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 
 func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	ctx := context.Background()
-	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
-		Annotations: map[string]string{
-			RunnerCredentialIDAnnotation:         runnerCredentialTestID,
-			RunnerCredentialKindAnnotation:       "vm",
-			RunnerCredentialLastVMIUIDAnnotation: "vmi-old",
-			RunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
-		},
-	}}
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"},
+		Status:     sandboxapi.SandboxStatus{RunnerCredential: acceptedVMRunnerCredential("vmi-old")},
+	}
 	halted := kubevirtv1.RunStrategyHalted
 	vm := &kubevirtv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vm-uid",
@@ -274,7 +257,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 			RunnerCredentialVMIUIDAnnotation: "vmi-old",
 		},
 	}, Spec: kubevirtv1.VirtualMachineSpec{RunStrategy: &halted}}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm}, true)
 	if err != nil || pending == nil {
@@ -301,8 +284,8 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &gotSandbox); err != nil {
 		t.Fatal(err)
 	}
-	if gotSandbox.Annotations[RunnerCredentialIDAnnotation] != newID {
-		t.Fatalf("Sandbox credential %q does not match VM credential %q", gotSandbox.Annotations[RunnerCredentialIDAnnotation], newID)
+	if got := gotSandbox.Status.RunnerCredential; got == nil || got.ID != newID || len(gotSandbox.Annotations) != 0 {
+		t.Fatalf("Sandbox binding %#v (annotations %v) is not the status-only VM credential %q", gotSandbox.Status.RunnerCredential, gotSandbox.Annotations, newID)
 	}
 	_, gate, err := r.converge(ctx, &gotSandbox, w, true, pending)
 	if err != nil {
@@ -341,7 +324,7 @@ func TestDeletingVMRetainsOnlyPreviouslyPublishedLauncher(t *testing.T) {
 				Annotations: map[string]string{RunnerCredentialIDAnnotation: runnerCredentialTestID},
 			}}
 			sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: launcher.Name, UID: "launcher-current"}
-			c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, vm.DeepCopy()).Build()
+			c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm.DeepCopy()).Build()
 			r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 			w, pending, err := r.ensureVMRunnerCredential(context.Background(), sandbox, workload{vm: vm.DeepCopy(), launcher: launcher}, true)
 			if err != nil || pending != nil {
@@ -363,14 +346,12 @@ func TestDeletingVMRetainsOnlyPreviouslyPublishedLauncher(t *testing.T) {
 
 func TestPodCredentialMismatchDoesNotPublishReplacementDuringFinalization(t *testing.T) {
 	ctx := context.Background()
-	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
-		Annotations: map[string]string{
-			RunnerCredentialIDAnnotation:     runnerCredentialTestID,
-			RunnerCredentialKindAnnotation:   "pod",
-			RunnerCredentialPodUIDAnnotation: "pod-old",
-		},
-	}}
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"},
+		Status: sandboxapi.SandboxStatus{RunnerCredential: &sandboxapi.RunnerCredential{
+			ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "pod-old",
+		}},
+	}
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: sandbox.Name, UID: "pod-old"}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "pod-replacement",
@@ -378,7 +359,7 @@ func TestPodCredentialMismatchDoesNotPublishReplacementDuringFinalization(t *tes
 			sandboxapi.RunnerCredentialLabel: runnerCredentialTestID,
 		},
 	}}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, pod).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, pod).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	w, pending, err := r.ensureRunnerCredential(ctx, sandbox, workload{pod: pod}, true)
 	if err != nil || pending == nil || pending.reason != "RunnerCredentialMismatch" {
@@ -407,7 +388,7 @@ func TestDeleteOldRunnerCertificatesRemovesOnlyManagedStaleGeneration(t *testing
 		Name:      "unrelated",
 		Labels:    map[string]string{sandboxapi.SandboxLabel: sandbox.Name},
 	}}
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(oldCertificate, oldSecret, activeSecret, unrelatedSecret).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(oldCertificate, oldSecret, activeSecret, unrelatedSecret).Build()
 	r := &Reconciler{Client: c, Objects: c}
 	if pending, err := r.deleteOldRunnerCertificates(ctx, sandbox, activeID); err != nil || pending != nil {
 		t.Fatalf("cleanup: pending=%v err=%v", pending, err)
@@ -446,7 +427,7 @@ func TestDeleteOldRunnerCertificatesPreservesForeignRunnerLikeSecret(t *testing.
 	foreignID := "fedcba9876543210fedcba9876543210"
 	foreignSecret := runnerCredentialTestSecret(sandbox, foreignID)
 	foreignSecret.Annotations[runnerCertificateNameAnnotation] = "unrelated-certificate"
-	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(foreignSecret).Build()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(foreignSecret).Build()
 	r := &Reconciler{Client: c, Objects: c}
 
 	pending, err := r.deleteOldRunnerCertificates(ctx, sandbox, runnerCredentialTestID)
@@ -478,3 +459,88 @@ func runnerCredentialTestSecret(sandbox *sandboxapi.Sandbox, credentialID string
 }
 
 func runnerCredentialTestPtr[T any](v T) *T { return &v }
+
+func acceptedVMRunnerCredential(lastVMIUID string) *sandboxapi.RunnerCredential {
+	return &sandboxapi.RunnerCredential{
+		ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindVM, LastVMIUID: lastVMIUID, AcceptedID: runnerCredentialTestID,
+	}
+}
+
+// migrateAndBindPod runs the legacy migration and the Pod credential check as a reconcile does,
+// and reports whether the Pod survived as the bound incarnation.
+func migrateAndBindPod(t *testing.T, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (sandboxapi.Sandbox, bool) {
+	t.Helper()
+	ctx := context.Background()
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, pod).Build()
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	var current sandboxapi.Sandbox
+	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &current); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.migrateLegacyRunnerCredential(ctx, &current); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.ensureRunnerCredential(ctx, &current, workload{pod: pod}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &current); err != nil {
+		t.Fatal(err)
+	}
+	return current, c.Get(ctx, client.ObjectKeyFromObject(pod), &corev1.Pod{}) == nil
+}
+
+func runnerCredentialTestPod(uid types.UID) *corev1.Pod {
+	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "sandboxes", Name: "test", UID: uid,
+		Labels: map[string]string{sandboxapi.RunnerCredentialLabel: runnerCredentialTestID},
+	}}
+}
+
+func TestLegacyAnnotationBindingKeepsRunningPodAcrossUpgrade(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
+		Annotations: map[string]string{
+			RunnerCredentialIDAnnotation:               runnerCredentialTestID,
+			legacyRunnerCredentialKindAnnotation:       "pod",
+			legacyRunnerCredentialPodUIDAnnotation:     "pod-current",
+			legacyRunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
+			"unrelated": "keep",
+		},
+	}}
+	got, kept := migrateAndBindPod(t, sandbox, runnerCredentialTestPod("pod-current"))
+	if !kept {
+		t.Fatal("the Pod bound by the legacy annotations was replaced")
+	}
+	want := sandboxapi.RunnerCredential{ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "pod-current", AcceptedID: runnerCredentialTestID}
+	if got.Status.RunnerCredential == nil || *got.Status.RunnerCredential != want {
+		t.Fatalf("status binding = %#v, want %#v", got.Status.RunnerCredential, want)
+	}
+	if len(got.Annotations) != 1 || got.Annotations["unrelated"] != "keep" {
+		t.Fatalf("migration left legacy annotations or dropped others: %v", got.Annotations)
+	}
+}
+
+func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
+	// A Sandbox writer holding patch but not sandboxes/status points the annotations at another
+	// generation and Pod.
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
+			Annotations: map[string]string{
+				RunnerCredentialIDAnnotation:           "fedcba9876543210fedcba9876543210",
+				legacyRunnerCredentialKindAnnotation:   "pod",
+				legacyRunnerCredentialPodUIDAnnotation: "pod-other",
+			},
+		},
+		Status: sandboxapi.SandboxStatus{RunnerCredential: &sandboxapi.RunnerCredential{
+			ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "pod-current", AcceptedID: runnerCredentialTestID,
+		}},
+	}
+	got, kept := migrateAndBindPod(t, sandbox, runnerCredentialTestPod("pod-current"))
+	if !kept {
+		t.Fatal("annotations rebound the runner credential")
+	}
+	if got.Status.RunnerCredential == nil || *got.Status.RunnerCredential != *sandbox.Status.RunnerCredential || len(got.Annotations) != 0 {
+		t.Fatalf("status binding %#v or annotations %v changed", got.Status.RunnerCredential, got.Annotations)
+	}
+}

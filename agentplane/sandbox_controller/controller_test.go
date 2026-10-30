@@ -1239,12 +1239,10 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 	// must be asked immediately, even within the old deadline.
 	pod := getPod(t, c)
 	sandbox := getSandbox(t, c)
-	ensureAnnotations(sandbox)
-	sandbox.Annotations[RunnerCredentialIDAnnotation] = runnerCredentialTestID
-	sandbox.Annotations[RunnerCredentialKindAnnotation] = "pod"
-	sandbox.Annotations[RunnerCredentialPodUIDAnnotation] = "uid-next"
-	sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation] = runnerCredentialTestID
-	if err := c.Update(context.Background(), sandbox); err != nil {
+	sandbox.Status.RunnerCredential = &sandboxapi.RunnerCredential{
+		ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "uid-next", AcceptedID: runnerCredentialTestID,
+	}
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
 		t.Fatal(err)
 	}
 	if pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID); err != nil {
