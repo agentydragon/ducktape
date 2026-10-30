@@ -1,6 +1,6 @@
 ---
 name: ci_reliability
-description: Quantify CI flakiness and recurring failures from GitHub Actions and BuildBuddy, diagnose specific culprits, inspect fragile test patterns, and publish an evidence-backed HTML reliability report. Use for flaky-test audits, retry/recovery analysis, and measuring whether reliability fixes helped; use ci_latency for feedback-time analysis.
+description: Quantify CI flakiness and recurring failures, trace their mechanisms through test internals, fixtures and infrastructure, and test coverage-preserving repairs. Publish evidence-backed reliability reports; use ci_latency for feedback-time analysis.
 ---
 
 # CI reliability and flakiness
@@ -9,6 +9,11 @@ Produce a recent reliability diagnosis with failure frequencies, explicit
 denominators, concrete culprits, and prioritized fixes. A red build is not by itself
 a flaky test. Distinguish observed intermittent outcomes, sustained regressions,
 infrastructure failures, and source patterns that are only hypotheses.
+
+Test implementations and architecture are in scope: synchronization, fixtures,
+setup/teardown, shared resources, target structure, parallelism and dependencies.
+Follow important failures to whatever depth produces a useful repair; failure
+rankings, log signatures and successful retries are starting points, not diagnoses.
 
 ## Continue the previous investigation
 
@@ -47,9 +52,59 @@ revisions; BuildBuddy supplies invocation, target, shard, and attempt outcomes.
 - Use invocation details or checkout/job evidence for the actual tested full SHA.
   A PR head and its synthetic merge commit are not interchangeable.
 
-BuildBuddy's flake statistics are useful leads. Report the service's heuristic
-separately from independently verified recoveries and document its sample window.
-Unavailable historical logs limit diagnosis; they do not erase recorded outcomes.
+### Query BuildBuddy's Flakes APIs
+
+Use `GetTargetStats` to discover candidates and `GetTargetFlakeSamples` to inspect
+the important candidates, alongside ordinary failure history and non-green merges.
+The corresponding CLI commands are:
+
+```bash
+bbapi target stats --repo https://github.com/agentydragon/ducktape --json > target-stats.json
+bbapi target flakes "$TARGET_LABEL" --repo https://github.com/agentydragon/ducktape --json > flake-samples.json
+```
+
+Select the canonical repository explicitly. Local `file://` checkout URLs and
+forks have separate histories; automatic repo detection or a remembered UI
+selection can query the wrong one. Verify the organization, recorded repository,
+branch and time filters before interpreting an empty response. A missing branch
+name in recorded invocations cannot match `devel`. These APIs default to seven
+days when no window is supplied; use supported CLI filters or the RPC's
+`started_after`/`started_before` fields for a different window, and record it.
+Follow sample `nextPageToken` values; one page is not a complete sample set.
+
+Keep Bazel-reported `FLAKY` verdicts separate from BuildBuddy's `likely_flaky_runs`
+heuristic: an isolated failure/timeout bracketed by passing runs of the target.
+That heuristic does not require the same commit or configuration and excludes
+cached rows. It can miss repeated failures and does not establish a cause.
+Check whether CI target tracking includes the relevant invocations (`ROLE=CI`
+and target tracking enabled); this repository deliberately excludes PR invocations
+from that mainline tracker, so reconcile the results with GitHub PR checks and
+exact target histories. Report API candidates separately from independently
+verified recoveries. Unavailable historical logs limit diagnosis; they do not
+erase recorded outcomes.
+
+### Find PRs merged without green checks
+
+Enumerate PRs merged during the window, including those opened earlier, and find
+ones merged while required checks were failing, timed out, cancelled or still
+pending. In this repository, the owner sometimes force-merges because of flakes:
+these are priority discovery leads even when the PR or mainline is now green.
+
+Reconstruct check state **at merge time** from the PR's merged head, merge
+timestamp, associated check/status and workflow-attempt history, and the actual
+tested revisions. A later passing rerun must not erase a failure or pending check
+at merge. Keep synthetic merge runs and PR heads correctly associated; record
+missing historical state as unknown. Current rollups alone cannot establish what
+was green when the PR merged. Call a merge an explicit bypass/force-merge only
+when timeline/audit evidence or owner commentary supports it.
+
+Inspect the failed targets and logs, bypass explanations and PR discussion for
+each candidate. Correlate with same-source fresh recoveries and recurring failure
+signatures, then investigate the mechanism. A non-green merge is evidence of
+operator friction and a strong flake lead, not proof that the failure was flaky
+rather than a source regression, infrastructure fault or an unrelated gate.
+Report this candidate population separately from verified flakes and recoveries,
+with PR links, merge-time check states and the diagnosis or visibility limit.
 
 ### Verify cache exposure and physical executions
 
@@ -131,6 +186,45 @@ reservation races, shared mutable fixtures, unbounded waits, external services,
 and cleanup ordering. Explain a concrete failure mechanism and location for each
 finding. Keep source-only risks separate from observed incidents; a grep match
 does not establish causality or frequency.
+
+### Follow the failure mechanism through the test
+
+For each important failure cluster, reconstruct a causal timeline from a failure
+and comparable pass. Trace the relevant fixture lifetimes, subprocesses, service
+events, assertions and cleanup, following dependencies until the competing causes
+can be distinguished. Identify the violated invariant and ordering or resource
+condition that permits it. A timeout, idle period or racy-looking source pattern
+does not by itself identify the cause.
+
+Inspect sleep/poll loops, read/subscribe gaps, wrong-stage readiness, stale reads,
+shared mutable state, resource/port ownership, leaked processes and teardown that
+overlaps the next case. Distinguish a slow producer from a late observer and an
+application race from a harness race or infrastructure failure. Investigate
+why a retry changes the outcome, including caches, retained state, execution order,
+random seeds and external dependencies; do not assume independent attempts.
+
+Evaluate changes to the test and harness as well as the application: event-driven
+predicate waits, explicit happens-before relationships, fixture scope and ownership,
+isolation, setup/cleanup ordering, target boundaries and safe concurrency. Preserve
+the tested contract, failure sensitivity and real integration boundaries. Longer
+sleeps/timeouts, more retries, weaker assertions, serialization, mocks and disabling
+coverage are not equivalent repairs without evidence and explicit tradeoffs.
+
+When feasible, use a bounded isolated reproduction and candidate repair, retaining
+the failing conditions. Exercise the relevant scheduling/order/resource variation
+with fresh uncached executions and record actual exposure and failures before and
+after. Use controlled scheduling or fault injection when it reproduces the race
+more decisively than repetitions. A passing rerun alone does not validate a repair;
+when the failure cannot be reproduced, label the change a candidate and state what
+evidence is missing. Check latency/resource effects so reliability is not bought
+with unexplained waiting or reduced coverage.
+
+Continue available source/runtime investigation until there is a supported
+mechanism and concrete repair, a rejected hypothesis, or a specific visibility or
+resource boundary and next discriminating observation. Scale depth to decision
+value; a flake ranking or "inspect fixture races" is not a finished diagnosis of
+the major failures. Include the source location, causal evidence, preserved
+coverage, reproduction/validation result and remaining uncertainty in the report.
 
 Before adding diagnostics, inspect pytest captured logs, existing service logging,
 and undeclared test outputs. Prefer enabling standard logs and reusing an existing

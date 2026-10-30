@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose where recent CI feedback time and compute go across PR types, GitHub runners, BuildBuddy provisioning, Bazel analysis/actions/tests and critical paths; prioritize practical improvements with reproducible evidence.
+description: Diagnose CI feedback time and compute from workflow queues through slow-test internals, fixtures and waits; test coverage-preserving improvements to implementation, setup, teardown and parallelism with reproducible evidence.
 ---
 
 # CI latency analysis
@@ -20,6 +20,10 @@ run as the latest snapshot in that namespace (below). `cihealth` covers
 release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
+
+Test implementations and test architecture are part of the optimization scope.
+Follow measured bottlenecks to whatever depth yields useful, coverage-preserving
+changes; workflow configuration and target-duration rankings are not the boundary.
 
 ## Start from the previous investigation
 
@@ -199,6 +203,53 @@ shortlist, collect `GetExecution` first and fetch logs/XML only for selected
 labels; enumerating thousands of cached target/artifact pages is unnecessary.
 When testing fewer shards, preserve every case and compare both process/CPU
 totals and the slowest shard; repeated session setup may dominate cheap cases.
+
+## Explain what slow tests are doing
+
+For the major contributors selected from fresh cost and critical-path evidence,
+inspect the test source, fixture dependency graph and runtime behavior. Follow
+expensive or unexplained phases into subprocesses, services and dependencies.
+Do not stop at "this test takes seven minutes" or "setup is expensive," or let
+easy workflow tweaks substitute for investigating the dominant test work.
+
+- Reconstruct setup, readiness, scenario execution, assertions, diagnostics and
+  teardown. Use existing phase artifacts, logs, traces and real CPU/off-CPU or
+  sampling profilers as appropriate. Attribute elapsed time as well as CPU:
+  distinguish useful computation, repeated work, I/O, contention and waiting.
+  A Bazel action duration or a CPU profile alone cannot explain blocked time.
+- For material waits, identify the predicate, its producer and wake-up mechanism.
+  Inspect fixed sleeps, polling loops, backoff, debounce and sequential readiness
+  checks. Determine whether the state is already ready while the test sleeps, or
+  whether the producer itself is slow. Evaluate event/watch notifications or
+  predicate-driven synchronization while preserving deadlines, cancellation,
+  missed-event protection and any intentional stability-observation interval.
+  Low CPU or a sleep call alone is not evidence of removable time.
+- Explain what guarantee each costly operation buys. Look for unnecessarily large
+  inputs, repeated serialization/copying/hashing, duplicated end-to-end proofs,
+  excessive process launches and expensive fixtures for narrow assertions.
+  Evaluate equivalent faster algorithms, inputs or fixture construction. Preserve
+  the behavior and failure modes under test; equal test counts or passing results
+  alone do not prove equal coverage. Replacing a real integration boundary with a
+  mock is a coverage tradeoff, not an equivalent speedup.
+- Treat fixture scope/lifetime, setup and teardown, resource reuse, test/target
+  boundaries, target count, parametrization, batching, sharding and in-test
+  concurrency as changeable. Measure repeated setup against the longest shard,
+  invalidation/selectivity and scheduling overhead. Before sharing or overlapping
+  work, establish state isolation, ordering, capacity and cleanup ownership; keep
+  independent instances or cold starts where they are part of the test contract.
+- Try promising changes in bounded same-input experiments. Compare the actual
+  cases/assertions and exercised paths, wall/CPU/resource costs, reliability and
+  required-gate critical path. Control or label cache, worker and ordering effects;
+  faster tests that introduce flakes or merely move work are not established wins.
+
+For each investigated bottleneck, report the operation and source location, why
+it is needed, the measured work/wait mechanism, the proposed equivalent change
+and its experiment or rejection. Mark unexplained time explicitly. Continue
+until the evidence supports an actionable recommendation, a reason to retain the
+work, or a specific visibility/resource boundary with the next discriminating
+observation. Choose depth by whether further evidence can change the decision,
+not a fixed layer count or a requirement to audit every test. "Profile fixtures"
+is an unfinished investigation while the relevant source and runtime are available.
 
 ## Primary outcome: commit-to-actionable feedback
 
