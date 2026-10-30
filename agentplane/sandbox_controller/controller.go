@@ -136,6 +136,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		r.idle.forget(req.NamespacedName)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	if err := r.migrateLegacyRunnerCredential(ctx, &sandbox); err != nil {
+		return ctrl.Result{}, err
+	}
 	w, err := r.workload(ctx, &sandbox)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -541,7 +544,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
-	credentialID := sandbox.Annotations[RunnerCredentialIDAnnotation]
+	credentialID := runnerCredential(sandbox).ID
 	pod, blocked := render(sandbox, template, credentialID)
 	if blocked != nil {
 		return w, blocked, nil
@@ -557,10 +560,9 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	w.pod = pod
-	ensureAnnotations(sandbox)
-	sandbox.Annotations[RunnerCredentialPodUIDAnnotation] = string(pod.UID)
-	sandbox.Annotations[RunnerCredentialAcceptedIDAnnotation] = credentialID
-	if err := r.Update(ctx, sandbox); err != nil {
+	bound := runnerCredential(sandbox)
+	bound.PodUID, bound.AcceptedID = string(pod.UID), credentialID
+	if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
 		return w, nil, err
 	}
 	return w, nil, nil

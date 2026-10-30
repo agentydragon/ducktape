@@ -255,6 +255,36 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
+	// The app and Runner Gateway hold patch on Sandboxes but not sandboxes/status: neither the main
+	// resource's status nor the old binding annotations can rebind the runner credential.
+	var pod corev1.Pod
+	var bound sandboxapi.RunnerCredential
+	eventually(t, func() bool {
+		var current sandboxapi.Sandbox
+		if objects.Get(ctx, key, &pod) != nil || objects.Get(ctx, key, &current) != nil || current.Status.RunnerCredential == nil {
+			return false
+		}
+		bound = *current.Status.RunnerCredential
+		return bound.PodUID == string(pod.UID)
+	})
+	const otherID = "fedcba9876543210fedcba9876543210"
+	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
+		"metadata": {"annotations": {"agentplane.allegedly.works/runner-credential": "`+otherID+`", "agentplane.allegedly.works/runner-credential-kind": "pod"}},
+		"status": {"runnerCredential": {"id": "`+otherID+`", "kind": "Pod"}}
+	}`))); err != nil {
+		t.Fatal(err)
+	}
+	// The controller strips the annotations when it reconciles the patch.
+	eventually(t, func() bool {
+		return objects.Get(ctx, key, sandbox) == nil && sandbox.Annotations[RunnerCredentialIDAnnotation] == ""
+	})
+	var unchanged corev1.Pod
+	if err := objects.Get(ctx, key, &unchanged); err != nil || unchanged.UID != pod.UID {
+		t.Fatalf("spec writer's patch replaced the bound Pod: %v", err)
+	}
+	if sandbox.Status.RunnerCredential == nil || *sandbox.Status.RunnerCredential != bound {
+		t.Fatalf("spec writer's patch changed the binding to %#v, want %#v", sandbox.Status.RunnerCredential, bound)
+	}
 	var account corev1.ServiceAccount
 	if err := objects.Get(ctx, key, &account); err != nil {
 		t.Fatal(err)

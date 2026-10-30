@@ -75,10 +75,13 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
   CA bundle supplies the root. A renewed key can update only its own generation's Secret.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
-  first VMI UID is persisted on its VM and Sandbox. If KubeVirt unexpectedly replaces a VMI while
+  first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new
   credential ID and Secret name, and resumes only after the old VMI is gone and the new certificate
   is ready. A replacement never inherits a credential issued to its predecessor.
+- `status.runnerCredential` is the Sandbox's binding: the current credential ID and workload kind,
+  the bound Pod UID, and the last accepted VMI UID and credential ID. Only the controller writes it,
+  through the status subresource, so a writer of the Sandbox's spec or metadata cannot rebind it.
 - An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
   the controller does not halt an active VM just to install credentials. A coordinated Gateway
   authentication rollout must wait until legacy runners are stopped.
