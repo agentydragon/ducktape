@@ -129,8 +129,8 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 		suspended.Status.SuspendedAtWakeGeneration == nil || *suspended.Status.SuspendedAtWakeGeneration != suspended.Spec.WakeGeneration {
 		t.Fatalf("suspendedBy = %v at generation %v, want Idle at generation %d", suspended.Status.SuspendedBy, suspended.Status.SuspendedAtWakeGeneration, suspended.Spec.WakeGeneration)
 	}
-	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || runningReason(t, c) != "Quiescing" || getPod(t, c) == nil {
-		t.Fatalf("mode = %s, Running reason = %s, Pod present = %v; want Suspended while the Pod waits for the seal", suspended.Status.OperatingMode, runningReason(t, c), getPod(t, c) != nil)
+	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
+		t.Fatalf("mode = %s, stopStage = %q, Pod present = %v; want Suspended while the Pod waits for the seal", suspended.Status.OperatingMode, getSandbox(t, c).Status.StopStage, getPod(t, c) != nil)
 	}
 	if suspended.Status.IdleSuspendAt != nil {
 		t.Fatalf("idleSuspendAt = %v after suspension began, want absent", suspended.Status.IdleSuspendAt)
@@ -362,8 +362,8 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 
 	publishQuiesceStage(t, c, "draining")
 	reconcileOnce(t, r)
-	if runningReason(t, c) != "Quiescing" || getPod(t, c) == nil {
-		t.Fatalf("a runner in lameduck was not sealed before it was replaced: Running reason = %s", runningReason(t, c))
+	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
+		t.Fatalf("a runner in lameduck was not sealed before it was replaced: stopStage = %q", getSandbox(t, c).Status.StopStage)
 	}
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)

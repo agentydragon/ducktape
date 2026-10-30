@@ -645,8 +645,8 @@ func TestStoppedSandboxKeepsStateVolumeWithoutPod(t *testing.T) {
 	if getPod(t, c) != nil {
 		t.Fatal("a stopped Sandbox has a Pod")
 	}
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 }
 
@@ -662,8 +662,8 @@ func TestStopDeletesPodAndKeepsStateVolume(t *testing.T) {
 		t.Fatal("stopping deleted the state PVC")
 	}
 	reconcileOnce(t, r)
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation != nil {
 		t.Errorf("a stopped Sandbox reports incarnation %v", incarnation)
@@ -888,8 +888,8 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.Name != sandboxName || incarnation.UID != "uid-pod" {
 		t.Fatalf("deletion dropped the live runner route before it sealed: incarnation=%v", incarnation)
 	}
-	if reason := runningReason(t, c); reason != "Quiescing" {
-		t.Errorf("Running reason = %s, want Quiescing", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageQuiescing {
+		t.Errorf("stopStage = %q, want Quiescing", stage)
 	}
 
 	quiesceSessions(t, r)
@@ -899,6 +899,9 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("the state PVC went in the same step as the Pod, while the Pod could still be writing")
+	}
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageDeleting {
+		t.Errorf("stopStage = %q while the sealed Sandbox's workload goes, want Deleting", stage)
 	}
 	reconcileOnce(t, r)
 	var sandbox sandboxapi.Sandbox
@@ -968,7 +971,7 @@ func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
 	if err != nil || result.RequeueAfter == 0 {
 		t.Fatalf("a failed seal is asked again: %v, %v", result, err)
 	}
-	if getPod(t, c) == nil || runningReason(t, c) != "Quiescing" {
+	if getPod(t, c) == nil || getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
 		t.Fatal("the Pod stopped before its runner sealed")
 	}
 
@@ -1026,8 +1029,8 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 			}
 			publishBootstrap(t, c, finished)
 			reconcileOnce(t, r)
-			if runningReason(t, c) != "Quiescing" {
-				t.Errorf("Running reason = %s once the bootstrap %s, want Quiescing", runningReason(t, c), finished)
+			if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
+				t.Errorf("stopStage = %q once the bootstrap %s, want Quiescing", getSandbox(t, c).Status.StopStage, finished)
 			}
 		})
 	}
@@ -1053,8 +1056,8 @@ func TestSuspensionWaitsForARunningSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	if runningReason(t, c) != "Quiescing" {
-		t.Errorf("Running reason = %s once the setup ended, want Quiescing", runningReason(t, c))
+	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
+		t.Errorf("stopStage = %q once the setup ended, want Quiescing", getSandbox(t, c).Status.StopStage)
 	}
 }
 

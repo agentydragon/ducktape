@@ -231,6 +231,9 @@ type SandboxStatus struct {
 	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
+	// StopStage is how far the controller has taken stopping the Sandbox's workload; absent while
+	// the workload runs or starts. Readers dispatch on it; condition reasons are display only.
+	StopStage StopStage `json:"stopStage,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -276,6 +279,20 @@ const (
 	SuspendedByIdle SuspendedBy = "Idle"
 	// A requester cleared `spec.running`.
 	SuspendedByRequested SuspendedBy = "Requested"
+)
+
+// +kubebuilder:validation:Enum=Quiescing;Deleting;Stopped
+type StopStage string
+
+const (
+	// The controller is sealing the current incarnation's Sessions before it stops or deletes it. A
+	// Sandbox resumed meanwhile still waits for the seal and gets a new incarnation.
+	StopStageQuiescing StopStage = "Quiescing"
+	// The Sandbox is being deleted and has no Session left to seal; the controller deletes its
+	// workload and runner credentials.
+	StopStageDeleting StopStage = "Deleting"
+	// No Pod or VM runs; the state volume is kept.
+	StopStageStopped StopStage = "Stopped"
 )
 
 // +kubebuilder:object:root=true

@@ -87,6 +87,8 @@ func WorkspaceVolumeName(sandbox string) string { return sandbox + "-workspace" 
 // +kubebuilder:object:generate=false
 type unready struct {
 	reason, message string
+	// The stage of stopping the workload this wait is, if any; readers see it as `status.stopStage`.
+	stage sandboxapi.StopStage
 	// Nonzero where no watch event will end the wait.
 	retryAfter time.Duration
 }
@@ -284,24 +286,25 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		if err := r.deleteIfLive(ctx, w.pod); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
 	}
 	if w.vm != nil {
 		// The VM's DataVolumes, the VM-local workspace among them, go with it.
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
 	}
 	if w.vmi != nil {
 		// KubeVirt removes a VMI only once its virt-launcher Pod is gone, so no guest still writes to
 		// the state PVC after this.
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
 	if pending, err := r.deleteOldRunnerCertificates(ctx, sandbox, ""); err != nil || pending != nil {
 		if pending == nil {
 			pending = credentialPending("RunnerCredentialCleanupPending", "runner certificates and Secrets are being removed")
 		}
+		pending.stage = sandboxapi.StopStageDeleting
 		return w, pending, err
 	}
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
@@ -385,21 +388,21 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbo
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, runner)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	switch facts.Stage {
 	case sandboxlease.QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runner
 		sandbox.Status.QuiesceAttempt = nil
-		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 	}
 	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runner {
 		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
-			return &unready{reason: "Quiescing", message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
+			return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
 		}
 	}
 	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
@@ -408,14 +411,14 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 	}
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, nil)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
 	sandbox.Status.QuiescedIncarnation = &runner
 	sandbox.Status.QuiesceAttempt = nil
-	return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
+	return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
@@ -654,9 +657,11 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 		status.Incarnation = &sandboxapi.Incarnation{Name: incarnation.Name, UID: string(incarnation.UID)}
 	}
 	condition := metav1.Condition{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	status.StopStage = ""
 	switch {
 	case blocked != nil:
 		condition.Reason, condition.Message = blocked.reason, blocked.message
+		status.StopStage = blocked.stage
 	case w.pod != nil:
 		podCondition(&condition, sandbox, w.pod, func() *corev1.Event { return r.latestPodEvent(ctx, w.pod) })
 	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
@@ -665,8 +670,10 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
 	case w.vm != nil:
 		condition.Reason, condition.Message = "Stopped", fmt.Sprintf("VM %s is halted; its disks and the state PVC are kept", w.vm.Name)
+		status.StopStage = sandboxapi.StopStageStopped
 	default:
 		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
+		status.StopStage = sandboxapi.StopStageStopped
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
 	workloadReady := workloadReadyCondition(sandbox, condition, incarnation)
