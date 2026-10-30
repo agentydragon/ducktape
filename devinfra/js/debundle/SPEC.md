@@ -1377,6 +1377,18 @@ each conflicting effect. This is explicit author input, not an inferred fact:
 A1–A11 and every other contract still apply, and it grants no purity,
 no-reentry or receiver guarantee.
 
+That classification is decided once per edge when the graph is built and
+retained as `dependency_graph.json` `edges[].premise_verdict` on every
+`sequenced` and `co_declaration` edge: `inertable`, `summarized` (strict-chain
+adjacency of two summarized effects), or `known` with the `conflict` the gate
+would report. Applying a premise reads the retained verdicts of the edges
+between its endpoints; `debundle spec propose-commutations` reads the same
+field to draft entries for the constraining `sequenced` edges inside a
+rejection's blocking SCCs, so a drafted pair is accepted or rejected exactly
+as the gate decides. The field is absent
+on graphs written before it was retained; the draft command reports such an
+edge as `verdict_not_recorded` rather than classifying it itself.
+
 ## Ordinary own-property inspection
 
 A guarded `Object.getOwnPropertyNames` or `Object.getOwnPropertyDescriptors`

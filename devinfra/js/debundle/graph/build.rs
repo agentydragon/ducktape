@@ -637,8 +637,8 @@ pub fn build_dependency_graph_with(
             reason,
         })
         .collect();
-    let commuting_premises =
-        apply_commuting_statements(&mut edges, &stmt_by_source_unit, commuting_statements)?;
+    retain_premise_verdicts(&mut edges, &stmt_by_source_unit);
+    let commuting_premises = apply_commuting_statements(&mut edges, commuting_statements)?;
     Ok(DependencyGraph::from_parts(
         nodes,
         edges,
@@ -646,16 +646,22 @@ pub fn build_dependency_graph_with(
     ))
 }
 
-/// How a `commuting_statements` premise may treat one edge between its
-/// endpoints.
-enum PremiseVerdict {
+/// How a `commuting_statements` premise over an edge's two endpoints may
+/// treat that edge. Decided once per edge by [`premise_verdict`] when the
+/// graph is built and retained on the edge (`EdgeReason::premise_verdict`,
+/// `dependency_graph.json` `edges[].premise_verdict`), so the gate applying
+/// a premise and `spec propose-commutations` drafting one read the same
+/// classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "verdict", rename_all = "snake_case")]
+pub enum PremiseVerdict {
     /// The premise may make the edge inert.
     Inertable,
     /// The analysis already knows the two effects are unordered; the edge
     /// exists only as strict-chain adjacency.
     Summarized,
     /// The analysis derived a definite conflict the premise contradicts.
-    Known(KnownConflict),
+    Known { conflict: KnownConflict },
 }
 
 /// Classify one dependency edge between the two source units of a premise
@@ -696,8 +702,9 @@ fn premise_verdict(
 ) -> Option<PremiseVerdict> {
     let from = stmt_by_source_unit[&edge.from];
     let to = stmt_by_source_unit[&edge.to];
+    let known = |conflict| PremiseVerdict::Known { conflict };
     let verdict = match edge.reason.kind {
-        DepKind::CoDeclaration => PremiseVerdict::Known(KnownConflict::CoDeclaration {
+        DepKind::CoDeclaration => known(KnownConflict::CoDeclaration {
             binding: edge
                 .reason
                 .binding()
@@ -706,14 +713,14 @@ fn premise_verdict(
                 .clone(),
         }),
         DepKind::Sequenced => match edge.reason.sequenced_cause() {
-            None => PremiseVerdict::Known(KnownConflict::Unclassified),
+            None => known(KnownConflict::Unclassified),
             Some(
                 cause @ (SequencedCause::SharedVarAccess { .. }
                 | SequencedCause::BindingTimeline { .. }
                 | SequencedCause::UninitializedObservation { .. }),
             ) => {
                 if binding_effects_observed(cause) {
-                    PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone()))
+                    known(KnownConflict::Sequenced(cause.clone()))
                 } else {
                     PremiseVerdict::Inertable
                 }
@@ -729,7 +736,7 @@ fn premise_verdict(
                     )
                 });
                 if explicit {
-                    PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone()))
+                    known(KnownConflict::Sequenced(cause.clone()))
                 } else {
                     PremiseVerdict::Inertable
                 }
@@ -744,18 +751,30 @@ fn premise_verdict(
         },
         _ => return None,
     };
-    if matches!(verdict, PremiseVerdict::Known(_)) {
+    if matches!(verdict, PremiseVerdict::Known { .. }) {
         return Some(verdict);
     }
     // Recorded cells are facts even on an unsummarizable statement (its
     // unknown effects come on top), so a shared written cell wins.
     Some(
         conflicting_cell(&from.effects(), &to.effects()).map_or(verdict, |cell| {
-            PremiseVerdict::Known(KnownConflict::SharedCell {
+            known(KnownConflict::SharedCell {
                 cell: EffectCellReport::from(&cell),
             })
         }),
     )
+}
+
+/// Retain [`premise_verdict`] on every edge it classifies, so a premise
+/// applied now ([`apply_commuting_statements`]) and one drafted later from
+/// `dependency_graph.json` read the same classification.
+fn retain_premise_verdicts(
+    edges: &mut [DependencyEdge],
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+) {
+    for edge in edges.iter_mut() {
+        edge.reason.premise_verdict = premise_verdict(edge, stmt_by_source_unit).map(Box::new);
+    }
 }
 
 /// A cell one summary writes and the other reads or writes, if any.
@@ -769,14 +788,14 @@ fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> O
 
 /// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
 /// statements). For each pair, every `Sequenced` edge between the two source
-/// units (either direction) becomes inert — unless [`premise_verdict`] finds
-/// a definite conflict, in which case the entry contradicts a source fact and
-/// the build fails. `EagerUse` edges are never touched: an at-init read is a
-/// dataflow dependence, not an ordering of effects. A pair with no inertable
-/// edge is unused and the build fails so the spec sheds the stale assertion.
+/// units (either direction) becomes inert — unless the edge's retained
+/// [`PremiseVerdict`] is a definite conflict, in which case the entry
+/// contradicts a source fact and the build fails. `EagerUse` edges are never
+/// touched: an at-init read is a dataflow dependence, not an ordering of
+/// effects. A pair with no inertable edge is unused and the build fails so
+/// the spec sheds the stale assertion.
 fn apply_commuting_statements(
     edges: &mut [DependencyEdge],
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<Vec<AppliedCommutingPremise>, DependencyGraphBuildError> {
     let mut applied = Vec::with_capacity(commuting_statements.len());
@@ -790,14 +809,14 @@ fn apply_commuting_statements(
             if !((edge.from == a && edge.to == b) || (edge.from == b && edge.to == a)) {
                 continue;
             }
-            match premise_verdict(edge, stmt_by_source_unit) {
+            match edge.reason.premise_verdict() {
                 None => {}
                 Some(PremiseVerdict::Inertable) => inertable.push(edge.id),
                 Some(PremiseVerdict::Summarized) => summarized = true,
-                Some(PremiseVerdict::Known(conflict)) => conflicts.push(ContradictingEdge {
+                Some(PremiseVerdict::Known { conflict }) => conflicts.push(ContradictingEdge {
                     from: SourceUnitOrdinal(edge.from.0),
                     to: SourceUnitOrdinal(edge.to.0),
-                    conflict,
+                    conflict: conflict.clone(),
                 }),
             }
         }

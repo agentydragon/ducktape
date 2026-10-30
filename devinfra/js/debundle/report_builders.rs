@@ -333,6 +333,7 @@ fn build_source_unit_nodes_and_edges(
             role: edge_role_report(edge.reason.role()),
             sequenced_cause: edge.reason.sequenced_cause().cloned(),
             commuting_premise: edge.reason.commuting_premise().cloned(),
+            premise_verdict: edge.reason.premise_verdict().cloned(),
         })
         .collect();
     (nodes, edges)

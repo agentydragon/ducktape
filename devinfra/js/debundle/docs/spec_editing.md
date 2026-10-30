@@ -252,6 +252,35 @@ and the destinations each member would land in.
 
 The gate refuses; nothing on disk has changed.
 
+## Workflow: proposing commutations
+
+When `gate cut` shows a blocking SCC whose cut is `sequenced` edges with
+opaque effects (an unknown call, an escaped global alias), co-location is not
+the only remedy: a `commuting_statements` entry
+([SPEC § Commuting statements](../SPEC.md#commuting-statements)) certifies that
+the two source units are order-independent during initialization.
+
+1. **Draft.** Run `debundle spec propose-commutations --graph <graph>
+--source-root <root> [--modules <chunk tree>] --out commutations.yaml`
+   ([cli.md § Proposing commutations](cli.md#proposing-commutations-spec-propose-commutations)).
+   It proposes one entry per `sequenced` source-unit pair inside the SCC that
+   the gate would accept, ranked single-pair cuts first (the pair that alone
+   breaks the SCC may sit on an arc the gate's cut did not pick), and reports
+   separately the pairs the gate would
+   reject, the endpoints without a unique selector, and the `eager_use` edges
+   that still need co-location.
+2. **Audit.** For each proposal read both statements at the reported locations
+   and establish the premise yourself: neither observes the other's effect.
+   The explanation says only why the analysis could not prove the order
+   irrelevant; the draft is a candidate, not a fact.
+3. **Apply.** Copy the audited entries into
+   `chunk_analysis_options.<chunk>.commuting_statements` of the spec (the
+   draft is already grouped under that key) and write the `note` with the
+   reason the pair commutes. Drop the rest.
+4. **Validate.** Run `debundle run` (or `spec validate`): the gate rejects an
+   entry that contradicts a source fact or inerts nothing, and the rejection
+   report shows what the accepted entries bought (`inert_commuting_edges`).
+
 ## Workflow: applying a reviewed source-unit assignment
 
 When `modules decompose` reports a useful source-unit assignment, replace its

@@ -1,9 +1,11 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
 use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
+use crate::propose_commutations::ProposeCommutationsArgs;
 use crate::validate::{ValidateArgs, run_validate_cmd};
-use crate::{emit_report, print_section};
+use crate::{InspectionRoots, emit_report, print_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::{OutputFormat, print_report};
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
@@ -21,6 +23,29 @@ use std::path::PathBuf;
 pub(super) struct SpecNs {
     #[command(subcommand)]
     command: SpecNsCommand,
+}
+
+impl SpecNs {
+    /// Graph compatibility for the one `spec` verb that joins a saved graph
+    /// to current source (and, optionally, a module tree).
+    pub(super) fn verify_graph(
+        &self,
+        roots: &InspectionRoots,
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
+        match &self.command {
+            SpecNsCommand::ProposeCommutations(args) => args.verify_graph(roots).map(Some),
+            _ => Ok(None),
+        }
+    }
+
+    /// The output format of the verbs whose runtime failures are reported
+    /// as typed query failures (docs/cli.md § Runtime failures).
+    pub(super) fn query_format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            SpecNsCommand::ProposeCommutations(args) => Some(OutputFormat::resolve(args.format)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -104,6 +129,25 @@ enum SpecNsCommand {
     /// contract at a time, under all remaining assumptions.
     #[command(name = "audit-contracts")]
     AuditContracts(AuditContractsArgs),
+    /// Draft `commuting_statements` entries for a rejection's blocking SCCs.
+    ///
+    /// Reads `cycles.json` (default: the sibling of `--graph`) and
+    /// `dependency_graph.json`. Every constraining `sequenced` edge inside a
+    /// blocking SCC (not only the cut, whose feedback arc set may skip the
+    /// arc a premise can break) whose retained premise verdict the gate
+    /// would accept becomes a proposal: one
+    /// `commuting_statements` entry with a proven selector per endpoint
+    /// (`resolved_member` for a logical member when `--modules` names the
+    /// chunk's tree, else a synthesized `source_match`), the inerted
+    /// edge's explanation, both source locations and which SCC it breaks,
+    /// ranked single-pair cuts first. `eager_use` cut edges are reported
+    /// as needing co-location; a pair the gate would reject (a known
+    /// conflict, an unused premise) or an endpoint without a unique
+    /// selector is reported, not emitted. Dry-run: nothing is written
+    /// into the spec; `--out` writes the YAML draft. Applying an entry is
+    /// the author's step (docs/spec_editing.md § Proposing commutations).
+    #[command(name = "propose-commutations")]
+    ProposeCommutations(ProposeCommutationsArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -431,7 +475,7 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
     print_section("summary", &report.summary)
 }
 
-pub(super) fn run(args: SpecNs) -> Result<()> {
+pub(super) fn run(args: SpecNs, source_context: Option<&VerifiedGraphSourceContext>) -> Result<()> {
     match args.command {
         SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
         SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
@@ -441,5 +485,9 @@ pub(super) fn run(args: SpecNs) -> Result<()> {
             run_validate_cmd(v).context("running keep-going selector validation")
         }
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
+        SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
+            p,
+            source_context.context("propose-commutations verifies its graph before dispatch")?,
+        ),
     }
 }

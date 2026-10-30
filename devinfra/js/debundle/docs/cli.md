@@ -1243,6 +1243,61 @@ callback source does not match the callback argument roots of its barrier, the
 query reports an inconclusive link rather than pairing a contract with the
 wrong promoted callback.
 
+## Proposing commutations (`spec propose-commutations`)
+
+For a blocking SCC whose cut is `sequenced` edges with opaque effects, the
+remedy may be a `commuting_statements` entry ([SPEC](../SPEC.md#commuting-statements))
+rather than co-location. `spec propose-commutations` drafts those entries
+mechanically from the rejection the pipeline or an edit gate wrote:
+
+```sh
+debundle spec propose-commutations \
+  --graph reports/tree/static/app/dependency_graph.json \
+  --source-root snapshot \
+  --modules spec/modules/static/app \
+  --out commutations.yaml --format json
+```
+
+`--cycles` overrides the default `cycles.json` beside `--graph`; the common
+`--graph` / `--source-root` / `--modules` compatibility rules apply, and
+`--modules` is optional. For every blocking SCC the command:
+
+- takes every constraining `sequenced` edge between the SCC's modules (gate
+  view) — not only the `cut`, which is a feedback arc set chosen without
+  regard to what a premise can inert, so the pair that breaks the SCC may sit
+  on another arc — and classifies the pair of source units it joins by the
+  verdict the graph build retained on every edge between them
+  (`edges[].premise_verdict`, the classification the gate applies); a pair
+  with a `known` conflict or one the gate would call unused is listed in
+  `rejected` with a typed `reason` (`known_conflict` with the gate's
+  conflicts, `unused_summarized`, `verdict_not_recorded` for a graph written
+  before verdicts were retained, `cut_edge_not_in_graph`). `cut_edges` names
+  the cut entries a pair covers, empty when the cut chose elsewhere;
+- lists `eager_use` and other non-`sequenced` cut edges under
+  `needs_co_location`: an at-init read is a dataflow dependence no premise
+  inerts;
+- synthesizes one proven selector per endpoint with the selector codemod and
+  the shared resolve: `resolved_member` for a logical member when `--modules`
+  names the chunk's tree (its authored module spelling comes from the tree),
+  otherwise a `source_match` claiming the declared binding, or the exact
+  statement for an anonymous one. An endpoint with no uniquely proving
+  selector is reported as `no_unique_selector` with the resolve's nearest
+  miss, and the pair is not emitted;
+- ranks proposals: `single_pair_cut` (inerting this pair alone leaves the
+  SCC's constraining subgraph acyclic, every parallel unit edge counted) before
+  `partial_cut`, then by `remaining_module_pair_edges`.
+
+Each proposal carries the `entry` to paste, both endpoints (source unit,
+binding, module, source location, a source excerpt, `selector_origin`), the
+`inerted_edges` with their `SequencedCause` explanation, and the SCC it
+breaks. `draft_yaml` is the `chunk_analysis_options.<chunk>.commuting_statements`
+fragment in rank order, each entry preceded by the same facts as comments and
+`note` left `null` for the author's rationale; `--out` writes it to a file.
+The command is read-only analysis: it never writes into the spec, and an
+applied entry is validated by the gate's own contradiction and unused checks
+on the next `run` or `spec validate`. Runtime failures follow the typed
+`reason` convention of § Runtime failures from top-level queries.
+
 ## Workflow: investigating a binding end-to-end
 
 When a binding's role is unclear or a proposal is suspicious:

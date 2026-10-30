@@ -757,6 +757,13 @@ pub struct DependencyEdgeReport {
     /// report as the record of what source analysis found.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub commuting_premise: Option<CommutingStatementsRef>,
+    /// How a `commuting_statements` premise over this edge's endpoints would
+    /// treat it (`EdgeReason::premise_verdict`): present on `sequenced` and
+    /// `co_declaration` edges of graphs written since the verdict was
+    /// retained, absent on every other kind. `spec propose-commutations`
+    /// reads it so a drafted pair is classified exactly as the gate will.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub premise_verdict: Option<crate::graph::PremiseVerdict>,
 }
 
 /// Wire-format projection of [`crate::EdgeRole`]. The typed variant

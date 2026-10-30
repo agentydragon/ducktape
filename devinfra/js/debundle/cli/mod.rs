@@ -13,6 +13,7 @@ mod bindings_commands;
 mod contract_audit;
 mod inspection_commands;
 mod modules_commands;
+mod propose_commutations;
 mod selector_explanation;
 mod selector_input;
 mod snapshot;
@@ -47,7 +48,7 @@ pub(crate) fn load_dependency_graph_report(
 
 /// Which current authoring scope a graph-backed command actually interprets.
 #[derive(Clone, Copy)]
-enum GraphCompatibilityScope<'a> {
+pub(crate) enum GraphCompatibilityScope<'a> {
     AuthoredModuleTree {
         tree_config: Option<&'a std::path::Path>,
     },
@@ -67,7 +68,7 @@ pub(crate) fn verify_graph_compatibility(
 ) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     verify_graph_compatibility_with_scope(
         graph_path,
-        modules_root,
+        Some(modules_root),
         selector_source_root,
         spec_root,
         graph_source_root,
@@ -76,9 +77,12 @@ pub(crate) fn verify_graph_compatibility(
     )
 }
 
-fn verify_graph_compatibility_with_scope(
+/// `modules_root` is required by the authored-module-tree scope; the
+/// exact-source-unit scope uses it only to reject a fallback source shadow
+/// when no selector root is supplied.
+pub(crate) fn verify_graph_compatibility_with_scope(
     graph_path: &std::path::Path,
-    modules_root: &std::path::Path,
+    modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
@@ -103,7 +107,7 @@ fn verify_graph_compatibility_with_scope(
 fn verify_graph_header_compatibility(
     graph_path: &std::path::Path,
     graph: &graph_provenance::GraphHeader,
-    modules_root: &std::path::Path,
+    modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
     roots: &InspectionRoots,
     scope: GraphCompatibilityScope<'_>,
@@ -111,6 +115,10 @@ fn verify_graph_header_compatibility(
     let (require_module_scope, tree_config) = match scope {
         GraphCompatibilityScope::AuthoredModuleTree { tree_config } => (true, tree_config),
         GraphCompatibilityScope::ExactSourceUnit => (false, None),
+    };
+    let scoped_modules_root = match (require_module_scope, modules_root) {
+        (true, None) => anyhow::bail!("a module-scoped graph check requires --modules"),
+        (_, modules_root) => modules_root,
     };
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
@@ -127,12 +135,14 @@ fn verify_graph_header_compatibility(
         packages: roots.graph_package_roots.clone(),
     };
     let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
-    if require_module_scope && provenance.modules_directory.is_none() {
+    if let (true, None) = (require_module_scope, &provenance.modules_directory) {
         return Err(GraphMismatch::new(
             GraphMismatchReason::ModuleScope {
                 chunk_id: graph.chunk_id.clone(),
                 expected: Vec::new(),
-                actual: graph_provenance::absolute(modules_root)?,
+                actual: graph_provenance::absolute(
+                    scoped_modules_root.expect("checked by the scope match above"),
+                )?,
             },
             regenerate_command.clone(),
             Some(regenerate_cwd.clone()),
@@ -142,6 +152,7 @@ fn verify_graph_header_compatibility(
     // `inspect-source --id unit:*` resolves a saved node without interpreting
     // current module claims, so it skips only this authored-scope check.
     if require_module_scope {
+        let modules_root = scoped_modules_root.expect("checked by the scope match above");
         let directory = provenance
             .modules_directory
             .as_ref()
@@ -261,12 +272,14 @@ fn verify_graph_header_compatibility(
         }
         candidate.filter(|_| candidate_exists)
     } else {
-        anonymous_resolution::find_source_file_candidate(
-            &source_path,
-            None,
-            graph_path,
-            modules_root,
-        )
+        modules_root.and_then(|modules_root| {
+            anonymous_resolution::find_source_file_candidate(
+                &source_path,
+                None,
+                graph_path,
+                modules_root,
+            )
+        })
     };
     if let Some(candidate) = selector_candidate {
         let canonical_candidate = graph_provenance::absolute(&candidate)?;
@@ -493,7 +506,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         DebundleCommand::StaticImports(args) => static_imports::run(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
-        DebundleCommand::Spec(args) => spec_commands::run(args),
+        DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref()),
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
@@ -651,6 +664,7 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
         DebundleCommand::StaticImports(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Scc(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Cluster(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Spec(args) => args.query_format(),
         _ => None,
     }
 }
@@ -709,7 +723,7 @@ fn verify_mixed_graph_command(
             )?;
             verify_graph_compatibility_with_scope(
                 graph,
-                modules,
+                Some(modules),
                 args.source_root.as_deref(),
                 spec_root,
                 graph_source_root,
@@ -722,6 +736,11 @@ fn verify_mixed_graph_command(
             )
             .map(Some)
         }
+        DebundleCommand::Spec(args) => args.verify_graph(&InspectionRoots {
+            spec_root: spec_root.map(std::path::Path::to_path_buf),
+            graph_source_root: graph_source_root.map(std::path::Path::to_path_buf),
+            graph_package_roots: graph_package_roots.clone(),
+        }),
         _ => Ok(None),
     }
 }

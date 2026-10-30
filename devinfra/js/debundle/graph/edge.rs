@@ -11,6 +11,7 @@ use crate::analysis_inputs::CommutingStatementsRef;
 use crate::facts::{DataflowOpacityCause, EffectCell};
 use crate::reports::schema::ExecutionPrecisionLossReason;
 
+use super::build::PremiseVerdict;
 use super::dependency_graph::SourceUnitId;
 
 /// How an edge was emitted. Determines whether the gate / quotient /
@@ -114,6 +115,10 @@ pub struct EdgeReason {
     /// Boxed so the far more numerous binding edges stay small.
     sequenced_cause: Option<Box<SequencedCause>>,
     pub(crate) inerted_by: Option<CommutingStatementsRef>,
+    /// How a `commuting_statements` premise over this edge's endpoints would
+    /// treat it (`graph/build.rs::premise_verdict`); `None` for the kinds a
+    /// premise never considers. Boxed like `sequenced_cause`.
+    pub(crate) premise_verdict: Option<Box<PremiseVerdict>>,
 }
 
 /// Why a `Sequenced` edge `(from, to)` exists: the emission rule in
@@ -471,6 +476,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -481,6 +487,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -491,6 +498,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -501,6 +509,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -511,6 +520,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -521,6 +531,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -531,6 +542,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -541,6 +553,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn sequenced(so: SourceUnitOrdinal, cause: SequencedCause) -> Self {
@@ -551,6 +564,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: Some(Box::new(cause)),
             inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -561,6 +575,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
 
@@ -590,6 +605,7 @@ impl EdgeReason {
             role,
             sequenced_cause: None,
             inerted_by: None,
+            premise_verdict: None,
         }
     }
 
@@ -616,6 +632,13 @@ impl EdgeReason {
     /// The `commuting_statements` entry that made this edge inert.
     pub fn commuting_premise(&self) -> Option<&CommutingStatementsRef> {
         self.inerted_by.as_ref()
+    }
+
+    /// How a `commuting_statements` premise over this edge's endpoints would
+    /// treat it; `None` for kinds a premise never considers and for
+    /// synthetic edges.
+    pub fn premise_verdict(&self) -> Option<&PremiseVerdict> {
+        self.premise_verdict.as_deref()
     }
 
     /// The role this reason was emitted with. See [`EdgeRole`].

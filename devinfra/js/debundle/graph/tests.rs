@@ -175,6 +175,7 @@ mod from_report_tests {
                 role,
                 sequenced_cause: None,
                 commuting_premise: None,
+                premise_verdict: None,
             }],
             commuting_statements: Vec::new(),
             quotient: ModuleQuotientReport {

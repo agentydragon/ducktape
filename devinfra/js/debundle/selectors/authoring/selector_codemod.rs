@@ -219,6 +219,176 @@ pub fn synthesize_residual_claims_for_modules(
     })
 }
 
+/// One source unit a `commuting_statements` endpoint must select
+/// (SPEC.md § Commuting statements).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceUnitSelectorRequest {
+    /// `binding`'s declaration: a `source_match` claiming that one binding.
+    DeclaredBinding { binding: String },
+    /// The anonymous (non-declaring) statement at raw body index
+    /// `body_index`: a `source_match` without bindings.
+    AnonymousStatement { body_index: usize },
+}
+
+/// A proven `source_match` endpoint selector and the body item it selects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthesizedSourceUnitSelector {
+    pub claim: SourceMatchClaim,
+    pub body_index: usize,
+    pub rewritten_holes: Vec<String>,
+}
+
+/// Outcome of one [`SourceUnitSelectorRequest`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceUnitSelectorSynthesis {
+    Synthesized(SynthesizedSourceUnitSelector),
+    /// No uniquely proven selector; `reason` is the nearest miss (the
+    /// minimizer's rejection, or the shared resolve's non-resolved outcome).
+    Skipped {
+        reason: String,
+    },
+}
+
+/// Synthesize one proven `source_match` per request against the chunk whose
+/// parser identity is `source_name` and whose bytes are `source`, with the
+/// name-binding codemod's indexed synthesis for declared bindings and the
+/// exact statement for anonymous ones; every selector is proven with the
+/// shared resolve on its own. Must run inside an SWC `GLOBALS` scope.
+pub fn synthesize_source_unit_selectors(
+    source_name: &str,
+    source: String,
+    requests: &[SourceUnitSelectorRequest],
+) -> Result<Vec<SourceUnitSelectorSynthesis>> {
+    let parsed = js_ast::parse_js_module_consuming(source_name, source)
+        .with_context(|| format!("parsing source {source_name}"))?;
+    let index = ChunkSelectorIndex::new(&parsed.module);
+    requests
+        .iter()
+        .map(|request| match request {
+            SourceUnitSelectorRequest::DeclaredBinding { binding } => {
+                synthesize_declared_binding_selector(&index, binding)
+            }
+            SourceUnitSelectorRequest::AnonymousStatement { body_index } => {
+                synthesize_anonymous_statement_selector(&index, *body_index)
+            }
+        })
+        .collect()
+}
+
+fn synthesize_declared_binding_selector(
+    index: &ChunkSelectorIndex<'_>,
+    binding: &str,
+) -> Result<SourceUnitSelectorSynthesis> {
+    let decl_indices = index
+        .binding_to_decl
+        .get(binding)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let [decl_idx] = decl_indices else {
+        return Ok(SourceUnitSelectorSynthesis::Skipped {
+            reason: match decl_indices.len() {
+                0 => format!("binding `{binding}` is not declared in the source chunk"),
+                n => format!("binding `{binding}` is declared in {n} source declarations"),
+            },
+        });
+    };
+    let member = NameBindingMember {
+        member_index: 0,
+        export_name: binding.to_owned(),
+        binding_name: binding.to_owned(),
+        annotation_fields: Vec::new(),
+    };
+    let synthesized = match synthesize_simplest_selector_for_group(index, *decl_idx, &[member], 1)?
+    {
+        GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
+        GroupSelectorOutcome::Skipped(reason) => {
+            return Ok(SourceUnitSelectorSynthesis::Skipped { reason });
+        }
+    };
+    let [target] = synthesized.target_bindings.as_slice() else {
+        bail!(
+            "one requested binding synthesized {} targets",
+            synthesized.target_bindings.len()
+        );
+    };
+    Ok(SourceUnitSelectorSynthesis::Synthesized(
+        SynthesizedSourceUnitSelector {
+            claim: SourceMatchClaim {
+                identifiers: SourceMatchIdentifierMode::AlphaAll,
+                match_source: synthesized.match_source,
+                bindings: vec![SourceMatchBinding::Local(target.selector_local.clone())],
+                note: None,
+            },
+            body_index: synthesized.body_idx,
+            rewritten_holes: synthesized.rewritten_holes,
+        },
+    ))
+}
+
+/// The exact statement is the only anonymous-statement form the minimizer
+/// knows (`anonymous_statements[].match`); the shared resolve decides whether
+/// it is unique.
+fn synthesize_anonymous_statement_selector(
+    index: &ChunkSelectorIndex<'_>,
+    body_index: usize,
+) -> Result<SourceUnitSelectorSynthesis> {
+    let item = index
+        .module
+        .body
+        .get(body_index)
+        .with_context(|| format!("body index {body_index} is outside the parsed source"))?;
+    let match_source = js_ast::emit_module_source(&Module {
+        span: DUMMY_SP,
+        body: vec![item.clone()],
+        shebang: None,
+    })?;
+    let selector = spec::AnonymousStatementSelector {
+        match_source: match_source.clone(),
+        identifiers: SourceMatchIdentifierMode::AlphaAll,
+        target_binding: None,
+    };
+    let parsed = ParsedSourceMatchSelector::parse(
+        SYNTHESIS_MODULE,
+        format!("<anonymous source_match in {SYNTHESIS_MODULE}>"),
+        &selector,
+        "source_match",
+    )?;
+    let resolution = index.chunk.resolve(&[SpecModule {
+        path: SYNTHESIS_MODULE.to_string(),
+        members: Vec::new(),
+        anonymous_statements: vec![selector_resolve::AnonymousStatement {
+            index: 0,
+            selector: parsed,
+        }],
+    }])?;
+    let outcome = resolution
+        .outcome(0, EntityIndex::AnonymousStatement(0))
+        .context("an anonymous statement selector has an outcome")?;
+    match &outcome.outcome {
+        Outcome::Resolved {
+            body_index: resolved,
+            ..
+        } if *resolved == body_index => Ok(SourceUnitSelectorSynthesis::Synthesized(
+            SynthesizedSourceUnitSelector {
+                claim: SourceMatchClaim {
+                    identifiers: SourceMatchIdentifierMode::AlphaAll,
+                    match_source,
+                    bindings: Vec::new(),
+                    note: None,
+                },
+                body_index,
+                rewritten_holes: Vec::new(),
+            },
+        )),
+        _ => Ok(SourceUnitSelectorSynthesis::Skipped {
+            reason: format!(
+                "the exact statement does not select body index {body_index} alone: {}",
+                outcome.render_line()
+            ),
+        }),
+    }
+}
+
 #[derive(Serialize)]
 pub struct SelectorCodemodModuleResult<'a> {
     pub module: &'a str,

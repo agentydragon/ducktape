@@ -105,11 +105,17 @@ impl GateCommonArgs {
             .dependency_graph_path
             .as_deref()
             .context("--graph or --cycles is required")?;
-        Ok(graph
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(output_layout::CYCLES_REPORT))
+        Ok(sibling_cycles_path(graph))
     }
+}
+
+/// The default `cycles.json` location: the sibling of `dependency_graph.json`
+/// in the per-chunk report layout.
+pub(crate) fn sibling_cycles_path(graph: &Path) -> PathBuf {
+    graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(output_layout::CYCLES_REPORT)
 }
 
 #[derive(Debug, ClapArgs)]
@@ -893,7 +899,11 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
 }
 
 fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
-    let path = common.resolved_cycles_path()?;
+    load_blocking_sccs(&common.resolved_cycles_path()?)
+}
+
+/// The blocking SCCs of a `cycles.json`; an absent file is the clean state.
+pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
     // The pipeline writes `cycles.json` only when the gate rejects, so
     // its absence is the clean state: zero blocking SCCs. Returning an
     // empty list (rather than a read error) makes `gate list` on a
@@ -905,7 +915,7 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
         return Ok(Vec::new());
     }
     let text =
-        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text)
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }

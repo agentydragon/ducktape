@@ -171,6 +171,7 @@ pub fn dependency_edge(
         role: None,
         sequenced_cause: None,
         commuting_premise: None,
+        premise_verdict: None,
     }
 }
 

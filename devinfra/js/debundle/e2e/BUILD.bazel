@@ -65,6 +65,16 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "propose_commutations_cli_test",
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
 debundle_e2e_test(name = "rejection_fixture_report_test")
 
 debundle_e2e_test(

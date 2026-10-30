@@ -103,6 +103,9 @@ pub enum WriteScope {
     },
     /// `snapshot create` writes a self-contained snapshot at this destination.
     WorkerSnapshot { destination: PathBuf },
+    /// An authoring command writes a draft for review at this path, never
+    /// into the spec.
+    Draft { path: PathBuf },
 }
 
 /// Common, typed record for the effective command inputs and requested work.
@@ -469,6 +472,11 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
             InvocationMode::DiagnosticSnapshotRead
         }
         [gate, verb] if gate == "gate" && verb == "describe" => InvocationMode::GraphSnapshotRead,
+        // Reads a saved graph and its rejection report, but its product is
+        // a draft the author reviews: analysis, not a snapshot view.
+        [spec, propose] if spec == "spec" && propose == "propose-commutations" => {
+            InvocationMode::ReadOnlyAnalysis
+        }
         _ if has_argument(arguments, "dependency_graph_path")
             || has_argument(arguments, "graph") =>
         {
@@ -598,6 +606,11 @@ fn classify_write_scope(
         && let Some(destination) = get_path(&["destination"])
     {
         scopes.push(WriteScope::WorkerSnapshot { destination });
+    }
+    if command == ["spec", "propose-commutations"]
+        && let Some(path) = get_path(&["out_path"])
+    {
+        scopes.push(WriteScope::Draft { path });
     }
     scopes
 }
