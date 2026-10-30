@@ -127,14 +127,17 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/system_tests/test_thread_latency/test.outputs/`.
 
-## VM phase tracing
+## Phase tracing
 
-VM-marked cases write OpenTelemetry spans to `test.outputs/vm-phases.jsonl` using the shared
+Every case writes OpenTelemetry spans to `test.outputs/vm-phases.jsonl` (named for the VM suite that
+introduced it) using the shared
 [test trace exporter](../../util/testing/otel_tracing.py). Each `vm.case` trace carries the pytest
 node ID and covers function-scoped fixtures, scenario execution, diagnostics and cleanup. Shared
 k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these per-case traces.
 
-The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
+`vm.sandbox.ready` carries an event at each Sandbox and Pod condition's transition time and each
+container start, so a slow launch splits into controller, kubelet, runner-connection and polling
+time. The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
 scenario execution. `test_vm` also separates the scripted turn and each OOM command
 (`memory-before`, `tool-oom`, `memory-after`); each grouped Sandbox scenario has its own `vm.scenario`
 span so their overlap is visible. Cleanup events distinguish suspend acknowledgement,
