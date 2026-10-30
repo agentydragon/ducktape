@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"slices"
@@ -20,10 +21,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	authenticationv1 "k8s.io/api/authentication/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
@@ -37,40 +36,37 @@ var (
 func testCallerIndex(admitted bool) *callerIndex {
 	health := watchhealth.New()
 	health.MarkSynced()
-	accounts := sets.New[auth.Account]()
+	accounts := map[auth.Account]string{}
 	if admitted {
-		accounts.Insert(testAccount)
+		accounts[testAccount] = "uid-1"
 	}
 	return &callerIndex{health: health, mintable: sets.New(testAccount), accounts: accounts}
 }
 
-func testServiceAccount(uid string) *corev1.ServiceAccount {
-	return serviceAccount(testAccount, uid)
-}
-
-func serviceAccount(account auth.Account, uid string) *corev1.ServiceAccount {
-	return &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
-		Namespace: account.Namespace, Name: account.Name, UID: types.UID(uid),
-		Labels: map[string]string{callerLabel: "true"},
-	}}
+func (i *callerIndex) setUID(account auth.Account, uid string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.accounts[account] = uid
 }
 
 func tokenKube(t *testing.T) (*kubernetesfake.Clientset, <-chan *authenticationv1.TokenRequest) {
 	t.Helper()
-	kube := kubernetesfake.NewSimpleClientset(testServiceAccount("uid-1"))
-	requests := make(chan *authenticationv1.TokenRequest, 2)
+	kube := kubernetesfake.NewSimpleClientset()
+	requests := make(chan *authenticationv1.TokenRequest, 16)
 	kube.PrependReactor("create", "serviceaccounts", func(action kubetesting.Action) (bool, runtime.Object, error) {
 		if action.GetSubresource() != "token" {
 			return false, nil, nil
 		}
 		request := action.(kubetesting.CreateAction).GetObject().(*authenticationv1.TokenRequest)
 		requests <- request.DeepCopy()
-		return true, &authenticationv1.TokenRequest{Status: authenticationv1.TokenRequestStatus{Token: "minted"}}, nil
+		return true, &authenticationv1.TokenRequest{Status: authenticationv1.TokenRequestStatus{
+			Token: fmt.Sprintf("minted-%d", len(requests)), ExpirationTimestamp: metav1.NewTime(time.Now().Add(600 * time.Second)),
+		}}, nil
 	})
 	return kube, requests
 }
 
-func testCoreCaller(t *testing.T, admitted bool) (*coreCaller, *kubernetesfake.Clientset, <-chan *authenticationv1.TokenRequest) {
+func testCoreCaller(t *testing.T, admitted bool) (*coreCaller, <-chan *authenticationv1.TokenRequest) {
 	t.Helper()
 	kube, requests := tokenKube(t)
 	caller := &coreCaller{
@@ -81,13 +77,14 @@ func testCoreCaller(t *testing.T, admitted bool) (*coreCaller, *kubernetesfake.C
 			return &uniqueauth.TokenInfo{UserID: testAccount.Namespace + "/" + testAccount.Name}, nil
 		},
 		callers: testCallerIndex(admitted), kube: kube,
+		recheckPeriod: 10 * time.Millisecond, tokens: map[auth.Account]cachedToken{},
 	}
-	return caller, kube, requests
+	return caller, requests
 }
 
 func TestTokenRequestScopeAndUIDReplacement(t *testing.T) {
 	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
-	caller, kube, requests := testCoreCaller(t, false)
+	caller, requests := testCoreCaller(t, false)
 	if _, _, err := caller.token(ctx); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unlisted account admitted: %v", err)
 	}
@@ -107,27 +104,96 @@ func TestTokenRequestScopeAndUIDReplacement(t *testing.T) {
 	if !slices.Equal(request.Spec.Audiences, []string{"agentplane-egress"}) || request.Spec.ExpirationSeconds == nil || *request.Spec.ExpirationSeconds != 600 {
 		t.Fatalf("TokenRequest scope: %+v", request.Spec)
 	}
-	if md, _ := metadata.FromOutgoingContext(admitted); !slices.Equal(md.Get("authorization"), []string{"Bearer minted"}) {
+	if md, _ := metadata.FromOutgoingContext(admitted); !slices.Equal(md.Get("authorization"), []string{"Bearer minted-1"}) {
 		t.Fatalf("forwarded Authorization survived: %v", md.Get("authorization"))
 	}
-	kube.PrependReactor("create", "serviceaccounts", func(action kubetesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "token" {
-			return false, nil, nil
-		}
-		if err := kube.Tracker().Update(corev1.SchemeGroupVersion.WithResource("serviceaccounts"), testServiceAccount("uid-2"), testAccount.Namespace); err != nil {
-			return true, nil, err
-		}
-		return true, &authenticationv1.TokenRequest{Status: authenticationv1.TokenRequestStatus{Token: "minted-new"}}, nil
-	})
+}
+
+func authorization(t *testing.T, ctx context.Context) string {
+	t.Helper()
+	md, _ := metadata.FromOutgoingContext(ctx)
+	return md.Get("authorization")[0]
+}
+
+func TestRepeatedCallsReuseOneToken(t *testing.T) {
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
+	caller, requests := testCoreCaller(t, true)
+	first, _, err := caller.token(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := caller.token(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorization(t, first) != authorization(t, second) || len(requests) != 1 {
+		t.Fatalf("tokens %q, %q from %d TokenRequests", authorization(t, first), authorization(t, second), len(requests))
+	}
+}
+
+func TestTokenPastRefreshPointIsReplaced(t *testing.T) {
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
+	caller, requests := testCoreCaller(t, true)
+	if _, _, err := caller.token(ctx); err != nil {
+		t.Fatal(err)
+	}
+	caller.mu.Lock()
+	cached := caller.tokens[testAccount]
+	cached.refreshAt = time.Now().Add(-time.Second)
+	caller.tokens[testAccount] = cached
+	caller.mu.Unlock()
+	if _, _, err := caller.token(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("TokenRequests: %d", len(requests))
+	}
+}
+
+func TestUIDChangeStopsTokenReuse(t *testing.T) {
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
+	caller, requests := testCoreCaller(t, true)
+	first, _, err := caller.token(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller.callers.setUID(testAccount, "uid-2")
+	second, identity, err := caller.token(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.uid != "uid-2" || authorization(t, first) == authorization(t, second) || len(requests) != 2 {
+		t.Fatalf("reused a token across UIDs: %+v %d", identity, len(requests))
+	}
+}
+
+func TestDeletedAccountIsRefusedDespiteCachedToken(t *testing.T) {
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
+	caller, _ := testCoreCaller(t, true)
+	if _, _, err := caller.token(ctx); err != nil {
+		t.Fatal(err)
+	}
+	caller.callers.remove(testAccount.Namespace, testAccount.Name)
 	if _, _, err := caller.token(ctx); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("accepted token across account replacement: %v", err)
+		t.Fatalf("deleted account admitted: %v", err)
+	}
+}
+
+func TestUnhealthyCallerViewFailsClosedDespiteCachedToken(t *testing.T) {
+	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "grant")
+	caller, _ := testCoreCaller(t, true)
+	if _, _, err := caller.token(ctx); err != nil {
+		t.Fatal(err)
+	}
+	caller.callers.health = watchhealth.New() // never synced
+	if _, _, err := caller.token(ctx); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unhealthy view admitted: %v", err)
 	}
 }
 
 type watchCore struct {
 	pb.UnimplementedActionServiceServer
 	started chan<- []string
-	release <-chan struct{}
 }
 
 func (s *watchCore) WatchActionRequest(_ *pb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
@@ -136,26 +202,19 @@ func (s *watchCore) WatchActionRequest(_ *pb.WatchActionRequestRequest, stream g
 	if err := stream.Send(&pb.WatchActionRequestResponse{}); err != nil {
 		return err
 	}
-	select {
-	case <-s.release:
-	case <-stream.Context().Done():
-		return stream.Context().Err()
-	}
-	return stream.Send(&pb.WatchActionRequestResponse{})
+	<-stream.Context().Done()
+	return stream.Context().Err()
 }
 
-func TestGeneratedWatchReceivesAfterHalfCloseAndRechecksBeforeEachFrame(t *testing.T) {
+func TestGeneratedWatchReceivesAfterHalfCloseAndRevokesOnChange(t *testing.T) {
 	for _, changed := range []string{"grant", "binding", "label", "uid"} {
 		t.Run(changed, func(t *testing.T) {
-			caller, kube, _ := testCoreCaller(t, true)
+			caller, _ := testCoreCaller(t, true)
 			var revoked atomic.Bool
 			var rebound atomic.Bool
-			if err := kube.Tracker().Add(serviceAccount(reboundAccount, "uid-other")); err != nil {
-				t.Fatal(err)
-			}
 			caller.callers.mu.Lock()
 			caller.callers.mintable.Insert(reboundAccount)
-			caller.callers.accounts.Insert(reboundAccount)
+			caller.callers.accounts[reboundAccount] = "uid-other"
 			caller.callers.mu.Unlock()
 			valid := caller.authority
 			caller.authority = func(ctx context.Context, bearer string, request *http.Request) (*uniqueauth.TokenInfo, error) {
@@ -169,9 +228,8 @@ func TestGeneratedWatchReceivesAfterHalfCloseAndRechecksBeforeEachFrame(t *testi
 			}
 			listener := bufconn.Listen(1 << 20)
 			started := make(chan []string, 1)
-			release := make(chan struct{})
 			server := grpc.NewServer()
-			pb.RegisterActionServiceServer(server, &watchCore{started: started, release: release})
+			pb.RegisterActionServiceServer(server, &watchCore{started: started})
 			go func() { _ = server.Serve(listener) }()
 			t.Cleanup(server.Stop)
 			connection, err := grpc.NewClient("passthrough:///actions", grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -190,7 +248,7 @@ func TestGeneratedWatchReceivesAfterHalfCloseAndRechecksBeforeEachFrame(t *testi
 			if _, err := watch.Recv(); err != nil {
 				t.Fatalf("first frame after generated half-close: %v", err)
 			}
-			if credentials := <-started; !slices.Equal(credentials, []string{"Bearer minted"}) {
+			if credentials := <-started; !slices.Equal(credentials, []string{"Bearer minted-1"}) {
 				t.Fatalf("Actions received credentials %q", credentials)
 			}
 			switch changed {
@@ -199,19 +257,12 @@ func TestGeneratedWatchReceivesAfterHalfCloseAndRechecksBeforeEachFrame(t *testi
 			case "binding":
 				rebound.Store(true)
 			case "label":
-				unlabeled := testServiceAccount("uid-1")
-				delete(unlabeled.Labels, callerLabel)
-				if err := kube.Tracker().Update(corev1.SchemeGroupVersion.WithResource("serviceaccounts"), unlabeled, testAccount.Namespace); err != nil {
-					t.Fatal(err)
-				}
+				caller.callers.remove(testAccount.Namespace, testAccount.Name)
 			case "uid":
-				if err := kube.Tracker().Update(corev1.SchemeGroupVersion.WithResource("serviceaccounts"), testServiceAccount("uid-2"), testAccount.Namespace); err != nil {
-					t.Fatal(err)
-				}
+				caller.callers.setUID(testAccount, "uid-2")
 			}
-			close(release)
 			if _, err := watch.Recv(); status.Code(err) != codes.Unauthenticated {
-				t.Fatalf("%s change delivered another frame: %v", changed, err)
+				t.Fatalf("%s change did not revoke the open stream: %v", changed, err)
 			}
 		})
 	}

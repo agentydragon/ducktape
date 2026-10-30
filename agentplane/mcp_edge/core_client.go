@@ -22,10 +22,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-const (
-	actionAudience     = "agentplane-egress" // The deployed Action Service's current TokenReview audience.
-	watchRecheckPeriod = 5 * time.Second
-)
+// The deployed Action Service's current TokenReview audience.
+const actionAudience = "agentplane-egress"
 
 type edgeBearerKey struct{}
 
@@ -34,13 +32,28 @@ type callerIdentity struct {
 	uid     string
 }
 
-// coreCaller crosses the edge-to-Actions authority boundary. Each RPC resolves the OAuth bearer again, then mints
-// a short-lived token for the current binding. A watch also rechecks its grant, label and UID every five seconds.
+// coreCaller crosses the edge-to-Actions authority boundary. Each RPC resolves the OAuth bearer again, reads the
+// account's UID and caller label from the informer-backed index, and sends a cached token for that UID. Revocation
+// latency is therefore informer lag, and an unhealthy index refuses everything. An open stream rechecks on a ticker.
 type coreCaller struct {
-	authority uniqueauth.TokenVerifier
-	callers   *callerIndex
-	kube      kubernetes.Interface
+	authority     uniqueauth.TokenVerifier
+	callers       *callerIndex
+	kube          kubernetes.Interface
+	recheckPeriod time.Duration
+
+	mu     sync.Mutex
+	tokens map[auth.Account]cachedToken
 }
+
+// cachedToken is valid only for the ServiceAccount UID it was minted for; a recreated account has another UID.
+type cachedToken struct {
+	uid       string
+	token     string
+	refreshAt time.Time
+}
+
+// refreshFraction is the share of a token's lifetime after which it is replaced, as the kubelet's token manager does.
+const refreshFraction = 0.8
 
 func (c *coreCaller) identity(ctx context.Context) (callerIdentity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -61,21 +74,50 @@ func (c *coreCaller) identity(ctx context.Context) (callerIdentity, error) {
 		return callerIdentity{}, status.Error(codes.Internal, "invalid Connection binding")
 	}
 	account := auth.Account{Namespace: namespace, Name: name}
-	if !c.callers.Admits(account) {
+	uid, ok := c.callers.CurrentUID(account)
+	if !ok {
 		return callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
 	}
-	serviceAccount, err := c.kube.CoreV1().ServiceAccounts(namespace).Get(ctx, name, metav1.GetOptions{})
+	return callerIdentity{account: account, uid: uid}, nil
+}
+
+// serviceAccountToken returns a token for the identity, minting one only when none is cached for this UID or the
+// cached one is past its refresh point. The mutex serializes minting so concurrent calls share one TokenRequest.
+func (c *coreCaller) serviceAccountToken(ctx context.Context, identity callerIdentity) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cached, ok := c.tokens[identity.account]; ok && cached.uid == identity.uid && time.Now().Before(cached.refreshAt) {
+		return cached.token, nil
+	}
+	delete(c.tokens, identity.account)
+	expiry := int64(600)
+	requested := time.Now()
+	issued, err := c.kube.CoreV1().ServiceAccounts(identity.account.Namespace).CreateToken(ctx, identity.account.Name,
+		&authenticationv1.TokenRequest{Spec: authenticationv1.TokenRequestSpec{
+			Audiences: []string{actionAudience}, ExpirationSeconds: &expiry,
+		}}, metav1.CreateOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
+			return "", status.Error(codes.Unauthenticated, "invalid bearer")
 		}
-		slog.WarnContext(ctx, "reading bound ServiceAccount failed", "error", err)
-		return callerIdentity{}, status.Error(codes.Unavailable, "caller lookup unavailable")
+		slog.WarnContext(ctx, "minting Action caller token failed", "error", err)
+		return "", status.Error(codes.Unavailable, "caller token unavailable")
 	}
-	if serviceAccount.Labels[callerLabel] != "true" || serviceAccount.UID == "" {
-		return callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
+	if issued.Status.Token == "" {
+		return "", status.Error(codes.Unavailable, "caller token unavailable")
 	}
-	return callerIdentity{account: account, uid: string(serviceAccount.UID)}, nil
+	// A replacement between the identity read and the mint changes the UID in the informer and refuses the token. A
+	// replacement after this makes the token's old UID invalid when Actions TokenReviews it.
+	if uid, ok := c.callers.CurrentUID(identity.account); !ok || uid != identity.uid {
+		return "", status.Error(codes.Unauthenticated, "invalid bearer")
+	}
+	// An absent expiry yields a non-positive lifetime, so the token is used once and never reused.
+	lifetime := issued.Status.ExpirationTimestamp.Time.Sub(requested)
+	c.tokens[identity.account] = cachedToken{
+		uid: identity.uid, token: issued.Status.Token,
+		refreshAt: requested.Add(time.Duration(float64(lifetime) * refreshFraction)),
+	}
+	return issued.Status.Token, nil
 }
 
 func (c *coreCaller) token(ctx context.Context) (context.Context, callerIdentity, error) {
@@ -86,30 +128,13 @@ func (c *coreCaller) token(ctx context.Context) (context.Context, callerIdentity
 	if err != nil {
 		return nil, callerIdentity{}, err
 	}
-	expiry := int64(600)
-	issued, err := c.kube.CoreV1().ServiceAccounts(identity.account.Namespace).CreateToken(ctx, identity.account.Name,
-		&authenticationv1.TokenRequest{Spec: authenticationv1.TokenRequestSpec{
-			Audiences: []string{actionAudience}, ExpirationSeconds: &expiry,
-		}}, metav1.CreateOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
-		}
-		slog.WarnContext(ctx, "minting Action caller token failed", "error", err)
-		return nil, callerIdentity{}, status.Error(codes.Unavailable, "caller token unavailable")
-	}
-	// A replacement between the two reads changes the UID and refuses the token. A replacement after this read
-	// makes the token's old UID invalid when Actions TokenReviews it and checks the current caller label.
-	current, err := c.identity(ctx)
+	token, err := c.serviceAccountToken(ctx, identity)
 	if err != nil {
 		return nil, callerIdentity{}, err
 	}
-	if current != identity || issued.Status.Token == "" {
-		return nil, callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
-	}
 	previous, _ := metadata.FromOutgoingContext(ctx)
 	outgoing := previous.Copy()
-	outgoing.Set("authorization", "Bearer "+issued.Status.Token)
+	outgoing.Set("authorization", "Bearer "+token)
 	// The token request's own deadline ends here; the RPC retains its parent's deadline and cancellation.
 	return metadata.NewOutgoingContext(requestContext, outgoing), identity, nil
 }
@@ -151,8 +176,8 @@ func (c *coreCaller) stream(ctx context.Context, description *grpc.StreamDesc, c
 	return checked, nil
 }
 
-// checkedStream fails an open watch as soon as the Connection or account changes. The Action Service also
-// revalidates the minted token before its own frames; both checks are needed because the grants live at this edge.
+// checkedStream fails an open watch within one recheck period of the Connection or account changing; frames are not
+// rechecked individually. The Action Service also revalidates the minted token before its own frames; both checks are needed because the grants live at this edge.
 type checkedStream struct {
 	grpc.ClientStream
 	caller   *coreCaller
@@ -164,7 +189,7 @@ type checkedStream struct {
 }
 
 func (s *checkedStream) watch() {
-	ticker := time.NewTicker(watchRecheckPeriod)
+	ticker := time.NewTicker(s.caller.recheckPeriod)
 	defer ticker.Stop()
 	for {
 		select {
@@ -191,10 +216,6 @@ func (s *checkedStream) RecvMsg(message any) error {
 		return revoked
 	}
 	if err != nil {
-		s.cancel()
-		return err
-	}
-	if err := s.caller.recheck(s.ctx, s.identity); err != nil {
 		s.cancel()
 		return err
 	}

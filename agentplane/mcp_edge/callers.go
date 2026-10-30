@@ -27,7 +27,7 @@ type callerIndex struct {
 	health   *watchhealth.Health
 	mintable sets.Set[auth.Account]
 	mu       sync.RWMutex
-	accounts sets.Set[auth.Account]
+	accounts map[auth.Account]string // labeled, mintable ServiceAccount -> current UID
 }
 
 func (i *callerIndex) CallerServiceAccounts() ([]auth.Account, bool) {
@@ -41,13 +41,16 @@ func (i *callerIndex) CallerServiceAccounts() ([]auth.Account, bool) {
 	}), true
 }
 
-func (i *callerIndex) Admits(account auth.Account) bool {
+// CurrentUID returns the UID of an account that carries the caller label now, per the informer. It reports false
+// whenever the account is absent or the view is unhealthy, so callers fail closed.
+func (i *callerIndex) CurrentUID(account auth.Account) (string, bool) {
 	if !i.health.Available() {
-		return false
+		return "", false
 	}
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.accounts.Has(account)
+	uid, ok := i.accounts[account]
+	return uid, ok && uid != ""
 }
 
 func (i *callerIndex) put(account *corev1.ServiceAccount) {
@@ -55,18 +58,18 @@ func (i *callerIndex) put(account *corev1.ServiceAccount) {
 	defer i.mu.Unlock()
 	caller := auth.Account{Namespace: account.Namespace, Name: account.Name}
 	if i.mintable.Has(caller) {
-		i.accounts.Insert(caller)
+		i.accounts[caller] = string(account.UID)
 	}
 }
 
 func (i *callerIndex) remove(namespace, name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.accounts.Delete(auth.Account{Namespace: namespace, Name: name})
+	delete(i.accounts, auth.Account{Namespace: namespace, Name: name})
 }
 
 func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Account) (*callerIndex, *reader.Watches, error) {
-	index := &callerIndex{health: watchhealth.New(), mintable: sets.New(mintable...), accounts: sets.New[auth.Account]()}
+	index := &callerIndex{health: watchhealth.New(), mintable: sets.New(mintable...), accounts: map[auth.Account]string{}}
 	watches := reader.NewWatches(base, index.health)
 	for _, namespace := range sets.List(sets.New(namespaces...)) {
 		kind := watchhealth.Kind(namespace + "/serviceaccounts")
