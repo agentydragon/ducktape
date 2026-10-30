@@ -27,6 +27,8 @@ go_test(
         "environment_test.go",
         "guest_test.go",
     ],
+    data = ["//agentplane/runner/cmd:agentplane-runner"],
     embed = [":configuration"],
     race = "on",
+    deps = ["@io_bazel_rules_go//go/runfiles"],
 )

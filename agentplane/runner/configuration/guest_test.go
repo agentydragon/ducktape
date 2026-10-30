@@ -7,12 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
 func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	writeJSONFixture(t, configPath, validGuestConfiguration(t))
-	command := exec.Command(os.Args[0], vmResourcePropertiesMode, configPath)
+	binary, err := runfiles.Rlocation("ducktape/agentplane/runner/cmd/agentplane-runner_/agentplane-runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(binary, "--vm-resource-properties", configPath)
 	output, err := command.Output()
 	if err != nil {
 		t.Fatalf("resource properties mode failed: %v", err)
@@ -44,7 +50,7 @@ func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 		invalid := validGuestConfiguration(t)
 		mutate(invalid)
 		writeJSONFixture(t, configPath, invalid)
-		command = exec.Command(os.Args[0], vmResourcePropertiesMode, configPath)
+		command = exec.Command(binary, "--vm-resource-properties", configPath)
 		output, err = command.CombinedOutput()
 		if err == nil {
 			t.Fatal("resource preflight accepted invalid configuration")
