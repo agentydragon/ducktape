@@ -14,7 +14,6 @@ from model_catalog.catalog import (
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
-    Provider,
     Route,
 )
 
@@ -24,18 +23,8 @@ class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""
 
     claude: tuple[Route, ...]
-    # Coding-model offerings. The central sampler offers all routes; wrapped Codex
-    # offers only hosted ChatGPT routes. Third-party routes use standard Responses/JSON.
+    # Responses routes shared by the Codex and central sampler pickers.
     codex: tuple[Route, ...]
-
-    @property
-    def wrapped_codex(self) -> tuple[Route, ...]:
-        """Only OpenAI's hosted ChatGPT routes use the native Codex protocol."""
-        return tuple(route for route in self.codex if route.upstream.provider == Provider.CHATGPT)
-
-    @property
-    def central_sampler(self) -> tuple[Route, ...]:
-        return tuple(route for route in self.codex if route.upstream.provider != Provider.CHATGPT)
 
     @property
     def all(self) -> tuple[Route, ...]:

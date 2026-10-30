@@ -822,6 +822,7 @@ py_library(
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/ssh_mcp:config",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
