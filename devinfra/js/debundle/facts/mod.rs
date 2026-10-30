@@ -18,7 +18,7 @@
 //!   (TypeScript decorate helpers) and policy dispatch.
 //! - `at_init_fallback` — at-init unresolved-call fallback source
 //!   pruning (safe plain-array chains, opaque-call/inline-fn finders,
-//!   no-sync-callback member recognition).
+//!   `no_sync_callback_members` and builtin member-row exemptions).
 //! - `collector` — the single-pass [`StatementFactsCollector`] and the
 //!   inline-effect collector it delegates to.
 //! - `lazy_boundary` — the [`LazyBoundary`] trait and the shared

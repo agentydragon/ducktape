@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::builtins::member_call_row;
 
 pub(crate) fn safe_plain_array_at_init_fallback_sources(
     item: &ModuleItem,
@@ -287,38 +288,10 @@ pub(crate) fn no_sync_member_argument_fallback_sources(
     collector.sources
 }
 
-pub(crate) fn is_static_event_listener_registration(callee: &Expr, args: &[ExprOrSpread]) -> bool {
-    args.len() >= 2
-        && args
-            .first()
-            .is_some_and(|arg| is_static_event_name(&arg.expr))
-        && expr_is_add_event_listener_member(callee)
-}
-
-fn is_static_event_name(expr: &Expr) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Lit(Lit::Str(_)) => true,
-        Expr::Tpl(Tpl { exprs, .. }) => exprs.is_empty(),
-        _ => false,
-    }
-}
-
-fn expr_is_add_event_listener_member(expr: &Expr) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Member(member) => member_is_add_event_listener(member),
-        Expr::OptChain(opt) => match opt.base.as_ref() {
-            OptChainBase::Member(member) => member_is_add_event_listener(member),
-            OptChainBase::Call(_) => false,
-        },
-        _ => false,
-    }
-}
-
-fn member_is_add_event_listener(member: &MemberExpr) -> bool {
-    matches!(
-        &member.prop,
-        MemberProp::Ident(prop) if prop.sym.as_ref() == "addEventListener"
-    )
+/// Whether a builtin member row covers the call and invokes none of its
+/// arguments synchronously.
+pub(crate) fn member_row_invokes_no_argument(callee: &Expr, args: &[ExprOrSpread]) -> bool {
+    member_call_row(callee, args).is_some_and(|row| row.invokes.is_empty())
 }
 
 pub(crate) fn is_no_sync_callback_member_call(
@@ -508,7 +481,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
             Callee::Expr(callee) => match callee.unwrap_parens() {
                 Expr::Ident(_) => {}
                 _ if self.node_has_inline_fn(node)
-                    && !is_static_event_listener_registration(callee, &node.args)
+                    && !member_row_invokes_no_argument(callee, &node.args)
                     && !self.is_no_sync_callback_member_call(node) =>
                 {
                     self.found = true;
@@ -523,7 +496,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
 
     fn visit_opt_call(&mut self, node: &OptCall) {
         if self.node_has_inline_fn(node)
-            && !is_static_event_listener_registration(&node.callee, &node.args)
+            && !member_row_invokes_no_argument(&node.callee, &node.args)
         {
             self.found = true;
             return;

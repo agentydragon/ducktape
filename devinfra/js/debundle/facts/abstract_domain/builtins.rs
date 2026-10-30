@@ -16,6 +16,7 @@ use crate::analysis_inputs::NativeIntrinsic;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;
+use swc_ecma_ast::{Expr, ExprOrSpread, Lit, MemberProp, OptChainBase, Tpl};
 
 /// An operand of the operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -806,6 +807,74 @@ pub static GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
         .collect()
 });
 
+/// A host method selected by its property name alone. Receiver identity is
+/// not proved: the row assumes every same-named method the program calls
+/// behaves as the cited host method at call time.
+#[derive(Debug)]
+pub struct MemberRow {
+    pub member: &'static str,
+    /// Anchor of the summarized host algorithm.
+    pub cite: &'static str,
+    /// Admitted argument counts; a spread argument is never admitted.
+    pub arity: RangeInclusive<usize>,
+    /// Steps that run user code unless the operand is proved silent.
+    pub coerces: &'static [(ArgSel, CoerceOp)],
+    /// Operands invoked synchronously.
+    pub invokes: &'static [ArgSel],
+}
+
+pub const MEMBER_ROWS: &[MemberRow] = &[
+    // Converts `type` with ToString and appends the listener to the event
+    // listener list; only dispatch invokes it. Not listed: an object `options`
+    // argument goes through dictionary conversion, whose `[[Get]]` of
+    // `capture`, `once`, `passive` and `signal` can run accessors.
+    // TODO: list that coercion once an operand can be proved a clean ordinary
+    // object at the syntactic consumers.
+    MemberRow {
+        member: "addEventListener",
+        cite: "https://dom.spec.whatwg.org/#dom-eventtarget-addeventlistener",
+        arity: 2..=usize::MAX,
+        coerces: &[(ArgSel::Arg(0), CoerceOp::ToString)],
+        invokes: &[],
+    },
+];
+
+/// The member row a static-member call selects, when its arity matches, no
+/// argument is spread and every listed coercion is silent. Only a string
+/// literal operand is proved silent: the consumers are syntactic.
+pub fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static MemberRow> {
+    let member = match callee.unwrap_parens() {
+        Expr::Member(member) => member,
+        Expr::OptChain(chain) => match chain.base.as_ref() {
+            OptChainBase::Member(member) => member,
+            OptChainBase::Call(_) => return None,
+        },
+        _ => return None,
+    };
+    let MemberProp::Ident(prop) = &member.prop else {
+        return None;
+    };
+    let row = MEMBER_ROWS
+        .iter()
+        .find(|row| row.member == prop.sym.as_ref())?;
+    let silent = |&(operand, op): &(ArgSel, CoerceOp)| {
+        let operands = match operand {
+            ArgSel::Arg(index) => args.get(index..=index).unwrap_or_default(),
+            ArgSel::Rest(start) => args.get(start..).unwrap_or_default(),
+        };
+        op == CoerceOp::ToString
+            && operands.iter().all(|arg| match arg.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(_)) => true,
+                Expr::Tpl(Tpl { exprs, .. }) => exprs.is_empty(),
+                _ => false,
+            })
+    };
+    (row.arity.contains(&args.len())
+        && args.iter().all(|arg| arg.spread.is_none())
+        && row.coerces.iter().all(silent))
+    .then_some(row)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -844,6 +913,39 @@ mod tests {
                     slots
                 });
             assert_eq!(row.requires, expected.as_slice(), "{:?}", row.op);
+        }
+    }
+
+    #[test]
+    fn member_row_admits_only_silent_operands() {
+        use swc_ecma_ast::{Callee, ModuleItem, OptChainBase, Stmt};
+        for (source, admitted) in [
+            ("target.addEventListener('click', listener, options);", true),
+            ("target?.addEventListener(`click`, listener);", true),
+            ("target.addEventListener(type, listener);", false),
+            ("target.addEventListener(`${type}`, listener);", false),
+            ("target.addEventListener('click', ...listeners);", false),
+            ("target.addEventListener('click');", false),
+            ("target.removeEventListener('click', listener);", false),
+        ] {
+            let module = raw_js_test_support::parse(source);
+            let ModuleItem::Stmt(Stmt::Expr(statement)) = &module.body[0] else {
+                panic!("{source} is not an expression statement");
+            };
+            let row = match statement.expr.as_ref() {
+                Expr::Call(call) => {
+                    let Callee::Expr(callee) = &call.callee else {
+                        panic!("{source} has no expression callee");
+                    };
+                    member_call_row(callee, &call.args)
+                }
+                Expr::OptChain(chain) => match chain.base.as_ref() {
+                    OptChainBase::Call(call) => member_call_row(&call.callee, &call.args),
+                    OptChainBase::Member(_) => panic!("{source} is not a call"),
+                },
+                _ => panic!("{source} is not a call"),
+            };
+            assert_eq!(row.is_some(), admitted, "{source}");
         }
     }
 }
