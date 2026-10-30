@@ -314,9 +314,14 @@ fn plain_data_method_call_writing_through_this_disqualifies_receiver() {
         "const o = { x: 1, m: function () { this.x = 2; } }; const alias = o; alias.m();",
         "o",
     ));
+    assert!(!is_plain_data(
+        "function bump() { this.x = 2; } const o = { x: 1, bump }; o.bump();",
+        "o",
+    ));
     assert!(is_plain_data(
-        "const o = { x: 1, m: () => 2, n: function () { return 3; } }; \
-         o.m(); o.n(); o.hasOwnProperty('x');",
+        "function read() { return 3; } \
+         const o = { x: 1, m: () => 2, n: function () { return 3; }, read }; \
+         o.m(); o.n(); o.read(); o.hasOwnProperty('x');",
         "o",
     ));
 }

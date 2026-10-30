@@ -252,10 +252,23 @@ impl ChunkHeap {
         scan.candidate_index = Some(value_flow.candidate_object_index(&roots));
         scan.primitive_members = primitive_members;
         scan.in_chunk_callables = in_chunk_callables(body);
+        let mut this_free = ThisFreeFunctions(BTreeSet::new());
+        for item in body {
+            item.as_module_item().visit_with(&mut this_free);
+        }
+        // A key holding a binding is this-free when every function value flow
+        // gives the binding is.
+        let this_free_binding = |binding: &Ident| {
+            let values = value_flow.values_of_binding(&binding.to_id());
+            !values.is_empty()
+                && values.iter().all(|value| {
+                    matches!(value, Value::Alloc(Kind::Function, function) if this_free.0.contains(&function))
+                })
+        };
         scan.this_methods = inits_by_name
             .values()
             .flatten()
-            .map(|(init, _)| (site(init), this_methods(init)))
+            .map(|(init, _)| (site(init), this_methods(init, &this_free_binding)))
             .collect();
         for item in body {
             let module_item = item.as_module_item();
@@ -542,7 +555,12 @@ pub(crate) fn sees_only_element(callback: &Expr) -> bool {
 /// `this`, so calling it as a method can write the allocation. `None` when
 /// any key may be: an object spread copies unknown values. Keys a literal
 /// does not own resolve to inherited intrinsics under A11.
-fn this_methods(init: &Expr) -> Option<BTreeSet<String>> {
+/// `this_free_binding` says whether a binding only holds `this`-free
+/// functions.
+fn this_methods(
+    init: &Expr,
+    this_free_binding: &dyn Fn(&Ident) -> bool,
+) -> Option<BTreeSet<String>> {
     let Expr::Object(object) = init.unwrap_parens() else {
         // Arrays, TS enum objects and derived arrays own no functions.
         return Some(BTreeSet::new());
@@ -555,7 +573,9 @@ fn this_methods(init: &Expr) -> Option<BTreeSet<String>> {
         let (key, value) = match prop.as_ref() {
             Prop::KeyValue(kv) => (&kv.key, Some(kv.value.as_ref())),
             Prop::Shorthand(name) => {
-                keys.insert(name.sym.to_string());
+                if !this_free_binding(name) {
+                    keys.insert(name.sym.to_string());
+                }
                 continue;
             }
             // Not plain data; such a literal is never tracked.
@@ -573,6 +593,7 @@ fn this_methods(init: &Expr) -> Option<BTreeSet<String>> {
                 Expr::Arrow(_) | Expr::Lit(_) | Expr::Tpl(_) | Expr::Object(_) | Expr::Array(_),
             ) => true,
             Some(Expr::Fn(function)) => !uses_this(&function.function),
+            Some(Expr::Ident(binding)) => this_free_binding(binding),
             _ => false,
         };
         if !this_free {
@@ -580,6 +601,24 @@ fn this_methods(init: &Expr) -> Option<BTreeSet<String>> {
         }
     }
     Some(keys)
+}
+
+/// Start offsets of the chunk's arrows and of functions that never use
+/// `this`, keyed as value flow keys function allocations.
+struct ThisFreeFunctions(BTreeSet<u32>);
+
+impl Visit for ThisFreeFunctions {
+    fn visit_function(&mut self, function: &Function) {
+        if !uses_this(function) {
+            self.0.insert(function.span.lo.0);
+        }
+        function.visit_children_with(self);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.0.insert(arrow.span.lo.0);
+        arrow.visit_children_with(self);
+    }
 }
 
 /// Whether a function body reads `this`, including through nested arrows.
