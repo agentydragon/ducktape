@@ -81,6 +81,10 @@ func newFaults() *faults {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
+
 func (f *faults) wrap(next http.RoundTripper) http.RoundTripper {
 	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.Method == http.MethodPatch {
