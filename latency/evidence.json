@@ -19772,7 +19772,7 @@
     "histories": "cached target-history durations used only to locate candidates; cost comes from originating execution metadata; no cached-duration deduplication heuristic"
   },
   "attribution": "not collected",
-  "validation": {
+  "prior_validation_before_hash_cache_correction": {
     "report_sha256": "59731a5418a3b329b08b279883c64b770d8631708c9799f9aaf8918227e8802f",
     "browser_review": {
       "invocation": "97410a3f-4770-41b5-9b92-3936e0590a0c",
@@ -19800,5 +19800,821 @@
     "arithmetic": "292 unique head IDs; head outcomes sum to 292; each green head has all three successful gates and a common workflow-start proxy; maximum equals feedback offset",
     "stock_recipes": "evidence.sh completed; gate_headroom.py completed on 148 exact common-clock green heads",
     "privacy": "Reviewed selected metadata only; no credentials, raw logs, payloads, inbox data, worker identities or profiles published"
+  },
+  "hash_cache_recommendation_correction": {
+    "recorded_at_utc": "2026-10-30T20:12:58.214137+00:00",
+    "historical_report_commit": "783d6b76b7173a10fb63b2392be7149599676c74",
+    "historical_report_url": "https://github.com/agentydragon/ducktape/blob/783d6b76b7173a10fb63b2392be7149599676c74/index.html",
+    "historical_assessment": {
+      "recommendation": "Defer cross-run base-hash caching in this minute-scale pass",
+      "warm_full_selection_seconds": [
+        16.461,
+        16.456
+      ],
+      "absolute_saving_ceiling_seconds": 16.5,
+      "ceiling_scope": "One warm workload; full selection includes both hashes and final queries, so base-only saving is smaller",
+      "diagnostic_jobs": 10,
+      "distinct_base_shas": 8,
+      "actual_cache_spike": "Not performed; no transport or hit-rate claim",
+      "coverage_limit": "Root .bazelignore excludes nested modules even with //...; independent of caching"
+    },
+    "finding": "Prior deferral was incorrectly revived. Base/candidate query durations and PR/push overhead are not a matched intervention measurement; shared Skyframe warm-up may move to the candidate on a base-cache hit.",
+    "withdrawn_estimate_seconds": [
+      5,
+      15
+    ],
+    "replacement_recommendation": "Defer cross-run caching: measured ideal-hit consumer saving is small; current production/lookup cost and hit frequency remain unmeasured. See complete experiment and revisit conditions.",
+    "new_performance_measurements": {
+      "measured_at_utc": "2026-10-30T20:26:56.115543+00:00",
+      "runner_invocation": "69c90c0d-da56-4a01-a47e-c60b7e229d57",
+      "input": {
+        "merge": "21d508c9905015199bcfd82d27a8fa9f326ea8a6",
+        "base": "a854463d14d9527cddee21b8d1ea06f39376de0f",
+        "head": "d3770d3ad6f5dbc8e7138fae405b1edd5f26e8ad"
+      },
+      "method": "cProfile of complete CI driver; only base checkout/hash replaced by local digest-checked seed. Normal RBE, test/build/lint/probe paths retained; cold means fresh JVM, disk/repositories/RBE caches retained. Producer and network lookup excluded from hit timing.",
+      "producer": {
+        "profile": "producer.prof",
+        "driver_seconds": 69.446973176,
+        "phases": []
+      },
+      "rows": [
+        {
+          "label": "cold-1",
+          "variant": "normal",
+          "jvm_restarted_before_profile": true,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "074d1dca-3263-5c29-9288-3092c7c583d1"
+            },
+            {
+              "role": "build",
+              "invocation": "0cb23153-8f9f-582e-8006-09bc39f3796a"
+            }
+          ],
+          "profile": "cold-1.prof",
+          "driver_seconds": 94.62751236700012,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.000126457,
+              "cumulative_seconds": 47.480351590000005
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 9.030500000000001e-05,
+              "cumulative_seconds": 94.627483514
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.4402e-05,
+              "cumulative_seconds": 0.672459437
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.869e-06,
+              "cumulative_seconds": 0.665124999
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5967e-05,
+              "cumulative_seconds": 44.413820237
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.8918e-05,
+              "cumulative_seconds": 0.8071198770000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "cold-2",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": true,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "5b2eb0c5-c302-5ca8-88fb-4002eaa76554"
+            },
+            {
+              "role": "build",
+              "invocation": "85f896a6-6eaf-54a9-b092-f27c10b9d58b"
+            }
+          ],
+          "profile": "cold-2.prof",
+          "driver_seconds": 59.533279765,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.000123669,
+              "cumulative_seconds": 45.495432927
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 9.227000000000001e-05,
+              "cumulative_seconds": 59.533255198000006
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.3009e-05,
+              "cumulative_seconds": 0.6607874880000001
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 6.660000000000001e-06,
+              "cumulative_seconds": 0.42024856600000005
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5856000000000002e-05,
+              "cumulative_seconds": 11.537486616
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.9039000000000002e-05,
+              "cumulative_seconds": 0.807061389
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "cold-3",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": true,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "b0b38924-2b85-5f28-9e77-611bc4d0466e"
+            },
+            {
+              "role": "build",
+              "invocation": "f7b36661-2f3c-5a97-984f-fa066bb60d52"
+            }
+          ],
+          "profile": "cold-3.prof",
+          "driver_seconds": 60.53613970699998,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011878600000000001,
+              "cumulative_seconds": 45.308377177000004
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 7.550200000000001e-05,
+              "cumulative_seconds": 60.53611531000001
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2521000000000001e-05,
+              "cumulative_seconds": 0.663006149
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.719000000000001e-06,
+              "cumulative_seconds": 0.456182529
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.6015e-05,
+              "cumulative_seconds": 12.626010999
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.6847e-05,
+              "cumulative_seconds": 0.864621241
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "cold-4",
+          "variant": "normal",
+          "jvm_restarted_before_profile": true,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "7a62f51b-61a4-546b-8674-2f0f922bd36d"
+            },
+            {
+              "role": "build",
+              "invocation": "0d033f81-7938-53ad-9979-c80615b9c160"
+            }
+          ],
+          "profile": "cold-4.prof",
+          "driver_seconds": 64.38100659500006,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011747700000000001,
+              "cumulative_seconds": 49.998719560000005
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.2945e-05,
+              "cumulative_seconds": 64.38098385
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.1236e-05,
+              "cumulative_seconds": 0.68688623
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 4.889e-06,
+              "cumulative_seconds": 0.424176463
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.4825000000000001e-05,
+              "cumulative_seconds": 11.769636096000001
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.9127e-05,
+              "cumulative_seconds": 0.8849693110000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-1",
+          "variant": "normal",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "3b1b0bbe-38fd-5c82-a3c0-5f2934b564ca"
+            },
+            {
+              "role": "build",
+              "invocation": "c60c61c8-d1f2-5063-9236-8bc0ed5eb720"
+            }
+          ],
+          "profile": "warm-1.prof",
+          "driver_seconds": 18.056723094,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00013755,
+              "cumulative_seconds": 12.196451478
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.7755e-05,
+              "cumulative_seconds": 18.056697936000003
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.1207000000000001e-05,
+              "cumulative_seconds": 0.652728784
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.057e-06,
+              "cumulative_seconds": 0.392348391
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5186000000000002e-05,
+              "cumulative_seconds": 3.51541065
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.7826000000000002e-05,
+              "cumulative_seconds": 0.6698248520000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-2",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "448d977b-edc7-5a8e-9db1-a0f0e3884892"
+            },
+            {
+              "role": "build",
+              "invocation": "ee36d5f0-6c22-54f4-b44f-0468f7567330"
+            }
+          ],
+          "profile": "warm-2.prof",
+          "driver_seconds": 12.448711874000002,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011095600000000001,
+              "cumulative_seconds": 7.284028437000001
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 8.6982e-05,
+              "cumulative_seconds": 12.44868973
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.3829000000000001e-05,
+              "cumulative_seconds": 0.618771576
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.989000000000001e-06,
+              "cumulative_seconds": 0.397886273
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.828e-05,
+              "cumulative_seconds": 2.675636744
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.8228000000000002e-05,
+              "cumulative_seconds": 0.7822306010000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-3",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "9bdf0f31-7a7d-5d64-b463-3bbb16ccbd44"
+            },
+            {
+              "role": "build",
+              "invocation": "593dd597-36d5-51b0-b386-e10f8ff1c1ff"
+            }
+          ],
+          "profile": "warm-3.prof",
+          "driver_seconds": 12.430928241999997,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.000111643,
+              "cumulative_seconds": 7.0605423190000005
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 7.0379e-05,
+              "cumulative_seconds": 12.430903425
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2128000000000001e-05,
+              "cumulative_seconds": 0.6255944370000001
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.248e-06,
+              "cumulative_seconds": 0.434570732
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.4854e-05,
+              "cumulative_seconds": 2.8724004240000003
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.8917000000000002e-05,
+              "cumulative_seconds": 0.7711132850000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-4",
+          "variant": "normal",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "6801d151-fe5f-58ec-a6f8-d3edb223b44b"
+            },
+            {
+              "role": "build",
+              "invocation": "631ed2be-5d5c-589a-9404-2f6a4122da49"
+            }
+          ],
+          "profile": "warm-4.prof",
+          "driver_seconds": 18.267053256,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.000144928,
+              "cumulative_seconds": 12.567014141000001
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.5706e-05,
+              "cumulative_seconds": 18.267030572
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2277000000000001e-05,
+              "cumulative_seconds": 0.65130169
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 5.069e-06,
+              "cumulative_seconds": 0.408414316
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.6617e-05,
+              "cumulative_seconds": 3.260078887
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.7258e-05,
+              "cumulative_seconds": 0.715621108
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-5",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "1df0ff0f-29f6-5f6e-bbfa-a68d1f6becc6"
+            },
+            {
+              "role": "build",
+              "invocation": "d4649fcd-4592-5a27-ae02-40088f130c6f"
+            }
+          ],
+          "profile": "warm-5.prof",
+          "driver_seconds": 12.006923576999984,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011989700000000001,
+              "cumulative_seconds": 7.288932628
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.523000000000001e-05,
+              "cumulative_seconds": 12.006901704
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2528000000000001e-05,
+              "cumulative_seconds": 0.6221843690000001
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 4.997000000000001e-06,
+              "cumulative_seconds": 0.39445422100000005
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5832e-05,
+              "cumulative_seconds": 2.446943489
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.6524e-05,
+              "cumulative_seconds": 0.610960724
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-6",
+          "variant": "normal",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "e6638f7a-7f1c-5e7d-8845-ccfcf2e24b84"
+            },
+            {
+              "role": "build",
+              "invocation": "dee847ca-a967-5a9a-b0bf-117b8fbf69c1"
+            }
+          ],
+          "profile": "warm-6.prof",
+          "driver_seconds": 17.040087887999974,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011314200000000001,
+              "cumulative_seconds": 11.71271892
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.3856e-05,
+              "cumulative_seconds": 17.040064613000002
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2159e-05,
+              "cumulative_seconds": 0.627926157
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 4.937e-06,
+              "cumulative_seconds": 0.413477914
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5953e-05,
+              "cumulative_seconds": 2.9872373910000003
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.942e-05,
+              "cumulative_seconds": 0.6407001990000001
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-7",
+          "variant": "normal",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 0,
+          "skipped_base_checkout": 0,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "d160ab1c-4790-5b75-9a87-a906d60f3f8f"
+            },
+            {
+              "role": "build",
+              "invocation": "6bdecbed-daf4-5121-b10f-e30f0931b6af"
+            }
+          ],
+          "profile": "warm-7.prof",
+          "driver_seconds": 17.175415158999996,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00011725800000000001,
+              "cumulative_seconds": 11.805634084000001
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 6.0513e-05,
+              "cumulative_seconds": 17.175392625
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.1006000000000001e-05,
+              "cumulative_seconds": 0.634607735
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 4.187e-06,
+              "cumulative_seconds": 0.38344078200000004
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5678e-05,
+              "cumulative_seconds": 3.1188836290000004
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.6675000000000002e-05,
+              "cumulative_seconds": 0.632842666
+            }
+          ],
+          "returncode": 0
+        },
+        {
+          "label": "warm-8",
+          "variant": "local-base-cache",
+          "jvm_restarted_before_profile": false,
+          "local_base_cache_hits": 1,
+          "skipped_base_checkout": 1,
+          "affected_targets": 176,
+          "selection_sha256": "628285006de49ac7195d9c2e7f0687034afc152884b961e28b1d384c57320dce",
+          "commands": [
+            {
+              "role": "test",
+              "invocation": "d1ab1db7-67d7-5eb8-b4a0-37c6d728b535"
+            },
+            {
+              "role": "build",
+              "invocation": "04efd890-56ef-5e3a-b993-8aa1a629379a"
+            }
+          ],
+          "profile": "warm-8.prof",
+          "driver_seconds": 11.830181738999993,
+          "phases": [
+            {
+              "function": "_select_targets",
+              "calls": 1,
+              "self_seconds": 0.00010792000000000001,
+              "cumulative_seconds": 7.222743876
+            },
+            {
+              "function": "main",
+              "calls": 1,
+              "self_seconds": 9.7068e-05,
+              "cumulative_seconds": 11.830160657
+            },
+            {
+              "function": "_probe",
+              "calls": 3,
+              "self_seconds": 1.2589000000000001e-05,
+              "cumulative_seconds": 0.5744936900000001
+            },
+            {
+              "function": "_finalize_probe",
+              "calls": 1,
+              "self_seconds": 4.918e-06,
+              "cumulative_seconds": 0.377880406
+            },
+            {
+              "function": "_run_bazel",
+              "calls": 2,
+              "self_seconds": 1.5193000000000002e-05,
+              "cumulative_seconds": 2.403423692
+            },
+            {
+              "function": "_race_targets",
+              "calls": 1,
+              "self_seconds": 1.6995000000000002e-05,
+              "cumulative_seconds": 0.6215771880000001
+            }
+          ],
+          "returncode": 0
+        }
+      ],
+      "warm_medians_seconds": {
+        "normal": 17.616069126499998,
+        "local_base_cache": 12.21892590949999,
+        "optimistic_consumer_saving": 5.397143217000007
+      },
+      "later_cold_pair_saving_seconds": 3.8448668880000767,
+      "warmup_confound": "cold-1 normal fetched Rust toolchain (19.669s repository event) and test analysis/execution took41.164s versus8.756s on cold-4; do not attribute initial cold1-vs-cold2 gap to cache",
+      "selection_equal": true,
+      "affected_targets": 176,
+      "conclusion": "Defer implementation; a local hit has a small measured saving on this input, but fleet net benefit after production, lookup and miss/hit frequency is unmeasured."
+    }
+  },
+  "current_recommendations": [
+    {
+      "rank": 1,
+      "change": "Exclude explicitly race-enabled Go labels from the second sweep",
+      "scope": "Preserve race coverage and config/aspect equivalence; effect unmeasured"
+    }
+  ],
+  "symbol_strip_implementation_update": {
+    "pr": 13066,
+    "state": "merged",
+    "head_sha": "d3770d3ad6f5dbc8e7138fae405b1edd5f26e8ad",
+    "tested_merge": "21d508c9905015199bcfd82d27a8fa9f326ea8a6",
+    "required_checks": "success",
+    "end_to_end_effect": "unmeasured; prior bounded test probe retained"
+  },
+  "validation": {
+    "report_sha256": "61b13c36aa1b16c34eeb1c7c7ceeba96316b7960616232d3bf99cf48c5bdeffd",
+    "browser_review": {
+      "invocation": "d9e9543a-a77f-41bf-bcf5-46eeed829576",
+      "result": "2 parameterized cases passed on Bazel/RBE; Ruff/mypy aspects passed",
+      "viewports": [
+        {
+          "width": 1280,
+          "height": 900
+        },
+        {
+          "width": 390,
+          "height": 844
+        }
+      ],
+      "checked": "All six final screenshots inspected; mobile decision rows stack; no document-wide horizontal overflow; disclosure and 60-second gate calculator exercised; shared render checks passed",
+      "screenshots_sha256": {
+        "headroom-1280.png": "3603d0029088b868346af8f3e821f098e3c9ca696b6c8877ca007c212876f63a",
+        "headroom-390.png": "e756024d7d95c76370c5694edd957f55d1155a22cf3a4501ff17e4dcc73a772c",
+        "recommendations-1280.png": "a69902e61ce6db3b1d3475f07278c7bbe82f6a787906b0e2ac16eea788565e0c",
+        "recommendations-390.png": "228b92e09f04d659596f51252a024922ca3c149333545a373b8ca1998fd9be79",
+        "report-1280.png": "56a1ba987e5a6207c73fd28c059458a54410503319f729a35e1349bd468b4144",
+        "report-390.png": "efb2a13d69e7f64cf89b4ff34617917ce380e101a6c430c8cf30f7d62f8fad14"
+      }
+    },
+    "arithmetic": "292 unique head IDs; head outcomes sum to 292; each green head has all three successful gates and a common workflow-start proxy; maximum equals feedback offset",
+    "stock_recipes": "evidence.sh completed; gate_headroom.py completed on 148 exact common-clock green heads",
+    "privacy": "Selected profiler summary and invocation IDs only; no credentials, raw logs, payloads, inbox data, worker identities or profile binaries published",
+    "experiment": "13 real cProfile artifacts downloaded and checked; all 12 successful rows and target selection digest match the runner archive"
   }
 }
