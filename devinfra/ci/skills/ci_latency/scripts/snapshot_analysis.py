@@ -38,9 +38,7 @@ def _sort_run(run: Mapping[str, Any]) -> tuple[dt.datetime, int]:
 
 def _head_source(runs: Iterable[Mapping[str, Any]]) -> tuple[str, str | None]:
     repositories = {
-        (run.get("repository") or {}).get("full_name")
-        for run in runs
-        if isinstance(run.get("repository"), dict)
+        (run.get("repository") or {}).get("full_name") for run in runs if isinstance(run.get("repository"), dict)
     }
     head_repositories = {
         (run.get("head_repository") or {}).get("full_name")
@@ -58,7 +56,11 @@ def _head_source(runs: Iterable[Mapping[str, Any]]) -> tuple[str, str | None]:
 
 def _job_state(job: Mapping[str, Any]) -> str:
     if job.get("status") != "completed":
-        return "pending" if job.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"} else "unknown"
+        return (
+            "pending"
+            if job.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"}
+            else "unknown"
+        )
     conclusion = job.get("conclusion")
     if conclusion == "success":
         return "success"
@@ -86,9 +88,7 @@ def _latest_attempt_jobs(
     matching = [job for job in jobs if job.get("name") == gate]
     latest_attempt = run.get("run_attempt")
     if not isinstance(latest_attempt, int) or latest_attempt < 1:
-        attempts: list[int] = [
-            attempt for job in matching if isinstance((attempt := job.get("run_attempt")), int)
-        ]
+        attempts: list[int] = [attempt for job in matching if isinstance((attempt := job.get("run_attempt")), int)]
         if not attempts:
             return [], False
         latest_attempt = max(attempts)
@@ -207,9 +207,7 @@ def _head_outcome(source: str, states: list[str]) -> str:
     return "green-proxy"
 
 
-def analyze_feedback(
-    snapshot: Mapping[str, Any], since: str, until: str, gates: list[str]
-) -> dict[str, Any]:
+def analyze_feedback(snapshot: Mapping[str, Any], since: str, until: str, gates: list[str]) -> dict[str, Any]:
     first, last = _timestamp(since), _timestamp(until)
     if first is None or last is None or first > last:
         raise ValueError("window boundaries must be valid ordered RFC3339 timestamps")
@@ -363,7 +361,9 @@ def analyze_occupancy(
     }
 
 
-def analyze(snapshot: Mapping[str, Any], since: str, until: str, gates: list[str], workflows: set[str], thresholds: list[int]) -> dict[str, Any]:
+def analyze(
+    snapshot: Mapping[str, Any], since: str, until: str, gates: list[str], workflows: set[str], thresholds: list[int]
+) -> dict[str, Any]:
     return {
         "feedback": analyze_feedback(snapshot, since, until, gates),
         "occupancy": analyze_occupancy(snapshot, since, until, workflows, thresholds),
@@ -376,19 +376,22 @@ def main() -> None:
     parser.add_argument("--since", required=True, help="inclusive RFC3339 lower bound")
     parser.add_argument("--until", required=True, help="RFC3339 upper bound; occupancy ends just before it")
     parser.add_argument("--gate", action="append", required=True, help="exact required job name; may repeat")
-    parser.add_argument("--workflow", action="append", default=[], help="limit occupancy to this workflow path; may repeat")
-    parser.add_argument("--runner-threshold", action="append", type=int, default=[], help="busy-runner threshold in addition to the default 18 and 20")
+    parser.add_argument(
+        "--workflow", action="append", default=[], help="limit occupancy to this workflow path; may repeat"
+    )
+    parser.add_argument(
+        "--runner-threshold",
+        action="append",
+        type=int,
+        default=[],
+        help="busy-runner threshold in addition to the default 18 and 20",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         snapshot = json.loads(args.snapshot.read_text())
         result = analyze(
-            snapshot,
-            args.since,
-            args.until,
-            args.gate,
-            set(args.workflow),
-            [18, 20, *args.runner_threshold],
+            snapshot, args.since, args.until, args.gate, set(args.workflow), [18, 20, *args.runner_threshold]
         )
         args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
     except (OSError, json.JSONDecodeError, ValueError) as error:

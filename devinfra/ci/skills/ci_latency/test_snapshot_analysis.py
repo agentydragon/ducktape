@@ -49,16 +49,21 @@ def test_feedback_groups_by_exact_head_and_uses_each_latest_gate_attempt_clock()
             _job(11, 1, build, "2026-01-01T10:00:00Z", "2026-01-01T10:01:00Z", "2026-01-01T10:02:00Z"),
             _job(12, 1, build, "2026-01-01T10:00:00Z", "2026-01-01T10:02:00Z", "2026-01-01T10:04:00Z", attempt=2),
             _job(21, 2, precommit, "2026-01-01T10:00:35Z", "2026-01-01T10:01:00Z", "2026-01-01T10:03:00Z"),
-            _job(31, 3, build, "2026-01-01T11:00:00Z", "2026-01-01T11:01:00Z", "2026-01-01T11:02:00Z", conclusion="cancelled"),
+            _job(
+                31,
+                3,
+                build,
+                "2026-01-01T11:00:00Z",
+                "2026-01-01T11:01:00Z",
+                "2026-01-01T11:02:00Z",
+                conclusion="cancelled",
+            ),
             _job(41, 4, precommit, "2026-01-01T11:00:00Z", "2026-01-01T11:00:30Z", "2026-01-01T11:01:00Z"),
         ],
     }
 
     result = snapshot_analysis.analyze_feedback(
-        snapshot,
-        "2026-01-01T09:00:00Z",
-        "2026-01-01T12:00:00Z",
-        [build, precommit],
+        snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [build, precommit]
     )
 
     assert result["outcomes"] == {"green-proxy": 1, "canceled": 1}
@@ -79,9 +84,7 @@ def test_latest_attempt_without_visible_gate_does_not_reuse_older_success():
         "jobs": [_job(1, 1, gate, "2026-01-01T10:00:00Z", "2026-01-01T10:00:30Z", "2026-01-01T10:01:00Z", attempt=1)],
     }
 
-    result = snapshot_analysis.analyze_feedback(
-        snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate]
-    )
+    result = snapshot_analysis.analyze_feedback(snapshot, "2026-01-01T09:00:00Z", "2026-01-01T12:00:00Z", [gate])
 
     assert result["heads"][0]["gates"][0]["state"] == "missing"
     assert result["heads"][0]["feedback_proxy_seconds"] is None
@@ -108,29 +111,31 @@ def test_fork_and_unknown_source_states_are_not_reported_as_green():
 
 def test_completed_runner_occupancy_is_clipped_and_uses_github_job_clocks_only():
     snapshot = {
-        "runs": [
-            {"id": 1, "path": "workflow-a.yml"},
-            {"id": 2, "path": "workflow-b.yml"},
-        ],
+        "runs": [{"id": 1, "path": "workflow-a.yml"}, {"id": 2, "path": "workflow-b.yml"}],
         "jobs": [
             {
                 **_job(1, 1, "completed", "2026-01-01T09:59:58Z", "2026-01-01T09:59:58Z", "2026-01-01T10:00:05Z"),
                 "buildbuddy_cached_duration_seconds": 999999,
             },
-            _job(2, 2, "cancelled on runner", "2026-01-01T10:00:03Z", "2026-01-01T10:00:03Z", "2026-01-01T10:00:11Z", conclusion="cancelled"),
+            _job(
+                2,
+                2,
+                "cancelled on runner",
+                "2026-01-01T10:00:03Z",
+                "2026-01-01T10:00:03Z",
+                "2026-01-01T10:00:11Z",
+                conclusion="cancelled",
+            ),
             _job(3, 1, "unfinished", "2026-01-01T10:00:00Z", "2026-01-01T10:00:02Z", None, status="in_progress"),
-            {**_job(4, 1, "unassigned", "2026-01-01T10:00:00Z", "2026-01-01T10:00:01Z", "2026-01-01T10:00:03Z"), "runner_id": 0},
+            {
+                **_job(4, 1, "unassigned", "2026-01-01T10:00:00Z", "2026-01-01T10:00:01Z", "2026-01-01T10:00:03Z"),
+                "runner_id": 0,
+            },
             {**_job(5, 1, "missing timestamp", "2026-01-01T10:00:00Z", None, "2026-01-01T10:00:03Z"), "runner_id": 4},
         ],
     }
 
-    result = snapshot_analysis.analyze_occupancy(
-        snapshot,
-        "2026-01-01T10:00:00Z",
-        "2026-01-01T10:00:10Z",
-        set(),
-        [2],
-    )
+    result = snapshot_analysis.analyze_occupancy(snapshot, "2026-01-01T10:00:00Z", "2026-01-01T10:00:10Z", set(), [2])
 
     assert result["runner_seconds_by_workflow"] == {"workflow-a.yml": 5, "workflow-b.yml": 7}
     assert result["runner_seconds_total"] == 12
