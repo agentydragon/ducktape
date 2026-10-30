@@ -1441,8 +1441,11 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
         None,
     );
     assert!(graph.primitive_bindings.contains("value"));
-    assert!(!graph.number_bindings.contains("value"));
-    assert!(graph.number_or_undefined_bindings.contains("value"));
+    assert_eq!(
+        graph.binding_prims.kinds.get("value"),
+        Some(&PrimKinds::NUMBER.union(PrimKinds::UNDEFINED)),
+        "a stable var is Number after its initializer and undefined before it"
+    );
 
     let redeclared_module = parse("var value = 1; function value() {}");
     let redeclared_structure = analyze_chunk_structural(&redeclared_module, None, |_| None);

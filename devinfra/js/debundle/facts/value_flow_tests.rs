@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use swc_common::SyntaxContext;
 
 fn id(name: &str) -> Id {
@@ -50,18 +51,18 @@ const rooted = return_cycle();
     let body = top_level_item_views(&module.body);
     let flow = ChunkValueFlow::analyze(&body);
 
-    let mut candidates = BTreeSet::from([ValueOrigin::Unknown]);
+    let mut candidates = BTreeSet::from([Value::Top]);
     for name in ["alpha", "beta", "unknown_box", "rooted"] {
         candidates.extend(
             flow.values_of_binding(&id(name))
                 .iter()
-                .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
+                .filter(|origin| matches!(origin, Value::Alloc(Kind::Object, _))),
         );
     }
     candidates.extend(
         flow.values_of_binding(&id("cycle"))
             .iter()
-            .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
+            .filter(|origin| matches!(origin, Value::Alloc(Kind::Function, _))),
     );
 
     // This candidate comes from a second parsed source with a much larger
@@ -72,7 +73,7 @@ const rooted = return_cycle();
     let foreign_module = raw_js_test_support::parse(&foreign_source);
     let foreign_body = top_level_item_views(&foreign_module.body);
     let foreign_flow = ChunkValueFlow::analyze(&foreign_body);
-    let [ValueOrigin::Object(foreign_span)] = foreign_flow
+    let [Value::Alloc(Kind::Object, foreign_span)] = foreign_flow
         .values_of_binding(&id("foreign"))
         .iter()
         .collect::<Vec<_>>()[..]
@@ -80,7 +81,7 @@ const rooted = return_cycle();
         panic!("foreign binding should have one object identity");
     };
     assert!(foreign_span > source.len() as u32);
-    let foreign = ValueOrigin::Object(foreign_span);
+    let foreign = Value::Alloc(Kind::Object, foreign_span);
     assert!(candidates.insert(foreign));
 
     let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
@@ -88,19 +89,19 @@ const rooted = return_cycle();
     let expected = flow.candidate_object_index_reference_for_test(&candidates);
     assert_eq!(actual, expected);
 
-    let ValueOrigin::Object(alpha_span) = *candidates
+    let Value::Alloc(Kind::Object, alpha_span) = *candidates
         .iter()
         .find(|origin| {
-            matches!(origin, ValueOrigin::Object(_))
+            matches!(origin, Value::Alloc(Kind::Object, _))
                 && flow.values_of_binding(&id("alpha")).contains(origin)
         })
         .expect("alpha should be a candidate object")
     else {
         panic!("alpha should have an object identity");
     };
-    let alpha = ValueOrigin::Object(alpha_span);
+    let alpha = Value::Alloc(Kind::Object, alpha_span);
     let alpha_reachable = &actual.0[&alpha];
-    let [ValueOrigin::Function(cycle_span)] = flow
+    let [Value::Alloc(Kind::Function, cycle_span)] = flow
         .values_of_property(alpha_span, "callback")
         .expect("cycle property should have a value")
         .iter()
@@ -108,21 +109,22 @@ const rooted = return_cycle();
     else {
         panic!("cycle property should contain one function identity");
     };
-    assert!(alpha_reachable.contains(&ValueOrigin::Function(cycle_span)));
+    assert!(alpha_reachable.contains(&Value::Alloc(Kind::Function, cycle_span)));
     assert!(
-        alpha_reachable.contains(&ValueOrigin::Object(
+        alpha_reachable.contains(&Value::Alloc(
+            Kind::Object,
             flow.values_of_property(alpha_span, "peer")
                 .expect("peer property should have a value")
                 .iter()
                 .find_map(|origin| match origin {
-                    ValueOrigin::Object(span) => Some(span),
+                    Value::Alloc(Kind::Object, span) => Some(span),
                     _ => None,
                 })
                 .expect("peer property should point to beta"),
         ))
     );
-    let unknown_reachable = &actual.0[&ValueOrigin::Unknown];
-    assert!(unknown_reachable.contains(&ValueOrigin::Unknown));
+    let unknown_reachable = &actual.0[&Value::Top];
+    assert!(unknown_reachable.contains(&Value::Top));
     assert_eq!(actual.0[&foreign], BTreeSet::from([foreign]));
     assert!(actual.1.contains_key(&id("rooted")));
 }
@@ -151,7 +153,7 @@ const returned = make();
             initial
                 .values_of_binding(&id(name))
                 .iter()
-                .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
+                .filter(|origin| matches!(origin, Value::Alloc(Kind::Object, _))),
         );
     }
     for name in ["identity", "relay", "make"] {
@@ -159,7 +161,7 @@ const returned = make();
             initial
                 .values_of_binding(&id(name))
                 .iter()
-                .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
+                .filter(|origin| matches!(origin, Value::Alloc(Kind::Function, _))),
         );
     }
 
@@ -180,38 +182,44 @@ const returned = make();
         flow.candidate_object_index_reference_for_test(&candidates)
     );
 
-    let binding_origin = |name: &str, is_object: fn(&ValueOrigin) -> bool| {
+    let binding_origin = |name: &str, is_object: fn(&Value) -> bool| {
         flow.values_of_binding(&id(name))
             .iter()
             .find(is_object)
             .unwrap_or_else(|| panic!("{name} should have a matching value origin"))
     };
-    let ValueOrigin::Object(leaf) =
-        binding_origin("leaf", |origin| matches!(origin, ValueOrigin::Object(_)))
-    else {
+    let Value::Alloc(Kind::Object, leaf) = binding_origin("leaf", |origin| {
+        matches!(origin, Value::Alloc(Kind::Object, _))
+    }) else {
         unreachable!();
     };
-    let ValueOrigin::Object(outer) =
-        binding_origin("outer", |origin| matches!(origin, ValueOrigin::Object(_)))
-    else {
+    let Value::Alloc(Kind::Object, outer) = binding_origin("outer", |origin| {
+        matches!(origin, Value::Alloc(Kind::Object, _))
+    }) else {
         unreachable!();
     };
-    let ValueOrigin::Function(relay) =
-        binding_origin("relay", |origin| matches!(origin, ValueOrigin::Function(_)))
-    else {
+    let Value::Alloc(Kind::Function, relay) = binding_origin("relay", |origin| {
+        matches!(origin, Value::Alloc(Kind::Function, _))
+    }) else {
         unreachable!();
     };
-    let ValueOrigin::Function(make) =
-        binding_origin("make", |origin| matches!(origin, ValueOrigin::Function(_)))
-    else {
+    let Value::Alloc(Kind::Function, make) = binding_origin("make", |origin| {
+        matches!(origin, Value::Alloc(Kind::Function, _))
+    }) else {
         unreachable!();
     };
 
-    assert!(actual.0[&ValueOrigin::Object(outer)].contains(&ValueOrigin::Object(leaf)));
-    assert!(actual.0[&ValueOrigin::Function(relay)].contains(&ValueOrigin::Object(leaf)));
-    assert!(actual.0[&ValueOrigin::Function(make)].contains(&ValueOrigin::Object(leaf)));
+    assert!(
+        actual.0[&Value::Alloc(Kind::Object, outer)].contains(&Value::Alloc(Kind::Object, leaf))
+    );
+    assert!(
+        actual.0[&Value::Alloc(Kind::Function, relay)].contains(&Value::Alloc(Kind::Object, leaf))
+    );
+    assert!(
+        actual.0[&Value::Alloc(Kind::Function, make)].contains(&Value::Alloc(Kind::Object, leaf))
+    );
     for name in ["alias", "returned"] {
-        assert!(actual.1[&id(name)].contains(&ValueOrigin::Object(leaf)));
+        assert!(actual.1[&id(name)].contains(&Value::Alloc(Kind::Object, leaf)));
     }
 }
 
@@ -428,7 +436,7 @@ const after = poly(box.missing || box.primary || box.factory());
     let returned = flow.values_of_binding(&id("returned_leaf"));
     let mut expected = primary.iter().collect::<std::collections::BTreeSet<_>>();
     expected.extend(returned.iter());
-    expected.insert(ValueOrigin::Unknown);
+    expected.insert(Value::Top);
 
     for parameter in [
         "value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7",
@@ -501,7 +509,7 @@ poly(box.missing || leaf, extra);
     );
     let extra_origin = extra_values[0];
     let callback = flow.values_of_binding(&id("callback"));
-    assert!(callback.contains(&ValueOrigin::Unknown));
+    assert!(callback.contains(&Value::Top));
     let leaf = flow.values_of_binding(&id("leaf"));
     let leaf_values = leaf.iter().collect::<Vec<_>>();
     assert_eq!(
@@ -608,11 +616,11 @@ const later = invoke(box.run);
     );
 
     let callback_values = flow.values_of_binding(&id("callback"));
-    assert!(callback_values.contains(&ValueOrigin::Unknown));
+    assert!(callback_values.contains(&Value::Top));
     assert!(
         callback_values
             .iter()
-            .any(|value| matches!(value, ValueOrigin::Function(_)))
+            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
     );
 }
 
@@ -638,11 +646,11 @@ box = {};
         let flow = assert_matches_reference(source);
 
         let values = flow.values_of_binding(&id("early"));
-        assert!(values.contains(&ValueOrigin::Unknown));
+        assert!(values.contains(&Value::Top));
         assert!(
             values
                 .iter()
-                .any(|value| matches!(value, ValueOrigin::Function(_)))
+                .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
         );
     }
 }
@@ -692,7 +700,7 @@ const late_right = make_right()[key];
         let values = flow.values_of_binding(&id(name));
         let functions = values
             .iter()
-            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .filter(|value| matches!(value, Value::Alloc(Kind::Function, _)))
             .collect::<Vec<_>>();
         assert_eq!(
             functions.len(),
@@ -716,7 +724,7 @@ const late_right = make_right()[key];
         let objects = values
             .iter()
             .filter_map(|value| match value {
-                ValueOrigin::Object(object) => Some(object),
+                Value::Alloc(Kind::Object, object) => Some(object),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -732,7 +740,7 @@ const late_right = make_right()[key];
         let unknown = flow
             .values_of_property(object, "unknown_value")
             .expect("the missing-property write should create a property");
-        assert!(unknown.contains(&ValueOrigin::Unknown));
+        assert!(unknown.contains(&Value::Top));
         let changing = flow
             .values_of_property(object, "changing")
             .expect("the changing property should be written");
@@ -743,10 +751,7 @@ const late_right = make_right()[key];
 
     for binding in ["early_left", "late_left"] {
         let values = flow.values_of_binding(&id(binding));
-        assert!(
-            values.contains(&ValueOrigin::Unknown),
-            "{binding} lost Unknown"
-        );
+        assert!(values.contains(&Value::Top), "{binding} lost Unknown");
         for expected in left_functions {
             assert!(values.contains(&expected), "{binding} lost {expected:?}");
         }
@@ -759,10 +764,7 @@ const late_right = make_right()[key];
     }
     for binding in ["early_right", "late_right"] {
         let values = flow.values_of_binding(&id(binding));
-        assert!(
-            values.contains(&ValueOrigin::Unknown),
-            "{binding} lost Unknown"
-        );
+        assert!(values.contains(&Value::Top), "{binding} lost Unknown");
         for expected in right_functions {
             assert!(values.contains(&expected), "{binding} lost {expected:?}");
         }
@@ -801,7 +803,7 @@ fn later_alias_values_grow_recursive_callee_sets() {
     assert!(
         callback_values
             .iter()
-            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .filter(|value| matches!(value, Value::Alloc(Kind::Function, _)))
             .count()
             >= 2
     );
@@ -836,32 +838,26 @@ const second = relay(alias || box.primary || globalThis);
     assert_eq!(
         wide_values
             .iter()
-            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .filter(|value| matches!(value, Value::Alloc(Kind::Function, _)))
             .count(),
         8,
     );
-    assert!(
-        flow.values_of_binding(&id("overlap"))
-            .contains(&ValueOrigin::Unknown)
-    );
+    assert!(flow.values_of_binding(&id("overlap")).contains(&Value::Top));
 
     for name in ["first", "alias", "second"] {
         let values = flow.values_of_binding(&id(name));
-        assert!(
-            values.contains(&ValueOrigin::Unknown),
-            "{name} lost Unknown"
-        );
+        assert!(values.contains(&Value::Top), "{name} lost Unknown");
         assert!(
             values
                 .iter()
-                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .filter(|value| matches!(value, Value::Alloc(Kind::Function, _)))
                 .count()
                 >= 8,
             "{name} lost part of the wide function set",
         );
     }
 
-    let [ValueOrigin::Object(box_origin)] = flow
+    let [Value::Alloc(Kind::Object, box_origin)] = flow
         .values_of_binding(&id("box"))
         .iter()
         .collect::<Vec<_>>()[..]
@@ -872,11 +868,11 @@ const second = relay(alias || box.primary || globalThis);
         let values = flow
             .values_of_property(box_origin, property)
             .unwrap_or_else(|| panic!("missing static property {property}"));
-        assert!(values.contains(&ValueOrigin::Unknown) || property == "primary");
+        assert!(values.contains(&Value::Top) || property == "primary");
         assert!(
             values
                 .iter()
-                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .filter(|value| matches!(value, Value::Alloc(Kind::Function, _)))
                 .count()
                 >= 8,
             "property {property} lost part of the wide function set",

@@ -119,14 +119,14 @@ pub(crate) fn classify_expr_purity(
                 // `[Symbol.toPrimitive]`. Pure only when the
                 // operand is statically primitive-valued.
                 UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde => {
+                    let bigint_plus = u.op == UnaryOp::Plus
+                        && evaluate(&u.arg, &graph.binding_prims.scope(local_shadowed))
+                            .is_some_and(|kinds| kinds.is_only(PrimKinds::BIGINT));
                     if is_result_primitive(&u.arg, &graph.primitive_bindings, local_shadowed)
-                        && !(u.op == UnaryOp::Plus
-                            && is_bigint_expression(&u.arg, &graph.bigint_bindings, local_shadowed))
+                        && !bigint_plus
                     {
                         arg_purity
-                    } else if u.op == UnaryOp::Plus
-                        && is_bigint_expression(&u.arg, &graph.bigint_bindings, local_shadowed)
-                    {
+                    } else if bigint_plus {
                         arg_purity.worst(Purity::from_reason_with_detail(
                             PurityRule::Other,
                             u.span,
@@ -1093,22 +1093,21 @@ fn binary_may_throw_on_numeric_mismatch(
         return false;
     }
 
-    let left_number = is_number_expression(&binary.left, &graph.number_bindings, local_shadowed);
-    let right_number = is_number_expression(&binary.right, &graph.number_bindings, local_shadowed);
-    let left_non_bigint = is_definitely_non_bigint_expression(
-        &binary.left,
-        &graph.number_bindings,
-        &graph.number_or_undefined_bindings,
-        local_shadowed,
+    let scope = graph.binding_prims.scope(local_shadowed);
+    let left = evaluate(&binary.left, &scope).unwrap_or(PrimKinds::NONE);
+    let right = evaluate(&binary.right, &scope).unwrap_or(PrimKinds::NONE);
+    let non_bigint = PrimKinds::ANY
+        .without(PrimKinds::BIGINT)
+        .without(PrimKinds::SYMBOL);
+    let (left_number, right_number) = (
+        left.is_only(PrimKinds::NUMBER),
+        right.is_only(PrimKinds::NUMBER),
     );
-    let right_non_bigint = is_definitely_non_bigint_expression(
-        &binary.right,
-        &graph.number_bindings,
-        &graph.number_or_undefined_bindings,
-        local_shadowed,
+    let (left_non_bigint, right_non_bigint) = (left.is_only(non_bigint), right.is_only(non_bigint));
+    let (left_bigint, right_bigint) = (
+        left.is_only(PrimKinds::BIGINT),
+        right.is_only(PrimKinds::BIGINT),
     );
-    let left_bigint = is_bigint_expression(&binary.left, &graph.bigint_bindings, local_shadowed);
-    let right_bigint = is_bigint_expression(&binary.right, &graph.bigint_bindings, local_shadowed);
 
     if binary.op == BinaryOp::ZeroFillRShift && (left_bigint || right_bigint) {
         return true;
@@ -1117,12 +1116,8 @@ fn binary_may_throw_on_numeric_mismatch(
         return true;
     }
     if left_bigint != right_bigint {
-        let other = if left_bigint {
-            &binary.right
-        } else {
-            &binary.left
-        };
-        if binary.op != BinaryOp::Add || !is_definitely_string_expression(other) {
+        let other = if left_bigint { right } else { left };
+        if binary.op != BinaryOp::Add || !other.is_only(PrimKinds::STRING) {
             return true;
         }
     }
@@ -1418,7 +1413,7 @@ fn prop_name_is(name: &PropName, expected: &str) -> bool {
 /// * conditionals whose both branches are result-primitive;
 /// * a reference to a chunk-top `const` provably bound to a
 ///   primitive value (`primitives`, from
-///   `collect_binding_value_classes`), when the name is not
+///   `collect_binding_prims`), when the name is not
 ///   locally shadowed.
 ///
 /// The global `undefined` is deliberately NOT admitted: it is an

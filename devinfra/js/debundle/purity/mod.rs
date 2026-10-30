@@ -17,8 +17,6 @@
 //!   types and the load-bearing-hint detectors.
 //! - `plain_data` — plain-data candidate collection and whole-chunk
 //!   escape/write scanners.
-//! - `value_inference` — finite positive closure for fluent, plain-array,
-//!   primitive, and Symbol const value classes.
 //! - `ts_enum_iife` — recognition of the TypeScript-emit enum IIFE
 //!   plain-object shape.
 //! - `purity_type` — the `Purity` / `PurityReason` / `PurityRule`
@@ -39,7 +37,10 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
 pub(crate) use crate::SourceLocation;
 pub(crate) use crate::facts::TopLevelItemView;
-pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
+pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation, Row};
+pub(crate) use crate::facts::abstract_domain::primitive::{PrimScope, evaluate};
+pub(crate) use crate::facts::abstract_domain::value::PrimKinds;
+pub(crate) use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 mod classifier;
 mod code_graph;
@@ -50,7 +51,6 @@ mod plain_data;
 mod purity_type;
 mod redundant_hints;
 mod ts_enum_iife;
-mod value_inference;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -63,22 +63,73 @@ pub(crate) use plain_data::*;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
 
-#[derive(Default)]
-pub(crate) struct BindingValueClasses {
-    pub(crate) primitive_bindings: BTreeSet<String>,
-    pub(crate) symbol_const_bindings: BTreeSet<String>,
-    pub(crate) number_bindings: BTreeSet<String>,
-    pub(crate) bigint_bindings: BTreeSet<String>,
-    /// Stable `var` bindings are Number after initialization and `undefined`
-    /// before it, so callers must not treat these as exact Number facts.
-    pub(crate) number_or_undefined_bindings: BTreeSet<String>,
+/// Primitive types of chunk-top bindings (`collect_binding_prims`) and the
+/// global names whose intrinsic the chunk may replace.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct BindingPrims {
+    kinds: BTreeMap<String, PrimKinds>,
+    /// Shadowed globals plus every `G` and `G.m` a visible write may replace.
+    replaced_globals: BTreeSet<String>,
 }
 
-use value_inference::{
-    infer_const_value_classes, infer_fluent_const_bindings, infer_plain_array_candidates,
-    is_bigint_expression, is_definitely_non_bigint_expression, is_definitely_string_expression,
-    is_number_expression,
-};
+impl BindingPrims {
+    /// The bindings visible where `local_shadowed` names are rebound.
+    pub(crate) fn scope<'a>(&'a self, local_shadowed: &'a BTreeSet<String>) -> ScopedPrims<'a> {
+        ScopedPrims {
+            prims: self,
+            local_shadowed,
+        }
+    }
+
+    /// Bindings whose primitive excludes Symbol: `ToString` and `ToNumber`
+    /// on them run no user code.
+    fn non_symbol_bindings(&self) -> BTreeSet<String> {
+        self.bindings_within(PrimKinds::ANY.without(PrimKinds::SYMBOL))
+    }
+
+    /// Symbol bindings: safe for `ToPropertyKey`, while `ToString` throws.
+    fn symbol_bindings(&self) -> BTreeSet<String> {
+        self.bindings_within(PrimKinds::SYMBOL)
+    }
+
+    fn bindings_within(&self, kinds: PrimKinds) -> BTreeSet<String> {
+        self.kinds
+            .iter()
+            .filter(|(_, binding)| binding.is_only(kinds))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
+
+pub(crate) struct ScopedPrims<'a> {
+    prims: &'a BindingPrims,
+    local_shadowed: &'a BTreeSet<String>,
+}
+
+impl PrimScope for ScopedPrims<'_> {
+    fn binding(&self, ident: &Ident) -> Option<PrimKinds> {
+        let name = ident.sym.as_ref();
+        if self.local_shadowed.contains(name) {
+            return None;
+        }
+        self.prims.kinds.get(name).copied()
+    }
+
+    /// Purity trusts a callee only where its row allows identity from A11 and
+    /// an unshadowed, unwritten spelling.
+    fn intact_intrinsic(&self, row: &Row, global: &Ident, member: Option<&str>) -> bool {
+        let name = global.sym.as_ref();
+        row.assumed_intact
+            && !self.local_shadowed.contains(name)
+            && !self.prims.replaced_globals.contains(name)
+            && member.is_none_or(|member| {
+                !self
+                    .prims
+                    .replaced_globals
+                    .contains(&format!("{name}.{member}"))
+            })
+    }
+}
 
 // Public API: importable at `purity::<item>` exactly as before the split.
 pub use code_graph::ChunkCodeGraph;

@@ -8,7 +8,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::{self, Invocation};
-use crate::facts::abstract_domain::value::Kind;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use std::sync::Arc;
 
@@ -121,7 +121,7 @@ impl LocalClassConstructionShapes {
                     .values_of_binding(&callee.to_id())
                     .into_iter()
                     .collect();
-                if values == [ValueOrigin::Class(class_key)] {
+                if values == [Value::Alloc(Kind::Class, class_key)] {
                     proof
                         .constructions
                         .insert(construction.span.lo.0, class_key);

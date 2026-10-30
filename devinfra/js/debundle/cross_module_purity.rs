@@ -39,6 +39,7 @@ use crate::analysis_inputs::{
     NativeIntegrity, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
 };
+use crate::facts::abstract_domain::value::{PrimKinds, Value};
 use crate::facts::{TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{
@@ -59,6 +60,68 @@ pub struct ResolvedImport {
     pub module: ModuleKey,
     /// The export name read from that module.
     pub export: String,
+}
+
+/// A stable direct ESM export's primitive value before import resolution.
+/// Canonical shallow-scan facts; never serialized or author asserted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StableExportValue {
+    /// The types the exported binding's history computes itself, joined with
+    /// the values of the named/default import bindings it copies.
+    Local {
+        kinds: PrimKinds,
+        imports: BTreeSet<String>,
+    },
+    /// `export { export as name } from source`.
+    ReExport { source: String, export: String },
+}
+
+/// A stable export after its imports resolved: its own types and the exports
+/// it copies.
+pub struct ExportValueSource {
+    pub kinds: PrimKinds,
+    pub copies: Vec<ResolvedImport>,
+}
+
+/// Close export values over resolved imports and re-exports. An export's
+/// value is known once every export it copies is; unsupported cycles have no
+/// seed and stay unknown. The closure neither interprets values nor certifies
+/// that evaluating an initializer is pure.
+pub fn resolve_export_values(
+    sources: BTreeMap<(ModuleKey, String), ExportValueSource>,
+) -> BTreeMap<(ModuleKey, String), Value> {
+    let rules = ExportValueRules(sources.into_iter().collect());
+    let count = rules.0.len();
+    IterativeInference::new(rules)
+        .solve_values(0..count)
+        .into_iter()
+        .map(|(export, kinds)| (export, Value::Prim(kinds)))
+        .collect()
+}
+
+struct ExportValueRules(Vec<((ModuleKey, String), ExportValueSource)>);
+
+impl IterativeRules for ExportValueRules {
+    type Key = (ModuleKey, String);
+    type Fact = PrimKinds;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, PrimKinds>) {
+        let (export, source) = &self.0[*rule];
+        let mut kinds = source.kinds;
+        for copy in &source.copies {
+            let Some(copied) = context.read((copy.module.clone(), copy.export.clone())) else {
+                return;
+            };
+            kinds = kinds.union(*copied);
+        }
+        context.propose(export.clone(), kinds);
+    }
+
+    fn merge(_: &Self::Key, current: &mut PrimKinds, contribution: PrimKinds) -> bool {
+        let joined = current.union(contribution);
+        std::mem::replace(current, joined) != joined
+    }
 }
 
 /// One module's purity-relevant surface for the oracle.
@@ -182,6 +245,20 @@ impl<'a> ModulePurityFacts<'a> {
     /// program-wide export verdicts: each local import bound to a *function*
     /// export of an analyzed module gets that export's verdict; anything
     /// unresolved is omitted (stays `unknown_call`).
+    /// Each local import's value under the program-wide export values.
+    pub fn imported_values(
+        &self,
+        export_values: &BTreeMap<(ModuleKey, String), Value>,
+    ) -> BTreeMap<String, Value> {
+        self.imports
+            .iter()
+            .filter_map(|(local, target)| {
+                let value = export_values.get(&(target.module.clone(), target.export.clone()))?;
+                Some((local.clone(), *value))
+            })
+            .collect()
+    }
+
     fn imported_purities(
         &self,
         export_purity: &BTreeMap<(ModuleKey, String), Arc<Purity>>,

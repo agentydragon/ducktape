@@ -527,8 +527,8 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.imported_primitives = cross_module_purities
-            .primitives
+        inputs.imported_values = cross_module_purities
+            .values
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();

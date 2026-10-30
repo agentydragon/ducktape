@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use analysis::cross_module_values::resolve_primitive_binding_import_dependencies;
+use analysis::cross_module_purity::StableExportValue;
+use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
+use analysis::facts::abstract_domain::value::PrimKinds;
 use analysis::facts::module_has_top_level_await;
 use swc_common::{Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -164,48 +166,93 @@ pub struct DeclarationRecord {
 }
 
 enum PrimitiveExportSource {
-    Bindings(BTreeSet<Id>),
+    Value(PrimitiveValue),
     ReExport { source: String, export: String },
 }
 
-/// Bindings whose value is needed to prove that a normally-completing
-/// expression returns a primitive. This is deliberately separate from purity:
-/// templates and operators can coerce objects and run user code while still
-/// producing a primitive result when they complete.
-fn primitive_value_requirements(expression: &Expr) -> Option<BTreeSet<Id>> {
-    let requirements = match expression.unwrap_parens() {
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-        | Expr::Tpl(_)
-        | Expr::Unary(_)
-        | Expr::Update(_) => return Some(BTreeSet::new()),
-        Expr::Ident(id) => return Some(BTreeSet::from([id.to_id()])),
-        Expr::Bin(binary) => match binary.op {
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing => {
-                let mut requirements = primitive_value_requirements(&binary.left)?;
-                requirements.extend(primitive_value_requirements(&binary.right)?);
-                requirements
+/// The primitive types an expression computes itself, and the bindings whose
+/// values it copies.
+struct PrimitiveValue {
+    kinds: PrimKinds,
+    copies: BTreeSet<Id>,
+}
+
+impl PrimitiveValue {
+    fn join(mut self, other: Self) -> Self {
+        self.kinds = self.kinds.union(other.kinds);
+        self.copies.extend(other.copies);
+        self
+    }
+}
+
+/// A normally-completing expression's value, when it is primitive given the
+/// bindings it copies. This is deliberately separate from purity: templates
+/// and operators can coerce objects and run user code while still producing a
+/// primitive result when they complete.
+fn primitive_value(expression: &Expr) -> Option<PrimitiveValue> {
+    match expression.unwrap_parens() {
+        Expr::Ident(id) => Some(PrimitiveValue {
+            kinds: PrimKinds::NONE,
+            copies: BTreeSet::from([id.to_id()]),
+        }),
+        Expr::Bin(binary)
+            if matches!(
+                binary.op,
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+            ) =>
+        {
+            Some(primitive_value(&binary.left)?.join(primitive_value(&binary.right)?))
+        }
+        Expr::Cond(cond) => Some(primitive_value(&cond.cons)?.join(primitive_value(&cond.alt)?)),
+        Expr::Seq(sequence) => primitive_value(sequence.exprs.last()?),
+        computed => evaluate(computed, &NoBindings).map(|kinds| PrimitiveValue {
+            kinds,
+            copies: BTreeSet::new(),
+        }),
+    }
+}
+
+/// Resolves stable local bindings to their types and the imports they copy.
+/// A binding copying an unstable binding, or reached again through a cycle,
+/// stays unknown.
+struct StableValueResolver<'a> {
+    bindings: &'a BTreeMap<Id, PrimitiveValue>,
+    imported_bindings: &'a BTreeMap<Id, String>,
+    resolved: BTreeMap<Id, Option<(PrimKinds, BTreeSet<String>)>>,
+}
+
+impl StableValueResolver<'_> {
+    fn resolve(&mut self, value: &PrimitiveValue) -> Option<(PrimKinds, BTreeSet<String>)> {
+        let mut kinds = value.kinds;
+        let mut imports = BTreeSet::new();
+        for copy in &value.copies {
+            if let Some(local) = self.imported_bindings.get(copy) {
+                imports.insert(local.clone());
+                continue;
             }
-            _ => return Some(BTreeSet::new()),
-        },
-        Expr::Cond(cond) => {
-            let mut requirements = primitive_value_requirements(&cond.cons)?;
-            requirements.extend(primitive_value_requirements(&cond.alt)?);
-            requirements
+            let (copied, copied_imports) = self.resolve_binding(copy)?;
+            kinds = kinds.union(copied);
+            imports.extend(copied_imports);
         }
-        Expr::Seq(sequence) => {
-            return sequence
-                .exprs
-                .last()
-                .and_then(|last| primitive_value_requirements(last));
+        Some((kinds, imports))
+    }
+
+    fn resolve_binding(&mut self, id: &Id) -> Option<(PrimKinds, BTreeSet<String>)> {
+        if let Some(resolved) = self.resolved.get(id) {
+            return resolved.clone();
         }
-        _ => return None,
-    };
-    Some(requirements)
+        // Visiting marks the binding unknown, so a cycle resolves to unknown.
+        self.resolved.insert(id.clone(), None);
+        let value = self.bindings.get(id)?;
+        let resolved = self.resolve(value);
+        self.resolved.insert(id.clone(), resolved.clone());
+        resolved
+    }
 }
 
 fn collect_primitive_export_candidates(
     item: &ModuleItem,
-    bindings: &mut BTreeMap<Id, BTreeSet<Id>>,
+    bindings: &mut BTreeMap<Id, PrimitiveValue>,
     exports: &mut BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
 ) {
     let declaration = match item {
@@ -219,19 +266,26 @@ fn collect_primitive_export_candidates(
         for decl in &var.decls {
             if let Pat::Ident(id) = &decl.name
                 && let Some(initializer) = decl.init.as_deref()
-                && let Some(requirements) = primitive_value_requirements(initializer)
+                && let Some(mut value) = primitive_value(initializer)
             {
-                bindings.insert(id.id.to_id(), requirements);
+                // A `var` read before its initializer runs, including by an
+                // importer in a module cycle, is `undefined`.
+                if var.kind == VarDeclKind::Var {
+                    value.kinds = value.kinds.union(PrimKinds::UNDEFINED);
+                }
+                bindings.insert(id.id.to_id(), value);
             }
         }
     }
     match item {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => {
             for id in binding_targets::declaration_ids(&decl.decl) {
-                exports
-                    .entry(id.0.to_string())
-                    .or_default()
-                    .push(Some(PrimitiveExportSource::Bindings(BTreeSet::from([id]))));
+                exports.entry(id.0.to_string()).or_default().push(Some(
+                    PrimitiveExportSource::Value(PrimitiveValue {
+                        kinds: PrimKinds::NONE,
+                        copies: BTreeSet::from([id]),
+                    }),
+                ));
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
@@ -258,9 +312,10 @@ fn collect_primitive_export_candidates(
                         } else {
                             match &specifier.orig {
                                 ModuleExportName::Ident(id) => {
-                                    Some(PrimitiveExportSource::Bindings(BTreeSet::from([
-                                        id.to_id()
-                                    ])))
+                                    Some(PrimitiveExportSource::Value(PrimitiveValue {
+                                        kinds: PrimKinds::NONE,
+                                        copies: BTreeSet::from([id.to_id()]),
+                                    }))
                                 }
                                 _ => None,
                             }
@@ -291,8 +346,7 @@ fn collect_primitive_export_candidates(
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default)) => {
-            let source =
-                primitive_value_requirements(&default.expr).map(PrimitiveExportSource::Bindings);
+            let source = primitive_value(&default.expr).map(PrimitiveExportSource::Value);
             exports
                 .entry("default".to_string())
                 .or_default()
@@ -303,23 +357,6 @@ fn collect_primitive_export_candidates(
         }
         _ => {}
     }
-}
-
-fn resolve_primitive_binding_requirements(
-    requirements: &BTreeSet<Id>,
-    imported_bindings: &BTreeMap<Id, String>,
-    stable_bindings: &BTreeMap<Id, BTreeSet<String>>,
-) -> Option<BTreeSet<String>> {
-    let mut imports = BTreeSet::new();
-    for requirement in requirements {
-        if let Some(local) = imported_bindings.get(requirement) {
-            imports.insert(local.clone());
-        } else {
-            let local_imports = stable_bindings.get(requirement)?;
-            imports.extend(local_imports.iter().cloned());
-        }
-    }
-    Some(imports)
 }
 
 /// If `item` is a top-level declaration of a kind we anchor extraction on,
@@ -492,15 +529,11 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         ..ChunkRuntimeFacts::default()
     };
 
-    let mut primitive_binding_requirements = BTreeMap::new();
+    let mut primitive_bindings = BTreeMap::new();
     let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
-        collect_primitive_export_candidates(
-            item,
-            &mut primitive_binding_requirements,
-            &mut primitive_exports,
-        );
+        collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
             if import_decl_has_runtime_request(decl) {
                 runtime_facts.static_requests.push(StaticModuleRequest {
@@ -622,44 +655,34 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         && !runtime_facts.has_own_cjs_export_surface
         && !dynamic_scope
     {
-        let stable_primitive_bindings = primitive_binding_requirements
+        let stable_bindings = primitive_bindings
             .into_iter()
             .filter(|(id, _)| {
                 binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id)
             })
             .collect::<BTreeMap<_, _>>();
-        let stable_binding_import_dependencies = resolve_primitive_binding_import_dependencies(
-            stable_primitive_bindings,
-            &primitive_imported_bindings,
-        );
-
+        let mut resolver = StableValueResolver {
+            bindings: &stable_bindings,
+            imported_bindings: &primitive_imported_bindings,
+            resolved: BTreeMap::new(),
+        };
         for (name, sources) in primitive_exports {
             let [Some(source)] = sources.as_slice() else {
                 continue;
             };
-            match source {
-                PrimitiveExportSource::Bindings(requirements) => {
-                    let Some(imports) = resolve_primitive_binding_requirements(
-                        requirements,
-                        &primitive_imported_bindings,
-                        &stable_binding_import_dependencies,
-                    ) else {
+            let value = match source {
+                PrimitiveExportSource::Value(value) => {
+                    let Some((kinds, imports)) = resolver.resolve(value) else {
                         continue;
                     };
-                    if imports.is_empty() {
-                        runtime_facts.stable_primitive_exports.insert(name);
-                    } else {
-                        runtime_facts
-                            .stable_primitive_export_import_dependencies
-                            .insert(name, imports);
-                    }
+                    StableExportValue::Local { kinds, imports }
                 }
-                PrimitiveExportSource::ReExport { source, export } => {
-                    runtime_facts
-                        .stable_primitive_export_reexports
-                        .insert(name, (source.clone(), export.clone()));
-                }
-            }
+                PrimitiveExportSource::ReExport { source, export } => StableExportValue::ReExport {
+                    source: source.clone(),
+                    export: export.clone(),
+                },
+            };
+            runtime_facts.stable_export_values.insert(name, value);
         }
     }
 

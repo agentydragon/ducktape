@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::value::{Kind, Value};
 
 pub(crate) fn collect_local_effects(
     item: &ModuleItem,
@@ -66,12 +67,12 @@ impl MetadataDecorateCall {
     pub(crate) fn stable_origins(&self, flow: &ChunkValueFlow) -> Option<(u32, u32)> {
         let helpers = flow.values_of_binding(&self.helper);
         let mut helpers = helpers.iter();
-        let ValueOrigin::Function(helper) = helpers.next()? else {
+        let Value::Alloc(Kind::Function, helper) = helpers.next()? else {
             return None;
         };
         let targets = flow.values_of_binding(&self.target);
         let mut targets = targets.iter();
-        let ValueOrigin::Class(target) = targets.next()? else {
+        let Value::Alloc(Kind::Class, target) = targets.next()? else {
             return None;
         };
         (helpers.next().is_none() && targets.next().is_none()).then_some((helper, target))

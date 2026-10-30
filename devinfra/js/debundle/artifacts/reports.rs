@@ -1,11 +1,12 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
 
 use analysis::DepKind;
+use analysis::cross_module_purity::StableExportValue;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use swc_common::Span;
@@ -186,17 +187,10 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
-    /// Direct ESM exports whose complete local binding history is primitive.
-    /// Canonical shallow-scan facts; never serialized or author asserted.
-    pub stable_primitive_exports: BTreeSet<String>,
-    /// Stable exports whose value is primitive when each listed named/default
-    /// import binding has a primitive value. Resolved by the program-level
-    /// cross-module analysis; never serialized or author asserted.
-    pub stable_primitive_export_import_dependencies: BTreeMap<String, BTreeSet<String>>,
-    /// Stable exports that directly re-export another named/default export.
-    /// Resolved by the program-level cross-module analysis; never serialized
-    /// or author asserted.
-    pub stable_primitive_export_reexports: BTreeMap<String, (String, String)>,
+    /// Direct ESM exports whose complete local binding history is primitive
+    /// once their copied imports are. Resolved by the program-level
+    /// cross-module analysis.
+    pub stable_export_values: BTreeMap<String, StableExportValue>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,

@@ -30,23 +30,15 @@ pub struct ChunkCodeGraph {
     /// admitted as pure with args evaluated normally. Author-trust
     /// contract; see <docs/purity_soundness.md> "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
-    /// Chunk-top consts with result-primitive values, plus stable top-level
-    /// numeric vars. Their values carry no user accessors, so coercion of a
-    /// reference fires no user code. Stable vars require retained declaration
-    /// and no-write facts plus a Number-only initializer proof. Init effects
-    /// remain classified separately. See `collect_binding_value_classes`.
+    /// Primitive types of chunk-top consts and stable top-level numeric vars,
+    /// read by operator classification. See `collect_binding_prims`.
+    pub(crate) binding_prims: BindingPrims,
+    /// Projection of `binding_prims`: bindings whose values carry no user
+    /// accessors and are never Symbol, so coercing a reference fires no user
+    /// code. Init effects remain classified separately.
     pub(crate) primitive_bindings: BTreeSet<String>,
-    /// Bindings whose values are exactly Number (or BigInt). These preserve
-    /// the mixed-numeric exception check even when both operands are primitive.
-    pub(crate) number_bindings: BTreeSet<String>,
-    /// Number-valued consts plus stable numeric vars. A stable var is Number
-    /// after its initializer and `undefined` before it, so it is always
-    /// non-BigInt but is not an exact Number at every module position.
-    pub(crate) number_or_undefined_bindings: BTreeSet<String>,
-    pub(crate) bigint_bindings: BTreeSet<String>,
-    /// Immutable Symbol-valued consts are safe only for ToPropertyKey.
-    /// They must not enter `primitive_bindings`: ToString(Symbol)
-    /// throws, unlike the result-primitive forms tracked there.
+    /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
+    /// ToPropertyKey; ToString(Symbol) throws.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
     /// arrays under the same no-escape scan as `PlainData`, and are
@@ -459,7 +451,7 @@ impl ChunkCodeGraph {
                     )
                 })
                 .collect();
-        let value_classes = collect_binding_value_classes(
+        let binding_prims = collect_binding_prims(
             body,
             shape_inputs.shadowed,
             shape_inputs.stable_var_number_candidates,
@@ -499,11 +491,9 @@ impl ChunkCodeGraph {
                 .collect(),
             pure_new_constructors: shape_inputs.declared_pure_new.clone(),
             declared_pure_members: shape_inputs.declared_pure_members.clone(),
-            primitive_bindings: value_classes.primitive_bindings,
-            number_bindings: value_classes.number_bindings,
-            number_or_undefined_bindings: value_classes.number_or_undefined_bindings,
-            bigint_bindings: value_classes.bigint_bindings,
-            symbol_const_bindings: value_classes.symbol_const_bindings,
+            primitive_bindings: binding_prims.non_symbol_bindings(),
+            symbol_const_bindings: binding_prims.symbol_bindings(),
+            binding_prims,
             plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
             ts_enum_named_data_candidates,
             plain_data_dependencies,

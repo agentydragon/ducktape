@@ -20,7 +20,7 @@ use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row
 use crate::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::Kind;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
@@ -40,7 +40,7 @@ use crate::facts::semantic_inference::{
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
-use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
+use crate::facts::value_flow::ChunkValueFlow;
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
     StableArraySpreadShapes,
@@ -2168,7 +2168,7 @@ fn intrinsic_roots(
             BTreeSet::from([intrinsic(NativeIntrinsic::GlobalObject)])
         }
         ValueExpr::Binding(id) => roots.get(id).cloned().unwrap_or_default(),
-        ValueExpr::Origin(ValueOrigin::Function(_)) => NativeReceiverRoots::new(),
+        ValueExpr::Alloc(Kind::Function, _) => NativeReceiverRoots::new(),
         ValueExpr::ObjectLiteral(_, fields) => {
             // A fresh container is not native merely because it stores a
             // native value. Preserve this value-input extension only when a
@@ -2410,7 +2410,7 @@ fn intrinsic_roots(
                     | NativeReceiverRoot::SetIteratorPrototype => None,
                 }));
                 input_roots.extend(return_roots.iter().cloned());
-            } else if let ValueExpr::Origin(ValueOrigin::Function(function)) = callee.as_ref()
+            } else if let ValueExpr::Alloc(Kind::Function, function) = callee.as_ref()
                 && let Some(return_roots) = callable_return_inputs.by_origin.get(function)
             {
                 has_callable_return_roots = true;
@@ -2837,7 +2837,7 @@ fn evaluate_receiver_value(
             let targets = result.fact.callable_targets.clone();
             read_callable_capture_dependencies(&targets, context, &mut result.fact);
         }
-        ValueExpr::Origin(ValueOrigin::Function(function)) => {
+        ValueExpr::Alloc(Kind::Function, function) => {
             result.fact.callable_targets.insert(*function);
             result.fact.complete = true;
             read_callable_capture_dependencies(
@@ -2846,7 +2846,7 @@ fn evaluate_receiver_value(
                 &mut result.fact,
             );
         }
-        ValueExpr::Origin(_) => {
+        ValueExpr::Alloc(..) => {
             result.fact.opaque = true;
             result.fact.complete = true;
         }
@@ -3491,7 +3491,7 @@ fn solve_receiver_flow(
                 .values_of_binding(binding)
                 .into_iter()
                 .collect::<Vec<_>>();
-            if let [ValueOrigin::Function(function)] = values.as_slice() {
+            if let [Value::Alloc(Kind::Function, function)] = values.as_slice() {
                 inference.seed(
                     ReceiverFlowKey::BindingSeed(binding.clone()),
                     ReceiverFlowFact {
@@ -9843,7 +9843,7 @@ impl Visit for ExecutionIndex {
             callable.local_functions.insert(declaration.ident.to_id());
             callable.local_assignments.push((
                 declaration.ident.to_id(),
-                ValueExpr::Origin(ValueOrigin::Function(declaration.function.span.lo.0)),
+                ValueExpr::Alloc(Kind::Function, declaration.function.span.lo.0),
             ));
         } else {
             self.hoisted_bindings
@@ -9874,7 +9874,7 @@ impl Visit for ExecutionIndex {
             self.top_definite_initializers[self.owner.0].insert(declaration.ident.to_id());
             self.top_assignments[self.owner.0].push((
                 declaration.ident.to_id(),
-                ValueExpr::Origin(ValueOrigin::Class(declaration.class.span.lo.0)),
+                ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
             ));
         } else if let Some(key) = self.current {
             self.callables
@@ -9883,7 +9883,7 @@ impl Visit for ExecutionIndex {
                 .local_assignments
                 .push((
                     declaration.ident.to_id(),
-                    ValueExpr::Origin(ValueOrigin::Class(declaration.class.span.lo.0)),
+                    ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
                 ));
         }
     }
@@ -11411,7 +11411,7 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
         || !outer.member_value_writes.is_empty()
         || outer.dynamic_property_effect
         || outer.returns.len() != 1
-        || !matches!(outer.returns[0], ValueExpr::Origin(ValueOrigin::Function(inner_key)) if inner_key == returned.lo.0)
+        || !matches!(outer.returns[0], ValueExpr::Alloc(Kind::Function, inner_key) if inner_key == returned.lo.0)
         || inner.opaque
         || inner.generator
         || inner.implicit_capture
@@ -11821,7 +11821,7 @@ pub(crate) fn infer_callable_capabilities(
                 && (index.returned_record_candidates.contains_key(key)
                     || index.namespace_wrapper_candidates.contains_key(key)))
     }) || index.top_assignments.iter().flatten().any(|(id, value)| {
-        matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
+        matches!(value, ValueExpr::Alloc(Kind::Function, key) if callback_candidate(id, *key))
     });
     if has_candidate {
         let flow = prepared_flow
@@ -12075,7 +12075,7 @@ fn callable_inference_inputs(
             continue;
         }
         let definite_initializer = matches!(writes.as_slice(),
-            [(owner, ValueExpr::Origin(ValueOrigin::Function(_)))]
+            [(owner, ValueExpr::Alloc(Kind::Function, _))]
                 if index.top_definite_initializers[owner.0].contains(&binding));
         inputs.functions.insert(
             binding.clone(),
@@ -12092,7 +12092,7 @@ fn callable_inference_inputs(
         .values()
         .flat_map(|facts| facts.values.iter())
         .filter_map(|origin| match origin {
-            ValueOrigin::Function(function) => Some(function),
+            Value::Alloc(Kind::Function, function) => Some(function),
             _ => None,
         })
         .collect();
@@ -12185,7 +12185,7 @@ fn infer_returned_callback_factories(
                 .iter()
                 .flatten()
                 .filter_map(|(binding, value)| {
-                    let ValueExpr::Origin(ValueOrigin::Function(function)) = value else {
+                    let ValueExpr::Alloc(Kind::Function, function) = value else {
                         return None;
                     };
                     Some((binding, *function))

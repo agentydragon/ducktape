@@ -875,14 +875,6 @@ opaque escape, reflective writes, accessors, unknown keys, and reads before the
 initializer keep the conservative member-read path. Purity of the initializer
 alone does not establish the receiver's property identity.
 
-When that same stable enum member is used as a computed property key, the
-shared purity analysis may also prove its value primitive and omit only the
-possible `ToPropertyKey` callback/reentry. The member expression still runs
-normally and retains its eager binding dependency; only an exact static own
-member of the single recognized initializer qualifies. Whole-chunk mutation,
-escape, and accessor checks still apply, as do binding rebind and source-order
-checks.
-
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered source units
@@ -1061,11 +1053,26 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
-Source-proved stable primitive imports enter that same retained value flow, so
-copying one through local bindings preserves its callback-free conversion fact.
-Reassignment to an object or an unknown alternative restores conservative
-conversion analysis. This does not fold the imported value, prove the operator
-cannot throw, or remove binding-read and import-order constraints.
+Primitive values are tracked by their possible ECMAScript primitive types. A
+chunk-top `const`, or a stable top-level `var` with a Number initializer (whose
+type also includes its hoisted `undefined`), has the types its initializer
+completes with: literals, templates, operator results, conditional and logical
+alternatives, the last sequence element, earlier tracked bindings, and the
+primitive return of a builtin row purity may trust by spelling, when its
+unshadowed, unwritten intrinsic receives only primitive operands where it
+coerces (`Symbol` returns Symbol, `Number.isNaN` Boolean). The synchronous
+interpreter, which proves each row's integrity slots, also takes `Math.round`
+and its family as Number and `Symbol.for` as Symbol. A stable direct ESM export
+carries its types to named/default importers and re-exports, so copying one
+through local bindings preserves its callback-free conversion fact;
+reassignment to an object or an unknown alternative restores conservative
+conversion analysis. An exact static own primitive member of a stable
+single-initializer TS enum, used as a computed property key, is primitive too;
+whole-chunk mutation, escape, accessor, rebind and source-order checks still
+apply. A primitive operand omits only conversion callbacks: a Symbol is a safe
+property key but not a string or numeric operand, and mixed BigInt/Number
+arithmetic still throws. No value is folded, and every binding read,
+import-order and TDZ constraint remains.
 
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts
@@ -1073,7 +1080,7 @@ and operand shapes they admit, their allocations, writes and return shapes are
 the rows of `facts/abstract_domain/builtins.rs`, each with its ECMA-262
 citation. A call is admitted only when every coercion its row lists lands on a
 proven primitive or exact ordinary operand. A row returning a primitive
-composes with subsequent conversions; a row returning an argument keeps that
+gives its result's types; a row returning an argument keeps that
 argument's identity and the callbacks stored in it; a row with an untracked
 result stays opaque.
 
