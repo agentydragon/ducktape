@@ -35,17 +35,6 @@ Hand-rolled full-scan loops where a keyed, rate-limited work queue (client-go `w
 controller-runtime Reconciler) or a PostgreSQL dirty-row queue claimed with `SKIP LOCKED` is the
 standard shape.
 
-### `GATEWAY_OBSERVER_RECONCILER`
-
-`RunRunnerObservers` (`runner_gateway/gateway/runner_observer.go`) lists all Sandboxes every 10 s and
-on a coalesced wake, and does a live Pod GET per Sandbox; `validateRunnerDestination` re-reads
-Sandbox, Pod and for VMs the VMI and VM on every runner heartbeat; every proxied Runner or Executor
-RPC does a live Sandbox read and Pod GET (`gateway/sandboxes.go`), while a synced cache of the same
-objects feeds only the catalog and wake handlers. Drive observers from a Reconciler keyed by Sandbox
-(`Watches(Pod)` mapped to its owner) reading the cache; keep live reads only where fencing needs
-them (the Lease resourceVersion compare-and-swap already fences). Exit: API reads per runner no longer
-scale with the 10 s tick; fencing tests unchanged.
-
 ### `DISPATCHER_KEYED_DELIVERY`
 
 Blocked on the [merge design](dispatcher_gateway_merge.md). The Dispatcher turns any Sandbox event into

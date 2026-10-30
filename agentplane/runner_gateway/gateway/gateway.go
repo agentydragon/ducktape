@@ -8,12 +8,13 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -74,15 +75,17 @@ type Gateway struct {
 	connections *connections
 	records     *connectionRecords
 	objects     client.Reader
-	// runnerWake makes RunRunnerObservers rescan now rather than at its next tick; see RunnerDiscoveryHandler.
-	runnerWake chan struct{}
+	// observerQueue holds the names of Sandboxes whose observer RunRunnerObservers must reconcile.
+	observerQueue workqueue.TypedRateLimitingInterface[string]
 }
 
+// New builds a Gateway reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
+// an informer cache whose health is objectsHealth.
 func New(
 	config Config,
 	callerAuth *auth.Resolver,
 	objects client.Reader,
-	core coreclient.CoreV1Interface,
+	objectsHealth *watchhealth.Health,
 	coordination coordinationclient.CoordinationV1Interface,
 	discovery discoveryclient.DiscoveryV1Interface,
 ) (*Gateway, error) {
@@ -99,7 +102,7 @@ func New(
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
 	}
-	sandboxes, err := newSandboxResolver(config.Namespace, objects, core)
+	sandboxes, err := newSandboxResolver(config.Namespace, objects, objectsHealth)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +132,7 @@ func New(
 	return &Gateway{
 		config: config, callerAuth: callerAuth, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(), records: records,
-		runnerWake: make(chan struct{}, 1),
+		observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}, nil
 }
 

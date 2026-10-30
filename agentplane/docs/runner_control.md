@@ -22,7 +22,7 @@ and exposes the existing `<sandbox>-control` proxy route. A claim without an obs
 not a connected runner. Other replicas wait for the owner's Lease to expire before taking over:
 one Lease duration after they first saw its latest renewal, on their own clock, as client-go
 `leaderelection` measures it, so the owner's clock skew neither shortens nor extends the wait.
-The owning Gateway retries a lost observation after one second, independently of Sandbox discovery.
+The owning Gateway retries a lost observation after one second, without waiting for a Sandbox or Pod event.
 Each attempt claims a fresh Lease epoch. Unchanged internal notifications do not send snapshots;
 periodic heartbeats still publish unchanged facts.
 

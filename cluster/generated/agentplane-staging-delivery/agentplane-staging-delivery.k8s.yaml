@@ -276,7 +276,6 @@ rules:
     resources:
       - pods
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -284,7 +283,6 @@ rules:
     resources:
       - virtualmachineinstances
     verbs:
-      - get
       - list
       - watch
   - apiGroups:
@@ -292,7 +290,6 @@ rules:
     resources:
       - virtualmachines
     verbs:
-      - get
       - list
       - watch
   - apiGroups:

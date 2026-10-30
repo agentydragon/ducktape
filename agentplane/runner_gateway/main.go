@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -172,9 +174,22 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	inventory, err := cache.New(config, cache.Options{
+	inventoryHealth := watchhealth.New()
+	// A reflector names its type as the Go type; the health transport names a kind by its path.
+	kindByType := make(map[string]watchhealth.Kind)
+	for kind, object := range map[watchhealth.Kind]client.Object{
+		"sandboxes": &sandboxapi.Sandbox{}, "pods": &corev1.Pod{},
+		"virtualmachineinstances": &kubevirtv1.VirtualMachineInstance{}, "virtualmachines": &kubevirtv1.VirtualMachine{},
+	} {
+		kindByType[fmt.Sprintf("%T", object)] = kind
+	}
+	// KubeVirt informers start on the first VM Sandbox's read, so clusters without KubeVirt never watch it.
+	inventory, err := cache.New(inventoryHealth.Config(config, watchhealth.KindByPath), cache.Options{
 		Scheme: scheme, Mapper: objects.RESTMapper(),
 		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
+		DefaultWatchErrorHandler: func(ctx context.Context, r *toolscache.Reflector, err error) {
+			inventoryHealth.WatchErrorHandler(kindByType[r.TypeDescription()])(ctx, r, err)
+		},
 	})
 	if err != nil {
 		return err
@@ -204,18 +219,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
-	}, gatewayAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
+	}, gatewayAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
 	if err != nil {
 		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	failed := make(chan error, 8)
-	go func() {
-		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
-	}()
-	if !catalog.WaitSynced(ctx) {
-		return errors.New("Sandbox inventory did not synchronize")
 	}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(ctx, watched)
@@ -226,6 +232,16 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 			return err
 		}
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	failed := make(chan error, 8)
+	go func() {
+		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
+	}()
+	if !catalog.WaitSynced(ctx) {
+		return errors.New("Sandbox inventory did not synchronize")
+	}
+	inventoryHealth.MarkSynced()
 	if err := g.WatchConnectionLeases(ctx, kube); err != nil {
 		return err
 	}
