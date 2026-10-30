@@ -522,11 +522,11 @@ ProtoJSON response is not part of the browser contract. What a link authorizes a
 group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
-The Go executable accepts `--http-listener-fd=N` to consume an already-bound, listening TCP
-descriptor passed by its parent. In this mode the inherited socket owns the endpoint; `host` and
-`port` configure only ordinary binding when the flag is absent. App subprocess fixtures hold
-`util.net.listen_tcp()` across startup and pass its descriptor, including while constructing OIDC
-callback URLs, so there is no released-port allocation window.
+`listen_address` selects the HTTP listener: a TCP address such as `127.0.0.1:8080`, or
+`fd:N` to consume an inherited, already-listening TCP socket. It follows the shared
+[`util/netlistener`](../../util/netlistener/README.md) contract. App subprocess fixtures hold
+`util.net.listen_tcp()` across startup and put `fd:N` in configuration, including while
+constructing OIDC callback URLs, so there is no released-port allocation window.
 
 ## Launch presets
 

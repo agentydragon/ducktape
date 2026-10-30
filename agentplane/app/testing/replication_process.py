@@ -229,16 +229,14 @@ async def spawn_go_app(
         .set(drivername="postgresql", query={"sslmode": "disable"})
         .render_as_string(hide_password=False)
     )
-    host = str(configured.get("host", "127.0.0.1"))
-    port = int(cast(int, configured.get("port", 0)))
     stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
     with (
-        nullcontext(listener) if listener is not None else listen_tcp(host, port=port) as endpoint,
+        nullcontext(listener) if listener is not None else listen_tcp() as endpoint,
         TemporaryDirectory(prefix="go-app-") as directory,
     ):
-        configured["host"], configured["port"] = endpoint.host, endpoint.port
         url = f"http://{endpoint.host}:{endpoint.port}"
         listener_fd = endpoint.socket.fileno()
+        configured["listen_address"] = f"fd:{listener_fd}"
         config_file = Path(directory) / "config.json"
         config_file.write_text(json.dumps(configured))
         process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
@@ -251,7 +249,6 @@ async def spawn_go_app(
         with stderr.open("wb") as log:
             process = await asyncio.create_subprocess_exec(
                 get_required_path("_main/agentplane/app/go/agentplane-app_/agentplane-app"),
-                f"--http-listener-fd={listener_fd}",
                 pass_fds=(listener_fd,),
                 env=process_env,
                 stdout=log,
@@ -498,7 +495,6 @@ async def app_process(
             serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
         ):
             settings: dict[str, object] = {
-                "port": port,
                 "database_url": database_url,
                 "kubeconfig": str(sandboxes.kubeconfig),
                 "sandbox_namespace": sandboxes.namespace,

@@ -46,7 +46,7 @@ func validTestConfig() Config {
 				Issuer: "https://actions.example.test", Audience: "agentplane", JWKsURI: "https://actions.example.test/jwks", TokenProfile: "authentik",
 			}, Scope: "actions:operator",
 		},
-		Port: 8080, EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
+		ListenAddress: "127.0.0.1:8080", EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
 	}
 }
 
@@ -58,22 +58,23 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	}
 }
 
-func TestInheritedHTTPListenerConfig(t *testing.T) {
-	config := validTestConfig()
-	if _, _, err := applyCommandLineOverrides(&config, []string{"--http-listener-fd=7"}); err != nil {
-		t.Fatal(err)
-	}
-	if config.HTTPListenerFD == nil || *config.HTTPListenerFD != 7 {
-		t.Fatalf("inherited listener descriptor = %v, want 7", config.HTTPListenerFD)
-	}
-	if err := config.validate(); err != nil {
-		t.Fatal(err)
-	}
-	for _, fd := range []int{-1, 0, 1, 2} {
-		config.HTTPListenerFD = &fd
-		if err := config.validate(); err == nil || !strings.Contains(err.Error(), "http_listener_fd") {
-			t.Fatalf("descriptor %d validation = %v, want rejection", fd, err)
+func TestListenAddressConfig(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:8080", "[::1]:8080", "fd:7"} {
+		config := validTestConfig()
+		if _, _, err := applyCommandLineOverrides(&config, []string{"--listen-address=" + address}); err != nil {
+			t.Fatal(err)
 		}
+		if config.ListenAddress != address {
+			t.Fatalf("listen address = %q, want %q", config.ListenAddress, address)
+		}
+		if err := config.validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := validTestConfig()
+	config.ListenAddress = ""
+	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "listen_address") {
+		t.Fatalf("empty listener validation = %v, want rejection", err)
 	}
 }
 
@@ -265,8 +266,7 @@ history_service_target: yaml-history:9090
 session_dispatcher_target: yaml-dispatcher:9090
 notifications_url: http://yaml-notifications:9090
 notifications_token_file: /yaml/notifications-token
-host: 127.0.0.1
-port: 8080
+listen_address: 127.0.0.1:8080
 database_url: postgresql://app@postgres/agentplane
 log_levels: {}
 `
@@ -291,8 +291,7 @@ log_levels: {}
 		"--session-dispatcher-target=cli-dispatcher:9090",
 		"--notifications-url=http://cli-notifications:9090",
 		"--notifications-token-file=/cli/notifications-token",
-		"--host=0.0.0.0",
-		"--port=9091",
+		"--listen-address=0.0.0.0:9091",
 		"--shutdown-timeout=7",
 	})
 	if err != nil {
@@ -324,14 +323,14 @@ log_levels: {}
 	if c.RunnerGatewayTokenFile != "/cli/runner-token" {
 		t.Fatalf("CLI should override environment and YAML: %q", c.RunnerGatewayTokenFile)
 	}
-	if c.Host != "0.0.0.0" || c.Port != 9091 {
-		t.Fatalf("CLI bind values were not applied: host=%q port=%d", c.Host, c.Port)
+	if c.ListenAddress != "0.0.0.0:9091" {
+		t.Fatalf("CLI listen address was not applied: %q", c.ListenAddress)
 	}
 	if c.ShutdownTimeoutSeconds != 7 {
 		t.Fatalf("CLI shutdown timeout was not applied: %d", c.ShutdownTimeoutSeconds)
 	}
 
-	envWins, err := loadConfigWithArgs([]string{"--host=0.0.0.0"})
+	envWins, err := loadConfigWithArgs([]string{"--listen-address=0.0.0.0:8080"})
 	if err != nil {
 		t.Fatalf("load config with environment override: %v", err)
 	}

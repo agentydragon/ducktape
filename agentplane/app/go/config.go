@@ -47,9 +47,7 @@ type Config struct {
 	RunnerGatewayRequestTimeoutSeconds  float64                  `mapstructure:"runner_gateway_request_timeout_s"`
 	RunnerGatewayLifecycleTimeoutSecs   float64                  `mapstructure:"runner_gateway_lifecycle_timeout_s"`
 	LogLevels                           map[string]string        `mapstructure:"log_levels"`
-	Host                                string                   `mapstructure:"host"`
-	Port                                int                      `mapstructure:"port"`
-	HTTPListenerFD                      *int                     `mapstructure:"http_listener_fd"`
+	ListenAddress                       string                   `mapstructure:"listen_address"`
 	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
 	DatabaseURL                         string                   `mapstructure:"database_url"`
 	ElectricURL                         string                   `mapstructure:"electric_url"`
@@ -212,8 +210,7 @@ func defaultConfig() Config {
 		RunnerGatewayRequestTimeoutSeconds:  20,
 		RunnerGatewayLifecycleTimeoutSecs:   310,
 		LogLevels:                           map[string]string{},
-		Host:                                "127.0.0.1",
-		Port:                                8080,
+		ListenAddress:                       "127.0.0.1:8080",
 		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
@@ -575,11 +572,8 @@ func (c Config) validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if c.HTTPListenerFD != nil && *c.HTTPListenerFD < 3 {
-		return errors.New("http_listener_fd must name an inherited descriptor at least 3")
-	}
-	if c.Port < 0 || c.Port > 65535 {
-		return errors.New("port must be between 0 and 65535")
+	if strings.TrimSpace(c.ListenAddress) == "" {
+		return errors.New("listen_address is required")
 	}
 	if seconds := c.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil && *seconds < 60 {
 		return errors.New("new_sandbox_defaults.idle_suspend_after_seconds must be at least 60")

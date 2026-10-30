@@ -510,11 +510,7 @@ type processWorker struct {
 }
 
 func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
-	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
-	if config.HTTPListenerFD != nil {
-		address = "fd:" + strconv.Itoa(*config.HTTPListenerFD)
-	}
-	listener, err := netlistener.Open(address)
+	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)
 	}

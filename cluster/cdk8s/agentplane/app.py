@@ -243,8 +243,7 @@ class App(Construct):
                 ),
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
-                host="0.0.0.0",
-                port=self.service.pod_port,
+                listen_address=f"0.0.0.0:{self.service.pod_port}",
             ),
             env_variables={
                 **env,

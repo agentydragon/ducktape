@@ -154,8 +154,9 @@ class Settings(AppSettingsConfig):
     runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
     log_levels: LogLevels
-    host: str = Field(default="127.0.0.1", description="Bind address.")
-    port: int = Field(default=8080, description="Bind port.")
+    listen_address: str = Field(
+        default="127.0.0.1:8080", min_length=1, description="HTTP TCP bind address or inherited listening socket fd:N."
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="PostgreSQL connection URI of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(
