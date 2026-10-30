@@ -49,6 +49,7 @@ type Config struct {
 	LogLevels                           map[string]string        `mapstructure:"log_levels"`
 	Host                                string                   `mapstructure:"host"`
 	Port                                int                      `mapstructure:"port"`
+	HTTPListenerFD                      *int                     `mapstructure:"http_listener_fd"`
 	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
 	DatabaseURL                         string                   `mapstructure:"database_url"`
 	ElectricURL                         string                   `mapstructure:"electric_url"`
@@ -573,6 +574,9 @@ func (c Config) validate() error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", name)
 		}
+	}
+	if c.HTTPListenerFD != nil && *c.HTTPListenerFD < 3 {
+		return errors.New("http_listener_fd must name an inherited descriptor at least 3")
 	}
 	if c.Port < 0 || c.Port > 65535 {
 		return errors.New("port must be between 0 and 65535")

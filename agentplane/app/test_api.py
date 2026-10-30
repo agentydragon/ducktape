@@ -2,12 +2,38 @@
 
 from __future__ import annotations
 
+import errno
+import socket
+
 import httpx
+import pytest
 import pytest_bazel
 
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.models import SandboxView, ThreadPage, ThreadView
-from agentplane.app.testing.replication_process import AppProcess
+from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from util.net import listen_tcp
+
+
+async def test_go_app_serves_a_parent_owned_listener(db_url: str, sandbox: SandboxCluster) -> None:
+    with listen_tcp() as listener:
+        config: dict[str, object] = {
+            "database_url": db_url,
+            "kubeconfig": str(sandbox.server.kubeconfig),
+            "sandbox_namespace": sandbox.namespace,
+        }
+        async with spawn_go_app(config, listener=listener) as app:
+            assert app.url == f"http://{listener.host}:{listener.port}"
+            async with httpx.AsyncClient() as client:
+                assert (await client.get(app.url + "/readyz")).status_code == 200
+            with socket.socket() as competing:
+                with pytest.raises(OSError, match="Address already in use") as occupied:
+                    competing.bind((listener.host, listener.port))
+                assert occupied.value.errno == errno.EADDRINUSE
+        # The child consumes its inherited copy; the caller still owns its socket.
+        assert listener.socket.fileno() >= 0
+        assert listener.socket.getsockname() == (listener.host, listener.port)
 
 
 async def test_go_app_serves_sandbox_and_thread_views_using_the_shared_models(http: httpx.AsyncClient) -> None:

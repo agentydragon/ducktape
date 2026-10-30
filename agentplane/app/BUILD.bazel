@@ -106,7 +106,10 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util:net",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -58,6 +58,25 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	}
 }
 
+func TestInheritedHTTPListenerConfig(t *testing.T) {
+	config := validTestConfig()
+	if _, _, err := applyCommandLineOverrides(&config, []string{"--http-listener-fd=7"}); err != nil {
+		t.Fatal(err)
+	}
+	if config.HTTPListenerFD == nil || *config.HTTPListenerFD != 7 {
+		t.Fatalf("inherited listener descriptor = %v, want 7", config.HTTPListenerFD)
+	}
+	if err := config.validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, fd := range []int{-1, 0, 1, 2} {
+		config.HTTPListenerFD = &fd
+		if err := config.validate(); err == nil || !strings.Contains(err.Error(), "http_listener_fd") {
+			t.Fatalf("descriptor %d validation = %v, want rejection", fd, err)
+		}
+	}
+}
+
 func TestApplyCommandLineOverridesRejectsRetiredSessionDispatcherHTTPURLFlag(t *testing.T) {
 	config := validTestConfig()
 	if _, _, err := applyCommandLineOverrides(&config, []string{"--session-dispatcher-http-url=http://dispatcher:8080"}); err == nil ||

@@ -43,6 +43,7 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -509,7 +510,11 @@ type processWorker struct {
 }
 
 func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
-	listener, err := net.Listen("tcp", net.JoinHostPort(config.Host, strconv.Itoa(config.Port)))
+	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
+	if config.HTTPListenerFD != nil {
+		address = "fd:" + strconv.Itoa(*config.HTTPListenerFD)
+	}
+	listener, err := netlistener.Open(address)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)
 	}
