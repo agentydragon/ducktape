@@ -122,9 +122,11 @@ func TestClaimExpiresByLocallyObservedRenewal(t *testing.T) {
 			if _, err := kube.CoordinationV1().Leases(testNamespace).Update(ctx, lease, metav1.UpdateOptions{}); err != nil {
 				t.Fatal(err)
 			}
-			refused(renewedAt + time.Second)
-			refused(renewedAt + duration - time.Second)
-			now = start.Add(renewedAt + duration)
+			// Expiry counts from when this replica first sees the renewal, not when it was written.
+			seenAt := renewedAt + time.Second
+			refused(seenAt)
+			refused(seenAt + duration - time.Second)
+			now = start.Add(seenAt + duration)
 			epoch, err := records.claim(ctx, identity, testPodUID)
 			if err != nil {
 				t.Fatalf("lapsed connection was not taken over: %v", err)
