@@ -151,9 +151,9 @@ its runner connection.
 Rejected: keeping `dispatcher-<uid>` and delivering in process only when owner and holder coincide. With N replicas
 they coincide one time in N, so the self-call stays and two ownership mechanisms stay with it.
 
-**Relation to `DISPATCHER_OWNERSHIP_IN_POSTGRES`.** That node asks whether Postgres could own what the Lease owns,
-and found its fence cannot choose a live owner. This design answers differently: the connection chooses the live
-owner, so the Lease and the question both go.
+Rejected: moving the Lease's job into Postgres alone (an `expires_at` heartbeat on the fence row, or a
+session-level advisory lock). The fence has no expiry, so it stops stale writers but cannot choose a live owner;
+here the connection chooses the live owner, so neither the Lease nor a Postgres liveness mechanism is needed.
 
 ## What queue off removes
 
@@ -201,5 +201,4 @@ are independent once step 3 has landed.
    PostgreSQL.
 
 On approval, the ADR row about the Dispatcher being its own service is replaced, the Gateway and Dispatcher
-READMEs describe the modes, and `DISPATCHER_OWNERSHIP_IN_POSTGRES` and `PROXY_START_METHODS_DISPATCHER_ONLY` leave
-the DAG with the steps that finish them.
+READMEs describe the modes, and `PROXY_START_METHODS_DISPATCHER_ONLY` leaves the DAG with the step that finishes it.

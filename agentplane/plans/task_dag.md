@@ -31,7 +31,7 @@ Each group holds a track's open nodes; cleanup candidates are in
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
+        ACTION_MCP_EDGE_SPLIT[Candidate: remove Actions' retired compatibility settings]
     end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
@@ -1571,7 +1571,6 @@ The Gateway observes state and proxies the runner's
 flowchart TD
     RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
-    DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
@@ -1606,26 +1605,6 @@ select generalized send grants or broaden caller permissions.
 
 The proposed [merge into one service](dispatcher_gateway_merge.md) removes the command methods from the
 caller-visible proxy in its third step, which would finish this node.
-
-### `DISPATCHER_OWNERSHIP_IN_POSTGRES` — Dispatcher Sandbox ownership without the Kubernetes Lease
-
-**Unscheduled; operator, 2026-10-19 PDT: a potential future change, not a decision.** Each Dispatcher
-replica takes a per-Sandbox `dispatcher-<uid>` Lease (`runner_gateway/dispatcher/ownership.go`). The Lease
-gives one replica exclusive ownership and detects a dead owner through its 30 s expiry. The Postgres
-`sandbox_ownership` row is only a compare-and-swap fence on a generation number and has no expiry, so it
-stops stale writers but cannot choose a live owner. Only the Dispatcher uses the Lease, plus the failover
-probe in the Dispatcher acceptance test. The Gateway's separate `<sandbox>-runner` connection Lease stays,
-and the Sandbox controller watches it.
-
-Move ownership entirely into Postgres: an `expires_at` heartbeat on the same row, or a session-level
-advisory lock that frees itself when the connection drops. Write the comparison first (failover time,
-behavior under a Postgres outage, the shared Lease RBAC rule in `runner_gateway_workload.py`); the Lease
-has no recorded comparison against doing this in Postgres.
-
-[Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) retires the `dispatcher-<uid>` Lease
-instead, by making the replica that holds a Sandbox's runner connection the owner; the operator chose that on
-2026-10-20 07:34 UTC, so this node's question is superseded. The node finishes with that plan's holder-owned
-delivery step once the operator approves the whole design.
 
 ## Scope and retirement of stale gates
 
@@ -1686,9 +1665,8 @@ operator chose that the replica holding a Sandbox's runner connection owns its d
 `dispatcher-<uid>` Lease (2026-10-20 07:34 UTC); the rest awaits review.
 
 No implementation starts, and no implementation nodes other than `DISPATCHER_QUEUE_OPTIONAL` (which the operator
-asked for) are added, before the operator approves. On approval
-`DISPATCHER_OWNERSHIP_IN_POSTGRES` and `PROXY_START_METHODS_DISPATCHER_ONLY` finish with the plan's steps;
-`DELIVERY_DESTINATION_AUTHORITY_DESIGN` stays independent of it.
+asked for) are added, before the operator approves. On approval `PROXY_START_METHODS_DISPATCHER_ONLY` finishes with
+the plan's steps; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` stays independent of it.
 
 ### `DISPATCHER_QUEUE_OPTIONAL` — the combined service runs without its queue
 
@@ -1802,7 +1780,7 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
+    ACTION_MCP_EDGE_SPLIT[Candidate: remove Actions' retired compatibility settings]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1814,17 +1792,17 @@ check on `thread_observations` (404 for a Session no Thread links) is kept or dr
 
 ### `ACTION_MCP_EDGE_SPLIT` — remove the retired Action Service serving path
 
-**Active (Codex).** The standalone edge serves external MCP/OAuth and ConnectionService; Actions
-keeps upstream MCP linkage and CIMD. This source change removes Actions' integrated runtime and
-API registrations while retaining false-only/no-op settings for the old image's generated keys.
+**Candidate.** The standalone edge serves external MCP/OAuth and ConnectionService; Actions keeps
+upstream MCP linkage and CIMD. Actions' integrated runtime and API registrations are gone; it still
+accepts the false-only `integrated_connection_service` and no-op `max_wait_seconds` keys its
+manifests generate, under `CLEANUP` markers.
 
-Remaining work: after the new image is observed running, remove the compatibility keys from
+Remaining work: confirm the current image is running, remove the compatibility keys from
 generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
-all database rows and schemas in this change; any later migration needs a separate verified
-ownership and retention plan. Detailed sequence and constraints:
+all database rows and schemas; any later migration needs a separate verified ownership and
+retention plan. Detailed sequence and constraints:
 [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The current token audience is
-`agentplane-egress`; a dedicated audience is a separate change. Actions retains its upstream CIMD
-endpoint and the app retains upstream OAuth callbacks.
+`agentplane-egress`; a dedicated audience is a separate change.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
