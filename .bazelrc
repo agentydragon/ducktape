@@ -126,6 +126,11 @@ common:quiet --show_progress_rate_limit=30
 # +14% actions; devinfra/debug/2026_10_29_rust_pipelined_compilation.md.
 build --@rules_rust//rust/settings:pipelined_compilation=True
 
+# Run Go tests once with race detection, including local and publication tests.
+# Production builds keep the normal configuration. Explicit pure="on" targets
+# retain their no-cgo mode and cannot use the race detector.
+test --@io_bazel_rules_go//go/config:race
+
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
