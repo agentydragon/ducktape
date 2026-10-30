@@ -46,21 +46,17 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
-    if any(item.get_closest_marker("vm_sandboxes") is not None for item in session.items):
-        configure_tracing(filename="vm-phases.jsonl")
+    configure_tracing(filename="vm-phases.jsonl")
 
 
 @pytest.fixture
 def phase_tracer(request: pytest.FixtureRequest) -> Iterator[trace.Tracer]:
-    selected = tracer if request.node.get_closest_marker("vm_sandboxes") is not None else trace.NoOpTracer()
-    with selected.start_as_current_span("vm.case", attributes={"pytest.nodeid": request.node.nodeid}):
-        yield selected
+    with tracer.start_as_current_span("vm.case", attributes={"pytest.nodeid": request.node.nodeid}):
+        yield tracer
 
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> object:
-    if item.get_closest_marker("vm_sandboxes") is None:
-        return (yield)
     with tracer.start_as_current_span("vm.scenario"):
         return (yield)
 
