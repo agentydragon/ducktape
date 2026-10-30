@@ -19,12 +19,8 @@ Only `sops` and `mirrored` tokens write `sops_file` and enter git commit
 bookkeeping. Kubernetes-only tokens publish and notify, then return without a
 SOPS write or git commit.
 
-During rollout, cdk8s temporarily emits the deployed flat fields: top-level
-`sops_file` and, for mirrored entries, `kubernetes`. The parser adapts that
-shape and matching top-level `storage` tags into `destination`; contradictory
-flat tags and mixed flat/nested fields fail validation. The temporary writer
-rejects Kubernetes-only entries because the deployed image requires
-`sops_file`. Remove the writer and flat-config adapter after the
-destination-union image is deployed, then emit nested destinations directly.
-The CI writer remains mirrored until that rollout; a follow-up can remove its
-SOPS output.
+Generated configurations contain nested destinations with their default storage
+tags included. The parser still accepts the previous flat shape during rollout.
+Remove that adapter after every deployed rotator ConfigMap uses nested
+destinations. The Ducktape CI writer uses Kubernetes-only storage; per-host
+readers and the gaffer-private writer remain SOPS-backed.

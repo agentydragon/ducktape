@@ -134,11 +134,11 @@ or on pull/push scope drift vs. `ROTATOR_CONFIG` in
 
 | Repo           | Workflow                               | Cache            | Reads token from                                                         |
 | -------------- | -------------------------------------- | ---------------- | ------------------------------------------------------------------------ |
-| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | `secrets/ci/attic-main-writer.sops.yaml`                                 |
+| ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | Actions secret `ATTIC_TOKEN`, propagated from Kubernetes                 |
 | gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer`         | `secrets/ci/attic-gaffer-writer.sops.yaml` (sparse-cloned from ducktape) |
 
-Both files are encrypted with the CI age key, already on both repos as
-`SOPS_AGE_KEY` (synced by `tf/gitops/github-secrets-sync/main.tf`).
+The gaffer-private file is encrypted with its CI age key (`SOPS_AGE_KEY`).
+Ducktape CI receives its token directly from Actions secrets.
 
 ## Private-binary isolation (drivefs/drivectl)
 
@@ -244,14 +244,12 @@ unlike that earlier plaintext leak.
 ### CI token propagation
 
 The rotator publishes the Ducktape CI writer JWT to
-`nix-cache/attic-ducktape-ci-writer` as well as its existing SOPS output during
-the CI migration. After a successful token check it patches the GitHub secrets
+`nix-cache/attic-ducktape-ci-writer`, with no SOPS mirror. After a successful token check it patches the GitHub secrets
 OpenTofu Workspace with the Secret identity/version. Crossplane's annotation
 watch queues reconciliation; `github-secrets-sync` reads the Secret and owns
 the `ATTIC_TOKEN` Actions secret. The rotator retries the notification on runs
 that do not mint a token, so a failed notification does not wait for expiry.
 
-Deploy the rotator image plus generated config/RBAC, run the rotation job, then
-verify the Actions secret before migrating CI consumers. The existing SOPS path
-remains until that migration lands. The cache signing keys and per-host reader
-rotation are unchanged.
+The Kubernetes-only roster requires the rotator image with storage-variant
+support to be deployed first. The cache signing keys, per-host reader rotation,
+and gaffer-private writer remain SOPS-backed.

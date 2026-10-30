@@ -22,56 +22,80 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/wyrm2-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/wyrm2-attic.yaml
           - name: rugged attic reader
             sub: rugged
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/rugged-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/rugged-attic.yaml
           - name: iguana attic reader
             sub: iguana
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/iguana-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/iguana-attic.yaml
           - name: atlas attic reader
             sub: atlas
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/atlas-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/atlas-attic.yaml
           - name: gecko attic reader
             sub: gecko
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/gecko-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/gecko-attic.yaml
           - name: agent-box attic reader
             sub: agent-box
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/hosts/agent-box-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/hosts/agent-box-attic.yaml
           - name: claude-web attic reader
             sub: claude-web
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/claude-web-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/claude-web-attic.yaml
           - name: haku attic reader
             sub: haku
             validity: 1 year
             pull:
               - main
               - gaffer
-            sops_file: secrets/haku-attic.yaml
+            push: []
+            destination:
+              storage: sops
+              sops_file: secrets/haku-attic.yaml
           - name: ducktape CI attic writer (main)
             sub: ducktape-ci
             validity: 1 year
@@ -81,8 +105,7 @@ configMapGenerator:
             push:
               - main
               - public
-            sops_file: secrets/ci/attic-main-writer.sops.yaml
-            kubernetes:
+            destination:
               secret:
                 namespace: nix-cache
                 name: attic-ducktape-ci-writer
@@ -90,6 +113,7 @@ configMapGenerator:
               notification:
                 workspace: github-secrets-sync
                 annotation_key: ducktape.allegedly.works/attic-token-version
+              storage: kubernetes
           - name: gaffer CI attic writer
             sub: gaffer-ci
             validity: 1 year
@@ -97,4 +121,17 @@ configMapGenerator:
               - gaffer
             push:
               - gaffer
-            sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
+            destination:
+              storage: sops
+              sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
+        attic_namespace: nix-cache
+        attic_deployment: deploy/attic
+        server_config: /config/server.toml
+        token_field: attic_token
+        rotate_below_hours: 24
+        git_remote: https://github.com/agentydragon/ducktape.git
+        git_username: x-access-token
+        git_clone_depth: 1
+        sops_config: .sops.yaml
+        git_author_name: attic-jwt-rotation
+        git_author_email: noreply@allegedly.works
