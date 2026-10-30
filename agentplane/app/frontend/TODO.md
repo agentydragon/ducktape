@@ -4,27 +4,12 @@ Gaps to close if a workflow needs them; none is committed.
 
 ## Thread tool schemas generated from their implementations
 
-The thread's shell tool calls have the same hazard: `threads/shell_calls.ts` mirrors Claude Code's
+`threads/shell_calls.ts` mirrors Claude Code's
 `Bash` input and the arguments `runner/codex/adapter.go` records for `commandExecution` by hand, strictly, so
 a field a harness adds sends every such call to the JSON view while the tests still pass.
 
 ## Thread view UX
 
-- **Give block Markdown clear one-line summaries**: `Markdown`'s `singleLine` mode makes lists,
-  tables, and blockquotes inline, but removes list markers and flattens table cells without visible
-  separators; a blockquote also loses its quote cue. Choose compact separators and markers that keep
-  these structures readable in reasoning previews, while leaving the expanded Markdown unchanged.
-- **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
-  (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure`
-  (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
-  ahead -- whenever `entity.textRef` is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
-  has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
-  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the fetch
-  resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
-- **Fold adjacent reasoning items inside mixed tool/reasoning runs**: `historyRows` groups consecutive tool calls and
-  reasoning items together, and opening a run currently shows each item separately. When reasoning items are
-  adjacent within a mixed run, fold each consecutive reasoning group into a nested disclosure whose collapsed line
-  joins their text and whose expanded body shows the original individual items in order.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.go`'s `Observation` type, the archive/API layer
@@ -75,5 +60,5 @@ client can leave bodies past a size to be read when shown, and a memory budget a
 ## System page probes
 
 The System page does not probe the Kubernetes API, whose reachability the app has but does not probe
-(the live views show only the watch's freshness). Consider a Kubernetes API probe in `main.py` if an
+(the live views show only the watch's freshness). Consider a Kubernetes API probe beside the others in `app/go/runtime.go` if an
 operator wants to see it there.
