@@ -1528,11 +1528,12 @@ enum FlowFact {
     ReadyParameters(Vec<Option<Id>>),
 }
 
+/// Candidate reachability is a second stratum over the completed value facts:
+/// no event rule reads a candidate key, so it never wakes AST events.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-enum FlowRule {
-    Event(usize),
-    CandidateReachability(OriginId),
-    CandidateBinding(Id),
+enum CandidateRule {
+    Reachability(OriginId),
+    Binding(Id),
 }
 
 struct FlowProgram {
@@ -1610,24 +1611,33 @@ impl FlowProgram {
             events,
             declared_ids: declared_ids.clone(),
             origin_table: origin_table.clone(),
-            candidate_facts_enabled: !candidate_objects.is_empty(),
-            native_set_allocations: native_set_allocations.keys().copied().collect(),
             #[cfg(test)]
             argument_evaluations: argument_evaluations.clone(),
             #[cfg(test)]
             event_executions: event_executions.clone(),
         };
-        let mut inference = IterativeInference::new(rules);
-        let candidate_words = candidate_objects.len().div_ceil(64);
-        for (index, object) in candidate_objects.iter().copied().enumerate() {
-            let mut bits = vec![0; candidate_words];
-            bits[index / 64] |= 1 << (index % 64);
-            inference.seed(
-                FlowKey::CandidateReachable(origin_table.id(object)),
-                FlowFact::CandidateReachability(Arc::new(bits)),
+        let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
+        let facts = if candidate_objects.is_empty() {
+            values.into_values()
+        } else {
+            let mut inference = IterativeInference::from_completed(
+                CandidateRules {
+                    origin_table: origin_table.clone(),
+                    native_set_allocations: native_set_allocations.keys().copied().collect(),
+                },
+                values,
             );
-        }
-        let facts = inference.solve_values((0..producer_count).map(FlowRule::Event));
+            let candidate_words = candidate_objects.len().div_ceil(64);
+            for (index, object) in candidate_objects.iter().copied().enumerate() {
+                let mut bits = vec![0; candidate_words];
+                bits[index / 64] |= 1 << (index % 64);
+                inference.seed(
+                    FlowKey::CandidateReachable(origin_table.id(object)),
+                    FlowFact::CandidateReachability(Arc::new(bits)),
+                );
+            }
+            inference.solve_values([])
+        };
         #[cfg(test)]
         let evaluations = event_executions.get();
         #[cfg(not(test))]
@@ -1999,8 +2009,6 @@ struct FlowRules {
     events: Vec<FlowEvent>,
     declared_ids: BTreeSet<Id>,
     origin_table: Arc<OriginTable>,
-    candidate_facts_enabled: bool,
-    native_set_allocations: BTreeSet<u32>,
     #[cfg(test)]
     argument_evaluations: Rc<Cell<usize>>,
     #[cfg(test)]
@@ -2063,29 +2071,6 @@ impl FlowRules {
         context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
     }
 
-    fn propose_candidate_values(
-        &self,
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        target: FlowKey,
-        values: &Values,
-    ) {
-        if !self.candidate_facts_enabled {
-            return;
-        }
-        for value in values {
-            let Some(fact) = context
-                .read(FlowKey::CandidateReachable(self.origin_table.id(value)))
-                .cloned()
-            else {
-                continue;
-            };
-            let FlowFact::CandidateReachability(bits) = fact else {
-                unreachable!("candidate reachability keys must contain candidate facts")
-            };
-            context.propose(target.clone(), FlowFact::CandidateReachability(bits));
-        }
-    }
-
     fn singleton_value(&self, value: ValueOrigin) -> Values {
         Values::singleton(self.origin_table.clone(), value)
     }
@@ -2094,194 +2079,134 @@ impl FlowRules {
 impl IterativeRules for FlowRules {
     type Key = FlowKey;
     type Fact = FlowFact;
-    type Rule = FlowRule;
+    type Rule = usize;
 
     fn evaluate(
         &self,
-        rule: &FlowRule,
+        index: &usize,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
     ) {
-        match rule {
-            FlowRule::CandidateBinding(binding) => {
-                if !self.candidate_facts_enabled {
-                    return;
-                }
-                let Some(fact) = context.read(FlowKey::Binding(binding.clone())).cloned() else {
-                    return;
-                };
-                let FlowFact::Values(values) = fact else {
-                    unreachable!("binding keys must contain value facts")
-                };
-                self.propose_candidate_values(
-                    context,
-                    FlowKey::CandidateBinding(binding.clone()),
-                    &values,
-                );
+        #[cfg(test)]
+        self.event_executions.set(self.event_executions.get() + 1);
+        let event = &self.events[*index];
+        match event {
+            FlowEvent::FunctionDeclaration { id, origin }
+            | FlowEvent::ClassDeclaration { id, origin } => {
+                let values = self.singleton_value(*origin);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
             }
-            FlowRule::CandidateReachability(origin) => {
-                if !self.candidate_facts_enabled {
-                    return;
-                }
-                let parent = self.origin_table.origin(*origin);
-                let values_key = match parent {
-                    ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) => {
-                        FlowKey::Properties(object)
-                    }
-                    ValueOrigin::Function(function) => FlowKey::Return(function),
-                    ValueOrigin::Class(_) | ValueOrigin::Unknown => return,
-                };
-                let Some(fact) = context.read(values_key).cloned() else {
-                    return;
-                };
-                let FlowFact::Values(values) = fact else {
-                    unreachable!("property and return keys must contain value facts")
-                };
-                self.propose_candidate_values(
-                    context,
-                    FlowKey::CandidateReachable(*origin),
-                    &values,
-                );
+            FlowEvent::Variable { id, init } => {
+                let values = self.values_of_expr_tracking(init, context, None);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
             }
-            FlowRule::Event(index) => {
-                #[cfg(test)]
-                self.event_executions.set(self.event_executions.get() + 1);
-                let event = &self.events[*index];
-                match event {
-                    FlowEvent::FunctionDeclaration { id, origin }
-                    | FlowEvent::ClassDeclaration { id, origin } => {
-                        let values = self.singleton_value(*origin);
-                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+            FlowEvent::AssignBinding { id, right } => {
+                let values = self.values_of_expr_tracking(right, context, None);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+            }
+            FlowEvent::AssignProperty {
+                object,
+                property,
+                right,
+            } => {
+                let values = self.values_of_expr_tracking(right, context, None);
+                let objects = self.values_of_expr_tracking(object, context, None);
+                for origin in objects {
+                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
+                        Self::propose_property(context, object, property.clone(), values.clone());
                     }
-                    FlowEvent::Variable { id, init } => {
-                        let values = self.values_of_expr_tracking(init, context, None);
-                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
-                    }
-                    FlowEvent::AssignBinding { id, right } => {
-                        let values = self.values_of_expr_tracking(right, context, None);
-                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
-                    }
-                    FlowEvent::AssignProperty {
-                        object,
-                        property,
-                        right,
-                    } => {
-                        let values = self.values_of_expr_tracking(right, context, None);
-                        let objects = self.values_of_expr_tracking(object, context, None);
-                        for origin in objects {
-                            if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) =
-                                origin
-                            {
-                                Self::propose_property(
-                                    context,
-                                    object,
-                                    property.clone(),
-                                    values.clone(),
-                                );
-                            }
-                        }
-                    }
-                    FlowEvent::WritePropertyExpr {
-                        object,
-                        property,
-                        value,
-                    } => {
-                        let values = self.values_of_expr_tracking(value, context, None);
-                        Self::propose_property(context, *object, property.clone(), values);
-                    }
-                    FlowEvent::WritePropertyBinding {
-                        object,
-                        property,
-                        binding,
-                    } => {
-                        let values = self.values_of_expr_tracking(
-                            &FlowValueExpr::Binding(binding.clone()),
-                            context,
-                            None,
-                        );
-                        Self::propose_property(context, *object, property.clone(), values);
-                    }
-                    FlowEvent::WritePropertyValue {
-                        object,
-                        property,
-                        value,
-                    } => {
-                        let values = self.singleton_value(*value);
-                        Self::propose_property(context, *object, property.clone(), values);
-                    }
-                    FlowEvent::FunctionMetadata { function, params } => {
-                        context.propose(
-                            FlowKey::Parameters(*function),
-                            FlowFact::Parameters(params.clone()),
-                        );
-                        // The legacy solver only woke calls waiting for metadata if
-                        // some non-empty value fact grew in its initial source sweep.
-                        if context.read(FlowKey::ValueFlowActive).is_some() {
-                            context.propose(
-                                FlowKey::ReadyParameters(*function),
-                                FlowFact::ReadyParameters(params.clone()),
-                            );
-                        }
-                    }
-                    FlowEvent::Return { function, value } => {
-                        let values = self.values_of_expr_tracking(value, context, None);
-                        Self::propose_values(context, FlowKey::Return(*function), values);
-                    }
-                    FlowEvent::Invoke { callee, args } => {
-                        let targets = self.values_of_expr_tracking(callee, context, None);
-                        let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
+                }
+            }
+            FlowEvent::WritePropertyExpr {
+                object,
+                property,
+                value,
+            } => {
+                let values = self.values_of_expr_tracking(value, context, None);
+                Self::propose_property(context, *object, property.clone(), values);
+            }
+            FlowEvent::WritePropertyBinding {
+                object,
+                property,
+                binding,
+            } => {
+                let values = self.values_of_expr_tracking(
+                    &FlowValueExpr::Binding(binding.clone()),
+                    context,
+                    None,
+                );
+                Self::propose_property(context, *object, property.clone(), values);
+            }
+            FlowEvent::WritePropertyValue {
+                object,
+                property,
+                value,
+            } => {
+                let values = self.singleton_value(*value);
+                Self::propose_property(context, *object, property.clone(), values);
+            }
+            FlowEvent::FunctionMetadata { function, params } => {
+                context.propose(
+                    FlowKey::Parameters(*function),
+                    FlowFact::Parameters(params.clone()),
+                );
+                // The legacy solver only woke calls waiting for metadata if
+                // some non-empty value fact grew in its initial source sweep.
+                if context.read(FlowKey::ValueFlowActive).is_some() {
+                    context.propose(
+                        FlowKey::ReadyParameters(*function),
+                        FlowFact::ReadyParameters(params.clone()),
+                    );
+                }
+            }
+            FlowEvent::Return { function, value } => {
+                let values = self.values_of_expr_tracking(value, context, None);
+                Self::propose_values(context, FlowKey::Return(*function), values);
+            }
+            FlowEvent::Invoke { callee, args } => {
+                let targets = self.values_of_expr_tracking(callee, context, None);
+                let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
 
-                        for target in targets {
-                            let ValueOrigin::Function(function) = target else {
-                                continue;
-                            };
-                            let params = match context
-                                .read(FlowKey::ReadyParameters(function))
-                                .cloned()
-                            {
-                                Some(FlowFact::ReadyParameters(params)) => params,
-                                Some(_) => {
-                                    unreachable!("parameter keys must contain parameter metadata")
-                                }
-                                None => continue,
-                            };
-                            for (arg_index, (param, arg)) in
-                                params.into_iter().zip(args).enumerate()
-                            {
-                                let Some(param) = param else {
-                                    continue;
-                                };
-                                let values = if let Some(cached) = &cached_args[arg_index] {
-                                    cached.values.clone()
-                                } else {
-                                    let mut binding_dependencies = BTreeSet::new();
-                                    #[cfg(test)]
-                                    self.argument_evaluations
-                                        .set(self.argument_evaluations.get() + 1);
-                                    let values = self.values_of_expr_tracking(
-                                        arg,
-                                        context,
-                                        Some(&mut binding_dependencies),
-                                    );
-                                    cached_args[arg_index] = Some(CachedArgument {
-                                        values: values.clone(),
-                                        binding_dependencies,
-                                    });
-                                    values
-                                };
-                                // Proposals are immediately visible to later arguments and targets.
-                                // Recompute only arguments that read a binding this invocation grows.
-                                if Self::propose_values(
-                                    context,
-                                    FlowKey::Binding(param.clone()),
-                                    values,
-                                ) {
-                                    for cached in &mut cached_args {
-                                        if cached.as_ref().is_some_and(|cached| {
-                                            cached.binding_dependencies.contains(&param)
-                                        }) {
-                                            *cached = None;
-                                        }
-                                    }
+                for target in targets {
+                    let ValueOrigin::Function(function) = target else {
+                        continue;
+                    };
+                    let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
+                        Some(FlowFact::ReadyParameters(params)) => params,
+                        Some(_) => {
+                            unreachable!("parameter keys must contain parameter metadata")
+                        }
+                        None => continue,
+                    };
+                    for (arg_index, (param, arg)) in params.into_iter().zip(args).enumerate() {
+                        let Some(param) = param else {
+                            continue;
+                        };
+                        let values = if let Some(cached) = &cached_args[arg_index] {
+                            cached.values.clone()
+                        } else {
+                            let mut binding_dependencies = BTreeSet::new();
+                            #[cfg(test)]
+                            self.argument_evaluations
+                                .set(self.argument_evaluations.get() + 1);
+                            let values = self.values_of_expr_tracking(
+                                arg,
+                                context,
+                                Some(&mut binding_dependencies),
+                            );
+                            cached_args[arg_index] = Some(CachedArgument {
+                                values: values.clone(),
+                                binding_dependencies,
+                            });
+                            values
+                        };
+                        // Proposals are immediately visible to later arguments and targets.
+                        // Recompute only arguments that read a binding this invocation grows.
+                        if Self::propose_values(context, FlowKey::Binding(param.clone()), values) {
+                            for cached in &mut cached_args {
+                                if cached.as_ref().is_some_and(|cached| {
+                                    cached.binding_dependencies.contains(&param)
+                                }) {
+                                    *cached = None;
                                 }
                             }
                         }
@@ -2291,13 +2216,101 @@ impl IterativeRules for FlowRules {
         }
     }
 
-    fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<FlowRule> {
-        if !self.candidate_facts_enabled {
-            return Vec::new();
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_flow_fact(key, current, contribution)
+    }
+}
+
+struct CandidateRules {
+    origin_table: Arc<OriginTable>,
+    native_set_allocations: BTreeSet<u32>,
+}
+
+impl CandidateRules {
+    /// Union the reachability of every value, then propose it once.
+    fn propose_candidate_values(
+        &self,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+        target: FlowKey,
+        values: &Values,
+    ) {
+        let mut reachable: Option<Arc<Vec<u64>>> = None;
+        for value in values {
+            let Some(fact) = context.read(FlowKey::CandidateReachable(self.origin_table.id(value)))
+            else {
+                continue;
+            };
+            let FlowFact::CandidateReachability(bits) = fact else {
+                unreachable!("candidate reachability keys must contain candidate facts")
+            };
+            match &mut reachable {
+                None => reachable = Some(bits.clone()),
+                Some(into) => {
+                    if !bits_contain_all(into.as_slice(), bits.as_slice()) {
+                        union_bits(Arc::make_mut(into).as_mut_slice(), bits.as_slice());
+                    }
+                }
+            }
         }
+        if let Some(bits) = reachable {
+            context.propose(target, FlowFact::CandidateReachability(bits));
+        }
+    }
+
+    /// Carrier values are final in this stratum: read them without watchers.
+    fn carrier_values(
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+        key: FlowKey,
+    ) -> Option<Values> {
+        match context.read_final(key)? {
+            FlowFact::Values(values) => Some(values.clone()),
+            _ => unreachable!("binding, property and return keys must contain value facts"),
+        }
+    }
+}
+
+impl IterativeRules for CandidateRules {
+    type Key = FlowKey;
+    type Fact = FlowFact;
+    type Rule = CandidateRule;
+
+    fn evaluate(&self, rule: &CandidateRule, context: &mut impl FactContext<FlowKey, FlowFact>) {
+        match rule {
+            CandidateRule::Binding(binding) => {
+                let Some(values) = Self::carrier_values(context, FlowKey::Binding(binding.clone()))
+                else {
+                    return;
+                };
+                self.propose_candidate_values(
+                    context,
+                    FlowKey::CandidateBinding(binding.clone()),
+                    &values,
+                );
+            }
+            CandidateRule::Reachability(origin) => {
+                let carrier = match self.origin_table.origin(*origin) {
+                    ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) => {
+                        FlowKey::Properties(object)
+                    }
+                    ValueOrigin::Function(function) => FlowKey::Return(function),
+                    ValueOrigin::Class(_) | ValueOrigin::Unknown => return,
+                };
+                let Some(values) = Self::carrier_values(context, carrier) else {
+                    return;
+                };
+                self.propose_candidate_values(
+                    context,
+                    FlowKey::CandidateReachable(*origin),
+                    &values,
+                );
+            }
+        }
+    }
+
+    fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<CandidateRule> {
         match (key, fact) {
             (FlowKey::Binding(binding), FlowFact::Values(values)) if !values.is_empty() => {
-                vec![FlowRule::CandidateBinding(binding.clone())]
+                vec![CandidateRule::Binding(binding.clone())]
             }
             (FlowKey::Properties(object), FlowFact::Values(values)) if !values.is_empty() => {
                 let origin = if self.native_set_allocations.contains(object) {
@@ -2305,12 +2318,10 @@ impl IterativeRules for FlowRules {
                 } else {
                     ValueOrigin::Object(*object)
                 };
-                vec![FlowRule::CandidateReachability(
-                    self.origin_table.id(origin),
-                )]
+                vec![CandidateRule::Reachability(self.origin_table.id(origin))]
             }
             (FlowKey::Return(function), FlowFact::Values(values)) if !values.is_empty() => {
-                vec![FlowRule::CandidateReachability(
+                vec![CandidateRule::Reachability(
                     self.origin_table.id(ValueOrigin::Function(*function)),
                 )]
             }
@@ -2319,55 +2330,57 @@ impl IterativeRules for FlowRules {
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        match (key, current, contribution) {
-            (
-                FlowKey::Parameters(_),
-                FlowFact::Parameters(current),
-                FlowFact::Parameters(contribution),
-            ) => {
-                assert_eq!(current, &contribution, "parameter metadata is immutable");
-                false
-            }
-            (
-                FlowKey::ReadyParameters(_),
-                FlowFact::ReadyParameters(current),
-                FlowFact::ReadyParameters(contribution),
-            ) => {
-                assert_eq!(
-                    current, &contribution,
-                    "ready parameter metadata is immutable"
-                );
-                false
-            }
-            (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive, FlowFact::ValueFlowActive) => {
-                false
-            }
-            (
-                FlowKey::CandidateReachable(_) | FlowKey::CandidateBinding(_),
-                FlowFact::CandidateReachability(current),
-                FlowFact::CandidateReachability(contribution),
-            ) => {
-                if Arc::ptr_eq(current, &contribution)
-                    || bits_contain_all(current.as_slice(), contribution.as_slice())
-                {
-                    false
-                } else {
-                    union_bits(
-                        Arc::make_mut(current).as_mut_slice(),
-                        contribution.as_slice(),
-                    )
-                }
-            }
-            (
-                FlowKey::Binding(_)
-                | FlowKey::Property(_, _)
-                | FlowKey::Properties(_)
-                | FlowKey::Return(_),
-                FlowFact::Values(current),
-                FlowFact::Values(contribution),
-            ) => current.union_with(&contribution),
-            _ => unreachable!("flow key and fact variants must agree"),
+        merge_flow_fact(key, current, contribution)
+    }
+}
+
+fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
+    match (key, current, contribution) {
+        (
+            FlowKey::Parameters(_),
+            FlowFact::Parameters(current),
+            FlowFact::Parameters(contribution),
+        ) => {
+            assert_eq!(current, &contribution, "parameter metadata is immutable");
+            false
         }
+        (
+            FlowKey::ReadyParameters(_),
+            FlowFact::ReadyParameters(current),
+            FlowFact::ReadyParameters(contribution),
+        ) => {
+            assert_eq!(
+                current, &contribution,
+                "ready parameter metadata is immutable"
+            );
+            false
+        }
+        (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive, FlowFact::ValueFlowActive) => false,
+        (
+            FlowKey::CandidateReachable(_) | FlowKey::CandidateBinding(_),
+            FlowFact::CandidateReachability(current),
+            FlowFact::CandidateReachability(contribution),
+        ) => {
+            if Arc::ptr_eq(current, &contribution)
+                || bits_contain_all(current.as_slice(), contribution.as_slice())
+            {
+                false
+            } else {
+                union_bits(
+                    Arc::make_mut(current).as_mut_slice(),
+                    contribution.as_slice(),
+                )
+            }
+        }
+        (
+            FlowKey::Binding(_)
+            | FlowKey::Property(_, _)
+            | FlowKey::Properties(_)
+            | FlowKey::Return(_),
+            FlowFact::Values(current),
+            FlowFact::Values(contribution),
+        ) => current.union_with(&contribution),
+        _ => unreachable!("flow key and fact variants must agree"),
     }
 }
 

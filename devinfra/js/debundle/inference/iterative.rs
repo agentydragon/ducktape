@@ -110,13 +110,10 @@ impl<R: IterativeRules> IterativeInference<R> {
     /// the new context schedules all of its producers over those facts. The
     /// caller must guarantee that the completed source-only premises cannot
     /// be refined by the later rules.
-    pub(crate) fn from_completed(rules: R, completed: &IterativeFacts<R::Key, R::Fact>) -> Self
-    where
-        R::Fact: Clone,
-    {
+    pub(crate) fn from_completed(rules: R, completed: IterativeFacts<R::Key, R::Fact>) -> Self {
         Self {
             rules,
-            facts: completed.facts.clone(),
+            facts: completed.facts,
         }
     }
 
@@ -143,6 +140,16 @@ impl<R: IterativeRules> IterativeInference<R> {
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> BTreeMap<R::Key, R::Fact> {
         self.solve_with_premises::<false>(producers).into_values()
+    }
+
+    /// `solve_values` for a closure that a later stratum resumes through
+    /// `from_completed`: judgments keep values and typed dependencies, but
+    /// no explanatory premises.
+    pub(crate) fn solve_values_resumable(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
+        self.solve_with_premises::<false>(producers)
     }
 
     fn solve_with_premises<const RETAIN_PREMISES: bool>(
@@ -303,7 +310,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
 }
 
 /// Immutable results after every supplied producer and its dependents settle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct IterativeFacts<Key, Fact> {
     facts: BTreeMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]

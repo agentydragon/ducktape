@@ -521,7 +521,7 @@ impl SemanticFacts {
             .collect();
         let inference = match source {
             Some(source) => {
-                IterativeInference::from_completed(rules, &source.inference).solve(roots)
+                IterativeInference::from_completed(rules, source.inference.clone()).solve(roots)
             }
             None => IterativeInference::new(rules).solve(roots),
         };
