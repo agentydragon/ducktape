@@ -2,17 +2,17 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"math"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -173,72 +173,168 @@ func (s *sidecar) acceptLoop() error {
 	}
 }
 
+// handle serves one workload connection over one central proxy connection of its own. Every
+// request the workload sends on it, pipelined or not, is parsed and re-serialized through
+// rewriteRequest; only a successful CONNECT or a 101 upgrade turns the rest of the connection into
+// opaque bytes.
 func (s *sidecar) handle(client net.Conn) {
 	defer func() {
 		s.track(client, false)
 		_ = client.Close()
 	}()
-	reader := bufio.NewReaderSize(client, pipeChunkBytes)
-	head, err := readRequestHead(reader)
-	if err != nil {
-		slog.Warn("refusing malformed request", "error", err)
-		writeRefusal(client, http.StatusBadRequest, "Bad Request", "bad-request")
-		return
-	}
-	connect, err := isConnectRequest(head)
-	if err != nil {
-		slog.Warn("refusing malformed request", "error", err)
-		writeRefusal(client, http.StatusBadRequest, "Bad Request", "bad-request")
-		return
-	}
-	token, err := readToken(s.config.TokenFile)
-	if err != nil {
-		slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
-		writeRefusal(client, http.StatusServiceUnavailable, "Service Unavailable", "token-unavailable")
-		return
-	}
-	projected := s.readProjectedTokens()
-	forwarded := rewriteRequestHead(head, token, projected, connect)
-	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
-	if err != nil {
-		slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
-		writeRefusal(client, http.StatusBadGateway, "Bad Gateway", "proxy-unreachable")
-		return
-	}
-	s.track(upstream, true)
+	// headLimit bounds each request head, as http.Server's MaxHeaderBytes does; bodies are unbounded.
+	headLimit := &io.LimitedReader{R: client}
+	clientReader := bufio.NewReaderSize(headLimit, pipeChunkBytes)
+	var upstream net.Conn
+	var upstreamReader *bufio.Reader
 	defer func() {
-		s.track(upstream, false)
-		_ = upstream.Close()
+		if upstream != nil {
+			s.track(upstream, false)
+			_ = upstream.Close()
+		}
 	}()
-	if err := writeBytes(upstream, forwarded); err != nil {
-		slog.Warn("writing request to central proxy failed", "error", err)
-		return
-	}
-	upstreamReader := bufio.NewReaderSize(upstream, pipeChunkBytes)
-	if connect {
-		responseHead, err := readResponseHead(upstreamReader)
+	for {
+		headLimit.N = maxHeadBytes
+		request, err := http.ReadRequest(clientReader)
+		headLimit.N = math.MaxInt64
+		if errors.Is(err, io.EOF) {
+			return
+		}
 		if err != nil {
-			slog.Warn("reading CONNECT response from central proxy failed", "error", err)
+			slog.Warn("refusing malformed request", "error", err)
+			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
-		if err := writeBytes(client, responseHead); err != nil {
-			return
-		}
-		statusCode, err := responseStatus(responseHead)
+		token, err := readToken(s.config.TokenFile)
 		if err != nil {
-			slog.Warn("invalid CONNECT response from central proxy", "error", err)
+			slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
+			writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
 			return
 		}
-		if statusCode < 200 || statusCode >= 300 {
-			if _, err := io.Copy(client, upstreamReader); err != nil {
-				slog.Warn("relaying CONNECT refusal body failed", "error", err)
+		rewriteRequest(request, token, s.readProjectedTokens())
+		if upstream == nil {
+			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+			if err != nil {
+				slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+				writeRefusal(client, http.StatusBadGateway, "proxy-unreachable")
+				return
 			}
+			s.track(upstream, true)
+			upstreamReader = bufio.NewReaderSize(upstream, pipeChunkBytes)
+		}
+		if !s.exchange(client, clientReader, upstream, upstreamReader, request) {
 			return
 		}
 	}
-	if err := pipeDuplex(client, reader, upstream, upstreamReader); err != nil {
-		slog.Warn("relay ended with connection error", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+}
+
+// exchange forwards one request and relays its response. It reports whether the connection pair
+// may carry another request.
+func (s *sidecar) exchange(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader, request *http.Request) bool {
+	// The body is written concurrently so an interim response (100 Continue) reaches a client that
+	// waits for it before sending the body.
+	written := make(chan error, 1)
+	go func() { written <- request.WriteProxy(upstream) }()
+	abort := func() bool {
+		_ = client.Close()
+		_ = upstream.Close()
+		<-written
+		return false
 	}
+	response, err := readFinalResponse(client, upstreamReader, request)
+	if err != nil {
+		slog.Warn("relaying response from central proxy failed", "error", err)
+		return abort()
+	}
+	if (request.Method == http.MethodConnect && response.StatusCode/100 == 2) || response.StatusCode == http.StatusSwitchingProtocols {
+		if err := writeResponseHead(client, response); err != nil {
+			return abort()
+		}
+		if err := <-written; err != nil {
+			slog.Warn("writing request to central proxy failed", "error", err)
+			return false
+		}
+		if err := pipeDuplex(client, clientReader, upstream, upstreamReader); err != nil {
+			slog.Warn("relay ended with connection error", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+		}
+		return false
+	}
+	if request.Method == http.MethodConnect {
+		// A refused CONNECT ends the connection, as the central proxy ends its side.
+		response.Close = true
+	}
+	if err := response.Write(client); err != nil {
+		slog.Warn("relaying response to client failed", "error", err)
+		return abort()
+	}
+	if response.Close || request.Close {
+		// Closing upstream first stops the writer from waiting on a body nobody will read, and the
+		// client is closed only after its response, so the response is not lost to a reset.
+		_ = upstream.Close()
+		<-written
+		return false
+	}
+	if err := <-written; err != nil {
+		slog.Warn("writing request to central proxy failed", "error", err)
+		return false
+	}
+	return true
+}
+
+// readFinalResponse relays interim 1xx responses to the client and returns the first other one;
+// 101 Switching Protocols is final.
+func readFinalResponse(client io.Writer, upstreamReader *bufio.Reader, request *http.Request) (*http.Response, error) {
+	for {
+		response, err := http.ReadResponse(upstreamReader, request)
+		if err != nil {
+			return nil, err
+		}
+		if response.StatusCode/100 != 1 || response.StatusCode == http.StatusSwitchingProtocols {
+			return response, nil
+		}
+		if err := response.Write(client); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// rewriteRequest replaces the workload's proxy credentials with the sidecar's own. http.ReadRequest
+// canonicalizes header keys and joins obs-folded lines into the value they continue, so each Del
+// removes every value of that header however the workload spelled, repeated or folded it.
+func rewriteRequest(request *http.Request, token string, projected map[string]string) {
+	request.Header.Del("Proxy-Connection")
+	request.Header.Del(projectedTokenHeader)
+	request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	for _, audience := range slices.Sorted(maps.Keys(projected)) {
+		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
+	}
+	// Request.Write sends Go's default User-Agent when the key is absent; an empty value sends none.
+	if _, ok := request.Header["User-Agent"]; !ok {
+		request.Header["User-Agent"] = []string{""}
+	}
+}
+
+// writeResponseHead relays the head of a response after which the connection carries tunnel bytes.
+// Response.Write would frame a body that a successful CONNECT or a 101 does not have.
+func writeResponseHead(writer io.Writer, response *http.Response) error {
+	if _, err := fmt.Fprintf(writer, "HTTP/%d.%d %s\r\n", response.ProtoMajor, response.ProtoMinor, response.Status); err != nil {
+		return err
+	}
+	if err := response.Header.Write(writer); err != nil {
+		return err
+	}
+	_, err := io.WriteString(writer, "\r\n")
+	return err
+}
+
+func writeRefusal(writer io.Writer, status int, reason string) {
+	_ = (&http.Response{
+		StatusCode: status,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{http.CanonicalHeaderKey(refusedHeader): {"reason=" + reason}},
+		Close:      true,
+	}).Write(writer)
 }
 
 func (s *sidecar) track(conn net.Conn, add bool) {
@@ -264,109 +360,6 @@ func (s *sidecar) readProjectedTokens() map[string]string {
 		}
 	}
 	return tokens
-}
-
-func readRequestHead(reader *bufio.Reader) ([]byte, error) { return readHead(reader, "request") }
-
-func readResponseHead(reader *bufio.Reader) ([]byte, error) { return readHead(reader, "response") }
-
-func readHead(reader *bufio.Reader, kind string) ([]byte, error) {
-	var head bytes.Buffer
-	for {
-		line, err := reader.ReadSlice('\n')
-		if err != nil {
-			return nil, err
-		}
-		if !bytes.HasSuffix(line, []byte("\r\n")) {
-			return nil, fmt.Errorf("%s head has a non-HTTP line ending", kind)
-		}
-		if _, err := head.Write(line); err != nil {
-			return nil, err
-		}
-		if head.Len() > maxHeadBytes {
-			return nil, fmt.Errorf("%s head exceeds %d bytes", kind, maxHeadBytes)
-		}
-		if bytes.Equal(line, []byte("\r\n")) {
-			return head.Bytes(), nil
-		}
-	}
-}
-
-func isConnectRequest(head []byte) (bool, error) {
-	line, _, found := bytes.Cut(head, []byte("\r\n"))
-	if !found {
-		return false, errors.New("request line is not terminated")
-	}
-	parts := strings.Split(string(line), " ")
-	if len(parts) != 3 || !strings.HasPrefix(parts[2], "HTTP/1.") {
-		return false, fmt.Errorf("not an HTTP/1.x request line: %q", line)
-	}
-	return parts[0] == "CONNECT", nil
-}
-
-func rewriteRequestHead(head []byte, token string, projected map[string]string, connect bool) []byte {
-	lines := bytes.Split(head[:len(head)-4], []byte("\r\n"))
-	rewritten := make([][]byte, 0, len(lines)+len(projected)+3)
-	rewritten = append(rewritten, lines[0])
-	for _, line := range lines[1:] {
-		name, _, _ := bytes.Cut(line, []byte(":"))
-		name = bytes.ToLower(bytes.TrimSpace(name))
-		nameString := string(name)
-		if nameString == "proxy-authorization" || nameString == "proxy-connection" ||
-			nameString == strings.ToLower(projectedTokenHeader) {
-			continue
-		}
-		if !connect && nameString == "connection" {
-			continue
-		}
-		rewritten = append(rewritten, line)
-	}
-	if !connect {
-		rewritten = append(rewritten, []byte("Connection: close"))
-	}
-	rewritten = append(rewritten, []byte("Proxy-Authorization: Bearer "+token))
-	audiences := make([]string, 0, len(projected))
-	for audience := range projected {
-		audiences = append(audiences, audience)
-	}
-	sort.Strings(audiences)
-	for _, audience := range audiences {
-		rewritten = append(rewritten, []byte(projectedTokenHeader+": "+audience+" "+projected[audience]))
-	}
-	return append(bytes.Join(rewritten, []byte("\r\n")), '\r', '\n', '\r', '\n')
-}
-
-func responseStatus(head []byte) (int, error) {
-	line, _, found := bytes.Cut(head, []byte("\r\n"))
-	parts := strings.SplitN(string(line), " ", 3)
-	if !found || len(parts) < 2 || !strings.HasPrefix(parts[0], "HTTP/1.") {
-		return 0, fmt.Errorf("not an HTTP/1.x status line: %q", line)
-	}
-	status, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, fmt.Errorf("invalid HTTP status: %w", err)
-	}
-	return status, nil
-}
-
-func writeRefusal(writer io.Writer, status int, phrase, reason string) {
-	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n%s: reason=%s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-		status, phrase, refusedHeader, reason)
-	_ = writeBytes(writer, []byte(response))
-}
-
-func writeBytes(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		n, err := writer.Write(data)
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return io.ErrShortWrite
-		}
-		data = data[n:]
-	}
-	return nil
 }
 
 type copyResult struct{ err error }
