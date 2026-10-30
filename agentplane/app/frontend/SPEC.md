@@ -77,9 +77,9 @@ browser on desktop and phone.
 - None of the above ever produces a visible flash of blank space or a scrollbar that visibly jumps
   and then corrects.
 
-## On-device scroll diagnostics
+## Thread view recorder
 
-Debug tools can record scrolling across Thread switches and download the recording locally.
+Thread view recorder can record scrolling across Thread switches and download the recording locally.
 The recording includes Thread/view identities, bounded row geometry and virtualizer state, and
 before/after geometry for component scroll corrections. It excludes message bodies and tool
 payloads. Layout sampling runs only while recording; the export reports truncation when its

@@ -17,9 +17,14 @@ import { type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";
 import { revealEvidenceOnTap } from "./thread_evidence";
-import { LayoutSettle, markThreadViewEvent, type FollowReason } from "./thread_view_timing";
+import { LayoutSettle } from "./layout_settle";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
-import { scrollCapture, type ScrollLayout } from "./scroll_diagnostics";
+import {
+  threadViewRecorder,
+  markThreadViewEvent,
+  type FollowReason,
+  type ThreadViewLayout,
+} from "./thread_view_recorder";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 
 type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
@@ -77,9 +82,9 @@ export function VirtualizedHistory({
   const viewId = useId();
   const writeScroll = useCallback(
     (reason: string, write: () => void) => {
-      scrollCapture.snapshotView("scroll-before", viewId, reason);
+      threadViewRecorder.snapshotView("scroll-before", viewId, reason);
       write();
-      scrollCapture.snapshotView("scroll-after", viewId, reason);
+      threadViewRecorder.snapshotView("scroll-after", viewId, reason);
     },
     [viewId]
   );
@@ -218,7 +223,7 @@ export function VirtualizedHistory({
     });
     return correction;
   }
-  const snapshotLayout = (): ScrollLayout | null => {
+  const snapshotLayout = (): ThreadViewLayout | null => {
     const element = viewport.current;
     const content = contents.current;
     if (!element || !content) return null;
@@ -311,7 +316,7 @@ export function VirtualizedHistory({
           sync,
           following: atBottom.current,
         });
-        scrollCapture.snapshot("virtual-change", snapshotLayout);
+        threadViewRecorder.snapshot("virtual-change", snapshotLayout);
         lastTotalSize.current = total;
         layoutChanged();
       }
@@ -336,9 +341,9 @@ export function VirtualizedHistory({
     },
   });
   const readCommittedLayout = useEffectEvent(snapshotLayout);
-  useLayoutEffect(() => scrollCapture.register(viewId, () => readCommittedLayout()), [viewId]);
+  useLayoutEffect(() => threadViewRecorder.register(viewId, () => readCommittedLayout()), [viewId]);
   useLayoutEffect(() => {
-    scrollCapture.snapshot("commit", snapshotLayout);
+    threadViewRecorder.snapshot("commit", snapshotLayout);
   });
   // During a gesture, preserve movement relative to the rows rather than a stale resting
   // anchor. Apply the adjustment after the new height commits: scrolling before it can clamp

@@ -1,4 +1,76 @@
-import { startThreadViewMarks, stopThreadViewMarks, type ThreadViewEvent } from "./thread_view_timing";
+/** Why the history started or stopped following the tail. */
+export type FollowReason =
+  | "jump-to-latest"
+  | "returned-to-previous-bottom"
+  | "scrolled-to-bottom"
+  | "scrolled-up"
+  | "wheel-up"
+  | "key-up"
+  | "touch-up"
+  | "disclosure-click";
+
+/** Mirrored by the typed events in agentplane/app/testing/thread_view_marks.py. */
+export type ThreadViewEvent =
+  | { kind: "follow"; following: boolean; reason: FollowReason }
+  | {
+      kind: "scroll";
+      scrollTop: number;
+      previousTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+      followed: boolean;
+    }
+  | {
+      kind: "input";
+      source: "wheel" | "key" | "touch" | "pointer";
+      direction: "up" | "down" | "unknown";
+      scrollTop: number;
+    }
+  | { kind: "virtual-size"; before: number; after: number; sync: boolean; following: boolean }
+  | { kind: "scrollend"; restoring: boolean; capturing: boolean }
+  /** The history's content or tail changed size. `pinned`: it was followed to the bottom. */
+  | { kind: "resize"; scrollTop: number; scrollHeight: number; pinned: boolean }
+  | { kind: "click"; scrollTop: number; scrollHeight: number; clientHeight: number }
+  | { kind: "anchor"; key: string; offset: number }
+  | { kind: "restore"; key: string; correction: number | null }
+  | { kind: "prepend"; added: number }
+  | { kind: "marker" }
+  | { kind: "load-older" }
+  | { kind: "older-state"; loading: boolean; available: boolean; rowCount: number }
+  /** A row's height was read. `estimate` is what the virtualizer laid it out with before: a
+   * remembered reading of an earlier visit if `remembered`, else a flat guess. */
+  | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean; remembered: boolean }
+  | { kind: "settled"; settled: boolean };
+
+declare global {
+  interface Window {
+    /** Set by the Playwright init script before the app loads, not by production code. */
+    __agentplaneThreadViewMarksEnabled?: boolean;
+  }
+}
+
+const MAX_CAPTURE_MARKS = 20_000;
+let capture: { recorded: number; dropped: number } | null = null;
+
+/** Enabled by the on-device recorder. Tests use their own flag, set before app startup. */
+function startThreadViewMarks(): void {
+  capture = { recorded: 0, dropped: 0 };
+}
+
+function stopThreadViewMarks(): number {
+  const dropped = capture?.dropped ?? 0;
+  capture = null;
+  return dropped;
+}
+
+export function markThreadViewEvent(event: ThreadViewEvent): void {
+  if (!capture && !window.__agentplaneThreadViewMarksEnabled) return;
+  if (capture && capture.recorded++ >= MAX_CAPTURE_MARKS) {
+    capture.dropped++;
+    return;
+  }
+  performance.mark(`agentplane:thread-view:${event.kind}`, { detail: event });
+}
 
 const MARK_PREFIX = "agentplane:thread-view:";
 const MAX_LAYOUT_SNAPSHOTS = 1_000;
@@ -6,7 +78,7 @@ const MAX_BROWSER_ENTRIES = 5_000;
 const BROWSER_TYPES = ["layout-shift", "longtask", "long-animation-frame"] as const;
 
 /** Geometry and identifiers only; never message text, arguments, or output. */
-export interface ScrollLayout {
+export interface ThreadViewLayout {
   threadId: string;
   viewId: string;
   following: boolean;
@@ -31,12 +103,12 @@ export interface ScrollLayout {
 
 type SnapshotPhase =
   "start" | "mount" | "unmount" | "commit" | "frame" | "virtual-change" | "scroll-before" | "scroll-after";
-type LayoutSource = () => ScrollLayout | null;
+type LayoutSource = () => ThreadViewLayout | null;
 interface LayoutSnapshot {
   at: number;
   phase: SnapshotPhase;
   reason: string | null;
-  layout: ScrollLayout;
+  layout: ThreadViewLayout;
 }
 
 interface BrowserEntry {
@@ -48,7 +120,7 @@ interface BrowserEntry {
 }
 
 /** JSON for inspection, not a Chrome DevTools profile. No DOM text or resource URLs. */
-export interface ScrollRecording {
+export interface ThreadViewRecording {
   version: 3;
   startedAt: string;
   savedAt: string;
@@ -72,8 +144,8 @@ interface ActiveRecording {
   previousFrames: Map<string, string>;
 }
 
-/** The browser owns the mark timeline; this class collects only opt-in browser metrics. */
-export class ScrollCapture {
+/** Opt-in event, browser, and layout recording across Thread switches. */
+export class ThreadViewRecorder {
   #recording: ActiveRecording | null = null;
   #sources = new Map<string, LayoutSource>();
   #frame: number | null = null;
@@ -166,7 +238,7 @@ export class ScrollCapture {
     return this.#recording !== null;
   }
 
-  stopRecording(): ScrollRecording | null {
+  stopRecording(): ThreadViewRecording | null {
     const recording = this.#recording;
     if (!recording) return null;
     // Collect entries delivered after the last observer callback before disconnecting.
@@ -205,15 +277,15 @@ export class ScrollCapture {
   }
 }
 
-/** One capture across the page: it survives switching between threads. */
-export const scrollCapture: ScrollCapture = new ScrollCapture();
+/** One recorder across the page: it survives switching between Threads. */
+export const threadViewRecorder: ThreadViewRecorder = new ThreadViewRecorder();
 
 /** On-device diagnostics only: nothing is uploaded. Row keys can contain identifying metadata. */
-export function downloadScrollDiagnostics(recording: ScrollRecording): void {
+export function downloadThreadViewRecording(recording: ThreadViewRecording): void {
   const url = URL.createObjectURL(new Blob([JSON.stringify(recording, null, 2)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `agentplane-scroll-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.download = `agentplane-thread-view-recording-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   document.body.append(link);
   link.click();
   link.remove();

@@ -54,12 +54,11 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "scroll_debug_tools",
-    srcs = ["scroll_debug_tools.tsx"],
+    name = "thread_view_recorder_tools",
+    srcs = ["thread_view_recorder_tools.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":scroll_diagnostics",
-        ":thread_view_timing",
+        ":thread_view_recorder",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -68,33 +67,31 @@ ts_library(
 )
 
 ts_library(
-    name = "scroll_diagnostics",
-    srcs = ["scroll_diagnostics.ts"],
+    name = "thread_view_recorder",
+    srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,
-    deps = [":thread_view_timing"],
 )
 
 agentplane_vitest_test(
-    name = "scroll_diagnostics_test",
-    srcs = ["scroll_diagnostics.test.ts"],
+    name = "thread_view_recorder_test",
+    srcs = ["thread_view_recorder.test.ts"],
     deps = [
-        ":scroll_diagnostics",
-        ":thread_view_timing",
+        ":thread_view_recorder",
         "//:node_modules/vitest",
     ],
 )
 
 ts_library(
-    name = "thread_view_timing",
-    srcs = ["thread_view_timing.ts"],
+    name = "layout_settle",
+    srcs = ["layout_settle.ts"],
     tsconfig = TSCONFIG,
 )
 
 agentplane_vitest_test(
-    name = "thread_view_timing_test",
-    srcs = ["thread_view_timing.test.ts"],
+    name = "layout_settle_test",
+    srcs = ["layout_settle.test.ts"],
     deps = [
-        ":thread_view_timing",
+        ":layout_settle",
         "//:node_modules/vitest",
     ],
 )
@@ -105,7 +102,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
-        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/proto:event_pb",
     ],
@@ -117,7 +113,6 @@ agentplane_vitest_test(
     deps = [
         ":history_rows",
         ":thread_sync",
-        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/threads/testing:entity",
@@ -209,10 +204,10 @@ ts_library(
         ":history_row_views",
         ":history_rows",
         ":history_sizes",
-        ":scroll_diagnostics",
+        ":layout_settle",
         ":thread_evidence",
         ":thread_sync",
-        ":thread_view_timing",
+        ":thread_view_recorder",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/react",
@@ -263,7 +258,6 @@ ts_library(
         ":thread_status",
         ":thread_sync",
         ":thread_tab",
-        ":thread_view_timing",
         ":virtualized_history",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -346,7 +340,6 @@ agentplane_vitest_test(
         ":page",
         ":retained_disclosures",
         ":thread_sync",
-        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -465,7 +458,6 @@ agentplane_vitest_test(
         ":retained_disclosures",
         ":thread_cards",
         ":thread_sync",
-        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

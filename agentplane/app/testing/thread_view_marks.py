@@ -1,4 +1,4 @@
-"""The history's User Timing marks (frontend/threads/thread_view_timing.ts), collected by the
+"""The history's User Timing marks (frontend/threads/thread_view_recorder.ts), collected by the
 Playwright init script (thread_view_marks.js) and read back as typed events.
 
 `ThreadViewEvent` there and the models here are one contract: an event kind or field added on either

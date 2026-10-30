@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { markThreadViewEvent } from "./thread_view_timing";
-import { downloadScrollDiagnostics, ScrollCapture, type ScrollLayout } from "./scroll_diagnostics";
+import {
+  markThreadViewEvent,
+  downloadThreadViewRecording,
+  ThreadViewRecorder,
+  type ThreadViewLayout,
+} from "./thread_view_recorder";
 
-describe("ScrollCapture User Timing", () => {
+describe("ThreadViewRecorder User Timing", () => {
   const marks: Array<{ name: string; startTime: number; detail: unknown }> = [];
   const mark = vi.fn((name: string, options: { detail: unknown }) => {
     marks.push({ name, startTime: marks.length + 1, detail: options.detail });
@@ -26,7 +30,7 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("does not emit marks until the reader opts in", () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     markThreadViewEvent({ kind: "load-older" });
     expect(mark).not.toHaveBeenCalled();
     trace.startRecording();
@@ -51,7 +55,7 @@ describe("ScrollCapture User Timing", () => {
     expect(mark).toHaveBeenCalledTimes(2);
   });
 
-  const layout = (threadId: string, viewId: string, scrollTop = 0): ScrollLayout => ({
+  const layout = (threadId: string, viewId: string, scrollTop = 0): ThreadViewLayout => ({
     threadId,
     viewId,
     following: true,
@@ -67,7 +71,7 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("captures the existing view, changed frame geometry, and thread replacement", () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     let top = 0;
     const source = vi.fn(() => layout("thread-a", "view-a", top));
     const unregister = trace.register("view-a", source);
@@ -95,7 +99,7 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("preserves transient virtual layouts and scroll correction reasons between frames", () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     trace.startRecording();
     const inflated = layout("thread-a", "view-a");
     inflated.virtualTotal = 944;
@@ -127,7 +131,7 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("bounds layout capture and stops reading geometry after the cap", () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     const source = vi.fn(() => layout("thread-a", "view-a"));
     trace.startRecording();
     for (let index = 0; index < 1005; index++) trace.snapshot("commit", source);
@@ -138,7 +142,7 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("downloads the recorded marks as local JSON and cleans up its temporary link", async () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     trace.startRecording();
     markThreadViewEvent({ kind: "marker" });
     const recording = trace.stopRecording();
@@ -162,11 +166,11 @@ describe("ScrollCapture User Timing", () => {
     const clickLink = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement
     ) {
-      expect(this.download).toMatch(/^agentplane-scroll-diagnostics-.*\.json$/);
+      expect(this.download).toMatch(/^agentplane-thread-view-recording-.*\.json$/);
       expect(this.href).toBe("blob:scroll-recording");
     });
     try {
-      downloadScrollDiagnostics(recording);
+      downloadThreadViewRecording(recording);
       expect(clickLink).toHaveBeenCalledOnce();
       expect(createObjectURL).toHaveBeenCalledOnce();
       expect(savedBlob?.type).toBe("application/json");
@@ -185,10 +189,27 @@ describe("ScrollCapture User Timing", () => {
   });
 
   it("drops excess marks rather than growing the native timeline indefinitely", () => {
-    const trace = new ScrollCapture();
+    const trace = new ThreadViewRecorder();
     trace.startRecording();
     for (let i = 0; i < 20_005; i++) markThreadViewEvent({ kind: "load-older" });
     expect(trace.stopRecording()?.dropped).toBe(5);
     expect(mark).toHaveBeenCalledTimes(20_000);
   });
+});
+
+it("emits User Timing marks only when the test harness enables recording", () => {
+  const mark = vi.fn();
+  vi.stubGlobal("performance", { mark });
+  try {
+    markThreadViewEvent({ kind: "load-older" });
+    expect(mark).not.toHaveBeenCalled();
+    window.__agentplaneThreadViewMarksEnabled = true;
+    markThreadViewEvent({ kind: "follow", following: false, reason: "wheel-up" });
+    expect(mark).toHaveBeenCalledWith("agentplane:thread-view:follow", {
+      detail: { kind: "follow", following: false, reason: "wheel-up" },
+    });
+  } finally {
+    delete window.__agentplaneThreadViewMarksEnabled;
+    vi.unstubAllGlobals();
+  }
 });

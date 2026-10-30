@@ -1,13 +1,12 @@
-/** On-device scroll diagnostics available from the app's persistent navigation. */
+/** Thread view recording controls in the app's persistent navigation. */
 import { ActionIcon, Menu } from "@mantine/core";
 import { IconBug } from "../icons";
 import { type JSX, useState } from "react";
 
-import { downloadScrollDiagnostics, scrollCapture } from "./scroll_diagnostics";
-import { markThreadViewEvent } from "./thread_view_timing";
+import { markThreadViewEvent, downloadThreadViewRecording, threadViewRecorder } from "./thread_view_recorder";
 
-export function ScrollDebugTools(): JSX.Element {
-  const [recording, setRecording] = useState(() => scrollCapture.isRecording());
+export function ThreadViewRecorderTools(): JSX.Element {
+  const [recording, setRecording] = useState(() => threadViewRecorder.isRecording());
   return (
     <Menu position="top-start" withinPortal withArrow shadow="md">
       <Menu.Target>
@@ -15,20 +14,20 @@ export function ScrollDebugTools(): JSX.Element {
           size="sm"
           variant={recording ? "filled" : "subtle"}
           color={recording ? "red" : "gray"}
-          aria-label={recording ? "Debug tools (recording)" : "Debug tools"}
-          title="Scroll debug tools"
+          aria-label={recording ? "Thread view recorder (recording)" : "Thread view recorder"}
+          title="Thread view recorder"
         >
           <IconBug size={16} />
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Label>Scroll diagnostics (saved on this device only)</Menu.Label>
+        <Menu.Label>Thread view recorder (saved on this device only)</Menu.Label>
         {recording ? (
           <Menu.Item
             onClick={() => {
-              const capture = scrollCapture.stopRecording();
+              const capture = threadViewRecorder.stopRecording();
               setRecording(false);
-              if (capture) downloadScrollDiagnostics(capture);
+              if (capture) downloadThreadViewRecording(capture);
             }}
           >
             Stop and download recording
@@ -36,7 +35,7 @@ export function ScrollDebugTools(): JSX.Element {
         ) : (
           <Menu.Item
             onClick={() => {
-              scrollCapture.startRecording();
+              threadViewRecorder.startRecording();
               setRecording(true);
             }}
           >
