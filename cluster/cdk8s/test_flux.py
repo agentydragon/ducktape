@@ -1,6 +1,5 @@
 import base64
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -54,8 +53,8 @@ def _raw_kustomization(chart: Chart, *, wait: bool, health_checks: list[Kustomiz
     )
 
 
-def test_wait_with_health_checks_fails_synth(scratch_app: Callable[[], App]) -> None:
-    chart = kustomizations_chart(scratch_app())
+def test_wait_with_health_checks_fails_synth(scratch_app: App) -> None:
+    chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
     with pytest.raises(Exception, match="Kustomization/test-app"):
         Cdk8sTesting.synth(chart)
@@ -63,18 +62,18 @@ def test_wait_with_health_checks_fails_synth(scratch_app: Callable[[], App]) -> 
 
 @pytest.mark.parametrize(("wait", "health_checks"), [(False, _HEALTH_CHECKS), (True, None)])
 def test_wait_or_health_checks_alone_synthesizes(
-    scratch_app: Callable[[], App], wait: bool, health_checks: list[KustomizationSpecHealthChecks] | None
+    scratch_app: App, wait: bool, health_checks: list[KustomizationSpecHealthChecks] | None
 ) -> None:
-    chart = kustomizations_chart(scratch_app())
+    chart = kustomizations_chart(scratch_app)
     _raw_kustomization(chart, wait=wait, health_checks=health_checks)
     (rendered,) = Cdk8sTesting.synth(chart)
     assert rendered["spec"]["wait"] is wait
 
 
-def test_rendered_directory_refuses_a_second_decryption(scratch_app: Callable[[], App]) -> None:
+def test_rendered_directory_refuses_a_second_decryption(scratch_app: App) -> None:
     directory = RenderedDirectory(artifact=artifact("test-app", "test/app"), decryption=None)
     with pytest.raises(ValueError, match="decryption="):
-        flux_kustomization(kustomizations_chart(scratch_app()), "test-app", directory, decryption=SOPS_DECRYPTION)
+        flux_kustomization(kustomizations_chart(scratch_app), "test-app", directory, decryption=SOPS_DECRYPTION)
 
 
 def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> None:

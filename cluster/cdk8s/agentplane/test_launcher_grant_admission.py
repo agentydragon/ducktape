@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable
 from typing import Any, cast
 
 import cdk8s
@@ -93,8 +92,8 @@ def _without(body: Body, path: Path) -> Body:
     return changed
 
 
-async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Callable[[], Chart]) -> None:
-    chart = scratch_chart()
+async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Chart) -> None:
+    chart = scratch_chart
     actions.add_launcher_admission(chart, NAMESPACE)
     policy, binding = cdk8s.Testing.synth(chart)
     async with kubernetes_apiserver() as server:

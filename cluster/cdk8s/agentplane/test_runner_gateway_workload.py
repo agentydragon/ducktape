@@ -1,6 +1,5 @@
 """The Gateway keeps one public Service and uses mTLS client connections to runner Pods."""
 
-from collections.abc import Callable
 from pathlib import PurePosixPath
 from typing import Any, cast
 
@@ -66,9 +65,9 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     assert spec["privateKey"]["rotationPolicy"] == "Always"
 
 
-def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: Callable[[], App]) -> None:
-    docs = _gateway_objects(scratch_app())
-    root = Chart(scratch_app(), "root-services", disable_resource_name_hashes=True)
+def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
+    docs = _gateway_objects(scratch_app)
+    root = Chart(scratch_app, "root-services", disable_resource_name_hashes=True)
     runner_gateway_workload.add_stable_services(root, staging.ENV)
     root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
     assert not [doc for doc in docs if doc["kind"] == "Service"]
@@ -149,8 +148,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: Cal
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
-def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: Callable[[], App]) -> None:
-    docs = _gateway_objects(scratch_app())
+def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch_app: App) -> None:
+    docs = _gateway_objects(scratch_app)
     pod = _resource(docs, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
     path = PurePosixPath(one(entry["value"] for entry in container["env"] if entry["name"] == Settings.config_file_env))

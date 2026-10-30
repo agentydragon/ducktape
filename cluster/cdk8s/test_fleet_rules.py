@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -172,8 +171,8 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
     ]
 
 
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app: Callable[[], App]) -> None:
-    chart = Chart(scratch_app(), "vpa")
+def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "vpa")
     ApiObject(
         chart,
         "partial-vpa-policy",
@@ -336,8 +335,8 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
 
 
-def test_rules_fail_synth_naming_the_object(scratch_app: Callable[[], App]) -> None:
-    chart = Chart(scratch_app(), "fleet")
+def test_rules_fail_synth_naming_the_object(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "fleet")
     ApiObject(
         chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
     ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))

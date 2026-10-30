@@ -2,8 +2,6 @@
 `EnvValue`, and a Helm values map, where the typed `k8s.EnvVarSource` is serialized through jsii's
 `any` and must still come out wire-shaped (the executable record of that library behavior)."""
 
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
@@ -17,8 +15,8 @@ _ENV = {"name": "TOKEN", "valueFrom": {"secretKeyRef": {"key": "token", "name": 
 
 
 @pytest.fixture
-def chart(scratch_chart: Callable[[], Chart]) -> Chart:
-    return scratch_chart()
+def chart(scratch_chart: Chart) -> Chart:
+    return scratch_chart
 
 
 def test_raw_env_var(chart: Chart) -> None:

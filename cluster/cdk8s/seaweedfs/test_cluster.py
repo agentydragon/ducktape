@@ -8,7 +8,6 @@ git dies of SIGBUS on mmap'd packfiles cluster-wide.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 import pytest_bazel
@@ -39,8 +38,8 @@ def _pod_spawning_components(node: Any, path: str = "") -> dict[str, dict[str, A
     return found
 
 
-def test_seaweedfs_components_carry_the_protected_priority_class(scratch_app: Callable[[], App]) -> None:
-    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(scratch_app())) if doc["kind"] == "Seaweed")
+def test_seaweedfs_components_carry_the_protected_priority_class(scratch_app: App) -> None:
+    seaweed = one(doc for doc in Cdk8sTesting.synth(cluster.chart(scratch_app)) if doc["kind"] == "Seaweed")
     components = _pod_spawning_components(seaweed["spec"])
 
     assert components, "found no pod-spawning components in the SeaweedFS CR"

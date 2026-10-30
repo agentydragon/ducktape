@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
@@ -7,8 +5,8 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 
-def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Callable[[], Chart]) -> None:
-    chart = scratch_chart()
+def test_bearer_token_secret_endpoint_wire_shape(scratch_chart: Chart) -> None:
+    chart = scratch_chart
     ServiceMonitor(
         chart,
         "test",

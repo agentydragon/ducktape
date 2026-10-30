@@ -31,11 +31,9 @@ def _git_repository(scope: Construct) -> GitRepository:
     ("repository", "version"), [(_helm_repository, None), (_git_repository, "1.0.0")], ids=["helm", "git"]
 )
 def test_version_mismatched_to_source_raises(
-    scratch_chart: Callable[[], Chart],
-    repository: Callable[[Construct], HelmRepository | GitRepository],
-    version: str | None,
+    scratch_chart: Chart, repository: Callable[[Construct], HelmRepository | GitRepository], version: str | None
 ) -> None:
-    chart = scratch_chart()
+    chart = scratch_chart
     with pytest.raises(ValueError, match="version"):
         helm_release(
             chart,
@@ -49,8 +47,8 @@ def test_version_mismatched_to_source_raises(
         )
 
 
-def test_git_repository_chart_references_its_source(scratch_chart: Callable[[], Chart]) -> None:
-    chart = scratch_chart()
+def test_git_repository_chart_references_its_source(scratch_chart: Chart) -> None:
+    chart = scratch_chart
     helm_release(
         chart,
         "test-release",

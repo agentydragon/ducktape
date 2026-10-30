@@ -15,6 +15,7 @@ import pytest
 import pytest_bazel
 import yaml
 from cdk8s import (
+    App,
     Chart,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
@@ -35,8 +36,10 @@ def ssh_config() -> ssh_mcp_config.SshMcpConfig:
 
 
 @pytest.fixture(scope="module")
-def ssh_resources(scratch_chart: Callable[[], Chart], ssh_config: ssh_mcp_config.SshMcpConfig) -> list[dict[str, Any]]:
-    chart = scratch_chart()
+def ssh_resources(
+    scratch_app_factory: Callable[[], App], ssh_config: ssh_mcp_config.SshMcpConfig
+) -> list[dict[str, Any]]:
+    chart = Chart(scratch_app_factory(), "test")
     ssh_mcp_backend.SshMcp(
         chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
     )

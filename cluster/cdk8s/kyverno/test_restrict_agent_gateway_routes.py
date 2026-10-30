@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -14,8 +13,8 @@ from cluster.cdk8s.kyverno.test_utils import manifest, policy
 
 
 @pytest.fixture
-def gateway_routes_policy(scratch_app: Callable[[], App], tmp_path: Path) -> Path:
-    return policy(scratch_app(), "restrict-agent-gateway-routes", tmp_path)
+def gateway_routes_policy(scratch_app: App, tmp_path: Path) -> Path:
+    return policy(scratch_app, "restrict-agent-gateway-routes", tmp_path)
 
 
 class TestRestrictAgentGatewayRoutes:

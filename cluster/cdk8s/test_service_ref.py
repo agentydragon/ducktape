@@ -2,8 +2,6 @@
 Cilium rules on both ends name the Pods' port, which Cilium matches after socket-LB translation;
 and a `Port` renders one agreeing container port and Service port in both builder tiers."""
 
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
@@ -18,8 +16,8 @@ _SERVICE = ServiceRef(name="test-app", port=Port(name="http", number=80), pods=_
 
 
 @pytest.fixture
-def chart(scratch_chart: Callable[[], Chart]) -> Chart:
-    return scratch_chart()
+def chart(scratch_chart: Chart) -> Chart:
+    return scratch_chart
 
 
 def test_client_addresses_dial_the_service_port() -> None:

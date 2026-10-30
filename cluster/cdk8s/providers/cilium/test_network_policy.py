@@ -1,7 +1,5 @@
 """`NetworkPolicy` refuses toFQDNs egress that Cilium's DNS proxy cannot see resolve."""
 
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
@@ -29,10 +27,10 @@ def _policy(chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]) -> None:
     [[dns_egress(_DNS_LABELS), EgressRule.to_fqdns("api.example.test")], [EgressRule.to_fqdns("api.example.test")]],
 )
 def test_fqdn_egress_without_dns_rule_is_refused(
-    scratch_chart: Callable[[], Chart], egress: list[CiliumNetworkPolicySpecEgress]
+    scratch_chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]
 ) -> None:
     with pytest.raises(ValueError, match="DNS rule"):
-        _policy(scratch_chart(), egress)
+        _policy(scratch_chart, egress)
 
 
 @pytest.mark.parametrize(
@@ -44,9 +42,9 @@ def test_fqdn_egress_without_dns_rule_is_refused(
     ],
 )
 def test_dns_rule_or_no_fqdn_egress_is_accepted(
-    scratch_chart: Callable[[], Chart], egress: list[CiliumNetworkPolicySpecEgress]
+    scratch_chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]
 ) -> None:
-    _policy(scratch_chart(), egress)
+    _policy(scratch_chart, egress)
 
 
 if __name__ == "__main__":

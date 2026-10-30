@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
@@ -20,9 +18,9 @@ from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy
     ],
 )
 def test_validation_failure_action_passes_through(
-    scratch_chart: Callable[[], Chart], action: ClusterPolicySpecValidationFailureAction, expected: str
+    scratch_chart: Chart, action: ClusterPolicySpecValidationFailureAction, expected: str
 ) -> None:
-    chart = scratch_chart()
+    chart = scratch_chart
     ClusterPolicy(
         chart, "test", metadata=ApiObjectMetadata(name="test-policy"), rules=[], validation_failure_action=action
     )

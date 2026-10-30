@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import (
@@ -13,8 +11,8 @@ _TENANT = min(cluster.TENANTS)
 _NOT_A_TENANT = "test-not-a-tenant"
 
 
-def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant(scratch_chart: Callable[[], Chart]) -> None:
-    chart = scratch_chart()
+def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant(scratch_chart: Chart) -> None:
+    chart = scratch_chart
     s3.identity(chart, "local", name="test-local")
     s3.credentials(
         chart, "local-credentials", identity="test-local", namespace=namespace.NAME, secret="test", key_fields=None
@@ -33,8 +31,8 @@ def test_seaweed_ref_names_the_seaweedfs_namespace_only_from_a_tenant(scratch_ch
     ]
 
 
-def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit(scratch_chart: Callable[[], Chart]) -> None:
-    chart = scratch_chart()
+def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit(scratch_chart: Chart) -> None:
+    chart = scratch_chart
     with pytest.raises(ValueError, match="TENANTS"):
         s3.bucket(chart, "bucket", name="test", namespace=_NOT_A_TENANT, access=[], adopt_existing=False)
     with pytest.raises(ValueError, match="TENANTS"):

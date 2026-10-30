@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import pytest_bazel
 from cdk8s import (
     Chart,
@@ -11,7 +9,7 @@ from cluster.cdk8s.etcd import TalosEtcdMetrics
 from cluster.scripts.nebula_mesh import Host, Mesh
 
 
-def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Callable[[], Chart]) -> None:
+def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Chart) -> None:
     mesh = Mesh(
         hosts={
             "cp-a": Host(nebula_ip="10.42.255.1", role="control-plane", managed_by="tofu-ovh"),
@@ -19,7 +17,7 @@ def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Cal
             "cp-c": Host(nebula_ip="10.42.255.3", role="control-plane", managed_by="tofu-ovh"),
         }
     )
-    chart = scratch_chart()
+    chart = scratch_chart
     TalosEtcdMetrics(chart, "etcd", mesh)
     endpoint_slice = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "EndpointSlice")
     assert endpoint_slice["endpoints"] == [

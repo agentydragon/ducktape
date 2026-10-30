@@ -22,9 +22,9 @@ from cluster.cdk8s.public_coder import app as public_coder_app
 
 
 @pytest.fixture(scope="module")
-def model_resources(scratch_app: Callable[[], App]) -> list[dict[str, Any]]:
+def model_resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     """Synthesize just the charts that declare agent RBAC and Agentplane's grants."""
-    app = scratch_app()
+    app = scratch_app_factory()
     charts = [
         agent_rbac_base.chart(app),
         agent_shared_rbac.chart(app),

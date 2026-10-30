@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -14,8 +13,8 @@ _PLACEMENT = Placement(node_selector={"example.test/zone": "zone-a"})
 
 
 @pytest.fixture
-def chart(scratch_app: Callable[[], App]) -> Chart:
-    return Chart(scratch_app(), "test")
+def chart(scratch_app: App) -> Chart:
+    return Chart(scratch_app, "test")
 
 
 def _deployment(chart: Chart) -> Deployment:

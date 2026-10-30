@@ -1,8 +1,6 @@
 """`HelmRelease` rejects at construction the `chart`/`chartRef` combinations the CRD's validation
 rejects at apply."""
 
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
@@ -30,11 +28,11 @@ _CHART_REF = HelmReleaseSpecChartRef(kind=HelmReleaseSpecChartRefKind.OCI_REPOSI
 
 @pytest.mark.parametrize(("chart", "chart_ref"), [(None, None), (_CHART, _CHART_REF)], ids=["neither", "both"])
 def test_not_exactly_one_chart_source_raises(
-    scratch_chart: Callable[[], Chart], chart: HelmReleaseSpecChart | None, chart_ref: HelmReleaseSpecChartRef | None
+    scratch_chart: Chart, chart: HelmReleaseSpecChart | None, chart_ref: HelmReleaseSpecChartRef | None
 ) -> None:
     with pytest.raises(ValueError, match="chart_ref"):
         HelmRelease(
-            scratch_chart(),
+            scratch_chart,
             "release",
             metadata=ApiObjectMetadata(name="test-release", namespace="test-namespace"),
             interval="1h",

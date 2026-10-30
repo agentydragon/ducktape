@@ -1,7 +1,6 @@
 """Exercise the gateway probe's alert expressions with upstream promtool."""
 
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest_bazel
@@ -31,10 +30,10 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+def test_gateway_probe_rules(scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app(), _MESH))
+        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))

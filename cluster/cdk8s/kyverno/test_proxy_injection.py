@@ -9,7 +9,6 @@ already carries the wiring is skipped.
 from __future__ import annotations
 
 import textwrap
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -42,7 +41,7 @@ def _pod(namespace: str) -> str:
 
 
 @pytest.fixture(params=sorted(POLICIES))
-def reinvoked(scratch_app: Callable[[], App], request: pytest.FixtureRequest, tmp_path: Path) -> dict:
+def reinvoked(scratch_app: App, request: pytest.FixtureRequest, tmp_path: Path) -> dict:
     """The probe pod after the policy ran **twice** — one CREATE, two Kyverno passes.
 
     This is not a hypothetical. Kyverno's mutating webhook is registered
@@ -51,7 +50,7 @@ def reinvoked(scratch_app: Callable[[], App], request: pytest.FixtureRequest, tm
     """
     resource = tmp_path / "pod.yaml"
     resource.write_text(_pod(POLICIES[request.param]))
-    _, second = apply_twice(policy(scratch_app(), request.param, tmp_path), resource, tmp_path)
+    _, second = apply_twice(policy(scratch_app, request.param, tmp_path), resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 
 
@@ -87,7 +86,7 @@ def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
         assert _dupes([e["name"] for e in container["env"]]) == [], container["name"]
 
 
-def test_pod_carrying_its_own_wiring_is_left_alone(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+def test_pod_carrying_its_own_wiring_is_left_alone(scratch_app: App, tmp_path: Path) -> None:
     """A pod that already holds the policy's proxy wiring is skipped whole, env included.
 
     Every rule preconditions on the thing it appends being absent — the volume rule on the CA
@@ -97,7 +96,7 @@ def test_pod_carrying_its_own_wiring_is_left_alone(scratch_app: Callable[[], App
     the pod's.
     """
     assert_not_mutated(
-        policy(scratch_app(), "inject-haku-egress-proxy", tmp_path), manifest("pod_self_wired_egress_proxy.yaml")
+        policy(scratch_app, "inject-haku-egress-proxy", tmp_path), manifest("pod_self_wired_egress_proxy.yaml")
     )
 
 

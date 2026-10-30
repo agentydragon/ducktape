@@ -240,14 +240,15 @@ helper, class or indirection.
   copy a generator literal into an assertion.
 - **Code is not its deployment**: STYLE.md § Testing; here, tests of code under `x/` or
   `haku/` never read `cluster/` or synthesize a cluster chart.
-- **Construct tests use synthetic props** (`Chart(scratch_app(), ...)`, pattern:
+- **Construct tests use synthetic props** (`Chart(scratch_app, ...)`, pattern:
   `test_fleet_rules.py`); invariants use real environments.
-- **Test apps and charts come from the `scratch_app`/`scratch_chart` fixtures**
-  (`testing/scratch.py`, exposed by `conftest.py`): session-scoped factories, each call a fresh
-  outdir under pytest's temp dir. `Testing.app()`/`Testing.chart()` are banned (ruff `TID251`):
-  each call leaks a `/tmp/cdk8s.outdir.*`. Helpers take the `App`/`Chart` as a parameter;
-  outside pytest, use `App()`. The conftest imports cdk8s, so every test under this tree needs
-  jsii's Node runtime (`data` + `JSII_NODE`).
+- **Test apps and charts are the `scratch_app`/`scratch_chart` fixtures** (`testing/scratch.py`,
+  exposed by `conftest.py`), outdir under `tmp_path`; one test's charts share its `scratch_app`
+  (distinct ids). Module/session-scoped fixtures call `scratch_app_factory()`.
+  `Testing.app()`/`Testing.chart()` are banned (ruff `TID251`): each call leaks a
+  `/tmp/cdk8s.outdir.*`. Helpers take the `App`/`Chart` as a parameter; outside pytest, use
+  `App()`. The conftest imports cdk8s, so every test under this tree needs jsii's Node runtime
+  (`data` + `JSII_NODE`).
 
 ## Adding a fleet rule
 

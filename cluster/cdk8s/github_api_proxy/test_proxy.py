@@ -1,7 +1,6 @@
 """Exercise the central proxy's alert expressions with upstream promtool."""
 
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest_bazel
@@ -16,10 +15,10 @@ from cluster.cdk8s.github_api_proxy import proxy
 from util.bazel.runfiles import get_required_path
 
 
-def test_github_proxy_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+def test_github_proxy_rules(scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(proxy.app_chart(scratch_app()))
+        for manifest in Cdk8sTesting.synth(proxy.app_chart(scratch_app))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "github-proxy.yaml").write_text(yaml.safe_dump(manifest["spec"]))

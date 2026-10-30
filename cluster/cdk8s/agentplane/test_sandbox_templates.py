@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, cast
 
@@ -156,7 +155,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert {"ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "LITELLM_URL"}.isdisjoint(executor_env)
 
 
-def test_runner_template_can_override_executor_resources_independently(scratch_app: Callable[[], App]) -> None:
+def test_runner_template_can_override_executor_resources_independently(scratch_app: App) -> None:
     runner_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
@@ -166,7 +165,7 @@ def test_runner_template_can_override_executor_resources_independently(scratch_a
         limits={"cpu": k8s.Quantity.from_string("71m"), "memory": k8s.Quantity.from_string("997Mi")},
     )
     pod = _runner_pod(
-        app=scratch_app(),
+        app=scratch_app,
         isolated_executor=True,
         runner_resources=runner_resources,
         executor_resources=executor_resources,
@@ -178,13 +177,13 @@ def test_runner_template_can_override_executor_resources_independently(scratch_a
     assert containers["codex-executor"]["resources"]["limits"] == {"cpu": "71m", "memory": "997Mi"}
 
 
-def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: Callable[[], App]) -> None:
+def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App) -> None:
     runner_resources = k8s.ResourceRequirements(
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
     pod = _runner_pod(
-        app=scratch_app(), isolated_executor=False, runner_resources=runner_resources, executor_resources=None
+        app=scratch_app, isolated_executor=False, runner_resources=runner_resources, executor_resources=None
     )
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
@@ -192,8 +191,8 @@ def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: Cal
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
-def test_runner_template_configures_session_reconcile_concurrency(scratch_app: Callable[[], App]) -> None:
-    chart = Chart(scratch_app(), "runner-concurrency-test")
+def test_runner_template_configures_session_reconcile_concurrency(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-concurrency-test")
     RunnerTemplate(
         chart,
         "runner-template",
@@ -208,16 +207,14 @@ def test_runner_template_configures_session_reconcile_concurrency(scratch_app: C
     assert config["session_reconcile_concurrency"] == 2048
 
 
-def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: Callable[[], App]) -> None:
+def test_environment_cannot_configure_resources_for_a_disabled_executor(scratch_app: App) -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(
-            app=scratch_app(), isolated_executor=False, runner_resources=resources, executor_resources=resources
-        )
+        _runner_pod(app=scratch_app, isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
-def test_runner_template_renders_mtls_server_listener(scratch_app: Callable[[], App]) -> None:
-    chart = Chart(scratch_app(), "runner-template-test")
+def test_runner_template_renders_mtls_server_listener(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-template-test")
     RunnerTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")

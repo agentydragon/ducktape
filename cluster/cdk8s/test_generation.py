@@ -65,17 +65,15 @@ def test_patch_charts_are_listed_as_patches_not_resources(tmp_path: Path) -> Non
     [((), False), (("test-config.yaml",), False), (("test-config.yaml", "test-secret.sops.yaml"), True)],
 )
 def test_flux_decrypts_exactly_when_a_sibling_is_sops(
-    scratch_app: Callable[[], App], tmp_path: Path, siblings: Sequence[str], decrypted: bool
+    scratch_app: App, tmp_path: Path, siblings: Sequence[str], decrypted: bool
 ) -> None:
-    chart = kustomizations_chart(scratch_app())
+    chart = kustomizations_chart(scratch_app)
     flux_kustomization(chart, "test-app", write_directory(tmp_path, _ARTIFACT, _chart("first"), siblings=siblings))
     (rendered,) = Cdk8sTesting.synth(chart)
     assert ("decryption" in rendered["spec"]) is decrypted
 
 
-def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(
-    scratch_app: Callable[[], App], tmp_path: Path
-) -> None:
+def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(scratch_app: App, tmp_path: Path) -> None:
     directory = write_directory(
         tmp_path,
         _ARTIFACT,
@@ -92,7 +90,7 @@ def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(
         {"name": "test-secret", "namespace": "test-ns", "files": ["credentials.yaml=source.sops.yaml"]}
     ]
 
-    chart = kustomizations_chart(scratch_app())
+    chart = kustomizations_chart(scratch_app)
     flux_kustomization(chart, "test-app", directory)
     (rendered,) = Cdk8sTesting.synth(chart)
     assert rendered["spec"]["decryption"]["provider"] == "sops"

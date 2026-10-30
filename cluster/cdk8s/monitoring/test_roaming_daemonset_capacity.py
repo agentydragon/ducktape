@@ -51,11 +51,9 @@ _ROAMING_DAEMONSETS = (
 
 
 @pytest.fixture(scope="module")
-def release_manifests(scratch_app: Callable[[], App]) -> list[dict]:
-    return [
-        *Cdk8sTesting.synth(loki.chart(scratch_app())),
-        *Cdk8sTesting.synth(node_feature_discovery.chart(scratch_app())),
-    ]
+def release_manifests(scratch_app_factory: Callable[[], App]) -> list[dict]:
+    app = scratch_app_factory()
+    return [*Cdk8sTesting.synth(loki.chart(app)), *Cdk8sTesting.synth(node_feature_discovery.chart(app))]
 
 
 @pytest.fixture(scope="module")

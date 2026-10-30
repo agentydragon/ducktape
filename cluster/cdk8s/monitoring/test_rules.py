@@ -1,7 +1,6 @@
 """Exercise the PrometheusRule expressions with upstream promtool."""
 
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest_bazel
@@ -30,21 +29,21 @@ def _promtool_test_rules(app: App, tmp_path: Path, rule_files: dict[str, str], t
     )
 
 
-def test_github_quota_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
+def test_github_quota_rules(scratch_app: App, tmp_path: Path) -> None:
     _promtool_test_rules(
-        scratch_app(),
+        scratch_app,
         tmp_path,
         {"github-quota-alerts": "github-quota.yaml", "roaming-node-alerts": "roaming-node.yaml"},
         "github_quota_rules.yaml",
     )
 
 
-def test_disk_usage_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
-    _promtool_test_rules(scratch_app(), tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml")
+def test_disk_usage_rules(scratch_app: App, tmp_path: Path) -> None:
+    _promtool_test_rules(scratch_app, tmp_path, {"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml")
 
 
-def test_io_pressure_rules(scratch_app: Callable[[], App], tmp_path: Path) -> None:
-    _promtool_test_rules(scratch_app(), tmp_path, {"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml")
+def test_io_pressure_rules(scratch_app: App, tmp_path: Path) -> None:
+    _promtool_test_rules(scratch_app, tmp_path, {"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml")
 
 
 if __name__ == "__main__":

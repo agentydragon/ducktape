@@ -4,7 +4,6 @@ the Kubernetes access every sandbox gets rather than the ones that opted in."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -349,7 +348,7 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     "target_namespace", binding_delegation.external_scopes(staging.ENV, staging.assignable_grants())
 )
 def test_external_delegation_binds_exactly_the_granted_roles(
-    scratch_app: Callable[[], App], target_namespace: str, staging_manifests: list[dict[str, Any]]
+    scratch_app: App, target_namespace: str, staging_manifests: list[dict[str, Any]]
 ) -> None:
     assignable_grants = [grant.model_dump(mode="json") for grant in staging.assignable_grants()]
     granted = {
@@ -360,7 +359,7 @@ def test_external_delegation_binds_exactly_the_granted_roles(
         and grant["role_ref"]["kind"] == "Role"
     }
     delegated = Cdk8sTesting.synth(
-        binding_delegation.chart(scratch_app(), staging.ENV, target_namespace, staging.assignable_grants())
+        binding_delegation.chart(scratch_app, staging.ENV, target_namespace, staging.assignable_grants())
     )
     role = one(doc for doc in delegated if doc["kind"] == "Role")
     assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted

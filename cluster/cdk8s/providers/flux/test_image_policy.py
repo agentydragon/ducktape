@@ -1,8 +1,6 @@
 """`ImagePolicy` rejects at construction the `interval`/`digestReflectionPolicy` combinations
 the CRD's validation rejects at apply."""
 
-from collections.abc import Callable
-
 import pytest
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting
@@ -39,18 +37,16 @@ def _policy(
     ],
 )
 def test_interval_without_always_digest_reflection_raises(
-    scratch_chart: Callable[[], Chart],
-    digest_reflection_policy: ImagePolicySpecDigestReflectionPolicy | None,
-    interval: str | None,
+    scratch_chart: Chart, digest_reflection_policy: ImagePolicySpecDigestReflectionPolicy | None, interval: str | None
 ) -> None:
     with pytest.raises(ValueError, match="interval"):
-        _policy(chart=scratch_chart(), digest_reflection_policy=digest_reflection_policy, interval=interval)
+        _policy(chart=scratch_chart, digest_reflection_policy=digest_reflection_policy, interval=interval)
 
 
-def test_always_digest_reflection_renders_its_interval(scratch_chart: Callable[[], Chart]) -> None:
+def test_always_digest_reflection_renders_its_interval(scratch_chart: Chart) -> None:
     (policy,) = Cdk8sTesting.synth(
         _policy(
-            chart=scratch_chart(), digest_reflection_policy=ImagePolicySpecDigestReflectionPolicy.ALWAYS, interval="5m"
+            chart=scratch_chart, digest_reflection_policy=ImagePolicySpecDigestReflectionPolicy.ALWAYS, interval="5m"
         ).chart
     )
     assert policy["spec"]["digestReflectionPolicy"] == "Always"
