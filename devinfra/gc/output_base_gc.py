@@ -302,15 +302,25 @@ def _read_positive_integer_metadata(path: Path, *, uid: int) -> int:
     return value
 
 
-def _server_is_live(base: Path, *, uid: int, proc_root: Path) -> bool:
-    """Whether the process at Bazel's recorded PID is a Bazel server on this very base.
+def _names_base(cmdline: bytes, resolved_base: Path) -> bool:
+    prefix = "--output_base="
+    return any(
+        argument.startswith(prefix) and Path(argument.removeprefix(prefix)).resolve() == resolved_base
+        for argument in (os.fsdecode(raw) for raw in cmdline.split(b"\0") if raw)
+    )
 
-    An extant PID alone proves nothing: a server started inside a sandbox PID namespace
-    records a low namespace-local PID (13, 42, …) that names an unrelated host process,
-    and a host PID is recycled once the server exits. The server JVM's argv carries
-    `--output_base=<path>` (the same argv Bazel copies to server/cmdline), so a process
-    is this base's server only if its cmdline names this base. An unreadable cmdline is
-    left for review rather than guessed either way.
+
+def _server_is_live(base: Path, *, uid: int, proc_root: Path) -> bool:
+    """Whether a Bazel server is running on this very base.
+
+    A recorded PID alone proves nothing: a server started inside a sandbox PID namespace
+    records its namespace-local PID (13, 42, …), which on the host names an unrelated
+    process or none, and a host PID is recycled once the server exits. A process is this
+    base's server only if its argv carries `--output_base=<this base>` (the argv Bazel
+    copies to server/cmdline). The recorded PID is checked first; failing that, every
+    visible process is, because a live sandboxed server appears in the host's /proc under
+    its host PID. An unreadable cmdline at the recorded PID is left for review rather
+    than guessed either way.
     """
     pid_path = base / "server" / "server.pid.txt"
     try:
@@ -319,18 +329,24 @@ def _server_is_live(base: Path, *, uid: int, proc_root: Path) -> bool:
         return False
 
     pid = _read_positive_integer_metadata(pid_path, uid=uid)
+    resolved_base = base.resolve(strict=True)
     try:
-        cmdline = (proc_root / str(pid) / "cmdline").read_bytes()
+        if _names_base((proc_root / str(pid) / "cmdline").read_bytes(), resolved_base):
+            return True
     except FileNotFoundError:
-        return False
+        pass
     except OSError as error:
         raise MetadataError(f"cannot verify server pid {pid}: {error.strerror}") from error
-    resolved_base = base.resolve(strict=True)
-    prefix = "--output_base="
-    return any(
-        argument.startswith(prefix) and Path(argument.removeprefix(prefix)).resolve() == resolved_base
-        for argument in (os.fsdecode(raw) for raw in cmdline.split(b"\0") if raw)
-    )
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            cmdline = (process / "cmdline").read_bytes()
+        except OSError:
+            continue  # exited mid-sweep, or another user's process hidden by hidepid; ours is readable
+        if _names_base(cmdline, resolved_base):
+            return True
+    return False
 
 
 def _unescape_mount_path(value: str) -> Path:

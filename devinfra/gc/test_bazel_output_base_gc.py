@@ -149,6 +149,18 @@ def test_recycled_server_pid_is_not_live(tmp_path: Path, argv: list[str]) -> Non
     assert isinstance(_inspect(base, proc_root=proc_root), gc.PrunableBase)
 
 
+def test_sandboxed_server_under_another_host_pid_retains_base(tmp_path: Path) -> None:
+    # The server recorded its namespace-local PID 13, which on the host is some unrelated
+    # process; the server itself is visible under its host PID.
+    base = make_base(tmp_path / "output", tmp_path / "gone")
+    proc_root = tmp_path / "proc"
+    _record_server(base, proc_root=proc_root, pid=13, argv=["bash"])
+    (proc_root / "7777").mkdir()
+    (proc_root / "7777" / "cmdline").write_bytes(os.fsencode(f"java\0--output_base={base}\0"))
+
+    assert _reason(_inspect(base, proc_root=proc_root)) is gc.RetainedBaseReason.SERVER_LIVE
+
+
 def test_missing_server_pid_is_not_live(tmp_path: Path) -> None:
     base = make_base(tmp_path / "output", tmp_path / "gone")
     (base / "server" / "server.pid.txt").write_text("42")
