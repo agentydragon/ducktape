@@ -157,7 +157,6 @@ pub enum LoaderSite {
         resolved_target: Option<ExportReentryTarget>,
     },
     TopLevelAwait,
-    VendorChunk,
 }
 
 pub(super) struct LoaderSurfaces {
@@ -370,7 +369,6 @@ pub(super) fn loader_surfaces(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<LoaderSurfaces> {
     // Exported loader aliases by defining chunk and export name.
     let mut aliases = BTreeSet::<(ChunkId, String)>::new();
@@ -417,12 +415,6 @@ pub(super) fn loader_surfaces(
             surface.load_failures.push((
                 LoaderClosureFailureKind::LoadedClosureTopLevelAwait,
                 witness(LoaderSite::TopLevelAwait),
-            ));
-        }
-        if vendor_affected_chunk_ids.contains(&source) {
-            surface.load_failures.push((
-                LoaderClosureFailureKind::LoadedClosureVendorChunk,
-                witness(LoaderSite::VendorChunk),
             ));
         }
         for request in &runtime.static_requests {

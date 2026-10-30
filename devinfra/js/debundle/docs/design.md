@@ -1145,7 +1145,7 @@ independently observed blocker in `export_reentry.json`, beside
 `dependency_graph.json`. `loader` names the loader derivation and the first
 witness of each failure kind; `global_blockers` names artifact incompleteness
 and nonordinary static requests across the artifact. The per-target
-`closure_blockers` names non-ESM, top-level-await, and vendor-affected
+`closure_blockers` names non-ESM, top-level-await, and open replacement-bundle
 closure chunks; unsupported, unresolved, missing, or non-entry static
 requests; and a target cycle. Request blockers carry their source chunk and
 specifier, plus the resolved chunk/file when resolution succeeded. The report
@@ -3367,15 +3367,19 @@ writes. The strip does not build an dependency graph or consume
 call-effect annotation. The split-brain and swap-privacy gates still use the
 same augmented calls, local effects, and cell-write summaries.
 
-### Partial swap: analysis sees replacement code as unknown
+### Swap equivalence is an author promise
 
-Swap identity is not behavioral equivalence: a replacement may run a callback
-its original deferred. The cross-module oracle therefore analyzes a partially
-swapped provider through `vendor::module_with_opaque_swapped_symbols`, which
-turns each swapped implementation into an unresolvable package import in place
-(statement positions and ordinals are unchanged, so author inputs and resolved
-member sites still line up). Full swaps are excluded from the oracle outright;
-`suppress` and `boundary_rename` emit the original bodies.
+A swap mark promises the replacement behaves like the bundled code
+(SPEC.md § Vendor swap equivalence), so analysis derives facts from the bundled
+body. Treating swapped code as unknown (#13058) lost: the bundled body is the
+only implementation the engine indexes, and opacity denies every swapped
+callee its summaries, while on Tana the callees behind the large atomic groups
+(TypeScript decorate helpers swapped to MobX, Zod builders) are all swapped. A
+false promise produces a wrong split, not a refusal: a replacement that runs
+`factory(callback)`'s callback at once where the bundled `factory` deferred it
+lets `const wrapped = factory(() => globalThis.mode.length)` move ahead of
+`globalThis.mode = "ready"` and throw. The visible case, a bundled replacement
+that is not an ESM leaf, still blocks export reentry.
 
 ### Deliberate split-brain bypasses in the strip pass
 

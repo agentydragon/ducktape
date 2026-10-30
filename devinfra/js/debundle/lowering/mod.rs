@@ -186,7 +186,7 @@ pub enum ExportReentryClosureBlocker {
     TopLevelAwait {
         source_chunk: String,
     },
-    VendorAffectedChunk {
+    OpenReplacementBundle {
         source_chunk: String,
     },
     UnsupportedStaticRequest {
@@ -330,13 +330,11 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
-    let vendor_affected_chunk_ids = vendor_plan.affected_chunk_ids();
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
         host_behavior,
         vendor_plan,
-        &vendor_affected_chunk_ids,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
     )?;
@@ -347,16 +345,12 @@ pub fn materialize_logical_modules(
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
-    // `AnalysisInputs::imported_purities`.
-    // Fully-swapped vendor chunks stay opaque — they are excluded from
-    // the emission set and their bodies are replaced by the upstream
-    // package, so they must not contribute purity facts.
-    let full_swap_chunk_ids = vendor_plan.full_swap_chunk_ids();
+    // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
+    // through their bundled bodies (SPEC.md § Vendor swap equivalence).
     let cross_module_chunk_closure = cross_module::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
-        &full_swap_chunk_ids,
     )?;
     let artifact_ref: &ChunkBundle = &artifact;
     // Vendor consultation for lowering's import construction: runtime re-imports whose source
@@ -456,11 +450,9 @@ pub fn materialize_logical_modules(
             graph_provenance: options.graph_provenance.as_ref(),
             explicit_binding_destinations: &explicit_binding_destinations,
             resolved_member_sites: &resolved_member_sites,
-            partially_swapped_symbols: &vendor_plan.partially_swapped_symbols(),
+            replacement_packages: &vendor_plan.replacement_packages(),
         },
         &declared_pure_new,
-        &full_swap_chunk_ids,
-        &vendor_affected_chunk_ids,
         Some(&cross_module_chunk_closure),
     )?;
     let chunk_results = GLOBALS
@@ -517,7 +509,6 @@ fn export_reentry_reports(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     vendor_plan: &vendor::VendorResolutionPlan,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
@@ -555,13 +546,7 @@ fn export_reentry_reports(
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
-    let mut loader_derivations = loader_derivations(
-        artifact,
-        indexes,
-        host_behavior,
-        vendor_affected_chunk_ids,
-        &targets,
-    )?;
+    let mut loader_derivations = loader_derivations(artifact, indexes, host_behavior, &targets)?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -570,14 +555,7 @@ fn export_reentry_reports(
         let closure = if artifact.has_chunk(target)
             && (include_closure_diagnostics || !global_proof_is_blocked)
         {
-            collect_closure_blockers(
-                target,
-                artifact,
-                indexes,
-                host_behavior,
-                vendor_plan,
-                vendor_affected_chunk_ids,
-            )?
+            collect_closure_blockers(target, artifact, indexes, host_behavior, vendor_plan)?
         } else {
             ExportReentryClosureInspection::default()
         };
@@ -612,7 +590,6 @@ fn loader_derivations(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     targets: &BTreeSet<ChunkId>,
 ) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
     let uniform = |derivation: ExportReentryLoaderDerivation| {
@@ -624,12 +601,7 @@ fn loader_derivations(
     if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
         return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
     }
-    let surfaces = loader_surface::loader_surfaces(
-        artifact,
-        indexes,
-        host_behavior,
-        vendor_affected_chunk_ids,
-    )?;
+    let surfaces = loader_surface::loader_surfaces(artifact, indexes, host_behavior)?;
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }
@@ -652,10 +624,7 @@ fn collect_closure_blockers(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     vendor_plan: &vendor::VendorResolutionPlan,
-    vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<ExportReentryClosureInspection> {
-    let loader_present =
-        host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::Present;
     // Follow resolved static requests even when another blocker is present,
     // so the report exposes independent predicates and structural cycles.
     let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
@@ -678,10 +647,8 @@ fn collect_closure_blockers(
                 source_chunk: source_name.clone(),
             });
         }
-        if vendor_affected_chunk_ids.contains(&source)
-            && (loader_present || !vendor_plan.preserves_static_import_closure(source))
-        {
-            blockers.push(ExportReentryClosureBlocker::VendorAffectedChunk {
+        if vendor_plan.replacement_bundle_is_open(source) {
+            blockers.push(ExportReentryClosureBlocker::OpenReplacementBundle {
                 source_chunk: source_name.clone(),
             });
         }
