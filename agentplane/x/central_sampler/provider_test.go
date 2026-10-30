@@ -82,11 +82,13 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 	if call.Type != ResponsesItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
 		t.Fatalf("streamed tool call changed: %s", canonicalJSON(call))
 	}
-	var terminal []ResponsesItem
-	if err := json.Unmarshal(response.Terminal.Output, &terminal); err != nil {
+	var terminal struct {
+		Output []ResponsesItem `json:"output"`
+	}
+	if err := json.Unmarshal([]byte(canonicalJSON(response.Terminal)), &terminal); err != nil {
 		t.Fatal(err)
 	}
-	if len(terminal) != 3 || terminal[0].EncryptedContent != "fixture-opaque-reasoning" {
+	if len(terminal.Output) != 3 || terminal.Output[0].EncryptedContent != "fixture-opaque-reasoning" {
 		t.Fatalf("terminal evidence was not retained: %s", canonicalJSON(response.Terminal))
 	}
 }
