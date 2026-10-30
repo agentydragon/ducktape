@@ -6,14 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,55 +23,38 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	SandboxesKind         = "sandboxes"
-	PodsKind              = "pods"
-	PolicyBindingsKind    = "policybindings.agentplane.allegedly.works"
-	PolicySetsKind        = "policysets.agentplane.allegedly.works"
-	EgressCredentialsKind = "egresscredentials"
-	defaultWatchPeriod    = 5 * time.Minute
-)
-
 var (
 	ErrAlreadyStarted = errors.New("live inventory has already been started")
 	ErrNotSynced      = errors.New("live inventory has not completed its initial list")
 )
 
-var watchedKinds = []string{SandboxesKind, PodsKind, PolicyBindingsKind, PolicySetsKind, EgressCredentialsKind}
-
-// Option configures the watch cycle and health clock.
-type Option func(*options)
-
-type options struct {
-	watchPeriod time.Duration
-	now         func() time.Time
+// watched is each object kind the index caches, with its plural: the last segment of its requests' paths, which is
+// the kind its health is recorded as.
+var watched = []struct {
+	object client.Object
+	kind   watchhealth.Kind
+	policy bool
+}{
+	{&sandboxapi.Sandbox{}, "sandboxes", false},
+	{&corev1.Pod{}, "pods", false},
+	{&policyapi.PolicyBinding{}, "policybindings", true},
+	{&policyapi.PolicySet{}, "policysets", true},
+	{&egressapi.EgressCredential{}, "egresscredentials", false},
 }
-
-// WithWatchPeriod bounds each watch request. client-go owns list, watch, reconnect, and relist;
-// this period is carried as the API server's timeoutSeconds watch option.
-func WithWatchPeriod(period time.Duration) Option { return func(o *options) { o.watchPeriod = period } }
-
-// WithClock injects the health clock. It is useful for deterministic tests.
-func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
 
 // Index is a namespace-scoped controller-runtime cache of the objects that feed the /live views.
 // Run owns the cache lifecycle; all returned Kubernetes objects are deep copies.
 type Index struct {
-	cache      ctrlcache.Cache
-	namespace  string
-	period     time.Duration
-	staleAfter time.Duration
-	now        func() time.Time
+	cache     ctrlcache.Cache
+	namespace string
+	health    *watchhealth.Health
 
-	mu        sync.RWMutex
-	cycles    map[string]time.Time
-	listRuns  map[string]uint64
-	cycleRuns map[string]uint64
-	synced    bool
-	started   bool
-	syncDone  chan struct{}
-	runDone   chan struct{}
-	runErr    error
+	mu       sync.RWMutex
+	synced   bool
+	started  bool
+	syncDone chan struct{}
+	runDone  chan struct{}
+	runErr   error
 
 	policyGeneration atomic.Uint64
 	changes          changeHub
@@ -87,41 +69,17 @@ type Snapshot struct {
 	PolicySets        []policyapi.PolicySet
 	EgressCredentials []egressapi.EgressCredential
 	PolicyGeneration  uint64
-	Watch             WatchHealth
-}
-
-// WatchHealth reports whether the watched cache is fresh and the last completed cycle age for
-// each resource kind. Synced remains true after the initial list even if a later watch wedges.
-type WatchHealth struct {
-	Fresh               bool               `json:"fresh"`
-	Synced              bool               `json:"synced"`
-	StaleAfterSeconds   float64            `json:"stale_after_seconds"`
-	RefreshedSecondsAgo map[string]float64 `json:"refreshed_seconds_ago"`
+	// Watch is the cache's health: whether it has synced and which kinds are failing to list or watch. It is reported
+	// beside the last complete snapshot rather than hiding it.
+	Watch watchhealth.Status
 }
 
 // New builds the namespace-scoped cache and registers generated Sandbox, Policy, Egress, and core
 // Pod informers. It does not start any API requests until Run is called.
-func New(config *rest.Config, namespace string, opts ...Option) (*Index, error) {
+func New(config *rest.Config, namespace string) (*Index, error) {
 	if config == nil || namespace == "" {
 		return nil, errors.New("Kubernetes config and Sandbox namespace are required")
 	}
-	settings := options{watchPeriod: defaultWatchPeriod, now: time.Now}
-	for _, option := range opts {
-		if option != nil {
-			option(&settings)
-		}
-	}
-	if settings.watchPeriod < 2*time.Second || settings.watchPeriod%time.Second != 0 {
-		return nil, fmt.Errorf("watch period must be a whole number of seconds and at least 2s: %s", settings.watchPeriod)
-	}
-	if settings.now == nil {
-		return nil, errors.New("live inventory clock is required")
-	}
-	staleAfter := 3 * settings.watchPeriod
-	if staleAfter < time.Second {
-		return nil, errors.New("stale-after duration must be at least 1s")
-	}
-
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
 		corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, egressapi.AddToScheme,
@@ -131,42 +89,36 @@ func New(config *rest.Config, namespace string, opts ...Option) (*Index, error) 
 		}
 	}
 	index := &Index{
-		namespace: namespace, period: settings.watchPeriod, staleAfter: staleAfter, now: settings.now,
-		cycles: make(map[string]time.Time, len(watchedKinds)), listRuns: make(map[string]uint64, len(watchedKinds)),
-		cycleRuns: make(map[string]uint64, len(watchedKinds)), syncDone: make(chan struct{}), runDone: make(chan struct{}),
+		namespace: namespace, health: watchhealth.New(), syncDone: make(chan struct{}), runDone: make(chan struct{}),
 		changes: newChangeHub(),
 	}
-	config = rest.CopyConfig(config)
-	config.Wrap(cycleRecorder{index: index}.wrap)
-	inventory, err := ctrlcache.New(config, ctrlcache.Options{
+	byObject := make(map[client.Object]ctrlcache.ByObject, len(watched))
+	// The reflector describes the type it watches as its Go type, which the watch error handler maps back to a kind.
+	kindByType := make(map[string]watchhealth.Kind, len(watched))
+	for _, w := range watched {
+		byObject[w.object] = ctrlcache.ByObject{}
+		kindByType[fmt.Sprintf("%T", w.object)] = w.kind
+	}
+	inventory, err := ctrlcache.New(index.health.Config(config, watchhealth.KindByPath), ctrlcache.Options{
 		Scheme:            scheme,
 		DefaultNamespaces: map[string]ctrlcache.Config{namespace: {}},
-		ByObject: map[client.Object]ctrlcache.ByObject{
-			&sandboxapi.Sandbox{}:         {},
-			&corev1.Pod{}:                 {},
-			&policyapi.PolicyBinding{}:    {},
-			&policyapi.PolicySet{}:        {},
-			&egressapi.EgressCredential{}: {},
+		ByObject:          byObject,
+		DefaultWatchErrorHandler: func(ctx context.Context, r *toolscache.Reflector, err error) {
+			kind, ok := kindByType[r.TypeDescription()]
+			if !ok {
+				kind = watchhealth.Kind(r.TypeDescription())
+			}
+			index.health.WatchErrorHandler(kind)(ctx, r, err)
 		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create live inventory cache: %w", err)
 	}
 	index.cache = inventory
-	if err := index.registerInformer(context.Background(), &sandboxapi.Sandbox{}, false); err != nil {
-		return nil, err
-	}
-	if err := index.registerInformer(context.Background(), &corev1.Pod{}, false); err != nil {
-		return nil, err
-	}
-	if err := index.registerInformer(context.Background(), &policyapi.PolicyBinding{}, true); err != nil {
-		return nil, err
-	}
-	if err := index.registerInformer(context.Background(), &policyapi.PolicySet{}, true); err != nil {
-		return nil, err
-	}
-	if err := index.registerInformer(context.Background(), &egressapi.EgressCredential{}, false); err != nil {
-		return nil, err
+	for _, w := range watched {
+		if err := index.registerInformer(context.Background(), w.object, w.policy); err != nil {
+			return nil, err
+		}
 	}
 	return index, nil
 }
@@ -203,10 +155,6 @@ func (i *Index) Run(ctx context.Context) (result error) {
 		return ErrAlreadyStarted
 	}
 	i.started = true
-	started := i.now()
-	for _, kind := range watchedKinds {
-		i.cycles[kind] = started
-	}
 	i.mu.Unlock()
 	defer func() {
 		i.mu.Lock()
@@ -236,6 +184,7 @@ func (i *Index) Run(ctx context.Context) (result error) {
 		i.synced = true
 		close(i.syncDone)
 		i.mu.Unlock()
+		i.health.MarkSynced()
 		select {
 		case result = <-cacheErr:
 			if ctx.Err() != nil {
@@ -285,7 +234,7 @@ func (i *Index) WaitForSync(ctx context.Context) error {
 }
 
 // Snapshot returns all watched objects from the cache at the time of each List call. It reports
-// stale state in Watch rather than hiding the last complete snapshot.
+// unhealthy watches in Watch rather than hiding the last complete snapshot.
 func (i *Index) Snapshot(ctx context.Context) (Snapshot, error) {
 	var result Snapshot
 	var sandboxes sandboxapi.SandboxList
@@ -329,7 +278,7 @@ func (i *Index) Snapshot(ctx context.Context) (Snapshot, error) {
 		result.EgressCredentials[n] = *credentials.Items[n].DeepCopy()
 	}
 	result.PolicyGeneration = i.policyGeneration.Load()
-	result.Watch = i.health(i.now())
+	result.Watch = i.health.Status()
 	return result, nil
 }
 
@@ -359,43 +308,8 @@ func (i *Index) GetSandbox(ctx context.Context, name string) (*sandboxapi.Sandbo
 	return sandboxCopy, pod.DeepCopy(), nil
 }
 
-func (i *Index) health(now time.Time) WatchHealth {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-	ages := make(map[string]float64, len(i.cycles))
-	fresh := len(i.cycles) == len(watchedKinds)
-	for _, kind := range watchedKinds {
-		completed, ok := i.cycles[kind]
-		if !ok {
-			fresh = false
-			continue
-		}
-		age := now.Sub(completed).Seconds()
-		ages[kind] = age
-		if age < 0 || time.Duration(age*float64(time.Second)) > i.staleAfter {
-			fresh = false
-		}
-	}
-	for kind, age := range ages {
-		ages[kind] = float64(int(age*10+0.5)) / 10
-	}
-	return WatchHealth{
-		Fresh: fresh, Synced: i.synced, StaleAfterSeconds: i.staleAfter.Seconds(), RefreshedSecondsAgo: ages,
-	}
-}
-
 // PolicyGeneration returns the monotonic trigger changed by every PolicyBinding or PolicySet event.
 func (i *Index) PolicyGeneration() uint64 { return i.policyGeneration.Load() }
 
 // Subscribe adds an independent coalescing change channel. Unsubscribe is safe to call more than once.
 func (i *Index) Subscribe() (<-chan struct{}, func()) { return i.changes.subscribe() }
-
-// Names returns resource-kind health keys in stable order.
-func (h WatchHealth) Names() []string {
-	names := make([]string, 0, len(h.RefreshedSecondsAgo))
-	for name := range h.RefreshedSecondsAgo {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}

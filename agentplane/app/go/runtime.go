@@ -153,8 +153,7 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Sandbox inventory: %w", err)
 	}
 	policies := policyaccess.New(config.SandboxNamespace, objects)
-	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace,
-		liveinventory.WithWatchPeriod(time.Duration(config.ResyncSeconds)*time.Second))
+	liveIndex, err := liveinventory.New(kubeConfig, config.SandboxNamespace)
 	if err != nil {
 		return fmt.Errorf("configure live Kubernetes inventory: %w", err)
 	}

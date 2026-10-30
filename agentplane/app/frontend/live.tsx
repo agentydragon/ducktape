@@ -7,8 +7,8 @@
  *
  * Honesty is the other half of that trade. A poll that stops shows an error on the next tick,
  * while a stream that goes quiet looks exactly like nothing happening, so neither is assumed: the
- * stream's connection and the server's verdict on whether its watch is still cycling both go to the
- * app's one connection indicator (`stream_status.tsx`).
+ * stream's connection and the server's verdict on whether its watch is healthy both go to the app's
+ * one connection indicator (`stream_status.tsx`).
  */
 import { useEffect, useState } from "react";
 
@@ -18,14 +18,15 @@ import { type StreamStatus, useStreamStatus } from "./stream_status";
 
 // The raw live streams use app/go's watchHealthView JSON shape.
 export type WatchHealth = {
-  fresh: boolean;
-  stale_after_seconds: number;
-  refreshed_seconds_ago: Record<string, number>;
+  /** Whether the server's informers have synced and no watched kind is failing to list or watch. */
+  healthy: boolean;
+  /** Each failing kind, with its error and since when (RFC 3339). */
+  failing: Record<string, { error: string; since: string }>;
 };
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */
   snapshot: T | null;
-  /** The watch's freshness, from the last frame of either kind. */
+  /** The watch's health, from the last frame of either kind. */
   health: WatchHealth | null;
   stream: StreamStatus;
 }
@@ -60,17 +61,19 @@ export function useLive<T extends { watch: WatchHealth }>(
     [url]
   );
   const stalled =
-    state.health && !state.health.fresh
-      ? `watch stopped moving (${stalest(state.health)})`
-      : state.snapshot && stalledBy(state.snapshot);
+    state.health && !state.health.healthy ? unhealthy(state.health) : state.snapshot && stalledBy(state.snapshot);
   const stream = useStreamStatus(name, connection, stalled);
   return { ...state, stream };
 }
-/** The oldest watched kind and how far behind it is, as the server last reported. */
-function stalest(health: WatchHealth): string {
-  const [kind, age] = Object.entries(health.refreshed_seconds_ago).reduce(
-    (oldest, entry) => (entry[1] > oldest[1] ? entry : oldest),
-    ["nothing", 0]
+/** Why the server's watch is not healthy, as it last reported: each failing kind, or not yet synced. */
+function unhealthy(health: WatchHealth): string {
+  const failing = Object.entries(health.failing);
+  if (failing.length === 0) {
+    return "watch not yet synced";
+  }
+  const reasons = failing.map(
+    ([kind, failure]) =>
+      `${kind} failing since ${ageAgo((Date.now() - Date.parse(failure.since)) / 1000)}: ${failure.error}`
   );
-  return `${kind} last updated ${ageAgo(age)}`;
+  return `watch failing (${reasons.join("; ")})`;
 }

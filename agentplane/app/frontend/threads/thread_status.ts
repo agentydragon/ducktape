@@ -8,7 +8,9 @@ import { turnErrorLabel } from "./history_rows";
 
 /** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */
 export function snapshotFresh(live: Live<{ updates_connected: boolean }>): boolean {
-  return live.stream.standing === "current" && live.health?.fresh === true && live.snapshot?.updates_connected === true;
+  return (
+    live.stream.standing === "current" && live.health?.healthy === true && live.snapshot?.updates_connected === true
+  );
 }
 
 export function archiveBlockReason(thread: ThreadView): string | null {

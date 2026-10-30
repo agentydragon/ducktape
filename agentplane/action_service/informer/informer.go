@@ -12,7 +12,6 @@ import (
 	"maps"
 	"slices"
 	"sync"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
@@ -41,8 +41,8 @@ var ActionsReady = reader.Condition{
 // the Informer; readers take the state of one moment.
 type Index struct {
 	Rules *reader.Index[policies.Policy]
-	// Freshness covers the PolicySets, the PolicyBindings and each caller namespace's ServiceAccounts.
-	Freshness *reader.Freshness
+	// Health covers the PolicySets, the PolicyBindings and each caller namespace's ServiceAccounts.
+	Health *watchhealth.Health
 	// namespaces are the caller namespaces, sorted.
 	namespaces []string
 
@@ -52,32 +52,27 @@ type Index struct {
 }
 
 // NewIndex returns an empty Index of the callers in callerNamespaces. It is unavailable until an Informer has listed
-// every kind, and once a kind's last completed watch cycle is older than staleAfter.
-func NewIndex(staleAfter time.Duration, callerNamespaces []string) *Index {
-	namespaces := sets.List(sets.New(callerNamespaces...))
-	kinds := []reader.Kind{reader.PolicySets, reader.PolicyBindings}
-	for _, namespace := range namespaces {
-		kinds = append(kinds, serviceAccounts(namespace))
-	}
+// every kind, and while any kind fails to list or watch.
+func NewIndex(callerNamespaces []string) *Index {
 	return &Index{
 		Rules:      reader.NewIndex(policies.RuleType, policies.ParseRule),
-		Freshness:  reader.NewFreshness(staleAfter, kinds...),
-		namespaces: namespaces,
+		Health:     watchhealth.New(),
+		namespaces: sets.List(sets.New(callerNamespaces...)),
 		callers:    sets.New[auth.Account](),
 	}
 }
 
 // serviceAccounts is the kind a caller namespace's ServiceAccounts are watched as: each namespace is a watch of its own,
-// which goes stale on its own.
-func serviceAccounts(namespace string) reader.Kind {
-	return reader.Kind(namespace + "/serviceaccounts")
+// which fails on its own.
+func serviceAccounts(namespace string) watchhealth.Kind {
+	return watchhealth.Kind(namespace + "/serviceaccounts")
 }
 
 // Admits reports whether the account may call the service: it carries the caller label now. Nothing is admitted while
 // the Index is unavailable, so a replica that cannot reach the API server refuses every caller rather than serve a
 // picture it cannot vouch for. Every refusal is logged.
 func (i *Index) Admits(account auth.Account) bool {
-	if !i.Freshness.Available(time.Now()) {
+	if !i.Health.Available() {
 		slog.Warn("workload bearer refused: the policy index is unavailable",
 			"namespace", account.Namespace, "name", account.Name)
 		return false
@@ -95,7 +90,7 @@ func (i *Index) Admits(account auth.Account) bool {
 // CallerServiceAccounts are the ServiceAccounts that carry the caller label now, in namespace and name order, and
 // whether the Index was available to read them: none when it was not.
 func (i *Index) CallerServiceAccounts() ([]auth.Account, bool) {
-	if !i.Freshness.Available(time.Now()) {
+	if !i.Health.Available() {
 		return nil, false
 	}
 	i.mu.RLock()
@@ -109,7 +104,7 @@ func (i *Index) CallerServiceAccounts() ([]auth.Account, bool) {
 // was available to read them: nothing when it was not. The Policy Controller deletes a binding at expiry. Admission
 // and the policy views read this one resolution, so what a view reports and what admission decides cannot drift.
 func (i *Index) Resolve(subject policyapi.ServiceAccountRef) ([]reader.BindingResolution[policies.Policy], bool) {
-	if !i.Freshness.Available(time.Now()) {
+	if !i.Health.Available() {
 		return nil, false
 	}
 	return i.Rules.Bindings(subject), true
@@ -150,14 +145,9 @@ func (i *Index) deleteCaller(account auth.Account) {
 // Informer fills an Index from the API server and keeps ActionsReady on the policy namespace's bindings.
 type Informer struct{ watches *reader.Watches }
 
-// New returns an Informer of the Index that is idle until Run. policyNamespace holds the PolicySets and PolicyBindings;
-// the period is how long the server holds each watch open (see reader.NewWatches), of which the Index's staleness
-// bound should be reader.StaleAfterCycles.
-func New(base *rest.Config, index *Index, policyNamespace string, period time.Duration) (*Informer, error) {
-	watches, err := reader.NewWatches(base, index.Freshness, period)
-	if err != nil {
-		return nil, err
-	}
+// New returns an Informer of the Index that is idle until Run. policyNamespace holds the PolicySets and PolicyBindings.
+func New(base *rest.Config, index *Index, policyNamespace string) (*Informer, error) {
+	watches := reader.NewWatches(base, index.Health)
 	watched := []error{reader.WatchRules(watches, index.Rules, policyNamespace, ActionsReady)}
 	for _, namespace := range index.namespaces {
 		core, err := kubernetes.NewForConfig(watches.ConfigRecordingAs(serviceAccounts(namespace)))
@@ -165,12 +155,10 @@ func New(base *rest.Config, index *Index, policyNamespace string, period time.Du
 			return nil, err
 		}
 		// The server sends a ServiceAccount that loses the label as deleted.
-		labeled := func(options *metav1.ListOptions) {
-			watches.TweakListOptions(options)
-			options.LabelSelector = CallerLabel + "=true"
-		}
+		labeled := func(options *metav1.ListOptions) { options.LabelSelector = CallerLabel + "=true" }
 		watched = append(watched, reader.Watch(
 			watches,
+			serviceAccounts(namespace),
 			coreinformers.NewTypedFilteredServiceAccountInformer(core, namespace, 0, nil, labeled),
 			index.putCaller,
 			func(name string) { index.deleteCaller(auth.Account{Namespace: namespace, Name: name}) },

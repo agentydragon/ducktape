@@ -85,7 +85,7 @@ func (p *Proxy) Serve(listener net.Listener) error { return p.server.Serve(liste
 // responses reach the client. It returns once they have, or ctx ends, and either way closes every
 // tunnel before it returns: a tunnel with nothing in flight does not delay it.
 func (p *Proxy) Drain(ctx context.Context) error {
-	p.options.Policy.Freshness.MarkDraining()
+	p.options.Policy.Health.MarkDraining()
 	// Shutdown closes the listeners first; requests inside tunnels are invisible to it, so they are
 	// waited for separately, and then each tunnel is shut down to let what they answered be written.
 	err := errors.Join(p.server.Shutdown(ctx), p.flights.wait(ctx), p.tunnels.shutdown(ctx))

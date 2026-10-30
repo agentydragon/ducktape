@@ -37,7 +37,6 @@ type config struct {
 	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	ResyncSeconds                   int               `mapstructure:"resync_seconds"`
 	DatabaseURL                     string            `mapstructure:"database_url"`
 	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
 	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
@@ -49,7 +48,7 @@ type config struct {
 func defaultConfig() config {
 	return config{
 		ListenAddress: "0.0.0.0:8888", AdminListenAddress: "0.0.0.0:8081",
-		AgentAPIListenAddress: "0.0.0.0:8082", ResyncSeconds: 300, DecisionHistorySize: 200,
+		AgentAPIListenAddress: "0.0.0.0:8082", DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -70,7 +69,6 @@ func loadConfig() (config, error) {
 		"upstream_ca_file",
 		"token_audience",
 		"kubeconfig",
-		"resync_seconds",
 		"database_url",
 		"decision_history_size",
 		"decision_retention_days",
@@ -121,8 +119,6 @@ func (c *config) validate() error {
 		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
 	for _, limit := range []bounded{
-		// client-go relists a watch shorter than a second, so the informer takes two at the least.
-		{"resync_seconds", c.ResyncSeconds, 2, 86400},
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},
 		{"decision_retention_days", c.DecisionRetentionDays, 1, 365},
 		{"decision_queue_size", c.DecisionQueueSize, 1, 100000},

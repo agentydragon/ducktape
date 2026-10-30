@@ -26,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
@@ -198,11 +197,9 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 		return err
 	}
 
-	watchPeriod := time.Duration(c.ResyncSeconds) * time.Second
-	index := policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
+	index := policy.NewIndex()
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
-		WatchPeriod: watchPeriod,
 	})
 	if err != nil {
 		return err
@@ -250,7 +247,7 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	}
 	adminServer := &http.Server{Handler: http.NotFoundHandler(), ReadHeaderTimeout: readHeaderTimeout}
 	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
-		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Freshness, Clock: time.Now,
+		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health,
 	})
 	if err != nil {
 		return err
@@ -279,7 +276,7 @@ type shutdowner interface {
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
 func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
 	slog.Info("draining")
-	index.Freshness.MarkDraining()
+	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	if err := egress.Drain(ctx); err != nil {

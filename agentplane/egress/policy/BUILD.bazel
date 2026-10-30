@@ -15,6 +15,7 @@ go_library(
         "//agentplane/egress/resources",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
+        "//agentplane/watchhealth",
     ],
 )
 

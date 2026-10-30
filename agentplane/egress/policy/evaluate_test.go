@@ -74,7 +74,7 @@ func newIndex(
 	sets []*policyapi.PolicySet, bindings []*policyapi.PolicyBinding, credentials []resources.Credential,
 	secrets ...resources.Secret,
 ) *Index {
-	index := NewIndex(0)
+	index := NewIndex()
 	for _, set := range sets {
 		index.Rules.PutPolicySet(set)
 	}

@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
@@ -36,7 +35,7 @@ const (
 )
 
 // Options are the Agentplane authorities the adapter delegates to. Ready can add a component-local
-// readiness gate; Policy.Freshness.Available remains mandatory regardless of that callback.
+// readiness gate; Policy.Health.Available remains mandatory regardless of that callback.
 type Options struct {
 	Identity *auth.Resolver
 	Policy   *policy.Index
@@ -194,7 +193,7 @@ func (b *Bridge) available() bool {
 	if b.ready != nil && !b.ready() {
 		return false
 	}
-	return b.policy.Freshness.Available(time.Now())
+	return b.policy.Health.Available()
 }
 
 func (b *Bridge) authenticate(ctx context.Context, headers http.Header, previous *tunnelState) (tunnelState, decision.Reason, int) {

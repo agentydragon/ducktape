@@ -74,8 +74,8 @@ flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (defaul
 and waiting for each watch write to clear transport backpressure; `watch_lease_s` (default 300) is how long a watch
 lasts before it ends with `reconnect_required`.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
-`policy_watch_period_s` (default 60, at least 2) is how long each watch of PolicySets and PolicyBindings stays
-open; sends are refused once a watch has missed three. GitHub is on
+Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
+watch. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 

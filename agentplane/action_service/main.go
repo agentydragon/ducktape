@@ -45,12 +45,12 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
@@ -144,16 +144,16 @@ func (e executors) Route(action store.ActionIdentity) (worker.Executor, bool) {
 }
 
 // readiness is the health service of probes, whose readiness also needs the policy index available: a replica whose
-// watches have wedged would auto-decide from a frozen copy, so it leaves the Service instead.
+// watches are failing would auto-decide from a copy it cannot vouch for, so it leaves the Service instead.
 type readiness struct {
 	*probes.Probes
-	policy *reader.Freshness
+	policy *watchhealth.Health
 }
 
 func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	if request.GetService() == "" {
-		if status := r.policy.Status(time.Now()); !status.Available {
-			slog.WarnContext(ctx, "policy index unavailable", "synced", status.Synced, "stale_after", status.StaleAfter, "ages", status.Ages)
+		if status := r.policy.Status(); !status.Available {
+			slog.WarnContext(ctx, "policy index unavailable", "synced", status.Synced, "draining", status.Draining, "failing", status.Failing)
 			return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_NOT_SERVING}, nil
 		}
 	}
@@ -317,8 +317,7 @@ func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 // share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
 // listener's shutdown, and serve returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	watchPeriod := c.policyWatchPeriod()
-	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
+	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err
@@ -409,7 +408,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 
-	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, watchPeriod)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace)
 	if err != nil {
 		return err
 	}
@@ -430,7 +429,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
-	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
+	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Health})
 	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})

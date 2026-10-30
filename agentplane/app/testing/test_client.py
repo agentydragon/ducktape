@@ -189,7 +189,7 @@ async def test_a_client_error_is_not_retried() -> None:
 
 
 async def test_sandbox_subscription_parses_multiline_snapshots_and_ignores_health_frames() -> None:
-    watch = {"fresh": True, "stale_after_seconds": 30.0, "refreshed_seconds_ago": {}}
+    watch = {"healthy": True, "failing": {}}
 
     async def snapshots(after: int, writer: asyncio.StreamWriter) -> None:
         del after
@@ -205,7 +205,7 @@ async def test_sandbox_subscription_parses_multiline_snapshots_and_ignores_healt
         updates = client.sandbox_snapshots()
         snapshot = await anext(updates)
         assert snapshot.sandboxes == []
-        assert snapshot.watch.fresh
+        assert snapshot.watch.healthy
         with pytest.raises(RuntimeError, match="inventory stream ended"):
             await anext(updates)
 

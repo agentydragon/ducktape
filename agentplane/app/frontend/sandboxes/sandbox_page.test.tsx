@@ -65,9 +65,9 @@ const live = vi.hoisted(
         bindings: [],
         action_policy: null,
         updates_connected: true,
-        watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
+        watch: { healthy: true, failing: {} },
       },
-      health: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
+      health: { healthy: true, failing: {} },
       stream: {
         name: "Sandbox startup-test",
         connection: { phase: "live", since: 0 },

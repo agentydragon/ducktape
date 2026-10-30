@@ -298,9 +298,11 @@ container, so a failed migration keeps that Pod unready while the previous proxi
 ## Replica lifecycle
 
 Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
-initially synced and have completed a watch cycle within three configured resync periods
-(`resync_seconds`, default 300, at least two). A negative clock age also fails closed. DB health does
-not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
+initially synced, and none may be failing. A kind fails when one of its list or watch requests fails
+or client-go's watch error handler reports an abnormal end, and recovers on its next successful list
+or watch; `GetHealth` names each failing kind with its error and since when. client-go owns the
+watch timeouts, resumes and relists, and its HTTP/2 health checks turn a dead connection into a
+failed request. DB health does not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
 cause a restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
 a changed egress-policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.

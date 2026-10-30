@@ -153,7 +153,6 @@ go_library(
         "//agentplane/notification_service/webhook",
         "//agentplane/notification_service/worker",
         "//agentplane/observability",
-        "//agentplane/policy/reader",
         "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",

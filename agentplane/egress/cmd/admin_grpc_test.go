@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -60,8 +60,8 @@ func (quietChanges) Follow(ctx context.Context, changed func() error) error {
 
 type readyIndex struct{}
 
-func (readyIndex) Status(time.Time) reader.Status {
-	return reader.Status{Available: true, Synced: true}
+func (readyIndex) Status() watchhealth.Status {
+	return watchhealth.Status{Available: true, Synced: true}
 }
 
 type idleHistory struct{}
@@ -74,7 +74,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 	mux.HandleFunc("GET /test-live", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "alive") })
 	adminServer := &http.Server{Handler: mux}
 	shutdown, err := mountAdminGRPC(adminServer, c, api.TokenReviews(), admin.ServiceOptions{
-		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{}, Clock: time.Now,
+		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
 	adminServer := &http.Server{Handler: http.NewServeMux()}
-	shutdown, err := mountAdminGRPC(adminServer, config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}, Clock: time.Now})
+	shutdown, err := mountAdminGRPC(adminServer, config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}})
 	if err != nil {
 		t.Fatal(err)
 	}

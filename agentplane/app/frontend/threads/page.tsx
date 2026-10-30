@@ -77,7 +77,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const traceSearch = frontendConfig?.trace_search ?? null;
   const langfuseSearch = frontendConfig?.langfuse_search ?? null;
   const environment = useRequiredSandboxesLive();
-  const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
+  const inventoryFresh = environment.stream.standing === "current" && environment.health?.healthy === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const { commandsRequireReadySandbox } = harnessBehavior(thread?.harness);
   const notice =

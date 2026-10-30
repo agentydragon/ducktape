@@ -87,7 +87,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 		return fmt.Errorf("MCP edge PostgreSQL listener unavailable: %w", err)
 	}
 	defer hub.Close()
-	callers, watches, err := callerWatches(kubeConfig, c.CallerServiceAccountNamespaces, c.MintableAccounts, c.callerWatchPeriod())
+	callers, watches, err := callerWatches(kubeConfig, c.CallerServiceAccountNamespaces, c.MintableAccounts)
 	if err != nil {
 		return err
 	}

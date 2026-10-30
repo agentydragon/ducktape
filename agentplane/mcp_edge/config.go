@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings/go"
@@ -30,12 +29,11 @@ type config struct {
 	Port                           int      `mapstructure:"port" yaml:"port"`
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
 	// MintableAccounts is the explicit ownership scope granted to this edge's TokenRequest RBAC.
-	MintableAccounts   []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
-	OperatorOIDC       api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
-	OAuth              *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
-	MaxWaitSeconds     float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
-	DirectWaitSeconds  float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
-	CallerWatchSeconds int                      `mapstructure:"caller_watch_seconds" yaml:"caller_watch_seconds"`
+	MintableAccounts  []auth.Account           `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
+	OperatorOIDC      api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
+	OAuth             *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
+	MaxWaitSeconds    float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
@@ -59,7 +57,7 @@ type oauthSettings struct {
 func loadConfig() (config, error) {
 	c := config{
 		Host: "0.0.0.0", Port: 8080, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
-		CallerWatchSeconds: 300, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
+		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 	}
 	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
 	settings.SetEnvPrefix("AGENTPLANE_MCP_EDGE")
@@ -134,9 +132,6 @@ func (c config) validate() error {
 			return errors.New("mintable_accounts must be in a caller namespace")
 		}
 	}
-	if c.CallerWatchSeconds < 2 {
-		return errors.New("caller_watch_seconds must be at least 2")
-	}
 	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
 		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
 			return errors.New("MCP wait seconds must be finite and nonnegative")
@@ -168,10 +163,6 @@ func (c config) validate() error {
 		return errors.New("oauth.base_url must be an origin")
 	}
 	return nil
-}
-
-func (c config) callerWatchPeriod() time.Duration {
-	return time.Duration(c.CallerWatchSeconds) * time.Second
 }
 
 func (c config) address() string { return fmt.Sprintf("%s:%d", c.Host, c.Port) }

@@ -96,7 +96,7 @@ async function render(): Promise<string[]> {
           archived_count: 0,
           sandboxes: [SANDBOX],
           updates_connected: true,
-          watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+          watch: { healthy: true, failing: {} },
         };
         queueMicrotask(() => this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) })));
       }

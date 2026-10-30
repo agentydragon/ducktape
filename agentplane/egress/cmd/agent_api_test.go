@@ -28,7 +28,7 @@ func TestAgentAPIAnswersTheRulesFacadeThroughItsOwnListener(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	server, err := newAgentAPI(ctx, listener.Addr().String(), identity.NewVerifier(hop, nil), policy.NewIndex(0),
+	server, err := newAgentAPI(ctx, listener.Addr().String(), identity.NewVerifier(hop, nil), policy.NewIndex(),
 		fstest.MapFS{"llms.txt": {Data: []byte("# index")}}, []byte("{}"))
 	if err != nil {
 		t.Fatal(err)

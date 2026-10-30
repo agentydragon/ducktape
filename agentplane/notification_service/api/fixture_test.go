@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -288,15 +287,13 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		}},
 		actions: &fakeActions{},
 		github:  &fakeGitHub{access: store.GitHubAccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
-		policy:  inboxaccess.NewPolicy(time.Hour),
+		policy:  inboxaccess.NewPolicy(),
 		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
 			testSession: {Namespace: testNamespace, Name: sandboxName},
 		}},
 		kube: kube,
 	}
-	server.policy.Freshness.MarkSynced()
-	server.policy.Freshness.RecordCycle(reader.PolicySets, time.Now())
-	server.policy.Freshness.RecordCycle(reader.PolicyBindings, time.Now())
+	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,

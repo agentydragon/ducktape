@@ -70,7 +70,6 @@ class Settings(BaseModel):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
 
-    resync_seconds: int = Field(default=300, ge=2, le=86400, description="Watch lifetime in whole seconds.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)

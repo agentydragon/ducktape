@@ -195,9 +195,10 @@ beforeEach(() => {
                     }
                   : {}),
                 watch: {
-                  fresh: inventoryFresh,
-                  stale_after_seconds: 90,
-                  refreshed_seconds_ago: { sandboxes: inventoryFresh ? 0 : 2400 },
+                  healthy: inventoryFresh,
+                  failing: inventoryFresh
+                    ? {}
+                    : { sandboxes: { error: "test-failure", since: "2026-10-30T12:00:00Z" } },
                 },
               }),
             })
