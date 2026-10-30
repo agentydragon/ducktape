@@ -163,6 +163,17 @@ class Timeline:
             out.write(json.dumps(entry) + "\n")
 
 
+def write_deployment_logs(kubectl: Callable[..., str], namespace: str, deployments: list[str]) -> None:
+    """Each fixture Deployment's whole timestamped log, to line its work up with the trace."""
+    output = undeclared_outputs_dir() / "deployments"
+    output.mkdir(exist_ok=True)
+    for name in deployments:
+        (output / f"{name}.log").write_text(kubectl(
+            "-n", namespace, "logs", f"deployment/{name}", "--all-containers", "--all-pods=true",
+            "--timestamps", "--tail=-1", check=False,
+        ))  # fmt: skip
+
+
 class EventRecorder:
     """Every Kubernetes Event of the run, put on the trace as one `k8s.object` span per involved object.
 
@@ -659,6 +670,7 @@ def running_stack(
 
         failed: list[str] = []
         deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
+        cleanup.callback(write_deployment_logs, k3s.kubectl, fixture.namespace, deployments)
         deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
         for name in deployments:
             remaining = max(5, int(deadline - time.monotonic()))

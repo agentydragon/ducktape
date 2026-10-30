@@ -134,6 +134,11 @@ class Client:
     async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
         """The decoded body, or None for a successful empty lifecycle response."""
         response = await self._http.request(method, path, **kwargs)
+        if response.is_error:
+            # The status alone does not say which dependency refused; the problem detail does.
+            trace.get_current_span().add_event(
+                "http.error", {"status": response.status_code, "body": response.text[:1000]}
+            )
         response.raise_for_status()
         return response.json() if response.content else None
 
