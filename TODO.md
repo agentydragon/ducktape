@@ -35,18 +35,22 @@
 
 ## Agent scratch in `/tmp`
 
-- [ ] Make agents write scratch under a per-agent (ideally per-session) dir instead of loose in
-      `/tmp`. On wyrm2 (2026-10-29), about 3,900 top-level per-task dirs (`claude-*`, `tana-*`,
-      `openclaw-*`, `tmp.*`, …) held 318 G, next to 6,200 loose files. Nothing scopes or ages
-      them apart from the 14d `/tmp` rule. Candidate levers:
+- [ ] Make agents keep their temp files in one dir of their own instead of an undifferentiated pile
+      in `/tmp`. The convention to teach: at the start of a task, pick one name (a short
+      description of the work, or a random slug), e.g. `/tmp/<slug>/`, and put every temp file,
+      log, clone and output for that task under it, reusing the same name for the whole task. On
+      wyrm2 (2026-10-29), about 3,900 top-level per-task dirs (`claude-*`, `tana-*`, `openclaw-*`,
+      `tmp.*`, …) held 318 G, next to 6,200 loose files. Nothing scopes or ages them apart from the
+      14d `/tmp` rule. Candidate levers:
   - Codex (<nix/home/codex/default.nix>): `exclude_slash_tmp = true`, plus
     `shell_environment_policy` setting `TMPDIR=/tmp/codex-<uid>`. Hard-coded `/tmp/x` paths then
     fail inside Codex, and `/tmp/ducktape-worktrees` needs to be a writable root.
   - Claude Code: export `TMPDIR=<session scratchpad>` from the session-start hook
     (<devinfra/claude/claude_hook>) via `$CLAUDE_ENV_FILE`. Today all sessions share
     `/tmp/claude-<uid>`.
-  - <AGENTS.md> § Environment: one rule to put scratch in `$TMPDIR`, never loose in `/tmp`. First
-    pick one home for large outputs and worktrees (`/tmp/...` vs `/var/cache/agentydragon/...`).
+  - <AGENTS.md> § Environment: state the one-dir-per-task convention above, with that dir under
+    `$TMPDIR` where the harness sets one. First pick one home for large outputs and worktrees
+    (`/tmp/...` vs `/var/cache/agentydragon/...`).
   - Once the roots exist, give them their own short tmpfiles age (e.g. `bcmBM:3d`).
 
 ## Build System
