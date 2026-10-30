@@ -391,6 +391,7 @@ go_library(
         "//agentplane/grpc/bearer",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/lease",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
