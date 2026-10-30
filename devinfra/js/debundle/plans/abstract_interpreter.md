@@ -494,9 +494,13 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 ### Step 8 — promotion and fallback
 
 - Remaining: `safe_plain_array_at_init_fallback_sources` becomes `Clean`
-  array resolution once step 4b gives arrays heap state. Until then it cannot:
-  `plain_array_bindings` admits any array literal, so its elements may be
-  callables, and the rule's soundness rests on its call-free callback check.
+  array resolution after 4c. Its callbacks must be evaluated against the
+  elements' state (`props ⊆ Prim`), not just a `Clean` array: today it admits
+  a root only when the callbacks use elements by identity, strict equality or
+  truthiness, or when 4b's heap state proves the elements primitive. The rule
+  lost the two Tana sites in `index-DI2GynTv.js` that need element state:
+  `lV` (tool objects read through `n.name` and `n.systemNodeId`, lines
+  69844–69850) and `eet` (command objects, line 109391).
 - `promote_at_init_calls` already consumes complete synchronous summaries and
   takes the syntactic reach (`at_init_unresolved_sources`, closed by
   `source_unit_read_closure.rs`) only for incomplete ones. An incomplete
