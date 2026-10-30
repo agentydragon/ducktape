@@ -55,6 +55,15 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
 
+// Direct dependencies for the shared-k3s runner spikes.
+require (
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
+	github.com/onsi/ginkgo/v2 v2.33.1
+	github.com/onsi/gomega v1.44.0
+)
+
 // Direct dependencies for Agentplane service configuration
 require (
 	github.com/go-viper/mapstructure/v2 v2.5.0

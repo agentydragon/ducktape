@@ -333,6 +333,7 @@ py_library(
 py_library(
     name = "rendered_fixture",
     srcs = ["rendered_fixture.py"],
+    visibility = ["//agentplane/system_tests/x/go_runners:__pkg__"],
     deps = [
         "@pypi//pydantic",
     ],

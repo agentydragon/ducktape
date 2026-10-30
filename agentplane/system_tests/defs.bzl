@@ -26,8 +26,8 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = []):
-    """Run a Python suite entrypoint against one session-scoped k3s stack."""
+def k3s_runtime(stack):
+    """Artifacts and RBE settings for a stack, independent of its test runner."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     config = _STACKS[stack]
@@ -40,10 +40,9 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
         "K3S_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
         "K3S_GUEST_IMAGE_LAYOUTS": "",
-        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
     }
     properties = {}
-    suite_tags = K3S_TAGS + tags
+    suite_tags = list(K3S_TAGS)
     if config.vm:
         # Six 1.5 GiB guests boot alongside k3s services; request the 20 GB worker estimate.
         properties["EstimatedComputeUnits"] = "8"
@@ -59,14 +58,24 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
         suite_tags.append("live_openai_api")
-    py_test(
-        name = name,
-        size = "enormous",
-        srcs = srcs,
+    return struct(
         data = data,
         env = env,
         exec_properties = K3S_EXEC_PROPERTIES | properties,
         tags = suite_tags,
+    )
+
+def k3s_suite(name, srcs, deps, stack, tags = []):
+    """Run a Python suite entrypoint against one session-scoped k3s stack."""
+    runtime = k3s_runtime(stack)
+    py_test(
+        name = name,
+        size = "enormous",
+        srcs = srcs,
+        data = runtime.data,
+        env = runtime.env | {"PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target"},
+        exec_properties = runtime.exec_properties,
+        tags = runtime.tags + tags,
         deps = deps + [
             "//agentplane/system_tests/k3s:system_test_target",
         ],

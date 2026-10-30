@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//agentplane/system_tests:defs.bzl", "k3s_runtime")
+
+package(default_testonly = True)
+
+_VM = k3s_runtime("vm")
+
+go_test(
+    name = "compiled.test",
+    srcs = ["runner_test.go"],
+    data = ["//agentplane/system_tests/x/go_runners:host_bin"],
+    tags = ["manual"],
+    deps = [
+        "//agentplane/system_tests/x/go_runners/driver",
+        "@com_github_onsi_ginkgo_v2//:ginkgo",
+        "@com_github_onsi_gomega//:gomega",
+    ],
+)
+
+_COORDINATOR_DATA = [
+    ":compiled.test",
+    "@com_github_onsi_ginkgo_v2//ginkgo",
+]
+
+_COORDINATOR_ENV = {
+    "GINKGO_CLI": "$(rlocationpath @com_github_onsi_ginkgo_v2//ginkgo)",
+    "GINKGO_SUITE": "$(rlocationpath :compiled.test)",
+}
+
+sh_test(
+    name = "probe",
+    size = "medium",
+    srcs = ["run.sh"],
+    data = _COORDINATOR_DATA,
+    env = _COORDINATOR_ENV,
+)
+
+sh_test(
+    name = "vm",
+    size = "enormous",
+    srcs = ["run.sh"],
+    data = _COORDINATOR_DATA + _VM.data,
+    env = _COORDINATOR_ENV | _VM.env | {"RUNNER_SPIKE_MODE": "vm"},
+    exec_properties = _VM.exec_properties,
+    tags = _VM.tags + ["manual"],
+)

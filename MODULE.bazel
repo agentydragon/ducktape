@@ -2447,6 +2447,8 @@ use_repo(
     "com_github_modelcontextprotocol_go_sdk",
     "com_github_munnerz_goautoneg",
     "com_github_nervsystems_osmmcp",
+    "com_github_onsi_ginkgo_v2",
+    "com_github_onsi_gomega",
     "com_github_openshift_api",
     "com_github_openshift_client_go",
     "com_github_pb33f_ordered_map_v2",

@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//agentplane/system_tests:defs.bzl", "k3s_runtime")
+
+package(default_testonly = True)
+
+_VM = k3s_runtime("vm")
+
+go_test(
+    name = "probe",
+    size = "medium",
+    srcs = ["runner_test.go"],
+    args = [
+        "-test.parallel=3",
+        "-test.v",
+    ],
+    data = ["//agentplane/system_tests/x/go_runners:host_bin"],
+    deps = ["//agentplane/system_tests/x/go_runners/driver"],
+)
+
+go_test(
+    name = "vm",
+    size = "enormous",
+    srcs = ["runner_test.go"],
+    args = [
+        "-test.parallel=3",
+        "-test.v",
+    ],
+    data = ["//agentplane/system_tests/x/go_runners:host_bin"] + _VM.data,
+    env = _VM.env | {"RUNNER_SPIKE_MODE": "vm"},
+    exec_properties = _VM.exec_properties,
+    tags = _VM.tags + ["manual"],
+    deps = ["//agentplane/system_tests/x/go_runners/driver"],
+)

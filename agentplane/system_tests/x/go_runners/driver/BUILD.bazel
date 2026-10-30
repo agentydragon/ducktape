@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/system_tests/x/go_runners:__subpackages__"],
+)
+
+go_library(
+    name = "driver",
+    srcs = ["driver.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/system_tests/x/go_runners/driver",
+    deps = ["@io_bazel_rules_go//go/runfiles"],
+)
