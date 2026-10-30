@@ -39,6 +39,11 @@ continues to serve wrapped Codex/Claude. There is no central-to-native fallback.
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
 V1 fixes the binding and does not expose executor replacement.
 
+The executor `OpenSession` initialization handshake has its own positive
+`executor_initialize_timeout_seconds` setting, defaulting to 30 seconds independently of
+`rpc_timeout_seconds`. A timeout cancels the stream and records the initialization outcome as
+unknown; it does not claim that the executor did not initialize.
+
 Non-empty setup scripts (at most 65,536 UTF-8 bytes) execute once through the bound exec-server
 with `/bin/sh -eu -c`, before any provider request or queued command. Setup stdout and stderr
 retain separate byte streams and lifecycle events in History. A failed or interrupted setup blocks

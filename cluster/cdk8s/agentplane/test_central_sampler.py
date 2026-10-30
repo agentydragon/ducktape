@@ -78,6 +78,8 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     props = staging.ENV.central_sampler
     assert props is not None
     assert config["llm_proxy_url"] == props.llm_proxy_url
+    assert config["rpc_timeout_seconds"] == props.rpc_timeout_seconds
+    assert config["executor_initialize_timeout_seconds"] == props.executor_initialize_timeout_seconds
     assert config["credential_file"] == "/var/run/secrets/central-sampler/llm"
     assert "credential" not in config
 

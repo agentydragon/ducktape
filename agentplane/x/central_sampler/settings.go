@@ -10,6 +10,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
+)
+
+const (
+	defaultExecutorInitializeTimeoutSeconds = 30
+	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
 )
 
 type APIStyle string
@@ -59,29 +65,30 @@ func (c ModelConfig) Validate() error {
 }
 
 type Settings struct {
-	Models                          map[string]ModelConfig `json:"models"`
-	DatabaseURL                     string                 `json:"database_url"`
-	Listen                          string                 `json:"listen"`
-	LLMProxyURL                     string                 `json:"llm_proxy_url"`
-	Credential                      string                 `json:"credential"`
-	CredentialFile                  string                 `json:"credential_file"`
-	Audience                        string                 `json:"audience"`
-	AllowedAccounts                 []string               `json:"allowed_accounts"`
-	CodeModeHost                    string                 `json:"code_mode_host"`
-	ExecutorCodex                   string                 `json:"executor_codex"`
-	Logs                            string                 `json:"logs"`
-	HistoryTarget                   string                 `json:"history_target"`
-	HistoryTokenFile                string                 `json:"history_token_file"`
-	GatewayTarget                   string                 `json:"gateway_target"`
-	GatewayTokenFile                string                 `json:"gateway_token_file"`
-	DirectExecutorTarget            string                 `json:"direct_executor_target"`
-	DirectExecutorInsecureLocaltest bool                   `json:"direct_executor_insecure_localtest"`
-	MaxLiveSessions                 int                    `json:"max_live_sessions"`
-	TurnTimeoutSeconds              int                    `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds               int                    `json:"rpc_timeout_seconds"`
-	LeaseSeconds                    int                    `json:"lease_seconds"`
-	AutoCompactTokens               *int                   `json:"auto_compact_tokens"`
-	Kubeconfig                      string                 `json:"kubeconfig"`
+	Models                           map[string]ModelConfig `json:"models"`
+	DatabaseURL                      string                 `json:"database_url"`
+	Listen                           string                 `json:"listen"`
+	LLMProxyURL                      string                 `json:"llm_proxy_url"`
+	Credential                       string                 `json:"credential"`
+	CredentialFile                   string                 `json:"credential_file"`
+	Audience                         string                 `json:"audience"`
+	AllowedAccounts                  []string               `json:"allowed_accounts"`
+	CodeModeHost                     string                 `json:"code_mode_host"`
+	ExecutorCodex                    string                 `json:"executor_codex"`
+	Logs                             string                 `json:"logs"`
+	HistoryTarget                    string                 `json:"history_target"`
+	HistoryTokenFile                 string                 `json:"history_token_file"`
+	GatewayTarget                    string                 `json:"gateway_target"`
+	GatewayTokenFile                 string                 `json:"gateway_token_file"`
+	DirectExecutorTarget             string                 `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest  bool                   `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                  int                    `json:"max_live_sessions"`
+	TurnTimeoutSeconds               int                    `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds                int                    `json:"rpc_timeout_seconds"`
+	ExecutorInitializeTimeoutSeconds *int                   `json:"executor_initialize_timeout_seconds,omitempty"`
+	LeaseSeconds                     int                    `json:"lease_seconds"`
+	AutoCompactTokens                *int                   `json:"auto_compact_tokens"`
+	Kubeconfig                       string                 `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -176,10 +183,24 @@ func (s Settings) Validate() error {
 	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
+	if s.ExecutorInitializeTimeoutSeconds != nil {
+		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
+		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
+			return errors.New("executor_initialize_timeout_seconds must be positive and fit in time.Duration")
+		}
+	}
 	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
 		return errors.New("auto_compact_tokens must be positive")
 	}
 	return nil
+}
+
+func (s Settings) ExecutorInitializeTimeout() time.Duration {
+	seconds := defaultExecutorInitializeTimeoutSeconds
+	if s.ExecutorInitializeTimeoutSeconds != nil {
+		seconds = *s.ExecutorInitializeTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s Settings) ReadCredential() (string, error) {

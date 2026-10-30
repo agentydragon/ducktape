@@ -21,9 +21,6 @@ import (
 )
 
 const (
-	readyBudget       = 20 * time.Second
-	readinessRetry    = 100 * time.Millisecond
-	readinessProbe    = 2 * time.Second
 	healthInterval    = 5 * time.Second
 	healthDeadline    = 3 * time.Second
 	fenceDeadline     = 90 * time.Second
@@ -35,10 +32,14 @@ type Config struct {
 	URL             string
 	ContainerSocket string
 	Isolation       *supervision.SystemdPolicy
+	Readiness       Readiness
 }
 
 func (c Config) Validate(harnessIsolation *supervision.SystemdPolicy) error {
 	if err := validateURL(c.URL); err != nil {
+		return err
+	}
+	if _, err := c.Readiness.Resolve(); err != nil {
 		return err
 	}
 	if c.ContainerSocket != "" {

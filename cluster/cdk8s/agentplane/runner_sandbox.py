@@ -30,6 +30,7 @@ from agentplane.runner import configuration
 from agentplane.runner.configuration import (
     CONFIG_FILE,
     LAUNCH_FILE,
+    CodexReadiness,
     Configuration,
     ContainerExecutor,
     Endpoint,
@@ -217,6 +218,8 @@ class RunnerSandbox(Construct):
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         session_reconcile_concurrency: int | None = None,
+        pod_codex_readiness: CodexReadiness | None = None,
+        vm_codex_readiness: CodexReadiness | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -242,6 +245,7 @@ class RunnerSandbox(Construct):
             trust_mounts=trust_mounts,
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
+            codex_readiness=pod_codex_readiness,
             disable_otel_sdk=disable_otel_sdk,
         )
         if env.vm_sandboxes:
@@ -274,6 +278,7 @@ class RunnerSandbox(Construct):
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
                 session_reconcile_concurrency=session_reconcile_concurrency,
+                codex_readiness=vm_codex_readiness,
             )
 
     def add_platform_resources(self) -> None:
@@ -321,6 +326,7 @@ class RunnerTemplate(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
+        codex_readiness: CodexReadiness | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -337,6 +343,7 @@ class RunnerTemplate(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.session_reconcile_concurrency = session_reconcile_concurrency
+        self.codex_readiness = codex_readiness
         self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
@@ -420,6 +427,7 @@ class RunnerTemplate(Construct):
         config = Configuration(
             version=2,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
+            codex_readiness=self.codex_readiness,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
             control=RunnerControl(

@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.runner.configuration import Configuration, GuestResources, VMEnvironment
+from agentplane.runner.configuration import CodexReadiness, Configuration, GuestResources, VMEnvironment
 
 
 def _configuration() -> dict[str, object]:
@@ -36,6 +36,8 @@ def test_runner_configuration_round_trip_preserves_environment_sources() -> None
     decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
     assert decoded == config
     assert decoded.session_reconcile_concurrency is None
+    assert decoded.codex_readiness is None
+    assert "codex_readiness" not in config.model_dump(mode="json", exclude_none=True)
     assert decoded.harness_environment.values["HOME"] == "/test/home"
     assert decoded.harness_environment.inherit == ["PATH"]
 
@@ -45,6 +47,56 @@ def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -
     config = Configuration.model_validate(values)
     decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
     assert decoded.session_reconcile_concurrency == 2048
+
+
+def test_codex_readiness_values_round_trip_and_omit_unset_fields() -> None:
+    config = Configuration.model_validate(
+        _configuration()
+        | {
+            "codex_readiness": {
+                "exec_server_ready_timeout_ms": 60_000,
+                "exec_server_probe_timeout_ms": 5_000,
+                "exec_server_dependency_timeout_ms": 120_000,
+            }
+        }
+    )
+    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
+    serialized = config.model_dump(mode="json", exclude_none=True)
+
+    assert decoded.codex_readiness == CodexReadiness(
+        exec_server_ready_timeout_ms=60_000,
+        exec_server_probe_timeout_ms=5_000,
+        exec_server_dependency_timeout_ms=120_000,
+    )
+    assert serialized["codex_readiness"] == {
+        "exec_server_ready_timeout_ms": 60_000,
+        "exec_server_probe_timeout_ms": 5_000,
+        "exec_server_dependency_timeout_ms": 120_000,
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "exec_server_ready_timeout_ms",
+        "exec_server_probe_timeout_ms",
+        "exec_server_probe_interval_ms",
+        "exec_server_dependency_timeout_ms",
+        "app_server_start_timeout_ms",
+        "app_server_initialize_timeout_ms",
+    ],
+)
+def test_codex_readiness_rejects_nonpositive_or_out_of_range_windows(field: str) -> None:
+    with pytest.raises(ValidationError):
+        CodexReadiness.model_validate({field: 0})
+    with pytest.raises(ValidationError):
+        CodexReadiness.model_validate({field: 9_223_372_036_855})
+
+
+def test_codex_readiness_accepts_the_largest_duration_representable_in_milliseconds() -> None:
+    readiness = CodexReadiness(exec_server_ready_timeout_ms=9_223_372_036_854)
+
+    assert readiness.exec_server_ready_timeout_ms == 9_223_372_036_854
 
 
 def test_runner_control_listener_round_trips() -> None:

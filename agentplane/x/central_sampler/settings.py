@@ -8,6 +8,9 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, model_validator
 from pydantic_settings import SettingsConfigDict
 
+DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = 30
+MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
+
 
 class ResponsesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -53,6 +56,12 @@ class Settings(BaseModel):
     max_live_sessions: int = Field(gt=0)
     turn_timeout_seconds: int = Field(gt=0)
     rpc_timeout_seconds: int = Field(gt=0)
+    executor_initialize_timeout_seconds: int = Field(
+        default=DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Time allowed for the executor OpenSession initialization handshake.",
+    )
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
     kubeconfig: Path | None = None
