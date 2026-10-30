@@ -1434,6 +1434,25 @@ rust_binary(
     ],
 )
 
+# Snapshot e2e cases copy and hash the engine. Keep symbols on the normal CLI,
+# but omit them from the test executable to avoid repeating that byte work.
+rust_binary(
+    name = "debundle_e2e",
+    testonly = True,
+    srcs = ["main.rs"],
+    crate_name = "debundle",
+    crate_root = "main.rs",
+    edition = "2024",
+    rustc_flags = ["-Cstrip=symbols"],
+    visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
+    deps = [
+        ":cli",
+        ":gate",
+        "@crates//:clap",
+        "@crates//:swc_common",
+    ],
+)
+
 # A faithful, fail-closed projection of a
 # parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
 # source-unit-ordinal join). The extractor errors loudly on any construct it has not
