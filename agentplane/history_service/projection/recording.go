@@ -105,6 +105,50 @@ func RecordEmptyThreadFold(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, 
 	return true, err
 }
 
+// resetThreadFoldEpoch clears only this Session's derived fold rows and starts its new projection at cursor 0.
+// Raw History events, feed state, and sidebar metadata live outside these tables and remain intact.
+func resetThreadFoldEpoch(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string) (bool, error) {
+	if projectionEpoch == "" {
+		return false, errors.New("projection epoch is required")
+	}
+	stored, err := lockCheckpoint(ctx, tx, threadID)
+	if err != nil || stored == nil || stored.projectionEpoch == projectionEpoch {
+		return false, err
+	}
+	if stored.projectionEpoch != previousFoldEpoch || projectionEpoch != FoldEpoch {
+		return false, replication(nil, "thread fold epoch %q cannot reset to %q", stored.projectionEpoch, projectionEpoch)
+	}
+	previous, err := readViewState(ctx, tx, threadID, stored.projectionEpoch)
+	if err != nil {
+		return false, err
+	}
+	for _, table := range []string{
+		"thread_payload_chunk", "thread_payload_manifest", "thread_native_link", "thread_evidence", "thread_entity",
+	} {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE thread_id = $1", threadID); err != nil {
+			return false, err
+		}
+	}
+	state, err := json.Marshal(threadfold.StoredViewState{
+		Controls:    threadfold.StoredControls{BlockedReason: previous.Controls.BlockedReason},
+		Operational: threadfold.Operational{Status: threadfold.StatusActive},
+	})
+	if err != nil {
+		return false, err
+	}
+	if _, err := insertEntity(ctx, tx, threadfold.EntityRow{
+		ThreadID: threadID, ProjectionEpoch: projectionEpoch, EntityKind: threadfold.KindViewState, EntityID: "current",
+		State: state,
+	}, 0); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE thread_checkpoint SET source_id = NULL, projection_epoch = $2, through_cursor = 0
+		WHERE thread_id = $1`, threadID, projectionEpoch); err != nil {
+		return false, err
+	}
+	return true, notify(ctx, tx, ChannelSummaries)
+}
+
 // RecordThreadFold folds an archived page into the Thread's rows, in the transaction the caller fences with
 // its lease. The page must carry entries, all from sourceID.
 func RecordThreadFold(
@@ -263,6 +307,7 @@ func foldState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, sourceID str
 		Controls: threadfold.Controls{
 			AppliedModel: view.Controls.AppliedModel, AppliedReasoningEffort: view.Controls.AppliedReasoningEffort,
 			ActiveTurnID: view.Controls.ActiveTurnID, HarnessState: view.Controls.HarnessState,
+			BlockedReason: view.Controls.BlockedReason,
 		},
 	}, &view.Operational, nil
 }

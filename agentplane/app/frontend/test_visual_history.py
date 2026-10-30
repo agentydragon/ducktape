@@ -30,6 +30,18 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @DESKTOP_AND_MOBILE
+async def test_blocked_session(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.blocked_session(
+        "The executor reply was lost; the command outcome is unknown. Automatic replay is disabled."
+    )
+    await app.mount_thread(IDLE_THREAD)
+    await expect(view.page.get_by_text("Session blocked", exact=True)).to_be_visible()
+    await expect(view.page.get_by_role("textbox", name="Message")).to_be_disabled()
+    await expect(view.page.get_by_role("link", name="New thread", exact=True)).to_be_visible()
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
 async def test_single_tool_expansion_reserves_height(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(RUNNING_THREAD)
     page = view.page

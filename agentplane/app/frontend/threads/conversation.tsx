@@ -1,4 +1,16 @@
-import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
+import {
+  ActionIcon,
+  Alert,
+  Anchor,
+  Button,
+  Group,
+  Menu,
+  Popover,
+  Select,
+  Stack,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
 import type { LangfuseSearchSettings, ModelOption, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
@@ -213,19 +225,21 @@ function ConversationBody({
   const activityAge = modelActivityAge(thread.last_model_activity_at, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useThreadCommands(threadId, entities);
+  const view = entities.find((row) => row.entityKind === "view_state");
+  const controls = view && "controls" in view.state ? view.state.controls : null;
+  const blockedReason = controls?.blocked_reason ?? null;
+  const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
+  const commands = useThreadCommands(threadId, entities, syncWritable && blockedReason === null);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]
   );
   const openDebug = useOpenChronologicalDebug();
-  const view = entities.find((row) => row.entityKind === "view_state");
-  const controls = view && "controls" in view.state ? view.state.controls : null;
   const operational = view && "controls" in view.state ? view.state.operational : null;
-  const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
   const threadCanAcceptInput =
     syncWritable &&
     !thread.archived &&
+    blockedReason === null &&
     !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
     operational?.status !== "failed";
   const running =
@@ -304,6 +318,7 @@ function ConversationBody({
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
+        canDeliver={blockedReason === null}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands
@@ -312,6 +327,7 @@ function ConversationBody({
           store={commands.store}
           errors={commands.errors}
           deliver={commands.deliver}
+          canDeliver={blockedReason === null}
         />
       )}
       <ModelActivityHint
@@ -346,6 +362,28 @@ function ConversationBody({
               : `Rejected event ${operational.feed_error.cursor}: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`}
           </Text>
         )}
+        {blockedReason !== null && (
+          <Alert color="red" title="Session blocked" role="alert">
+            <Stack gap="xs">
+              <Text size="sm">
+                This session cannot accept more commands. Its history is preserved. Start a new thread to continue.
+              </Text>
+              <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                {blockedReason}
+              </Text>
+              <Button
+                component={Link}
+                to={`/sandboxes/${encodeURIComponent(thread.sandbox)}`}
+                size="xs"
+                variant="light"
+                color="red"
+                style={{ alignSelf: "flex-start" }}
+              >
+                New thread
+              </Button>
+            </Stack>
+          </Alert>
+        )}
         {modelError && (
           <Text role="alert" c="red">
             {modelError}
@@ -360,7 +398,7 @@ function ConversationBody({
           canSend={canSend}
           running={running}
           activeTurn={activeTurn}
-          canResumeSandbox={canResumeSandbox}
+          canResumeSandbox={canResumeSandbox && blockedReason === null}
           composerPlaceholder={composerPlaceholder}
           onResumeSandbox={onResumeSandbox}
           onSubmit={commands.submitInput}

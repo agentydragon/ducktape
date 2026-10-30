@@ -141,6 +141,9 @@ class AgentplaneFixture:
     async def failed_turn(self, *, after_content: bool = False) -> None:
         await self.page.evaluate("after => window.agentplaneVisual.failedTurn(after)", after_content)
 
+    async def blocked_session(self, reason: str) -> None:
+        await self.page.evaluate("reason => window.agentplaneVisual.blockedSession(reason)", reason)
+
     async def standalone_reasoning(
         self, *, long_preview: bool = False, code_fence: bool = False, long_body: bool = False
     ) -> None:

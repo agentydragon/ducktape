@@ -31,11 +31,13 @@ export function viewState({
   status = "active",
   model = "test-model",
   activeTurn = null,
+  blockedReason = null,
 }: {
   harness?: string | null;
   status?: "active" | "ended" | "failed";
   model?: string | null;
   activeTurn?: string | null;
+  blockedReason?: string | null;
 } = {}): ThreadEntity {
   return {
     threadId: THREAD.id,
@@ -53,6 +55,7 @@ export function viewState({
         applied_reasoning_effort: null,
         active_turn_id: activeTurn,
         harness_state: harness,
+        blocked_reason: blockedReason,
       },
       operational: { status, last_verified_cursor: "1", feed_error: null },
     },

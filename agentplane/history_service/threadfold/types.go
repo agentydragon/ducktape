@@ -166,6 +166,7 @@ type Controls struct {
 	ActiveTurnID           *string
 	HarnessState           *string
 	AppliedReasoningEffort *string
+	BlockedReason          *string
 }
 
 type ViewState struct {

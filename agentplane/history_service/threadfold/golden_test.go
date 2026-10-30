@@ -150,6 +150,7 @@ func (g *goldenRows) viewState(t *testing.T) ViewState {
 			ActiveTurnID:           stored.Controls.ActiveTurnID,
 			HarnessState:           stored.Controls.HarnessState,
 			AppliedReasoningEffort: stored.Controls.AppliedReasoningEffort,
+			BlockedReason:          stored.Controls.BlockedReason,
 		},
 	}
 }

@@ -61,6 +61,7 @@ type StoredControls struct {
 	AppliedReasoningEffort *string `json:"applied_reasoning_effort"`
 	ActiveTurnID           *string `json:"active_turn_id"`
 	HarnessState           *string `json:"harness_state"`
+	BlockedReason          *string `json:"blocked_reason"`
 }
 
 // StoredViewState is the `state` of the one view-state row of a Thread.
@@ -215,6 +216,7 @@ func (b *rowBuilder) viewState(state ViewState, operational *Operational) Entity
 				AppliedReasoningEffort: state.Controls.AppliedReasoningEffort,
 				ActiveTurnID:           state.Controls.ActiveTurnID,
 				HarnessState:           state.Controls.HarnessState,
+				BlockedReason:          state.Controls.BlockedReason,
 			},
 			Operational: *operational,
 		}),

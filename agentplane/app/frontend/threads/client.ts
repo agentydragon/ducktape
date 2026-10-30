@@ -34,6 +34,7 @@ export type ThreadEntityState =
         applied_reasoning_effort: string | null;
         active_turn_id: string | null;
         harness_state: string | null;
+        blocked_reason: string | null;
       };
       operational: {
         status: "active" | "ended" | "failed";

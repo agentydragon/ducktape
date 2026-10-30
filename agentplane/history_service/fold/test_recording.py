@@ -19,7 +19,7 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.history_service.fold.views import EntityKind, ThreadOperationalState
+from agentplane.history_service.fold.views import EntityKind, ThreadControlsState, ThreadOperationalState
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 
@@ -39,6 +39,13 @@ async def view_state(history: History, thread: UUID) -> tuple[ThreadCheckpoint, 
 
 def operational_state(view: ThreadEntity) -> dict[str, object]:
     return ThreadOperationalState.model_validate(view.state["operational"]).model_dump()
+
+
+def test_v1_controls_default_missing_blocked_reason_to_null() -> None:
+    controls = ThreadControlsState.model_validate(
+        {"applied_model": None, "applied_reasoning_effort": None, "active_turn_id": None, "harness_state": None}
+    )
+    assert controls.blocked_reason is None
 
 
 def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:

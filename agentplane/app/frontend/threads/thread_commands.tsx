@@ -76,12 +76,14 @@ export function LocalControlCommands({
   store,
   errors,
   deliver,
+  canDeliver = true,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  canDeliver?: boolean;
 }): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
   const rows = useThreadSync().useCommandRows(controls.map((value) => value.command.commandId));
@@ -94,6 +96,7 @@ export function LocalControlCommands({
       store={store}
       errors={errors}
       deliver={deliver}
+      canDeliver={canDeliver}
     />
   );
 }
@@ -107,6 +110,7 @@ export function PendingInputMessages({
   errors,
   store,
   deliver,
+  canDeliver = true,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
@@ -115,6 +119,7 @@ export function PendingInputMessages({
   errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
+  canDeliver?: boolean;
 }): JSX.Element | null {
   const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
   const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
@@ -185,7 +190,7 @@ export function PendingInputMessages({
             action={
               !admitted && !value.attempted && value.dispatch === null
                 ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted && value.dispatch === null
+                : !admitted && value.dispatch === null && canDeliver
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
             }
@@ -226,6 +231,7 @@ function LocalControlRows({
   store,
   errors,
   deliver,
+  canDeliver = true,
 }: {
   rows: ThreadEntity[];
   entities: ThreadEntity[];
@@ -233,6 +239,7 @@ function LocalControlRows({
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
+  canDeliver?: boolean;
 }): JSX.Element {
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
@@ -277,6 +284,7 @@ function LocalControlRows({
                   <Button
                     size="xs"
                     variant="subtle"
+                    disabled={value.attempted && !canDeliver}
                     onClick={() =>
                       value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
                     }

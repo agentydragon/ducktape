@@ -824,6 +824,36 @@ it.each([
   expect(submitInput).not.toHaveBeenCalled();
 });
 
+it("keeps a blocked session read-only and links to existing thread creation", async () => {
+  const reason = "The executor reply was lost; its outcome is unknown. Automatic replay is disabled.";
+  const store = new LocalCommands(THREAD.id);
+  store.remember(message("blocked-pending"));
+  store.markAttempted("blocked-pending");
+  const container = await render(threadState({ rows: [viewState({ blockedReason: reason })] }));
+  expect(container.textContent).toContain("Session blocked");
+  expect(container.textContent).toContain(reason);
+  expect(composer(container).disabled).toBe(true);
+  const link = container.querySelector('a[href="/sandboxes/composer-test"]');
+  expect(link?.textContent).toBe("New thread");
+  expect(pendingRow(container, "blocked-pending").textContent).not.toContain("Retry");
+  await act(async () => window.dispatchEvent(new Event("online")));
+  await type(composer(container), "Do not submit");
+  await press(composer(container), {});
+  expect(submitInput).not.toHaveBeenCalled();
+  expect(changeModel).not.toHaveBeenCalled();
+  expect(changeReasoningEffort).not.toHaveBeenCalled();
+});
+
+it("allows a new command after an ordinary failed turn", async () => {
+  sharedThread = { last_turn_status: "TURN_STATUS_FAILED" };
+  const container = await render(threadState());
+  expect(container.textContent).not.toContain("Session blocked");
+  expect(composer(container).disabled).toBe(false);
+  await type(composer(container), "Continue safely");
+  await press(composer(container), {});
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue safely" } }]);
+});
+
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
   const container = await render();
   expect(document.body.textContent).not.toContain(THREAD.id);

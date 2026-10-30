@@ -851,6 +851,7 @@
           "active_turn_id": null,
           "applied_model": "model-b",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1039,6 +1040,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1156,6 +1158,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1357,6 +1360,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1473,6 +1477,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1581,6 +1586,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1680,6 +1686,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1788,6 +1795,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1887,6 +1895,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -1997,6 +2006,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2116,6 +2126,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2244,6 +2255,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2382,6 +2394,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2499,6 +2512,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2618,6 +2632,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2714,6 +2729,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2823,6 +2839,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-b",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -2905,6 +2922,7 @@
           "active_turn_id": null,
           "applied_model": "model-b",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3013,6 +3031,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3135,6 +3154,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3257,6 +3277,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3377,6 +3398,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3499,6 +3521,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3613,6 +3636,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3732,6 +3756,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3852,6 +3877,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -3974,6 +4000,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4096,6 +4123,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4216,6 +4244,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4338,6 +4367,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4452,6 +4482,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4571,6 +4602,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4691,6 +4723,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4813,6 +4846,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -4938,6 +4972,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5058,6 +5093,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5180,6 +5216,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5297,6 +5334,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5419,6 +5457,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5518,6 +5557,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5623,6 +5663,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5730,6 +5771,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5829,6 +5871,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -5934,6 +5977,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6041,6 +6085,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6140,6 +6185,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6245,6 +6291,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6352,6 +6399,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6451,6 +6499,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6554,6 +6603,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6698,6 +6748,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6807,6 +6858,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -6910,6 +6962,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7032,6 +7085,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7131,6 +7185,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7254,6 +7309,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7341,6 +7397,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7428,6 +7485,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7508,6 +7566,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7595,6 +7654,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7682,6 +7742,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7762,6 +7823,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7849,6 +7911,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -7981,6 +8044,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8100,6 +8164,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8210,6 +8275,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8297,6 +8363,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8384,6 +8451,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8471,6 +8539,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8558,6 +8627,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8645,6 +8715,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8732,6 +8803,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8819,6 +8891,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8906,6 +8979,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -8993,6 +9067,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -9080,6 +9155,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -9212,6 +9288,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -9844,6 +9921,7 @@
           "active_turn_id": null,
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "lost"
          },
          "operational": {
@@ -9925,6 +10003,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10007,6 +10086,7 @@
           "active_turn_id": "turn-1",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10087,6 +10167,7 @@
           "active_turn_id": "turn-2",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10167,6 +10248,7 @@
           "active_turn_id": "turn-2",
           "applied_model": "model-a",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10247,6 +10329,7 @@
           "active_turn_id": "turn-2",
           "applied_model": "model-b",
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10329,6 +10412,7 @@
           "active_turn_id": "turn-2",
           "applied_model": "model-b",
           "applied_reasoning_effort": "high",
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10432,6 +10516,7 @@
           "active_turn_id": "turn-2",
           "applied_model": "model-b",
           "applied_reasoning_effort": "high",
+          "blocked_reason": null,
           "harness_state": "running"
          },
          "operational": {
@@ -10520,6 +10605,7 @@
           "active_turn_id": null,
           "applied_model": "model-b",
           "applied_reasoning_effort": "high",
+          "blocked_reason": null,
           "harness_state": "stopped"
          },
          "operational": {
@@ -10623,6 +10709,7 @@
           "active_turn_id": null,
           "applied_model": "model-b",
           "applied_reasoning_effort": "high",
+          "blocked_reason": null,
           "harness_state": "stopped"
          },
          "operational": {
@@ -10711,6 +10798,7 @@
           "active_turn_id": null,
           "applied_model": "model-b",
           "applied_reasoning_effort": "high",
+          "blocked_reason": null,
           "harness_state": "lost"
          },
          "operational": {
@@ -10821,6 +10909,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -10938,6 +11027,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11034,6 +11124,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11118,6 +11209,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11202,6 +11294,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11282,6 +11375,7 @@
           "active_turn_id": "turn-1",
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11370,6 +11464,7 @@
           "active_turn_id": "turn-1",
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11469,6 +11564,7 @@
           "active_turn_id": "turn-1",
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11592,6 +11688,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11702,6 +11799,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11858,6 +11956,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -11979,6 +12078,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12099,6 +12199,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12260,6 +12361,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12391,6 +12493,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12511,6 +12614,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12633,6 +12737,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12766,6 +12871,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -12897,6 +13003,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13039,6 +13146,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13180,6 +13288,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13317,6 +13426,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13460,6 +13570,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13553,6 +13664,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13688,6 +13800,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13781,6 +13894,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -13916,6 +14030,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -14009,6 +14124,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -14149,6 +14265,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -14297,6 +14414,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -14397,6 +14515,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
@@ -14646,6 +14765,7 @@
           "active_turn_id": null,
           "applied_model": null,
           "applied_reasoning_effort": null,
+          "blocked_reason": null,
           "harness_state": null
          },
          "operational": {
