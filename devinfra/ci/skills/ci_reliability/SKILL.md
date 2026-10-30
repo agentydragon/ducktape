@@ -197,10 +197,10 @@ condition that permits it. A timeout, idle period or racy-looking source pattern
 does not by itself identify the cause.
 
 When the test emits spans, inspect the exact failed physical attempt's trace
-before adding diagnostics. [Agentplane's phase-tracing notes](../../../../agentplane/system_tests/README.md#phase-tracing)
+before adding diagnostics. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
 describe `test.outputs/vm-phases.jsonl`, its parallel/nested spans and the
 separate k3s timeline. Use the
-[BuildBuddy artifact recipe](../../../../devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands)
+[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands)
 to list test outputs and download the trace for the failing result and a
 comparable pass; retain each artifact's source SHA, target, and shard/run/attempt.
 Find the earliest causal span/event, then correlate it with native, service and

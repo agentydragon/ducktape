@@ -213,10 +213,10 @@ Do not stop at "this test takes seven minutes" or "setup is expensive," or let
 easy workflow tweaks substitute for investigating the dominant test work.
 
 When a selected test emits spans, use them as the primary phase evidence before
-adding instrumentation. [Agentplane's phase-tracing notes](../../../../agentplane/system_tests/README.md#phase-tracing)
+adding instrumentation. [Agentplane's phase-tracing notes](https://github.com/agentydragon/ducktape/blob/devel/agentplane/system_tests/README.md#phase-tracing)
 document `test.outputs/vm-phases.jsonl`, the separate k3s timeline, and how the
 traces relate to fixture and scenario lifetimes. Follow the
-[BuildBuddy artifact recipe](../../../../devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
+[BuildBuddy artifact recipe](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/skill/buildbuddy_api/SKILL.md#three-kinds-of-file-three-commands):
 list the physical invocation's test artifacts first, then download the trace
 for the relevant target and shard/run/attempt. Tie it to the tested source SHA
 and a physical execution; do not infer a trace from a cached target summary.
@@ -321,6 +321,11 @@ where possible; note unknown and overlapping intervals explicitly:
    reasons for a cold start (pool/instance, isolation, concurrency, image changes,
    idle expiration), but do not claim reuse failed without evidence that reuse was
    possible. Avoid confusing a GitHub runner with a BuildBuddy VM or an RBE action.
+   For live diagnosis, compare the sampled BuildBuddy Active view and per-invocation
+   execution/queue timestamps with GitHub job queuing and outer VM preparation.
+   Deduplicate workflow and child invocation IDs. `IN_PROGRESS` can outlive its VM;
+   absent or epoch timestamps are unknown. Infer throttling only when observed
+   queueing coincides with backlog and exhausted capacity.
 3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
    downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
    tool log, cache scorecard, target and execution records as needed (see the
