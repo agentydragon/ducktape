@@ -10,6 +10,7 @@ image-pins).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
@@ -38,8 +39,9 @@ from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
     KubernetesSecretDestination,
-    MirroredToken,
-    SopsToken,
+    MirroredDestination,
+    SopsDestination,
+    Token,
     WorkspaceNotification,
 )
 
@@ -63,13 +65,12 @@ _SERVER_CONFIG_MAP = "attic-config"
 ROTATOR_CONFIG = Config(
     tokens=[
         *[
-            SopsToken(
-                storage="sops",
+            Token(
                 name=f"{sub} attic reader",
-                sops_file=Path(secret_file),
                 sub=sub,
                 validity="1 year",
                 pull=["main", "gaffer"],
+                destination=SopsDestination(sops_file=Path(secret_file)),
             )
             for sub, secret_file in [
                 ("wyrm2", "secrets/hosts/wyrm2-attic.yaml"),
@@ -84,11 +85,10 @@ ROTATOR_CONFIG = Config(
         ],
         # CI reads main and gaffer for Nix substituter access. Public is an
         # anonymous-readable bootstrap cache required before CI credentials exist.
-        MirroredToken(
-            storage="mirrored",
+        Token(
             name="ducktape CI attic writer (main)",
-            sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
-            kubernetes=KubernetesDestination(
+            destination=MirroredDestination(
+                sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
                 secret=KubernetesSecretDestination(
                     namespace=ci_token.WRITER.namespace, name=ci_token.WRITER.name, key=ci_token.TOKEN.key
                 ),
@@ -101,21 +101,50 @@ ROTATOR_CONFIG = Config(
             pull=["main", "gaffer"],
             push=["main", "public"],
         ),
-        SopsToken(
-            storage="sops",
+        Token(
             name="gaffer CI attic writer",
-            sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml"),
             sub="gaffer-ci",
             validity="1 year",
             pull=["gaffer"],
             push=["gaffer"],
+            destination=SopsDestination(sops_file=Path("secrets/ci/attic-gaffer-writer.sops.yaml")),
         ),
     ]
 )
 
 SERVER_CONFIG_MAP = ConfigMapArgs(name=_SERVER_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml"])
+
+
+def _legacy_rotator_config(config: Config) -> dict[str, Any]:
+    """Project the destination union into the flat fields required by the old image.
+
+    CLEANUP(added 2026-10-30): remove this helper after the destination-union image
+    is deployed, then pass ROTATOR_CONFIG directly to yaml_config.
+    """
+    result = config.model_dump(mode="json", exclude_unset=True)
+    result["tokens"] = []
+    for token in config.tokens:
+        serialized = token.model_dump(mode="json", exclude_unset=True)
+        serialized.pop("destination")
+        destination = token.destination
+        if isinstance(destination, SopsDestination):
+            serialized["sops_file"] = destination.sops_file.as_posix()
+        elif isinstance(destination, MirroredDestination):
+            serialized["sops_file"] = destination.sops_file.as_posix()
+            serialized["kubernetes"] = {
+                "secret": destination.secret.model_dump(mode="json", exclude_unset=True),
+                "notification": destination.notification.model_dump(mode="json", exclude_unset=True),
+            }
+        elif isinstance(destination, KubernetesDestination):
+            raise ValueError("Kubernetes-only Attic tokens require the destination-union rotator image")
+        result["tokens"].append(serialized)
+    return result
+
+
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
-    name=_ROTATORS_CONFIG_MAP, namespace=NAMESPACE, data={"rotators.yaml": yaml_config(ROTATOR_CONFIG)}
+    name=_ROTATORS_CONFIG_MAP,
+    namespace=NAMESPACE,
+    data={"rotators.yaml": yaml_config(_legacy_rotator_config(ROTATOR_CONFIG))},
 )
 
 

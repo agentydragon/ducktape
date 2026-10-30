@@ -22,7 +22,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/wyrm2-attic.yaml
           - name: rugged attic reader
             sub: rugged
@@ -30,7 +29,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/rugged-attic.yaml
           - name: iguana attic reader
             sub: iguana
@@ -38,7 +36,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/iguana-attic.yaml
           - name: atlas attic reader
             sub: atlas
@@ -46,7 +43,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/atlas-attic.yaml
           - name: gecko attic reader
             sub: gecko
@@ -54,7 +50,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/gecko-attic.yaml
           - name: agent-box attic reader
             sub: agent-box
@@ -62,7 +57,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/hosts/agent-box-attic.yaml
           - name: claude-web attic reader
             sub: claude-web
@@ -70,7 +64,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/claude-web-attic.yaml
           - name: haku attic reader
             sub: haku
@@ -78,7 +71,6 @@ configMapGenerator:
             pull:
               - main
               - gaffer
-            storage: sops
             sops_file: secrets/haku-attic.yaml
           - name: ducktape CI attic writer (main)
             sub: ducktape-ci
@@ -89,7 +81,6 @@ configMapGenerator:
             push:
               - main
               - public
-            storage: mirrored
             sops_file: secrets/ci/attic-main-writer.sops.yaml
             kubernetes:
               secret:
@@ -106,5 +97,4 @@ configMapGenerator:
               - gaffer
             push:
               - gaffer
-            storage: sops
             sops_file: secrets/ci/attic-gaffer-writer.sops.yaml

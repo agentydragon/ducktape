@@ -18,6 +18,14 @@ from pydantic import (
 )
 
 from cluster.cdk8s.config_format import json_config, yaml_config
+from cluster.rotators.attic_jwt_rotation.config import (
+    Config,
+    KubernetesDestination,
+    KubernetesSecretDestination,
+    SopsDestination,
+    Token,
+    WorkspaceNotification,
+)
 from util.settings_contract import validate_settings_fragment
 
 
@@ -140,6 +148,39 @@ def test_yaml_keeps_cdk8s_null_omission() -> None:
     assert yaml.safe_load(yaml_config({"peer": peer, "optional": None}, exclude_none=True)) == {
         "peer": {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "serialized": True}
     }
+
+
+def test_yaml_config_preserves_default_destination_discriminators() -> None:
+    config = Config(
+        tokens=[
+            Token(
+                name="reader",
+                sub="reader",
+                validity="1 year",
+                pull=["main"],
+                destination=SopsDestination(sops_file=Path("reader.sops.yaml")),
+            ),
+            Token(
+                name="writer",
+                sub="writer",
+                validity="1 year",
+                pull=["main"],
+                destination=KubernetesDestination(
+                    secret=KubernetesSecretDestination(namespace="nix-cache", name="attic-token", key="token"),
+                    notification=WorkspaceNotification(
+                        workspace="github-secrets-sync", annotation_key="test/token-version"
+                    ),
+                ),
+            ),
+        ]
+    )
+
+    rendered = yaml.safe_load(yaml_config(config.model_dump(mode="json")))
+
+    assert [token["destination"]["storage"] for token in rendered["tokens"]] == ["sops", "kubernetes"]
+    parsed = Config.model_validate(rendered)
+    assert isinstance(parsed.tokens[0].destination, SopsDestination)
+    assert isinstance(parsed.tokens[1].destination, KubernetesDestination)
 
 
 if __name__ == "__main__":

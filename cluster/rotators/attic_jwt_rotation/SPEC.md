@@ -1,10 +1,11 @@
 # Attic JWT rotator
 
-Every token has one `storage` variant. `sops` stores its JWT in the configured
-SOPS file, `kubernetes` stores it in the configured Secret and notifies the
-configured OpenTofu Workspace, and `mirrored` does both while consumers migrate.
-The variant determines which destinations exist; mismatched or missing fields
-fail config validation.
+Every token has common identity and scope fields plus one `destination` variant.
+`destination.storage` is `sops`, `kubernetes`, or `mirrored`: SOPS stores its JWT
+in the configured file, Kubernetes stores it in the configured Secret and
+notifies the configured OpenTofu Workspace, and mirrored does both. The
+destination determines which fields exist; mismatched or missing fields fail
+config validation.
 
 For Kubernetes-backed variants, the Secret is canonical. The rotator checks the
 JWT subject and expiry claim plus pull and push scope annotations. The Secret
@@ -18,8 +19,12 @@ Only `sops` and `mirrored` tokens write `sops_file` and enter git commit
 bookkeeping. Kubernetes-only tokens publish and notify, then return without a
 SOPS write or git commit.
 
-The Config parser temporarily tags only the previous SOPS and mirrored shapes,
-which both required `sops_file`. TODO: remove that adapter after all deployed
-rotators ConfigMaps carry `storage` tags. The current CI writer remains
-`mirrored` until the union-capable runtime is deployed; a follow-up can then
-remove its SOPS output.
+During rollout, cdk8s temporarily emits the deployed flat fields: top-level
+`sops_file` and, for mirrored entries, `kubernetes`. The parser adapts that
+shape and matching top-level `storage` tags into `destination`; contradictory
+flat tags and mixed flat/nested fields fail validation. The temporary writer
+rejects Kubernetes-only entries because the deployed image requires
+`sops_file`. Remove the writer and flat-config adapter after the
+destination-union image is deployed, then emit nested destinations directly.
+The CI writer remains mirrored until that rollout; a follow-up can remove its
+SOPS output.

@@ -17,12 +17,33 @@ class WorkspaceNotification(BaseModel):
     annotation_key: str = Field(min_length=1)
 
 
-class KubernetesDestination(BaseModel):
+class KubernetesPublication(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     secret: KubernetesSecretDestination
     notification: WorkspaceNotification
 
 
-class TokenFields(BaseModel):
+class SopsDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    storage: Literal["sops"] = "sops"
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+
+
+class KubernetesDestination(KubernetesPublication):
+    storage: Literal["kubernetes"] = "kubernetes"
+
+
+class MirroredDestination(KubernetesPublication):
+    storage: Literal["mirrored"] = "mirrored"
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+
+
+Destination = Annotated[SopsDestination | KubernetesDestination | MirroredDestination, Field(discriminator="storage")]
+
+
+class Token(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Human-readable name for logs and the commit message")
@@ -33,25 +54,7 @@ class TokenFields(BaseModel):
         default_factory=list,
         description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens",
     )
-
-
-class SopsToken(TokenFields):
-    storage: Literal["sops"]
-    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
-
-
-class KubernetesToken(TokenFields):
-    storage: Literal["kubernetes"]
-    kubernetes: KubernetesDestination
-
-
-class MirroredToken(TokenFields):
-    storage: Literal["mirrored"]
-    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
-    kubernetes: KubernetesDestination
-
-
-Token = Annotated[SopsToken | KubernetesToken | MirroredToken, Field(discriminator="storage")]
+    destination: Destination
 
 
 class Config(BaseModel):
@@ -86,31 +89,58 @@ class Config(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def tag_legacy_tokens(cls, value: Any) -> Any:
-        """Tag the deployed pre-union ConfigMap shape until its replacement rolls out.
+    def adapt_legacy_tokens(cls, value: Any) -> Any:
+        """Adapt deployed flat token records while ConfigMaps roll to nested destinations.
 
-        TODO: remove this adapter after the tagged rotators ConfigMap is deployed.
+        CLEANUP(added 2026-10-30): remove the flat-record branch after every deployed
+        rotator ConfigMap contains nested destinations.
         """
         if not isinstance(value, dict):
             return value
         raw_tokens = value.get("tokens")
         if not isinstance(raw_tokens, list):
             return value
+
         tokens = []
         for raw_token in raw_tokens:
-            if not isinstance(raw_token, dict) or "storage" in raw_token:
+            if not isinstance(raw_token, dict) or "destination" in raw_token:
                 tokens.append(raw_token)
                 continue
-            has_sops = "sops_file" in raw_token
-            has_kubernetes = "kubernetes" in raw_token
-            if has_sops and has_kubernetes:
-                storage = "mirrored"
-            elif has_sops:
-                storage = "sops"
+
+            # The deployed schema required sops_file; its optional kubernetes
+            # field distinguished mirrored tokens. Kubernetes-only records were
+            # never valid in that schema and must wait for the new image.
+            if "sops_file" not in raw_token:
+                tokens.append(raw_token)
+                continue
+
+            legacy_kubernetes = raw_token.get("kubernetes")
+            legacy_storage = raw_token.get("storage")
+            inferred_storage = "mirrored" if "kubernetes" in raw_token else "sops"
+            if "storage" in raw_token and legacy_storage != inferred_storage:
+                raise ValueError("flat Attic token storage tag contradicts its destination fields")
+            destination: dict[str, Any]
+            if "kubernetes" in raw_token:
+                if not isinstance(legacy_kubernetes, dict):
+                    # Preserve the malformed value so nested destination validation rejects it.
+                    destination = {
+                        "storage": "mirrored",
+                        "sops_file": raw_token["sops_file"],
+                        "kubernetes": legacy_kubernetes,
+                    }
+                else:
+                    destination = {"storage": "mirrored", "sops_file": raw_token["sops_file"], **legacy_kubernetes}
             else:
-                # The deployed pre-union schema required sops_file. Do not
-                # reinterpret a new untagged Kubernetes-only entry as legacy.
-                tokens.append(raw_token)
-                continue
-            tokens.append({**raw_token, "storage": storage})
+                destination = {"storage": "sops", "sops_file": raw_token["sops_file"]}
+
+            tokens.append(
+                {
+                    **{
+                        key: item
+                        for key, item in raw_token.items()
+                        if key not in {"sops_file", "kubernetes", "storage"}
+                    },
+                    "destination": destination,
+                }
+            )
         return {**value, "tokens": tokens}

@@ -283,6 +283,7 @@ py_test(
     deps = [
         ":config_format",
         "//:conftest",
+        "//cluster/rotators/attic_jwt_rotation:config",
         "//util:settings_contract",
         "@pypi//pydantic",
         "@pypi//pytest",
