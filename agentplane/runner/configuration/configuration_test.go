@@ -1,4 +1,4 @@
-package runner
+package configuration
 
 import (
 	"encoding/json"
@@ -51,9 +51,9 @@ func TestConfigurationRequiresExplicitControlSecurity(t *testing.T) {
 			value, path, launch := configurationFixture(t)
 			value["control"].(map[string]any)["security"] = test.security
 			writeJSONFixture(t, path, value)
-			_, _, _, err := loadConfiguration(path, launch)
+			_, _, _, err := load(path, launch)
 			if (err == nil) != test.valid {
-				t.Fatalf("loadConfiguration error = %v, valid = %t", err, test.valid)
+				t.Fatalf("load error = %v, valid = %t", err, test.valid)
 			}
 		})
 	}
@@ -83,7 +83,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 				value["environment"] = environment
 			}
 			writeJSONFixture(t, path, value)
-			config, ingress, environment, err := loadConfiguration(path, launchPath)
+			config, ingress, environment, err := load(path, launchPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,8 +112,8 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if config.Launch.PlatformInstructions != "Test guidance." || config.Launch.Bootstrap == nil || *config.Launch.Bootstrap != "echo initialized" {
 				t.Fatalf("launch = %+v", config.Launch)
 			}
-			if config.SessionReconcileConcurrency != defaultSessionReconcileConcurrency {
-				t.Fatalf("session reconcile concurrency = %d, want default %d", config.SessionReconcileConcurrency, defaultSessionReconcileConcurrency)
+			if config.SessionReconcileConcurrency != DefaultSessionReconcileConcurrency {
+				t.Fatalf("session reconcile concurrency = %d, want default %d", config.SessionReconcileConcurrency, DefaultSessionReconcileConcurrency)
 			}
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
@@ -206,7 +206,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 			value, path, launchPath := configurationFixture(t)
 			test.update(value)
 			writeJSONFixture(t, path, value)
-			if _, _, err := LoadConfiguration(path, launchPath); err == nil {
+			if _, _, err := Load(path, launchPath); err == nil {
 				t.Fatal("accepted invalid configuration")
 			}
 			if os.Getenv("TOOL_ROUTE") != "original" {
@@ -222,7 +222,7 @@ func TestConfigurationUsesExplicitSessionReconcileConcurrency(t *testing.T) {
 	value["session_reconcile_concurrency"] = 2048
 	writeJSONFixture(t, path, value)
 
-	config, _, _, err := loadConfiguration(path, launchPath)
+	config, _, _, err := load(path, launchPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestConfigurationRejectsLaunchFieldsOutsideControllerContract(t *testing.T)
 			t.Fatal(err)
 		}
 		writeJSONFixture(t, launchPath, launch)
-		if _, _, _, err := loadConfiguration(path, launchPath); err == nil {
+		if _, _, _, err := load(path, launchPath); err == nil {
 			t.Fatalf("accepted invalid launch %s", data)
 		}
 	}

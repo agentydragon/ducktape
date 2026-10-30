@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/ingress"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
@@ -13,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (r *Runner) Run(ctx context.Context, ingressEndpoint Endpoint) error {
+func (r *Runner) Run(ctx context.Context, ingressEndpoint configuration.Endpoint) error {
 	if err := r.Startup(r.ctx); err != nil {
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
@@ -54,7 +55,7 @@ func (r *Runner) Run(ctx context.Context, ingressEndpoint Endpoint) error {
 	return errors.Join(failure, closeErr)
 }
 
-func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
+func (r *Runner) ingressLoop(ctx context.Context, endpoint configuration.Endpoint) error {
 	ctx, cancel := context.WithCancel(ctx)
 	conn, err := stream.NewConnection(endpoint.Target)
 	if err != nil {

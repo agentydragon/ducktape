@@ -9,6 +9,7 @@ import (
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -124,7 +125,9 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 		ingresspb.RegisterRunnerIngressServer(server, service)
 	})
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- runner.ingressLoop(ctx, Endpoint{Target: endpoint, Bearer: "ingress-token"}) }()
+	go func() {
+		loopDone <- runner.ingressLoop(ctx, configuration.Endpoint{Target: endpoint, Bearer: "ingress-token"})
+	}()
 
 	select {
 	case authorization := <-service.authorization:

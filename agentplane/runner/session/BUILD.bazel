@@ -7,7 +7,10 @@ go_library(
         exclude = ["*_test.go"],
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/session",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/configuration:__pkg__",
+    ],
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

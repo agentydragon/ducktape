@@ -1,4 +1,4 @@
-package runner
+package configuration
 
 import (
 	"encoding/json"
@@ -104,7 +104,7 @@ func guestResourcesFromMap(value map[string]any) (guestResources, error) {
 		return guestResources{}, err
 	}
 	var resources guestResources
-	if err := DecodeStrict(data, &resources); err != nil {
+	if err := decodeStrict(data, &resources); err != nil {
 		return guestResources{}, err
 	}
 	return resources, nil

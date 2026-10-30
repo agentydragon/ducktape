@@ -1,6 +1,7 @@
 package runner
 
 import (
+ "github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"context"
 	"errors"
 	"path/filepath"
@@ -59,7 +60,7 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
-	if err := validateControlIdentity(config); err != nil {
+	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
 		return nil, err
 	}
 	return newRunner(config, nil, nil)

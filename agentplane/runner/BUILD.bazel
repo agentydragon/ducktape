@@ -588,6 +588,7 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
+        "//agentplane/runner/configuration",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
@@ -646,6 +647,9 @@ go_test(
     exec_properties = {"test.dockerUser": "0:0"},
     race = "on",
     deps = [
+        "//agentplane/runner/executor",
+        "//agentplane/runner/workspace",
+        "//agentplane/runner/configuration",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

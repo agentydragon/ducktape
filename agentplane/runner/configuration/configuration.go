@@ -1,4 +1,4 @@
-package runner
+package configuration
 
 import (
 	"encoding/json"
@@ -38,7 +38,7 @@ type Configuration struct {
 	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
 }
 
-const defaultSessionReconcileConcurrency = 16
+const DefaultSessionReconcileConcurrency = 16
 
 type DebugCheckpointConfiguration struct {
 	Name      string `json:"name"`
@@ -161,7 +161,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexe
 	switch tag.Kind {
 	case "pod":
 		var pod PodEnvironmentConfiguration
-		if err := DecodeStrict(f.Environment, &pod); err != nil {
+		if err := decodeStrict(f.Environment, &pod); err != nil {
 			return nil, nil, nil, false, err
 		}
 		if pod.Supervision != "pid1" && pod.Supervision != "subprocess" {
@@ -176,7 +176,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexe
 		}
 	case "vm":
 		vm = &VMEnvironmentConfiguration{}
-		if err := DecodeStrict(f.Environment, vm); err != nil {
+		if err := decodeStrict(f.Environment, vm); err != nil {
 			return nil, nil, nil, false, err
 		}
 		if err := vm.Resources.Validate(); err != nil {
@@ -217,7 +217,7 @@ func readConfiguration(path string) (Configuration, error) {
 		return Configuration{}, err
 	}
 	var file Configuration
-	if err := DecodeStrict(data, &file); err != nil {
+	if err := decodeStrict(data, &file); err != nil {
 		return Configuration{}, fmt.Errorf("invalid Runner configuration: %w", err)
 	}
 	if file.Version != 2 {
@@ -226,28 +226,28 @@ func readConfiguration(path string) (Configuration, error) {
 	return file, nil
 }
 
-// LoadConfiguration validates and composes template policy, the image's explicitly
+// Load validates and composes template policy, the image's explicitly
 // inherited environment, and controller-owned launch data before opening state.
-func LoadConfiguration(path, launchPath string) (Config, Endpoint, error) {
-	config, ingress, environment, err := loadConfiguration(path, launchPath)
+func Load(path, launchPath string) (Resolved, Endpoint, error) {
+	config, ingress, environment, err := load(path, launchPath)
 	if err != nil {
-		return Config{}, Endpoint{}, err
+		return Resolved{}, Endpoint{}, err
 	}
-	if err := validateControlIdentity(config); err != nil {
-		return Config{}, Endpoint{}, err
+	if err := ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
+		return Resolved{}, Endpoint{}, err
 	}
 	for name, value := range environment {
 		if err := os.Setenv(name, value); err != nil {
-			return Config{}, Endpoint{}, err
+			return Resolved{}, Endpoint{}, err
 		}
 	}
 	return config, ingress, nil
 }
 
-func loadConfiguration(path, launchPath string) (Config, Endpoint, map[string]string, error) {
+func load(path, launchPath string) (Resolved, Endpoint, map[string]string, error) {
 	file, err := readConfiguration(path)
 	if err != nil {
-		return Config{}, Endpoint{}, nil, err
+		return Resolved{}, Endpoint{}, nil, err
 	}
 	config, environment, err := file.compose(launchPath)
 	return config, file.Ingress, environment, err
@@ -265,32 +265,32 @@ func validateRunnerControl(control RunnerControlConfiguration) error {
 	return nil
 }
 
-func (f Configuration) compose(launchPath string) (Config, map[string]string, error) {
-	sessionReconcileConcurrency := defaultSessionReconcileConcurrency
+func (f Configuration) compose(launchPath string) (Resolved, map[string]string, error) {
+	sessionReconcileConcurrency := DefaultSessionReconcileConcurrency
 	if f.SessionReconcileConcurrency != nil {
 		if *f.SessionReconcileConcurrency <= 0 {
-			return Config{}, nil, errors.New("session_reconcile_concurrency must be positive")
+			return Resolved{}, nil, errors.New("session_reconcile_concurrency must be positive")
 		}
 		sessionReconcileConcurrency = *f.SessionReconcileConcurrency
 	}
 	if !filepath.IsAbs(f.StateDir) || !filepath.IsAbs(f.InitializationCwd) || (f.WorkspaceRoot != nil && !filepath.IsAbs(*f.WorkspaceRoot)) {
-		return Config{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
+		return Resolved{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
 	}
 	if err := validateRunnerControl(f.Control); err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
-		return Config{}, nil, errors.New("invalid ingress endpoint")
+		return Resolved{}, nil, errors.New("invalid ingress endpoint")
 	}
 	for name, endpoint := range map[string]Endpoint{"ingress": f.Ingress} {
 		host, port, err := net.SplitHostPort(endpoint.Target)
 		number, numberErr := strconv.Atoi(port)
 		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
-			return Config{}, nil, fmt.Errorf("invalid %s endpoint", name)
+			return Resolved{}, nil, fmt.Errorf("invalid %s endpoint", name)
 		}
 	}
 	if strings.TrimSpace(f.PlatformInstructions) == "" {
-		return Config{}, nil, errors.New("platform instructions must be nonempty")
+		return Resolved{}, nil, errors.New("platform instructions must be nonempty")
 	}
 	environ := map[string]string{}
 	for _, entry := range os.Environ() {
@@ -299,44 +299,44 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 	}
 	environment, err := f.RunnerEnvironment.resolve(environ)
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	maps.Copy(environ, environment)
 	if f.HarnessEnvironment == nil {
-		return Config{}, nil, errors.New("harness_environment is required")
+		return Resolved{}, nil, errors.New("harness_environment is required")
 	}
 	child, err := f.HarnessEnvironment.resolve(environ)
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	if _, ok := child["CODEX_EXEC_SERVER_URL"]; ok {
-		return Config{}, nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
+		return Resolved{}, nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
 	}
 	claude, err := f.Claude.resolve(environ)
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	codex, err := f.Codex.resolve(environ)
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	isolation, executor, _, podPID1, err := f.resolveEnvironment()
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	launchBytes, err := os.ReadFile(launchPath)
 	if err != nil {
-		return Config{}, nil, err
+		return Resolved{}, nil, err
 	}
 	var launch SandboxLaunch
-	if err := DecodeStrict(launchBytes, &launch); err != nil {
-		return Config{}, nil, err
+	if err := decodeStrict(launchBytes, &launch); err != nil {
+		return Resolved{}, nil, err
 	}
 	if launch.Sandbox.Namespace == "" || launch.Sandbox.Name == "" || launch.Sandbox.UID == "" || (launch.Bootstrap != nil && *launch.Bootstrap == "") {
-		return Config{}, nil, errors.New("Sandbox namespace, name, UID and nonempty optional bootstrap are required")
+		return Resolved{}, nil, errors.New("Sandbox namespace, name, UID and nonempty optional bootstrap are required")
 	}
 	launch.PlatformInstructions = strings.TrimSpace(f.PlatformInstructions)
-	config := Config{
+	config := Resolved{
 		Control:                     f.Control,
 		StateDir:                    f.StateDir,
 		SessionReconcileConcurrency: sessionReconcileConcurrency,
@@ -354,7 +354,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 	}
 	if f.DebugCheckpoint != nil {
 		if f.DebugCheckpoint.Name == "" || f.DebugCheckpoint.CommandID == "" {
-			return Config{}, nil, errors.New("checkpoint name and command ID must be nonempty")
+			return Resolved{}, nil, errors.New("checkpoint name and command ID must be nonempty")
 		}
 		config.DebugCheckpoint = &session.DebugCheckpointConfig{Name: f.DebugCheckpoint.Name, CommandID: f.DebugCheckpoint.CommandID}
 	}
