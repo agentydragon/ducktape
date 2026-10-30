@@ -1929,7 +1929,6 @@ flowchart LR
     CONDITION_REASONS_NOT_STATE[Candidate: no code branches on condition reasons]
     GATEWAY_OBSERVER_RECONCILER[Candidate: Gateway observers as a cached reconciler]
     HISTORY_FOLD_DIRTY_QUEUE[Candidate: fold only changed Sessions]
-    SAMPLER_EXPORTER_WORKQUEUE[Candidate: sampler exporter on a rate-limited queue]
     POSTGRES_LEASE_HELPER[Candidate: one PostgreSQL lease helper]
     SAMPLER_TYPED_STATE[Candidate: typed sampler states]
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
@@ -1955,7 +1954,7 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
 `APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `CONDITION_REASONS_NOT_STATE`,
-`GATEWAY_OBSERVER_RECONCILER`, `HISTORY_FOLD_DIRTY_QUEUE`, `SAMPLER_EXPORTER_WORKQUEUE`,
+`GATEWAY_OBSERVER_RECONCILER`, `HISTORY_FOLD_DIRTY_QUEUE`,
 `POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
 `RUNNER_JSONRPC`, `FRONTEND_SSE_CLIENT`.
 `CONDITION_REASONS_NOT_STATE` needs the roll-safe order in its plan section;
