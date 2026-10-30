@@ -1,12 +1,13 @@
 package runner
 
 import (
- "github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"context"
 	"errors"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"

@@ -1,7 +1,6 @@
 package runner
 
 import (
- "github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"bytes"
 	"context"
 	"io"
@@ -13,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"

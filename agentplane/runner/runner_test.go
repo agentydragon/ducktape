@@ -1,7 +1,6 @@
 package runner
 
 import (
- "github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
