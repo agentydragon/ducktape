@@ -149,14 +149,17 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 		t.Fatal(err)
 	}
 	sends := 0
-	socket := &recoverySocket{
-		send: func([]byte) error { sends++; return nil },
-		receive: func() ([]byte, error) {
+	client := &fakeExecutionClient{
+		write: func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+			sends++
+			return nil, errors.New("abandoned process unexpectedly attempted a write")
+		},
+		read: func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 			t.Fatal("abandoned process unexpectedly attempted a read")
 			return nil, nil
 		},
 	}
-	executor := &Executor{store: store, owner: newOwner, socket: socket, processLocks: map[string]*sync.Mutex{}}
+	executor := newFakeExecutor(t, store, newOwner, client)
 	result, err := executor.writeStdin(t.Context(), json.RawMessage(`{"session_id":77,"chars":"must not be sent"}`))
 	if result != nil || !errors.As(err, new(*toolError)) || !strings.Contains(err.Error(), "no input was sent") {
 		t.Fatalf("write_stdin result=%v error=%v, want a tool error disclosing no input was sent", result, err)
