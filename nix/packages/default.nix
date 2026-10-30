@@ -471,6 +471,8 @@ rec {
     ];
     propagatedBuildInputs = with python314Packages; [
       absl-py
+      # CLEANUP(added 2026-10-30): Remove when the gterm-theme pin's wheel no longer
+      # requires dbus-python.
       dbus-python
       pycairo
       pygobject3

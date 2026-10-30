@@ -6,12 +6,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "main",
     srcs = ["main.py"],
-    # Requires system libraries (libgirepository1.0-dev, libdbus-1-dev) - manual only
+    # Requires system libraries (libgirepository1.0-dev, libcairo2-dev) - manual only
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//absl_py",
-        "@pypi//dbus_python",
         "@pypi//pycairo",
         "@pypi//pygobject",
     ],
@@ -41,7 +40,6 @@ py_wheel(
     python_requires = ">=3.14",
     requires = [
         "absl-py",
-        "dbus-python",
         "pycairo",
         "pygobject",
     ],

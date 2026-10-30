@@ -4,9 +4,7 @@ import ast
 import subprocess
 import uuid
 from uuid import UUID
-from xml.etree import ElementTree
 
-import dbus
 from absl import app, flags, logging
 from gi.repository import Gio
 
@@ -166,31 +164,6 @@ def create_or_update_auto_profile(source_profile_name: str, gsettings_profiles: 
     ProfileDConf(auto_uuid).write_property("visible-name", f"{AUTO_PROFILE_NAME} ({source_profile_name})")
 
     return auto_uuid
-
-
-def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
-    bus = dbus.SessionBus()
-
-    obj = bus.get_object("org.gnome.Terminal", "/org/gnome/Terminal/window")
-    iface = dbus.Interface(obj, "org.freedesktop.DBus.Introspectable")
-
-    tree = ElementTree.fromstring(iface.Introspect())
-    windows = [child.attrib["name"] for child in tree if child.tag == "node"]
-    logging.info(f"requesting new uuid: {new_uuid}")
-
-    def _get_window_profile_uuid(window_actions_iface):
-        description = window_actions_iface.Describe("profile")
-        return UUID(description[2][0])
-
-    for window in windows:
-        obj = bus.get_object("org.gnome.Terminal", f"/org/gnome/Terminal/window/{window}")
-        window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
-        original_uuid = _get_window_profile_uuid(window_actions_iface)
-        logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")
-        window_actions_iface.SetState("profile", str(new_uuid), [])
-        uuid_after = _get_window_profile_uuid(window_actions_iface)
-        logging.info(f"new uuid after action: {uuid_after}")
-        assert uuid_after == new_uuid
 
 
 def _main(_):
