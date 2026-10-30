@@ -79,6 +79,7 @@ py_library(
         ":git_repo",
         ":output_base_gc",
         ":pull_request",
+        ":repo_contents_cache_gc",
         ":scan_progress",
         ":workspace_scan",
         ":worktree_gc",
@@ -185,6 +186,7 @@ py_test(
     srcs = ["test_workspace_gc.py"],
     deps = [
         ":conftest",
+        ":repo_contents_cache_gc",
         ":workspace_gc",
         ":workspace_scan",
         "//:conftest",
@@ -205,6 +207,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":repo_contents_cache_gc",
         "@pypi//pygit2",
         "@pypi//pytest",
     ],
@@ -242,6 +245,31 @@ py_test(
         ":git_repo",
         "//:conftest",
         "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "repo_contents_cache_gc",
+    srcs = ["repo_contents_cache_gc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":output_base_gc",
+        ":scan_progress",
+        "@pypi//humanize",
+        "@pypi//tabulate",
+    ],
+)
+
+py_test(
+    name = "test_repo_contents_cache_gc",
+    srcs = ["test_repo_contents_cache_gc.py"],
+    deps = [
+        ":conftest",
+        ":output_base_gc",
+        ":repo_contents_cache_gc",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

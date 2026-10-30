@@ -380,7 +380,7 @@ def test_rmtree_callback_does_not_retry_open_with_the_wrong_signature(tmp_path: 
     error = PermissionError("unreadable directory")
 
     with pytest.raises(PermissionError) as raised:
-        gc._retry_rmtree_after_permission_error(os.open, str(tmp_path), error)
+        gc.retry_rmtree_after_permission_error(os.open, str(tmp_path), error)
 
     assert raised.value is error
 

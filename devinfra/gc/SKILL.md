@@ -2,24 +2,27 @@
 name: workspace-gc
 description: >-
   Inspect and safely clean stale local dev state: unused Git worktrees, merged
-  branches, orphaned Bazel output bases. Use for pruning worktrees/branches or
-  reclaiming Bazel disk — drive the `workspace-gc` tool and apply PR judgment
-  to REVIEW items.
+  branches, orphaned Bazel output bases, unreferenced repo-contents-cache
+  entries. Use for pruning worktrees/branches or reclaiming Bazel disk — drive
+  the `workspace-gc` tool and apply PR judgment to REVIEW items.
 ---
 
 # Clean Workspaces
 
-`workspace-gc` runs **one joint scan** over three coupled domains and classifies them
+`workspace-gc` runs **one joint scan** over four coupled domains and classifies them
 together (the domains depend on each other: a branch checked out in a live worktree can't be
-deleted; an output base orphans when its workspace worktree is removed):
+deleted; an output base orphans when its workspace worktree is removed; a repo-cache entry is
+unreferenced once the bases linking to it are gone):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
 - **bazel-bases** — orphaned Bazel output bases (the default MD5-named ones and Claude Code's
-  per-session ones) and bases linked to workspaces under `/tmp`.
+  per-session ones) and bases linked to workspaces under `/tmp`;
+- **repo-cache** — entries of Bazel's repo contents cache that no output base links to.
 
-`workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees` and
-`workspace-gc bazel-bases` are **views** of that same computed result, scoped to one domain.
+`workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
+`workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
+result, scoped to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
 immediately before removing it.
 
@@ -59,6 +62,7 @@ workspace-gc                        # the default: worktrees + branches + bases 
 workspace-gc --sizes                # add du-measured base sizes (slow on a large cache)
 workspace-gc worktrees              # the worktree slice only
 workspace-gc bazel-bases            # the output-base slice only
+workspace-gc repo-cache             # the repo-contents-cache slice only
 git worktree prune --dry-run --verbose   # stale admin records
 ```
 
@@ -160,6 +164,32 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
 Re-run the dry scan after deletion. A nonzero delete result or a `.bazel-output-base-gc-*`
 quarantine means cleanup is incomplete and needs inspection.
 
+## Repo Contents Cache
+
+Bazel stores every fetched repository once, under `<output user root>/cache/repos/v1/contents/
+<hash>/<uuid>/` with a sibling `<uuid>.recorded_inputs`, and an output base uses it through the
+symlink `external/<repo>`. Bazel's own GC (`--repo_contents_cache_gc_max_age`) is age-based,
+runs only on an idle server, and never asks whether anything still links to an entry.
+`workspace-gc repo-cache` does; interpret it literally:
+
+- `PRUNE`: no output base the scan knows — the root's and the per-session ones — links to the
+  entry. Remove with `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock`
+  exclusively (every Bazel command holds it shared while it runs, so nothing can be fetching
+  or linking meanwhile; a busy lock skips the round), re-lists the bases and their links,
+  then removes the entry the way Bazel's GC does (recorded inputs first, directory via
+  `_trash/`).
+- `KEEP`: some base that itself stays (KEEP or REVIEW) links to it. An entry whose only
+  referrers are **prunable bases** is KEEP in this view, annotated "only prunable bases
+  reference it"; run `all --prune` to remove those bases and then the entry in one pass.
+- `REVIEW`: a malformed name, a directory without its `.recorded_inputs` (or the reverse), a
+  nested mount, or an unreadable entry. Never `rm -rf` one without proving what it is.
+
+`LAST USED` is the recorded-inputs mtime, which Bazel touches on every cache hit. `--sizes`
+runs `du` per entry and is slow on thousands of entries. The scan derives the cache location
+from `--output-user-root` as Bazel's default does; a base under _another_ output user root
+that points `--repo_contents_cache` at this cache is invisible, and an entry only it links to
+is deleted — that base re-fetches the repo, the same exposure Bazel's own GC already creates.
+
 ## Leave Judgment Where It Belongs
 
 Handle these manually per situation instead of expanding the tool's deletion surface:
@@ -168,12 +198,12 @@ Handle these manually per situation instead of expanding the tool's deletion sur
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and
-- Bazel's shared repository, disk, and install caches, plus any legacy `repo-contents`
-  cache.
+- Bazel's shared repository (download), disk, and install caches.
 
 `workspace-gc` deletes only **local** branches it proves are merged; deleting remote branches
 is never implied — do that only when the user separately requests it and its safety is
 established.
 
 Finish with a concise ledger: worktrees removed and retained, branches deleted and retained,
-output bases deleted, space reclaimed, roots scanned, and every item still requiring review.
+output bases and repo-cache entries deleted, space reclaimed, roots scanned, and every item
+still requiring review.

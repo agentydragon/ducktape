@@ -1,15 +1,18 @@
-"""`workspace-gc`: reclaim local development state — worktrees, branches, Bazel output bases.
+"""`workspace-gc`: reclaim local development state — worktrees, branches, Bazel output bases,
+and Bazel's repo contents cache.
 
-The three domains are coupled (a branch checked out in a live worktree can't be deleted; an
-output base orphans when its workspace worktree is removed, and a base for a workspace under
-`/tmp` can be reclaimed without removing its workspace), so one joint scan
-(`workspace_scan.scan_workspace`) classifies all three together and the subcommands are views
-of that single result:
+The domains are coupled (a branch checked out in a live worktree can't be deleted; an output
+base orphans when its workspace worktree is removed, and a base for a workspace under `/tmp`
+can be reclaimed without removing its workspace; a repo-cache entry is unreferenced once the
+bases linking to it are gone), so one joint scan (`workspace_scan.scan_workspace`, then
+`repo_contents_cache_gc.scan_repo_contents_cache` over its bases) classifies them together
+and the subcommands are views of that single result:
 
   * `all`          — the default; every domain, and one `--prune` removes all prunable
-                     items in dependency order (worktrees → branches → bases).
+                     items in dependency order (worktrees → branches → bases → repo cache).
   * `worktrees`    — the worktree slice; `--prune` removes prunable worktrees.
   * `bazel-bases`  — the output-base slice; `--delete` removes prunable bases.
+  * `repo-cache`   — the repo-contents-cache slice; `--delete` removes unreferenced entries.
 
 The `all` command also surfaces foreign clones (`foreign_clone_gc`) — other clones of the same
 project, found among Bazel output-base workspaces, that are invisible to `git worktree list`
@@ -44,7 +47,15 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
 from tabulate import tabulate
 
-from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, workspace_scan, worktree_gc
+from devinfra.gc import (
+    branch_gc,
+    foreign_clone_gc,
+    git_repo,
+    output_base_gc,
+    repo_contents_cache_gc,
+    workspace_scan,
+    worktree_gc,
+)
 from devinfra.gc.branch_gc import BranchClassification, FailedBranch, PrunableBranch, RemovedBranch, RetainedBranch
 from devinfra.gc.foreign_clone_gc import (
     ForeignCloneClassification,
@@ -55,6 +66,7 @@ from devinfra.gc.foreign_clone_gc import (
 from devinfra.gc.git_repo import GitError
 from devinfra.gc.output_base_gc import DeletedBase, FailedBase, PrunableBase, SkippedBase, default_output_user_root
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.repo_contents_cache_gc import DeletedEntry, EntryInspection, FailedEntry, PrunableEntry, SkippedEntry
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
 from devinfra.gc.workspace_scan import WorkspaceScan
 from devinfra.gc.worktree_gc import (
@@ -450,6 +462,42 @@ def _apply_base_deletions(output_user_root: Path, session_bases: Sequence[Path])
     return skipped == 0 and failed == 0
 
 
+def _apply_repo_cache_deletions(output_user_root: Path, session_bases: Sequence[Path]) -> bool:
+    """Delete every unreferenced repo-cache entry; returns whether all of them succeeded.
+
+    Re-scans the bases first, so entries that only bases removed moments ago referenced are
+    prunable in this same run.
+    """
+    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
+    bases = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
+    entries = repo_contents_cache_gc.scan_repo_contents_cache(contents, bases)
+    candidates = [item for item in entries if isinstance(item, PrunableEntry)]
+    if not candidates:
+        return True
+    free_before = shutil.disk_usage(contents).free
+    results = repo_contents_cache_gc.delete_prunable_entries(
+        candidates, contents=contents, output_user_root=output_user_root, session_bases=session_bases
+    )
+    free_change = shutil.disk_usage(contents).free - free_before
+    for result in results:
+        name = os.path.relpath(result.path, contents)
+        if isinstance(result, DeletedEntry):
+            print(f"DELETED repo-cache entry {name}")
+        elif isinstance(result, SkippedEntry):
+            print(f"SKIPPED repo-cache entry {name}: {result.reason}", file=sys.stderr)
+        else:
+            trash = f"; trash={result.trash}" if result.trash is not None else ""
+            print(f"FAILED repo-cache entry {name}: {result.error}{trash}", file=sys.stderr)
+    deleted = sum(isinstance(result, DeletedEntry) for result in results)
+    skipped = sum(isinstance(result, SkippedEntry) for result in results)
+    failed = sum(isinstance(result, FailedEntry) for result in results)
+    print(
+        f"Repo cache: {deleted} deleted, {skipped} skipped, {failed} failed; "
+        f"free-space change {humanize.naturalsize(free_change, binary=True)}"
+    )
+    return skipped == 0 and failed == 0
+
+
 def _apply_foreign_clone_deletions(
     repo: Path, output_user_root: Path, session_bases: Sequence[Path], prs: dict[str, PrInfo], workers: int
 ) -> bool:
@@ -549,6 +597,29 @@ def run_bases(
         raise SystemExit(1)
 
 
+def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delete: bool) -> None:
+    # Entries are classified against every base's PRUNE/KEEP/REVIEW verdict, which the
+    # filesystem alone decides; no worktree, branch, or PR state can change an entry's row.
+    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
+    session_bases = output_base_gc.session_env_output_bases()
+    try:
+        with _ProgressReporter() as progress:
+            bases = output_base_gc.scan_output_user_root(
+                output_user_root, session_bases=session_bases, progress=progress
+            )
+            entries = repo_contents_cache_gc.scan_repo_contents_cache(contents, bases, progress=progress)
+    except (OSError, RuntimeError) as error:
+        print(error, file=sys.stderr)
+        raise SystemExit(1) from error
+    print(repo_contents_cache_gc.render_report(entries, contents=contents, include_kept=show_all, include_sizes=sizes))
+    if not delete:
+        if any(isinstance(item, PrunableEntry) for item in entries):
+            print("Dry run only; pass --delete to remove the unreferenced entries.")
+        return
+    if not _apply_repo_cache_deletions(output_user_root, session_bases):
+        raise SystemExit(1)
+
+
 def run_all(
     repo: Path,
     *,
@@ -562,6 +633,7 @@ def run_all(
 ) -> None:
     progress = _ProgressReporter()
     session_bases = output_base_gc.session_env_output_bases()
+    contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
     try:
         foreign_roots = workspace_scan.foreign_clone_roots(repo, output_user_root, session_bases=session_bases)
         extra_branches = workspace_scan.foreign_clone_branch_candidates(foreign_roots)
@@ -576,6 +648,9 @@ def run_all(
                 workers=workers,
                 foreign_clone_roots=foreign_roots,
             )
+            entries: list[EntryInspection] = repo_contents_cache_gc.scan_repo_contents_cache(
+                contents, scan.bases, progress=progress
+            )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1) from error
@@ -586,6 +661,8 @@ def run_all(
     print(render_branches(scan.branches, include_kept=show_all))
     print("\n# Bazel output bases")
     print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
+    print("\n# Repo contents cache")
+    print(repo_contents_cache_gc.render_report(entries, contents=contents, include_kept=show_all, include_sizes=sizes))
     print("\n# Foreign clones")
     print(render_foreign_clones(scan.foreign_clones, include_kept=show_all))
 
@@ -595,9 +672,13 @@ def run_all(
             any(isinstance(i, PrunableWorktree) for i in scan.worktrees)
             or any(isinstance(i, PrunableBranch) for i in scan.branches)
             or any(isinstance(i, PrunableBase) for i in scan.bases)
+            or any(isinstance(i, PrunableEntry) for i in entries)
         )
         if prunable:
-            print("\nDry run only; pass --prune to remove all prunable worktrees, branches, and bases.")
+            print(
+                "\nDry run only; pass --prune to remove all prunable worktrees, branches, bases, "
+                "and repo-cache entries."
+            )
         if foreign_prunable:
             print("Foreign clones are prunable too; pass --prune --delete-foreign-clones to remove them.")
         return
@@ -608,18 +689,20 @@ def run_all(
         with progress:
             return _scan(repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers)
 
-    # Remove worktrees first so branches they hold are freed and their bases orphan. Every step
+    # Remove worktrees first so branches they hold are freed and their bases orphan, and bases
+    # before the repo cache so entries only they referenced become unreferenced. Every step
     # runs regardless of an earlier one's failures — each domain is independent — and the
     # combined outcome decides the process exit status once, at the end.
     worktrees_ok = _apply_worktree_removals(repo, rescan().worktrees)
     branches_ok = _apply_branch_deletions(repo, rescan().branches)
     bases_ok = _apply_base_deletions(output_user_root, session_bases)
+    repo_cache_ok = _apply_repo_cache_deletions(output_user_root, session_bases)
     foreign_ok = True
     if delete_foreign_clones:
         foreign_ok = _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)
     elif foreign_prunable:
         print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
-    if not (worktrees_ok and branches_ok and bases_ok and foreign_ok):
+    if not (worktrees_ok and branches_ok and bases_ok and repo_cache_ok and foreign_ok):
         raise SystemExit(1)
 
 
@@ -658,7 +741,8 @@ def _all_command(
     verbose: _VerboseOption = False,
     workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     prune: Annotated[
-        bool, typer.Option("--prune", help="remove all prunable worktrees, branches, and output bases")
+        bool,
+        typer.Option("--prune", help="remove all prunable worktrees, branches, output bases, and repo-cache entries"),
     ] = False,
     delete_foreign_clones: Annotated[
         bool,
@@ -720,7 +804,24 @@ def _bases_command(
     )
 
 
-_COMMANDS = {"all", "worktrees", "bazel-bases"}
+@app.command("repo-cache")
+def _repo_cache_command(
+    output_user_root: _RootOption = _DEFAULT_OUTPUT_USER_ROOT,
+    show_all: _AllOption = False,
+    sizes: Annotated[
+        bool, typer.Option("--sizes", help="calculate entry sizes with du (slow: thousands of entries)")
+    ] = False,
+    verbose: _VerboseOption = False,
+    delete: Annotated[
+        bool, typer.Option("--delete", help="revalidate under Bazel's cache lock and remove unreferenced entries")
+    ] = False,
+) -> None:
+    """The repo-contents-cache slice of the joint scan: entries no output base links to."""
+    _configure_logging(verbose=verbose)
+    run_repo_cache(output_user_root=output_user_root, show_all=show_all, sizes=sizes, delete=delete)
+
+
+_COMMANDS = {"all", "worktrees", "bazel-bases", "repo-cache"}
 
 
 def _with_default_command(argv: list[str]) -> list[str]:

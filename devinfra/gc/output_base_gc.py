@@ -146,7 +146,7 @@ def session_env_output_bases() -> list[Path]:
     return sorted([*home.glob(_SESSION_ENV_BASE_GLOB), *home.glob(_SESSION_ENV_QUARANTINE_GLOB)])
 
 
-def _identity(metadata: os.stat_result) -> FileIdentity:
+def file_identity(metadata: os.stat_result) -> FileIdentity:
     return FileIdentity(device=metadata.st_dev, inode=metadata.st_ino)
 
 
@@ -369,7 +369,7 @@ def mount_points(*, mountinfo_path: Path = Path("/proc/self/mountinfo")) -> set[
     return points
 
 
-def _nested_mount(base: Path, points: set[Path]) -> Path | None:
+def nested_mount(base: Path, points: set[Path]) -> Path | None:
     return next((point for point in sorted(points) if point == base or point.is_relative_to(base)), None)
 
 
@@ -399,9 +399,9 @@ def inspect_output_base(
         return ReviewBase(base, ReviewBaseReason.UNSAFE_METADATA, metadata.st_mtime_ns, detail=str(error))
 
     resolved_base = base.resolve(strict=True)
-    nested_mount = _nested_mount(resolved_base, points)
-    if nested_mount is not None:
-        return ReviewBase(base, ReviewBaseReason.NESTED_MOUNT, last_activity_ns, detail=os.fspath(nested_mount))
+    mount = nested_mount(resolved_base, points)
+    if mount is not None:
+        return ReviewBase(base, ReviewBaseReason.NESTED_MOUNT, last_activity_ns, detail=os.fspath(mount))
 
     try:
         workspace_exists = _workspace_exists(workspace)
@@ -421,11 +421,16 @@ def inspect_output_base(
             )
         if _workspace_is_under_tmp(workspace):
             return PrunableBase(
-                base, workspace, _identity(metadata), last_activity_ns, layout, reason=PrunableBaseReason.TMP_WORKSPACE
+                base,
+                workspace,
+                file_identity(metadata),
+                last_activity_ns,
+                layout,
+                reason=PrunableBaseReason.TMP_WORKSPACE,
             )
         return RetainedBase(base, workspace, RetainedBaseReason.WORKSPACE_EXISTS, last_activity_ns, False)
 
-    return PrunableBase(base, workspace, _identity(metadata), last_activity_ns, layout)
+    return PrunableBase(base, workspace, file_identity(metadata), last_activity_ns, layout)
 
 
 def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tuple[Path, BaseLayout]]:
@@ -488,14 +493,14 @@ def _bazel_lock(base: Path, *, uid: int) -> Iterator[int]:
             raise
         metadata = os.fstat(fd)
         path_metadata = lock_path.lstat()
-        if metadata.st_nlink == 0 or _identity(metadata) != _identity(path_metadata):
+        if metadata.st_nlink == 0 or file_identity(metadata) != file_identity(path_metadata):
             raise MetadataError("lock changed while it was being acquired")
         yield fd
     finally:
         os.close(fd)
 
 
-def _retry_rmtree_after_permission_error(function: Callable[..., object], path: str, error: BaseException) -> None:
+def retry_rmtree_after_permission_error(function: Callable[..., object], path: str, error: BaseException) -> None:
     if not isinstance(error, PermissionError):
         raise error
     if function not in (os.unlink, os.rmdir):
@@ -538,7 +543,7 @@ def delete_prunable_bases(
                 candidate.path.rename(quarantine)
                 (quarantine / "lock").unlink()
             assert quarantine is not None
-            shutil.rmtree(quarantine, onexc=_retry_rmtree_after_permission_error)
+            shutil.rmtree(quarantine, onexc=retry_rmtree_after_permission_error)
             results.append(DeletedBase(candidate.path))
         except MetadataError as error:
             results.append(SkippedBase(candidate.path, str(error)))

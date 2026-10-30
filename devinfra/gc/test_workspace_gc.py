@@ -9,8 +9,8 @@ import pytest
 import pytest_bazel
 import respx
 
-from devinfra.gc import workspace_gc, workspace_scan
-from devinfra.gc.conftest import GitRepo
+from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
+from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
 
 
 def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -154,6 +154,44 @@ def test_render_branches_prints_numeric_looking_branch_names_verbatim(
 
     # STATUS, BRANCH: the second cell of a row. The default branch is kept, so it is not a row.
     assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
+
+
+def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
+    repo: GitRepo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plain `workspace-gc --prune`: bases go first, then a re-scan frees the entries only they
+    linked to, in the same invocation."""
+    home = tmp_path / "home"  # holds no session-env bases
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    checkout = repo.clone("checkout")  # `run_all` needs the `origin/HEAD` a real clone has
+    root = tmp_path / "output"
+    contents = repo_contents_cache_gc.repo_contents_cache(root)
+    kept_entry = make_cache_entry(contents, "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    freed_entry = make_cache_entry(contents, "b" * 64, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    unreferenced_entry = make_cache_entry(contents, "c" * 64, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+    kept_base = make_base(root, checkout.path.resolve())
+    link_external(kept_base, "kept_repo", kept_entry)
+    pruned_base = make_base(root, tmp_path / "gone")
+    link_external(pruned_base, "freed_repo", freed_entry)
+
+    workspace_gc.run_all(
+        checkout.path,
+        output_user_root=root,
+        show_all=False,
+        no_prs=True,
+        sizes=False,
+        prune=True,
+        delete_foreign_clones=False,
+        workers=1,
+    )
+
+    assert not pruned_base.exists()
+    assert kept_entry.is_dir()
+    assert repo_contents_cache_gc.recorded_inputs_of(kept_entry).is_file()
+    for entry in (freed_entry, unreferenced_entry):
+        assert not entry.exists()
+        assert not repo_contents_cache_gc.recorded_inputs_of(entry).exists()
 
 
 if __name__ == "__main__":
