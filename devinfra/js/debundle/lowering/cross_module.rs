@@ -283,6 +283,9 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    /// A partially swapped provider is analyzed with these symbols opaque.
+    pub(super) partially_swapped_symbols:
+        &'a BTreeMap<ChunkId, &'a BTreeMap<String, PartialSwapSymbol>>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -292,7 +295,6 @@ pub(super) fn collect_cross_module_imported_purities(
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     excluded_chunks: &BTreeSet<ChunkId>,
     vendor_affected_chunks: &BTreeSet<ChunkId>,
-    partially_swapped_symbols: &BTreeMap<ChunkId, &BTreeMap<String, PartialSwapSymbol>>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
@@ -301,6 +303,7 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         explicit_binding_destinations,
         resolved_member_sites,
+        partially_swapped_symbols,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -1736,11 +1739,11 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    partially_swapped_symbols: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
                 &BTreeSet::new(),
                 &BTreeSet::new(),
-                &BTreeMap::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");
@@ -1794,11 +1797,11 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
+                    partially_swapped_symbols: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
                 &BTreeSet::new(),
                 &BTreeSet::new(),
-                &BTreeMap::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");
