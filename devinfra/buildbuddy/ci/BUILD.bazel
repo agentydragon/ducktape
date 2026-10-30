@@ -28,6 +28,33 @@ py_library(
 )
 
 py_library(
+    name = "invocation_census",
+    srcs = ["invocation_census.py"],
+    imports = ["../../.."],
+    deps = [
+        ":invocation_ids",
+        "//devinfra/buildbuddy:cli",
+    ],
+)
+
+py_binary(
+    name = "invocation_census_bin",
+    main_module = "devinfra.buildbuddy.ci.invocation_census",
+    deps = [":invocation_census"],
+)
+
+py_test(
+    name = "test_invocation_census",
+    srcs = ["test_invocation_census.py"],
+    deps = [
+        ":invocation_census",
+        ":invocation_ids",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "live_test_status",
     srcs = ["live_test_status.py"],
     visibility = ["//:__subpackages__"],
