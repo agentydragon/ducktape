@@ -228,6 +228,12 @@ working tree.
   commit. Patches are only generated when BOTH `--run_from_branch` and
   `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
   scripts — it silently drops all uncommitted local changes.
+  CI deliberately supplies both flags: the commit pins the source while the
+  event's branch populates BuildBuddy's `BRANCH_NAME` metadata and branch filters.
+- **Local clone sources cannot be fetched by hosted runners**: `bbr` rejects
+  filesystem paths and `file://` remotes after applying Git's `insteadOf` rewrites.
+  Configure a reachable Git remote and select it with
+  `git config buildbuddy.remote-bazel-remote-name <name>`.
 - **Large patchsets**: all untracked files are included — a stale `bazel-bin`
   symlink or large generated files can bloat the patchset (`.gitignore`'d
   files are excluded via `--exclude-standard`).

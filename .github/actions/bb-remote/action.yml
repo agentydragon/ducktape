@@ -130,6 +130,7 @@ runs:
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
         INPUT_BAZEL_INVOCATION_IDS: ${{ inputs.bazel_invocation_ids }}
         INPUT_RUN_FROM_COMMIT: ${{ inputs.run_from_commit }}
+        SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
       run: |
         set -euo pipefail
 
@@ -191,6 +192,11 @@ runs:
         RUN_FROM_COMMIT_ARGS=()
         if [[ -n "$INPUT_RUN_FROM_COMMIT" ]]; then
           RUN_FROM_COMMIT_ARGS=(--run_from_commit="$INPUT_RUN_FROM_COMMIT")
+          # A commit alone leaves BRANCH_NAME empty in the runner's bazelrc.
+          # Keep the event's branch identity while the exact SHA remains authoritative.
+          if [[ -n "$SOURCE_BRANCH" ]]; then
+            RUN_FROM_COMMIT_ARGS+=(--run_from_branch="$SOURCE_BRANCH")
+          fi
         fi
 
         if [[ -n "$INPUT_SCRIPT" ]]; then
