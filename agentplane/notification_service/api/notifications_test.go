@@ -19,30 +19,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestEveryRPCRefusesACallerWhoseBearerIsNotAWorkloadOfTheNamespace(t *testing.T) {
-	server := newServer(t)
-	rpcs := map[string]func(context.Context) error{
-		"CreateSubscription": unary(server.client.CreateSubscription),
-		"ListSubscriptions":  unary(server.client.ListSubscriptions),
-		"GetSubscription":    unary(server.client.GetSubscription),
-		"RenewSubscription":  unary(server.client.RenewSubscription),
-		"CancelSubscription": unary(server.client.CancelSubscription),
-		"ListInboxes":        unary(server.client.ListInboxes),
-		"ReadInbox":          unary(server.client.ReadInbox),
-		"AcknowledgeInbox":   unary(server.client.AcknowledgeInbox),
-		"RetireInbox":        unary(server.client.RetireInbox),
-		"SendMessage":        unary(server.client.SendMessage),
-		"GetMessage":         unary(server.client.GetMessage),
-	}
-	for name, call := range rpcs {
-		for bearer, token := range map[string]string{"no bearer": "", "unknown bearer": "test-token-unknown", "other namespace": outsiderToken} {
-			t.Run(name+" with "+bearer, func(t *testing.T) {
-				requireCode(t, call(bearing(t, token)), codes.Unauthenticated)
-			})
-		}
-	}
-}
-
 func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *testing.T) {
 	server := newServer(t)
 	request := createRequest("create")

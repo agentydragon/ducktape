@@ -47,6 +47,7 @@ go_test(
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
         "//agentplane/workload_auth/go/auth",

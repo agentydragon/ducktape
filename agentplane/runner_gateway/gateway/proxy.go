@@ -7,7 +7,6 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -24,18 +23,10 @@ type runnerProxy struct {
 	gateway *Gateway
 }
 
-func (p *runnerProxy) connection(ctx context.Context, controllerOnly bool) (*runnerConnection, error) {
+// connection is the elected connection to the runner of the Sandbox the call's metadata names. Gateway.Methods
+// admitted the caller.
+func (p *runnerProxy) connection(ctx context.Context) (*runnerConnection, error) {
 	g := p.gateway
-	allowed := g.callers
-	if controllerOnly {
-		allowed = make(map[auth.Account]struct{})
-		if g.controller != nil {
-			allowed[*g.controller] = struct{}{}
-		}
-	}
-	if err := g.authorize(ctx, allowed); err != nil {
-		return nil, err
-	}
 	metadata, _ := metadata.FromIncomingContext(ctx)
 	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
 	if len(names) != 1 || names[0] == "" {
@@ -71,7 +62,7 @@ func (p *runnerProxy) connection(ctx context.Context, controllerOnly bool) (*run
 }
 
 func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +70,7 @@ func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSe
 }
 
 func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +78,7 @@ func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatus
 }
 
 func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +86,7 @@ func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
-	connection, err := p.connection(ctx, true)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +94,7 @@ func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequ
 }
 
 func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +102,7 @@ func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +110,7 @@ func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +118,7 @@ func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runner
 }
 
 func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx)
 	if err != nil {
 		return nil, err
 	}

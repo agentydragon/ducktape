@@ -18,7 +18,6 @@ import (
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
 	store     *store.Store
-	resolver  *auth.Resolver
 	namespace string
 	sandboxes worker.Sandboxes
 	runner    Runner
@@ -33,22 +32,22 @@ type Notifications struct {
 
 func NewNotifications(options Options) *Notifications {
 	return &Notifications{
-		store: options.Store, resolver: options.Resolver, namespace: options.Namespace, sandboxes: options.Sandboxes,
+		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
 	}
 }
 
-// caller admits any workload of the namespaces the resolver serves. Its ServiceAccount is who it acts for.
+// caller is the workload Methods admitted. Its ServiceAccount is who it acts for.
 func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error) {
-	principal, err := s.resolver.Resolve(ctx)
+	principal, err := auth.Caller(ctx)
 	if err != nil {
 		return model.ServiceAccount{}, admissionRefused{err}
 	}
 	return model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
 }
 
-// serve admits the caller, then runs handle for the account under the request timeout.
+// serve runs handle for the admitted account under the request timeout.
 func serve[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
 	handle func(context.Context, model.ServiceAccount, *Request) (*Response, error),

@@ -309,7 +309,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(Methods(options).ServerOptions(config.requestTimeout)...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
 	operatorpb.RegisterNotificationsOperatorServer(grpcServer, server.operatorService)
 	go func() { _ = grpcServer.Serve(listener) }()
@@ -339,13 +339,6 @@ func requireCode(t *testing.T, err error, want codes.Code) {
 	t.Helper()
 	if got := status.Code(err); got != want {
 		t.Fatalf("code = %v (%v), want %v", got, err, want)
-	}
-}
-
-func unary[Request, Response any](call func(context.Context, *Request, ...grpc.CallOption) (*Response, error)) func(context.Context) error {
-	return func(ctx context.Context) error {
-		_, err := call(ctx, new(Request))
-		return err
 	}
 }
 

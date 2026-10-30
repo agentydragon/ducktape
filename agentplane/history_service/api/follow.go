@@ -17,9 +17,6 @@ type followStream = grpc.ServerStreamingServer[historypb.FollowSessionResponse]
 
 func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream followStream) error {
 	ctx := stream.Context()
-	if err := s.admit(ctx); err != nil {
-		return err
-	}
 	sessionID, err := uuid.Parse(request.GetSessionId())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "invalid session ID")

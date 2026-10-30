@@ -46,46 +46,44 @@ type Index interface {
 	Status() watchhealth.Status
 }
 
-// Service is the admin gRPC API. Every RPC admits only the allowed callers, each proving a
-// ServiceAccount by a bearer reviewed on that call (agentplane/docs/grpc_services.md).
+// Service is the admin gRPC API. Methods admits its callers.
 type Service struct {
 	egressadminpb.UnimplementedEgressAdminServer
 	decisions     Decisions
 	changes       Changes
 	historyHealth HistoryHealth
 	index         Index
-	resolver      *auth.Resolver
-	callers       map[auth.Account]struct{}
 	lease         time.Duration
 	draining      context.Context
 	drain         context.CancelFunc
 }
 
-// ServiceOptions are what a Service reads and whom it admits.
+// ServiceOptions are what a Service reads.
 type ServiceOptions struct {
 	Decisions     Decisions
 	Changes       Changes
 	HistoryHealth HistoryHealth
 	Index         Index
-	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver
-	// reviews, and the ServiceAccount must be one of Callers.
-	Resolver *auth.Resolver
-	Callers  []auth.Account
 	// WatchLease ends each watch after this long: a stream is admitted once, so the lease bounds how
 	// long a revoked token keeps reading.
 	WatchLease time.Duration
 }
 
-func NewService(options ServiceOptions) *Service {
-	allowed := make(map[auth.Account]struct{}, len(options.Callers))
-	for _, caller := range options.Callers {
-		allowed[caller] = struct{}{}
+// Methods admits callers to every EgressAdmin RPC: each proves, by a bearer resolver reviews, one of callers.
+func Methods(resolver *auth.Resolver, callers []auth.Account) auth.Methods {
+	rule := auth.Accounts(resolver, callers)
+	return auth.Methods{
+		egressadminpb.EgressAdmin_ListDecisions_FullMethodName:  rule,
+		egressadminpb.EgressAdmin_WatchDecisions_FullMethodName: rule,
+		egressadminpb.EgressAdmin_GetHealth_FullMethodName:      rule,
 	}
+}
+
+func NewService(options ServiceOptions) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
 		decisions: options.Decisions, changes: options.Changes, historyHealth: options.HistoryHealth,
-		index: options.Index, resolver: options.Resolver, callers: allowed,
-		lease: options.WatchLease, draining: draining, drain: drain,
+		index: options.Index, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
 
@@ -104,9 +102,6 @@ func historyFailure(err error) error {
 // GetHealth is ready only while the index has synced and no watched kind is failing. `synced` alone
 // says only that every kind has listed once; the failing kinds are the facts and `ready` the verdict.
 func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
-	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
-		return nil, err
-	}
 	index := s.index.Status()
 	counters := s.historyHealth.Health()
 	failing := make(map[string]*egressadminpb.KindFailure, len(index.Failing))
@@ -127,9 +122,6 @@ func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthReque
 }
 
 func (s *Service) ListDecisions(ctx context.Context, request *egressadminpb.ListDecisionsRequest) (*egressadminpb.ListDecisionsResponse, error) {
-	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
-		return nil, err
-	}
 	subject, err := subjectOf(request.GetFilter())
 	if err != nil {
 		return nil, err
@@ -145,9 +137,6 @@ func (s *Service) ListDecisions(ctx context.Context, request *egressadminpb.List
 // Changes only prompts the re-read, so a heartbeat of quiet or a commit by another subject sends nothing.
 func (s *Service) WatchDecisions(request *egressadminpb.WatchDecisionsRequest, stream grpc.ServerStreamingServer[egressadminpb.WatchDecisionsResponse]) error {
 	ctx := stream.Context()
-	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
-		return err
-	}
 	subject, err := subjectOf(request.GetFilter())
 	if err != nil {
 		return err
