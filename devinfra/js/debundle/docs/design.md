@@ -3366,6 +3366,16 @@ writes. The strip does not build an dependency graph or consume
 call-effect annotation. The split-brain and swap-privacy gates still use the
 same augmented calls, local effects, and cell-write summaries.
 
+### Partial swap: analysis sees replacement code as unknown
+
+Swap identity is not behavioral equivalence: a replacement may run a callback
+its original deferred. The cross-module oracle therefore analyzes a partially
+swapped provider through `vendor::module_with_opaque_swapped_symbols`, which
+turns each swapped implementation into an unresolvable package import in place
+(statement positions and ordinals are unchanged, so author inputs and resolved
+member sites still line up). Full swaps are excluded from the oracle outright;
+`suppress` and `boundary_rename` emit the original bodies.
+
 ### Deliberate split-brain bypasses in the strip pass
 
 Vendor package ownership follows source reads and rebinds, including those

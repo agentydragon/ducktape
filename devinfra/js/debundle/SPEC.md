@@ -844,6 +844,14 @@ not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
 
+Program analysis treats every swapped symbol of a partial or bundled partial
+swap as replacement code it cannot see: an import of that symbol, and a
+residual call the bundled self-rewrite retargets, are unknown calls. No fact
+derived from the original implementation (purity, callback timing, returned
+values) justifies a split. A destructuring or multi-binding declarator that
+declares a swapped symbol makes its other bindings unknown too. Author
+`chunk_export_purity` contracts on a swapped export still apply.
+
 ## Synchronous analysis limits
 
 Recursion and analysis limits preserve the first-await boundary where retained
