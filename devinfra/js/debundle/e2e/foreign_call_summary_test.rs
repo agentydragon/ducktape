@@ -131,7 +131,7 @@ fn a_provider_reading_exported_state_stays_unknown() {
 }
 
 #[test]
-fn a_vendor_affected_provider_stays_unknown() {
+fn a_vendor_marked_provider_keeps_its_summary() {
     let vendor_marks = [(
         "static/peer.js",
         VendorMark {
@@ -140,14 +140,13 @@ fn a_vendor_affected_provider_stays_unknown() {
             level: VendorLevel::Suppress,
         },
     )];
-    expect_atomic_conflict_rejection(
+    let fixture = run_fixture(
         FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             modules(),
         )
         .with_extra_chunks(&[("static/peer", BOX)])
         .with_vendor_marks(&vendor_marks),
-        &["callbacks/wrapped", "values/later"],
-        &[],
     );
+    assert_preserved_entry_output(&fixture, "42\n");
 }

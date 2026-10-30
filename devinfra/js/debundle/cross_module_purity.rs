@@ -135,10 +135,11 @@ pub struct ModulePurityFacts<'a> {
     /// Origin of direct function-body reasons, if the caller retained the
     /// source line index. Imports reuse these locations unchanged.
     pub source: Option<(String, SourceLineIndex)>,
-    /// The emitted program may run replacement code instead of this body for
-    /// some exports (a vendor mark), so no derived foreign call summary is
-    /// published for it.
-    pub vendor_affected: bool,
+    /// Export name → the package a vendor swap replaces it with. Facts derived
+    /// from this body still hold for those exports under the swap's
+    /// equivalence promise (SPEC.md § Vendor swap equivalence); summaries
+    /// name the package so an author can audit them against it.
+    pub replacement_packages: BTreeMap<String, String>,
 }
 
 struct PreparedModulePurityFacts<'a> {
@@ -1117,13 +1118,12 @@ pub fn resolve_imported_callable_summaries(
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
-                    !modules[module].vendor_affected
-                        && modules[module].exports.keys().any(|export| {
-                            required.contains(&CallableExportKey {
-                                module: module.clone(),
-                                export: export.clone(),
-                            })
-                        }),
+                    modules[module].exports.keys().any(|export| {
+                        required.contains(&CallableExportKey {
+                            module: module.clone(),
+                            export: export.clone(),
+                        })
+                    }),
                 ),
             )
         })
@@ -1250,6 +1250,7 @@ pub fn resolve_imported_callable_summaries(
                     returns: call.derived.returns.clone(),
                     retained_arguments: call.derived.retained_arguments.clone(),
                     native_constructions: call.derived.native_constructions.clone(),
+                    replacement_package: facts.replacement_packages.get(export).cloned(),
                     dependencies: call.dependencies.clone(),
                 }),
                 call.dependencies.clone(),
@@ -1634,7 +1635,7 @@ mod tests {
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
             source: None,
-            vendor_affected: false,
+            replacement_packages: BTreeMap::new(),
         }
     }
 

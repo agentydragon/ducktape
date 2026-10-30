@@ -664,16 +664,12 @@ back to the selected chunk. CommonJS compatibility references alone do not
 expose that chunk's exports. Callbacks actually passed or published remain
 tracked, including callbacks that escape through global or unknown objects.
 
-Vendor replacement may preserve the proof when the original residual edges
-over-approximate the effective dependencies. A bundled partial replacement
-qualifies only when its prepared bundle is an ESM leaf with no static requests
-or top-level await: generated facades lead only to that leaf, while residual
-pruning can delete original edges. Bundles with external requests, raw package
-swaps and full package swaps retain conservative export reentry. Boundary
-renames and suppressed chunks add no dependency edges. With a synchronous
-loader present, every vendor-affected chunk in the target's closure blocks the
-proof, and host-loader sites are admitted only by the loader-closed derivation
-below.
+Vendor-swapped chunks take part through their bundled bodies (§ Vendor swap
+equivalence): a replacement evaluates like the code it replaces. The one
+visible exception is a bundled partial replacement whose prepared bundle is
+not an ESM leaf (it has static requests or top-level `await`); it blocks the
+proof as `open_replacement_bundle`. Host-loader sites are admitted only by the
+loader-closed derivation below.
 
 ### Loader-closed derivation
 
@@ -705,8 +701,8 @@ all of the following hold:
   unresolved specifier keeps every target open.
 - For each request resolved to a chunk, that chunk's static and loader closure
   excludes the target, and every chunk in it has only resolved ordinary static
-  requests to analyzed chunk entries or reentry-free builtins, no top-level
-  `await`, and no vendor replacement. Cycles through the target are therefore
+  requests to analyzed chunk entries or reentry-free builtins and no top-level
+  `await`. Cycles through the target are therefore
   open; a loaded chunk need not be ESM.
 
 With `synchronous_load_drains_microtasks: never`, a mandatorily suspended site
@@ -834,6 +830,22 @@ Sources containing statements without a runtime ESM declaration retain the
 `non_esm_chunk` blocker. This source fact does not waive any other closure or
 runtime requirement.
 
+## Vendor swap equivalence
+
+A `swap`, `partial_swap` or `bundled_partial_swap` mark is the author's
+promise that each replacement behaves like the bundled code it replaces, in
+everything the engine reasons about: purity, whether and when callbacks run
+(synchronously or deferred), returned values and allocations, module-evaluation
+effects and loader behavior. Analysis derives facts from the bundled body and
+applies them to the emitted program, which runs the replacement. The author
+owns the promise. A different build of the same package version (down-levelled
+syntax, lowered decorators, another bundler's helpers) or a wrong version pin
+can break it without any visible change to the spec.
+
+A swapped export's derived foreign call summary names the replacement in
+`modules.json` as `imported_callables.*.foreign_call.replacement_package`, so
+the author can audit it against that package. Other facts carry no such field.
+
 ## Partial vendor-swap ownership
 
 The vendor strip pass assigns top-level items to swapped packages through
@@ -843,14 +855,6 @@ ownership: a function passed to a different invocation of the same helper is
 not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
-
-Program analysis treats every swapped symbol of a partial or bundled partial
-swap as replacement code it cannot see: an import of that symbol, and a
-residual call the bundled self-rewrite retargets, are unknown calls. No fact
-derived from the original implementation (purity, callback timing, returned
-values) justifies a split. A destructuring or multi-binding declarator that
-declares a swapped symbol makes its other bindings unknown too. Author
-`chunk_export_purity` contracts on a swapped export still apply.
 
 ## Synchronous analysis limits
 
@@ -1593,8 +1597,8 @@ chunk's census. A class may also define instance fields and write its declared
 private fields. Straight-line statements only. A class qualifies only without
 `extends`, decorators, parameter properties or an explicit `return`. Any other
 operation, including a read of any provider binding, leaves the callee unknown.
-Providers in vendor-affected chunks (any swap, suppression or boundary rename)
-never receive a summary: the emitted program may run replacement code.
+A vendor-swapped provider is summarized from its bundled body (§ Vendor swap
+equivalence).
 
 The summary applies only to a spread-free ordinary call of a function or a
 `new` of a class through the importing binding, when no narrower summary or

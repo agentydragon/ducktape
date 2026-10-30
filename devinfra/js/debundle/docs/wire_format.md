@@ -123,7 +123,7 @@ never relaxes the proof.
   },
   "global_blockers": [],
   "closure_blockers": [
-    { "reason": "vendor_affected_chunk", "source_chunk": "static/provider" },
+    { "reason": "open_replacement_bundle", "source_chunk": "static/provider" },
     { "reason": "target_cycle", "target_chunk": "static/provider" }
   ]
 }

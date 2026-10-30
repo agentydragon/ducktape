@@ -280,12 +280,6 @@ export const value = 1;
     assert!(has_reason(
         &report,
         "closure_blockers",
-        "vendor_affected_chunk",
-        Some("static/vendor"),
-    ));
-    assert!(has_reason(
-        &report,
-        "closure_blockers",
         "top_level_await",
         Some("static/vendor"),
     ));

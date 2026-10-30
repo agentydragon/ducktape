@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
-mod analysis_view;
 mod emission;
 mod export_surface;
 mod import_rewrites;
@@ -21,7 +20,6 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-pub use analysis_view::module_with_opaque_swapped_symbols;
 use artifact::{ChunkId, ChunkTable, list_chunk_file_paths};
 use binding_targets::declaration_ids;
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};

@@ -51,8 +51,6 @@ pub enum LoaderClosureFailureKind {
     /// request for an analyzed chunk entry or a declared reentry-free builtin.
     LoadedClosureRequest,
     LoadedClosureTopLevelAwait,
-    /// A loaded closure contains a vendor-replaced chunk, whose code is unseen.
-    LoadedClosureVendorChunk,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]

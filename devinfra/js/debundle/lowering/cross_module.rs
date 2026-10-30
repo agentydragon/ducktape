@@ -39,7 +39,7 @@ use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_identity::{SourceUnitOrdinal, StatementId};
 use source_match::source_match_claim_member_selectors;
-use spec::{ChunkExportPurity, DependencyGraphOptions, PartialSwapSymbol, SourceUnitSelector};
+use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
 use swc_common::Spanned;
 use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat, Stmt, VarDeclarator};
 
@@ -205,13 +205,12 @@ pub(super) struct CrossModulePurities {
 ///
 /// Starts from the user-selected chunks and follows each retained chunk's
 /// shallow-analysis import records through the same artifact-index resolver used
-/// by emission. Excluded chunks are opacity boundaries: they are neither added
-/// to the closure nor traversed.
+/// by emission. Vendor-swapped chunks are traversed like any other: their
+/// bundled bodies stand for the replacement (SPEC.md § Vendor swap equivalence).
 pub(super) fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     selected_chunk_ids: &[String],
-    excluded_chunks: &BTreeSet<ChunkId>,
 ) -> Result<BTreeSet<ChunkId>> {
     let mut closure = BTreeSet::new();
     let mut pending = Vec::new();
@@ -220,9 +219,6 @@ pub(super) fn selected_static_import_closure(
             .chunk_table
             .get(chunk_id)
             .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-        if excluded_chunks.contains(&interned) {
-            continue;
-        }
         if closure.insert(interned) {
             pending.push(interned);
         }
@@ -242,9 +238,6 @@ pub(super) fn selected_static_import_closure(
             ) else {
                 continue;
             };
-            if excluded_chunks.contains(&target.target_chunk_id) {
-                continue;
-            }
             if closure.insert(target.target_chunk_id) {
                 pending.push(target.target_chunk_id);
             }
@@ -272,20 +265,18 @@ fn resolved_target_is_entry(
 /// stays opaque: its exports get no verdicts and imports of it stay
 /// unresolved (`unknown_call`), exactly as before this pass existed.
 ///
-/// `excluded_chunks` (fully vendor-swapped chunks excluded from the
-/// emission set) stay opaque to the oracle: an excluded chunk's body
-/// is replaced by the upstream package at serve time, so verdicts
-/// derived from the bundle copy would assert purity about code that is
-/// never emitted. Imports of such chunks stay `unknown_call`.
+/// A vendor-swapped provider (full, partial or bundled partial) is analyzed
+/// from its bundled body: the swap promises the replacement behaves like it
+/// (SPEC.md § Vendor swap equivalence).
 pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
-    /// A partially swapped provider is analyzed with these symbols opaque.
-    pub(super) partially_swapped_symbols:
-        &'a BTreeMap<ChunkId, &'a BTreeMap<String, PartialSwapSymbol>>,
+    /// Export name → replacement package of every vendor-swapped export, by
+    /// defining chunk; summaries derived from those bodies name the package.
+    pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -293,8 +284,6 @@ pub(super) fn collect_cross_module_imported_purities(
     indexes: &ArtifactIndexes,
     options: CrossModuleAnalysisOptions<'_>,
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
-    excluded_chunks: &BTreeSet<ChunkId>,
-    vendor_affected_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
@@ -303,7 +292,7 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         explicit_binding_destinations,
         resolved_member_sites,
-        partially_swapped_symbols,
+        replacement_packages,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -312,9 +301,6 @@ pub(super) fn collect_cross_module_imported_purities(
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
-            continue;
-        }
-        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
         let entry_file = &chunk_artifact.analysis.entry_file;
@@ -350,28 +336,6 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
 
-    // A partially swapped provider is analyzed as the emitted program runs it:
-    // swapped symbols are replacement code, opaque to every inference here.
-    let opaque_swap_bodies: BTreeMap<ChunkId, Module> = artifact
-        .chunks
-        .iter()
-        .filter(|chunk| {
-            chunk_allowed(chunk.chunk_id, chunk_filter)
-                && !excluded_chunks.contains(&chunk.chunk_id)
-        })
-        .filter_map(|chunk| {
-            let symbols = partially_swapped_symbols.get(&chunk.chunk_id)?;
-            let module = match chunk.js.get_file(&chunk.analysis.entry_file)?.ast() {
-                Some(ast) => &ast.module,
-                None => &reparsed.get(&chunk.chunk_id)?.parsed.module,
-            };
-            Some((
-                chunk.chunk_id,
-                vendor::module_with_opaque_swapped_symbols(module, symbols),
-            ))
-        })
-        .collect();
-
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
@@ -380,9 +344,6 @@ pub(super) fn collect_cross_module_imported_purities(
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
-            continue;
-        }
-        if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
         let chunk_name = artifact.chunk_table.name(chunk_artifact.chunk_id);
@@ -405,48 +366,45 @@ pub(super) fn collect_cross_module_imported_purities(
                 ),
                 (None, None) => continue,
             };
-        if !vendor_affected_chunks.contains(&chunk_artifact.chunk_id) {
-            let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
-                Some(entry) => &entry.stable_export_values,
-                None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
-            };
-            for (export, value) in stable_export_values {
-                let key = (chunk_name.to_string(), export.clone());
-                let (source, imported_export) = match value {
-                    StableExportValue::Local { kinds, imports } => {
-                        local_export_values.insert(key, (*kinds, imports.clone()));
-                        continue;
-                    }
-                    StableExportValue::ReExport { source, export } => (source, export),
-                };
-                let Some(target) = indexes.resolve_runtime_import_reference(
-                    source,
-                    chunk_artifact.chunk_id,
-                    entry_file,
-                    &artifact.chunk_table,
-                ) else {
-                    continue;
-                };
-                if excluded_chunks.contains(&target.target_chunk_id)
-                    || !chunk_allowed(target.target_chunk_id, chunk_filter)
-                    || !resolved_target_is_entry(artifact, &target)
-                {
+        let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
+            Some(entry) => &entry.stable_export_values,
+            None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
+        };
+        for (export, value) in stable_export_values {
+            let key = (chunk_name.to_string(), export.clone());
+            let (source, imported_export) = match value {
+                StableExportValue::Local { kinds, imports } => {
+                    local_export_values.insert(key, (*kinds, imports.clone()));
                     continue;
                 }
-                export_value_sources.insert(
-                    key,
-                    ExportValueSource {
-                        kinds: PrimKinds::NONE,
-                        copies: vec![ResolvedImport {
-                            module: artifact
-                                .chunk_table
-                                .name(target.target_chunk_id)
-                                .to_string(),
-                            export: imported_export.clone(),
-                        }],
-                    },
-                );
+                StableExportValue::ReExport { source, export } => (source, export),
+            };
+            let Some(target) = indexes.resolve_runtime_import_reference(
+                source,
+                chunk_artifact.chunk_id,
+                entry_file,
+                &artifact.chunk_table,
+            ) else {
+                continue;
+            };
+            if !chunk_allowed(target.target_chunk_id, chunk_filter)
+                || !resolved_target_is_entry(artifact, &target)
+            {
+                continue;
             }
+            export_value_sources.insert(
+                key,
+                ExportValueSource {
+                    kinds: PrimKinds::NONE,
+                    copies: vec![ResolvedImport {
+                        module: artifact
+                            .chunk_table
+                            .name(target.target_chunk_id)
+                            .to_string(),
+                        export: imported_export.clone(),
+                    }],
+                },
+            );
         }
         let mut imports = BTreeMap::new();
         for import in import_records {
@@ -461,8 +419,7 @@ pub(super) fn collect_cross_module_imported_purities(
             ) else {
                 continue;
             };
-            if excluded_chunks.contains(&target.target_chunk_id)
-                || !chunk_allowed(target.target_chunk_id, chunk_filter)
+            if !chunk_allowed(target.target_chunk_id, chunk_filter)
                 || !resolved_target_is_entry(artifact, &target)
             {
                 continue;
@@ -511,9 +468,7 @@ pub(super) fn collect_cross_module_imported_purities(
         modules.insert(
             chunk_name.to_string(),
             ModulePurityFacts {
-                body: opaque_swap_bodies
-                    .get(&chunk_artifact.chunk_id)
-                    .map_or(&parsed.module.body, |module| &module.body),
+                body: &parsed.module.body,
                 imports,
                 exports,
                 source: Some((
@@ -523,7 +478,10 @@ pub(super) fn collect_cross_module_imported_purities(
                     ),
                     parsed.line_index(),
                 )),
-                vendor_affected: vendor_affected_chunks.contains(&chunk_artifact.chunk_id),
+                replacement_packages: replacement_packages
+                    .get(&chunk_artifact.chunk_id)
+                    .cloned()
+                    .unwrap_or_default(),
             },
         );
     }
@@ -546,7 +504,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
     )?;
     let native_operation_inputs = resolve_native_operation_inputs(
@@ -554,7 +511,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
         resolved_member_sites,
     )?;
@@ -563,7 +519,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
     )?;
     let commuting_statements = resolve_commuting_statements(
@@ -571,7 +526,6 @@ pub(super) fn collect_cross_module_imported_purities(
         &modules,
         chunk_analysis_options,
         graph_provenance,
-        excluded_chunks,
         chunk_filter,
         resolved_member_sites,
     )?;
@@ -780,7 +734,6 @@ fn resolve_value_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
     let mut resolved = BTreeMap::new();
@@ -797,10 +750,6 @@ fn resolve_value_inputs(
                     "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
                 )
             })?;
-        ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id),
-            "chunk_analysis_options.{chunk_name}.value_inputs cannot target a fully swapped or excluded provider"
-        );
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
@@ -958,7 +907,6 @@ fn resolve_native_operation_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
@@ -978,10 +926,6 @@ fn resolve_native_operation_inputs(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs names no loaded provider chunk"
                 )
             })?;
-        ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id),
-            "chunk_analysis_options.{chunk_name}.native_operation_inputs cannot target a fully swapped or excluded provider"
-        );
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.native_operation_inputs provider is outside the existing analyzed import closure"
@@ -1148,7 +1092,6 @@ fn resolve_commuting_statements(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedCommutingStatements>>> {
@@ -1164,9 +1107,8 @@ fn resolve_commuting_statements(
             .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id)
-                && chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an excluded or outside-closure provider"
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an outside-closure provider"
         );
         let facts = modules
             .get(chunk_name)
@@ -1352,7 +1294,6 @@ fn resolve_argument_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
-    excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
     let mut resolved = BTreeMap::new();
@@ -1367,9 +1308,8 @@ fn resolve_argument_inputs(
             .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
-            !excluded_chunks.contains(&chunk.chunk_id)
-                && chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an excluded or outside-closure provider"
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an outside-closure provider"
         );
         let facts = modules
             .get(chunk_name)
@@ -1606,49 +1546,6 @@ mod tests {
         });
     }
 
-    fn closure_names(artifact: &ChunkBundle, closure: &BTreeSet<ChunkId>) -> BTreeSet<String> {
-        closure
-            .iter()
-            .map(|chunk_id| artifact.chunk_table.name(*chunk_id).to_string())
-            .collect()
-    }
-
-    #[test]
-    fn selected_static_import_closure_stops_at_excluded_chunks() {
-        let artifact = test_bundle(&[
-            (
-                "static/app",
-                "import { callWrap } from \"./adapter.js\";\ncallWrap(() => 1);\n",
-            ),
-            (
-                "static/adapter",
-                "import { wrap } from \"./vendorlib.js\";\n\
-export function callWrap(f) { return wrap(f); }\n",
-            ),
-            (
-                "static/vendorlib",
-                "export function wrap(f) { return { impl: f }; }\n",
-            ),
-        ]);
-        let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-        let excluded = BTreeSet::from([artifact
-            .chunk_table
-            .get("static/adapter")
-            .expect("adapter chunk")]);
-        let closure = selected_static_import_closure(
-            &artifact,
-            &indexes,
-            &["static/app".to_string()],
-            &excluded,
-        )
-        .expect("closure");
-
-        assert_eq!(
-            closure_names(&artifact, &closure),
-            BTreeSet::from(["static/app".to_string()])
-        );
-    }
-
     #[test]
     fn request_only_host_loading_preserves_direct_esm_primitive_facts() {
         js_ast::with_swc_globals(|| {
@@ -1706,11 +1603,9 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
-                    partially_swapped_symbols: &BTreeMap::new(),
+                    replacement_packages: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
-                &BTreeSet::new(),
-                &BTreeSet::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");
@@ -1764,11 +1659,9 @@ export function callWrap(f) { return wrap(f); }\n",
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
-                    partially_swapped_symbols: &BTreeMap::new(),
+                    replacement_packages: &BTreeMap::new(),
                 },
                 &BTreeMap::new(),
-                &BTreeSet::new(),
-                &BTreeSet::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");

@@ -1889,134 +1889,67 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
 
 // ─── analysis of swapped implementations ────────────────────────────────
 //
-// The emitted program runs replacement code for every swapped symbol, so
-// facts derived from the original implementation must not justify a split.
-// Each fixture's original callee defers its callback and its replacement runs
-// it at once. Splitting `wrapped` into its own module hoists its initializer
-// above `globalThis.mode = "ready"`; with the replacement that read throws,
-// where the swapped program in source order prints 5.
-
-const REPLACED_CALLEE_CALLER: &str = "globalThis.mode = \"ready\";\n\
-     const wrapped = factory(() => globalThis.mode.length);\n\
-     console.log(wrapped());\n";
-
-/// Spec keys splitting `wrapped` out of `static/app`, with reports under
-/// `report_root`.
-fn split_wrapped_spec(report_root: &Path) -> Value {
-    json!({
-        "logical_modules": {
-            "static/app": {
-                "callbacks/wrapped": {
-                    "members": [
-                        { "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } },
-                    ],
-                },
-            },
-        },
-        "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
-        "materialize_logical_modules": {
-            "prune_other_chunks": false,
-            "report_out_dir": report_root,
-        },
-    })
-}
-
-/// The split is refused: `wrapped`'s initializer is impure, so it stays
-/// ordered after the global write.
-fn assert_wrapped_split_refused(result: &CommandResult, report_root: &Path) {
-    assert_eq!(
-        result.status.code(),
-        Some(1),
-        "expected the split to be refused\nstdout:\n{}\nstderr:\n{}",
-        result.stdout,
-        result.stderr,
-    );
-    let cycles: Vec<Value> = read_json(&report_root.join("static/app/cycles.json"));
-    let unit = cycles
-        .iter()
-        .flat_map(|cycle| cycle["cut"].as_array().expect("cycle cut"))
-        .find(|cut| cut["from_binding"] == "wrapped")
-        .map(|cut| &cut["sequenced_source_unit"])
-        .unwrap_or_else(|| panic!("no cut from `wrapped`: {cycles:#?}"));
-    assert_eq!(unit["purity"]["kind"], "not_pure", "{unit:#}");
-}
+// A swap promises the replacement behaves like the bundled implementation
+// (SPEC.md § Vendor swap equivalence), so facts derived from the bundled
+// body justify splits around calls that run the replacement.
 
 #[test]
-fn partial_swap_split_does_not_trust_swapped_export_body() {
+fn partial_swap_split_uses_summary_of_swapped_export_body() {
+    // The bundled `object` only allocates, so `wrapped` retains its callback
+    // without running it and `later` may move to a module of its own.
+    const PROVIDER: &str =
+        "export function object(shape) { const kind = \"object\"; return { kind, shape }; }\n";
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-replaced-export-",
-        "export function factory(callback) { return () => callback(); }\n\
-         export const keep = () => 7;\n",
-        &format!("import {{ factory }} from \"./megachunk.js\";\n{REPLACED_CALLEE_CALLER}"),
+        "vendor-partial-swap-equivalent-export-",
+        &format!("{PROVIDER}export const keep = () => 7;\n"),
+        "import { object } from \"./megachunk.js\";\n\
+         const wrapped = object({ read: () => later });\n\
+         const later = 42;\n\
+         console.log(wrapped.shape.read());\n",
         "fac",
         "1.0.0",
         "lib/index.mjs",
-        "export function factory(callback) { callback(); return () => callback(); }\n",
+        PROVIDER,
     );
     let report_root = ws.out_root.join("reports").join("tree");
     let spec = build_bundled_partial_swap_spec(
         &ws,
         json!({"static/megachunk.js": partial_swap_vendor(
-            "replaced export fixture",
+            "equivalent export fixture",
             &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
-            &[("factory", swap_symbol("fac", PartialSwapKind::Member, Some("factory"), None))],
+            &[("object", swap_symbol("fac", PartialSwapKind::Member, Some("object"), None))],
         )}),
-        Some(split_wrapped_spec(&report_root)),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "callbacks/wrapped": {
+                        "members": [{ "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } }],
+                    },
+                    "values/later": {
+                        "members": [{ "name": "later", "selector": { "binding": { "name": "later" } } }],
+                    },
+                },
+            },
+            "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": &report_root,
+            },
+        })),
     );
     let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[("fac", &package_root)]);
-    assert_wrapped_split_refused(&result, &report_root);
-}
-
-#[test]
-fn bundled_partial_swap_split_does_not_trust_swapped_local_helper_body() {
-    // The residual `factory` export survives; its call to the swapped
-    // `local` helper is retargeted to the facade.
-    let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-replaced-helper-",
-        "fac.esbuilt.js",
-        "const Fac = { defer: callback => { callback(); return () => callback(); } };\n\
-         export { Fac };\n",
-        &[
-            (
-                "static/vendor.js",
-                "function nY(callback) { return () => callback(); }\n\
-                 const factory = callback => nY(callback);\n\
-                 export { factory as keep };\n",
-            ),
-            (
-                "static/app.js",
-                &format!(
-                    "import {{ keep as factory }} from \"./vendor.js\";\n{REPLACED_CALLEE_CALLER}"
-                ),
-            ),
-        ],
+    assert_success(&result);
+    let modules: Value = read_json(&report_root.join("static/app/modules.json"));
+    assert_eq!(
+        modules["imported_callables"]["object"]["foreign_call"]["replacement_package"],
+        "fac"
     );
-    let package_root = ws.write_upstream_package(
-        "upstream/fac",
-        "fac",
-        "1.0.0",
-        "index.js",
-        "export const defer = callback => { callback(); return () => callback(); };\n",
-    );
-    let report_root = ws.out_root.join("reports").join("tree");
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
-        json!({"static/vendor.js": bundled_vendor(
-            "replaced local helper fixture",
-            &bundle_path,
-            &[("fac", bundled_package("1.0.0", "index.js", "Fac", Some("Fac")))],
-            &[("facDefer", swap_symbol("fac", PartialSwapKind::Named, Some("defer"), Some("nY")))],
-        )}),
-        Some(split_wrapped_spec(&report_root)),
-    );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
-    assert_wrapped_split_refused(&result, &report_root);
+    let app_root = ws.out_root.join("app");
+    install_node_module(&app_root, "fac", "1.0.0", PROVIDER);
+    assert_node_output(&app_root.join("static/app/entry.js"), "42\n", "");
 }
 
 // ─── partial-swap consumer soundness ────────────────────────────────────
@@ -3199,24 +3132,13 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
     run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)])
 }
 
-/// A fully swapped chunk's body is replaced by the upstream package at serve
-/// time, so the cross-module purity oracle must not derive verdicts from its
-/// bundle copy: with `adapter` kept the interleaved calls are pure and the
-/// split is accepted; with it swapped `callWrap` stays an opaque call and the
-/// split is rejected on an S-cycle.
+/// A full swap promises the package behaves like the bundled chunk, so the
+/// cross-module purity oracle derives verdicts from the bundled body: the
+/// interleaved calls through `adapter` are pure whether or not it is swapped.
 #[test]
-fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
+fn full_swapped_chunk_keeps_cross_module_purity() {
     assert_success(&run_interleaved_calls_through_adapter(false));
-
-    let swapped = run_interleaved_calls_through_adapter(true);
-    assert!(!swapped.status.success(), "stdout:\n{}", swapped.stdout);
-    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
-        assert!(
-            swapped.stderr.to_lowercase().contains(expected),
-            "stderr missing {expected:?}:\n{}",
-            swapped.stderr,
-        );
-    }
+    assert_success(&run_interleaved_calls_through_adapter(true));
 }
 
 fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
@@ -3299,9 +3221,8 @@ fn closed_bundled_replacement_preserves_browser_export_proof() {
 }
 
 #[test]
-fn bundled_reentry_proof_requires_no_synchronous_loader_and_closed_bundle() {
+fn bundled_reentry_proof_requires_closed_bundle() {
     for (bundle, loader) in [
-        ("export const factory = () => 'ready';\n", "present"),
         (
             "import './app.js'; export const factory = () => 'ready';\n",
             "none",

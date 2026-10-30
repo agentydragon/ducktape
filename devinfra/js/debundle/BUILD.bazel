@@ -308,7 +308,6 @@ rust_test(
 rust_library(
     name = "vendor",
     srcs = [
-        "vendor/analysis_view.rs",
         "vendor/emission.rs",
         "vendor/export_surface.rs",
         "vendor/import_rewrites.rs",

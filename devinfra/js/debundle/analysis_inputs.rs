@@ -155,6 +155,11 @@ pub struct ForeignCallSummary {
     /// Census families the body constructs from (`new WeakMap()`); their
     /// integrity premise is in `dependencies`.
     pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// The vendor swap's replacement package when the emitted program runs it
+    /// instead of this body; the summary then rests on the swap's equivalence
+    /// promise (SPEC.md § Vendor swap equivalence).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,

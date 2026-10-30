@@ -532,8 +532,8 @@ requests do not invalidate the primitive type of an explicit ESM binding.
 Primitive facts only project through artifact imports and re-exports that
 resolve to the target chunk's entry file. Duplicate
 declarations, assignment/update/loop writes, writes in closures, `let`, opaque
-initializers, namespace properties, and vendor-affected providers remain
-conservative. A shadowing local binding does not inherit an import's fact.
+initializers, and namespace properties remain conservative; a vendor-swapped
+provider's bundled body counts (SPEC.md § Vendor swap equivalence). A shadowing local binding does not inherit an import's fact.
 
 This is an inferred callback-timing fact, separate from purity and author
 assertions. It does not remove eager binding reads, relax live-binding or TDZ
