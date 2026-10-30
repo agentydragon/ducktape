@@ -1118,7 +1118,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let (row, callee) = super::native_call_identity_key(kind, callee)?;
         if !names_intrinsic(
             &callee,
-            row.family(),
+            row.family()?,
             self.inputs.flow.is_declared(&callee.binding),
             self.inputs.shadowed,
             &self.inputs.index.global_object_names,
@@ -1275,17 +1275,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         return None;
                     }
                 }
+                _ => return None,
             }
         }
-        for (ArgSel::Arg(index), _) in row.coerces {
-            if ordinary_operands.contains(index) {
+        for &(selector, operation) in row.coerces {
+            let ArgSel::Arg(index) = selector else {
+                return None;
+            };
+            if ordinary_operands.contains(&index) {
                 continue;
             }
             // An absent argument is `undefined`.
-            let Some(values) = args.get(*index) else {
+            let Some(values) = args.get(index) else {
                 continue;
             };
-            if values.is_empty() || !values.iter().all(AbstractValue::is_primitive) {
+            if !operation.silent_on_primitive()
+                || values.is_empty()
+                || !values.iter().all(AbstractValue::is_primitive)
+            {
                 return None;
             }
         }
@@ -1406,6 +1413,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             Return::Unknown => unknown(),
             Return::Primitive => Values::from([AbstractValue::NonCallable]),
             Return::Arg(ArgSel::Arg(index)) => args.get(index).cloned().unwrap_or_else(unknown),
+            Return::Arg(ArgSel::Rest(_)) => unknown(),
             Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
         };
         if may_throw {
@@ -1450,6 +1458,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     values.extend([self.deferred_callbacks(retained), AbstractValue::Unknown]);
                 }
                 Mutation::Integrity(_) | Mutation::DefineProperties { .. } => {}
+                Mutation::FreshRetains(ArgSel::Rest(_)) => return unknown(),
             }
         }
         if values.is_empty() {

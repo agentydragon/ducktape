@@ -12,6 +12,7 @@ pub enum Kind {
     RegExp,
     /// A `FinalizationRegistry`.
     Registry,
+    Proxy,
 }
 
 impl Kind {

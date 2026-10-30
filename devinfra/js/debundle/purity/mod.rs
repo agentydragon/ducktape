@@ -3,7 +3,7 @@
 //! `ChunkCodeGraph` indexes a chunk's top-level bindings; the
 //! `classify_*` functions answer "does evaluating this expression /
 //! statement fire observable user code?" against that index, the
-//! whitelist tables, and the spec author's declared-purity hints.
+//! builtin summary table, and the spec author's declared-purity hints.
 //!
 //! The module is split by responsibility; submodules share the imports
 //! and crate-internal items re-exported below via `pub(crate) use`, so
@@ -24,11 +24,10 @@
 //! - `purity_type` — the `Purity` / `PurityReason` / `PurityRule`
 //!   verdict types.
 //! - `classifier` — `classify_expr_purity` and its expression /
-//!   member / call / fluent-chain / property recursion, plus
-//!   `classify_var_decl_purity` and `classify_class_static_purity`.
-//! - `builtin_calls` — `new`-expression, iterable-arg, and
-//!   `Object.*` builtin admission helpers and the result-primitive /
-//!   safe-key predicates.
+//!   member / call / `new` / fluent-chain / property recursion,
+//!   `classify_var_decl_purity`, `classify_class_static_purity`, and the
+//!   result-primitive / safe-key predicates.
+//! - `native_rows` — the purity projection of builtin summary rows.
 
 pub(crate) use crate::analysis_inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
@@ -40,22 +39,13 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
 pub(crate) use crate::SourceLocation;
 pub(crate) use crate::facts::TopLevelItemView;
+pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
 
-mod whitelists;
-
-pub(crate) use whitelists::{
-    PLAIN_DATA_HOSTILE_BUILTINS, PURE_BUILTIN_NEW_ARRAY_ITERABLE, PURE_BUILTIN_NEW_NO_ARGS,
-    PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS, PURE_BUILTIN_NEW_STRING_LITERAL_ARG, PURE_GLOBAL_CALLS,
-    PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS, PURE_OBJECT_CALLS_ON_PLAIN_DATA, PURE_STATIC_CALLS,
-    PURE_STATIC_FUNCTION_REFS, PURE_STATIC_PROPS,
-};
-pub(crate) use whitelists::{SHADOW_TRACKED_GLOBALS, WHITELIST_RECEIVERS};
-
-mod builtin_calls;
 mod classifier;
 mod code_graph;
 mod effect_inference;
 mod fresh_record;
+mod native_rows;
 mod plain_data;
 mod purity_type;
 mod redundant_hints;
@@ -64,11 +54,11 @@ mod value_inference;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
-pub(crate) use builtin_calls::*;
 pub(crate) use classifier::*;
 pub(crate) use code_graph::*;
 pub(crate) use effect_inference::*;
 pub(crate) use fresh_record::*;
+pub(crate) use native_rows::*;
 pub(crate) use plain_data::*;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
