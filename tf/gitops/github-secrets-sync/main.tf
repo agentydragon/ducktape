@@ -47,6 +47,13 @@ data "kubernetes_secret" "forgejo_images_creds" {
   }
 }
 
+data "kubernetes_secret" "attic_ci_writer" {
+  metadata {
+    name      = "attic-ducktape-ci-writer"
+    namespace = "nix-cache"
+  }
+}
+
 data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
     name      = "pr-visuals-s3-credentials"
@@ -94,6 +101,12 @@ resource "github_actions_secret" "forgejo_images_password_gaffer_private" {
   repository      = "gaffer-private"
   secret_name     = "FORGEJO_IMAGES_PASSWORD"
   plaintext_value = data.kubernetes_secret.forgejo_images_creds.data["password"]
+}
+
+resource "github_actions_secret" "attic_token" {
+  repository      = "ducktape"
+  secret_name     = "ATTIC_TOKEN"
+  plaintext_value = data.kubernetes_secret.attic_ci_writer.data["attic_token"]
 }
 
 resource "github_actions_secret" "buildbuddy_api_key" {

@@ -82,6 +82,14 @@ configMapGenerator:
             push:
               - main
               - public
+            kubernetes:
+              secret:
+                namespace: nix-cache
+                name: attic-ducktape-ci-writer
+                key: attic_token
+              notification:
+                workspace: github-secrets-sync
+                annotation_key: ducktape.allegedly.works/attic-token-version
           - name: gaffer CI attic writer
             sops_file: secrets/ci/attic-gaffer-writer.sops.yaml
             sub: gaffer-ci

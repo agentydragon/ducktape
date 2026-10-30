@@ -1,6 +1,13 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "ci_token",
+    srcs = ["ci_token.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:secret_ref"],
+)
+
+py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
@@ -18,6 +25,8 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":ci_token",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:config_format",
@@ -30,6 +39,7 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/github_secrets_sync:workspace",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

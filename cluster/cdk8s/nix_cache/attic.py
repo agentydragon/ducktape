@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -21,18 +21,26 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import api_resource, cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.github_secrets_sync import workspace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.rotators.attic_jwt_rotation.config import Config, Token
+from cluster.rotators.attic_jwt_rotation.config import (
+    Config,
+    KubernetesDestination,
+    KubernetesSecretDestination,
+    Token,
+    WorkspaceNotification,
+)
 
 NAME = "attic"
 NAMESPACE = "nix-cache"
@@ -77,6 +85,14 @@ ROTATOR_CONFIG = Config(
         Token(
             name="ducktape CI attic writer (main)",
             sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
+            kubernetes=KubernetesDestination(
+                secret=KubernetesSecretDestination(
+                    namespace=ci_token.WRITER.namespace, name=ci_token.WRITER.name, key=ci_token.TOKEN.key
+                ),
+                notification=WorkspaceNotification(
+                    workspace=workspace.NAME, annotation_key="ducktape.allegedly.works/attic-token-version"
+                ),
+            ),
             sub="ducktape-ci",
             validity="1 year",
             pull=["main", "gaffer"],
@@ -229,6 +245,28 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
 
 
 def _rotation(scope: Construct) -> None:
+    # Flux owns the Secret's identity; only the rotator owns its data. Omitting
+    # data avoids overwriting the runtime token on subsequent Flux reconciles.
+    k8s.KubeSecret(
+        scope,
+        "ci-writer-token",
+        metadata=k8s.ObjectMeta(name=ci_token.WRITER.name, namespace=ci_token.WRITER.namespace),
+        type="Opaque",
+    )
+    notification_role = ClusterRole(
+        scope,
+        "ci-token-notification",
+        metadata=ApiObjectMetadata(name="attic-github-secrets-notification"),
+        rules=[
+            ClusterRolePolicyRule(
+                endpoints=[api_resource.named_resource("opentofu.upbound.io", "workspaces", workspace.NAME)],
+                verbs=["get", "patch"],
+            )
+        ],
+    )
+    notification_role.bind(
+        ServiceAccount.from_service_account_name(scope, "notification-identity", _ROTATOR, namespace_name=NAMESPACE)
+    )
     k8s.KubeServiceAccount(
         scope, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
@@ -270,6 +308,9 @@ def _rotation(scope: Construct) -> None:
             # create on pods/exec (to open the exec stream).
             k8s.PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"]),
             k8s.PolicyRule(api_groups=[""], resources=["pods/exec"], verbs=["create"]),
+            k8s.PolicyRule(
+                api_groups=[""], resources=["secrets"], resource_names=[ci_token.WRITER.name], verbs=["get", "patch"]
+            ),
             # Resolving `deploy/attic` to a pod first reads the Deployment.
             k8s.PolicyRule(api_groups=["apps"], resources=["deployments"], verbs=["get"]),
         ],

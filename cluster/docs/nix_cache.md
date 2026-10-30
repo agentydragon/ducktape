@@ -240,3 +240,18 @@ removed from `trusted-public-keys`. The `main` cache's current keypair is
 unrelated, supplied from `cache-keys.sops.yaml` (see Bootstrap above) — SOPS
 encryption is the intended way private key material lives in this repo,
 unlike that earlier plaintext leak.
+
+### CI token propagation
+
+The rotator publishes the Ducktape CI writer JWT to
+`nix-cache/attic-ducktape-ci-writer` as well as its existing SOPS output during
+the CI migration. After a successful token check it patches the GitHub secrets
+OpenTofu Workspace with the Secret identity/version. Crossplane's annotation
+watch queues reconciliation; `github-secrets-sync` reads the Secret and owns
+the `ATTIC_TOKEN` Actions secret. The rotator retries the notification on runs
+that do not mint a token, so a failed notification does not wait for expiry.
+
+Deploy the rotator image plus generated config/RBAC, run the rotation job, then
+verify the Actions secret before migrating CI consumers. The existing SOPS path
+remains until that migration lands. The cache signing keys and per-host reader
+rotation are unchanged.

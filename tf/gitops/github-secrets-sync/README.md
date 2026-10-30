@@ -12,14 +12,14 @@ The token should be scoped to selected repositories:
 
 Required repository permissions:
 
-| Permission     | Access     | Why                                                                                                                                                                                                                                                                      |
-| -------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                  |
-| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for both repositories, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI. |
-| Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                     |
-| Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, GitHub returns `403 Resource not accessible by personal access token`.      |
-| Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                   |
-| Webhooks       | Read/write | `tf/gitops/flux-webhook-token` manages the `ducktape` repository webhook used by the Flux GitHub receiver.                                                                                                                                                               |
+| Permission     | Access     | Why                                                                                                                                                                                                                                                                                                 |
+| -------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                                             |
+| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for both repositories, the Attic CI writer token, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI. |
+| Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                                                |
+| Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, GitHub returns `403 Resource not accessible by personal access token`.                                 |
+| Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                                              |
+| Webhooks       | Read/write | `tf/gitops/flux-webhook-token` manages the `ducktape` repository webhook used by the Flux GitHub receiver.                                                                                                                                                                                          |
 
 `Metadata: read` is implicit for fine-grained PATs.
 
@@ -57,3 +57,19 @@ curl -sS -D - -o /tmp/github-body \
   https://api.github.com/repos/agentydragon/ducktape/actions/variables/PROPS_REGISTRY_URL \
   | grep -i '^x-accepted-github-permissions:'
 ```
+
+The Attic rotator publishes `nix-cache/attic-ducktape-ci-writer` and patches the
+`github-secrets-sync` Workspace's `ducktape.allegedly.works/attic-token-version`
+annotation after every successful token check. The annotation carries the Secret
+identity/version, never its contents. Annotation changes enqueue the pinned
+provider's Workspace reconciler, which reads the token and updates `ATTIC_TOKEN`
+in Ducktape's Actions secrets. Periodic reconciliation remains a recovery path.
+
+The Secret is declared without data so Flux owns its identity and the rotator
+owns its token. The rotator can patch only that named Secret and the named
+Workspace. The sync Workspace has read access to that Secret.
+
+Rollout: deploy the rotator image and generated RBAC/config, run the declared
+rotation job, and verify `ATTIC_TOKEN` exists in GitHub before switching CI.
+Until that consumer change lands, the rotator also maintains the existing SOPS
+output; CI continues to use it. Remove that output after all consumers migrate.

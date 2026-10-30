@@ -338,6 +338,42 @@ spec:
           port: 8080
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: attic-ducktape-ci-writer
+  namespace: nix-cache
+type: Opaque
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: attic-github-secrets-notification
+rules:
+  - apiGroups:
+      - opentofu.upbound.io
+    resourceNames:
+      - github-secrets-sync
+    resources:
+      - workspaces
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: attic-ci-token-notification-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: attic-github-secrets-notification
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: attic-jwt-rotator
+    namespace: nix-cache
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: external-creds-reader
@@ -394,6 +430,15 @@ rules:
       - pods/exec
     verbs:
       - create
+  - apiGroups:
+      - ""
+    resourceNames:
+      - attic-ducktape-ci-writer
+    resources:
+      - secrets
+    verbs:
+      - get
+      - patch
   - apiGroups:
       - apps
     resources:

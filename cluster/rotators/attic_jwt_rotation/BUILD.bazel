@@ -21,6 +21,7 @@ py_library(
         ":config",
         "//devinfra:prettier_cli",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//typer",

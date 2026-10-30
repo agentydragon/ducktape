@@ -5,6 +5,22 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+class KubernetesSecretDestination(BaseModel):
+    namespace: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+
+
+class WorkspaceNotification(BaseModel):
+    workspace: str = Field(min_length=1)
+    annotation_key: str = Field(min_length=1)
+
+
+class KubernetesDestination(BaseModel):
+    secret: KubernetesSecretDestination
+    notification: WorkspaceNotification
+
+
 class Token(BaseModel):
     name: str = Field(description="Human-readable name for logs and the commit message")
     sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
@@ -14,6 +30,9 @@ class Token(BaseModel):
     push: list[str] = Field(
         default_factory=list,
         description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens",
+    )
+    kubernetes: KubernetesDestination | None = Field(
+        default=None, description="Optional Kubernetes Secret destination and Workspace notification for publication"
     )
 
 
