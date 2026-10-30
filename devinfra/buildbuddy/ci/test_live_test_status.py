@@ -47,6 +47,30 @@ def test_watch_publishes_failure_before_invocation_completes(monkeypatch: pytest
     )
 
 
+def test_watch_keeps_pending_when_invocation_disconnects(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    args = Namespace(
+        invocation_id="invocation-123",
+        sha="abc123",
+        state_file=tmp_path / "state.json",
+        buildbuddy_url="https://buildbuddy.example",
+        github_api_url="https://github.example/api",
+        poll_interval=0.0,
+    )
+    publish_status = Mock()
+    statuses = iter(["DISCONNECTED_INVOCATION_STATUS", "DISCONNECTED_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
+    monkeypatch.setattr(live_test_status, "STOP", Event())
+    monkeypatch.setattr(live_test_status, "_credentials", lambda: ("bb-key", "gh-token", "owner/repo"))
+    monkeypatch.setattr(
+        live_test_status, "_invocation", lambda *_args: {"invocationStatus": next(statuses), "success": True}
+    )
+    monkeypatch.setattr(live_test_status, "_first_failed_test", lambda *_args: None)
+    monkeypatch.setattr(live_test_status, "_publish_status", publish_status)
+
+    live_test_status._watch(args)
+
+    assert [call.kwargs["state"] for call in publish_status.call_args_list] == ["pending", "success"]
+
+
 def _api_error(*_args: object) -> None:
     raise live_test_status.APIError("HTTP Error 500: Internal Server Error")
 
@@ -109,6 +133,24 @@ def test_finish_retries_status_after_github_rejects_watch_post(monkeypatch: pyte
             "failure",
             "failure",
             id="tests-failed",
+        ),
+        pytest.param(
+            lambda *_args: {"invocationStatus": "DISCONNECTED_INVOCATION_STATUS"},
+            "success",
+            "success",
+            id="disconnected-ci-passed",
+        ),
+        pytest.param(
+            lambda *_args: {"invocationStatus": "DISCONNECTED_INVOCATION_STATUS"},
+            "failure",
+            "failure",
+            id="disconnected-ci-failed",
+        ),
+        pytest.param(
+            lambda *_args: {"invocationStatus": "DISCONNECTED_INVOCATION_STATUS"},
+            "cancelled",
+            "error",
+            id="disconnected-ci-cancelled",
         ),
     ],
 )
