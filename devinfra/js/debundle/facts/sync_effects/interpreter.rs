@@ -37,10 +37,10 @@ use crate::facts::sync_effects::property_inference::{
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
-    set_iterables::SetIterableProof,
+    StatementPurityContext, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::ChunkCodeGraph;
+use crate::purity::{ChunkCodeGraph, Purity};
 use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, InferenceRule,
@@ -420,6 +420,7 @@ pub(super) struct ExecutionInputs<'source> {
     index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
     facts: &'source [StatementFacts],
+    purity: &'source StatementPurityContext<'source>,
     flow: &'source ChunkValueFlow,
     set_iterable_proof: &'source SetIterableProof,
     shadowed: &'source BTreeSet<&'static str>,
@@ -450,6 +451,11 @@ pub(super) struct OwnPropertyQuery {
 }
 
 impl ExecutionInputs<'_> {
+    /// The purity transfer at `owner`'s program point.
+    pub(super) fn statement_purity(&self, owner: SourceUnitOrdinal) -> Purity {
+        self.purity.statement_purity(&self.facts[owner.0])
+    }
+
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
         infer_own_property_projection(
             query.source_object,
@@ -2229,7 +2235,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
         if !matches!(fact.kind, StatementKind::VarDecl)
-            || !fact.purity.is_pure()
+            || !self.queries.statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
             || !self.inputs.index.const_call_owners.contains(&fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
@@ -2416,7 +2422,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // synchronous owner closure and undo the target filter below.
         if metadata_target.is_none()
             && (self.inputs.exported_owners.contains(&fact.ordinal)
-                || !((fact.purity.is_pure()
+                || !((self.queries.statement_is_pure(fact.ordinal)
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
                         || closed_callback_factory_result
@@ -2492,7 +2498,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// omitted until a later read, call, write, or export exposes that value.
     fn closed_local_record_factory_result(&self, fact: &StatementFacts) -> bool {
         if !matches!(fact.kind, StatementKind::VarDecl)
-            || !fact.purity.is_pure()
+            || !self.queries.statement_is_pure(fact.ordinal)
             || fact.declared.len() != 1
             || self.state.reachability.incomplete
             || !self.inputs.index.dynamic_scope_owners.is_empty()
@@ -3136,7 +3142,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
         if !matches!(fact.kind, StatementKind::ClassDecl)
-            || !fact.purity.is_pure()
+            || !self.queries.statement_is_pure(fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
             || self.state.reachability.incomplete
         {
@@ -3170,7 +3176,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !fact.reads.eager.contains(base)
             || self.inputs.index.class_bindings.get(base_key) != Some(base)
             || base_owner.0 >= fact.ordinal.0
-            || !self.inputs.facts[base_owner.0].purity.is_pure()
+            || !self.queries.statement_is_pure(base_owner)
             || self.state.tainted_classes.contains(base_key)
             || self.state.escaped_class_capabilities.contains(base_key)
             || values.len() != 1
@@ -7295,6 +7301,7 @@ fn callback_source_units_for_signature(
 pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) set_iterable: &'a SetIterableProof,
     pub(crate) graph: &'a ChunkCodeGraph,
+    pub(crate) purity: &'a StatementPurityContext<'a>,
     pub(crate) index: PreparedSynchronousCallIndex,
 }
 
@@ -7615,7 +7622,7 @@ pub(crate) fn annotate_synchronous_calls(
     hints: &AnalysisInputs,
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
-) {
+) -> Vec<Purity> {
     let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
@@ -7837,6 +7844,7 @@ pub(crate) fn annotate_synchronous_calls(
         index: &index,
         graph: proofs.graph,
         facts,
+        purity: proofs.purity,
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
@@ -7945,12 +7953,17 @@ pub(crate) fn annotate_synchronous_calls(
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
     };
-    let effects =
+    let results =
         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
     drop(inputs);
-    for (fact, effect) in facts.iter_mut().zip(effects) {
-        fact.synchronous_calls = Some(effect);
-    }
+    results
+        .into_iter()
+        .zip(facts.iter_mut())
+        .map(|((effects, purity), fact)| {
+            fact.synchronous_calls = Some(effects);
+            purity
+        })
+        .collect()
 }
 
 impl Executor<'_, '_> {
@@ -8102,7 +8115,7 @@ impl Executor<'_, '_> {
         if let Some((factory, span)) = closed_result
             && !fact_roots.contains(&fact.ordinal)
             && !self.inputs.exported_owners.contains(&fact.ordinal)
-            && fact.purity.is_pure()
+            && self.queries.statement_is_pure(fact.ordinal)
             && !fact.declares_direct_function
             && frozen_namespace.is_none()
             && self.state.private_constructor_result_owners.is_empty()
@@ -8265,7 +8278,9 @@ impl Executor<'_, '_> {
         let mut prior_effect_owners = outcome.executed_owners.clone();
         prior_effect_owners
             .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
-        if !fact.purity.is_pure() && self.state.private_constructor_result_owners.is_empty() {
+        if !self.queries.statement_is_pure(fact.ordinal)
+            && self.state.private_constructor_result_owners.is_empty()
+        {
             prior_effect_owners.insert(fact.ordinal);
         }
         self.state.prior_effect_owners.extend(prior_effect_owners);

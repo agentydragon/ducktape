@@ -143,9 +143,10 @@ Landed with step 4b: `facts/abstract_domain/heap.rs` holds `escape ::=
 Private | Published` and `taint ::= Clean | Tainted` for chunk-top literal
 initializers (and TS enum IIFE and derived-array initializers), solved
 flow-insensitively before purity from value flow and one whole-chunk scan;
-`PlainData` is its projection. `props`, `dense`, `proto`, `integrity`,
-`Published(owners)`/`Global` and per-prefix state arrive with the
-interpreter-derived heap (4c, 5a, 6).
+`PlainData` is its projection. `props`, `dense`, `proto`, `integrity` and
+`Published(owners)`/`Global` arrive with the interpreter-derived heap (5a, 6).
+Purity's "no later write" premise stays this whole-chunk state; per-prefix
+values feed only `Coerce` resolution (4c).
 
 ### 2.3 Effects
 
@@ -342,13 +343,17 @@ Canonical replays (hours at `-c opt`, both corpora) are required only for the
 steps that change what the gates can prove: 2, 5a–5d and 6. Steps 4, 7
 and 8 are covered by the public controls and the e2e suite.
 
-Pipeline order: `facts/analyze.rs::analyze_chunk_with_policy_and_sync` runs
-purity (`ChunkCodeGraph`) → heap-content effects → the interpreter
-(`annotate_synchronous_calls`), and the interpreter consumes the purity graph
-and statement facts. The vendor-prune path (`analyze_vendor_prune_chunk`)
-never runs the interpreter. A step that derives from the interpreter a fact
-purity or heap-content effects consume lands after 4c and 6, or owns that
-reorder and measures its cost.
+Pipeline order (<../docs/design.md> § Purity and synchronous execution share
+one context): source facts, function effects (`ChunkCodeGraph`) and the
+whole-chunk heap state (`facts/abstract_domain/heap.rs`) → heap-content
+effects → synchronous execution, which computes each statement's purity at its
+own program point (`RuntimeKey::Purity`) and consumes it there. Dependencies
+run forward only: nothing at a source prefix refines an earlier prefix's
+purity, function effects or the whole-chunk heap state. The vendor-prune path
+(`analyze_vendor_prune_chunk`) runs the same purity transfer without
+execution. A step that derives from the interpreter a fact that heap-content
+effects or function effects consume lands after 6, or owns that reorder and
+measures its cost.
 
 ### Step 0 — baseline
 
@@ -378,8 +383,18 @@ atomic group or loss there.
   closure becomes `Alloc(Array)` with `Prim` elements.
 - Stack: 4a whitelists → rows (landed); 4b PlainData → heap state (landed:
   `plain_data.rs` deleted, scan moved to `heap.rs` with per-allocation
-  state, still before purity); 4c classifier → projection, which also moves
-  the heap state into the interpreter once purity consumes its effects.
+  state, still before purity); 4c classifier → projection, as a stack of
+  layers: (1) statement purity is a runtime-store fact at its program point; (2) the classifier emits effect events and `purity_type.rs`
+  projects them; (3) `Coerce` resolves against the settled `Prefix(n)`
+  values; (4) the enum IIFE is interpreted; (5) the checked local record
+  factory discharge becomes a contribution reading its certificate; (6) the
+  unit tests are rewritten against effect sets. The heap's "no later write"
+  premise stays whole-chunk (design.md § Purity and synchronous execution
+  share one context).
+- TODO: revisit one least fixpoint over growing prefix states (the
+  alternative that design section rejects) if per-prefix heap state would
+  make enough statements pure on the canonical inputs to matter for
+  acceptance; layer 3 reports the count.
 - Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
   `initializer_purity`, `export_default_purity`, `pure_members`,
   `cross_module_purity_scale`, `dependency_graph_purity_reason`,

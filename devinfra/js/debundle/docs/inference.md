@@ -238,6 +238,14 @@ order alone is insufficient.
   flow or function-purity caches. Own-property queries use the selected current
   prefix state; their results do not update provider source certificates and
   cannot survive a later mutation.
+- A statement's purity is a runtime fact (`RuntimeKey::Purity`) produced at its
+  own program point, after `Prefix(n)` settles and before the statement
+  executes; that execution and later ones read it. It reads source facts,
+  completed function effects and the whole-chunk heap state, never a later
+  prefix: heap writes at any prefix are a whole-chunk fact, so a pure
+  statement can move past them (<design.md> § Purity and synchronous execution
+  share one context). The vendor-prune path runs the same transfer without
+  execution.
 
 A changed source, author input, import summary or analysis policy creates a new
 context. A missing fact during evaluation is bottom, not proof that a JavaScript
