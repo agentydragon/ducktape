@@ -288,6 +288,11 @@ fn authored_module_paths(modules_root: &Path) -> Result<BTreeMap<ModulePath, Str
     Ok(out)
 }
 
+struct ConstrainingEdge {
+    id: DependencyEdgeId,
+    module_pair: (ModuleId, ModuleId),
+}
+
 /// A candidate pair before its endpoints have selectors.
 struct Candidate {
     scc_id: usize,
@@ -479,10 +484,7 @@ impl<'a> Analysis<'a> {
             }
             // Unordered source-unit pair -> its sequenced edges, each with the
             // module pair it constrains.
-            let mut by_pair: BTreeMap<
-                (usize, usize),
-                Vec<(DependencyEdgeId, (ModuleId, ModuleId))>,
-            > = BTreeMap::new();
+            let mut by_pair: BTreeMap<(usize, usize), Vec<ConstrainingEdge>> = BTreeMap::new();
             for (&module_pair, edges) in &constraining {
                 for &edge_id in edges {
                     let edge = &self.report.edges[edge_id.0];
@@ -494,15 +496,18 @@ impl<'a> Analysis<'a> {
                     by_pair
                         .entry((a.min(b), a.max(b)))
                         .or_default()
-                        .push((edge_id, module_pair));
+                        .push(ConstrainingEdge {
+                            id: edge_id,
+                            module_pair,
+                        });
                 }
             }
             for ((a, b), edges) in by_pair {
                 let mut cut_edges: Vec<usize> = edges
                     .iter()
-                    .flat_map(|(edge_id, _)| {
+                    .flat_map(|edge| {
                         cut_indices_by_edge
-                            .get(edge_id)
+                            .get(&edge.id)
                             .into_iter()
                             .flatten()
                             .copied()
@@ -515,7 +520,7 @@ impl<'a> Analysis<'a> {
                         scc_id: scc.id,
                         scc_modules: scc.modules.clone(),
                         cut_edges,
-                        module_pair: edges[0].1,
+                        module_pair: edges[0].module_pair,
                         a,
                         b,
                         inerted,
