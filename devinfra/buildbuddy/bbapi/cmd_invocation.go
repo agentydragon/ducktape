@@ -9,7 +9,9 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	invocationstatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func formatTags(inv *invocationpb.Invocation) string {
@@ -102,26 +104,58 @@ func invocationCmd() *cobra.Command {
 
 func invocationListCmd() *cobra.Command {
 	var repo string
+	var groupID string
 	var count int32
 	var tagFilter string
 	var roleFilter string
 	var commitFilter, commandFilter string
+	var statusFilters []string
+	var updatedAfter, updatedBefore string
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List recent invocations",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			statuses, err := parseInvocationListStatuses(statusFilters)
+			if err != nil {
+				return err
+			}
+			after, err := parseInvocationListTimestamp("--updated-after", updatedAfter)
+			if err != nil {
+				return err
+			}
+			before, err := parseInvocationListTimestamp("--updated-before", updatedBefore)
+			if err != nil {
+				return err
+			}
+			if after != nil && before != nil && after.AsTime().After(before.AsTime()) {
+				return fmt.Errorf("--updated-after must be before or equal to --updated-before")
+			}
+
 			c, err := newClient()
 			if err != nil {
 				return err
 			}
 			defer c.close()
-			if repo == "" {
+			if repo == "" && groupID == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
 					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
 				}
 			}
-			query := &invocationpb.InvocationQuery{RepoUrl: repo, CommitSha: commitFilter, Command: commandFilter}
+			query := &invocationpb.InvocationQuery{
+				RepoUrl:       repo,
+				CommitSha:     commitFilter,
+				Command:       commandFilter,
+				UpdatedAfter:  after,
+				UpdatedBefore: before,
+				Status:        statuses,
+			}
+			var requestContext *ctxpb.RequestContext
+			if groupID != "" {
+				query.GroupId = groupID
+				requestContext = &ctxpb.RequestContext{GroupId: groupID}
+			}
 			if tagFilter != "" {
 				query.Tags = []string{tagFilter}
 			}
@@ -129,10 +163,11 @@ func invocationListCmd() *cobra.Command {
 				query.Role = []string{roleFilter}
 			}
 			req := &invocationpb.SearchInvocationRequest{
-				Query: query,
-				Count: count,
+				RequestContext: requestContext,
+				Query:          query,
+				Count:          count,
 			}
-			resp, err := c.rpc.SearchInvocation(context.Background(), req)
+			resp, err := searchInvocationList(c, req, all)
 			if err != nil {
 				return err
 			}
@@ -162,12 +197,84 @@ func invocationListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
-	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations to list")
+	cmd.Flags().StringVar(&groupID, "group", "", "Search this BuildBuddy group (without --repo, searches the whole group)")
+	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations per page")
+	cmd.Flags().BoolVar(&all, "all", false, "Fetch every matching page (--count sets page size)")
+	cmd.Flags().StringSliceVar(&statusFilters, "status", nil, "Filter by status: in-progress, success, failure, disconnected (repeat or comma-separate)")
+	cmd.Flags().StringVar(&updatedAfter, "updated-after", "", "Include invocations updated at or after this RFC3339 timestamp")
+	cmd.Flags().StringVar(&updatedBefore, "updated-before", "", "Include invocations updated before this RFC3339 timestamp")
 	cmd.Flags().StringVar(&commitFilter, "commit", "", "Filter by commit SHA")
 	cmd.Flags().StringVar(&commandFilter, "command", "", "Filter by Bazel command")
 	cmd.Flags().StringVar(&tagFilter, "tag", "", "Filter by tag (exact match)")
 	cmd.Flags().StringVar(&roleFilter, "role", "", "Filter by role (exact match)")
 	return cmd
+}
+
+func parseInvocationListStatuses(filters []string) ([]invocationstatuspb.OverallStatus, error) {
+	statusValues := map[string]invocationstatuspb.OverallStatus{
+		"success":      invocationstatuspb.OverallStatus_SUCCESS,
+		"failure":      invocationstatuspb.OverallStatus_FAILURE,
+		"in-progress":  invocationstatuspb.OverallStatus_IN_PROGRESS,
+		"in_progress":  invocationstatuspb.OverallStatus_IN_PROGRESS,
+		"disconnected": invocationstatuspb.OverallStatus_DISCONNECTED,
+	}
+	statuses := make([]invocationstatuspb.OverallStatus, 0, len(filters))
+	for _, filter := range filters {
+		value := strings.ToLower(strings.TrimSpace(filter))
+		status, ok := statusValues[value]
+		if !ok {
+			return nil, fmt.Errorf("invalid --status %q; valid values: in-progress, success, failure, disconnected", filter)
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, nil
+}
+
+func parseInvocationListTimestamp(flag, value string) (*timestamppb.Timestamp, error) {
+	if value == "" {
+		return nil, nil
+	}
+	timestamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an RFC3339 timestamp: %w", flag, err)
+	}
+	protoTimestamp := timestamppb.New(timestamp)
+	if err := protoTimestamp.CheckValid(); err != nil {
+		return nil, fmt.Errorf("%s: %w", flag, err)
+	}
+	return protoTimestamp, nil
+}
+
+func searchInvocationList(c *client, req *invocationpb.SearchInvocationRequest, all bool) (*invocationpb.SearchInvocationResponse, error) {
+	if !all {
+		return c.rpc.SearchInvocation(context.Background(), req)
+	}
+
+	result := &invocationpb.SearchInvocationResponse{}
+	seenPageTokens := make(map[string]struct{})
+	for {
+		pageToken := req.GetPageToken()
+		if _, ok := seenPageTokens[pageToken]; ok {
+			return nil, fmt.Errorf("SearchInvocation returned repeated page token %q", pageToken)
+		}
+		seenPageTokens[pageToken] = struct{}{}
+		page, err := c.rpc.SearchInvocation(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if result.GetResponseContext() == nil {
+			result.ResponseContext = page.GetResponseContext()
+		}
+		result.Invocation = append(result.GetInvocation(), page.GetInvocation()...)
+		nextPageToken := page.GetNextPageToken()
+		if nextPageToken == "" {
+			return result, nil
+		}
+		if _, ok := seenPageTokens[nextPageToken]; ok {
+			return nil, fmt.Errorf("SearchInvocation returned repeated page token %q", nextPageToken)
+		}
+		req.PageToken = nextPageToken
+	}
 }
 
 // getChildInvocationIDs returns child invocation IDs for a workflow invocation.

@@ -60,6 +60,12 @@ bbapi blob download --manifest downloads.json
 # List recent invocations (auto-detects repo from git remote)
 bbapi invocation list [--repo URL] [--count N] [--commit SHA] [--command test]
 
+# Enumerate invocations recorded as in progress for one BuildBuddy group
+bbapi invocation list --group <group-id> --status in-progress --all --count 100
+
+# Restrict the list by the stored invocation update time (RFC3339)
+bbapi invocation list --group <group-id> --status in-progress --updated-after 2026-10-29T00:00:00Z --updated-before 2026-10-30T00:00:00Z --all
+
 # Download test.log for a specific target (most common for debugging failures).
 # A sharded target has one log per shard: the failing ones are printed, each under a header
 bbapi target log <invocation-id> <target-label-or-substring>
@@ -152,6 +158,20 @@ bbapi trend [--days N] [--repo URL]
 All `bbapi` commands support `--json` and `--timeout <duration>` (API request timeout, default 120s).
 `status`, `first-failure`, `export`, and `events` always emit JSON; `blob cat` emits raw bytes.
 Reads retry transient failures; cancellation RPCs are sent once.
+
+`invocation list --group` scopes the search to that group; without `--repo`, it
+does not auto-detect or add a repository filter. `--all` follows every result
+page, and `--count` remains the page size. Without `--group`, listing retains
+its repository auto-detection behavior.
+
+The status and update-time filters find records BuildBuddy currently stores as
+`IN_PROGRESS`; they do not prove that a worker is still running or consuming
+capacity. Treat these rows as candidates, then inspect each with
+`bbapi execution <invocation-id>` and account for duplicate execution IDs and
+parent/child invocations. `bbapi execution search` can omit execution rows
+that `GetExecution` returns, so its empty result does not prove that there are
+no active executions. Missing or epoch-valued stage timestamps are unknown,
+not evidence that a stage began in 1970.
 
 Read RPCs use the generated gRPC client with API-key metadata and system TLS
 trust. Mutations, suggestions, public API queries, raw BES, and artifact downloads
