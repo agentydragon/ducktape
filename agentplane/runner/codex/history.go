@@ -12,6 +12,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 )
 
 // Codex history is a display projection. The paginated contract preserves the tested visible
@@ -156,7 +157,7 @@ func (a *codexAdapter) readTurnHistory(ctx context.Context, turnID string, items
 		if err != nil {
 			return err
 		}
-		frame, _, err := a.request(ctx, requestID, map[string]any{"id": requestID, "method": "thread/items/list", "params": params})
+		frame, err := a.request(ctx, jsonrpc.Request[any]{ID: requestID, Method: "thread/items/list", Params: params})
 		if err != nil {
 			return err
 		}
