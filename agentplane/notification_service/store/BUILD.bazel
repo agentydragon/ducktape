@@ -105,6 +105,7 @@ go_test(
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
+        "//agentplane/postgres/go/lease",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
