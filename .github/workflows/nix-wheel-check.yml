@@ -20,8 +20,8 @@ on:
       BUILDBUDDY_API_KEY:
         description: "BuildBuddy remote execution and cache credential"
         required: true
-      SOPS_AGE_KEY:
-        description: "SOPS age key, for decrypting the Attic reader token (nix substituter cache)"
+      ATTIC_TOKEN:
+        description: "Attic CI token for private cache access and permitted uploads"
         required: true
     inputs:
       environment:
@@ -107,7 +107,7 @@ jobs:
       # toolchain on every run and blows the timeout (#5749).
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets.ATTIC_TOKEN }}
 
       # The remote build only needs bb; use the same pin and checksum as Bazel CI.
       - name: Install pinned BuildBuddy CLI

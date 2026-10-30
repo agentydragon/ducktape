@@ -41,7 +41,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Install Attic client + nix-fast-build
         # nix-fast-build (+ nix-eval-jobs) drives the parallel eval/build/push in

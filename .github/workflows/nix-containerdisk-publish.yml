@@ -41,7 +41,7 @@ on:
         required: true
       FORGEJO_IMAGES_PASSWORD:
         required: true
-      SOPS_AGE_KEY:
+      ATTIC_TOKEN:
         required: true
 
 permissions:
@@ -64,7 +64,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Build containerDisk image
         run: nix build ".#$FLAKE_OUTPUT" --print-build-logs

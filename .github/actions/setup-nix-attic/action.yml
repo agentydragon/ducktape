@@ -2,8 +2,8 @@ name: Setup Nix + Attic
 description: Install Nix with the repository Attic substituter and authenticate it
 
 inputs:
-  sops_age_key:
-    description: SOPS age private key for CI decryption
+  attic_token:
+    description: Attic token for private cache access and permitted uploads
     required: true
 
 runs:
@@ -28,13 +28,13 @@ runs:
           extra-substituters = https://cache.allegedly.works/main
           fallback = true
 
-    - uses: ./.github/actions/setup-ci-secrets
-      with:
-        sops_age_key: ${{ inputs.sops_age_key }}
-
     - name: Write Nix netrc for cache.allegedly.works
       shell: bash
+      env:
+        ATTIC_TOKEN: ${{ inputs.attic_token }}
       run: |
+        : "${ATTIC_TOKEN:?Attic token is required}"
+        printf 'ATTIC_TOKEN=%s\n' "$ATTIC_TOKEN" >> "$GITHUB_ENV"
         mkdir -p /home/runner/.config/nix
         umask 077
         printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
