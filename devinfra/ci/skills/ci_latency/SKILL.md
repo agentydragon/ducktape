@@ -145,6 +145,24 @@ bash scripts/collect.sh agentydragon/ducktape "$SINCE" "$UNTIL" "$OUT"
 bash scripts/evidence.sh "$OUT" > "$OUT/evidence.json"
 ```
 
+To compare required-gate feedback for exact PR heads and completed runner occupancy
+in the same snapshot, name the required job contexts explicitly:
+
+```bash
+python3 scripts/snapshot_analysis.py "$OUT/snapshot.json" \
+  --since "$SINCE" --until "$UNTIL" \
+  --gate "Bazel CI" --gate "Pre-commit checks" \
+  --output "$OUT/snapshot-analysis.json"
+```
+
+The feedback clock is a labeled proxy from the first observed PR workflow creation
+to the latest visible successful required-gate completion for that repository and
+head SHA. Each gate retains its own run and job clocks; missing, canceled, fork and
+unknown states are surfaced instead of counted as green. Occupancy includes only
+completed jobs assigned to a runner, clipped to the requested half-open window.
+GitHub job timestamps are used directly; BuildBuddy cached durations are not a
+freshness or occupancy signal.
+
 `evidence.sh` runs the same jq recipes used for the report. `summarize.jq` produces
 queue/runtime percentiles, occupied time and step totals. `contention.jq` attributes
 CodeQL language cost and samples one-minute occupancy alongside queued Bazel jobs.

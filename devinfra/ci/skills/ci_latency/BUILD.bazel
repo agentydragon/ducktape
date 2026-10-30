@@ -17,6 +17,7 @@ skill_package(
                 "scripts/gate_headroom.py",
                 "scripts/inspect.sh",
                 "scripts/summarize.jq",
+                "scripts/snapshot_analysis.py",
                 "scripts/test_costs.jq",
             ],
             preserve_paths = True,
@@ -78,6 +79,11 @@ py_library(
     srcs = ["scripts/gate_headroom.py"],
 )
 
+py_library(
+    name = "snapshot_analysis",
+    srcs = ["scripts/snapshot_analysis.py"],
+)
+
 py_test(
     name = "test_artifacts",
     srcs = ["test_artifacts.py"],
@@ -94,6 +100,17 @@ py_test(
     srcs = ["test_gate_headroom.py"],
     deps = [
         ":gate_headroom",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_snapshot_analysis",
+    srcs = ["test_snapshot_analysis.py"],
+    deps = [
+        ":snapshot_analysis",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
