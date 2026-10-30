@@ -175,7 +175,7 @@ func (r *FoldRunner) claim(ctx context.Context) ([]claim, error) {
 	tokens := make([]string, 0, len(r.leases))
 	for sessionID, lease := range r.leases {
 		held[sessionID] = lease
-		tokens = append(tokens, lease.Token.String())
+		tokens = append(tokens, lease.held.Holder.String())
 	}
 	r.mu.Unlock()
 	var claims []claim
