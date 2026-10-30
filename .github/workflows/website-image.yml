@@ -114,4 +114,4 @@ jobs:
     secrets:
       FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
       FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-      ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+      ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}

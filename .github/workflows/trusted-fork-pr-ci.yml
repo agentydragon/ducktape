@@ -106,7 +106,7 @@ jobs:
       allow_unsafe_pr_checkout: true
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-      ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+      ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}
 
   nix-wheel-check-required:
     # Branch protection requires this exact context. The reusable workflow's own

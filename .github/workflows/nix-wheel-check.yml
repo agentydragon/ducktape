@@ -21,7 +21,10 @@ on:
         description: "BuildBuddy remote execution and cache credential"
         required: true
       ATTIC_TOKEN:
-        description: "Attic CI token for private cache access and permitted uploads"
+        description: "Attic writer token for runs that upload to the private cache"
+        required: false
+      ATTIC_READ_TOKEN:
+        description: "Attic reader token for private cache access without uploads"
         required: true
     inputs:
       environment:
@@ -107,7 +110,7 @@ jobs:
       # toolchain on every run and blows the timeout (#5749).
       - uses: ./.github/actions/setup-nix-attic
         with:
-          attic_token: ${{ secrets.ATTIC_TOKEN }}
+          attic_token: ${{ secrets[github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
 
       - name: Install pinned BuildBuddy CLIs
         run: nix profile install .#bb .#bbapi

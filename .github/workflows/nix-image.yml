@@ -52,6 +52,10 @@ on:
       FORGEJO_IMAGES_PASSWORD:
         required: false
       ATTIC_TOKEN:
+        description: "Attic writer token for runs that upload to the private cache"
+        required: false
+      ATTIC_READ_TOKEN:
+        description: "Attic reader token for private cache access without uploads"
         required: true
 
 jobs:
@@ -70,7 +74,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          attic_token: ${{ secrets.ATTIC_TOKEN }}
+          attic_token: ${{ secrets[inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
 
       - name: Build image
         run: nix build ".#${{ inputs.attr }}" --print-build-logs

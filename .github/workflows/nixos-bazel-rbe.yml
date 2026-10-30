@@ -63,7 +63,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          attic_token: ${{ secrets.ATTIC_TOKEN }}
+          attic_token: ${{ secrets.ATTIC_READ_TOKEN }}
 
       # Run first to verify independence from host Bazel setup: the NixOS image
       # supplies Bazelisk, and run.sh mounts credentials separately.
