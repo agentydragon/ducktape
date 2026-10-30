@@ -107,8 +107,8 @@ route an entry only where a context window is configured. The pinned Codex must 
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
-`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
-response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
+`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs the first 1 MiB of each request body (with its
+total size) and every raw response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 

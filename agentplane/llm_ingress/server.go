@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"slices"
@@ -24,11 +25,7 @@ import (
 )
 
 var (
-	bearerPattern = regexp.MustCompile(`(?i)^Bearer +([A-Za-z0-9._~+/=-]+)$`)
-	hopHeaders    = map[string]struct{}{
-		"connection": {}, "keep-alive": {}, "proxy-authenticate": {}, "proxy-authorization": {},
-		"te": {}, "trailer": {}, "transfer-encoding": {}, "upgrade": {},
-	}
+	bearerPattern     = regexp.MustCompile(`(?i)^Bearer +([A-Za-z0-9._~+/=-]+)$`)
 	credentialHeaders = map[string]struct{}{
 		"authorization": {}, "x-api-key": {}, "x-litellm-api-key": {},
 	}
@@ -40,16 +37,17 @@ var (
 )
 
 type ingressHandler struct {
-	resolver    *auth.Resolver
-	backend     *http.Client
-	baseURL     *url.URL
-	key         string
-	models      map[string]modelConfig
-	attribution attributionConfig
-	codex       *codexCatalog
-	logBody     bool
-	logger      *slog.Logger
-	pool        chan struct{}
+	resolver     *auth.Resolver
+	transport    *http.Transport
+	roundTripper http.RoundTripper
+	baseURL      *url.URL
+	key          string
+	models       map[string]modelConfig
+	attribution  attributionConfig
+	codex        *codexCatalog
+	logBody      bool
+	logger       *slog.Logger
+	pool         chan struct{}
 
 	centralSamplerAccounts []string
 }
@@ -77,12 +75,6 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 		return writeTimeoutConn{Conn: conn, timeout: 60 * time.Second}, nil
 	}
-	backend := &http.Client{
-		Transport: observability.HTTPTransport(transport),
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
 	models := make(map[string]modelConfig, len(c.Models))
 	for _, item := range c.Models {
 		models[item.Model] = item
@@ -94,16 +86,17 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 	}
 	return &ingressHandler{
-		resolver:    resolver,
-		backend:     backend,
-		baseURL:     baseURL,
-		key:         c.LiteLLMKey,
-		models:      models,
-		attribution: c.Attribution,
-		codex:       codex,
-		logBody:     c.LogLLMRequests,
-		logger:      logger,
-		pool:        make(chan struct{}, 100),
+		resolver:     resolver,
+		transport:    transport,
+		roundTripper: observability.HTTPTransport(transport),
+		baseURL:      baseURL,
+		key:          c.LiteLLMKey,
+		models:       models,
+		attribution:  c.Attribution,
+		codex:        codex,
+		logBody:      c.LogLLMRequests,
+		logger:       logger,
+		pool:         make(chan struct{}, 100),
 
 		centralSamplerAccounts: c.CentralSamplerAccounts,
 	}, nil
@@ -227,167 +220,136 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			return
 		}
 	}
-
-	body, err := io.ReadAll(incoming.Body)
-	if err != nil {
-		if incoming.Context().Err() == nil {
-			writeJSONError(writer, http.StatusBadRequest, "request body unavailable", "")
-		}
-		return
-	}
-	requestID := rand.Text()
-	if h.logBody {
-		h.logger.Info("llm request", "id", requestID, "namespace", principal.Account.Namespace,
-			"pod", principal.PodName, "pod_uid", principal.PodUID, "method", incoming.Method,
-			"path", incoming.URL.Path, "body", fmt.Sprintf("%q", body))
-	}
-	forwardURL := *h.baseURL
-	basePath := strings.TrimSuffix(h.baseURL.EscapedPath(), "/")
-	requestPath := strings.TrimLeft(incoming.URL.EscapedPath(), "/")
-	rawPath := basePath + "/" + requestPath
-	path, err := url.PathUnescape(rawPath)
-	if err != nil {
-		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
-		return
-	}
-	forwardURL.Path = path
-	forwardURL.RawPath = ""
-	if path != rawPath {
-		forwardURL.RawPath = rawPath
-	}
-	forwardURL.RawQuery = incoming.URL.RawQuery
-	forwardURL.ForceQuery = incoming.URL.ForceQuery
-	outgoing, err := http.NewRequestWithContext(incoming.Context(), incoming.Method, forwardURL.String(), bytes.NewReader(body))
-	if err != nil {
-		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
-		return
-	}
-	outgoing.Header, err = forwardedRequestHeaders(incoming.Header, principal, h.key, h.attribution)
+	verified, err := verifiedRequestHeaders(principal, h.key, h.attribution, sessionID)
 	if err != nil {
 		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
 		return
 	}
-	if sessionID != "" {
-		// This claim is supplied by an explicitly trusted sampler, not inferred from
-		// its shared Pod. Existing workload attribution stays bound to TokenReview.
-		members := map[string]string{}
-		if value := outgoing.Header.Get("x-litellm-spend-logs-metadata"); value != "" {
-			if err := json.Unmarshal([]byte(value), &members); err != nil {
-				writeJSONError(writer, http.StatusInternalServerError, "Invalid attribution metadata", "")
-				return
-			}
-		}
-		members["agentplane.session_id"] = sessionID
-		encoded, _ := json.Marshal(members)
-		outgoing.Header.Set("x-litellm-spend-logs-metadata", string(encoded))
-		// LiteLLM creates its pre-call span before spend-log metadata promotion.
-		// Extend only the freshly verified baggage; caller baggage was stripped.
-		verifiedBaggage, err := baggage.Parse(outgoing.Header.Get("baggage"))
-		if err != nil {
-			writeJSONError(writer, http.StatusInternalServerError, "Invalid attribution baggage", "")
-			return
-		}
-		member, err := baggage.NewMemberRaw("litellm.metadata.spend_logs_metadata.agentplane.session_id", sessionID)
-		if err != nil {
-			writeJSONError(writer, http.StatusInternalServerError, "Invalid Session attribution", "")
-			return
-		}
-		verifiedBaggage, err = verifiedBaggage.SetMember(member)
-		if err != nil {
-			writeJSONError(writer, http.StatusInternalServerError, "Could not attach Session attribution", "")
-			return
-		}
-		outgoing.Header.Set("baggage", verifiedBaggage.String())
-	}
 
-	response, err := h.backend.Do(outgoing)
-	if err != nil {
-		if incoming.Context().Err() == nil {
-			writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
-		}
-		return
-	}
-	defer response.Body.Close()
-	if h.logBody {
-		h.logger.Info("llm response start", "id", requestID, "status", response.StatusCode,
-			"content_type", response.Header.Get("Content-Type"))
-	}
-	copyResponseHeaders(writer.Header(), response.Header)
-	if h.codex != nil && incoming.URL.Path == "/v1/responses" {
-		writer.Header().Set("X-Models-Etag", h.codex.etag)
-	}
-	writer.WriteHeader(response.StatusCode)
-	if err := http.NewResponseController(writer).Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return
-	}
-	complete := false
-	defer func() {
-		if h.logBody {
-			h.logger.Info("llm response end", "id", requestID, "complete", complete)
-		}
-	}()
-	buffer := make([]byte, 32*1024)
-	chunk := 0
-	for {
-		count, readErr := response.Body.Read(buffer)
-		if count > 0 {
-			part := buffer[:count]
+	requestID := rand.Text()
+	var requestBody *boundedCapture
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(out *httputil.ProxyRequest) {
+			out.SetURL(h.baseURL)
+			dropUntrustedRequestHeaders(out.Out.Header, h.attribution)
+			for name, values := range verified {
+				out.Out.Header[name] = values
+			}
 			if h.logBody {
-				h.logger.Info("llm response chunk", "id", requestID, "status", response.StatusCode,
-					"chunk", chunk, "body", fmt.Sprintf("%q", part))
+				requestBody = &boundedCapture{ReadCloser: out.Out.Body, limit: maxLoggedRequestBody}
+				out.Out.Body = requestBody
 			}
-			chunk++
-			if _, err := writer.Write(part); err != nil {
+		},
+		Transport:     h.roundTripper,
+		FlushInterval: -1,
+		ModifyResponse: func(response *http.Response) error {
+			for name := range credentialHeaders {
+				response.Header.Del(name)
+			}
+			if h.codex != nil && incoming.URL.Path == "/v1/responses" {
+				response.Header.Set("X-Models-Etag", h.codex.etag)
+			}
+			if h.logBody {
+				h.logger.Info("llm response start", "id", requestID, "status", response.StatusCode,
+					"content_type", response.Header.Get("Content-Type"))
+				response.Body = &loggedResponseBody{ReadCloser: response.Body, logger: h.logger, id: requestID, status: response.StatusCode}
+			}
+			return nil
+		},
+		ErrorLog: slog.NewLogLogger(h.logger.Handler(), slog.LevelWarn),
+		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, _ error) {
+			if request.Context().Err() == nil {
+				writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
+			}
+		},
+	}
+	if h.logBody {
+		defer func() {
+			if requestBody == nil {
 				return
 			}
-			if err := http.NewResponseController(writer).Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
-				return
-			}
+			h.logger.Info("llm request", "id", requestID, "namespace", principal.Account.Namespace,
+				"pod", principal.PodName, "pod_uid", principal.PodUID, "method", incoming.Method,
+				"path", incoming.URL.Path, "body", fmt.Sprintf("%q", requestBody.captured.Bytes()),
+				"body_bytes", requestBody.total, "body_truncated", requestBody.total > requestBody.captured.Len())
+		}()
+	}
+	proxy.ServeHTTP(writer, incoming)
+}
+
+// maxLoggedRequestBody bounds the request body prefix kept for `log_llm_requests`; the body itself
+// is streamed to LiteLLM, never buffered.
+const maxLoggedRequestBody = 1 << 20
+
+// boundedCapture passes a body through unchanged while keeping its first `limit` bytes.
+type boundedCapture struct {
+	io.ReadCloser
+	limit    int
+	captured bytes.Buffer
+	total    int
+}
+
+func (c *boundedCapture) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	c.captured.Write(p[:min(n, max(c.limit-c.captured.Len(), 0))])
+	c.total += n
+	return n, err
+}
+
+// loggedResponseBody logs each raw response chunk and whether the stream completed.
+type loggedResponseBody struct {
+	io.ReadCloser
+	logger   *slog.Logger
+	id       string
+	status   int
+	chunk    int
+	complete bool
+}
+
+func (b *loggedResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.logger.Info("llm response chunk", "id", b.id, "status", b.status, "chunk", b.chunk, "body", fmt.Sprintf("%q", p[:n]))
+		b.chunk++
+	}
+	if err == io.EOF {
+		b.complete = true
+	}
+	return n, err
+}
+
+func (b *loggedResponseBody) Close() error {
+	b.logger.Info("llm response end", "id", b.id, "complete", b.complete)
+	return b.ReadCloser.Close()
+}
+
+// dropUntrustedRequestHeaders removes what the caller must not choose. ReverseProxy has already
+// removed hop-by-hop headers and `Connection`-named ones.
+func dropUntrustedRequestHeaders(headers http.Header, attribution attributionConfig) {
+	for name := range headers {
+		lower := strings.ToLower(name)
+		_, credential := credentialHeaders[lower]
+		_, untrusted := untrustedMetadataHeaders[lower]
+		if credential || untrusted || hasIdentityHeaderPrefix(lower) ||
+			lower == "host" || lower == "content-length" || lower == "baggage" {
+			delete(headers, name)
 		}
-		if readErr == io.EOF {
-			complete = true
-			return
-		}
-		if readErr != nil {
-			panic(http.ErrAbortHandler)
-		}
+	}
+	for _, header := range attribution.JSONHeaders {
+		headers.Del(header.Name)
 	}
 }
 
-func forwardedRequestHeaders(
-	headers http.Header,
+// verifiedRequestHeaders are the headers LiteLLM trusts: the server-held key and attribution
+// derived from the authenticated principal, plus the Session claim of an authorized central
+// sampler (sessionID != "").
+func verifiedRequestHeaders(
 	principal auth.Principal,
 	key string,
 	attribution attributionConfig,
+	sessionID string,
 ) (http.Header, error) {
-	connectionTokens := connectionHeaderTokens(headers)
-	configuredHeaders := make(map[string]struct{}, len(attribution.JSONHeaders))
-	for _, header := range attribution.JSONHeaders {
-		configuredHeaders[strings.ToLower(header.Name)] = struct{}{}
-	}
 	forwarded := make(http.Header)
-	for name, values := range headers {
-		lower := strings.ToLower(name)
-		if _, found := hopHeaders[lower]; found {
-			continue
-		}
-		if _, found := connectionTokens[lower]; found {
-			continue
-		}
-		if _, found := credentialHeaders[lower]; found {
-			continue
-		}
-		if _, found := configuredHeaders[lower]; found {
-			continue
-		}
-		if _, found := untrustedMetadataHeaders[lower]; found || lower == "host" || lower == "content-length" || lower == "baggage" {
-			continue
-		}
-		if hasIdentityHeaderPrefix(lower) {
-			continue
-		}
-		forwarded[name] = append([]string(nil), values...)
-	}
 	forwarded.Set("Authorization", "Bearer "+key)
 	claims := map[verifiedClaim]string{
 		verifiedNamespace:      principal.Account.Namespace,
@@ -413,6 +375,38 @@ func forwardedRequestHeaders(
 		}
 		forwarded.Set("baggage", value)
 	}
+	if sessionID == "" {
+		return forwarded, nil
+	}
+	// This claim is supplied by an explicitly trusted sampler, not inferred from
+	// its shared Pod. Existing workload attribution stays bound to TokenReview.
+	members := map[string]string{}
+	if value := forwarded.Get("x-litellm-spend-logs-metadata"); value != "" {
+		if err := json.Unmarshal([]byte(value), &members); err != nil {
+			return nil, err
+		}
+	}
+	members["agentplane.session_id"] = sessionID
+	encoded, err := json.Marshal(members)
+	if err != nil {
+		return nil, err
+	}
+	forwarded.Set("x-litellm-spend-logs-metadata", string(encoded))
+	// LiteLLM creates its pre-call span before spend-log metadata promotion.
+	// Extend only the freshly verified baggage; caller baggage was stripped.
+	verifiedBaggage, err := baggage.Parse(forwarded.Get("baggage"))
+	if err != nil {
+		return nil, err
+	}
+	member, err := baggage.NewMemberRaw("litellm.metadata.spend_logs_metadata.agentplane.session_id", sessionID)
+	if err != nil {
+		return nil, err
+	}
+	verifiedBaggage, err = verifiedBaggage.SetMember(member)
+	if err != nil {
+		return nil, err
+	}
+	forwarded.Set("baggage", verifiedBaggage.String())
 	return forwarded, nil
 }
 
@@ -430,37 +424,6 @@ func agentplaneIdentityBaggage(fields []attributionField, claims map[verifiedCla
 		}
 	}
 	return outgoing.String(), nil
-}
-
-func copyResponseHeaders(destination, source http.Header) {
-	connectionTokens := connectionHeaderTokens(source)
-	for name, values := range source {
-		lower := strings.ToLower(name)
-		if _, found := hopHeaders[lower]; found {
-			continue
-		}
-		if _, found := connectionTokens[lower]; found {
-			continue
-		}
-		if _, found := credentialHeaders[lower]; found || lower == "content-length" {
-			continue
-		}
-		for _, value := range values {
-			destination.Add(name, value)
-		}
-	}
-}
-
-func connectionHeaderTokens(headers http.Header) map[string]struct{} {
-	tokens := make(map[string]struct{})
-	for _, value := range headers.Values("Connection") {
-		for _, token := range strings.Split(value, ",") {
-			if token = strings.TrimSpace(token); token != "" {
-				tokens[strings.ToLower(token)] = struct{}{}
-			}
-		}
-	}
-	return tokens
 }
 
 func hasIdentityHeaderPrefix(name string) bool {
