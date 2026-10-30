@@ -212,8 +212,6 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	}()
 	liveness := time.NewTimer(timing.LivenessTimeout)
 	defer liveness.Stop()
-	maximumAge := time.NewTimer(timing.MaximumAge)
-	defer maximumAge.Stop()
 	var connection *runnerConnection
 	defer func() {
 		if connection != nil {
@@ -226,8 +224,6 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			return ctx.Err()
 		case <-liveness.C:
 			return status.Error(codes.Unavailable, "runner state timed out")
-		case <-maximumAge.C:
-			return status.Error(codes.Unavailable, "maximum connection age reached")
 		case received := <-responses:
 			if received.err != nil {
 				return received.err

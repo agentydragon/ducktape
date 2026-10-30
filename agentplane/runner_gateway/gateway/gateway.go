@@ -38,7 +38,6 @@ type ControlTiming struct {
 	HeartbeatInterval  time.Duration
 	LivenessTimeout    time.Duration
 	LeaseTouchInterval time.Duration
-	MaximumAge         time.Duration
 }
 
 func defaultControlTiming(timing ControlTiming) ControlTiming {
@@ -51,15 +50,12 @@ func defaultControlTiming(timing ControlTiming) ControlTiming {
 	if timing.LeaseTouchInterval == 0 {
 		timing.LeaseTouchInterval = 15 * time.Second
 	}
-	if timing.MaximumAge == 0 {
-		timing.MaximumAge = time.Hour
-	}
 	return timing
 }
 
 func validateControlTiming(timing ControlTiming) error {
 	if timing.HeartbeatInterval <= 0 || timing.LivenessTimeout <= 0 ||
-		timing.LeaseTouchInterval <= 0 || timing.MaximumAge <= 0 {
+		timing.LeaseTouchInterval <= 0 {
 		return fmt.Errorf("Gateway control timings must be positive")
 	}
 	if timing.HeartbeatInterval >= timing.LivenessTimeout ||

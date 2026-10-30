@@ -289,10 +289,10 @@ receipt first. Certificate resources can remain while rolling back; prior runner
 ## Heartbeat and liveness
 
 `WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Gateway
-ends observation after 30 seconds without a snapshot, on identity or ownership loss, or at the
-configured maximum connection age. It supervises a new observation while the workload remains
-current. A live observation establishes control connectivity, not harness readiness, command
-admission or native execution. Losing it does not establish that admitted work failed.
+ends observation after 30 seconds without a snapshot, on transport failure, or on identity or
+ownership loss. Healthy observations have no age limit. It supervises a new observation while the
+workload remains current. A live observation establishes control connectivity, not harness readiness,
+command admission or native execution. Losing it does not establish that admitted work failed.
 
 ## Path through the egress proxy
 

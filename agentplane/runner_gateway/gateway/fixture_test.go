@@ -154,7 +154,6 @@ func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, e
 			HeartbeatInterval:  time.Second,
 			LivenessTimeout:    10 * time.Second,
 			LeaseTouchInterval: 5 * time.Second,
-			MaximumAge:         time.Minute,
 		},
 	}, f.callerAuth, f.objects, api.Clientset.CoreV1(), api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
 	if err != nil {
