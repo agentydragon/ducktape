@@ -840,16 +840,16 @@ func advanceWithFakeOperation(
 	peer *fakeCodeModePeer,
 	wantMethod string,
 	respond func(int64),
-) (string, error) {
+) (TurnResult, error) {
 	t.Helper()
 	done := make(chan struct {
-		result string
+		result TurnResult
 		err    error
 	}, 1)
 	go func() {
 		result, err := runtime.advance(t.Context(), code.owner, live, nil, &Session{Model: "fixture-model"})
 		done <- struct {
-			result string
+			result TurnResult
 			err    error
 		}{result: result, err: err}
 	}()

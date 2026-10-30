@@ -206,15 +206,15 @@ type ResponsesExecutionState struct {
 }
 
 type ResponsesActiveCell struct {
-	CellID string `json:"cell_id"`
-	Status string `json:"status"`
+	CellID string     `json:"cell_id"`
+	Status CellStatus `json:"status"`
 }
 
 type ResponsesActiveProcess struct {
-	SessionID int    `json:"session_id"`
-	Status    string `json:"status"`
-	TTY       bool   `json:"tty"`
-	ExitCode  *int   `json:"exit_code"`
+	SessionID int           `json:"session_id"`
+	Status    ProcessStatus `json:"status"`
+	TTY       bool          `json:"tty"`
+	ExitCode  *int          `json:"exit_code"`
 }
 
 func newResponsesMessage(role, content string) (ResponsesItem, error) {
