@@ -1569,7 +1569,6 @@ The Gateway observes state and proxies the runner's
 
 ```mermaid
 flowchart TD
-    RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
 ```
 
@@ -1577,21 +1576,6 @@ The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gatew
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
-
-### `RUNNER_CONTROL_TRANSPORT_DESIGN` — native runner gRPC with mTLS
-
-**Selected; implementation in progress, operator, 2026-10-28 PDT.** The Gateway dials each runner's
-native gRPC server using mTLS. Remove the custom reverse tunnel and transport selection. cert-manager
-issues leaf certificates and trust-manager distributes roots. Public Gateway caller authorization,
-runner journals and History push retain their contracts.
-
-The Gateway retains per-Sandbox observation ownership and the control route; direct dialing does
-not choose Dispatcher queue ownership. The [transport contract](../docs/runner_control.md)
-defines credential/incarnation binding and epochs.
-
-Exit: runtime and integration coverage, stale credential and epoch rejection, lost-reply admission
-reconciliation, bounded executor relay, generated Pod/VM deployment wiring, and a reviewable
-coordinated cutover/rollback procedure that preserves runner state.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1932,7 +1916,6 @@ flowchart LR
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
     FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
@@ -1961,6 +1944,5 @@ raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decis
 
 ### Blocked
 
-`RUNNER_MTLS_GO_SPIFFE` waits for `RUNNER_CONTROL_TRANSPORT_DESIGN` to land (same code).
 `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` wait for the merge design, which changes who
 owns delivery.

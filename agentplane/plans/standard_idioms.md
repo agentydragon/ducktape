@@ -27,17 +27,6 @@ which `GracefulStop` cannot drain, and which forces the abort-write hook in `grp
 the Action Service and egress. Serve gRPC on its own listener, as the Runner Gateway does. Exit: drain
 on shutdown covered by a test; the abort-write hook removed if nothing else needs it.
 
-### `RUNNER_MTLS_GO_SPIFFE`
-
-`runner_transport/credentials.go` (about 470 lines) skips Go's verification and re-implements SPIFFE
-peer verification, verifies twice per handshake to fill `VerifiedChains`, re-reads certificate, key
-and CA bundle from disk on every handshake and retries loads to ride out rotation. Use
-`github.com/spiffe/go-spiffe/v2` `tlsconfig.MTLSClientConfig`/`MTLSServerConfig` with
-`tlsconfig.AuthorizeID` and `grpccredentials.PeerIDFromContext`, and a rotating file source (grpc-go
-`certprovider/pemfile` or an `x509svid.Source` over the mounted files). Issuance by cert-manager and
-trust-manager stays. Exit: stale credential and epoch rejection tests from the transport contract
-pass unchanged.
-
 ## Kubernetes
 
 ## Work queues
