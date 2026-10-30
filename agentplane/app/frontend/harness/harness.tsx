@@ -3332,7 +3332,8 @@ function drops(url: URL): boolean {
   return false;
 }
 
-// A dropped stream is not answered again, as on a network that stays down.
+// A dropped stream is not answered again while its drop flag stays set, as on a network that stays
+// down; once the flag is cleared it is served afresh.
 const droppedStreams = new Set<string>();
 
 routes.unshift([
@@ -3341,9 +3342,10 @@ routes.unshift([
   (match, query, signal) => {
     const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
     const key = `${url.pathname}${url.search}`;
-    if (droppedStreams.has(key)) return UNANSWERED;
     const drop = drops(url);
-    if (drop) droppedStreams.add(key);
+    if (!drop) droppedStreams.delete(key);
+    else if (droppedStreams.has(key)) return UNANSWERED;
+    else droppedStreams.add(key);
     return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
   },
 ]);

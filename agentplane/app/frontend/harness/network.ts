@@ -202,6 +202,7 @@ function streamResponse(
   drop: boolean
 ): Response {
   let dispose = (): void => {};
+  let dropping = drop;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
@@ -226,11 +227,15 @@ function streamResponse(
       signal?.addEventListener("abort", onAbort, { once: true });
       send(initial);
     },
-    // Called once the reader has taken what `start` sent: erroring sooner would discard it.
+    // Called once the reader has taken what `start` sent. Erroring discards what the reader's pipe
+    // stages still hold, so the drop waits a task for them to hand those events on.
     pull(controller) {
-      if (!drop) return;
-      dispose();
-      controller.error(new TypeError("the harness dropped this stream"));
+      if (!dropping) return;
+      dropping = false;
+      setTimeout(() => {
+        dispose();
+        controller.error(new TypeError("the harness dropped this stream"));
+      }, 0);
     },
     cancel() {
       dispose();
