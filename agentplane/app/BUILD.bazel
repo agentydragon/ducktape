@@ -281,7 +281,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane:sandbox_resource",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:models",

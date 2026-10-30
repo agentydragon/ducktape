@@ -456,10 +456,18 @@ func (f *streamTestHistory) ReadWatermark(context.Context, uuid.UUID) (uint64, e
 	return 100, nil
 }
 
-type streamTestChanges struct{ changes chan struct{} }
+type streamTestChanges struct {
+	changes chan struct{}
+	// unsubscribed, when set, receives each ended subscription.
+	unsubscribed chan struct{}
+}
 
 func (f *streamTestChanges) Subscribe(...string) (<-chan struct{}, func(), error) {
-	return f.changes, func() {}, nil
+	return f.changes, func() {
+		if f.unsubscribed != nil {
+			f.unsubscribed <- struct{}{}
+		}
+	}, nil
 }
 
 type threadFollowResult struct {
@@ -1098,7 +1106,7 @@ func newLiveFramesFixture() *liveFramesFixture {
 	f := &liveFramesFixture{
 		live:    &countingLive{snapshot: liveFramesSnapshot(nil), unsubscribed: make(chan struct{}, 8)},
 		store:   &countingThreadStore{rows: []threads.Thread{{ID: liveFramesFirstThread}}},
-		updates: &streamTestChanges{changes: make(chan struct{}, 1)},
+		updates: &streamTestChanges{changes: make(chan struct{}, 1), unsubscribed: make(chan struct{}, 8)},
 	}
 	history := &streamTestHistory{
 		summaries:   map[uuid.UUID]historydata.FoldSummary{liveFramesFirstThread: summary, liveFramesSecondThread: summary},
@@ -1140,17 +1148,17 @@ func (f *liveFramesFixture) assertReads(t *testing.T, step string, snapshots, th
 	}
 }
 
-// awaitProducerStopped waits for the shared producer to drop its live inventory subscription.
+// awaitProducerStopped waits for the shared producer to drop its thread update subscription.
 func (f *liveFramesFixture) awaitProducerStopped(t *testing.T) {
 	t.Helper()
 	select {
-	case <-f.live.unsubscribed:
+	case <-f.updates.unsubscribed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the shared producer did not stop after its last stream ended")
 	}
 }
 
-func TestLiveThreadStreamsComputeEachChangeOnceAndRereadThreadsOnlyOnThreadUpdates(t *testing.T) {
+func TestLiveThreadStreamsComputeEachThreadUpdateOnceAndIgnoreKubernetes(t *testing.T) {
 	f := newLiveFramesFixture()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1159,18 +1167,20 @@ func TestLiveThreadStreamsComputeEachChangeOnceAndRereadThreadsOnlyOnThreadUpdat
 	}, 3)
 
 	waitForEveryStream(t, responses, liveFramesFirstThread.String())
-	waitForEveryStream(t, responses, `"idle_suspend_at":null`)
-	f.assertReads(t, "initial frame", 1, 1)
+	f.assertReads(t, "initial frame", 0, 1)
 
+	// Sandboxes come from /live/sandboxes: a Kubernetes change neither reads the inventory nor re-reads threads.
 	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
 	f.live.change(liveFramesSnapshot(&deadline))
-	waitForEveryStream(t, responses, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
-	f.assertReads(t, "Kubernetes-only change", 2, 1)
-
 	f.store.setRows(threads.Thread{ID: liveFramesSecondThread}, threads.Thread{ID: liveFramesFirstThread})
 	f.updates.changes <- struct{}{}
 	waitForEveryStream(t, responses, liveFramesSecondThread.String())
-	f.assertReads(t, "thread update", 3, 2)
+	f.assertReads(t, "thread update", 0, 2)
+	for _, response := range responses {
+		if body := response.String(); strings.Contains(body, `"sandboxes"`) || strings.Contains(body, "idle_suspend_at") {
+			t.Fatalf("thread stream carried Sandboxes: %s", body)
+		}
+	}
 
 	cancel()
 	wait()
