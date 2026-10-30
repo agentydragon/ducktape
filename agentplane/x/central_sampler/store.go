@@ -2567,7 +2567,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 	})
 }
 
-// AbandonProcess stops scheduling a remote handle whose transport outcome is unknown while
+// AbandonProcess stops scheduling a remote handle whose remote outcome is unknown while
 // retaining every observed byte and exit code for inspection. It never records a remote exit.
 func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID string, afterSequence *uint64, output *headTailBuffer, remoteOutcome, executorSessionID string) error {
 	if remoteOutcome != "unknown" && remoteOutcome != "not_dispatched" {

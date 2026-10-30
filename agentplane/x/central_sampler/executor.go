@@ -200,6 +200,40 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		return &toolOutcomeError{toolError: &toolError{transport.Error()}, evidence: transport.evidence(transport.retainedSession)}
 	}
+	var rejected *executorRejectedError
+	if errors.As(err, &rejected) {
+		if rejected.method == "process/read" {
+			if rejected.processID == "" {
+				return errors.New("settle rejected process/read without a process ID")
+			}
+			process, processErr := e.store.Process(ctx, e.owner, rejected.processID)
+			if processErr != nil {
+				return fmt.Errorf("inspect process %s after rejected process/read: %w", rejected.processID, processErr)
+			}
+			if process.Status == "exited" || process.Status == "exited_unread" {
+				return &toolError{rejected.Error()}
+			}
+			if process.Status != "abandoned" {
+				afterSequence := rejected.afterSequence
+				if afterSequence == nil {
+					afterSequence = process.AfterSequence
+				}
+				if abandonErr := e.store.AbandonProcess(ctx, e.owner, rejected.processID, afterSequence, rejected.output, "unknown", rejected.executionSessionID); abandonErr != nil {
+					return fmt.Errorf("record unknown process %s outcome after rejected process/read: %w", rejected.processID, abandonErr)
+				}
+			}
+			message := rejected.Error() + "; the process handle was abandoned with unknown outcome and was not replayed"
+			return &toolOutcomeError{
+				toolError: &toolError{message},
+				evidence: map[string]any{
+					"error": message, "executor_intent_id": rejected.intentID,
+					"process_id": rejected.processID, "execution_session_id": rejected.executionSessionID,
+					"remote_outcome": "unknown", "automatic_replay": false,
+				},
+			}
+		}
+		return &toolError{rejected.Error()}
+	}
 	return err
 }
 
@@ -214,10 +248,6 @@ func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (
 	maps.Copy(environment, unifiedExecEnvironment)
 	processID, sessionID, unlock, err := e.startProcess(ctx, plan.argv, plan.cwd, environment, plan.tty)
 	if err != nil {
-		var rejected *executorRejectedError
-		if errors.As(err, &rejected) {
-			return nil, &toolError{fmt.Sprintf("exec_command failed: CreateProcess { message: %q }", rejected.message)}
-		}
 		return nil, err
 	}
 	defer unlock()
@@ -288,7 +318,10 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 		var rejected *executorRejectedError
 		if errors.As(err, &rejected) {
 			// No process exists; release its session number.
-			err = errors.Join(err, e.store.ProcessResult(ctx, e.owner, processID, nil, "exited", nil, true))
+			if settleErr := e.store.ProcessResult(ctx, e.owner, processID, nil, "exited", nil, true); settleErr != nil {
+				lock.Unlock()
+				return "", 0, nil, fmt.Errorf("record rejected process start %s: %w", processID, settleErr)
+			}
 		}
 		lock.Unlock()
 		return "", 0, nil, err
@@ -472,6 +505,10 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			if errors.As(rpcErr, &transport) {
 				transport.afterSequence, transport.output = after, output
 			}
+			var rejected *executorRejectedError
+			if errors.As(rpcErr, &rejected) && rejected.method == "process/read" {
+				rejected.afterSequence, rejected.output = after, output
+			}
 			return nil, rpcErr
 		}
 		for _, chunk := range result.Chunks {
@@ -533,6 +570,18 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536})
 		cancel()
 		if rpcErr != nil {
+			var rejected *executorRejectedError
+			if errors.As(rpcErr, &rejected) && rejected.method == "process/read" {
+				handled := e.outcomeToolError(ctx, rpcErr)
+				var toolFailure *toolError
+				if !errors.As(handled, &toolFailure) {
+					lock.Unlock()
+					return progressed, handled
+				}
+				progressed = true
+				lock.Unlock()
+				continue
+			}
 			var transport *executorTransportError
 			var notDispatched *executorNotDispatchedError
 			if errors.As(rpcErr, &transport) || errors.As(rpcErr, &notDispatched) {
