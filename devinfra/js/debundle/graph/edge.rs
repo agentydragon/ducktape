@@ -9,6 +9,7 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::facts::{DataflowOpacityCause, EffectCell};
+use crate::reports::schema::ExecutionPrecisionLossReason;
 
 use super::dependency_graph::SourceUnitId;
 
@@ -136,18 +137,31 @@ pub enum SequencedCause {
     /// rebind) of a binding declared at several `var` sites. The cell is
     /// hoisted, so the accesses keep source order even when every access
     /// is pure.
-    SharedVarAccess { binding: Atom },
+    /// `source` / `target` are the provenance of `from`'s / `to`'s access.
+    SharedVarAccess {
+        binding: Atom,
+        source: EffectProvenance,
+        target: EffectProvenance,
+    },
     /// At-init binding timeline (`promote_at_init_calls`): `to` and
     /// `from` are a writer and an observer (or two writers) of `binding`
-    /// that must keep source order.
+    /// that must keep source order. `source` / `target` are the provenance
+    /// of `from`'s / `to`'s effect named by `order`.
     BindingTimeline {
         binding: Atom,
         order: BindingTimelineOrder,
+        source: EffectProvenance,
+        target: EffectProvenance,
     },
     /// A synchronous callee invoked by `to` observed `binding` before
     /// `from`, the statement declaring it, ran; the pair keeps source
     /// order so the TDZ / initial-`undefined` observation is preserved.
-    UninitializedObservation { binding: Atom },
+    /// `observation` is the provenance of `to`'s observation; the
+    /// declaration side is syntax.
+    UninitializedObservation {
+        binding: Atom,
+        observation: EffectProvenance,
+    },
     /// Cell timeline (dataflow-aware S-chain and array/Set content
     /// order): `conflicts` names every reason the timeline made `from`
     /// depend on `to`, given how each endpoint was classified.
@@ -156,6 +170,45 @@ pub enum SequencedCause {
         to: CellEffectClass,
         conflicts: BTreeSet<CellConflict>,
     },
+}
+
+/// Whether the engine derived one endpoint's binding effect behind a
+/// binding-ordering edge or only assumed it (SPEC.md § Commuting statements).
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectProvenance {
+    /// Direct syntax or precise synchronous execution.
+    Observed,
+    /// Contributed only by the statement's fallback summary, which assumes
+    /// every callback it stopped expanding may run; `reason` is the
+    /// precision loss that opened that summary.
+    Fallback {
+        reason: ExecutionPrecisionLossReason,
+    },
+}
+
+impl EffectProvenance {
+    pub(crate) fn from_fallback(reason: Option<&ExecutionPrecisionLossReason>) -> Self {
+        reason.map_or(Self::Observed, |reason| Self::Fallback {
+            reason: reason.clone(),
+        })
+    }
+
+    /// Observed wins: an effect also derived precisely is a fact.
+    pub(crate) fn join(&mut self, other: &Self) {
+        if *other == Self::Observed {
+            *self = Self::Observed;
+        }
+    }
+}
+
+impl fmt::Display for EffectProvenance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Observed => f.write_str("observed"),
+            Self::Fallback { reason } => write!(f, "assumed by the {reason} fallback"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -335,30 +388,62 @@ impl fmt::Display for CellConflict {
     }
 }
 
+/// Suffix naming each endpoint effect that is only assumed; nothing when
+/// both are observed.
+fn write_assumed(
+    f: &mut fmt::Formatter<'_>,
+    source: &EffectProvenance,
+    target: &EffectProvenance,
+) -> fmt::Result {
+    for (side, provenance) in [("source", source), ("target", target)] {
+        if let EffectProvenance::Fallback { .. } = provenance {
+            write!(f, " ({side} effect {provenance})")?;
+        }
+    }
+    Ok(())
+}
+
 impl fmt::Display for SequencedCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::StrictChain => {
                 f.write_str("strict S-chain: source is the next impure statement after target")
             }
-            Self::SharedVarAccess { binding } => {
+            Self::SharedVarAccess {
+                binding,
+                source,
+                target,
+            } => {
                 write!(
                     f,
                     "consecutive at-init accesses of shared `var` `{binding}`"
-                )
+                )?;
+                write_assumed(f, source, target)
             }
-            Self::BindingTimeline { binding, order } => {
+            Self::BindingTimeline {
+                binding,
+                order,
+                source,
+                target,
+            } => {
                 let order = match order {
                     BindingTimelineOrder::WriterAfterWriter => "writes after target wrote",
                     BindingTimelineOrder::ReaderAfterWriter => "observes after target wrote",
                     BindingTimelineOrder::WriterAfterReader => "writes after target observed",
                 };
-                write!(f, "at-init timeline of `{binding}`: source {order}")
+                write!(f, "at-init timeline of `{binding}`: source {order}")?;
+                write_assumed(f, source, target)
             }
-            Self::UninitializedObservation { binding } => write!(
-                f,
-                "target's synchronous callee observed `{binding}` before source declared it"
-            ),
+            Self::UninitializedObservation {
+                binding,
+                observation,
+            } => {
+                write!(
+                    f,
+                    "target's synchronous callee observed `{binding}` before source declared it"
+                )?;
+                write_assumed(f, &EffectProvenance::Observed, observation)
+            }
             Self::CellOrder {
                 from,
                 to,

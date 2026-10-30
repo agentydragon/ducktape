@@ -21,9 +21,10 @@ pub use spec::DependencyGraphOptions;
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitId};
 use super::edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
-    EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+    EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
 use crate::facts::DataflowOpacityCause;
+use crate::reports::schema::ExecutionPrecisionLossReason;
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -549,7 +550,7 @@ pub fn build_dependency_graph_with(
     // resolve to chunk-declared bindings are followed; indirect
     // calls (`const g = f; g()`), method calls (`obj.method()`), and
     // dynamic dispatch are conservatively unmodelled.
-    promote_at_init_calls(
+    let fallback_eager_uses = promote_at_init_calls(
         facts,
         &binding_source_unit,
         &shared_vars,
@@ -560,10 +561,7 @@ pub fn build_dependency_graph_with(
     // Initializers and eager observations of shared var cells must retain their
     // order even when the expressions are pure. Include promoted reads from
     // at-init calls, not just syntactically direct reads.
-    let mut accesses: BTreeMap<Id, BTreeSet<SourceUnitId>> = shared_vars
-        .iter()
-        .map(|binding| (binding.clone(), BTreeSet::new()))
-        .collect();
+    let mut accesses = BindingAccesses::new();
     for stmt in facts {
         for binding in stmt
             .reads
@@ -572,29 +570,43 @@ pub fn build_dependency_graph_with(
             .chain(&stmt.rebinds.eager)
             .chain(&stmt.var_initializers)
         {
-            if let Some(source_units) = accesses.get_mut(binding) {
-                source_units.insert(SourceUnitId(stmt.ordinal.0));
+            if shared_vars.contains(binding) {
+                record_access(
+                    &mut accesses,
+                    binding,
+                    SourceUnitId(stmt.ordinal.0),
+                    EffectProvenance::Observed,
+                );
             }
         }
     }
-    for (from, _, reason) in &raw_edges {
+    for (index, (from, _, reason)) in raw_edges.iter().enumerate() {
         if reason.kind == super::DepKind::EagerUse
             && let Some(binding) = reason.binding()
-            && let Some(source_units) = accesses.get_mut(binding)
+            && shared_vars.contains(binding)
         {
-            source_units.insert(*from);
+            record_access(
+                &mut accesses,
+                binding,
+                *from,
+                EffectProvenance::from_fallback(fallback_eager_uses.get(&index)),
+            );
         }
     }
     for (binding, source_units) in &accesses {
-        let source_units: Vec<_> = source_units.iter().copied().collect();
+        let source_units: Vec<_> = source_units.iter().collect();
         for pair in source_units.windows(2) {
+            let (&earlier, earlier_access) = pair[0];
+            let (&later, later_access) = pair[1];
             raw_edges.push((
-                pair[1],
-                pair[0],
+                later,
+                earlier,
                 EdgeReason::sequenced(
-                    SourceUnitOrdinal(pair[1].0),
+                    SourceUnitOrdinal(later.0),
                     SequencedCause::SharedVarAccess {
                         binding: binding.0.clone(),
+                        source: later_access.clone(),
+                        target: earlier_access.clone(),
                     },
                 ),
             ));
@@ -655,9 +667,13 @@ enum PremiseVerdict {
 /// from its retained cause and the endpoints' recorded effects. This is the
 /// soundness boundary of `commuting_statements`:
 ///
-/// - `CoDeclaration`, `SharedVarAccess`, `BindingTimeline` and
-///   `UninitializedObservation` are derived from a named binding both sides
-///   touch: known.
+/// - `CoDeclaration` is derived from syntax: known.
+/// - `SharedVarAccess`, `BindingTimeline` and `UninitializedObservation`
+///   order two effects on a named binding: known when both effects are
+///   `EffectProvenance::Observed`; inertable when either was only assumed by
+///   a synchronous fallback summary (an opaque effect, like a barrier).
+///   Derived order routed through an assumed effect is retained separately
+///   (`promote_at_init_calls` offers the observed-only timeline too).
 /// - `CellOrder` with an explicit relation (`ReadAfterWrite`,
 ///   `WriteAfterWrite`, `WriteAfterRead`, `UseAfterAllocation`) is derived
 ///   from recorded effects on both sides, whatever each side's class: known.
@@ -671,6 +687,8 @@ enum PremiseVerdict {
 /// - Before accepting any edge, the two recorded summaries are compared:
 ///   a shared cell with a write is a known conflict even when the emitting
 ///   rule did not name it (a barrier target's own recorded effects).
+///   `StatementFacts::effects` holds only syntax-derived cells, never a
+///   fallback contribution.
 /// - A missing cause is treated as known, so the premise never widens
 ///   through an unclassified edge.
 ///
@@ -698,7 +716,13 @@ fn premise_verdict(
                 cause @ (SequencedCause::SharedVarAccess { .. }
                 | SequencedCause::BindingTimeline { .. }
                 | SequencedCause::UninitializedObservation { .. }),
-            ) => PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone())),
+            ) => {
+                if binding_effects_observed(cause) {
+                    PremiseVerdict::Known(KnownConflict::Sequenced(cause.clone()))
+                } else {
+                    PremiseVerdict::Inertable
+                }
+            }
             Some(cause @ SequencedCause::CellOrder { conflicts, .. }) => {
                 let explicit = conflicts.iter().any(|conflict| {
                     matches!(
@@ -1475,13 +1499,142 @@ fn first_order_unresolved_inline_fn(stmt: &StatementFacts) -> bool {
         })
 }
 
+/// Binding-ordering `Sequenced` edges of one `promote_at_init_calls` pass,
+/// one per `(from, to)` pair. A pair several rules order keeps the first
+/// cause offered, unless a later one is derived on both sides and the kept one
+/// is not: the commuting-statements gate reads only the retained cause, so a
+/// derived conflict must not hide behind an assumed one.
+#[derive(Default)]
+struct BindingOrderEdges(BTreeMap<(SourceUnitId, SourceUnitId), SequencedCause>);
+
+impl BindingOrderEdges {
+    fn offer(&mut self, from: SourceUnitId, to: SourceUnitId, cause: SequencedCause) {
+        match self.0.entry((from, to)) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(cause);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if binding_effects_observed(&cause) && !binding_effects_observed(entry.get()) {
+                    entry.insert(cause);
+                }
+            }
+        }
+    }
+}
+
+/// Whether a binding-ordering cause was derived from observed effects on
+/// both endpoints; `false` for every other rule.
+fn binding_effects_observed(cause: &SequencedCause) -> bool {
+    match cause {
+        SequencedCause::SharedVarAccess { source, target, .. }
+        | SequencedCause::BindingTimeline { source, target, .. } => {
+            *source == EffectProvenance::Observed && *target == EffectProvenance::Observed
+        }
+        SequencedCause::UninitializedObservation { observation, .. } => {
+            *observation == EffectProvenance::Observed
+        }
+        SequencedCause::StrictChain | SequencedCause::CellOrder { .. } => false,
+    }
+}
+
+/// Source units that write or observe one binding, each with the provenance
+/// of its effect (observed wins when a unit has both).
+type BindingAccesses = BTreeMap<Id, BTreeMap<SourceUnitId, EffectProvenance>>;
+
+fn record_access(
+    accesses: &mut BindingAccesses,
+    binding: &Id,
+    source_unit: SourceUnitId,
+    provenance: EffectProvenance,
+) {
+    accesses
+        .entry(binding.clone())
+        .or_default()
+        .entry(source_unit)
+        .and_modify(|existing| existing.join(&provenance))
+        .or_insert(provenance);
+}
+
+/// Offer one binding's source-order timeline: consecutive writers, and each
+/// reader against its nearest preceding and following writer. No
+/// reader-to-reader edges: independent observations of an unchanged cell need
+/// no relative order and can form false cycles.
+fn offer_binding_timeline(
+    binding: &Id,
+    writers: &BTreeMap<SourceUnitId, EffectProvenance>,
+    readers: &BTreeMap<SourceUnitId, EffectProvenance>,
+    existing_order_pairs: &BTreeSet<(SourceUnitId, SourceUnitId)>,
+    edges: &mut BindingOrderEdges,
+) {
+    let mut offer = |from: SourceUnitId,
+                     to: SourceUnitId,
+                     order: BindingTimelineOrder,
+                     source: &EffectProvenance,
+                     target: &EffectProvenance| {
+        if !existing_order_pairs.contains(&(from, to)) {
+            edges.offer(
+                from,
+                to,
+                SequencedCause::BindingTimeline {
+                    binding: binding.0.clone(),
+                    order,
+                    source: source.clone(),
+                    target: target.clone(),
+                },
+            );
+        }
+    };
+    let writer_events: Vec<_> = writers.iter().collect();
+    for pair in writer_events.windows(2) {
+        let (&earlier, earlier_provenance) = pair[0];
+        let (&later, later_provenance) = pair[1];
+        offer(
+            later,
+            earlier,
+            BindingTimelineOrder::WriterAfterWriter,
+            later_provenance,
+            earlier_provenance,
+        );
+    }
+    for (&reader, read) in readers {
+        if let Some((&previous_writer, write)) = writers.range(..reader).next_back() {
+            offer(
+                reader,
+                previous_writer,
+                BindingTimelineOrder::ReaderAfterWriter,
+                read,
+                write,
+            );
+        }
+        if let Some((&next_writer, write)) = writers
+            .range((
+                std::ops::Bound::Excluded(reader),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+        {
+            offer(
+                next_writer,
+                reader,
+                BindingTimelineOrder::WriterAfterReader,
+                write,
+                read,
+            );
+        }
+    }
+}
+
+/// Promote at-init call effects into the graph. Returns the raw-edge index
+/// of every promoted `EagerUse` whose read or rebind only a statement's
+/// fallback summary contributed, with that summary's reason (the
+/// shared-`var` access order reads it).
 fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-) {
+) -> BTreeMap<usize, ExecutionPrecisionLossReason> {
     // Index statement source units that can change a chunk binding's value or
     // observable object state when they execute. A callback read must see the
     // source-prefix value, so the callback-read and writer source units form one
@@ -1490,16 +1643,19 @@ fn promote_at_init_calls(
     // declaration alone would not stop a later mutation from moving before
     // the callback. Unknown effects still take the existing strict S-chain
     // fallback; this index only records effects with a known binding target.
-    let mut writers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
-    let mut callback_readers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
-    let mut eager_readers_by_binding = BTreeMap::<Id, BTreeSet<SourceUnitId>>::new();
+    // Each effect carries its provenance: only a synchronous summary's
+    // fallback contributes an assumed one.
+    let mut writers_by_binding = BindingAccesses::new();
+    let mut readers_by_binding = BindingAccesses::new();
     for stmt in facts {
         let source_unit = SourceUnitId(stmt.ordinal.0);
         for binding in &stmt.reads.eager {
-            eager_readers_by_binding
-                .entry(binding.clone())
-                .or_default()
-                .insert(source_unit);
+            record_access(
+                &mut readers_by_binding,
+                binding,
+                source_unit,
+                EffectProvenance::Observed,
+            );
         }
         // Lexical declarations become observable at their statement. Function
         // declarations are initialized during module instantiation and are
@@ -1512,10 +1668,12 @@ fn promote_at_init_calls(
         // imports no local declarations.
         if stmt.kind != StatementKind::Import && !is_hoisted_function {
             for binding in stmt.declared.difference(&stmt.var_declared) {
-                writers_by_binding
-                    .entry(binding.clone())
-                    .or_default()
-                    .insert(source_unit);
+                record_access(
+                    &mut writers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::Observed,
+                );
             }
         }
         for binding in stmt
@@ -1524,42 +1682,53 @@ fn promote_at_init_calls(
             .chain(&stmt.rebinds.eager)
             .chain(&stmt.local_effects)
         {
-            writers_by_binding
-                .entry(binding.clone())
-                .or_default()
-                .insert(source_unit);
+            record_access(
+                &mut writers_by_binding,
+                binding,
+                source_unit,
+                EffectProvenance::Observed,
+            );
         }
         // A summary's rebinds execute at this statement's callsite, not at
         // the lexical source unit containing the callback body.
         if let Some(synchronous) = &stmt.synchronous_calls {
             for (binding, _) in &synchronous.reads {
-                callback_readers_by_binding
-                    .entry(binding.clone())
-                    .or_default()
-                    .insert(source_unit);
+                record_access(
+                    &mut readers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(synchronous.fallback_read(binding)),
+                );
             }
             // Keep the graph sound even if an availability-specific read is
             // not duplicated in the general read set.
             for binding in &synchronous.uninitialized_reads {
-                callback_readers_by_binding
-                    .entry(binding.clone())
-                    .or_default()
-                    .insert(source_unit);
+                record_access(
+                    &mut readers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(
+                        synchronous.fallback_uninitialized_read(binding),
+                    ),
+                );
             }
             for (binding, _) in &synchronous.rebinds {
-                writers_by_binding
-                    .entry(binding.clone())
-                    .or_default()
-                    .insert(source_unit);
+                record_access(
+                    &mut writers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(synchronous.fallback_rebind(binding)),
+                );
             }
         }
     }
 
     // A pair may be observed by several callback callsites or be both a
     // future declaration and a future writer. Emit each temporal ordering
-    // constraint only once within this pass.
-    let mut temporal_sequence_pairs = BTreeSet::<(SourceUnitId, SourceUnitId)>::new();
-    let mut existing_order_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
+    // constraint only once within this pass; pairs an earlier rule already
+    // orders get no timeline edge.
+    let mut binding_order = BindingOrderEdges::default();
+    let existing_order_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
         .iter()
         .filter(|(_, _, reason)| reason.constrains_init_order())
         .map(|(from, to, _)| (*from, *to))
@@ -1582,73 +1751,39 @@ fn promote_at_init_calls(
     // against only its nearest preceding/following writer. Ordinary eager
     // readers need this timeline even when no callback reads the binding:
     // a pure initializer may otherwise move across a later assignment.
-    // Do not add reader-to-reader edges: independent observations of an
-    // unchanged cell need no relative order and can form false cycles.
+    // The timeline of observed effects alone is offered too: when an assumed
+    // (fallback) effect sits between two observed ones, the nearest-effect
+    // edges route their derived order through it, and a premise making an
+    // assumed edge inert must not drop that order.
+    let no_readers = BTreeMap::new();
     for (binding, writers) in &writers_by_binding {
-        let mut readers: BTreeSet<SourceUnitId> = callback_readers_by_binding
-            .get(binding)
-            .into_iter()
-            .flat_map(|readers| readers.iter().copied())
-            .collect();
-        if let Some(eager_readers) = eager_readers_by_binding.get(binding) {
-            readers.extend(eager_readers.iter().copied());
-        }
+        let readers = readers_by_binding.get(binding).unwrap_or(&no_readers);
         if readers.is_empty() {
             continue;
         }
-        let timeline = |order: BindingTimelineOrder| SequencedCause::BindingTimeline {
-            binding: binding.0.clone(),
-            order,
+        offer_binding_timeline(
+            binding,
+            writers,
+            readers,
+            &existing_order_pairs,
+            &mut binding_order,
+        );
+        let observed = |accesses: &BTreeMap<SourceUnitId, EffectProvenance>| {
+            accesses
+                .iter()
+                .filter(|(_, provenance)| **provenance == EffectProvenance::Observed)
+                .map(|(source_unit, provenance)| (*source_unit, provenance.clone()))
+                .collect::<BTreeMap<_, _>>()
         };
-        let writer_events: Vec<_> = writers.iter().copied().collect();
-        for pair in writer_events.windows(2) {
-            let earlier = pair[0];
-            let later = pair[1];
-            if existing_order_pairs.insert((later, earlier)) {
-                temporal_sequence_pairs.insert((later, earlier));
-                raw_edges.push((
-                    later,
-                    earlier,
-                    EdgeReason::sequenced(
-                        SourceUnitOrdinal(later.0),
-                        timeline(BindingTimelineOrder::WriterAfterWriter),
-                    ),
-                ));
-            }
-        }
-
-        for reader in readers {
-            if let Some(&previous_writer) = writers.range(..reader).next_back()
-                && existing_order_pairs.insert((reader, previous_writer))
-            {
-                temporal_sequence_pairs.insert((reader, previous_writer));
-                raw_edges.push((
-                    reader,
-                    previous_writer,
-                    EdgeReason::sequenced(
-                        SourceUnitOrdinal(reader.0),
-                        timeline(BindingTimelineOrder::ReaderAfterWriter),
-                    ),
-                ));
-            }
-            if let Some(&next_writer) = writers
-                .range((
-                    std::ops::Bound::Excluded(reader),
-                    std::ops::Bound::Unbounded,
-                ))
-                .next()
-                && existing_order_pairs.insert((next_writer, reader))
-            {
-                temporal_sequence_pairs.insert((next_writer, reader));
-                raw_edges.push((
-                    next_writer,
-                    reader,
-                    EdgeReason::sequenced(
-                        SourceUnitOrdinal(next_writer.0),
-                        timeline(BindingTimelineOrder::WriterAfterReader),
-                    ),
-                ));
-            }
+        let (observed_writers, observed_readers) = (observed(writers), observed(readers));
+        if observed_writers.len() != writers.len() || observed_readers.len() != readers.len() {
+            offer_binding_timeline(
+                binding,
+                &observed_writers,
+                &observed_readers,
+                &existing_order_pairs,
+                &mut binding_order,
+            );
         }
     }
 
@@ -1860,6 +1995,7 @@ fn promote_at_init_calls(
     //    the conservative fallback in addition: see
     //    [`UnresolvedCallFallback`].
     let mut fallback: Option<UnresolvedCallFallback> = None;
+    let mut fallback_eager_uses = BTreeMap::new();
     for stmt in facts {
         if let Some(synchronous) = &stmt.synchronous_calls {
             let caller = SourceUnitId(stmt.ordinal.0);
@@ -1885,34 +2021,39 @@ fn promote_at_init_calls(
                     target_source_unit,
                     target_binding.clone(),
                 )) {
+                    if let Some(reason) = synchronous.fallback_read(target_binding) {
+                        fallback_eager_uses.insert(raw_edges.len(), reason.clone());
+                    }
                     raw_edges.push((
                         caller,
                         target_source_unit,
                         EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
                     ));
                 }
-                if caller < target_source_unit
-                    && temporal_sequence_pairs.insert((target_source_unit, caller))
-                {
-                    raw_edges.push((
+                if caller < target_source_unit {
+                    binding_order.offer(
                         target_source_unit,
                         caller,
-                        EdgeReason::sequenced(
-                            SourceUnitOrdinal(target_source_unit.0),
-                            SequencedCause::UninitializedObservation {
-                                binding: target_binding.0.clone(),
-                            },
-                        ),
-                    ));
+                        SequencedCause::UninitializedObservation {
+                            binding: target_binding.0.clone(),
+                            observation: EffectProvenance::from_fallback(
+                                synchronous.fallback_uninitialized_read(target_binding),
+                            ),
+                        },
+                    );
                 }
             }
 
-            for (target_binding, callee_ordinal) in synchronous
+            let reads = synchronous
                 .reads
                 .iter()
                 .filter(|(binding, _)| !synchronous.uninitialized_reads.contains(binding))
-                .chain(&synchronous.rebinds)
-            {
+                .map(|(binding, callee)| (binding, callee, synchronous.fallback_read(binding)));
+            let rebinds = synchronous
+                .rebinds
+                .iter()
+                .map(|(binding, callee)| (binding, callee, synchronous.fallback_rebind(binding)));
+            for (target_binding, callee_ordinal, fallback) in reads.chain(rebinds) {
                 if target_is_hoisted(target_binding) {
                     continue;
                 }
@@ -1924,6 +2065,9 @@ fn promote_at_init_calls(
                     || !emitted.insert((target_source_unit, callee_source_unit))
                 {
                     continue;
+                }
+                if let Some(reason) = fallback {
+                    fallback_eager_uses.insert(raw_edges.len(), reason.clone());
                 }
                 raw_edges.push((
                     caller,
@@ -2082,6 +2226,14 @@ fn promote_at_init_calls(
             }
         }
     }
+    for ((from, to), cause) in binding_order.0 {
+        raw_edges.push((
+            from,
+            to,
+            EdgeReason::sequenced(SourceUnitOrdinal(from.0), cause),
+        ));
+    }
+    fallback_eager_uses
 }
 
 /// Conservative fallback for at-init calls promotion can't resolve

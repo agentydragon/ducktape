@@ -196,6 +196,17 @@ determine the destination kind.
 The entry's `path` is the historical report label `anon_residual_sentinel`;
 the emitted entry filename is chosen separately by the chunk configuration.
 
+## Binding-ordering effect provenance
+
+`dependency_graph.json` `edges[].sequenced_cause` for the `binding_timeline`
+and `shared_var_access` rules carries `source` and `target`, and
+`uninitialized_observation` carries `observation`: the provenance of that
+endpoint's binding effect, `{"kind": "observed"}` or
+`{"kind": "fallback", "reason": {"code": …}}` (the reason uses the
+`synchronous_execution.precision_losses[].reason` shape). The fields are
+required: a graph written before them does not deserialize, so the
+commuting-statements gate never reads an unclassified effect as assumed.
+
 ## Shared purity causes
 
 An impure known-function call has one `impure_function_call` reason at the

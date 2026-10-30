@@ -6,6 +6,8 @@
 //! - `eager_use` edges are never inerted, so an eager cycle still blocks;
 //! - a pair the analysis derived to conflict (a known write and read of one
 //!   cell or binding, a shared `var`) is rejected even though asserted;
+//! - a binding timeline is a derived conflict only between two observed
+//!   effects; one a synchronous fallback merely assumed is inertable;
 //! - a pair with no `sequenced` edge between its endpoints is rejected as
 //!   unused.
 
@@ -413,4 +415,144 @@ fn pair_without_a_sequenced_edge_is_unused() {
         "unused",
         &[ENTRY, "inerts no sequenced edge", "`alpha`", "`gamma`"],
     );
+}
+
+/// `callback` plus 64 inert callbacks: a host call receiving the array
+/// exceeds the interpreter's callback pool, which then assumes every pooled
+/// callback may run (`callback_pool_limit`).
+fn padded_pool(callback: &str) -> String {
+    let padding = vec!["() => 3"; 64].join(", ");
+    format!("JSON.stringify([{callback}, {padding}])")
+}
+
+/// `first` and `second` touch `state` through `bump` (writes) and `peek`
+/// (reads); `third` reads `second`. With `first`/`third` in `outer` and
+/// `second` in `inner`, the `state` timeline `second -> first` closes an
+/// `outer`/`inner` cycle.
+fn state_source(first: &str, second: &str) -> String {
+    format!(
+        "let state = 0;\nfunction bump() {{ state = 1; return 3; }}\nfunction peek() {{ return state; }}\nconst first = {first};\nconst second = {second};\nconst third = String(second).length;\nconsole.log(String(first).length, third, state);\nexport {{ state, bump, peek, first, second, third }};\n"
+    )
+}
+
+const STATE_MODULES: [&str; 2] = ["probes/outer", "probes/inner"];
+
+fn state_split(source: &str, pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "cells/state",
+                &[
+                    Member::new("state"),
+                    Member::new("bump"),
+                    Member::new("peek"),
+                ],
+            ),
+            logical_module(
+                "probes/outer",
+                &[Member::new("first"), Member::new("third")],
+            ),
+            logical_module("probes/inner", &[Member::new("second")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", pairs)
+}
+
+fn first_second_pair() -> CommutingStatementsContract {
+    commuting_pair(
+        member_source_unit("probes/outer", "first"),
+        member_source_unit("probes/inner", "second"),
+    )
+}
+
+/// The `binding_timeline` causes of `state` the premise inerted, as wire JSON.
+fn inerted_state_timelines(fixture: &Fixture) -> Vec<serde_json::Value> {
+    let graph = fixture.dependency_graph();
+    inerted_edges(&graph, &premise(0))
+        .into_iter()
+        .filter_map(|edge| edge.sequenced_cause.as_ref())
+        .map(|cause| serde_json::to_value(cause).expect("cause serializes"))
+        .filter(|cause| cause["rule"] == "binding_timeline" && cause["binding"] == "state")
+        .collect()
+}
+
+/// Both endpoints are incomplete: each hands a pool past the bound to
+/// `JSON.stringify`, so the `state` write and read exist only because the
+/// fallback assumes every pooled callback may run. That is opacity, not a
+/// derived conflict, so the pair is accepted (and holds: `JSON.stringify`
+/// never calls a function element).
+#[test]
+fn timeline_between_two_fallback_effects_is_inertable() {
+    let source = state_source(&padded_pool("bump"), &padded_pool("peek"));
+    // Positive anchor: without the pair the `state` timeline closes the cycle.
+    let without = expect_cycle_rejection(state_split(&source, vec![]), &STATE_MODULES);
+    assert!(
+        without["cut"].as_array().expect("cut").iter().any(|edge| {
+            let cause = &edge["explanation"]["cause"];
+            cause["rule"] == "binding_timeline" && cause["binding"] == "state"
+        }),
+        "{without:#}"
+    );
+
+    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]));
+    assert_preserved_entry_output(&fixture, "326 326 0\n");
+    let timelines = inerted_state_timelines(&fixture);
+    assert!(!timelines.is_empty(), "no `state` timeline inerted");
+    for cause in &timelines {
+        for side in ["source", "target"] {
+            assert_eq!(
+                cause[side],
+                serde_json::json!({
+                    "kind": "fallback",
+                    "reason": {"code": "callback_pool_limit", "limit": 64},
+                }),
+                "{cause:#}"
+            );
+        }
+    }
+}
+
+/// Soundness: the same shape with both effects observed (direct calls the
+/// interpreter executes completely) is a derived conflict; the pair is still
+/// rejected.
+#[test]
+fn timeline_between_two_observed_effects_rejects_the_pair() {
+    let source = state_source("bump()", "peek()");
+    expect_rejected(
+        || state_split(&source, vec![first_second_pair()]),
+        "contradicted",
+        &[
+            ENTRY,
+            CONTRADICTION,
+            "`first`",
+            "`second`",
+            "timeline of `state`",
+        ],
+    );
+}
+
+/// An observed write against a fallback read is inertable. Only the read is
+/// assumed, and the author asserts the pooled `peek` does not run during
+/// `second`'s initialization (`JSON.stringify` never calls it), so `second`
+/// cannot observe `first`'s write. Had `peek` run, the assertion would be
+/// false; the engine never derived that it runs.
+#[test]
+fn timeline_between_observed_write_and_fallback_read_is_inertable() {
+    let source = state_source("bump()", &padded_pool("peek"));
+    expect_cycle_rejection(state_split(&source, vec![]), &STATE_MODULES);
+
+    let fixture = run_fixture(state_split(&source, vec![first_second_pair()]));
+    assert_preserved_entry_output(&fixture, "1 326 1\n");
+    let timelines = inerted_state_timelines(&fixture);
+    assert!(!timelines.is_empty(), "no `state` timeline inerted");
+    for cause in &timelines {
+        assert_eq!(cause["source"]["kind"], "fallback", "{cause:#}");
+        assert_eq!(
+            cause["target"],
+            serde_json::json!({"kind": "observed"}),
+            "{cause:#}"
+        );
+    }
 }

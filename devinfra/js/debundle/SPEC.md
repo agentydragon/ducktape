@@ -1359,15 +1359,33 @@ analysis derived that the two source units definitely conflict, read from each
 `sequenced` edge's retained cause (§ Realizability cut explanations) and the
 two recorded effect summaries: a `cell_order` edge with a `read_after_write`,
 `write_after_write`, `write_after_read` or `use_after_allocation` relation; a
-`binding_timeline`, `shared_var_access` or `uninitialized_observation` edge;
-two summaries sharing a cell (a binding, a static `globalThis` property, array
-or Set contents) with at least one write; or a shared `var` declaration. A
+`binding_timeline`, `shared_var_access` or `uninitialized_observation` edge
+whose two binding effects are both `observed`; two summaries sharing a cell (a
+binding, a static `globalThis` property, array or Set contents) with at least
+one write; or a shared `var` declaration. A
 `cell_order` edge carrying only barrier relations (`after_barrier`,
-`barrier_after_prior`, `frontier_after_cell`), and a `strict_chain` edge with
-an endpoint that is not dataflow-summarizable, exist because an effect is
+`barrier_after_prior`, `frontier_after_cell`), a `strict_chain` edge with
+an endpoint that is not dataflow-summarizable, and a binding-ordering edge
+with a `fallback` effect exist because an effect is
 opaque (a call the classifier cannot prove pure, an escaped global-object
 alias, a dynamic key, incomplete synchronous execution, an opaque heap
-frontier); those the premise makes inert. An entry whose endpoints share no
+frontier); those the premise makes inert.
+
+A binding effect is `observed` when it comes from the statement's syntax
+(declaration, initializer, eager read or rebind, local effect) or from
+synchronous execution the interpreter followed precisely. It is `fallback` when
+only the statement's fallback summary contributed it: having stopped expanding
+callbacks (`callback_pool_limit`, `recursive_invocation`,
+`invocation_depth_limit`, `invocation_expansion_limit`) or handed a returned
+callback to opaque code, the interpreter assumes each such callback may run and
+attributes its whole synchronous read/rebind closure to the statement. An
+effect both observed and assumed is `observed`. Asserting a pair with a
+`fallback` effect asserts that the assumed callback does not run (or does not
+reach the binding) during that statement's initialization. Ordering derived
+between two observed effects is never routed only through an assumed one: the
+binding timeline also orders each binding's observed effects among
+themselves, so inerting an edge to a fallback effect never releases an
+observed write/read order. An entry whose endpoints share no
 `sequenced` edge, or only `strict_chain` edges between two summarized effects
 on disjoint cells (which `dataflow_aware_s_chain` already leaves unordered), is
 unused and fails validation. Both failures fail `spec validate` and `run` with
@@ -2271,12 +2289,13 @@ as constraining, keyed by `explanation.kind`:
   side's impure initializer in the same shape as `sequenced_source_unit`,
   omitted when the target is classified pure (an array allocation or a pure
   content reader). Rules: `strict_chain` (adjacent impure statements under the
-  strict S-chain), `shared_var_access` (`binding`: consecutive at-init accesses
-  of a binding declared at several `var` sites), `binding_timeline` (`binding`,
-  `order` ∈ `writer_after_writer`, `reader_after_writer`,
-  `writer_after_reader`: the at-init writer/observer timeline),
-  `uninitialized_observation` (`binding`: a synchronous callee observed the
-  binding before its declaration), and `cell_order` (`from`, `to`,
+  strict S-chain), `shared_var_access` (`binding`, `source`, `target`:
+  consecutive at-init accesses of a binding declared at several `var` sites),
+  `binding_timeline` (`binding`, `source`, `target`, `order` ∈
+  `writer_after_writer`, `reader_after_writer`, `writer_after_reader`: the
+  at-init writer/observer timeline), `uninitialized_observation` (`binding`,
+  `observation`: a synchronous callee observed the binding before its
+  declaration), and `cell_order` (`from`, `to`,
   `conflicts`). A `cell_order` endpoint is `summarized`, `opaque_barrier`
   (not dataflow-summarizable; `causes` ⊆ {`member_write_or_alias`,
   `dynamic_cell_writes`, `global_object_alias_escape`,
@@ -2287,7 +2306,11 @@ as constraining, keyed by `explanation.kind`:
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
   `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`
-  for the opaque-barrier dependence.
+  for the opaque-barrier dependence. `source`, `target` and `observation` are
+  the provenance of that endpoint's binding effect (§ Commuting statements):
+  `{"kind": "observed"}` or `{"kind": "fallback", "reason": …}` with the
+  `precision_losses` reason that opened the statement's fallback summary; the
+  `explanation` text names each assumed side.
 
 Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
 also carries `synchronous_execution_complete` when synchronous analysis ran;

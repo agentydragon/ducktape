@@ -26,7 +26,7 @@ use crate::facts::semantic_inference::{
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
-    ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
+    FallbackOnlyEffects, ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
@@ -7489,6 +7489,43 @@ impl Executor<'_, '_> {
         }
         let fallback = std::mem::take(&mut self.state.fallback_outcome);
         if fallback.unknown_call {
+            // Provenance for the commuting-statements gate: what only the
+            // fallback summary contributed is assumed, not observed.
+            let observed_reads: BTreeSet<&Id> =
+                outcome.effects.reads.iter().map(|(id, _)| id).collect();
+            let observed_rebinds: BTreeSet<&Id> =
+                outcome.effects.rebinds.iter().map(|(id, _)| id).collect();
+            outcome.effects.fallback_only = Some(FallbackOnlyEffects {
+                reason: fallback
+                    .effects
+                    .precision_losses
+                    .first()
+                    .expect("a fallback summary records the loss that opened it")
+                    .reason
+                    .clone(),
+                reads: fallback
+                    .effects
+                    .reads
+                    .iter()
+                    .map(|(id, _)| id)
+                    .filter(|id| !observed_reads.contains(id))
+                    .cloned()
+                    .collect(),
+                rebinds: fallback
+                    .effects
+                    .rebinds
+                    .iter()
+                    .map(|(id, _)| id)
+                    .filter(|id| !observed_rebinds.contains(id))
+                    .cloned()
+                    .collect(),
+                uninitialized_reads: fallback
+                    .effects
+                    .uninitialized_reads
+                    .difference(&outcome.effects.uninitialized_reads)
+                    .cloned()
+                    .collect(),
+            });
             outcome.effects.reads.extend(fallback.effects.reads);
             outcome.effects.rebinds.extend(fallback.effects.rebinds);
             outcome
@@ -7514,9 +7551,32 @@ impl Executor<'_, '_> {
             // The source proof normally makes this unreachable. If an actual
             // executor path fails, restore the current statement's omitted
             // callback effects as well as all future reachability roots.
+            let mut restored = Outcome::default();
             for owner in self.state.reachability.owners.clone() {
-                self.promote_lazy_owner(owner, fact.ordinal, &mut outcome);
+                self.promote_lazy_owner(owner, fact.ordinal, &mut restored);
             }
+            // Restored effects count as observed (conservative for the
+            // commuting-statements gate).
+            if let Some(fallback_only) = &mut outcome.effects.fallback_only {
+                for (id, _) in &restored.effects.reads {
+                    fallback_only.reads.remove(id);
+                }
+                for (id, _) in &restored.effects.rebinds {
+                    fallback_only.rebinds.remove(id);
+                }
+                for id in &restored.effects.uninitialized_reads {
+                    fallback_only.uninitialized_reads.remove(id);
+                }
+            }
+            outcome.effects.reads.append(&mut restored.effects.reads);
+            outcome
+                .effects
+                .rebinds
+                .append(&mut restored.effects.rebinds);
+            outcome
+                .effects
+                .uninitialized_reads
+                .append(&mut restored.effects.uninitialized_reads);
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
         let mut prior_effect_owners = outcome.executed_owners.clone();

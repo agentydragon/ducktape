@@ -629,6 +629,33 @@ pub enum ExecutionPrecisionLossReason {
     CallbackPoolLimit { limit: usize },
 }
 
+impl std::fmt::Display for ExecutionPrecisionLossReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownCallTarget => f.write_str("`unknown_call_target`"),
+            Self::UnsupportedOperation { operation } => {
+                let operation = serde_json::to_value(operation)
+                    .expect("execution operations serialize as strings");
+                write!(
+                    f,
+                    "`unsupported_operation` ({})",
+                    operation.as_str().expect("unit variant")
+                )
+            }
+            Self::RecursiveInvocation => f.write_str("`recursive_invocation`"),
+            Self::InvocationDepthLimit { limit } => {
+                write!(f, "`invocation_depth_limit` (limit {limit})")
+            }
+            Self::InvocationExpansionLimit { limit } => {
+                write!(f, "`invocation_expansion_limit` (limit {limit})")
+            }
+            Self::CallbackPoolLimit { limit } => {
+                write!(f, "`callback_pool_limit` (limit {limit})")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionOperation {
