@@ -491,7 +491,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		type unresolvedIntent struct {
 			id   string
-			kind string
+			kind IntentKind
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT id::text,request FROM sampler_intent
 			WHERE conversation_id=$1 AND result IS NULL ORDER BY id FOR UPDATE`, conversation.ID)
@@ -507,17 +507,17 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				rows.Close()
 				return err
 			}
-			request, err := decodeMap(requestWire)
+			request, err := decodeIntentRequest(requestWire)
 			if err != nil {
 				rows.Close()
 				return err
 			}
-			kind := stringValue(request["kind"])
-			if kind != string(PendingIntentCell) && kind != "tool" && kind != "executor" {
+			kind := request.Kind
+			if kind != IntentCell && kind != IntentTool && kind != IntentExecutor {
 				rows.Close()
 				return ErrPrecondition
 			}
-			if kind == string(PendingIntentCell) {
+			if kind == IntentCell {
 				if conversation.Pending == nil || intentID != conversation.Pending.ID || pendingIntentFound {
 					rows.Close()
 					return ErrPrecondition
@@ -541,14 +541,18 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			if err != nil {
 				return err
 			}
-			dispatched, known := intent.Result["dispatched"].(bool)
-			call, isCall := intent.Request["call"].(map[string]any)
-			if intent.ConversationID != conversation.ID || stringValue(intent.Request["kind"]) != "cell" ||
-				stringValue(intent.Result["status"]) != "rejected" || !known || dispatched || !isCall {
+			var rejection RejectedCellResult
+			if len(intent.ResultWire) > 0 {
+				if err := json.Unmarshal(intent.ResultWire, &rejection); err != nil {
+					return err
+				}
+			}
+			if intent.ConversationID != conversation.ID || intent.Kind != IntentCell ||
+				rejection.Status != IntentResultRejected || rejection.Dispatched == nil || *rejection.Dispatched || intent.CallID == "" {
 				return ErrPrecondition
 			}
-			rejectedCallID = stringValue(call["call_id"])
-			rejectionReason = stringValue(intent.Result["reason"])
+			rejectedCallID = intent.CallID
+			rejectionReason = rejection.Reason
 			if rejectedCallID == "" || rejectionReason == "" {
 				return ErrPrecondition
 			}
@@ -568,7 +572,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			abandonedIntent := map[string]any{"status": "abandoned", "remote_outcome": "unknown", "automatic_replay": false}
+			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "unknown", "automatic_replay": false}
 			wire, err := marshal(abandonedIntent)
 			if err != nil {
 				return err
@@ -585,7 +589,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return ErrPrecondition
 			}
 			if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
-				session, intent.id, intent.kind, "abandoned", abandonedIntent); err != nil {
+				session, intent.id, string(intent.kind), "abandoned", abandonedIntent); err != nil {
 				return err
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
@@ -1186,8 +1190,8 @@ func nullableJSON(value string) any {
 	return value
 }
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request map[string]any) (string, error) {
-	kind := PendingIntentKind(stringValue(request["kind"]))
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (string, error) {
+	kind := request.Kind
 	if !kind.valid() {
 		return "", ErrInvalid
 	}
@@ -1253,14 +1257,14 @@ func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "result", result); err != nil {
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", result); err != nil {
 			return err
 		}
 		conversation.Items = append(conversation.Items, items...)
 		if conversation.ContextItems != nil {
 			conversation.ContextItems = append(conversation.ContextItems, items...)
 		}
-		if intent.Request["kind"] == "sampling" {
+		if intent.Kind == IntentSampling {
 			conversation.ContextTokens = contextTokens
 		}
 		conversation.Pending = nil
@@ -1297,7 +1301,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			return err
 		}
 		if unresolved || liveCell || liveProcess {
-			result := map[string]any{"status": "rejected", "not_dispatched": []any{}}
+			result := map[string]any{"status": IntentResultRejected, "not_dispatched": []any{}}
 			for key, value := range failure.Evidence {
 				result[key] = value
 			}
@@ -1316,13 +1320,13 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "rejected", result); err != nil {
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "rejected", result); err != nil {
 				return err
 			}
 			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 		}
 		outputs := notDispatchedOutputs(conversation.Items)
-		result := map[string]any{"status": "rejected", "not_dispatched": outputs}
+		result := map[string]any{"status": IntentResultRejected, "not_dispatched": outputs}
 		for key, value := range failure.Evidence {
 			result[key] = value
 		}
@@ -1346,14 +1350,17 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "rejected", result); err != nil {
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "rejected", result); err != nil {
 			return err
 		}
 		return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request map[string]any, original []ResponsesItem) (string, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original []ResponsesItem) (string, error) {
+	if request.Kind != PendingIntentCompaction {
+		return "", ErrInvalid
+	}
 	id := uuid.NewString()
 	requestWire, err := marshal(request)
 	if err != nil {
@@ -1430,7 +1437,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "result", audit)
+		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", audit)
 		if err != nil {
 			return err
 		}
@@ -1493,8 +1500,8 @@ func (s *Store) completeCompactionCommand(ctx context.Context, tx *sql.Tx, sessi
 
 func (s *Store) RecordNested(ctx context.Context, owner Owner, request map[string]any) (string, error) {
 	id := uuid.NewString()
-	kind := stringValue(request["kind"])
-	if kind == "" {
+	kind := IntentKind(stringValue(request["kind"]))
+	if kind != IntentTool && kind != IntentExecutor && kind != IntentInterruptProcess {
 		return "", ErrInvalid
 	}
 	requestWire, err := marshal(request)
@@ -1506,7 +1513,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, request map[strin
 		if err != nil {
 			return err
 		}
-		if kind == "tool" {
+		if kind == IntentTool {
 			if err := checkInterrupt(ctx, tx, owner); err != nil {
 				return err
 			}
@@ -1521,7 +1528,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, request map[strin
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, kind, "dispatch", request)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, id, string(kind), "dispatch", request)
 	})
 	return id, err
 }
@@ -1550,7 +1557,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "result", result)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, string(intent.Kind), "result", result)
 	})
 }
 
@@ -2117,7 +2124,10 @@ func (s *Store) ensureTurnInterrupt(ctx context.Context, tx *sql.Tx, owner Owner
 	return err
 }
 
-func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, commandID, result string) error {
+func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, commandID string, result TurnResult) error {
+	if !result.finishesCommand() {
+		return fmt.Errorf("%w: turn result %q does not finish a command", ErrInvalid, result)
+	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -2136,17 +2146,14 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 		}
 		session.ActiveCommand = nil
 		// Codex records pending turn input when a turn finishes and clears it when the turn aborts.
-		if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, result == "done"); err != nil {
+		if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, result == TurnDone); err != nil {
 			return err
 		}
-		outcome := samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
-		if result == "effects_unknown" {
-			outcome = samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN
-		}
+		outcome := result.Outcome()
 		if err := setCommandOutcome(ctx, tx, sessionID, commandID, outcome, nil); err != nil {
 			return err
 		}
-		session.Blocked = result == "effects_unknown"
+		session.Blocked = result == TurnEffectsUnknown
 		session.BlockedReason = nil
 		if session.Blocked {
 			reason, err := blockedReason(ctx, tx, conversation, "the command ended with an unknown effect outcome")
@@ -2193,7 +2200,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 				if err := setCommandOutcome(ctx, tx, sessionID, candidate.ID, outcome, nil); err != nil {
 					return err
 				}
-				if result == "done" {
+				if result == TurnDone {
 					if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
 						CommandNoop: &eventpb.CommandNoop{CommandId: candidate.ID, Reason: "turn completed before interrupt was applied"},
 					}}); err != nil {
@@ -2204,7 +2211,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 				}
 			}
 			turnStatus := eventpb.TurnStatus_TURN_STATUS_INTERRUPTED
-			if result == "done" {
+			if result == TurnDone {
 				turnStatus = eventpb.TurnStatus_TURN_STATUS_COMPLETED
 			}
 			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
@@ -2228,11 +2235,11 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 	})
 }
 
-func settleTurnInterrupts(ctx context.Context, tx *sql.Tx, session *Session, result string) error {
+func settleTurnInterrupts(ctx context.Context, tx *sql.Tx, session *Session, result TurnResult) error {
 	if session.ActiveTurn == nil {
 		return nil
 	}
-	wire, err := marshal(map[string]any{"status": "not_applied", "reason": "target turn ended", "turn_result": result})
+	wire, err := marshal(map[string]any{"status": "not_applied", "reason": "target turn ended", "turn_result": string(result)})
 	if err != nil {
 		return err
 	}
@@ -2417,7 +2424,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 		return err
 	}
 	if session.ActiveTurn != nil {
-		if err := settleTurnInterrupts(ctx, tx, session, "failed"); err != nil {
+		if err := settleTurnInterrupts(ctx, tx, session, TurnFailed); err != nil {
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT session_id,id,payload,admission,outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND outcome=$2 ORDER BY admission FOR UPDATE`,
@@ -2538,8 +2545,8 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	return &process, nil
 }
 
-func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status string, exitCode *int, consumeOutput bool) error {
-	if status == "" {
+func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status ProcessStatus, exitCode *int, consumeOutput bool) error {
+	if !status.valid() {
 		return ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
@@ -2556,7 +2563,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		// Consuming an observed terminal result is local; it remains readable after takeover.
-		if process.Generation != owner.Generation && !(consumeOutput && process.Status == "exited_unread" && status == "exited") {
+		if process.Generation != owner.Generation && !(consumeOutput && process.Status == ProcessExitedUnread && status == ProcessExited) {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
 		var sequence any
@@ -2584,7 +2591,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", status, payload)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", string(status), payload)
 	})
 }
 
@@ -2610,10 +2617,10 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		if process.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
-		if process.Status == "abandoned" {
+		if process.Status == ProcessAbandoned {
 			return nil
 		}
-		if process.Status == "exited" {
+		if process.Status == ProcessExited {
 			return ErrPrecondition
 		}
 		if afterSequence == nil {
@@ -2673,7 +2680,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			code = *exitCode
 		}
 		if exited {
-			status = "exited_unread"
+			status = ProcessExitedUnread
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
 			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.omitted); err != nil {
@@ -2684,12 +2691,12 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.totalBytes()}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", status, payload)
+		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", string(status), payload)
 	})
 }
 
-func (s *Store) CellResult(ctx context.Context, owner Owner, cellID, status string) error {
-	if cellID == "" || status == "" {
+func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, status CellStatus) error {
+	if cellID == "" || !status.valid() {
 		return ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
@@ -2706,7 +2713,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID, status stri
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, cellID, "cell", status, map[string]any{})
+		return s.recordEvidence(ctx, tx, owner, conversation, session, cellID, "cell", string(status), map[string]any{})
 	})
 }
 
@@ -2853,8 +2860,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			if err != nil {
 				return err
 			}
-			call, _ := intent.Request["call"].(map[string]any)
-			activeCall = stringValue(call["call_id"])
+			activeCall = intent.CallID
 			interrupted := map[string]any{"status": "interrupted", "partial_effects_possible": true}
 			for key, value := range result {
 				interrupted[key] = value
@@ -2871,7 +2877,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			}
 		} else if !cleanupComplete {
 			id := uuid.NewString()
-			request := map[string]any{"kind": "interrupt", "requests": requestIDs}
+			request := map[string]any{"kind": IntentInterrupt, "requests": requestIDs}
 			requestWire, err := marshal(request)
 			if err != nil {
 				return err
@@ -2997,9 +3003,9 @@ func sameItems(left, right []ResponsesItem) bool {
 
 func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
 	var intent Intent
-	var request, result []byte
+	var request []byte
 	err := tx.QueryRowContext(ctx, `SELECT id::text,conversation_id::text,generation,request,result FROM sampler_intent WHERE id=$1`, id).Scan(
-		&intent.ID, &intent.ConversationID, &intent.Generation, &request, &result,
+		&intent.ID, &intent.ConversationID, &intent.Generation, &request, &intent.ResultWire,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrMissing
@@ -3007,13 +3013,35 @@ func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
 	if err != nil {
 		return nil, err
 	}
-	if intent.Request, err = decodeMap(request); err != nil {
+	decoded, err := decodeIntentRequest(request)
+	if err != nil {
 		return nil, err
 	}
-	if intent.Result, err = decodeMap(result); err != nil {
-		return nil, err
-	}
+	intent.Kind, intent.CallID = decoded.Kind, decoded.callID()
 	return &intent, nil
+}
+
+// storedIntentRequest is the part of a stored intent request the store reads, whatever its kind.
+type storedIntentRequest struct {
+	Kind IntentKind `json:"kind"`
+	Call *struct {
+		CallID string `json:"call_id"`
+	} `json:"call"`
+}
+
+func (request storedIntentRequest) callID() string {
+	if request.Call == nil {
+		return ""
+	}
+	return request.Call.CallID
+}
+
+func decodeIntentRequest(raw []byte) (storedIntentRequest, error) {
+	var request storedIntentRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return request, fmt.Errorf("decode stored intent request: %w", err)
+	}
+	return request, nil
 }
 
 func hasUnresolvedIntent(ctx context.Context, tx *sql.Tx, conversationID, exceptID string) (bool, error) {

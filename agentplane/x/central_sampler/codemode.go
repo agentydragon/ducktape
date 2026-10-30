@@ -364,7 +364,7 @@ func (r *CodeMode) request(ctx context.Context, request codeOperation, execute b
 	if started.Type != "execution/started" || cellID == "" {
 		return nil, errors.New("code-mode execute response has no cellId")
 	}
-	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(cellID), "live"); err != nil {
+	if err := r.store.CellResult(ctx, r.owner, r.cellHandle(cellID), CellLive); err != nil {
 		return nil, err
 	}
 	defer r.setForeground(id)()
@@ -655,7 +655,7 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArgum
 	}
 	known := false
 	for _, cell := range state.Cells {
-		if cell.ID == cellID && cell.Status == "live" {
+		if cell.ID == cellID && cell.Status == CellLive {
 			known = true
 			break
 		}
@@ -744,12 +744,12 @@ func parseExecSource(input string) (execSource, error) {
 
 // observe records the observed cell's lifecycle status.
 func (r *CodeMode) observe(ctx context.Context, observation codeObservation) error {
-	status := "completed"
+	status := CellCompleted
 	switch observation.Kind {
 	case codeYielded:
-		status = "live"
+		status = CellLive
 	case codeTerminated:
-		status = "terminated"
+		status = CellTerminated
 	case codeResult:
 	default:
 		return fmt.Errorf("unsupported cell observation %q", observation.Kind)
@@ -764,7 +764,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 	}
 	outcomes := map[string]any{}
 	for _, cell := range state.Cells {
-		if !strings.HasPrefix(cell.ID, r.sessionID+":") || cell.Status != "live" {
+		if !strings.HasPrefix(cell.ID, r.sessionID+":") || cell.Status != CellLive {
 			continue
 		}
 		nativeID, err := r.nativeCell(cell.ID)
