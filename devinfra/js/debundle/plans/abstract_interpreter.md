@@ -402,7 +402,17 @@ atomic group or loss there.
 - 5b local construction: `local_class_construction.rs`, `fresh_receiver.rs`,
   `fresh_record.rs` → interpreting the constructor/factory body. Tests
   `local_class_construction`, `local_record_factory_contract`,
-  `fresh_returned_record_destructuring`.
+  `fresh_returned_record_destructuring`. Depends on 4b, 4c and 6, like 5a:
+  purity reads `LocalClassConstructionProof` (`new` admission in
+  `classifier.rs`, `cross_module_purity.rs`), the `FreshRecordProof` that
+  `ChunkCodeGraph` builds, and value flow's `fresh_returned_record_keys`
+  (destructuring admission); heap-content effects read `LocalClassHeapProof`.
+  All run before the interpreter, and on the vendor-prune path without it.
+  The derived fact, `Alloc(One)` with known props and `escape = Private`, is
+  heap state the domain gains in 4b. `fresh_receiver.rs` is read only by the
+  interpreter but needs the same state: an enum IIFE adds new keys to its
+  `{}` receiver, so setter freedom rests on the receiver's escape and taint,
+  not on fields it already owns.
 - 5c callable summaries: `callable_inference.rs`, `namespace_wrapper.rs`,
   `SemanticKey::{StableFunction, StableProvider, CallbackFactory,
 ReturnedRecord, NamespaceWrapper, ArgumentNoEscape, DescriptorCopy*}` → the
