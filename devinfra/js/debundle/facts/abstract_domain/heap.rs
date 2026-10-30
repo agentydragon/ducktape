@@ -637,6 +637,9 @@ impl HeapScan<'_> {
     }
 
     /// Apply `effect` to every root value flow says `expr` can reach.
+    // TODO: A write through a receiver taints every tracked allocation the
+    // receiver reaches. Precise taint marks only the allocations the write's
+    // target denotes.
     fn apply_to_reachable(&mut self, expr: &Expr, effect: HeapEffect) {
         let Some(flow) = self.value_flow else {
             return;
