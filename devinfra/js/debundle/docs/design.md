@@ -3384,13 +3384,14 @@ same augmented calls, local effects, and cell-write summaries.
 
 A swap mark promises the replacement behaves like the bundled code
 (SPEC.md § Vendor swap equivalence), so analysis derives facts from the bundled
-body. Treating swapped code as unknown (#13058) lost: the bundled body is the
-only implementation the engine indexes, and opacity denies every swapped
-callee its summaries, while on Tana the callees behind the large atomic groups
-(TypeScript decorate helpers swapped to MobX, Zod builders) are all swapped. A
-false promise produces a wrong split, not a refusal: a replacement that runs
-`factory(callback)`'s callback at once where the bundled `factory` deferred it
-lets `const wrapped = factory(() => globalThis.mode.length)` move ahead of
+body. Treating swapped code as unknown (#13058) was the alternative: it is sound
+without the promise, but the bundled body is the only implementation the engine
+indexes, so it denies every swapped callee its summaries, and on Tana the
+callees behind the largest atomic groups (TypeScript decorate helpers swapped to
+MobX, Zod builders) are swapped. A false promise produces a wrong split, not a
+refusal: a replacement that runs `factory(callback)`'s callback at once where
+the bundled `factory` deferred it lets
+`const wrapped = factory(() => globalThis.mode.length)` move ahead of
 `globalThis.mode = "ready"` and throw. The visible case, a bundled replacement
 that is not an ESM leaf, still blocks export reentry.
 
