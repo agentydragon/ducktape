@@ -123,7 +123,7 @@ pub(crate) fn ts_enum_iife_named_data_keys(expr: &Expr, binding: &str) -> Option
 }
 
 /// `CallExpr`-level form of `is_ts_enum_iife_init_for_binding`, used
-/// both from the var-init admission and by `PlainDataWriteScanner` to
+/// both from the var-init admission and by the heap scan (`heap.rs`) to
 /// exempt the vetted `X || (X = {})` argument occurrence of the enum
 /// binding from the escape scan.
 pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -> bool {
@@ -325,4 +325,81 @@ fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
             | Expr::Lit(Lit::Null(_))
             | Expr::Lit(Lit::BigInt(_))
     )
+}
+
+/// A candidate enum own-key fact. Final binding stability is checked against
+/// the canonical statement-fact rebinds outside `initializer_source_unit`.
+#[derive(Clone, Debug)]
+pub(crate) struct TsEnumNamedDataCandidate {
+    pub(crate) initializer_source_unit: source_identity::SourceUnitOrdinal,
+    pub(crate) own_primitive_keys: BTreeSet<String>,
+}
+
+/// Exact named primitive fields installed by one TS enum initializer.
+/// PlainData supplies the chunk-wide no-member-write/no-escape guarantee.
+/// Multiple declarations, including destructuring declarations, are excluded.
+pub(crate) fn collect_ts_enum_named_data_candidates(
+    body: &[TopLevelItemView<'_>],
+    plain_data_bindings: &[String],
+) -> BTreeMap<Id, TsEnumNamedDataCandidate> {
+    struct Declaration<'a> {
+        initializer: Option<&'a Expr>,
+        kind: VarDeclKind,
+        direct: bool,
+        source_unit: usize,
+    }
+    let plain: BTreeSet<&str> = plain_data_bindings.iter().map(String::as_str).collect();
+    let mut declarations: BTreeMap<Id, Vec<Declaration<'_>>> = BTreeMap::new();
+    for (source_unit, item) in body.iter().enumerate() {
+        let declaration = match item.as_module_item() {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => Some(declaration.as_ref()),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                if let Decl::Var(declaration) = &export.decl {
+                    Some(declaration.as_ref())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        for declarator in &declaration.decls {
+            for binding in binding_targets::binding_names(&declarator.name) {
+                declarations.entry(binding).or_default().push(Declaration {
+                    initializer: declarator.init.as_deref(),
+                    kind: declaration.kind,
+                    direct: matches!(&declarator.name, Pat::Ident(_)),
+                    source_unit,
+                });
+            }
+        }
+    }
+    declarations
+        .into_iter()
+        .filter_map(|(binding, declarations)| {
+            let [declaration] = declarations.as_slice() else {
+                return None;
+            };
+            if declaration.kind != VarDeclKind::Var
+                || !declaration.direct
+                || !plain.contains(binding.0.as_ref())
+            {
+                return None;
+            }
+            let init = declaration.initializer?;
+            ts_enum_iife_named_data_keys(init, binding.0.as_ref()).map(|keys| {
+                (
+                    binding,
+                    TsEnumNamedDataCandidate {
+                        initializer_source_unit: source_identity::SourceUnitOrdinal(
+                            declaration.source_unit,
+                        ),
+                        own_primitive_keys: keys,
+                    },
+                )
+            })
+        })
+        .collect()
 }

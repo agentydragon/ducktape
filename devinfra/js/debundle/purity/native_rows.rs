@@ -10,7 +10,7 @@
 use super::*;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
 use crate::facts::abstract_domain::effect::CoerceOp;
-use crate::facts::abstract_domain::heap::Mutation;
+use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
 
 /// What an operand must syntactically be for the row's steps on it to run no
 /// user code and complete normally.

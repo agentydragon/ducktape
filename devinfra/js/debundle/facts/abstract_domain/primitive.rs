@@ -1,13 +1,18 @@
-//! Primitive types of operator results and of the expressions built from them.
+//! Primitive types of operator results, of the expressions built from them,
+//! and of chunk-top bindings.
 //!
 //! Every result is the set of types the value can have when evaluation
 //! completes; `None` means it may be an object. Throwing is not modeled here:
 //! an operation that always throws on its operands yields the empty set, and
 //! callers keep classifying the evaluation's own effects and throws.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use super::builtins::{self, ArgSel, Invocation, Return, Row};
 use super::value::PrimKinds;
+use crate::facts::{TopLevelItemView, top_level_initializers, var_decl_of_item};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
 
 /// Where `evaluate` reads identifiers.
 pub trait PrimScope {
@@ -200,6 +205,267 @@ fn intrinsic_call(call: &CallExpr, scope: &impl PrimScope) -> Option<PrimKinds> 
             })
         });
     admitted.then_some(kinds)
+}
+
+/// Primitive types of chunk-top bindings (`collect_binding_prims`) and the
+/// global names whose intrinsic the chunk may replace.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct BindingPrims {
+    pub(crate) kinds: BTreeMap<String, PrimKinds>,
+    /// Shadowed globals plus every `G` and `G.m` a visible write may replace.
+    replaced_globals: BTreeSet<String>,
+}
+
+impl BindingPrims {
+    /// The bindings visible where `local_shadowed` names are rebound.
+    pub(crate) fn scope<'a>(&'a self, local_shadowed: &'a BTreeSet<String>) -> ScopedPrims<'a> {
+        ScopedPrims {
+            prims: self,
+            local_shadowed,
+        }
+    }
+
+    /// Bindings whose primitive excludes Symbol: `ToString` and `ToNumber`
+    /// on them run no user code.
+    pub(crate) fn non_symbol_bindings(&self) -> BTreeSet<String> {
+        self.bindings_within(PrimKinds::ANY.without(PrimKinds::SYMBOL))
+    }
+
+    /// Symbol bindings: safe for `ToPropertyKey`, while `ToString` throws.
+    pub(crate) fn symbol_bindings(&self) -> BTreeSet<String> {
+        self.bindings_within(PrimKinds::SYMBOL)
+    }
+
+    fn bindings_within(&self, kinds: PrimKinds) -> BTreeSet<String> {
+        self.kinds
+            .iter()
+            .filter(|(_, binding)| binding.is_only(kinds))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
+
+pub(crate) struct ScopedPrims<'a> {
+    prims: &'a BindingPrims,
+    local_shadowed: &'a BTreeSet<String>,
+}
+
+impl PrimScope for ScopedPrims<'_> {
+    fn binding(&self, ident: &Ident) -> Option<PrimKinds> {
+        let name = ident.sym.as_ref();
+        if self.local_shadowed.contains(name) {
+            return None;
+        }
+        self.prims.kinds.get(name).copied()
+    }
+
+    /// Purity trusts a callee only where its row allows identity from A11 and
+    /// an unshadowed, unwritten spelling.
+    fn intact_intrinsic(&self, row: &Row, global: &Ident, member: Option<&str>) -> bool {
+        let name = global.sym.as_ref();
+        row.assumed_intact
+            && !self.local_shadowed.contains(name)
+            && !self.prims.replaced_globals.contains(name)
+            && member.is_none_or(|member| {
+                !self
+                    .prims
+                    .replaced_globals
+                    .contains(&format!("{name}.{member}"))
+            })
+    }
+}
+
+/// Primitive types of chunk-top `const` bindings and stable top-level `var`
+/// bindings, evaluated in source order: an initializer reads only bindings
+/// declared before it, the set visible without hitting the temporal dead
+/// zone. Function and arrow initializers never reach here
+/// (`top_level_initializers` filters them).
+///
+/// A stable `var` has one direct initialization, retained whole-chunk
+/// declaration and rebind facts and no dynamic scope; it is tracked only for
+/// a Number initializer. Before that initializer runs it is `undefined`, so
+/// its module-wide type always includes Undefined. Initializer effects remain
+/// classified at the declaration site.
+pub(crate) fn collect_binding_prims(
+    body: &[TopLevelItemView<'_>],
+    shadowed: &BTreeSet<&'static str>,
+    stable_vars: &BTreeSet<Id>,
+) -> BindingPrims {
+    let mut writes = GlobalWriteFinder::default();
+    for item in body {
+        item.as_module_item().visit_with(&mut writes);
+    }
+    let mut prims = BindingPrims {
+        kinds: BTreeMap::new(),
+        replaced_globals: writes
+            .written
+            .into_iter()
+            .chain(shadowed.iter().map(|name| (*name).to_owned()))
+            .collect(),
+    };
+    let top_level = BTreeSet::new();
+    for item in body {
+        let item = item.as_module_item();
+        let mut declared = Vec::new();
+        for (name, init, kind) in top_level_initializers(item) {
+            if kind == VarDeclKind::Const
+                && let Some(kinds) = evaluate(init, &prims.scope(&top_level))
+                && !kinds.is_empty()
+            {
+                declared.push((name, kinds));
+            }
+        }
+        if let Some(var) = var_decl_of_item(item)
+            && var.kind == VarDeclKind::Var
+        {
+            for decl in &var.decls {
+                if let (Pat::Ident(binding), Some(init)) = (&decl.name, decl.init.as_deref())
+                    && stable_vars.contains(&binding.id.to_id())
+                    && let Some(kinds) = evaluate(init, &prims.scope(&top_level))
+                    && kinds.is_only(PrimKinds::NUMBER.union(PrimKinds::UNDEFINED))
+                {
+                    declared.push((
+                        binding.id.sym.to_string(),
+                        kinds.union(PrimKinds::UNDEFINED),
+                    ));
+                }
+            }
+        }
+        for (name, kinds) in declared {
+            // A duplicate declaration is a SyntaxError in a module; joining
+            // keeps malformed input deterministic.
+            prims
+                .kinds
+                .entry(name)
+                .and_modify(|current| *current = current.union(kinds))
+                .or_insert(kinds);
+        }
+    }
+    prims
+}
+
+/// Builtin globals a chunk may write through assignment, update,
+/// `delete` or a reflective define: `G` for a binding or property named `G`,
+/// and `G.m` for property `m` of binding `G`. A visible replacement can make an
+/// intrinsic return an object, so its builtin row stops applying.
+#[derive(Default)]
+struct GlobalWriteFinder {
+    written: BTreeSet<String>,
+}
+
+impl GlobalWriteFinder {
+    fn record(&mut self, name: &str) {
+        if builtins::GLOBALS.contains(name) {
+            self.written.insert(name.to_owned());
+        }
+    }
+
+    fn record_property(&mut self, object: &Expr, key: &str) {
+        if let Expr::Ident(object) = object.unwrap_parens()
+            && builtins::GLOBALS.contains(object.sym.as_ref())
+        {
+            self.written.insert(format!("{}.{key}", object.sym));
+        }
+        self.record(key);
+    }
+
+    fn record_member(&mut self, member: &MemberExpr) {
+        if let Some(key) = static_member_key(member) {
+            self.record_property(&member.obj, key);
+        }
+    }
+}
+
+impl Visit for GlobalWriteFinder {
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        match &node.left {
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                self.record_member(member);
+            }
+            other => other.visit_with(&mut AssignTargetNames(self)),
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        match node.arg.unwrap_parens() {
+            Expr::Ident(ident) => self.record(ident.sym.as_ref()),
+            Expr::Member(member) => self.record_member(member),
+            _ => {}
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, node: &UnaryExpr) {
+        if node.op == UnaryOp::Delete
+            && let Expr::Member(member) = node.arg.unwrap_parens()
+        {
+            self.record_member(member);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let Expr::Ident(receiver) = member.obj.unwrap_parens()
+            && let MemberProp::Ident(property) = &member.prop
+            && matches!(
+                (receiver.sym.as_ref(), property.sym.as_ref()),
+                ("Object", "defineProperty" | "defineProperties" | "assign")
+                    | ("Reflect", "defineProperty" | "set")
+            )
+            && let [target, keys, ..] = node.args.as_slice()
+        {
+            let keys: Vec<&str> = match keys.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(key)) => key.value.as_str().into_iter().collect(),
+                Expr::Object(object) => object
+                    .props
+                    .iter()
+                    .filter_map(|prop| match prop {
+                        PropOrSpread::Prop(prop) => match prop.as_ref() {
+                            Prop::KeyValue(KeyValueProp {
+                                key: PropName::Ident(key),
+                                ..
+                            }) => Some(key.sym.as_ref()),
+                            _ => None,
+                        },
+                        PropOrSpread::Spread(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for key in keys {
+                self.record_property(&target.expr, key);
+            }
+        }
+        node.visit_children_with(self);
+    }
+}
+
+/// Every name a destructuring or other non-member assignment target writes.
+struct AssignTargetNames<'a>(&'a mut GlobalWriteFinder);
+
+impl Visit for AssignTargetNames<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.0.record(ident.sym.as_ref());
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        self.0.record_member(member);
+        member.visit_children_with(self);
+    }
+}
+
+fn static_member_key(member: &MemberExpr) -> Option<&str> {
+    match &member.prop {
+        MemberProp::Ident(id) => Some(id.sym.as_ref()),
+        MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+            Expr::Lit(Lit::Str(value)) => value.value.as_str(),
+            _ => None,
+        },
+        MemberProp::PrivateName(_) => None,
+    }
 }
 
 #[cfg(test)]

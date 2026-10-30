@@ -1,5 +1,6 @@
 use super::*;
 use crate::facts::abstract_domain::builtins;
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 pub enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
@@ -112,6 +113,62 @@ pub(crate) fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// `(name, init, kind)` for every chunk-top `const`/`let`/`var` declarator
+/// binding one identifier to a non-function initializer. Comma-list
+/// declarations are pre-split by `top_level_item_views`.
+pub(crate) fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
+    let Some(var) = var_decl_of_item(item) else {
+        return Vec::new();
+    };
+    var.decls
+        .iter()
+        .filter_map(|decl| {
+            let Pat::Ident(binding) = &decl.name else {
+                return None;
+            };
+            let init = decl.init.as_deref()?;
+            (!matches!(init, Expr::Fn(_) | Expr::Arrow(_)))
+                .then(|| (binding.id.sym.to_string(), init, var.kind))
+        })
+        .collect()
+}
+
+/// The positive closure of a value class over chunk-top `const` aliases:
+/// `(target, None)` holds the class outright, `(target, Some(source))` when
+/// `source` does. A closure rather than one source pass, so an alias of a
+/// later declaration still closes.
+pub(crate) fn close_const_aliases(
+    seed: &BTreeSet<String>,
+    aliases: impl IntoIterator<Item = (String, Option<String>)>,
+) -> BTreeSet<String> {
+    let mut inference = IterativeInference::new(ConstAliasRules);
+    for name in seed {
+        inference.seed(name.clone(), ());
+    }
+    inference.solve_values(aliases).into_keys().collect()
+}
+
+struct ConstAliasRules;
+
+impl IterativeRules for ConstAliasRules {
+    type Key = String;
+    type Fact = ();
+    type Rule = (String, Option<String>);
+
+    fn evaluate(&self, (target, source): &Self::Rule, context: &mut impl FactContext<String, ()>) {
+        if source
+            .as_ref()
+            .is_none_or(|source| context.read(source.clone()).is_some())
+        {
+            context.propose(target.clone(), ());
+        }
+    }
+
+    fn merge(_: &String, _: &mut (), _: ()) -> bool {
+        false
     }
 }
 

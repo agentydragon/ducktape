@@ -1079,10 +1079,12 @@ summary. Neither annotation asserts call purity.
 
 ## `ChunkBinding::PlainData`
 
-A chunk-top binding admits as `PlainData` when its declared value is a
-plain object/array literal, and the chunk-wide write scan can prove no
-post-init mutation can install an accessor on the binding's cell.
-Concrete shapes admitted: `const X = <plain literal>`; `let X = <plain
+`PlainData` is a projection of the heap state in
+<../facts/abstract_domain/heap.rs>: a chunk-top binding whose every
+initializer is a plain-data shape, which is never rebound to anything else,
+and whose every denoted allocation is `escape = Private` and `taint = Clean`.
+The state is solved once per chunk, before purity, from value flow and one
+whole-chunk scan. Concrete shapes admitted: `const X = <plain literal>`; `let X = <plain
 literal>` / `var X = <plain literal>` with every chunk-top re-bind
 being another plain literal (whole-object replacement, no in-place
 mutation); the TS-enum-IIFE shape `var X = ((p) => (p.A = "a", …, p))(X
@@ -1118,25 +1120,28 @@ Why member reads on PlainData are pure:
   copies values via `CreateDataPropertyOrThrow` regardless of the
   source's descriptor shape — the result is plain.
 
-- **No post-init accessor installation.** The chunk-wide write scan
-  rejects any member write (`X.k = …`, `X[k] = …`), member update,
-  member delete, or call to `Object.{defineProperty,defineProperties,
-setPrototypeOf,assign}` /
-  `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}` with
-  `X` as first arg. Plain-ident writes whose RHS is not a
-  plain-literal also disqualify.
+- **`Clean`: no post-init write.** A member write (`X.k = …`,
+  `X[k] = …`), member update or member delete through any tracked alias,
+  or through an expression value flow says reaches the allocation, taints
+  it. A data-property write taints too: member reads are reorderable only
+  while nothing writes the object. Reflective writers
+  (`Object.defineProperty`, `Object.setPrototypeOf`, `Reflect.set`, …)
+  take the object as a call argument, which publishes it.
 
-- **No escaping references.** The write scan above is name-based: it
-  only catches mutations spelled through the candidate's own
-  identifier. An alias (`const Y = X; Object.defineProperty(Y, …)`)
-  or any captured reference (call argument, array element, object
-  property value) would defeat it, so the scan also treats every
-  bare candidate `Ident` outside a short list of provably
-  non-capturing read positions (member receiver, spread source,
+- **`Private`: no escaping references.** Every bare reference to a tracked
+  binding publishes its allocations unless it sits in a provably
+  non-capturing read position: member receiver, spread source,
   `typeof`/`!`/`void` operand, `Object.{keys,values,entries,freeze,
 fromEntries}` single argument with `Object` unshadowed, the vetted
-  TS-enum-IIFE argument, `export { X }`) as
-  an escape and disqualifies the candidate.
+  TS-enum-IIFE argument, an author-proven non-escaping argument
+  (`argument_inputs`), a tracked alias declaration or return, or
+  `export { X }`. A call argument or stored member value also publishes
+  every allocation value flow says it can reach.
+
+- **Rebinding is a binding fact.** Assigning a tracked binding anything but
+  a plain literal, a nested `var` initializer, or a `for-in`/`for-of`
+  `var` head excludes that binding. An alias rebound elsewhere does not
+  change the allocation it used to hold.
 
   **Residual assumption for `export { X }`:** consumers in other
   chunks are assumed not to install accessors on an exported PlainData
@@ -1204,7 +1209,7 @@ Soundness per entry:
 | Method                                  | ECMA-262 operation and reason it is safe under the receiver gate                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Object.keys(O)`                        | §20.1.2.17: `ToObject(O)` needs no coercion for an object; `EnumerableOwnPropertyNames` uses `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]`. Ordinary plain objects return their own keys and descriptors without user code.                                                                                                                                                                                                  |
-| `Object.values(O)`, `Object.entries(O)` | Like `keys`, then `[[Get]]` for each own key. Every key is a data property on a fresh literal or admitted PlainData binding; `PlainDataWriteScanner` rejects later accessor installation through `Object.defineProperty` or `Object.setPrototypeOf`.                                                                                                                                                                          |
+| `Object.values(O)`, `Object.entries(O)` | Like `keys`, then `[[Get]]` for each own key. Every key is a data property on a fresh literal or admitted PlainData binding, whose `Private` state excludes later accessor installation through `Object.defineProperty` or `Object.setPrototypeOf`.                                                                                                                                                                           |
 | `Object.freeze(O)`                      | §20.1.2.6: `SetIntegrityLevel` clears `[[Extensible]]` and makes own descriptors non-configurable (data properties also non-writable), without `[[Get]]` or user code. The mutated literal is fresh, or the admitted PlainData binding has no observable consumer outside the chunk.                                                                                                                                          |
 | `Object.fromEntries(I)`                 | §20.1.2.7: `I[@@iterator]()` uses the built-in iterator only for a fresh array (spreads only of fresh arrays). Each entry must be a fresh two-element array with data properties at `[0]` and `[1]`, and each key a safe property key, since `ToPropertyKey` runs on it. These gates also exclude the observable TypeError for a non-iterable argument. PlainData Object bindings are excluded because they are not iterable. |
 

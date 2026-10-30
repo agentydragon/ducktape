@@ -262,7 +262,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
         per_statement,
         top_level_await,
     } = source;
-    let mut candidate_roots = crate::purity::plain_data_candidate_roots(&body);
+    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(&body);
     candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
     let native_set_allocations =
         super::value_flow::native_set_allocation_roots(native_operation_inputs, stable_spreads);
@@ -282,23 +282,17 @@ pub fn complete_chunk_structural_with_inputs<'a>(
             dynamic_scope.present,
         )
     });
-    let (plain_data_bindings, plain_data_dependencies, plain_data_inference_uses) =
-        match &argument_facts {
-            Some(argument_facts) => {
-                let result = crate::purity::collect_plain_data_bindings_with_arguments(
-                    &body,
-                    &shadowed,
-                    &value_flow,
-                    argument_facts,
-                );
-                (result.bindings, result.dependencies, result.inference_uses)
-            }
-            None => (
-                crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow),
-                BTreeMap::new(),
-                BTreeMap::new(),
-            ),
-        };
+    let super::abstract_domain::heap::PlainDataBindings {
+        bindings: plain_data_bindings,
+        dependencies: plain_data_dependencies,
+        inference_uses: plain_data_inference_uses,
+    } = super::abstract_domain::heap::ChunkHeap::analyze(
+        &body,
+        &shadowed,
+        &value_flow,
+        argument_facts.as_ref(),
+    )
+    .plain_data_bindings();
     let source_semantic_facts =
         argument_facts.map(|facts| std::sync::Arc::new(facts.into_semantic_facts()));
     let set_iterable_proof = SetIterableShapes::analyze(
@@ -438,7 +432,7 @@ where
         per_statement,
         top_level_await,
     } = structural;
-    let plain_array_bindings = crate::purity::collect_plain_array_bindings(&body, &shadowed);
+    let plain_array_bindings = super::abstract_domain::heap::plain_array_bindings(&body, &shadowed);
     let mut prepared_sync_index =
         super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index_with_source_facts(
             &body,

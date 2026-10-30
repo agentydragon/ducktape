@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
+use crate::facts::abstract_domain::heap::{
+    ChunkHeap, plain_array_bindings, tracked_allocation_roots,
+};
 use crate::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
     analyze_chunk_structural, compute_shadowed_globals, top_level_item_views,
@@ -81,10 +84,11 @@ fn graph_with_conditioned_set_proof(
 ) -> ChunkCodeGraph {
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let candidate_roots = plain_data_candidate_roots(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
-    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
-    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
+        .plain_data_bindings()
+        .bindings;
+    let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
     let set_shapes = crate::facts::SetIterableShapes::analyze(
         &views,
@@ -1310,9 +1314,8 @@ fn object_freeze_on_object_with_spread_falls_back_to_unknown() {
 fn object_keys_on_plain_data_binding_classifies_pure() {
     // `Object.keys(plain)` where `plain` is a chunk-top
     // `const plain = {…}` bound to a plain-data shape —
-    // accessor-free by `collect_plain_data_bindings` /
-    // `PlainDataWriteScanner` invariants. Same admission as
-    // a fresh literal.
+    // accessor-free because its allocation stays private and
+    // clean (`ChunkHeap`). Same admission as a fresh literal.
     assert!(classify_built("const plain = { a: 1 };", "Object.keys(plain)").is_pure());
 }
 
@@ -1711,10 +1714,11 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let module = parse("class Box { state = new Set(); }\nconst instance = new Box();");
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let candidate_roots = plain_data_candidate_roots(&views);
-    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
-    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
-    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &tracked_allocation_roots(&views));
+    let plain_data = ChunkHeap::analyze(&views, &shadowed, &flow, None)
+        .plain_data_bindings()
+        .bindings;
+    let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);
     let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
         &views,

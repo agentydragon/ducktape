@@ -1,4 +1,6 @@
 use super::*;
+use crate::facts::abstract_domain::heap;
+use crate::facts::abstract_domain::primitive::{BindingPrims, collect_binding_prims};
 use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
     SetIterableShapes, StructuralStatementFacts,
@@ -124,9 +126,9 @@ pub(crate) enum ChunkBinding {
     /// Chunk-top binding whose value is provably a plain object/array
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
-    /// (see `is_ts_enum_iife_init_for_binding`). The chunk-wide write
-    /// scan (`PlainDataWriteScanner`) rejects any post-init accessor
-    /// installation, so property reads `X.k` / `X[k]` are pure.
+    /// (see `is_ts_enum_iife_init_for_binding`) — whose allocations stay
+    /// private and unwritten (`facts/abstract_domain/heap.rs`), so
+    /// property reads `X.k` / `X[k]` are pure.
     /// Full soundness write-up: <docs/purity_soundness.md> §
     /// "ChunkBinding::PlainData".
     PlainData,
@@ -222,11 +224,14 @@ impl ChunkCodeGraph {
         stable_var_number_candidates: &BTreeSet<Id>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
-        let candidate_roots = plain_data_candidate_roots(body);
-        let value_flow =
-            crate::facts::ChunkValueFlow::analyze_with_candidates(body, &candidate_roots);
-        let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
-        let plain_array_bindings = collect_plain_array_bindings(body, shadowed);
+        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
+            body,
+            &heap::tracked_allocation_roots(body),
+        );
+        let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
+            .plain_data_bindings()
+            .bindings;
+        let plain_array_bindings = heap::plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);
         let local_class_construction_proof =
             LocalClassConstructionShapes::analyze(body, shadowed, &value_flow, dynamic_scope);

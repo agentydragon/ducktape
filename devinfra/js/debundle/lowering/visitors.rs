@@ -16,7 +16,7 @@
 //! declaration) would change runtime behavior. Both renaming visitors
 //! maintain a scope stack (`RenameScopeStack`) and suppress a name's
 //! rename for the duration of any subtree that shadows it. This mirrors
-//! `purity::PlainDataWriteScanner`'s `shadowed_by_params` + `with_scope`
+//! the heap scan's (`facts/abstract_domain/heap.rs`) `shadowed_by_params` + `with_scope`
 //! pattern; here it must additionally track block-scoped `let`/`const`/
 //! `class`/`function` and `catch` bindings because rename targets reach
 //! deeper than the purity scan's parameter-only tracking.
