@@ -115,6 +115,51 @@ pub struct DescriptorCopyFactorySummary {
     pub signatures: Vec<spec::DescriptorCopyFactorySignature>,
 }
 
+/// How the importer must invoke a derived foreign callable for its summary to
+/// apply: a class only through `new`, a function only through an ordinary call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForeignInvocation {
+    Call,
+    Construct,
+}
+
+/// One possible result of a derived foreign call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ForeignReturn {
+    /// The argument value itself (`undefined` when not supplied).
+    Argument {
+        index: usize,
+    },
+    /// An object or closure allocated by this call. It may hold the
+    /// `retained_arguments`; nothing else in the importer can reach it.
+    FreshAllocation,
+    Primitive,
+}
+
+/// Provider-derived summary of one exported callable (SPEC.md § Derived
+/// foreign call summaries). Under A11 and the closed native census, a matching
+/// call runs no code other than the provider body itself: no getter, coercion,
+/// argument, host or export callback. It writes only to its own allocations.
+/// Arguments outside `retained_arguments` and `Argument` returns are dropped.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct ForeignCallSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub invocation: ForeignInvocation,
+    pub returns: BTreeSet<ForeignReturn>,
+    pub retained_arguments: BTreeSet<usize>,
+    /// Census families the body constructs from (`new WeakMap()`); their
+    /// integrity premise is in `dependencies`.
+    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// Trusted provider judgment; deliberately absent from report JSON.
+    #[serde(skip)]
+    pub(crate) dependencies: ProofDependencies,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
@@ -128,6 +173,8 @@ pub struct CallableSummary {
     pub callback_object_arguments: Option<CallbackObjectArguments>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreign_call: Option<ForeignCallSummary>,
 }
 
 impl CallableSummary {
@@ -138,6 +185,7 @@ impl CallableSummary {
             namespace_wrapper: None,
             callback_object_arguments: None,
             descriptor_copy_factory: None,
+            foreign_call: None,
         }
     }
 
@@ -170,7 +218,22 @@ impl CallableSummary {
         &self.callback_factory_evidence
     }
 
+    pub fn foreign_call(summary: ForeignCallSummary) -> Self {
+        Self {
+            foreign_call: Some(summary),
+            ..Self::default()
+        }
+    }
+
     pub fn merge(&mut self, other: Self) {
+        if let Some(call) = other.foreign_call {
+            assert!(
+                self.foreign_call
+                    .as_ref()
+                    .is_none_or(|previous| previous == &call)
+            );
+            self.foreign_call = Some(call);
+        }
         if let Some(factory) = other.descriptor_copy_factory {
             assert!(
                 self.descriptor_copy_factory
@@ -616,6 +679,23 @@ pub struct AnalysisAssumptions {
     /// calls on them AND on values derived from them are pure. See
     /// `ChunkCodeGraph::fluent_bindings`.
     pub fluent_bindings: BTreeSet<String>,
+}
+
+impl AnalysisAssumptions {
+    /// Whether an author contract describes calls through this imported local.
+    pub(crate) fn names_imported_callable(&self, local: &str) -> bool {
+        self.inline_callback_factories.contains(local)
+            || self.callback_factory_members.contains_key(local)
+            || self.retained_callback_factories.contains_key(local)
+            || self.retained_callback_factory_members.contains_key(local)
+            || self.retained_callback_constructors.contains_key(local)
+            || self.no_reentry_exports.contains(local)
+            || self.no_reentry_callback_exports.contains_key(local)
+            || self.no_reentry_members.contains_key(local)
+            || self.no_reentry_record_members.contains_key(local)
+            || self.namespace_independent_members.contains_key(local)
+            || self.fluent_bindings.contains(local)
+    }
 }
 
 /// Inputs to semantic analysis. Author assertions stay separate from imported

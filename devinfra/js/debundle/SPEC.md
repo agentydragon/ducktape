@@ -1528,6 +1528,33 @@ Provider identity and rule evidence appear under
 the provider derivation and the caller's own-property derivation in
 `synchronous_execution.inference_uses`.
 
+## Derived foreign call summaries
+
+A directly imported, stable top-level function or class declaration of another
+analyzed chunk receives a summary when every operation its call performs runs
+no other code. The body may read only its parameters and its own `const`/`let`
+bindings. It may create primitives, closures, and object or array literals with
+literal keys other than `__proto__`. It may construct an argument-free
+`Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
+chunk's census. A class may also define instance fields and write its declared
+private fields. Straight-line statements only. A class qualifies only without
+`extends`, decorators, parameter properties or an explicit `return`. Any other
+operation, including a read of any provider binding, leaves the callee unknown.
+Providers in vendor-affected chunks (any swap, suppression or boundary rename)
+never receive a summary: the emitted program may run replacement code.
+
+The summary applies only to a spread-free ordinary call of a function or a
+`new` of a class through the importing binding, when no narrower summary or
+author contract names that binding. Such a call invokes no callback and records
+no precision loss. Its result is the returned argument itself, or a fresh
+opaque value retaining the callbacks of the arguments it may hold. The analysis
+taints the objects among those arguments, and a construction may still throw
+before the provider evaluates. Arguments it neither returns nor retains are not
+exposed. The call stays impure, so purity and side-effect order are unchanged.
+Methods of a returned object stay unknown. The summary appears in `modules.json`
+under `imported_callables.*.foreign_call`; a use appears in
+`synchronous_execution.inference_uses` as `foreign_call_summary`.
+
 ## Audited callback factories
 
 Optional calls retain conservative callee, receiver and argument callback

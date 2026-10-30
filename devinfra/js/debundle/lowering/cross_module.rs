@@ -291,7 +291,7 @@ pub(super) fn collect_cross_module_imported_purities(
     options: CrossModuleAnalysisOptions<'_>,
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     excluded_chunks: &BTreeSet<ChunkId>,
-    primitive_opaque_chunks: &BTreeSet<ChunkId>,
+    vendor_affected_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
@@ -387,7 +387,7 @@ pub(super) fn collect_cross_module_imported_purities(
                 ),
                 (None, None) => continue,
             };
-        if !primitive_opaque_chunks.contains(&chunk_artifact.chunk_id) {
+        if !vendor_affected_chunks.contains(&chunk_artifact.chunk_id) {
             let (exports, import_candidates, reexport_candidates) =
                 match reparsed.get(&chunk_artifact.chunk_id) {
                     Some(entry) => (
@@ -508,6 +508,7 @@ pub(super) fn collect_cross_module_imported_purities(
                     ),
                     parsed.line_index(),
                 )),
+                vendor_affected: vendor_affected_chunks.contains(&chunk_artifact.chunk_id),
             },
         );
     }

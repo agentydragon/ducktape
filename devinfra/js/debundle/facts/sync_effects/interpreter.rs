@@ -3398,6 +3398,99 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callbacks
     }
 
+    /// A direct call or construction of an imported callable carrying a
+    /// derived foreign call summary (SPEC.md § Derived foreign call summaries).
+    fn foreign_call_summary(
+        &self,
+        kind: CallKind,
+        callee: &ValueExpr,
+    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+        use crate::analysis_inputs::ForeignInvocation;
+        let ValueExpr::Binding(binding) = callee else {
+            return None;
+        };
+        let summary = self.inputs.index.foreign_call_imports.get(binding)?;
+        matches!(
+            (kind, summary.invocation),
+            (CallKind::Call, ForeignInvocation::Call)
+                | (CallKind::New, ForeignInvocation::Construct)
+        )
+        .then(|| summary.clone())
+    }
+
+    /// Retained arguments stay reachable through the fresh result: code that
+    /// later holds it may invoke their callbacks or write through them.
+    fn retain_foreign_arguments(
+        &mut self,
+        summary: &crate::analysis_inputs::ForeignCallSummary,
+        args: &[Values],
+    ) -> Values {
+        let retained: Values = summary
+            .retained_arguments
+            .iter()
+            .filter_map(|position| args.get(*position))
+            .flatten()
+            .cloned()
+            .collect();
+        self.expose_class_capabilities(&retained);
+        self.taint_objects(&retained);
+        retained
+    }
+
+    fn foreign_call_result(
+        &mut self,
+        summary: &crate::analysis_inputs::ForeignCallSummary,
+        args: &[Values],
+    ) -> Values {
+        use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
+        let mut result = Values::new();
+        for returned in &summary.returns {
+            match returned {
+                ForeignReturn::Argument { index } => result.extend(
+                    args.get(*index)
+                        .cloned()
+                        .unwrap_or_else(|| Values::from([AbstractValue::Undefined])),
+                ),
+                ForeignReturn::FreshAllocation => {
+                    let retained = self.retain_foreign_arguments(summary, args);
+                    let callbacks = self.callback_values(&retained);
+                    result.insert(self.deferred_callbacks(callbacks));
+                }
+                ForeignReturn::Primitive => {
+                    result.insert(AbstractValue::NonCallable);
+                }
+            }
+        }
+        // A class binding stays in its TDZ until the provider evaluates, which
+        // an ESM cycle can delay past this call. A function declaration is
+        // initialized at instantiation.
+        if summary.invocation == ForeignInvocation::Construct {
+            result.insert(AbstractValue::Unavailable);
+        }
+        result
+    }
+
+    fn record_foreign_call_use(&self, summary: &crate::analysis_inputs::ForeignCallSummary) {
+        use crate::reports::schema::{InferenceRule, InferenceUse};
+        let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
+        if !summary.native_constructions.is_empty() {
+            derivation_rules.insert(InferenceRule::NativeIntegrity);
+        }
+        self.record_inference_use(
+            NativeIntegrityGuard::ForeignCallSummary,
+            InferenceUse {
+                conclusion: InferenceRule::ForeignCallSummary,
+                derivation_rules,
+                value_input_refs: summary.dependencies.value_inputs.clone(),
+                descriptor_copy_author_refs: BTreeSet::new(),
+                argument_input_refs: summary.dependencies.argument_inputs.clone(),
+                argument_input_spec_locations: BTreeSet::new(),
+                native_operation_input_refs: summary.dependencies.native_operation_inputs.clone(),
+            },
+            &summary.dependencies,
+        );
+    }
+
     fn retained_factory_callbacks(
         &self,
         site: CallSite,
@@ -5504,6 +5597,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
                 }
+                if let Some(summary) = self.foreign_call_summary(CallKind::Call, callee) {
+                    let mut result = self.foreign_call_result(&summary, &args);
+                    if args_may_throw {
+                        result.insert(AbstractValue::Unavailable);
+                    }
+                    return result;
+                }
                 if self.source_record_factory(callee, expressions) {
                     if let Some(&(owner, call_span)) = self.inputs.call_site_owners.get(span) {
                         self.record_returned_record_use(
@@ -5645,6 +5745,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut args_may_throw = targets.contains(&AbstractValue::Unavailable);
                 for values in &mut successful_args {
                     args_may_throw |= values.remove(&AbstractValue::Unavailable);
+                }
+                if let Some(summary) = self.foreign_call_summary(CallKind::New, callee) {
+                    if (targets.len() == 1 && targets.contains(&AbstractValue::Unavailable))
+                        || evaluated_args.iter().any(|values| {
+                            values.len() == 1 && values.contains(&AbstractValue::Unavailable)
+                        })
+                    {
+                        return Values::from([AbstractValue::Unavailable]);
+                    }
+                    let mut result = self.foreign_call_result(&summary, &successful_args);
+                    if args_may_throw {
+                        result.insert(AbstractValue::Unavailable);
+                    }
+                    return result;
                 }
                 if self
                     .inputs
@@ -6496,6 +6610,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        // The provider body runs no other code and writes only its own
+        // allocations. The call stays impure for purity and S-chain order.
+        if !call.has_spread
+            && let Some(summary) = self.foreign_call_summary(call.kind, &call.callee)
+        {
+            self.retain_foreign_arguments(&summary, &args);
+            self.record_foreign_call_use(&summary);
+            return;
         }
         if call.kind == CallKind::Call
             && !call.has_spread

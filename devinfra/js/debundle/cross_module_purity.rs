@@ -35,8 +35,8 @@ use swc_ecma_ast::{Id, ModuleItem};
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    DescriptorCopyFactorySummary, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    DescriptorCopyFactorySummary, ForeignCallSummary, NamespaceWrapperSummary, NativeInputKind,
+    NativeIntegrity, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
 };
 use crate::facts::{TopLevelItemView, top_level_item_views};
@@ -72,6 +72,10 @@ pub struct ModulePurityFacts<'a> {
     /// Origin of direct function-body reasons, if the caller retained the
     /// source line index. Imports reuse these locations unchanged.
     pub source: Option<(String, SourceLineIndex)>,
+    /// The emitted program may run replacement code instead of this body for
+    /// some exports (a vendor mark), so no derived foreign call summary is
+    /// published for it.
+    pub vendor_affected: bool,
 }
 
 struct PreparedModulePurityFacts<'a> {
@@ -1036,6 +1040,13 @@ pub fn resolve_imported_callable_summaries(
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
+                    !modules[module].vendor_affected
+                        && modules[module].exports.keys().any(|export| {
+                            required.contains(&CallableExportKey {
+                                module: module.clone(),
+                                export: export.clone(),
+                            })
+                        }),
                 ),
             )
         })
@@ -1108,6 +1119,63 @@ pub fn resolve_imported_callable_summaries(
                     },
                 ),
                 factory.dependencies.clone(),
+            );
+        }
+    }
+    // Like a returned record's Map premise, a construction premise must hold
+    // in every analyzed chunk's census, including the importer's.
+    let intact_collections = inferred
+        .values()
+        .map(|capabilities| &capabilities.intact_collections)
+        .fold(None::<BTreeSet<_>>, |all, module| {
+            Some(match all {
+                None => module.clone(),
+                Some(all) => all.intersection(module).copied().collect(),
+            })
+        })
+        .unwrap_or_default();
+    for (module, facts) in modules {
+        let Some(capabilities) = inferred.get(module) else {
+            continue;
+        };
+        for (export, local) in &facts.exports {
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
+            let Some(call) = capabilities.foreign_calls.get(local) else {
+                continue;
+            };
+            if !required.contains(&key)
+                || !call
+                    .derived
+                    .native_constructions
+                    .is_subset(&intact_collections)
+            {
+                continue;
+            }
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::foreign_call(ForeignCallSummary {
+                    defining_module: module.clone(),
+                    export: export.clone(),
+                    local: local.clone(),
+                    source_location: facts.source.as_ref().and_then(|(path, index)| {
+                        let (line, column) =
+                            index.line_and_column_for_pos(BytePos(call.declaration_start))?;
+                        Some(SourceLocation {
+                            source_path: path.clone(),
+                            start_line: line,
+                            end_line: line,
+                            start_column: Some(column),
+                        })
+                    }),
+                    invocation: call.derived.invocation,
+                    returns: call.derived.returns.clone(),
+                    retained_arguments: call.derived.retained_arguments.clone(),
+                    native_constructions: call.derived.native_constructions.clone(),
+                    dependencies: call.dependencies.clone(),
+                }),
+                call.dependencies.clone(),
             );
         }
     }
@@ -1489,6 +1557,7 @@ mod tests {
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
             source: None,
+            vendor_affected: false,
         }
     }
 
