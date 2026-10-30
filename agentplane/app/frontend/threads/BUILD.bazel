@@ -271,13 +271,13 @@ ts_library(
         "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:model_catalog",
-        "//agentplane/app/frontend:notification_status",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:tab_metadata",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
+        "//agentplane/app/frontend/notifications:status",
         "//agentplane/app/frontend/sandboxes:client",
     ],
 )
@@ -729,8 +729,8 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:mark_glyph",
-        "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend/notifications:types",
     ],
 )
 
@@ -830,9 +830,9 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:sidebar",
+        "//agentplane/app/frontend/notifications:types",
         "//agentplane/app/frontend/sandboxes:client",
     ],
 )
@@ -862,7 +862,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:notification_types",
+        "//agentplane/app/frontend/notifications:types",
     ],
 )
 

@@ -23,7 +23,7 @@ import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";
-import type { InboxNoticeState } from "../notification_types";
+import type { InboxNoticeState } from "../notifications/types";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { ThreadPage } from "./page";

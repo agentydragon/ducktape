@@ -24,7 +24,7 @@ import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
-import { NotificationStatus } from "../notification_status";
+import { NotificationStatus } from "../notifications/status";
 import { TopbarActions } from "../topbar";
 
 import { type ThreadTabTitleStatus } from "../tab_metadata";

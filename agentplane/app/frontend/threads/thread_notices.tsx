@@ -10,7 +10,7 @@ import type { JSX } from "react";
 
 import { clockTime } from "../format_time";
 import { useSnapshotStream } from "../live_stream";
-import type { InboxNoticeState, SessionNoticeStates } from "../notification_types";
+import type { InboxNoticeState, SessionNoticeStates } from "../notifications/types";
 
 /** The route's own bound, as many threads as one listing page carries. */
 const MAX_THREADS = 200;

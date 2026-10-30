@@ -39,6 +39,7 @@ filegroup(
         "//agentplane/app/frontend/bindings:typed_lint_srcs",
         "//agentplane/app/frontend/connections:typed_lint_srcs",
         "//agentplane/app/frontend/connections/testing:typed_lint_srcs",
+        "//agentplane/app/frontend/notifications:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
         "//agentplane/app/frontend/service_worker:typed_lint_srcs",
         "//agentplane/app/frontend/testing:typed_lint_srcs",
@@ -649,7 +650,6 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":live",
-        ":notification_types",
         ":schema",
         ":sidebar",
         ":stream_status",
@@ -660,6 +660,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/notifications:types",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
@@ -705,26 +706,6 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "notification_types",
-    srcs = ["notification_types.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "notification_status",
-    srcs = ["notification_status.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":format_time",
-        ":live_stream",
-        ":notification_types",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -909,7 +890,6 @@ ts_library(
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
-        ":notification_types",
         ":schema",
         ":shell_command_view",
         ":stream_status",
@@ -927,6 +907,7 @@ ts_library(
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
         "//agentplane/app/frontend/connections:models",
         "//agentplane/app/frontend/connections/testing:fixture",
+        "//agentplane/app/frontend/notifications:types",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",

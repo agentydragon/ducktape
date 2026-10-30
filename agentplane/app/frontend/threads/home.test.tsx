@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "../schema";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
-import type { SessionNoticeStates } from "../notification_types";
+import type { SessionNoticeStates } from "../notifications/types";
 import { Sidebar } from "../sidebar";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

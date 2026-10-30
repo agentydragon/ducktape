@@ -1,0 +1,40 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "types",
+    srcs = ["types.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "status",
+    srcs = ["status.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:live_stream",
+    ],
+)
+
+check_vitest_specs()

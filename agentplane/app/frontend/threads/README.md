@@ -4,6 +4,7 @@
 Thread list used there and in the sidebar. `sandbox_threads.tsx` and `new_thread_form.tsx`
 own the Thread list and creation form on a Sandbox. `thread_groups.ts`, `thread_notices.tsx`,
 the status indicator, and the Thread tab favicon belong with that navigation.
+The shared notification status drawer and projection types live in `../notifications/`.
 
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
