@@ -680,7 +680,7 @@ mod tests {
             &[],
         );
         assert_eq!(
-            intact(&[entries.clone()], PROBES),
+            intact(std::slice::from_ref(&entries), PROBES),
             [MAP, OBJECT, KEYS, SYMBOL_FOR]
         );
         // `Object.entries = f` after `Object = other` may write any object's
@@ -697,7 +697,7 @@ mod tests {
             &[NativeIntrinsic::Symbol],
         );
         assert_eq!(
-            intact(&[symbol_keyed.clone()], PROBES),
+            intact(std::slice::from_ref(&symbol_keyed), PROBES),
             [MAP, OBJECT, KEYS, ENTRIES, SYMBOL_FOR]
         );
         let replaced_for = witness(
