@@ -254,12 +254,6 @@ pub(crate) struct FallbackOnlyEffects {
     pub uninitialized_reads: BTreeMap<Id, AssumedEffectReason>,
 }
 
-impl FallbackOnlyEffects {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.reads.is_empty() && self.rebinds.is_empty() && self.uninitialized_reads.is_empty()
-    }
-}
-
 impl SynchronousCalls {
     /// The assumed path when only a conservative path contributed the read
     /// of `binding`; `None` when it was observed.

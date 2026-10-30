@@ -141,7 +141,7 @@ impl Outcome {
             &assumed.reads,
             assumption,
             |(id, _)| id,
-            holds_binding,
+            |effects: &BTreeSet<_>| HeldBindings::ByOwner(effects),
         );
         absorb_effects(
             &mut self.effects.rebinds,
@@ -150,7 +150,7 @@ impl Outcome {
             &assumed.rebinds,
             assumption,
             |(id, _)| id,
-            holds_binding,
+            |effects: &BTreeSet<_>| HeldBindings::ByOwner(effects),
         );
         absorb_effects(
             &mut self.effects.uninitialized_reads,
@@ -159,38 +159,107 @@ impl Outcome {
             &assumed.uninitialized_reads,
             assumption,
             |id| id,
-            BTreeSet::contains,
+            |bindings: &BTreeSet<_>| HeldBindings::Plain(bindings),
         );
     }
 }
 
-/// Whether a read or rebind set holds an effect on `binding` (from any owner).
-fn holds_binding(effects: &BTreeSet<(Id, SourceUnitOrdinal)>, binding: &Id) -> bool {
-    effects
-        .range((binding.clone(), SourceUnitOrdinal(0))..)
-        .next()
-        .is_some_and(|(id, _)| id == binding)
+/// The bindings an effect set holds, before new effects are inserted.
+#[derive(Clone, Copy)]
+enum HeldBindings<'a> {
+    /// Reads or rebinds, keyed by binding then owner.
+    ByOwner(&'a BTreeSet<(Id, SourceUnitOrdinal)>),
+    Plain(&'a BTreeSet<Id>),
 }
 
-/// Records the provenance of an effect on `binding` about to be inserted.
-/// `held` says whether the effect set already holds one: an assumed effect
-/// only tags a binding nothing contributed yet, and an observed one clears
-/// the tag.
-fn note_effect_provenance(
-    assumed: &mut BTreeMap<Id, AssumedEffectReason>,
-    binding: &Id,
-    held: impl FnOnce() -> bool,
-    provenance: Option<&AssumedEffectReason>,
-) {
-    match provenance {
-        None => {
-            assumed.remove(binding);
+impl<'a> HeldBindings<'a> {
+    fn len(self) -> usize {
+        match self {
+            Self::ByOwner(effects) => effects.len(),
+            Self::Plain(bindings) => bindings.len(),
         }
-        Some(reason) => {
-            if !held() {
-                assumed.insert(binding.clone(), reason.clone());
+    }
+
+    fn contains(self, binding: &Id) -> bool {
+        match self {
+            Self::ByOwner(effects) => effects
+                .range((binding.clone(), SourceUnitOrdinal(0))..)
+                .next()
+                .is_some_and(|(id, _)| id == binding),
+            Self::Plain(bindings) => bindings.contains(binding),
+        }
+    }
+
+    /// In order; a binding repeats once per owner.
+    fn iter(self) -> Box<dyn Iterator<Item = &'a Id> + 'a> {
+        match self {
+            Self::ByOwner(effects) => Box::new(effects.iter().map(|(id, _)| id)),
+            Self::Plain(bindings) => Box::new(bindings.iter()),
+        }
+    }
+}
+
+/// Lookups per binding beat a merge walk when the held set is this many times
+/// larger.
+const PROVENANCE_WALK_RATIO: usize = 16;
+
+/// Tags `bindings` (sorted, distinct), about to be inserted into an effect
+/// set, as assumed by `reason` unless `held` already has them: an effect both
+/// observed and assumed is observed, and an assumed one keeps its first path.
+fn note_assumed(
+    assumed: &mut BTreeMap<Id, AssumedEffectReason>,
+    bindings: &[&Id],
+    held: HeldBindings<'_>,
+    reason: &AssumedEffectReason,
+) {
+    let mut added = Vec::new();
+    if bindings.len().saturating_mul(PROVENANCE_WALK_RATIO) < held.len() {
+        added.extend(bindings.iter().copied().filter(|id| !held.contains(id)));
+    } else {
+        let mut held = held.iter().peekable();
+        for &id in bindings {
+            while held.next_if(|candidate| *candidate < id).is_some() {}
+            if held.peek() != Some(&id) {
+                added.push(id);
             }
         }
+    }
+    // Tags only name held bindings, so `added` is disjoint from `assumed`.
+    let tags = added.into_iter().map(|id| (id.clone(), reason.clone()));
+    if tags.len().saturating_mul(PROVENANCE_WALK_RATIO) < assumed.len() {
+        assumed.extend(tags);
+    } else {
+        assumed.append(&mut tags.collect());
+    }
+}
+
+/// Clears the tags of `bindings` (sorted, distinct): they are now observed.
+fn note_observed(assumed: &mut BTreeMap<Id, AssumedEffectReason>, bindings: &[&Id]) {
+    if assumed.is_empty() || bindings.is_empty() {
+        return;
+    }
+    if bindings.len().saturating_mul(PROVENANCE_WALK_RATIO) < assumed.len() {
+        for id in bindings {
+            assumed.remove(*id);
+        }
+    } else {
+        let mut observed = bindings.iter().peekable();
+        assumed.retain(|id, _| {
+            while observed.next_if(|candidate| **candidate < id).is_some() {}
+            observed.peek().is_none_or(|candidate| **candidate != id)
+        });
+    }
+}
+
+/// Inserts the effects of sorted `bindings`. Large fallback summaries merge
+/// in bulk, avoiding a tree lookup for every repeated binding; small additions
+/// insert into the larger set.
+fn insert_effects<T: Ord>(effects: &mut BTreeSet<T>, bindings: &[&Id], effect: impl Fn(&Id) -> T) {
+    if bindings.len() >= 64 && bindings.len().saturating_mul(2) >= effects.len() {
+        let mut promoted = bindings.iter().map(|id| effect(id)).collect();
+        effects.append(&mut promoted);
+    } else {
+        effects.extend(bindings.iter().map(|id| effect(id)));
     }
 }
 
@@ -201,20 +270,22 @@ fn absorb_effects<T: Ord>(
     source_assumed: &BTreeMap<Id, AssumedEffectReason>,
     assumption: Option<&AssumedEffectReason>,
     binding: impl Fn(&T) -> &Id,
-    holds: impl Fn(&BTreeSet<T>, &Id) -> bool,
+    held: impl Fn(&BTreeSet<T>) -> HeldBindings<'_>,
 ) {
     if assumption.is_some() || !source_assumed.is_empty() || !target_assumed.is_empty() {
-        // Effects on one binding are adjacent; decide each binding once,
-        // against what the target held before this merge.
-        let mut previous = None;
-        for effect in &source {
-            let id = binding(effect);
-            if previous == Some(id) {
-                continue;
+        let mut ids: Vec<&Id> = source.iter().map(&binding).collect();
+        ids.dedup();
+        match assumption {
+            Some(reason) => note_assumed(target_assumed, &ids, held(target), reason),
+            None => {
+                let (assumed, observed): (Vec<&Id>, Vec<&Id>) = ids
+                    .into_iter()
+                    .partition(|id| source_assumed.contains_key(*id));
+                note_observed(target_assumed, &observed);
+                for id in assumed {
+                    note_assumed(target_assumed, &[id], held(target), &source_assumed[id]);
+                }
             }
-            previous = Some(id);
-            let provenance = assumption.or_else(|| source_assumed.get(id));
-            note_effect_provenance(target_assumed, id, || holds(target, id), provenance);
         }
     }
     target.extend(source);
@@ -2092,89 +2163,43 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        let assumption = self.state.assumption.as_ref();
+        let top = &self.inputs.top_bindings;
+        let promoted_reads: Vec<&Id> = reads.intersection(top).collect();
+        let uninitialized: Vec<&Id> = promoted_reads
+            .iter()
+            .copied()
+            .filter(|id| !self.state.initialized_bindings.contains(*id))
+            .collect();
+        let promoted_rebinds: Vec<&Id> = rebinds.intersection(top).collect();
         let effects = &mut outcome.effects;
-        if assumption.is_some() || !effects.fallback_only.is_empty() {
-            let top = &self.inputs.top_bindings;
-            let assumed = &mut effects.fallback_only;
-            for id in reads.intersection(top) {
-                note_effect_provenance(
-                    &mut assumed.reads,
-                    id,
-                    || holds_binding(&effects.reads, id),
-                    assumption,
+        let assumed = &mut effects.fallback_only;
+        match self.state.assumption.as_ref() {
+            Some(reason) => {
+                let held = HeldBindings::ByOwner(&effects.reads);
+                note_assumed(&mut assumed.reads, &promoted_reads, held, reason);
+                let held = HeldBindings::Plain(&effects.uninitialized_reads);
+                note_assumed(
+                    &mut assumed.uninitialized_reads,
+                    &uninitialized,
+                    held,
+                    reason,
                 );
-                if !self.state.initialized_bindings.contains(id) {
-                    note_effect_provenance(
-                        &mut assumed.uninitialized_reads,
-                        id,
-                        || effects.uninitialized_reads.contains(id),
-                        assumption,
-                    );
-                }
+                let held = HeldBindings::ByOwner(&effects.rebinds);
+                note_assumed(&mut assumed.rebinds, &promoted_rebinds, held, reason);
             }
-            for id in rebinds.intersection(top) {
-                note_effect_provenance(
-                    &mut assumed.rebinds,
-                    id,
-                    || holds_binding(&effects.rebinds, id),
-                    assumption,
-                );
+            None => {
+                note_observed(&mut assumed.reads, &promoted_reads);
+                note_observed(&mut assumed.uninitialized_reads, &uninitialized);
+                note_observed(&mut assumed.rebinds, &promoted_rebinds);
             }
         }
-        self.collect_lazy_effects(reads, rebinds, effect_owner, effects);
-    }
-
-    fn collect_lazy_effects(
-        &self,
-        reads: &BTreeSet<Id>,
-        rebinds: &BTreeSet<Id>,
-        effect_owner: SourceUnitOrdinal,
-        effects: &mut SynchronousCalls,
-    ) {
-        // Large fallback summaries are already sorted. Building and merging
-        // their sets in bulk avoids a tree lookup for every repeated read.
-        // Small per-owner additions still use insertion into the larger set.
-        if reads.len() >= 64 && reads.len().saturating_mul(2) >= effects.reads.len() {
-            let mut uninitialized = reads
-                .difference(&self.state.initialized_bindings)
-                .filter(|id| self.inputs.top_bindings.contains(*id))
-                .cloned()
-                .collect();
-            effects.uninitialized_reads.append(&mut uninitialized);
-            let mut promoted = reads
-                .intersection(&self.inputs.top_bindings)
-                .cloned()
-                .map(|id| (id, effect_owner))
-                .collect();
-            effects.reads.append(&mut promoted);
-        } else {
-            for id in reads
-                .iter()
-                .filter(|id| self.inputs.top_bindings.contains(*id))
-            {
-                effects.reads.insert((id.clone(), effect_owner));
-                if !self.state.initialized_bindings.contains(id) {
-                    effects.uninitialized_reads.insert(id.clone());
-                }
-            }
-        }
-        if rebinds.len() >= 64 && rebinds.len().saturating_mul(2) >= effects.rebinds.len() {
-            let mut promoted = rebinds
-                .intersection(&self.inputs.top_bindings)
-                .cloned()
-                .map(|id| (id, effect_owner))
-                .collect();
-            effects.rebinds.append(&mut promoted);
-        } else {
-            effects.rebinds.extend(
-                rebinds
-                    .iter()
-                    .filter(|id| self.inputs.top_bindings.contains(*id))
-                    .cloned()
-                    .map(|id| (id, effect_owner)),
-            );
-        }
+        insert_effects(&mut effects.reads, &promoted_reads, |id| {
+            (id.clone(), effect_owner)
+        });
+        insert_effects(&mut effects.uninitialized_reads, &uninitialized, Id::clone);
+        insert_effects(&mut effects.rebinds, &promoted_rebinds, |id| {
+            (id.clone(), effect_owner)
+        });
     }
 
     fn roots_for_owner(&self, owner: SourceUnitOrdinal) -> BTreeSet<SourceUnitOrdinal> {
