@@ -45,7 +45,16 @@ def _make_repo(tmp_path: Path) -> pygit2.Repository:
 
 @pytest.mark.parametrize(
     "url",
-    ["file:///tmp/repo", "FILE:///tmp/repo", "/tmp/repo", "//tmp/repo", "../repo", "repo", "./repo:copy", "/tmp/repo:copy"],
+    [
+        "file:///tmp/repo",
+        "FILE:///tmp/repo",
+        "/tmp/repo",
+        "//tmp/repo",
+        "../repo",
+        "repo",
+        "./repo:copy",
+        "/tmp/repo:copy",
+    ],
 )
 def test_local_remote_is_rejected(tmp_path: Path, url: str) -> None:
     repo = _make_repo(tmp_path)
