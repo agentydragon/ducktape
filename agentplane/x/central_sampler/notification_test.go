@@ -57,7 +57,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "exec-call", Name: "exec", Input: "notify('progress')"}
-	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, []ResponsesItem{call}, nil); err != nil {
+	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
 	cell, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell"})
@@ -70,8 +70,15 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if _, err := store.DrainNotifications(t.Context(), owner); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("drain before the step's own output was recorded: %v", err)
 	}
-	final := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "exec-call", Output: []ResponsesContentPart{{Type: "input_text", Text: "final"}}}
-	if err := store.Finish(t.Context(), owner, cell, map[string]any{}, []ResponsesItem{final}, nil); err != nil {
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := conversation.Archive.FindCall("exec-call")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishTool(t.Context(), owner, cell, map[string]any{}, invocation, []ContentPart{{Type: "input_text", Text: "final"}}); err != nil {
 		t.Fatal(err)
 	}
 	if drained, err := store.DrainNotifications(t.Context(), owner); err != nil || !drained {
@@ -83,14 +90,15 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.FinishCommand(t.Context(), owner, session.ID, "turn", "done"); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := store.Read(t.Context(), owner)
+	conversation, err = store.Read(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := outputTexts(conversation.Items), []string{"final", "progress", "after last step"}; !slices.Equal(got, want) {
+	items := responsesItems(t, conversation.Archive)
+	if got, want := outputTexts(items), []string{"final", "progress", "after last step"}; !slices.Equal(got, want) {
 		t.Fatalf("outputs=%q, want %q", got, want)
 	}
-	if err := checkPairs(conversation.Items); err != nil {
+	if err := conversation.Archive.CheckSettled(); err != nil {
 		t.Fatalf("notify outputs break call/output pairing: %v", err)
 	}
 	if count := queuedNotifications(t, store, session.ConversationID); count != 0 {
@@ -124,7 +132,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if texts := outputTexts(conversation.Items); len(texts) != 0 {
+			if texts := outputTexts(responsesItems(t, conversation.Archive)); len(texts) != 0 {
 				t.Fatalf("aborted turn recorded notify outputs %q", texts)
 			}
 			if count := queuedNotifications(t, store, session.ConversationID); count != 0 {

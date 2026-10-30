@@ -36,7 +36,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		}
 	}
 	readTranscript := func() ([][]byte, error) {
-		rows, err := store.DB().QueryContext(t.Context(), `SELECT item FROM sampler_conversation_item
+		rows, err := store.DB().QueryContext(t.Context(), `SELECT record FROM sampler_conversation_item
 			WHERE conversation_id=$1 ORDER BY ordinal`, session.ConversationID)
 		if err != nil {
 			return nil, err
@@ -63,7 +63,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "opaque"}}
+	replacement := &ResponsesContext{Items: []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "opaque"}}}
 	intentID, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	compacted := conversation.Context()
+	compacted := responsesItems(t, conversation.Context())
 	if len(compacted) == 0 || compacted[len(compacted)-1].EncryptedContent != "opaque" {
 		t.Fatalf("compacted context=%#v", compacted)
 	}

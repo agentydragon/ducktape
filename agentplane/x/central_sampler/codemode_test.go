@@ -31,7 +31,7 @@ func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
 	input := canonicalJSON(map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123})
 	runtime := &CodeMode{sessionID: "fixture"}
-	prepared, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Input: input})
+	prepared, err := runtime.prepareCall(context.Background(), ToolInvocation{Encoding: ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	if operation.Request.Source != source || operation.Request.ToolCallID != "call" || operation.Request.YieldTimeMS != 0 || *operation.Request.MaxOutputTokens != 123 {
 		t.Fatalf("JSON source or options changed: %+v", operation.Request)
 	}
-	prepared, err = runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)"}`})
+	prepared, err = runtime.prepareCall(context.Background(), ToolInvocation{Encoding: ExecEncodingJSON, Name: "exec", Input: `{"code":"text(1)"}`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestJSONExecRejectsMalformedArgumentsBeforeDispatch(t *testing.T) {
 		`{"code":""}`, `{"cell_id":123}`, `{"cell_id":"cell","terminate":null}`,
 	} {
 		t.Run(input, func(t *testing.T) {
-			if _, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", Input: input}); err == nil {
+			if _, err := runtime.prepareCall(context.Background(), ToolInvocation{Encoding: ExecEncodingJSON, Name: "exec", Input: input}); err == nil {
 				t.Fatal("accepted invalid JSON exec arguments")
 			}
 		})
@@ -65,16 +65,16 @@ func TestJSONExecRejectsMalformedArgumentsBeforeDispatch(t *testing.T) {
 }
 
 func TestCodeModeInputErrorsReturnOutputWithoutAHostRequest(t *testing.T) {
-	for _, call := range []ResponsesToolCall{
-		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{}`},
-		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)","cell_id":"cell"}`},
-		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"cell_id":""}`},
-		{Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"code":"text(1)","yield_time_ms":-1}`},
-		{Type: ResponsesItemCustomToolCall, Name: "exec", Input: ""},
-		{Type: ResponsesItemCustomToolCall, Name: "exec", Input: "// @exec: {\"unknown\":true}\ntext(1)"},
-		{Type: ResponsesItemFunctionCall, Name: "wait", Input: `{"cell_id":42}`},
+	for _, call := range []ToolInvocation{
+		{Encoding: ExecEncodingJSON, Name: "exec", Input: `{}`},
+		{Encoding: ExecEncodingJSON, Name: "exec", Input: `{"code":"text(1)","cell_id":"cell"}`},
+		{Encoding: ExecEncodingJSON, Name: "exec", Input: `{"cell_id":""}`},
+		{Encoding: ExecEncodingJSON, Name: "exec", Input: `{"code":"text(1)","yield_time_ms":-1}`},
+		{Encoding: ExecEncodingFreeform, Name: "exec", Input: ""},
+		{Encoding: ExecEncodingFreeform, Name: "exec", Input: "// @exec: {\"unknown\":true}\ntext(1)"},
+		{Encoding: ExecEncodingJSON, Name: "wait", Input: `{"cell_id":42}`},
 	} {
-		t.Run(string(call.Type)+"/"+call.Name+"/"+call.Input, func(t *testing.T) {
+		t.Run(string(call.Encoding)+"/"+call.Name+"/"+call.Input, func(t *testing.T) {
 			// A host request would dereference the absent manager/host. Invalid input
 			// must instead return ordinary output for the model's matching call.
 			runtime := &CodeMode{}
@@ -98,8 +98,8 @@ func TestCodeModeInvalidCellPreservesOtherLiveWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
-	output, err := runtime.Execute(t.Context(), ResponsesToolCall{
-		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "bad-wait",
+	output, err := runtime.Execute(t.Context(), ToolInvocation{
+		Encoding: ExecEncodingJSON, Name: "exec", CallID: "bad-wait",
 		Input: `{"cell_id":"executor-session-id","terminate":true}`,
 	})
 	if err != nil || len(output) != 1 || !strings.Contains(output[0].Text, "known live cell_id") {
@@ -120,8 +120,8 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
-	output, err := runtime.Execute(t.Context(), ResponsesToolCall{
-		Type: ResponsesItemFunctionCall, Name: "exec", Input: `{"cell_id":"fixture:cell"}`,
+	output, err := runtime.Execute(t.Context(), ToolInvocation{
+		Encoding: ExecEncodingJSON, Name: "exec", Input: `{"cell_id":"fixture:cell"}`,
 	})
 	if err == nil || output != nil || errors.As(err, new(*toolError)) {
 		t.Fatalf("store failure became model output: output=%+v error=%v", output, err)
@@ -508,8 +508,8 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 }
 
 func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testing.T) {
-	call := ResponsesToolCall{
-		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "rejected-call", Input: `{"code":"text(1)"}`,
+	call := ToolInvocation{
+		Encoding: ExecEncodingJSON, Name: "exec", CallID: "rejected-call", Input: `{"code":"text(1)"}`,
 	}
 	store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
 	originalHost := code.host
@@ -532,10 +532,11 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conversation.Pending != nil || len(conversation.Items) < 2 {
-		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, conversation.Items)
+	items := responsesItems(t, conversation.Archive)
+	if conversation.Pending != nil || len(items) < 2 {
+		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, items)
 	}
-	if output := conversation.Items[len(conversation.Items)-1]; !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host admission rejected" {
+	if output := items[len(items)-1]; !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host admission rejected" {
 		t.Fatalf("rejected exec output=%+v", output)
 	}
 	state, err := store.ExecutionState(t.Context(), owner)
@@ -563,8 +564,8 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 		t.Fatalf("rejection evidence=%+v", rejectedResult["code_mode_host_response"])
 	}
 
-	nextCall := ResponsesToolCall{
-		Type: ResponsesItemFunctionCall, Name: "exec", CallID: "next-call", Input: `{"code":"text(load('retained'))"}`,
+	nextCall := ToolInvocation{
+		Encoding: ExecEncodingJSON, Name: "exec", CallID: "next-call", Input: `{"code":"text(load('retained'))"}`,
 	}
 	appendModelToolCall(t, store, owner, nextCall)
 	result, advanceErr = advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
@@ -587,7 +588,8 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output := conversation.Items[len(conversation.Items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
+	items = responsesItems(t, conversation.Archive)
+	if output := items[len(items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
 		t.Fatalf("next exec did not run through the retained logical session: %+v", output)
 	}
 	assertToolResultSucceeded(t, store, owner, nextCall.CallID, true)
@@ -606,7 +608,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 		{name: "terminate", input: `{"cell_id":"cell","terminate":true}`, method: "session/terminate"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "wait", CallID: "wait-call", Input: test.input}
+			call := ToolInvocation{Encoding: ExecEncodingJSON, Name: "wait", CallID: "wait-call", Input: test.input}
 			store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
 			cell := code.cellHandle("cell")
 			if err := store.CellResult(t.Context(), owner, cell, "live"); err != nil {
@@ -626,7 +628,8 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			output := conversation.Items[len(conversation.Items)-1]
+			items := responsesItems(t, conversation.Archive)
+			output := items[len(items)-1]
 			if !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host operation returned an error" {
 				t.Fatalf("%s error output=%+v", test.name, output)
 			}
@@ -716,7 +719,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "exec-call", Input: `{"code":"text(1)"}`}
+			call := ToolInvocation{Encoding: ExecEncodingJSON, Name: "exec", CallID: "exec-call", Input: `{"code":"text(1)"}`}
 			store, owner, runtime, live, _, peer := newCodeModeAdvanceFixture(t, call)
 			advanceDone := make(chan error, 1)
 			go func() {
@@ -768,7 +771,7 @@ func assertToolResultSucceeded(t *testing.T, store *Store, owner Owner, callID s
 	t.Fatalf("no completed tool result for %q", callID)
 }
 
-func newCodeModeAdvanceFixture(t *testing.T, call ResponsesToolCall) (*Store, Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
+func newCodeModeAdvanceFixture(t *testing.T, call ToolInvocation) (*Store, Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
 	t.Helper()
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
@@ -818,19 +821,23 @@ func newCodeModeAdvanceFixture(t *testing.T, call ResponsesToolCall) (*Store, Ow
 	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
 }
 
-func appendModelToolCall(t *testing.T, store *Store, owner Owner, call ResponsesToolCall) {
+func appendModelToolCall(t *testing.T, store *Store, owner Owner, call ToolInvocation) {
 	t.Helper()
 	intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "response_id": call.CallID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := ResponsesItem{Type: call.Type, CallID: call.CallID, Name: call.Name}
-	if call.Type == ResponsesItemFunctionCall {
+	itemType := ResponsesItemFunctionCall
+	if call.Encoding == ExecEncodingFreeform {
+		itemType = ResponsesItemCustomToolCall
+	}
+	item := ResponsesItem{Type: itemType, CallID: call.CallID, Name: call.Name}
+	if call.Encoding == ExecEncodingJSON {
 		item.Arguments = call.Input
 	} else {
 		item.Input = call.Input
 	}
-	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []ResponsesItem{item}}, []ResponsesItem{item}, nil); err != nil {
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"output": []ResponsesItem{item}}, nativeResponsesRecords(t, item), nil); err != nil {
 		t.Fatal(err)
 	}
 }

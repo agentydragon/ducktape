@@ -23,11 +23,12 @@ type Conversation struct {
 	Generation      int
 	Owner           *string
 	LeaseUntil      *time.Time
-	Items           []ResponsesItem
+	API             APIStyle
+	Archive         NativeContext
 	Pending         *PendingIntent
 	Stopped         bool
 	ExecutorSession *string
-	ContextItems    []ResponsesItem
+	ActiveContext   NativeContext
 	Instructions    *string
 	ContextTokens   *int
 	// ExecutorShell is the shell name the bound exec-server last reported.
@@ -36,11 +37,43 @@ type Conversation struct {
 	EnvironmentContext *EnvironmentContext
 }
 
-func (c *Conversation) Context() []ResponsesItem {
-	if c.ContextItems == nil {
-		return c.Items
+func (c *Conversation) Context() NativeContext {
+	if c.ActiveContext == nil {
+		return c.Archive
 	}
-	return c.ContextItems
+	return c.ActiveContext
+}
+
+func (c *Conversation) apply(change func(NativeContext) error) error {
+	if err := change(c.Archive); err != nil {
+		return err
+	}
+	if c.ActiveContext != nil {
+		return change(c.ActiveContext)
+	}
+	return nil
+}
+
+func (c *Conversation) appendToolResult(call ToolInvocation, output []ContentPart) error {
+	// The archive ordinal is authoritative. Compacted active context has different local ordinals.
+	original, err := c.Archive.FindCall(call.CallID)
+	if err != nil {
+		return err
+	}
+	if original.Encoding != call.Encoding || original.Name != call.Name || original.Input != call.Input ||
+		(call.SourceRecord != 0 && original.SourceRecord != call.SourceRecord) {
+		return ErrInvalid
+	}
+	return c.apply(func(state NativeContext) error {
+		local, err := state.FindCall(call.CallID)
+		if err != nil {
+			return err
+		}
+		if local.Encoding != call.Encoding || local.Name != call.Name || local.Input != call.Input {
+			return ErrInvalid
+		}
+		return state.AppendToolResult(local, output)
+	})
 }
 
 type PendingIntentKind string

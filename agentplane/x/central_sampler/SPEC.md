@@ -137,9 +137,15 @@ continuation, matching Codex. `response.completed.output` is retained as evidenc
 but does not replace or supplement them: Antigravity through LiteLLM can rewrite
 reasoning and add terminal-only messages.
 
-Anthropic Messages uses a native opaque message envelope plus function-call projections for the
-shared executor. Projections never enter the Anthropic wire transcript. The adapter preserves
-signed thinking, redacted thinking and compaction content without translating their fields.
+Each conversation is pinned to an explicit API: `responses` or `anthropic_messages`. Responses
+context contains native Responses items; Anthropic context contains native Messages API messages.
+Neither protocol is stored inside the other's item envelope. Protocol adapters own input rendering,
+call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
+with call IDs and native source-record ordinals; these execution decisions are not extra conversation
+records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
+
+Anthropic preserves signed thinking, redacted thinking and compaction content without translating
+their fields.
 Native text/thinking/tool observations reference the original event evidence. `message_stop` with
 `end_turn` completes a turn; `tool_use` requires at least one complete object input. Eager JSON
 fragments are observed but never executed before terminal validation. Errors, unsupported blocks,
@@ -374,7 +380,18 @@ initializer creates that schema from its Goose SQL baseline. Repeated initializa
 Session identities, conversation, effect-journal, process, command, evidence and export state.
 Acceptance tests initialize through the actual Go binary and inspect its database separately.
 
-Retained provider items use append-only `sampler_conversation_item` rows. The current model context
-remains a replaceable JSON value so compaction can swap it in the same transaction as its command
-result. Appending a response writes only its new retained items instead of rewriting the full
-transcript.
+`sampler_conversation.api` pins the native protocol. Ordered, immutable native records live in
+`sampler_conversation_item.record`. `sampler_conversation.context` optionally holds the compacted
+active context as a protocol-owned object (`items` for Responses; `messages` and deferred effort
+restoration for Anthropic). With no replacement context, the archive is the active context.
+Compaction atomically verifies the expected active context and lease before replacing it and
+settling its intent/command. It never rewrites the archive. New responses append only new records.
+
+The native-format migration preserves Session identities, provider payloads, raw exchange evidence,
+commands, events, and unresolved-effect state. It unwraps legacy Anthropic messages, validates and
+removes their redundant execution projections, and renders old shared inputs into native messages.
+The API is determined from recorded exchanges or an explicit configured model-route mapping;
+ambiguous classification or invalid conversion fails initialization. A live conversation lease
+prevents conversion. The sampler Deployment uses Recreate, so the old writer exits before the new
+initializer changes the schema. Schema rollback requires restoring the pre-migration database
+backup together with the old service image.

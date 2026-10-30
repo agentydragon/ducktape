@@ -10,7 +10,7 @@ import (
 // Expectations come from Codex rust-v0.162.1 core/src/tools/code_mode/mod.rs tests
 // truncated_text_output_starts_with_warning and over_budget_audio_output_is_omitted.
 func TestTruncateCodeModeResultMatchesCodex(t *testing.T) {
-	text, err := truncateCodeModeResult([]ResponsesContentPart{{Type: "input_text", Text: "0123456789012345678901234567890123456789"}}, 5)
+	text, err := truncateCodeModeResult([]ContentPart{{Type: "input_text", Text: "0123456789012345678901234567890123456789"}}, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,11 +18,11 @@ func TestTruncateCodeModeResultMatchesCodex(t *testing.T) {
 	if len(text) != 1 || text[0].Text != expected {
 		t.Fatalf("truncated text = %+v", text)
 	}
-	var audio ResponsesContentPart
+	var audio ContentPart
 	if err := json.Unmarshal([]byte(`{"type":"input_audio","audio_url":"data:audio/wav;base64,`+strings.Repeat("A", 100)+`"}`), &audio); err != nil {
 		t.Fatal(err)
 	}
-	omitted, err := truncateCodeModeResult([]ResponsesContentPart{audio}, 5)
+	omitted, err := truncateCodeModeResult([]ContentPart{audio}, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,11 +32,11 @@ func TestTruncateCodeModeResultMatchesCodex(t *testing.T) {
 }
 
 func TestTruncateCodeModeResultKeepsImagesAndBudgetsText(t *testing.T) {
-	var image ResponsesContentPart
+	var image ContentPart
 	if err := json.Unmarshal([]byte(`{"type":"input_image","image_url":"data:image/png;base64,opaque"}`), &image); err != nil {
 		t.Fatal(err)
 	}
-	items, err := truncateCodeModeResult([]ResponsesContentPart{
+	items, err := truncateCodeModeResult([]ContentPart{
 		{Type: "input_text", Text: strings.Repeat("a", 40)}, image, {Type: "input_text", Text: "later"},
 	}, 5)
 	if err != nil {

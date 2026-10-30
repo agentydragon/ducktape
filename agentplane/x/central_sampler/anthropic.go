@@ -3,7 +3,6 @@ package centralsampler
 import (
 	"bufio"
 	"bytes"
-	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,67 +10,46 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
-	"strconv"
 	"strings"
 
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
 	"google.golang.org/protobuf/proto"
 )
 
-// Native messages are durable opaque envelopes. The adjacent function-call items are execution
-// projections only; they are never sent to Anthropic. This keeps signed provider blocks intact.
-const (
-	ResponsesItemAnthropicMessage ResponsesItemType = "anthropic_message"
-	ResponsesItemEffort           ResponsesItemType = "reasoning_effort"
-	ResponsesItemEffortRestore    ResponsesItemType = "reasoning_effort_restore"
-	ResponsesItemExecutionState   ResponsesItemType = "execution_state"
-)
-
-type AnthropicMessage struct {
-	ID         string                     `json:"id"`
-	Role       string                     `json:"role"`
-	Content    []json.RawMessage          `json:"content"`
-	StopReason string                     `json:"stop_reason"`
-	Usage      map[string]json.RawMessage `json:"usage"`
+func anthropicMessageFields(record json.RawMessage) map[string]json.RawMessage {
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(record, &fields)
+	return fields
 }
 
-func nativeMessage(item ResponsesItem) (AnthropicMessage, error) {
-	var message AnthropicMessage
-	err := json.Unmarshal(item.Content, &message)
-	return message, err
+func anthropicEndTurn(record json.RawMessage) bool {
+	fields := anthropicMessageFields(record)
+	return rawString(fields, "role") == "assistant" && rawString(fields, "stop_reason") == "end_turn"
 }
 
-func anthropicEndTurn(item ResponsesItem) bool {
-	if item.Type != ResponsesItemAnthropicMessage {
-		return false
+func anthropicPreviousMessageID(context *AnthropicContext) string {
+	if context == nil {
+		return ""
 	}
-	message, err := nativeMessage(item)
-	return err == nil && message.StopReason == "end_turn"
-}
-
-func anthropicPreviousMessageID(items []ResponsesItem) string {
-	for i := len(items) - 1; i >= 0; i-- {
-		if items[i].Type != ResponsesItemAnthropicMessage {
-			continue
-		}
-		message, err := nativeMessage(items[i])
-		if err == nil && message.StopReason != "compaction" {
-			return message.ID
+	for i := len(context.Messages) - 1; i >= 0; i-- {
+		fields := anthropicMessageFields(context.Messages[i])
+		if rawString(fields, "role") == "assistant" && rawString(fields, "stop_reason") != "compaction" {
+			return rawString(fields, "id")
 		}
 	}
 	return ""
 }
 
-// AnthropicSuffixStart preserves complete settled turns, including the original signed thinking,
-// user/environment messages, and tool calls/results. It never cuts across an outstanding call.
-func anthropicSuffixStart(items []ResponsesItem, keep int) int {
+// anthropicSuffixStart keeps whole completed turns, including signed native blocks and any
+// associated user tool results.
+func anthropicSuffixStart(records []json.RawMessage, keep int) int {
 	if keep == 0 {
-		return len(items)
+		return len(records)
 	}
 	completed := 0
-	for i := len(items) - 1; i >= 0; i-- {
-		if anthropicEndTurn(items[i]) {
+	for i := len(records) - 1; i >= 0; i-- {
+		if anthropicEndTurn(records[i]) {
 			completed++
 			if completed > keep {
 				return i + 1
@@ -81,7 +59,13 @@ func anthropicSuffixStart(items []ResponsesItem, keep int) int {
 	return 0
 }
 
-func anthropicParts(parts []ResponsesContentPart) ([]any, error) {
+func isAnthropicEffortControl(record json.RawMessage) bool {
+	fields := anthropicMessageFields(record)
+	_, hasOutputConfig := fields["output_config"]
+	return rawString(fields, "role") == "system" && hasOutputConfig
+}
+
+func anthropicParts(parts []ContentPart) ([]any, error) {
 	result := make([]any, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
@@ -113,89 +97,14 @@ func anthropicParts(parts []ResponsesContentPart) ([]any, error) {
 	return result, nil
 }
 
-func anthropicInput(items []ResponsesItem, perMessageEffort bool) ([]any, error) {
-	messages := make([]any, 0, len(items))
-	answered := map[string]bool{}
-	pendingEffort := ""
-	control := func(effort string) any {
-		return map[string]any{"role": "system", "content": []any{}, "output_config": map[string]any{"effort": effort}}
-	}
-	for _, item := range items {
-		switch item.Type {
-		case ResponsesItemAnthropicMessage:
-			message, err := nativeMessage(item)
-			if err != nil {
-				return nil, err
-			}
-			messages = append(messages, map[string]any{"role": message.Role, "content": message.Content})
-		case ResponsesItemFunctionCall:
-			// Projection of a tool_use already present in the native assistant message.
-		case ResponsesItemEffort:
-			if perMessageEffort {
-				pendingEffort = ""
-				messages = append(messages, control(item.Input))
-			}
-		case ResponsesItemEffortRestore:
-			if perMessageEffort {
-				if len(messages) > 0 && messages[len(messages)-1].(map[string]any)["role"] == "user" {
-					messages = append(messages, control(item.Input))
-				} else {
-					pendingEffort = item.Input
-				}
-			}
-		case ResponsesItemExecutionState:
-			messages = append(messages, map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "Active execution handles: " + string(item.Content)}}})
-		case ResponsesItemMessage:
-			var parts []ResponsesContentPart
-			var text string
-			if err := json.Unmarshal(item.Content, &text); err == nil {
-				parts = []ResponsesContentPart{{Type: "input_text", Text: text}}
-			} else {
-				var err error
-				parts, err = item.TextParts()
-				if err != nil {
-					return nil, fmt.Errorf("Anthropic message content: %w", err)
-				}
-			}
-			blocks, err := anthropicParts(parts)
-			if err != nil {
-				return nil, err
-			}
-			role := item.Role
-			if role == "developer" {
-				role = "user"
-			}
-			if role != "user" && role != "assistant" {
-				return nil, fmt.Errorf("unsupported Anthropic role %q", role)
-			}
-			messages = append(messages, map[string]any{"role": role, "content": blocks})
-			if role == "user" && pendingEffort != "" {
-				messages = append(messages, control(pendingEffort))
-				pendingEffort = ""
-			}
-		case ResponsesItemFunctionOutput:
-			blocks, err := anthropicParts(item.Output)
-			if err != nil {
-				return nil, err
-			}
-			if answered[item.CallID] {
-				encoded, err := json.Marshal(blocks)
-				if err != nil {
-					return nil, err
-				}
-				messages = append(messages, map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "Asynchronous output from exec call " + item.CallID + ":\n" + string(encoded)}}})
-			} else {
-				answered[item.CallID] = true
-				messages = append(messages, map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": item.CallID, "content": blocks}}})
-			}
-		default:
-			return nil, fmt.Errorf("unsupported Anthropic conversation item %q", item.Type)
-		}
-	}
-	return messages, nil
+type AnthropicRequestParams struct {
+	Context      *AnthropicContext
+	Model        string
+	Effort       string
+	Instructions *string
 }
 
-func BuildAnthropicRequest(params ResponsesRequestParams, config ModelConfig, previousMessageID string) (map[string]any, error) {
+func BuildAnthropicRequest(params AnthropicRequestParams, config ModelConfig, previousMessageID string) (map[string]any, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -226,7 +135,11 @@ func BuildAnthropicRequest(params ResponsesRequestParams, config ModelConfig, pr
 			}
 		}
 	}
-	messages, err := anthropicInput(params.Items, options.PerMessageEffort)
+	context := params.Context
+	if context == nil {
+		context = &AnthropicContext{}
+	}
+	messages, err := context.WireMessages()
 	if err != nil {
 		return nil, err
 	}
@@ -234,8 +147,12 @@ func BuildAnthropicRequest(params ResponsesRequestParams, config ModelConfig, pr
 	if params.Instructions != nil && *params.Instructions != "" {
 		system += "\n\n" + *params.Instructions
 	}
+	model := params.Model
+	if model == "" {
+		model = config.ProviderModel
+	}
 	body := map[string]any{
-		"model": config.ProviderModel, "max_tokens": options.MaxTokens, "system": system, "messages": messages, "stream": true,
+		"model": model, "max_tokens": options.MaxTokens, "system": system, "messages": messages, "stream": true,
 		"tools": []any{map[string]any{"name": "exec", "description": description, "input_schema": schema, "strict": options.StrictToolInput, "eager_input_streaming": options.EagerInputStreaming}},
 	}
 	if options.Thinking != nil {
@@ -274,7 +191,22 @@ func anthropicBetas(config ModelConfig) string {
 	return strings.Join(betas, ",")
 }
 
-func SampleAnthropic(ctx context.Context, client *http.Client, connection ConnectionConfig, config ModelConfig, wire []byte, evidence *ResponseEvidence, compaction bool) (*ProviderResponse, error) {
+type AnthropicResponse struct {
+	Message           json.RawMessage
+	Events            []json.RawMessage
+	ContextTokens     *int
+	HTTPStatus        int
+	ProviderRequestID string
+}
+
+func (r AnthropicResponse) Audit() map[string]any {
+	return map[string]any{
+		"response": r.Message, "events": r.Events, "context_tokens": r.ContextTokens,
+		"http_status": r.HTTPStatus, "provider_request_id": r.ProviderRequestID,
+	}
+}
+
+func SampleAnthropic(ctx context.Context, client *http.Client, connection ConnectionConfig, config ModelConfig, wire []byte, evidence *ResponseEvidence, compaction bool) (*AnthropicResponse, error) {
 	credential, err := connection.Auth.ReadCredential()
 	if err != nil {
 		return nil, &KnownFailureError{Evidence: map[string]any{"reason": "provider credential unavailable", "error": err.Error(), "dispatched": false}}
@@ -321,9 +253,8 @@ func SampleAnthropic(ctx context.Context, client *http.Client, connection Connec
 	return result, err
 }
 
-// AnthropicEvent records the native wire event and derives public History observations with
-// references to that exact evidence. Execution uses only terminally validated messages below.
-func (s *Store) AnthropicEvent(ctx context.Context, owner Owner, intentID, wire string, projections []ResponsesEvent) error {
+// AnthropicEvent persists each exact native stream event before the parser acts on it.
+func (s *Store) AnthropicEvent(ctx context.Context, owner Owner, intentID, wire string, observations []*eventpb.Event) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
@@ -337,8 +268,12 @@ func (s *Store) AnthropicEvent(ctx context.Context, owner Owner, intentID, wire 
 		if err != nil {
 			return err
 		}
-		for _, projection := range projections {
-			if err := s.providerObservation(ctx, tx, session, sources, projection); err != nil {
+		for _, observation := range observations {
+			if observation == nil {
+				continue
+			}
+			observation.SourceSequences = sources
+			if _, err := appendEvent(ctx, tx, session, observation); err != nil {
 				return err
 			}
 		}
@@ -358,33 +293,57 @@ func rawString(fields map[string]json.RawMessage, key string) string {
 	return value
 }
 
-func blockProjection(fields map[string]json.RawMessage, id string) (ResponsesItem, error) {
+func anthropicString(fields map[string]json.RawMessage, key string) (string, bool) {
+	raw, present := fields[key]
+	if !present {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func validateAnthropicOutputBlock(fields map[string]json.RawMessage) error {
 	switch rawString(fields, "type") {
 	case "text":
-		content, err := json.Marshal([]ResponsesContentPart{{Type: "output_text", Text: rawString(fields, "text")}})
-		return ResponsesItem{Type: ResponsesItemMessage, ID: id, Role: "assistant", Content: content}, err
-	case "thinking", "redacted_thinking":
-		content, err := json.Marshal([]ResponsesContentPart{{Type: "summary_text", Text: rawString(fields, "thinking")}})
-		return ResponsesItem{Type: ResponsesItemReasoning, ID: id, Summary: content}, err
+		if _, ok := anthropicString(fields, "text"); !ok {
+			return errors.New("text block requires a string text field")
+		}
+		return nil
+	case "thinking":
+		if _, ok := anthropicString(fields, "thinking"); !ok {
+			return errors.New("thinking block requires a string thinking field")
+		}
+		return nil
+	case "redacted_thinking", "compaction":
+		return nil
 	case "tool_use":
-		return ResponsesItem{Type: ResponsesItemFunctionCall, CallID: rawString(fields, "id"), Name: rawString(fields, "name"), Arguments: string(fields["input"])}, nil
-	case "compaction":
-		return ResponsesItem{}, nil
+		if rawString(fields, "id") == "" || rawString(fields, "name") == "" {
+			return errors.New("tool_use requires an id and name")
+		}
+		var input map[string]json.RawMessage
+		if err := json.Unmarshal(fields["input"], &input); err != nil || input == nil {
+			return errors.New("tool_use requires an input object")
+		}
+		return nil
 	default:
-		return ResponsesItem{}, fmt.Errorf("unsupported Anthropic output block %q", rawString(fields, "type"))
+		return fmt.Errorf("unsupported Anthropic output block %q", rawString(fields, "type"))
 	}
 }
 
-func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *ResponseEvidence, compaction bool) (*ProviderResponse, error) {
-	result := &ProviderResponse{}
+func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *ResponseEvidence, compaction bool) (*AnthropicResponse, error) {
+	result := &AnthropicResponse{}
 	message := map[string]json.RawMessage{}
 	var blocks []*anthropicBlock
 	started, deltaSeen := false, false
 	var usage map[string]json.RawMessage
 	fail := func(reason string) error {
-		return &KnownFailureError{Evidence: map[string]any{"reason": reason, "events": result.AnthropicEvents}}
+		return &KnownFailureError{Evidence: map[string]any{"reason": reason, "events": result.Events}}
 	}
 	dispatch := func(data string) (eventErr error) {
+		var observations []*eventpb.Event
 		var event struct {
 			Type         string                     `json:"type"`
 			Index        *int                       `json:"index"`
@@ -393,16 +352,15 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 			Delta        map[string]json.RawMessage `json:"delta"`
 			Usage        map[string]json.RawMessage `json:"usage"`
 		}
-		var projections []ResponsesEvent
 		// Even malformed/unsupported events are durable before the parser returns to the runtime.
 		defer func() {
 			if evidence != nil {
-				if err := evidence.Store.AnthropicEvent(ctx, evidence.Owner, evidence.IntentID, data, projections); err != nil {
+				if err := evidence.Store.AnthropicEvent(ctx, evidence.Owner, evidence.IntentID, data, observations); err != nil {
 					eventErr = err
 				}
 			}
 		}()
-		result.AnthropicEvents = append(result.AnthropicEvents, json.RawMessage(data))
+		result.Events = append(result.Events, json.RawMessage(data))
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			return fmt.Errorf("invalid Anthropic stream event: %w", err)
 		}
@@ -437,13 +395,12 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 				return fail("overlapping content blocks")
 			}
 			block := &anthropicBlock{fields: event.ContentBlock}
-			blocks = append(blocks, block)
-			item, err := blockProjection(block.fields, rawString(message, "id")+"/"+strconv.Itoa(*event.Index))
-			if err != nil {
+			if err := validateAnthropicOutputBlock(block.fields); err != nil {
 				return fail(err.Error())
 			}
-			if item.Type != "" {
-				projections = append(projections, ResponsesEvent{Type: ResponsesEventOutputItemAdded, Item: &item})
+			blocks = append(blocks, block)
+			if observation := anthropicItemStarted(message, *event.Index, block.fields); observation != nil {
+				observations = append(observations, observation)
 			}
 		case "content_block_delta":
 			if event.Index == nil || *event.Index < 0 || *event.Index >= len(blocks) || blocks[*event.Index].stopped || deltaSeen {
@@ -453,21 +410,34 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 			kind := rawString(event.Delta, "type")
 			field := ""
 			delta := ""
-			projectionType := ResponsesEventType("")
 			switch kind {
 			case "text_delta":
 				field = "text"
-				delta = rawString(event.Delta, "text")
-				projectionType = "response.output_text.delta"
+				var ok bool
+				delta, ok = anthropicString(event.Delta, "text")
+				if !ok {
+					return fail("text_delta requires a string text field")
+				}
 			case "thinking_delta":
 				field = "thinking"
-				delta = rawString(event.Delta, "thinking")
-				projectionType = "response.reasoning_text.delta"
+				var ok bool
+				delta, ok = anthropicString(event.Delta, "thinking")
+				if !ok {
+					return fail("thinking_delta requires a string thinking field")
+				}
 			case "signature_delta":
 				field = "signature"
-				delta = rawString(event.Delta, "signature")
+				var ok bool
+				delta, ok = anthropicString(event.Delta, "signature")
+				if !ok {
+					return fail("signature_delta requires a string signature field")
+				}
 			case "input_json_delta":
-				block.input.WriteString(rawString(event.Delta, "partial_json"))
+				partial, ok := anthropicString(event.Delta, "partial_json")
+				if !ok {
+					return fail("input_json_delta requires a string partial_json field")
+				}
+				block.input.WriteString(partial)
 			default:
 				return fail("unsupported Anthropic delta " + kind)
 			}
@@ -482,8 +452,8 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 				}
 				block.fields[field] = encoded
 			}
-			if projectionType != "" {
-				projections = append(projections, ResponsesEvent{Type: projectionType, ItemID: rawString(message, "id") + "/" + strconv.Itoa(*event.Index), Delta: &delta})
+			if observation := anthropicBlockDelta(message, *event.Index, block.fields, kind, delta); observation != nil {
+				observations = append(observations, observation)
 			}
 		case "content_block_stop":
 			if event.Index == nil || *event.Index < 0 || *event.Index >= len(blocks) || blocks[*event.Index].stopped || deltaSeen {
@@ -499,13 +469,11 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 				if err := json.Unmarshal(block.fields["input"], &input); err != nil || input == nil {
 					return fail("tool input is not a complete JSON object")
 				}
-			}
-			item, err := blockProjection(block.fields, rawString(message, "id")+"/"+strconv.Itoa(*event.Index))
-			if err != nil {
-				return fail(err.Error())
-			}
-			if item.Type != "" {
-				projections = append(projections, ResponsesEvent{Type: ResponsesEventOutputItemDone, Item: &item})
+				if observation := anthropicToolArguments(message, *event.Index, block.fields); observation != nil {
+					observations = append(observations, observation)
+				}
+			} else if observation := anthropicBlockCompleted(message, *event.Index, block.fields); observation != nil {
+				observations = append(observations, observation)
 			}
 		case "message_delta":
 			if !started || deltaSeen {
@@ -576,20 +544,9 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 				return err
 			}
 			message["usage"] = encoded
-			result.AnthropicMessage, err = json.Marshal(message)
+			result.Message, err = json.Marshal(message)
 			if err != nil {
 				return err
-			}
-			result.Output = []ResponsesItem{{Type: ResponsesItemAnthropicMessage, ID: rawString(message, "id"), Role: "assistant", Content: result.AnthropicMessage}}
-			// Publish execution projections only after the complete provider message has been validated.
-			for _, block := range blocks {
-				if rawString(block.fields, "type") == "tool_use" {
-					item, err := blockProjection(block.fields, "")
-					if err != nil {
-						return err
-					}
-					result.Output = append(result.Output, item)
-				}
 			}
 			total := 0
 			for _, key := range []string{"input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"} {
@@ -598,7 +555,7 @@ func readAnthropicStream(ctx context.Context, reader io.Reader, evidence *Respon
 					total += value
 				}
 			}
-			result.AnthropicContextTokens = &total
+			result.ContextTokens = &total
 			return errProviderComplete
 		default:
 			return fail("unsupported Anthropic stream event " + event.Type)
@@ -640,17 +597,25 @@ func (r *Runtime) compactAnthropic(ctx context.Context, owner Owner, model strin
 	if options.Compaction == nil {
 		return &KnownFailureError{Evidence: map[string]any{"reason": "Anthropic compaction is not enabled for this route"}}
 	}
-	original := conversation.Context()
-	cut := anthropicSuffixStart(original, options.Compaction.KeepRecentTurns)
+	original, ok := conversation.Context().(*AnthropicContext)
+	if !ok {
+		return fmt.Errorf("Anthropic compaction received %T context", conversation.Context())
+	}
+	records, err := original.Records()
+	if err != nil {
+		return err
+	}
+	cut := anthropicSuffixStart(records, options.Compaction.KeepRecentTurns)
 	// A kept system control would merge with the summarized prefix, breaking preserved thinking.
 	// Keep its following turn by moving the boundary back to the previous completed turn.
-	for cut > 0 && cut < len(original) && (original[cut].Type == ResponsesItemEffort || original[cut].Type == ResponsesItemEffortRestore) {
-		cut = anthropicSuffixStart(original[:cut], 1)
+	for cut > 0 && cut < len(records) && isAnthropicEffortControl(records[cut]) {
+		cut = anthropicSuffixStart(records[:cut], 1)
 	}
 	if cut == 0 {
 		return &KnownFailureError{Evidence: map[string]any{"reason": "no settled prefix remains after keeping recent turns"}}
 	}
-	if err := checkPairs(original[:cut]); err != nil {
+	prefix := &AnthropicContext{Messages: records[:cut]}
+	if err := prefix.CheckSettled(); err != nil {
 		return err
 	}
 	var session *Session
@@ -672,7 +637,10 @@ func (r *Runtime) compactAnthropic(ctx context.Context, owner Owner, model strin
 	if options.PerMessageEffort {
 		effort = launch.GetSpec().GetReasoningEffort()
 	}
-	body, err := BuildAnthropicRequest(ResponsesRequestParams{Model: config.ProviderModel, Effort: effort, Attribution: metadata, Items: original[:cut], Instructions: conversation.Instructions, ExecutionState: state}, config, anthropicPreviousMessageID(conversation.Items))
+	body, err := BuildAnthropicRequest(AnthropicRequestParams{
+		Context: prefix, Model: config.ProviderModel, Effort: effort,
+		Instructions: conversation.Instructions,
+	}, config, anthropicPreviousMessageID(original))
 	if err != nil {
 		return err
 	}
@@ -700,15 +668,29 @@ func (r *Runtime) compactAnthropic(ctx context.Context, owner Owner, model strin
 		}
 		return err
 	}
-	replacement := append(response.Output, original[cut:]...)
-	if options.PerMessageEffort {
-		replacement = append(replacement, ResponsesItem{Type: ResponsesItemEffortRestore, Input: session.Effort})
+	replacement := &AnthropicContext{}
+	if err := json.Unmarshal(mustJSON(original), replacement); err != nil {
+		return err
 	}
-	originalMessages, err := anthropicInput(original, options.PerMessageEffort)
+	replacement.Messages = []json.RawMessage{cloneJSON(response.Message)}
+	replacement.Messages = append(replacement.Messages, records[cut:]...)
+	if options.PerMessageEffort {
+		effort := session.Effort
+		replacement.PendingEffort = &effort
+	}
+	originalForSize := &AnthropicContext{}
+	if err := json.Unmarshal(mustJSON(original), originalForSize); err != nil {
+		return err
+	}
+	replacementForSize := &AnthropicContext{}
+	if err := json.Unmarshal(mustJSON(replacement), replacementForSize); err != nil {
+		return err
+	}
+	originalMessages, err := originalForSize.WireMessages()
 	if err != nil {
 		return err
 	}
-	replacementMessages, err := anthropicInput(replacement, options.PerMessageEffort)
+	replacementMessages, err := replacementForSize.WireMessages()
 	if err != nil {
 		return err
 	}
@@ -722,56 +704,4 @@ func (r *Runtime) compactAnthropic(ctx context.Context, owner Owner, model strin
 	audit := response.Audit()
 	audit["replacement"] = replacement
 	return r.store.FinishCompaction(ctx, owner, intentID, audit, original, replacement)
-}
-
-// RecordAnthropicExecutionState appends changes instead of rewriting a leading prompt. The latest
-// snapshot remains in the exact prefix that produced any subsequent signed thinking block.
-func (s *Store) RecordAnthropicExecutionState(ctx context.Context, owner Owner, state *ExecutionState) (*Conversation, error) {
-	snapshot := ResponsesExecutionState{Cells: []ResponsesActiveCell{}, Processes: []ResponsesActiveProcess{}}
-	for _, cell := range state.Cells {
-		snapshot.Cells = append(snapshot.Cells, ResponsesActiveCell{CellID: cell.ID, Status: cell.Status})
-	}
-	for _, process := range state.Processes {
-		if process.ModelSessionID != nil {
-			snapshot.Processes = append(snapshot.Processes, ResponsesActiveProcess{SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode})
-		}
-	}
-	slices.SortFunc(snapshot.Cells, func(a, b ResponsesActiveCell) int { return strings.Compare(a.CellID, b.CellID) })
-	slices.SortFunc(snapshot.Processes, func(a, b ResponsesActiveProcess) int { return cmp.Compare(a.SessionID, b.SessionID) })
-	wire, err := json.Marshal(snapshot)
-	if err != nil {
-		return nil, err
-	}
-	var conversation *Conversation
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
-		var err error
-		conversation, err = lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		if conversation.Pending != nil {
-			return ErrPrecondition
-		}
-		var previous json.RawMessage
-		items := conversation.Context()
-		for i := len(items) - 1; i >= 0; i-- {
-			if items[i].Type == ResponsesItemExecutionState {
-				previous = items[i].Content
-				break
-			}
-		}
-		if previous == nil && len(snapshot.Cells) == 0 && len(snapshot.Processes) == 0 {
-			return nil
-		}
-		if bytes.Equal(previous, wire) {
-			return nil
-		}
-		item := ResponsesItem{Type: ResponsesItemExecutionState, Content: wire}
-		conversation.Items = append(conversation.Items, item)
-		if conversation.ContextItems != nil {
-			conversation.ContextItems = append(conversation.ContextItems, item)
-		}
-		return updateConversation(ctx, tx, conversation)
-	})
-	return conversation, err
 }

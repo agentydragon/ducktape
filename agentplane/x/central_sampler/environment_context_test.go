@@ -62,10 +62,18 @@ func TestEnvironmentContextUpdate(t *testing.T) {
 func messageText(t *testing.T, item ResponsesItem) string {
 	t.Helper()
 	var text string
-	if err := json.Unmarshal(item.Content, &text); err != nil {
+	if err := json.Unmarshal(item.Content, &text); err == nil {
+		return text
+	}
+	parts, err := item.TextParts()
+	if err != nil {
 		t.Fatalf("message content %s: %v", item.Content, err)
 	}
-	return text
+	texts := make([]string, len(parts))
+	for index, part := range parts {
+		texts[index] = part.Text
+	}
+	return strings.Join(texts, "")
 }
 
 func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
@@ -91,7 +99,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return conversation.Items
+		return responsesItems(t, conversation.Context())
 	}
 
 	items := submit("first", "first input")
@@ -110,19 +118,20 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &bash); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := store.RecordEnvironmentContext(t.Context(), owner)
+	conversation, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := messageText(t, conversation.Items[len(conversation.Items)-1]); !strings.Contains(got, "<shell>bash</shell>") {
+	items = responsesItems(t, conversation.Context())
+	if got := messageText(t, items[len(items)-1]); !strings.Contains(got, "<shell>bash</shell>") {
 		t.Fatalf("learned shell was not rendered before sampling: %q", got)
 	}
-	unchanged, err := store.RecordEnvironmentContext(t.Context(), owner)
+	unchanged, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(unchanged.Items) != len(conversation.Items) {
-		t.Fatalf("unchanged environment appended %d items", len(unchanged.Items)-len(conversation.Items))
+	if got := len(responsesItems(t, unchanged.Context())); got != len(items) {
+		t.Fatalf("unchanged environment appended %d items", got-len(items))
 	}
 
 	today = today.AddDate(0, 0, 1)
@@ -146,7 +155,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &bash); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := store.RecordEnvironmentContext(t.Context(), owner)
+	conversation, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +163,11 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "fixture-opaque"}}
+	originalItems := responsesItems(t, conversation.Context())
+	replacement := &ResponsesContext{Items: []ResponsesItem{
+		originalItems[len(originalItems)-1],
+		{Type: ResponsesItemCompaction, EncryptedContent: "fixture-opaque"},
+	}}
 	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +175,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := compacted.Context()
+	items := responsesItems(t, compacted.Context())
 	if len(items) != 2 || items[1].EncryptedContent != "fixture-opaque" {
 		t.Fatalf("compacted context=%+v", items)
 	}
