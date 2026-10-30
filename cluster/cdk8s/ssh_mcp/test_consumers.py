@@ -20,10 +20,6 @@ from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
 
-# pytest_plugins loads cluster.cdk8s.agentplane.conftest by name; gazelle cannot see
-# the dependency.
-pytest_plugins = ("cluster.cdk8s.agentplane.conftest",)
-
 
 def _locate(relative: str) -> Path:
     return get_required_path(f"_main/{relative}")

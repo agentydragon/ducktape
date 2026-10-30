@@ -69,15 +69,21 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         fail("Use requires_docker parameter instead of 'requires_docker' tag in {}".format(name))
 
     base_env_inherit = list(env_inherit or [])
+    base_args = list(args or [])
+    base_deps = list(deps or [])
 
     # importlib: pytest imports test modules without inserting their directories into sys.path.
     # Prepend mode would put e.g. cluster/cdk8s on sys.path for a conftest there, letting
     # cluster/cdk8s/agentplane shadow the top-level agentplane package.
-    base_args = ["--import-mode=importlib"] + list(args or [])
-    base_deps = list(deps or [])
+    # consider_namespace_packages: the repo has no __init__.py files, so without it pytest
+    # registers empty stand-in parent modules (`haku`, `haku.console`) that hide the real
+    # namespace packages spanning the main repo and external repos like @ducktape_haku.
+    # Passed via the environment, not `args`: pydantic-settings classes with `cli_parse_args`
+    # read sys.argv.
+    env = {"PYTEST_ADDOPTS": "--import-mode=importlib -o consider_namespace_packages=true"} | (env or {})
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
-        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
+        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | env
     if shard_count != None:
         base_args = base_args + ["-p", "util.testing.sharding"]
         base_deps = base_deps + ["//util/testing:sharding"]

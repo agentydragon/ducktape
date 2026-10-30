@@ -5,6 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = [
     "//agentplane/system_tests/k3s:__pkg__",
     "//cluster/cdk8s:__pkg__",
+    "//cluster/cdk8s/agentplane/testing:__pkg__",
 ])
 
 py_library(
@@ -767,7 +768,10 @@ py_library(
 py_library(
     name = "staging",
     srcs = ["staging.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane/testing:__pkg__",
+    ],
     deps = [
         ":actions",
         ":actions_staging_policies",
@@ -827,14 +831,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":runner_gateway_workload",
-        ":staging",
-        ":staging_grants",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-    ],
+    deps = ["//cluster/cdk8s/agentplane/testing:fixtures"],
 )
 
 # The conftest's in-memory synth needs jsii's Node runtime.

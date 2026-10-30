@@ -1,0 +1,17 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    deps = [
+        "//cluster/cdk8s/agentplane:runner_gateway_workload",
+        "//cluster/cdk8s/agentplane:staging",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
