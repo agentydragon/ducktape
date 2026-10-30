@@ -171,10 +171,6 @@ fn collect_plain_data_bindings_impl(
     // into code we can't analyze:
     //
     // * member writes / updates / deletes on `X.k` / `X[k]`;
-    // * calls to the hostile builtins in `PLAIN_DATA_HOSTILE_BUILTINS`
-    //   (`Object.{defineProperty,defineProperties,setPrototypeOf,assign}`,
-    //   `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}`)
-    //   with `X` as the first argument;
     // * references that escape into unknown code. Tracked direct-literal
     //   identities may pass through local aliases and returns; the scanner
     //   checks those aliases for later mutation. Other shapes remain
@@ -614,8 +610,8 @@ pub(crate) fn fluent_chain_root(expr: &Expr) -> Option<&str> {
 /// one `decl`.
 ///
 /// All three keyword forms flow through the same scanner; the
-/// scanner's check is uniform ("no member writes or hostile builtin
-/// calls, all ident writes have plain-literal RHS"), so the
+/// scanner's check is uniform ("no member writes or escapes, all
+/// ident writes have plain-literal RHS"), so the
 /// distinction is only at the candidate-collection stage:
 ///
 /// * `const` — binding cell is immutable at the language level; only
@@ -724,9 +720,9 @@ pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 }
 
 /// Visitor that disqualifies plain-data candidates seen as the target
-/// of a member write/update/delete, as the first argument to one of a
-/// small set of accessor- / prototype-installing built-ins, or in any
-/// ESCAPING position.
+/// of a member write/update/delete or in any ESCAPING position,
+/// including an argument of an accessor- or prototype-installing
+/// built-in.
 ///
 /// **Escape analysis.** The write scan above is name-based: it only
 /// catches mutations spelled through the candidate's own identifier.
@@ -741,10 +737,9 @@ pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 /// * spread source (`{...X}`, `[...X]`, `f(...X)`) — copies values /
 ///   iterates; the receiver object's identity is not captured;
 /// * `typeof X` / `!X` / `void X` operands — transient inspection;
-/// * single argument of `Object.{keys,values,entries,freeze,
-///   fromEntries}` with the global `Object` unshadowed — read-only /
-///   descriptor-tightening builtins that install no accessors (the
-///   same set `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admits);
+/// * single argument of an intrinsic call whose summary row only
+///   inspects its operand (`Object.{keys,values,entries,freeze,
+///   fromEntries}`), with the receiver unshadowed;
 /// * the vetted `X || (X = {})` argument of a recognized TS-enum
 ///   IIFE init (`is_ts_enum_iife_call_for_binding`);
 /// * a direct return of a literal identity tracked by the shared
@@ -1218,41 +1213,24 @@ impl Visit for PlainDataWriteScanner<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        // Hostile accessor-/prototype-installing builtins with the
-        // candidate as first arg. Redundant with the escape default
-        // (a call arg is an escape) but kept as an explicit,
-        // self-documenting check.
+        // A one-argument intrinsic call whose row only inspects its operand
+        // (`Object.{keys,values,entries,freeze,fromEntries}(X)`), with the
+        // receiver unshadowed: it installs no accessor and captures no
+        // reference. Skip the argument so the escape default doesn't fire.
+        // Every other call argument, including the first argument of an
+        // accessor- or prototype-installing builtin, is an escape.
         if let Callee::Expr(callee) = &node.callee
             && let Expr::Member(member) = callee.as_ref()
-            && let (Expr::Ident(obj), MemberProp::Ident(prop)) = (member.obj.as_ref(), &member.prop)
-            && PLAIN_DATA_HOSTILE_BUILTINS
-                .iter()
-                .any(|(r, p)| *r == obj.sym.as_ref() && *p == prop.sym.as_ref())
-            && let Some(arg) = node.args.first()
-            && arg.spread.is_none()
-            && let Expr::Ident(target) = arg.expr.as_ref()
-        {
-            self.disqualify_if_candidate(target.sym.as_ref());
-        }
-        // `Object.{keys,values,entries,freeze,fromEntries}(X)` with
-        // the global `Object` unshadowed — read-only /
-        // descriptor-tightening builtins that install no accessors
-        // (the same set `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admits).
-        // Skip the argument so the escape default doesn't fire.
-        if let Callee::Expr(callee) = &node.callee
-            && let Expr::Member(member) = callee.as_ref()
-            && let (Expr::Ident(obj), MemberProp::Ident(prop)) = (member.obj.as_ref(), &member.prop)
-            && obj.sym.as_ref() == "Object"
-            && !self.shadowed.contains("Object")
-            && PURE_OBJECT_CALLS_ON_PLAIN_DATA
-                .iter()
-                .any(|(_, p)| *p == prop.sym.as_ref())
+            && let Some((receiver, property)) = static_member(member)
+            && !self.shadowed.contains(receiver)
+            && builtins::lookup(receiver, Some(property), Invocation::Call)
+                .is_some_and(only_inspects_operand)
             && node.args.len() == 1
             && node.args[0].spread.is_none()
             && matches!(node.args[0].expr.unwrap_parens(), Expr::Ident(_))
         {
-            // Receiver `Object` and the static prop carry no
-            // candidate refs; nothing else to visit.
+            // Receiver and static prop carry no candidate refs; nothing
+            // else to visit.
             return;
         }
         // The vetted `X || (X = {})` argument of a recognized

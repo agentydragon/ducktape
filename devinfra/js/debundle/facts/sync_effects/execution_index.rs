@@ -1108,7 +1108,9 @@ fn native_call_identity_key(
         },
         _ => return None,
     };
-    let row = builtins::lookup(receiver, member, invocation)?;
+    // A callee outside the census has no identity premise to prove.
+    let row =
+        builtins::lookup(receiver, member, invocation).filter(|row| row.family().is_some())?;
     Some((
         row,
         NativeCallee {
@@ -2067,10 +2069,9 @@ pub(super) fn object_own_data_read_property(
     if object.0.as_ref() != "Object" || is_declared(object) {
         return None;
     }
-    crate::purity::PURE_STATIC_FUNCTION_REFS
-        .iter()
-        .find(|&&(root, member)| root == "Object" && member == property)
-        .map(|&(_, member)| member)
+    builtins::data_property("Object", property)
+        .filter(|data| data.value == builtins::PropertyValue::Function)
+        .map(|data| data.name)
 }
 
 fn receiver_uses_intrinsic_alias(
@@ -6884,7 +6885,7 @@ impl ExecutionIndex {
                 let Some((row, _)) = native_call_identity_key(CallKind::Call, callee) else {
                     return Some("does not resolve through the exact native Symbol call row");
                 };
-                (row.family() == NativeIntrinsic::Symbol)
+                (row.family() == Some(NativeIntrinsic::Symbol))
                     .then_some(())
                     .is_none()
                     .then_some("selected an unsupported native Symbol call row")

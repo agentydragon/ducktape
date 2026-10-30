@@ -1,8 +1,8 @@
 //! End-to-end pinning for the `Object.{entries, keys, values,
-//! freeze, fromEntries}` plain-data admission rule
-//! (`PURE_OBJECT_CALLS_ON_PLAIN_DATA`).
+//! freeze, fromEntries}` plain-data admission rule (their builtin
+//! summary rows).
 //!
-//! These built-ins are excluded from `PURE_STATIC_CALLS` because
+//! These built-ins are not pure on any argument because
 //! on a general argument they call `[[Get]]` on own keys (firing
 //! user accessors) or mutate descriptors. They become Pure only
 //! when the argument is structurally a fresh plain-data
@@ -25,7 +25,7 @@ use debundle_e2e_support::*;
 ///   4. `console.log(c);`
 ///
 /// Without the rule: `Object.freeze({…})` classifies Unknown
-/// (the call form is excluded from `PURE_STATIC_CALLS`), `b` is
+/// (on a general argument), `b` is
 /// SE → `b → a` s-edge → cycle after peeling `b` to b_module.
 ///
 /// With the rule: the call is Pure on a fresh plain-data literal,

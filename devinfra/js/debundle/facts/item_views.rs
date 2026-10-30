@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::builtins;
 
 pub enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
@@ -65,14 +66,14 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
     out
 }
 
-/// Walk `body` and collect the subset of `SHADOW_TRACKED_GLOBALS`
-/// (the union of every global name any purity-whitelist table keys
-/// on — receivers like `Math`/`Object`, global callables like
-/// `Boolean`/`Symbol`, pure-new builtins like `Map`/`Set`) that are
+/// Walk `body` and collect the subset of `builtins::GLOBALS` (every
+/// global a builtin row or data property names — receivers like
+/// `Math`/`Object`, callables like `Boolean`/`Symbol`, constructors
+/// like `Map`/`Set`) that are
 /// declared at the chunk's top-level scope (`var/let/const`,
 /// `function`, `class`, exported decls) or bound by an import
 /// specifier (default / namespace / named). The classifier consults
-/// this set to skip the whitelist for any name the chunk shadows —
+/// this set to skip the builtin table for any name the chunk shadows —
 /// `const Math = …` and `import { Math } from "./userland"` both
 /// make `Math.PI` an Unknown read, and `const Map = class { … }`
 /// makes `new Map()` an Unknown construction, not the built-in.
@@ -80,7 +81,7 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
 pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
-        if let Some(global) = SHADOW_TRACKED_GLOBALS.get(name) {
+        if let Some(global) = builtins::GLOBALS.get(name) {
             into.insert(*global);
         }
     };

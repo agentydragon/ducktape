@@ -21,4 +21,27 @@ pub enum CoerceOp {
     DefineOwnProperty,
     /// `[[PreventExtensions]]`.
     PreventExtensions,
+    /// `ToObject`: a TypeError for `undefined` and `null`.
+    ToObject,
+    /// `GetIterator` and `IteratorStep` over the operand, then the row's
+    /// operation on each produced value.
+    Iterate,
+    /// `[[Get]]` of `"0"` and `"1"` on each iterated value: a TypeError for a
+    /// primitive value.
+    EntryGet,
+    /// `ToPropertyKey` of each iterated entry's `"0"` value.
+    EntryKeyToPropertyKey,
+}
+
+impl CoerceOp {
+    /// Whether a primitive operand makes the step run no user code and
+    /// complete normally, apart from `ToString` of a Symbol and `ToNumber` of
+    /// a BigInt. `ToObject` rejects `undefined` and `null`; iteration reads
+    /// the primitive's prototype.
+    pub fn silent_on_primitive(self) -> bool {
+        !matches!(
+            self,
+            Self::ToObject | Self::Iterate | Self::EntryGet | Self::EntryKeyToPropertyKey
+        )
+    }
 }

@@ -1909,7 +1909,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   the union iff every chunk satisfies A1–A6 and the union graph
   is acyclic.
 - **A8. Whitelisted globals are not shadowed at chunk top level.**
-  `S`-edge construction consults a small purity whitelist —
+  `S`-edge construction consults the builtin summary table —
   `Math.PI`, `Number.isNaN(...)`, `Boolean(...)`, etc. — that
   classifies certain built-in property reads and calls as `Pure`.
   Soundness depends on those names referring to the global
@@ -1917,21 +1917,22 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   level (`const Math = userland; …; Math.PI`), the call dispatches
   through the user-bound value, which can fire arbitrary code.
   The validator's classifier consults a `compute_shadowed_globals`
-  pass and falls the whitelist back to `Unknown` for any
+  pass and falls the table back to `Unknown` for any
   shadowed name, so a chunk that does shadow remains sound (just
   conservatively over-restricted). The "no shadowing" form
-  documented here is the _unrestricted-whitelist_ version: chunks
+  documented here is the _unrestricted-table_ version: chunks
   that satisfy A8 reach the precise S-edge classification; chunks
   that violate it still validate correctly, with strictly more
   S edges than necessary.
 
-  The whitelist itself is admission-restricted: every entry must
-  fire no user-defined code on any argument value (no `ToNumber` /
-  `ToString` / `ToPrimitive` coercion paths, no iterator protocol,
-  no proxy traps, no own-property `[[Get]]`, no mutation). See
-  <purity_soundness.md> "Admission rule: PURE_STATIC_CALLS" for the contract that
-  governs adding new entries; soundness is preserved iff the
-  contract is preserved.
+  The builtin summary table is admission-restricted: every row
+  lists each step that can fire user-defined code on an operand
+  (`ToNumber` / `ToString` / `ToPrimitive` coercion paths, the
+  iterator protocol, proxy traps, own-property `[[Get]]`, mutation),
+  and purity admits a call only when each listed step is silent for
+  its operands. See <purity_soundness.md> "Admission rule: builtin
+  summary rows" for the contract that governs adding rows; soundness
+  is preserved iff the contract is preserved.
 
 - **A9. Spec-declared purity annotations are author-trusted.** The
   spec format admits optional per-member `purity:` values that

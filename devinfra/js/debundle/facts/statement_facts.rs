@@ -404,8 +404,8 @@ pub struct ChunkFactAnalysis {
     pub redundant_purity_hints: Vec<RedundantPurityHint>,
     /// Author-declared `pure_members: [<prop>, …]` entries the
     /// analyzer would classify pure without the hint — currently
-    /// limited to `(WHITELIST_RECEIVERS, PURE_STATIC_CALLS-prop)`
-    /// pairs (e.g. `pure_members: [isArray]` on a binding named
+    /// limited to intrinsic members whose builtin row admits any
+    /// operands (e.g. `pure_members: [isArray]` on a binding named
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,

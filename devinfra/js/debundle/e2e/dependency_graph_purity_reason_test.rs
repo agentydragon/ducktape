@@ -38,7 +38,7 @@ export { a };
 fn unknown_call_init_reports_unknown_call_reason() {
     // `Number(x)` is a global-callable that may coerce via
     // user `[Symbol.toPrimitive]` / `valueOf` / `toString` —
-    // not on the PURE_GLOBAL_CALLS whitelist. The classifier
+    // and has no builtin summary row. The classifier
     // returns NotPure with rule = unknown_call.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const x = "1";

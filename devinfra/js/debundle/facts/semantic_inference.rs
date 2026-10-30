@@ -240,7 +240,7 @@ impl NativePremises {
                 binding: binding.clone(),
                 global_this_qualified: false,
             },
-            row.family(),
+            row.family()?,
             row.requires,
             site,
             context,
