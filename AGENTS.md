@@ -8,6 +8,7 @@ Linux only.
 - **Claude Code Web:** certificate errors, `bazel: command not found`, or unresolvable `remote.buildbuddy.io` mean session setup failed — stop and recover via <devinfra/claude/claude_hook/docs/session_start_recovery.md>. Never `--noverify`/`SSL_VERIFY=false`; tell the user if recovery fails.
 - **Agentplane MCP:** use a connected Action when one fits; discover tools and current Action policy rather than assuming access. RBAC: <cluster/docs/agent_rbac.md>; staging: <cluster/docs/agentplane_mcp_staging.md>. `Bash(kubectl …)` uses your own kubeconfig, whose privileges may differ.
 - **Sandbox:** run `bb`/`bazel`/`bazelisk`/`bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl` and other network/system commands with `dangerouslyDisableSandbox: true`. Bazel always, without trying in-sandbox first: with any `WebFetch(domain:…)` rule present, `--unshare-net` breaks its gRPC DNS. Details: <docs/claude_code_sandbox.md>.
+- **Scratch:** pick one name per task (a short description or a random slug) and keep every temp file, log, clone and output for that task under `${TMPDIR:-/tmp}/<slug>/`. Never write loose files or extra top-level dirs into `/tmp`. `/tmp` gets cleaned, so commit and push anything worth keeping.
 
 ## Bazel Commands
 
