@@ -31,6 +31,7 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
+- [Electric high availability](electric_ha.md) — why the current replication stream and Pod-local shape store cannot become two useful replicas by changing Deployment settings, and the separate design and acceptance work
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
