@@ -21,6 +21,31 @@ func fixtureSettings() Settings {
 	}
 }
 
+func TestShutdownDrainTimeoutIsBoundedAndConfigurable(t *testing.T) {
+	settings := fixtureSettings()
+	if got := settings.ShutdownDrainTimeout(); got != 40*time.Second {
+		t.Fatalf("default shutdown drain timeout=%s, want 40s", got)
+	}
+	configured := 12
+	settings.ShutdownDrainSeconds = &configured
+	if got := settings.ShutdownDrainTimeout(); got != 12*time.Second {
+		t.Fatalf("configured shutdown drain timeout=%s, want 12s", got)
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []int{0, -1, 41} {
+		settings.ShutdownDrainSeconds = &invalid
+		if err := settings.Validate(); err == nil {
+			t.Fatalf("accepted invalid shutdown_drain_seconds=%d", invalid)
+		}
+	}
+	settings.ShutdownDrainSeconds = nil
+	if got := settings.ShutdownBudgetTimeout(); got != 55*time.Second {
+		t.Fatalf("default shutdown budget=%s, want 55s", got)
+	}
+}
+
 func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *testing.T) {
 	settings := fixtureSettings()
 	if got := settings.ExecutorInitializeTimeout(); got != 30*time.Second {

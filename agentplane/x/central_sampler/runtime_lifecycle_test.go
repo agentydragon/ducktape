@@ -136,3 +136,48 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	seconds := 2
+	runtime.settings.ShutdownDrainSeconds = &seconds
+	cancel, done := startRuntimeForTest(t, runtime)
+	runtime.mu.Lock()
+	runtime.drivers.Add(1)
+	effectCtx := runtime.runCtx
+	runtime.mu.Unlock()
+	cancel()
+	select {
+	case <-runtime.draining:
+	case <-time.After(time.Second):
+		t.Fatal("runtime did not enter drain")
+	}
+	if err := effectCtx.Err(); err != nil {
+		t.Fatalf("in-flight effect was canceled before drain deadline: %v", err)
+	}
+	assertRuntimeWaitsForGate(t, done, "the in-flight effect to settle")
+	runtime.drivers.Done()
+	waitRuntimeDone(t, done)
+}
+
+func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	seconds := 1
+	runtime.settings.ShutdownDrainSeconds = &seconds
+	cancel, done := startRuntimeForTest(t, runtime)
+	runtime.mu.Lock()
+	runtime.drivers.Add(1)
+	effectCtx := runtime.runCtx
+	runtime.mu.Unlock()
+	go func() {
+		<-effectCtx.Done()
+		runtime.drivers.Done()
+	}()
+	cancel()
+	select {
+	case <-effectCtx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("drain deadline did not cancel unsettled effect")
+	}
+	waitRuntimeDone(t, done)
+}

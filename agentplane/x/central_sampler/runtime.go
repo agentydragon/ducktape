@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -24,21 +25,23 @@ type Runtime struct {
 	claimLease   func(context.Context, string, time.Duration) (Owner, error)
 	releaseLease func(context.Context, Owner) error
 
-	mu       sync.Mutex
-	runCtx   context.Context
-	cancel   context.CancelFunc
-	started  bool
-	stopping bool
-	tasks    map[string]struct{}
-	changed  chan struct{}
-	drivers  sync.WaitGroup
-	codeHost *CodeModeHost
+	mu               sync.Mutex
+	runCtx           context.Context
+	cancel           context.CancelFunc
+	started          bool
+	stopping         bool
+	draining         chan struct{}
+	shutdownDeadline time.Time
+	tasks            map[string]struct{}
+	changed          chan struct{}
+	drivers          sync.WaitGroup
+	codeHost         *CodeModeHost
 }
 
 func NewRuntime(store *Store, settings Settings) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release,
-		tasks: map[string]struct{}{}, changed: make(chan struct{}, 1),
+		tasks: map[string]struct{}{}, changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
 }
 
@@ -58,27 +61,54 @@ func (r *Runtime) Run(ctx context.Context) error {
 		return errors.New("central sampler runtime already started")
 	}
 	r.started = true
-	r.runCtx, r.cancel = context.WithCancel(ctx)
+	// A service shutdown stops new work immediately, but an already dispatched effect must
+	// retain its context long enough to reach a durable result or the drain deadline.
+	r.runCtx, r.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
 	codeHost := r.codeHost
 	r.mu.Unlock()
 
 	recoveryDone := make(chan struct{})
+	recoveryCtx, stopRecovery := context.WithCancel(r.runCtx)
 	go func() {
 		defer close(recoveryDone)
-		r.recover(r.runCtx)
+		r.recover(recoveryCtx)
 	}()
-	<-r.runCtx.Done()
+	<-ctx.Done()
+	shutdownAt := time.Now()
+	// The chart grants 60 seconds and the default budget reserves five seconds
+	// for the process to return after all drivers and the shared host stop.
+	cleanupDeadline := shutdownAt.Add(r.settings.ShutdownBudgetTimeout())
 	r.mu.Lock()
 	r.stopping = true
-	codeHost.StopAccepting()
-	r.cancel()
+	r.shutdownDeadline = cleanupDeadline
+	close(r.draining)
+	activeDrivers := len(r.tasks)
 	r.mu.Unlock()
+	codeHost.StopAccepting()
+	slog.Info("central sampler drain started", "deadline", r.settings.ShutdownDrainTimeout(), "active_drivers", activeDrivers, "pod_name", os.Getenv("HOSTNAME"))
+	stopRecovery()
 	<-recoveryDone
+	// A forced stop retains any unresolved intent and its raw evidence. Drivers join
+	// before ownership is released, so a successor cannot race a live old writer.
+	drained := make(chan struct{})
+	go func() {
+		r.drivers.Wait()
+		close(drained)
+	}()
+	deadline := time.NewTimer(time.Until(shutdownAt.Add(r.settings.ShutdownDrainTimeout())))
+	select {
+	case <-drained:
+		deadline.Stop()
+	case <-deadline.C:
+		slog.Warn("central sampler drain deadline expired; canceling active effects")
+		r.cancel()
+		<-drained
+	}
+	r.cancel()
 	// Drivers deliberately use independent bounded contexts for Claim and Release. Waiting here
 	// closes the committed-but-not-returned Claim and blocked Release shutdown races.
-	r.drivers.Wait()
-	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	closeCtx, closeCancel := context.WithDeadline(context.Background(), cleanupDeadline)
 	if err := codeHost.Close(closeCtx); err != nil {
 		slog.Error("central sampler code-mode host close failed", "error", err)
 	}
@@ -152,6 +182,9 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 		}
 		return
 	}
+	if r.isStopping() {
+		return
+	}
 	claimCtx, claimCancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	owner, err := r.claimLease(claimCtx, session.ConversationID, time.Duration(r.settings.LeaseSeconds)*time.Second)
 	claimCancel()
@@ -162,6 +195,8 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string) {
 		}
 		return
 	}
+	slog.Info("central sampler lease claimed", "session_id", sessionID, "conversation_id", owner.ConversationID,
+		"generation", owner.Generation, "owner_token", owner.Token, "pod_name", os.Getenv("HOSTNAME"))
 	if runtimeCtx.Err() != nil || r.isStopping() {
 		r.release(owner)
 		return
@@ -218,7 +253,18 @@ func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
 }
 
 func (r *Runtime) release(owner Owner) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
+	timeout := time.Duration(r.settings.RPCTimeoutSeconds) * time.Second
+	r.mu.Lock()
+	shutdownDeadline := r.shutdownDeadline
+	r.mu.Unlock()
+	if !shutdownDeadline.IsZero() {
+		timeout = min(timeout, 5*time.Second, time.Until(shutdownDeadline))
+		if timeout <= 0 {
+			slog.Warn("central sampler cleanup budget expired before lease release", "conversation_id", owner.ConversationID)
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := r.releaseLease(ctx, owner); err != nil {
 		var lost *LostOwnershipError
@@ -234,10 +280,25 @@ func (r *Runtime) isStopping() bool {
 	return r.stopping
 }
 
+func (r *Runtime) isDraining() bool {
+	select {
+	case <-r.draining:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*string, error) {
+	if r.isDraining() {
+		return nil, nil
+	}
 	setupOK, err := r.setup(ctx, sessionID, owner)
 	if err != nil || !setupOK {
 		return nil, err
+	}
+	if r.isDraining() {
+		return nil, nil
 	}
 	var live *liveHost
 	defer func() {
@@ -254,6 +315,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 	for {
 		if ctx.Err() != nil {
 			return activeCommand, ctx.Err()
+		}
+		if r.isDraining() {
+			return activeCommand, nil
 		}
 		command, err := r.store.NextCommand(ctx, owner, sessionID)
 		if errors.Is(err, protocol.ErrPrecondition) {
@@ -326,6 +390,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 		if err := proto.Unmarshal(command.Payload, payload); err != nil {
 			return activeCommand, err
 		}
+		if r.isDraining() {
+			return activeCommand, nil
+		}
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 		var result TurnResult
 		if payload.GetCompact() != nil {
@@ -333,6 +400,10 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			result = TurnCompact
 		} else {
 			for {
+				if r.isDraining() {
+					cancel()
+					return activeCommand, nil
+				}
 				conversation, readErr := r.store.Read(turnCtx, owner)
 				if readErr != nil {
 					err = readErr

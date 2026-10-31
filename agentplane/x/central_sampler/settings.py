@@ -212,12 +212,20 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed for the executor OpenSession initialization handshake.",
     )
+    shutdown_drain_seconds: int = Field(
+        default=40, gt=0, description="Wait for active effects to settle before canceling them during shutdown."
+    )
+    shutdown_budget_seconds: int = Field(
+        default=55, gt=0, description="Maximum shutdown cleanup budget; must fit inside the Pod termination grace."
+    )
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
     kubeconfig: Path | None = None
 
     @model_validator(mode="after")
     def validate_model_connections(self) -> Self:
+        if self.shutdown_budget_seconds - self.shutdown_drain_seconds < 15:
+            raise ValueError("shutdown budget must leave at least 15 seconds after the drain deadline")
         if any(not name for name in self.connections):
             raise ValueError("connection name must not be empty")
         for model, config in self.models.items():
