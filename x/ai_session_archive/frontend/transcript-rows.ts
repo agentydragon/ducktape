@@ -14,7 +14,14 @@ export type ActivityStep =
       missingCall: boolean;
     }
   | { key: string; kind: "reasoning"; records: EventRecord[]; text: string }
-  | { key: string; kind: "subagent"; records: EventRecord[]; author: string; recipient: string | null; text: string }
+  | {
+      key: string;
+      kind: "subagent";
+      records: EventRecord[];
+      author: string;
+      recipient: string | null;
+      content: AgentMessageContent;
+    }
   | { key: string; kind: "attachment"; records: EventRecord[]; title: string; preview: string }
   | { key: string; kind: "record"; records: EventRecord[] };
 
@@ -24,6 +31,7 @@ export type TranscriptRow =
   | { key: string; kind: "activity"; records: EventRecord[]; steps: ActivityStep[] };
 
 type ObjectValue = Record<string, unknown>;
+type AgentMessageContent = { kind: "text"; text: string } | { kind: "encrypted"; text: string | null };
 type ToolNamespace = "claude" | "codex";
 type ToolEvent = {
   key: string;
@@ -420,17 +428,21 @@ function activitySteps(
       continue;
     }
     if (payload?.type === "agent_message") {
+      const content = agentMessageContent(payload);
       candidates.push({
         ordinal: record.ordinal,
         blockIndex: 0,
-        step: {
-          key: String(record.ordinal),
-          kind: "subagent",
-          records: [record],
-          author: nonemptyString(payload.author) ?? "Agent",
-          recipient: nonemptyString(payload.recipient),
-          text: agentMessageText(payload) ?? "Message content unavailable",
-        },
+        step:
+          content === null
+            ? { key: String(record.ordinal), kind: "record", records: [record] }
+            : {
+                key: String(record.ordinal),
+                kind: "subagent",
+                records: [record],
+                author: nonemptyString(payload.author) ?? "Agent",
+                recipient: nonemptyString(payload.recipient),
+                content,
+              },
       });
       continue;
     }
@@ -541,8 +553,25 @@ function reasoningText(payload: ObjectValue): string | null {
   return plaintext(payload.summary);
 }
 
-function agentMessageText(payload: ObjectValue): string | null {
-  return agentPlaintext(payload.message) ?? agentPlaintext(payload.content) ?? agentPlaintext(payload.text);
+function agentMessageContent(payload: ObjectValue): AgentMessageContent | null {
+  if (!Array.isArray(payload.content)) return null;
+  const chunks: string[] = [];
+  let encrypted = false;
+  // Observed Codex rollout shape: input_text blocks, optionally followed by encrypted_content.
+  for (const value of payload.content) {
+    const block = object(value);
+    if (block?.type === "input_text" && typeof block.text === "string") {
+      const body = block.text.replace(AGENT_ROUTING_PREAMBLE, "");
+      if (body.trim().length > 0) chunks.push(body);
+    } else if (block?.type === "encrypted_content" && typeof block.encrypted_content === "string") {
+      encrypted = true;
+    } else {
+      return null;
+    }
+  }
+  const text = chunks.length > 0 ? chunks.join("\n") : null;
+  if (encrypted) return { kind: "encrypted", text };
+  return text === null ? null : { kind: "text", text };
 }
 
 const ENCRYPTED_TEXT_TYPES = new Set([
@@ -570,24 +599,6 @@ function plaintext(value: unknown): string | null {
   if (item === null || ENCRYPTED_TEXT_TYPES.has(String(item.type))) return null;
   if (typeof item.text === "string" && item.text.trim().length > 0) return item.text;
   return plaintext(item.content) ?? plaintext(item.message);
-}
-
-function agentPlaintext(value: unknown): string | null {
-  if (typeof value === "string") {
-    const body = value.replace(AGENT_ROUTING_PREAMBLE, "");
-    return body.trim().length === 0 ? null : body;
-  }
-  if (Array.isArray(value)) {
-    const chunks = value.flatMap((item) => {
-      const text = agentPlaintext(item);
-      return text === null ? [] : [text];
-    });
-    return chunks.length === 0 ? null : chunks.join("\n");
-  }
-  const item = object(value);
-  if (item === null || ENCRYPTED_TEXT_TYPES.has(String(item.type))) return null;
-  if (typeof item.text === "string") return agentPlaintext(item.text);
-  return agentPlaintext(item.content) ?? agentPlaintext(item.message);
 }
 
 function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {

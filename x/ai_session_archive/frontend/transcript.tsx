@@ -192,7 +192,7 @@ function ActivityStepView({
       : step.kind === "reasoning"
         ? reasoning
         : step.kind === "subagent"
-          ? step.text
+          ? (step.content.text ?? "Encrypted message")
           : step.kind === "attachment"
             ? step.preview
             : "";
@@ -276,7 +276,12 @@ function ActivityStepView({
                   To {step.recipient}
                 </Text>
               )}
-              <Markdown source={step.text} />
+              {step.content.text !== null && <Markdown source={step.content.text} />}
+              {step.content.kind === "encrypted" && (
+                <Text size="xs" c="dimmed">
+                  Message body is encrypted in the archive.
+                </Text>
+              )}
             </DisclosureBody>
           ) : (
             <RecordContent record={records[0]} />

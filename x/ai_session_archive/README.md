@@ -95,7 +95,10 @@ without a loaded result does not claim to be running or successful. Older prepen
 can supply a missing call without resetting the result's expansion. Consecutive
 readable reasoning summaries form a nested step. Encrypted-only reasoning adds no
 placeholder step; its original record remains under Session details. Subagent
-messages show their sender and readable content, or an unavailable-content label.
+messages read Codex `content` arrays of `input_text` and `encrypted_content` blocks.
+They show the sender, any readable body after the routing header, and an explicit
+label when the source contains encrypted content. Unrecognized message shapes
+remain generic record disclosures instead of claiming the content is unavailable.
 Compaction is a compact marker with source inspection.
 
 Claude tool-use blocks pair with tool-result blocks by ID, including multiple tools
