@@ -718,7 +718,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                     blocked = await stub.GetSession(
                         sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                     )
-                    if blocked.blocked and await store.idle_generation(request.session_id) is not None:
+                    if blocked.blocked and await store.released_generation(request.session_id) is not None:
                         break
                     await asyncio.to_thread(time.sleep, 0.05)
             assert blocked.blocked
@@ -738,7 +738,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
             assert recovered.attached.last_cursor > blocked.attached.last_cursor
             assert recovered.expected_incarnation_uid == "reviewed-replacement-incarnation"
             assert recovered.executor == blocked.executor
-            assert await store.idle_generation(request.session_id) is not None
+            assert await store.released_generation(request.session_id) is not None
             abandoned = [
                 intent
                 for intent in await store.intents()

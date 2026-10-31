@@ -68,11 +68,16 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 		return err
 	}
 	store := centralsampler.New(db)
-	hub, err := wakeups.Listen(ctx, databaseURL, centralsampler.OutboxChannel)
+	hub, err := wakeups.Listen(ctx, databaseURL, centralsampler.OutboxChannel, centralsampler.WorkChannel)
 	if err != nil {
 		return err
 	}
 	defer hub.Close()
+	work, unsubscribe, err := hub.Subscribe(centralsampler.WorkChannel)
+	if err != nil {
+		return err
+	}
+	defer unsubscribe()
 	runtime := centralsampler.NewRuntime(store, settings)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(64*1024*1024), grpc.MaxSendMsgSize(64*1024*1024))
 	samplerpb.RegisterSamplerServer(server, &centralsampler.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
@@ -84,7 +89,7 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 	}
 	defer listener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
-	running.Go(func() error { return runtime.Run(runningCtx) })
+	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
 			return centralsampler.RunExporter(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, hub)

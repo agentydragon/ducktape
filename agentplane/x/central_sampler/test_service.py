@@ -153,7 +153,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             assert (await completed(stub, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
-async def test_session_store_survives_idle_leases_and_is_separate_between_sessions(
+async def test_session_store_survives_idle_turns_and_is_separate_between_sessions(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
@@ -187,20 +187,19 @@ async def test_session_store_survives_idle_leases_and_is_separate_between_sessio
                     assert expected in json.dumps(outputs[-1])
                     await exchange.send(*response_stream([Message("cell complete")], model="test-model").events)
                 assert (await completed(stub, command_id, session_id)).status == event_pb2.TURN_STATUS_COMPLETED
-                # Require the driver to release its lease so the next turn binds a new Owner.
                 async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
                     with attempt:
-                        generation = await store.idle_generation(session_id)
+                        generation = await store.resident_generation(session_id)
                         assert generation is not None
                         return generation
-                raise AssertionError("lease release retry loop ended")
+                raise AssertionError("resident lease retry loop ended")
 
             generation = await run_cell(
                 first.session_id, "store-first", 'store("key", "first-value"); text("saved");', "saved"
             )
             await run_cell(second.session_id, "store-second", 'store("key", "second-value"); text("saved");', "saved")
             successor = await run_cell(first.session_id, "load-first", 'text(load("key"));', "first-value")
-            assert successor > generation
+            assert successor == generation
             await run_cell(second.session_id, "load-second", 'text(load("key"));', "second-value")
 
 
@@ -737,7 +736,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process is not None
             assert process.status == "exited_unread"
             assert process.buffered_output == b"retained-output"
-            assert process.conversation_owner is None
+            assert process.conversation_owner is not None
             await stub.SubmitInput(
                 runner_service_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="read-retained", text="Read the retained output."

@@ -75,12 +75,31 @@ Choose exactly one Gateway or direct execution target. Production execution uses
 authentication.
 Optional `history_target` and `history_token_file` enable retained History export.
 
-`max_live_sessions` bounds concurrent active Session drivers; it does not cap the number of stored
-idle Sessions. The host starts lazily when code-mode work first needs it and multiplexes Sessions,
+`max_live_sessions` caps concurrent active-execution slots, not resident Session drivers. A replica
+retains the authoritative ownership lease, a lightweight driver and its heartbeat across idle turns
+for each Session whose JavaScript state lives in its shared host. The driver waits without consuming
+an active-execution slot. Protocol Session IDs and host generation remain stable across ordinary
+idle turns. The host starts lazily when code-mode work first needs it and multiplexes Sessions,
 while executor delegates and process-handle namespaces remain per Session. Interrupting a Session
-does not stop the shared host. The Executor adapter separately limits each Runner to eight open
-or opening streams; that is a connection limit, not a limit on stored sampler Sessions or the
-sampler's `max_live_sessions`. See the [Executor API resource and lifecycle contract](../../executor/README.md).
+does not stop the shared host.
+
+Any replica may authenticate and durably admit a command. The admission transaction emits a
+payloadless `central_sampler_work` PostgreSQL notification; the shared wakeups Hub also listens on
+the separate `central_sampler_outbox` channel for History export. These notifications carry no
+Session or Pod route. A resident owner responds by querying all pending work for its held lease
+token, including setup, accepted commands and live handles. Other replicas claim pending work only
+for Sessions with unowned or expired leases. The
+listener subscribes before its initial scan, catches up after reconnect, and periodic reconciliation
+remains enabled. The notification is only a wakeup; committed database rows remain authoritative,
+and the work channel adds no migration or deployment resource.
+
+During shutdown the service stops starting Session work and claiming unowned or expired Sessions,
+wakes idle residents to release their leases, then joins drivers and completes ownership release
+before stopping the shared host. The gRPC server can durably admit commands until graceful stop;
+other replicas continue admitting throughout. Active effects retain the existing bounded drain and
+uncertain outcome handling. The Executor adapter separately limits each Runner to eight open or opening
+streams; that is a connection limit, not a limit on resident sampler Sessions or active execution.
+See the [Executor API resource and lifecycle contract](../../executor/README.md).
 
 Host failure interrupts pending work for every attached Session; later code-mode work may start a
 fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU

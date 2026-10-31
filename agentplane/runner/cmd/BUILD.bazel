@@ -17,6 +17,7 @@ go_binary(
         "//agentplane/runner",
         "//agentplane/runner/configuration",
         "//agentplane/runner/workspace",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",
     ],

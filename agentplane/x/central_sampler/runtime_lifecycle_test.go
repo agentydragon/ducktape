@@ -10,7 +10,7 @@ func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runtime.Run(ctx) }()
+	go func() { done <- runtime.Run(ctx, nil) }()
 
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
@@ -99,6 +99,14 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
+	claimCommitted := make(chan struct{}, 1)
+	runtime.claimLease = func(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
+		owner, err := store.Claim(ctx, conversationID, duration)
+		if err == nil {
+			claimCommitted <- struct{}{}
+		}
+		return owner, err
+	}
 	releaseCommitted := make(chan Owner, 1)
 	allowReleaseReturn := make(chan struct{})
 	runtime.releaseLease = func(ctx context.Context, owner Owner) error {
@@ -113,6 +121,12 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	cancel, done := startRuntimeForTest(t, runtime)
 	defer cancel()
 	runtime.Wake(session.ID)
+	select {
+	case <-claimCommitted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runtime did not commit its lease claim")
+	}
+	cancel()
 
 	var owner Owner
 	select {
@@ -120,7 +134,6 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("runtime did not commit its lease release")
 	}
-	cancel()
 	assertRuntimeWaitsForGate(t, done, "the committed release to return")
 	close(allowReleaseReturn)
 	waitRuntimeDone(t, done)

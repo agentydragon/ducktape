@@ -193,7 +193,11 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             uid = created["metadata"]["uid"]
             cleanup.push_async_callback(_delete_sandbox, cluster, sandbox, uid)
-            await cluster.kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
+            with tracer.start_as_current_span(
+                "system_test.central_sampler.sandbox.ready",
+                attributes={"sandbox.name": sandbox, "sandbox.uid": uid, "sandbox.template": template},
+            ):
+                await cluster.kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
             ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             incarnation = ready["status"]["incarnation"]["uid"]
             target = await _address(cluster, core, SERVICE, 8080)

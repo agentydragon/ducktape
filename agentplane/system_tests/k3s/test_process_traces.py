@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 import grpc
+import pytest
 import pytest_bazel
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2, trace_service_pb2_grpc
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, InstrumentationScope, KeyValue
@@ -12,6 +13,26 @@ from opentelemetry.proto.resource.v1.resource_pb2 import Resource
 from opentelemetry.proto.trace.v1.trace_pb2 import ResourceSpans, ScopeSpans, Span
 
 from agentplane.system_tests.k3s.process_traces import ProcessTraces
+from agentplane.system_tests.k3s.vm_trace_contract import _codex_session_uids, _read_jsonl
+
+
+def test_driver_session_open_requires_ready_sandbox_identity() -> None:
+    session_open: dict[str, object] = {
+        "name": "system_test.session.open",
+        "attributes": {"harness": "HARNESS_CODEX", "sandbox.name": "missing-ready-span"},
+    }
+    with pytest.raises(AssertionError, match="has no ready identity"):
+        _codex_session_uids([session_open], {})
+
+
+def test_jsonl_reader_ignores_only_an_incomplete_trailing_record(tmp_path: Path) -> None:
+    path = tmp_path / "spans.jsonl"
+    path.write_bytes(b'{"name":"complete"}\n{"name":"partial"')
+    assert _read_jsonl(path) == [{"name": "complete"}]
+
+    path.write_bytes(b'{"name": }')
+    with pytest.raises(json.JSONDecodeError):
+        _read_jsonl(path)
 
 
 def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) -> None:
@@ -19,7 +40,10 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
         resource_spans=[
             ResourceSpans(
                 resource=Resource(
-                    attributes=[KeyValue(key="service.name", value=AnyValue(string_value="agentplane-runner"))]
+                    attributes=[
+                        KeyValue(key="service.name", value=AnyValue(string_value="agentplane-runner")),
+                        KeyValue(key="sandbox.uid", value=AnyValue(string_value="test-sandbox-uid")),
+                    ]
                 ),
                 scope_spans=[
                     ScopeSpans(
@@ -96,6 +120,7 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
     assert {span["trace_id"] for span in spans} == {"01" * 16}
     assert {span["parent_span_id"] for span in spans} == {"03" * 8}
     assert {span["service"] for span in spans} == {"agentplane-runner"}
+    assert {span["resource"]["sandbox.uid"] for span in spans} == {"test-sandbox-uid"}
     assert {span["attributes"]["session.id"] for span in spans} == {"s1"}
     assert {span["attributes"]["agentplane.codex.generation"] for span in spans} == {3}
     assert {span["attributes"]["rpc.grpc.status_code"] for span in spans} == {14}

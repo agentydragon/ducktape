@@ -2380,9 +2380,24 @@ impl CandidateRules {
         target: FlowKey,
         values: &Values,
     ) {
+        Self::propose_reachability(
+            context,
+            target,
+            values
+                .ids_within(&self.may_reach)
+                .map(FlowKey::CandidateReachable),
+        );
+    }
+
+    /// Union the reachability facts at `keys`, then propose it once.
+    fn propose_reachability(
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+        target: FlowKey,
+        keys: impl IntoIterator<Item = FlowKey>,
+    ) {
         let mut reachable: Option<Arc<Vec<u64>>> = None;
-        for id in values.ids_within(&self.may_reach) {
-            let Some(fact) = context.read(FlowKey::CandidateReachable(id)) else {
+        for key in keys {
+            let Some(fact) = context.read(key) else {
                 continue;
             };
             let FlowFact::CandidateReachability(bits) = fact else {
@@ -2418,6 +2433,24 @@ impl IterativeRules for CandidateRules {
     type Key = FlowKey;
     type Fact = FlowFact;
     type Rule = CandidateRule;
+
+    /// A rule re-runs only when a reachability fact it read grew, and its
+    /// carrier is final, so the changed reachability facts are all it needs to
+    /// join.
+    const EVALUATES_CHANGES: bool = true;
+
+    fn evaluate_changed(
+        &self,
+        rule: &CandidateRule,
+        changed: &BTreeSet<FlowKey>,
+        context: &mut impl FactContext<FlowKey, FlowFact>,
+    ) {
+        let target = match rule {
+            CandidateRule::Binding(binding) => FlowKey::CandidateBinding(*binding),
+            CandidateRule::Reachability(origin) => FlowKey::CandidateReachable(*origin),
+        };
+        Self::propose_reachability(context, target, changed.iter().copied());
+    }
 
     fn evaluate(&self, rule: &CandidateRule, context: &mut impl FactContext<FlowKey, FlowFact>) {
         match rule {

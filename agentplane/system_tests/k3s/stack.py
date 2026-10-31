@@ -574,6 +574,9 @@ def running_stack(
                     mcp,
                 )
                 if fixture.vm_sandboxes:
+                    vm_sandboxes.select_boot_probe(
+                        fixture.objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_PROBE") == "1"
+                    )
                     vm_sandboxes.select_native_profile(
                         fixture.objects,
                         enabled=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",

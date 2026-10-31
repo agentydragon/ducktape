@@ -38,8 +38,9 @@ const (
 var traceContext = propagation.TraceContext{}
 
 // Init configures the standard OTEL_* trace exporters. serviceName is used when OTEL_SERVICE_NAME
-// is absent. Shutdown is idempotent and flushes spans.
-func Init(ctx context.Context, serviceName string) (func(), error) {
+// is absent. resourceAttributes identify this process and are attached to every exported span.
+// Shutdown is idempotent and flushes spans.
+func Init(ctx context.Context, serviceName string, resourceAttributes ...attribute.KeyValue) (func(), error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")), "true") {
 		return func() {}, nil
 	}
@@ -52,7 +53,10 @@ func Init(ctx context.Context, serviceName string) (func(), error) {
 		ctx,
 		resource.WithFromEnv(),
 		resource.WithTelemetrySDK(),
-		resource.WithAttributes(attribute.String("service.name", name), attribute.Int("process.pid", os.Getpid())),
+		resource.WithAttributes(append(
+			[]attribute.KeyValue{attribute.String("service.name", name), attribute.Int("process.pid", os.Getpid())},
+			resourceAttributes...,
+		)...),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create trace resource: %w", err)

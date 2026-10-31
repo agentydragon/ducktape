@@ -94,13 +94,26 @@ class Store:
         assert all(isinstance(item, dict) for item in records)
         return records
 
-    async def idle_generation(self, session_id: str) -> int | None:
+    async def released_generation(self, session_id: str) -> int | None:
         async with self.engine.connect() as connection:
             generation = await connection.scalar(
                 text(
                     "SELECT c.generation FROM sampler_conversation c "
                     "JOIN sampler_session s ON s.conversation_id=c.id "
                     "WHERE s.id=:session_id AND c.owner IS NULL"
+                ),
+                {"session_id": session_id},
+            )
+        return None if generation is None else int(generation)
+
+    async def resident_generation(self, session_id: str) -> int | None:
+        async with self.engine.connect() as connection:
+            generation = await connection.scalar(
+                text(
+                    "SELECT c.generation FROM sampler_conversation c "
+                    "JOIN sampler_session s ON s.conversation_id=c.id "
+                    "WHERE s.id=:session_id AND s.active_turn IS NULL "
+                    "AND c.owner IS NOT NULL AND c.lease_until>clock_timestamp()"
                 ),
                 {"session_id": session_id},
             )

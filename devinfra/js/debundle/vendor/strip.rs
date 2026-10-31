@@ -574,11 +574,22 @@ fn sweep_unreachable_top_level(
         } else {
             an.eager_bindings.iter().collect()
         };
-        let mut lexical: Vec<&Id> = an.at_init.unresolved_sources.iter().collect();
+        // What the statement hands only to a host receiver (a global outside
+        // the chunk) is followed as a value: host code calling back into it is
+        // outside the analysed program (SPEC § Partial vendor-swap ownership).
+        let host = HostCalls::of(&module.body[i], |id| declarer.contains_key(id));
+        let (handed_to_host, mut lexical): (Vec<&Id>, Vec<&Id>) = an
+            .at_init
+            .unresolved_sources
+            .iter()
+            .filter(|id| !host.host_aliases.contains(*id))
+            .partition(|id| host.handed_only_to_host(id));
+        reached.extend(handed_to_host);
         let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
         // A closure handed to an unresolved call at init (an IIFE among them)
-        // runs this statement's own first-order body.
-        if an.at_init.unresolved_inline_fn {
+        // runs this statement's own first-order body, unless every such closure
+        // goes to a host receiver.
+        if an.at_init.unresolved_inline_fn && !host.only_host_closures() {
             run_first_order_body(
                 an,
                 &module.body[i],
@@ -611,8 +622,9 @@ fn sweep_unreachable_top_level(
         // binding the statement does not retain may alias state through its
         // initializer or what is written into it. Where unresolved code may
         // run, functions it reaches may run too.
-        let mut region: BTreeSet<usize> = entered;
-        region.insert(i);
+        // Items whose code may run (`true`), or whose values only are followed.
+        let mut region: BTreeMap<usize, bool> = entered.into_iter().map(|j| (j, true)).collect();
+        region.insert(i, true);
         let mut candidates = BTreeSet::new();
         // Each item followed into the region: the binding that led there and
         // the item that binding was read from (`None`: the statement's reach).
@@ -643,7 +655,7 @@ fn sweep_unreachable_top_level(
             let code_may_run = code_may_run && !item_declares_native_container(&module.body[j]);
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
-                    region.insert(k);
+                    *region.entry(k).or_default() |= code_may_run;
                     via.insert((k, code_may_run), (id, from));
                     // A value this statement itself computes (a loop variable,
                     // say) derives from what it reads at init; its own calls
@@ -671,8 +683,12 @@ fn sweep_unreachable_top_level(
         // mutate it: a member write, `delete`, method call or hand-off of it
         // there, or a rebind anywhere.
         let mut roots = BTreeMap::new();
-        for &k in &region {
-            let mut exposed = ExposedBindings::default();
+        for (&k, &code_may_run) in &region {
+            // Where only values are followed, code in closures never runs.
+            let mut exposed = ExposedBindings {
+                skip_closures: !code_may_run,
+                ..ExposedBindings::default()
+            };
             module.body[k].visit_with(&mut exposed);
             for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
                 roots.entry((*id).clone()).or_insert_with(|| {
@@ -717,6 +733,8 @@ fn sweep_unreachable_top_level(
             && an.observable_writes.iter().all(private_cell)
             && shared_roots(i).is_empty()
     };
+    // Every refusal of the pass, so one run shows them all.
+    let mut refusals = Vec::new();
     for i in 0..analyses.len() {
         if live[i]
             || swapped_reachability[i].is_empty()
@@ -765,8 +783,16 @@ fn sweep_unreachable_top_level(
             })
             .collect::<Vec<_>>()
             .join("; ");
+        refusals.push(format!(
+            "observable side-effect item {i} `{}` is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private; writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            module_item_snippet(&module.body[i]),
+        ));
+    }
+    if !refusals.is_empty() {
         bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s); writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: {} side effect(s) would be silently dropped although they may write a global / external cell residual code may read — restructure the spec so they do not read swapped binding(s):\n{}",
+            refusals.len(),
+            refusals.join("\n"),
         );
     }
 
@@ -1422,12 +1448,199 @@ fn run_first_order_body<'a>(
     }
 }
 
+/// The at-init calls of one statement whose receiver is host code: a member
+/// call rooted at a name neither the chunk nor the statement declares
+/// (`__REACT_DEVTOOLS_GLOBAL_HOOK__.inject(internals)`), directly or through a
+/// variable the statement initializes from such a name. Calls inside nested
+/// functions are not at init and are not inspected.
+#[derive(Default)]
+struct HostCalls {
+    /// Names declared inside the statement: parameters and nested bindings.
+    locals: BTreeSet<Id>,
+    /// Statement variables initialized from a host name or a property path on
+    /// one (`var hook = globalThis.__HOOK__`).
+    host_aliases: BTreeSet<Id>,
+    /// Names appearing in arguments of host calls.
+    to_host: BTreeSet<Id>,
+    /// Names appearing anywhere else in an at-init call.
+    elsewhere: BTreeSet<Id>,
+    host_closures: usize,
+    other_closures: usize,
+}
+
+impl HostCalls {
+    fn of(item: &ModuleItem, chunk_declares: impl Fn(&Id) -> bool) -> Self {
+        let mut locals = LocalNames::default();
+        item.visit_with(&mut locals);
+        let mut calls = HostCallScan {
+            calls: HostCalls {
+                locals: locals.0,
+                ..HostCalls::default()
+            },
+            chunk_declares: &chunk_declares,
+            depth: 0,
+        };
+        item.visit_with(&mut calls);
+        calls.calls
+    }
+
+    fn handed_only_to_host(&self, id: &Id) -> bool {
+        self.to_host.contains(id) && !self.elsewhere.contains(id)
+    }
+
+    fn only_host_closures(&self) -> bool {
+        self.host_closures > 0 && self.other_closures == 0
+    }
+}
+
+#[derive(Default)]
+struct LocalNames(BTreeSet<Id>);
+
+impl Visit for LocalNames {
+    fn visit_function(&mut self, function: &Function) {
+        let mut inner = BindingNames(&mut self.0);
+        function.visit_children_with(&mut inner);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        let mut inner = BindingNames(&mut self.0);
+        arrow.visit_children_with(&mut inner);
+    }
+
+    fn visit_catch_clause(&mut self, clause: &CatchClause) {
+        let mut inner = BindingNames(&mut self.0);
+        clause.visit_children_with(&mut inner);
+    }
+}
+
+struct BindingNames<'a>(&'a mut BTreeSet<Id>);
+
+impl Visit for BindingNames<'_> {
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.0.insert(ident.id.to_id());
+    }
+
+    fn visit_fn_decl(&mut self, decl: &FnDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.function.visit_with(self);
+    }
+
+    fn visit_class_decl(&mut self, decl: &ClassDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.class.visit_with(self);
+    }
+}
+
+struct HostCallScan<'a, F> {
+    calls: HostCalls,
+    chunk_declares: &'a F,
+    depth: u32,
+}
+
+impl<F: Fn(&Id) -> bool> HostCallScan<'_, F> {
+    fn is_host(&self, ident: &Ident) -> bool {
+        let id = ident.to_id();
+        self.calls.host_aliases.contains(&id)
+            || (!(self.chunk_declares)(&id) && !self.calls.locals.contains(&id))
+    }
+
+    fn record_arguments(&mut self, args: &[ExprOrSpread], host: bool) {
+        for arg in args {
+            let mut names = AllNames::default();
+            arg.expr.visit_with(&mut names);
+            let closure = matches!(arg.expr.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_));
+            if host {
+                self.calls.to_host.extend(names.0);
+                self.calls.host_closures += usize::from(closure);
+            } else {
+                self.calls.elsewhere.extend(names.0);
+                self.calls.other_closures += usize::from(closure);
+            }
+        }
+    }
+}
+
+impl<F: Fn(&Id) -> bool> Visit for HostCallScan<'_, F> {
+    fn visit_function(&mut self, function: &Function) {
+        self.depth += 1;
+        function.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.depth += 1;
+        arrow.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if self.depth == 0
+            && let Pat::Ident(name) = &declarator.name
+            && let Some(init) = declarator.init.as_deref().and_then(member_root)
+            && self.is_host(init)
+        {
+            self.calls.host_aliases.insert(name.id.to_id());
+        }
+        declarator.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if self.depth == 0 {
+            let host = match &call.callee {
+                Callee::Expr(callee) => match callee.unwrap_parens() {
+                    Expr::Member(member) => {
+                        member_root(&member.obj).is_some_and(|root| self.is_host(root))
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !host && let Callee::Expr(callee) = &call.callee {
+                let mut names = AllNames::default();
+                callee.visit_with(&mut names);
+                self.calls.elsewhere.extend(names.0);
+            }
+            self.record_arguments(&call.args, host);
+        }
+        call.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, new: &NewExpr) {
+        if self.depth == 0
+            && let Some(args) = &new.args
+        {
+            self.record_arguments(args, false);
+        }
+        new.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, tpl: &TaggedTpl) {
+        if self.depth == 0 {
+            let mut names = AllNames::default();
+            tpl.visit_with(&mut names);
+            self.calls.elsewhere.extend(names.0);
+            self.calls.other_closures += 1;
+        }
+        tpl.visit_children_with(self);
+    }
+}
+
+#[derive(Default)]
+struct AllNames(BTreeSet<Id>);
+
+impl Visit for AllNames {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.0.insert(ident.to_id());
+    }
+}
+
 /// An item followed into the swap-privacy region, and whether its code may run
 /// (`false`: only the values it holds are followed).
 type RegionStep = (usize, bool);
 
 /// How code uses bindings' values: every occurrence except a plain property
-/// read (`x.a`, `x.a.b`, `typeof x.a`) exposes the binding — a member write
+/// read (`x.a`, `x.a.b`), `typeof`, or an identity check (`===`, `!==`,
+/// `instanceof`) exposes the binding — a member write
 /// or `delete` rooted at it, a method call on it (the callee gets it as
 /// `this`), or any use that hands the value on. Names are compared without
 /// scope resolution, so a shadowing local only adds exposures.
@@ -1437,6 +1650,8 @@ struct ExposedBindings {
     uses: BTreeSet<Id>,
     /// Roots of in-place mutations: member writes, `delete`, method calls.
     mutated: BTreeSet<Id>,
+    /// Leave function and arrow bodies out.
+    skip_closures: bool,
 }
 
 impl ExposedBindings {
@@ -1458,6 +1673,18 @@ fn member_root(expr: &Expr) -> Option<&Ident> {
 impl Visit for ExposedBindings {
     fn visit_ident(&mut self, ident: &Ident) {
         self.uses.insert(ident.to_id());
+    }
+
+    fn visit_function(&mut self, function: &Function) {
+        if !self.skip_closures {
+            function.visit_children_with(self);
+        }
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        if !self.skip_closures {
+            arrow.visit_children_with(self);
+        }
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
@@ -1503,7 +1730,24 @@ impl Visit for ExposedBindings {
         update.visit_children_with(self);
     }
 
+    // Identity checks read a value without handing it on.
+    fn visit_bin_expr(&mut self, bin: &BinExpr) {
+        if matches!(
+            bin.op,
+            BinaryOp::EqEqEq | BinaryOp::NotEqEq | BinaryOp::InstanceOf
+        ) {
+            self.visit_read_chain(&bin.left);
+            self.visit_read_chain(&bin.right);
+        } else {
+            bin.visit_children_with(self);
+        }
+    }
+
     fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if unary.op == UnaryOp::TypeOf {
+            self.visit_read_chain(&unary.arg);
+            return;
+        }
         if unary.op == UnaryOp::Delete
             && let Expr::Member(member) = &*unary.arg
             && let Some(root) = member_root(&member.obj)
@@ -1580,7 +1824,28 @@ fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
                 || is_shareable_function_var(var)
                 || is_shareable_intrinsic_alias_var(var)
                 || is_symbol_var(var)
+                || var
+                    .decls
+                    .iter()
+                    .all(|decl| decl.init.as_deref().is_some_and(is_primitive_valued_expr))
         }),
+    }
+}
+
+/// An expression whose value is always a primitive: a non-regex literal, an
+/// untagged template, or a unary, update, arithmetic, comparison or bitwise
+/// operation (`nE * 60`). Logical operators and conditionals pass an operand
+/// through and are not included.
+fn is_primitive_valued_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => is_primitive_valued_expr(&paren.expr),
+        Expr::Lit(lit) => !matches!(lit, Lit::Regex(_)),
+        Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
+        Expr::Bin(bin) => !matches!(
+            bin.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ),
+        _ => false,
     }
 }
 

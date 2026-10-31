@@ -113,3 +113,92 @@ limit of 64.
 
 The patch is kept outside the repository at
 `/var/cache/agentydragon/tana-premises/pure-heap-frontier-wip.patch`.
+
+## Barrier chain census on gaffer main + #686 (ducktape `e1f145dd`)
+
+**Question:** do the heap barriers that close Tana's 963-module Pass-1 SCC
+include edges a sound engine change could drop?
+
+**Answer:** almost none. Under the current model the chain is justified:
+
+- every write-capable barrier may write any tracked array held by foreign
+  code;
+- the foreign-held set is non-empty from statement 0.
+
+The only unjustified edges are 419 read-read pairs between `pure_exports`
+calls. Dropping them soundly needs read frontiers, and those add more edges
+than they remove. No engine change was made. Pass 1 stays at 963 (the
+emulated gate gives 966–967).
+
+### Census
+
+- **The barriers form a total order.**
+  - 1,335 statements are heap barriers.
+  - Each of the 1,196 `after_barrier` edges points to the previous barrier
+    in source order. Out-degree is exactly 1, because
+    `emit_cell_order_events` keeps one `opaque_barrier`.
+  - 119 more edges are `frontier_after_cell`, ordering a barrier after an
+    earlier array allocation.
+  - The constraining cross-module heap edges are 958 `after_barrier` and 93
+    `frontier_after_cell`.
+- **Tracked contents are live from statement 0.** There are 1,698 eager and
+  7,931 lazy allocation sites, and lazy allocations count as live from the
+  start.
+- **Escapes are everywhere.** A probe that recorded `record_escaped_expr`
+  cells, not committed, found:
+  - 6,380 sites escape inside function bodies, mostly JSX children arrays;
+  - 1,216 sites escape at init;
+  - the first eager escape is statement 37.
+- **Almost nothing is observed precisely.** Only 4 statements make a precise
+  non-barrier observation, touching 6 eager cells. Nearly every heap event
+  is itself a barrier.
+
+Barrier statements by the opaque operations that make them barriers. A
+statement can count in several rows.
+
+| Family                                                                     | Statements |
+| -------------------------------------------------------------------------- | ---------: |
+| mobx-react `observer` (`X = B(function …)`, `pure_exports`)                |        537 |
+| synchronous execution incomplete (the fallback families)                   |        303 |
+| UICommand factories `Se`/`ft`/`Zt`/`uf`/`fs` (`callee_heap_effects`)       |        248 |
+| natives: `new Map`/`new Set`, `Object.freeze`/`defineProperty`, `Symbol.*` |         95 |
+| React `forwardRef`/`memo`/`lazy`/`createContext`, namespace receivers      |         94 |
+| Zod builders and chains                                                    |         67 |
+| other                                                                      |        <40 |
+
+### What each candidate change does
+
+These are offline experiments on the saved graph. The chain is rebuilt from
+the remaining barriers, using the realizability emulator from
+[the Tana SCC note](2026_10_31_tana_scc_pessimism.md). Rebuilding the
+unchanged chain gives Pass-1 SCCs of 970, 12 and 2; the engine gives 963
+and 2.
+
+| Change                                                                    | Pass-1 SCCs |
+| ------------------------------------------------------------------------- | ----------- |
+| Escape-gated frontier (only cells escaped earlier)                        | unchanged   |
+| Read frontiers for `observer` calls (A9 `pure_exports`; 1,979 heap edges) | 967, 12, 2  |
+| Read frontiers for every pure barrier statement (2,403 heap edges)        | 966, 12, 2  |
+| `observer` calls touch only operand cells (not a frontier)                | 613, 11, 2  |
+| + Zod, React, natives, UICommand                                          | 523, 11, 2  |
+| Every complete barrier statement demoted                                  | 257         |
+| No barrier ordering at all                                                | none        |
+
+The escape-gated frontier changes nothing because the lazy escapes make the
+foreign-held set non-empty from statement 0. The read/write split is sound
+under A9 but has the effect seen above: each read frontier depends on the
+latest write frontier, and each write frontier on every read since.
+
+Demoting families never clears Pass 1. The remaining barriers re-chain, and
+the 303 incomplete ones alone close a 257-module cycle. So Pass 1 needs both:
+
+- heap-locality knowledge for the write-capable callees. This is an
+  audited premise or vendor summary: "reads and writes only arrays
+  reachable from its operands". Nothing in the engine provides it today.
+- completeness of the incomplete barrier statements, which are the same
+  loss families as the fallback edges.
+
+The alternative is a policy change: extend `trusted_dataflow_summaries` to
+array contents, so opaque operations stop ordering against each other the
+way general heap objects already don't. SPEC § Dependency-graph array
+ordering excludes this on purpose, and it is not sound.

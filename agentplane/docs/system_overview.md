@@ -45,7 +45,9 @@ flowchart LR
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
     dispatcher -->|Sampler gRPC: open, input, controls| sampler
-    sampler -->|continuation, commands, evidence outbox| db
+    sampler -->|continuation, commands and ownership leases| db
+    db -->|NOTIFY: central_sampler_work| sampler
+    db -->|NOTIFY: central_sampler_outbox| sampler
     sampler -->|typed execution RPCs| gateway
     gateway -->|mTLS Executor gRPC| runner
     runner -->|local Codex JSON-RPC over WebSocket| executor
@@ -62,7 +64,13 @@ LiteLLM-owned secret and mounted only in the sampler container; Cilium pins dire
 The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
 logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells
 and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
-Provider continuation stays in the sampler.
+Provider continuation stays in the sampler. A resident replica keeps the Session's database
+ownership lease and a lightweight driver/heartbeat while idle; this does not consume a
+`max_live_sessions` active-execution slot. Any replica may admit commands, and a transactional,
+payloadless `central_sampler_work` notification wakes local lease holders to query pending work.
+The separate `central_sampler_outbox` notification wakes History export. Notifications carry no
+Session or Pod routing, and startup scans, listener reconnect catch-up and periodic reconciliation
+cover missed signals.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
 Gateway proxies the sandbox-owned [Executor service](../env/execution/executor.proto) to the Runner,
 whose execution adapter owns the local

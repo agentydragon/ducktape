@@ -177,7 +177,7 @@ async def vm_sandbox_turn(
                 assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
     with tracer.start_as_current_span(
-        "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}
+        "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness), "sandbox.name": view.name}
     ):
         agent = await session_setup_is_supervised(client, view.name, harness, offered_model)
     with tracer.start_as_current_span("system_test.turn"):
@@ -249,7 +249,9 @@ async def codex_tool_oom(
     assert isinstance(model, CodexModel)
     evidence: dict[str, Any] = {}
     try:
-        with tracer.start_as_current_span("system_test.session.open", attributes={"harness": "HARNESS_CODEX"}):
+        with tracer.start_as_current_span(
+            "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.name}
+        ):
             agent = await Agent.open(
                 client,
                 sandbox=view.name,

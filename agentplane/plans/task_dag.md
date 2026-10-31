@@ -16,14 +16,14 @@ concrete autonomous workflow is a daily agent inspecting the previous 24 hours o
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
-| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                            |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Address concrete instability reported during normal use; dedicated disruption/continuation exercises are [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                |
-| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                 |
-| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                |
-| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                |
-| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements        |
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Investigate concrete regressions reported during normal use; the dedicated disruption/continuation exercise remains [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                           |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                            |
+| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                           |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                           |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements                   |
 
 Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
@@ -101,13 +101,13 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Dispatched sprint: keep existing agents usable
+### Sprint scope and reliability follow-ups
 
 **Two-week timebox; operator dispatch, 2026-10-30 PDT; scope updated 2026-10-31 UTC.**
-The sampling-recovery and lazy-executor changes merged. Their contracts live in the
+Reliability contracts live in the
 [runtime specification](../x/central_sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md); source merge is not
-deployment evidence. The [acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
+[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md). The
+[acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
 retains the deployed exporter evidence and its limits.
 
 **Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
@@ -324,15 +324,9 @@ subscription reads/cancellation and existing GitHub gap recovery need not wait f
 
 ### `GITHUB_MERGEABILITY_FRESHNESS` — obtain a current result after base-only changes
 
-**Ready — remaining scope updated by Codex, 2026-10-28 UTC.** The implementation in
-[PR #12343](https://github.com/agentydragon/ducktape/pull/12343) is merged and deployed. Positive
-parent validation, current base labels, persisted retry/backoff and deterministic race/restart
-coverage are complete; their contract is in the [API reference](../notification_service/docs/api.md).
-The [live evidence](../notification_service/debug/github_mergeability_live_acceptance_20261028.md)
-shows a stale REST `MERGEABLE` / old test merge at 600 seconds after a received base-only push,
-while the service correctly stays `UNKNOWN` and retries. A request with `Cache-Control: no-cache`
-returned the same stale result. A later diagnostic GraphQL read returned `UNKNOWN`, and a head
-change followed; the subsequent conflict notice does not prove base-only recovery.
+**Ready.** The [live evidence](../notification_service/debug/github_mergeability_live_acceptance_20261028.md)
+records stale REST positives after base-only changes, while the service's
+[proof and retry policies](../notification_service/docs/api.md) keep the source `UNKNOWN`.
 
 **TODO: test whether GraphQL obtains a fresh result sooner than REST.** Use controlled disposable
 fixtures, advance only the base, and keep the PR head unchanged throughout polling. Compare
@@ -730,8 +724,6 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
-    RUNNER_SHARED_RUNTIME_PACKAGES[Candidate: shared environment runtime libraries]
-    ENVIRONMENT_EXECUTION_SERVICE[Candidate: standalone execution service]
     ENVIRONMENT_HARNESS_HOST[Candidate: environment harness host and runtime]
     ENVIRONMENT_RUNTIME_PACKAGING[Candidate: environment image packaging]
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
@@ -777,36 +769,6 @@ Preserve existing durable authorities; the broader runner-state/central-authorit
 frozen. These tasks do not select the deferred Session/Environment dispatch binary regrouping,
 optional queue policy, a replacement JS host, or the complete 0..N-environment API.
 
-### `RUNNER_SHARED_RUNTIME_PACKAGES` — place shared runtime support under env
-
-**Candidate.** Move reusable process supervision (`runner/supervision`) to
-`agentplane/env/supervision` and shared one-shot lifecycle support (`runner/operation`) to
-`agentplane/env/oneoff`. The Environment Runtime, Execution service and Environment Harness Host
-are the runtime consumers. Keep component-specific controllers/resources with their owners. Update
-all consumers, BUILD targets, helper-entrypoint references and docs atomically; retain one
-process-lifetime owner and the existing Pod/VM fencing behavior. This is a package-boundary refactor
-with no new service or process-launch behavior.
-
-Exit: the shared libraries have no dependency on the Environment Runtime composition root or a
-sibling binary's implementation, callers use the new locations, and existing lifecycle coverage
-still applies. Extraction work can proceed against explicit existing interfaces while this move is
-reviewed.
-
-### `ENVIRONMENT_EXECUTION_SERVICE` — independently runnable process and filesystem service
-
-**Candidate.** Create `agentplane-execution-service` under `agentplane/env/execution`. Keep the
-Executor protocol, generated client and typed execution contract with this component as its public
-API; the central sampler and Gateway remain clients. Extract both the current `runner/execution`
-typed gRPC adapter and the `runner/executor` companion plus required executor lifecycle/backend
-support. First assign admission, connection/session ownership, process generation, drain and fencing
-for this boundary; preserve Pod PID-1 and VM/systemd semantics.
-
-Exit: a client can use the standalone execution target without a native harness or app-server;
-existing native Codex and central-sampler callers still work. Preserve process identity, retained
-output/cursors, uncertain outcomes and no automatic mutation replay. Update affected callers,
-packaging and system diagrams, with proportional real-boundary acceptance and a data-preserving
-rollback. No new laptop backend or full environment-attachment API is required.
-
 ### `ENVIRONMENT_HARNESS_HOST` — run native harness hosting inside the environment
 
 **Candidate.** Create `agentplane-harness-host` under `agentplane/env/harnesshost`, with native
@@ -817,8 +779,8 @@ journals and History ingress to the host. Name the remaining environment lifecyc
 First review this split's admission, state locks, native process ownership, shutdown and fencing.
 Preserve shared Codex app-server/N-Session operation and native Claude support. The native Harness
 Host runs inside an environment; the Execution service may be a separate process/resource domain
-within it. Use the existing execution API where sufficient; a concrete missing contract creates a
-scoped prerequisite, not a blanket dependency on every execution-service change. The central sampler
+within it. Use the [execution API](../env/execution/SPEC.md) where sufficient; a concrete missing
+contract creates a scoped prerequisite. The central sampler
 remains a separate control-plane implementation outside the environment.
 
 Exit: the two entrypoints have distinct ownership and can run in separate resource domains inside
@@ -1568,10 +1530,8 @@ with the runner jailing a forked child into stage 2 to exec Claude/Codex — is 
 squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
-works, so the update path exists. Landed: the runner and CLI are published as their own `containerDisk`
-(`//agentplane/runner:disk_image`), the `runner-vm` template attaches it as a second read-only disk, and the guest
-mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
-(a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
+works. The existing runner/CLI disk (`//agentplane/runner:disk_image`) is mounted at
+`/run/agentplane/runner`; the remaining work is splitting the tools-heavy environment.
 Preserve the shipped typed guest resource policy when splitting layers: stage 1 owns the OS
 reserve and service caps, and native workloads and the executor keep their separate budgets.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
@@ -1715,20 +1675,16 @@ replace.
 ### `RUNNER_IMAGES_RENAME` — tools images stop being called runner
 
 **Unscheduled; operator, 2026-10-20 05:48 UTC: "rename those images and stuff named after \"runner\" since
-they no longer even contain it".** The Pod tools images (`runner`, `runner-ducktape`), the VM guest
+they no longer even contain it".** The staging Pod tools image (`runner-ducktape`), the VM guest
 (`runner-vm`) and what is named for them no longer carry the runner or the `agentplane` command: those
 come from the runner-disk image. Name each for what it holds (harnesses, tools), including their Nix
-flake outputs, `agentplane/runner/{image,container-disk,vm}.nix`, the `agentplane-runner-{image,ducktape-image,vm-image}`
+flake outputs, `agentplane/runner/{container-disk,vm}.nix`, the `agentplane-runner-{ducktape-image,vm-image}`
 workflows, the `ducktape-ci/runner*` image repositories with their Flux image policies and pins, the
-`runner` and `runner-vm` SandboxTemplates, and docs. The runner-disk image keeps its name. This is separate
+`runner-ducktape` and `runner-vm` SandboxTemplates, and docs. The runner-disk image keeps its name. This is separate
 from `RUNNER_RENAME`, which names the process; do not hold either for the other. Renamed template and
 image names reach live Sandboxes and Flux pins, so land it as an image-before-config sequence.
 
-Scope note (2026-10-26): the generic `runner` Pod tools image and its SandboxTemplate are gone; a
-deployment names its own Pod execution environment (`cluster/cdk8s/agentplane/staging.py`'s
-`POD_TEMPLATE`, `runner-ducktape`), and the k3s fixture names its own `runner`. What remains here is
-renaming staging's image and the VM guest for what they hold, plus the k3s fixture's Bazel-built runner
-image reference.
+Include the k3s fixture's Bazel-built runner image reference and its fixture-local `runner` template.
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
