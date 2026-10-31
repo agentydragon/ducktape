@@ -1,14 +1,22 @@
 # gazelle:include_dep //util/testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
+from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from x.ai_session_archive.database import FileVersionRecordRow, ResticSnapshotRow, SnapshotFileRow
+from x.ai_session_archive.database import (
+    FileVersionRecordRow,
+    FileVersionRow,
+    ResticSnapshotRow,
+    SessionRow,
+    SnapshotFileRow,
+)
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.queries import get_session, list_events, list_sessions, list_versions
@@ -41,7 +49,9 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         b'{"type":"assistant","timestamp":"2026-01-01T00:00:03Z"}\n'
     )
     telemetry_path.write_bytes(b'{"event":"not a conversation"}\n')
-    codex_path.write_bytes(b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo"}}\n["scalar",1]\n')
+    codex_path.write_bytes(
+        b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo","source":"cli"}}\n["scalar",1]\n'
+    )
 
     _backup(env, Path(".claude"), Path(".codex"), cwd=archive_home)
     initial_snapshot = repository.list_snapshots()[0]
@@ -58,10 +68,56 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
     assert report.files_failed == 0
     assert report.snapshots_incomplete == 0
 
+    with factory() as db, db.begin():
+        codex_session = db.scalar(
+            select(SessionRow).where(SessionRow.machine_id == "archive-test", SessionRow.harness == Harness.CODEX.value)
+        )
+        assert codex_session is not None
+        checkpoint = db.scalar(select(FileVersionRow).where(FileVersionRow.session_id == codex_session.id))
+        assert checkpoint is not None
+        inherited_record = db.execute(
+            select(FileVersionRecordRow.payload_id, FileVersionRecordRow.byte_offset).where(
+                FileVersionRecordRow.file_version_id == checkpoint.id, FileVersionRecordRow.ordinal == 1
+            )
+        ).one()
+        delta = FileVersionRow(
+            id=uuid4(),
+            session_id=checkpoint.session_id,
+            sha256="f" * 64,
+            byte_size=checkpoint.byte_size,
+            source_path=checkpoint.source_path,
+            first_seen_at=checkpoint.last_seen_at + timedelta(seconds=1),
+            last_seen_at=checkpoint.last_seen_at + timedelta(seconds=1),
+            first_snapshot_id=checkpoint.first_snapshot_id,
+            complete=True,
+            parse_issue_count=0,
+            record_count=checkpoint.record_count,
+            parent_version_id=checkpoint.id,
+            shared_prefix_record_count=1,
+            is_checkpoint=False,
+            delta_depth=checkpoint.delta_depth + 1,
+            parser_version=checkpoint.parser_version,
+        )
+        db.add(delta)
+        db.flush()
+        db.add(
+            FileVersionRecordRow(
+                file_version_id=delta.id,
+                ordinal=1,
+                byte_offset=inherited_record.byte_offset,
+                payload_id=inherited_record.payload_id,
+            )
+        )
+        for row in db.scalars(select(SessionRow).where(SessionRow.machine_id == "archive-test")):
+            row.session_kind = None
+    ingestor._project_missing_session_kinds()
+
     with factory() as db:
         summaries = list_sessions(db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100).data
         main = next(item for item in summaries if item.title == "hello")
         child = next(item for item in summaries if item.parent_session_id == main.id)
+        assert main.session_kind.value == "unknown"
+        assert child.session_kind.value == "subagent"
         assert child.parent_link_kind == "claude_path_inferred"
         assert not child.identity_inferred
         children = list_sessions(
@@ -78,6 +134,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         assert child_last_record["type"] == "assistant"
         codex_sessions = list_sessions(db, machine_id="archive-test", harness=Harness.CODEX, cursor=None, limit=100)
         assert len(codex_sessions.data) == 1
+        assert codex_sessions.data[0].session_kind.value == "main"
         codex_versions = list_versions(db, session_id=codex_sessions.data[0].id)
         codex_events = list_events(
             db, session_id=codex_sessions.data[0].id, version_id=codex_versions[0].id, cursor=None, limit=20

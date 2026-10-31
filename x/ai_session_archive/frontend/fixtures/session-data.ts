@@ -75,6 +75,7 @@ const sessions: SessionSummary[] = [
     id: "codex-thread-1",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Compare two captured versions",
     cwd: "/home/example/project",
     started_at: "2026-10-28T16:00:00Z",
@@ -92,6 +93,7 @@ const sessions: SessionSummary[] = [
     id: "claude-session-1",
     machine_id: "atlas",
     harness: "claude",
+    session_kind: "subagent",
     title: "Inspect a local transcript",
     cwd: "/home/example/another-project",
     started_at: "2026-10-27T18:00:00Z",
@@ -106,9 +108,28 @@ const sessions: SessionSummary[] = [
     identity_inferred: false,
   },
   {
+    id: "guardian-session",
+    machine_id: "thinkpad",
+    harness: "codex",
+    session_kind: "guardian",
+    title: "Guardian automation fixture",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
+    parent_session_id: "codex-thread-1",
+    parent_link_kind: "codex_parent_thread_id",
+    parent_native_session_id: "thread-one",
+    identity_inferred: false,
+  },
+  {
     id: "inferred-claude-parent",
     machine_id: "atlas",
     harness: "claude",
+    session_kind: "main",
     title: "Inferred Claude parent · session 12ab",
     cwd: "/home/example/another-project",
     started_at: null,
@@ -126,6 +147,7 @@ const sessions: SessionSummary[] = [
     id: "mixed-transcript-fixture",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Tools and reasoning fixture",
     cwd: "/fixture/project",
     started_at: "2026-10-28T16:00:00Z",
@@ -350,6 +372,7 @@ export const sessionFixtureApi: SessionBrowserApi = {
       (session) =>
         (query.machineId === undefined || session.machine_id === query.machineId) &&
         (query.harness === undefined || session.harness === query.harness) &&
+        (query.kinds === undefined || query.kinds.includes(session.session_kind)) &&
         (query.parentSessionId === undefined || session.parent_session_id === query.parentSessionId)
     );
     return { data: filtered, next_cursor: null };
@@ -387,6 +410,7 @@ const longRelatedChildren: SessionSummary[] = Array.from({ length: 63 }, (_unuse
   id: `claude-child-${String(index + 1).padStart(2, "0")}`,
   machine_id: "atlas",
   harness: "claude",
+  session_kind: "subagent",
   title: `Inspect module ${String(index + 1).padStart(2, "0")}`,
   cwd: "/home/example/another-project",
   started_at: "2026-10-27T18:00:00Z",

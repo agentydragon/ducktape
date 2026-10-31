@@ -11,11 +11,11 @@ from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session as DbSession, load_only
+from sqlalchemy import and_, exists, literal, select, text
+from sqlalchemy.orm import Session as DbSession, aliased, load_only
 
 from x.ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
-from x.ai_session_archive.codex_metadata import read_codex_titles
+from x.ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
 from x.ai_session_archive.database import (
     CodexTitleObservationRow,
     FileVersionRecordRow,
@@ -28,7 +28,7 @@ from x.ai_session_archive.database import (
     SnapshotFileRow,
     UsageObservationRow,
 )
-from x.ai_session_archive.models import Harness
+from x.ai_session_archive.models import Harness, SessionKind
 from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from x.ai_session_archive.usage_observations import usage_observations_for_record
@@ -112,10 +112,11 @@ class SnapshotIngestor:
         snapshots = sorted(self._source.restic.list_snapshots(), key=lambda row: (row.captured_at, row.id))
         self._ensure_source()
         self._discover_snapshots(snapshots)
+        self._project_missing_session_kinds()
         available_snapshot_ids = {snapshot.id for snapshot in snapshots}
         if snapshots:
             # Make the latest names visible before a potentially long historical transcript import.
-            self._process_codex_metadata(snapshots[-1])
+            self._process_codex_metadata(snapshots[-1], refresh_completed=True)
             self._project_codex_titles(allow_index_only=False)
         for snapshot in snapshots:
             self._prepare_snapshot(snapshot, available_snapshot_ids)
@@ -365,6 +366,13 @@ class SnapshotIngestor:
             parent_session_id=parent_id,
             parent_link_kind=parent_link_kind,
             identity_inferred=inferred,
+            session_kind=(
+                SessionKind.SUBAGENT.value
+                if location.harness == Harness.CLAUDE and location.parent_source_path is not None
+                else SessionKind.MAIN.value
+                if location.harness == Harness.CLAUDE and inferred
+                else SessionKind.UNKNOWN.value
+            ),
         )
         db.add(row)
         db.flush()
@@ -411,20 +419,35 @@ class SnapshotIngestor:
             failed = any(status in ("pending", "failed") for status in statuses)
             snapshot_row.processing_status = "failed" if failed else "complete"
 
-    def _process_codex_metadata(self, snapshot: ResticSnapshot) -> None:
+    def _process_codex_metadata(self, snapshot: ResticSnapshot, *, refresh_completed: bool = False) -> None:
+        refresh_kinds = False
         with self._session_factory() as db, db.begin():
             row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
             if row.codex_metadata_status in ("complete", "partial"):
-                return
+                if not refresh_completed:
+                    return
+                refresh_kinds = bool(
+                    db.scalar(
+                        select(
+                            exists().where(
+                                CodexTitleObservationRow.machine_id == self._source.machine_id,
+                                CodexTitleObservationRow.snapshot_id == snapshot.id,
+                                CodexTitleObservationRow.session_kind.is_(None),
+                            )
+                        )
+                    )
+                )
+                if not refresh_kinds:
+                    return
         roots = tuple(root.path for root in self._roots if root.harness == Harness.CODEX)
         try:
             observations, warnings, retry_errors = read_codex_titles(self._source.restic, snapshot.id, roots)
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
-                if row is None or row.codex_metadata_status in ("complete", "partial"):
+                if row is None:
                     return
                 existing_observations = {
                     observation.native_session_id: observation
@@ -435,9 +458,21 @@ class SnapshotIngestor:
                         )
                     )
                 }
+                if refresh_kinds:
+                    if not retry_errors:
+                        refreshed = {item.native_session_id: item for item in observations}
+                        for existing in existing_observations.values():
+                            if existing.session_kind is None:
+                                item = refreshed.get(existing.native_session_id)
+                                existing.session_kind = (
+                                    item.session_kind.value if item is not None else SessionKind.UNKNOWN.value
+                                )
+                    return
+                if row.codex_metadata_status in ("complete", "partial"):
+                    return
                 for item in observations:
-                    existing = existing_observations.get(item.native_session_id)
-                    if existing is None:
+                    existing_observation = existing_observations.get(item.native_session_id)
+                    if existing_observation is None:
                         db.add(
                             CodexTitleObservationRow(
                                 machine_id=self._source.machine_id,
@@ -447,20 +482,22 @@ class SnapshotIngestor:
                                 title=item.title,
                                 title_source=item.title_source,
                                 updated_at=item.updated_at,
+                                session_kind=item.session_kind.value,
                             )
                         )
                     else:
-                        existing.source_path = item.source_path
-                        existing.title = item.title
-                        existing.title_source = item.title_source
-                        existing.updated_at = item.updated_at
+                        existing_observation.source_path = item.source_path
+                        existing_observation.title = item.title
+                        existing_observation.title_source = item.title_source
+                        existing_observation.updated_at = item.updated_at
+                        existing_observation.session_kind = item.session_kind.value
                 row.codex_metadata_status = "failed" if retry_errors else "partial" if warnings else "complete"
                 issues = [*retry_errors, *warnings]
                 row.codex_metadata_error = "; ".join(issues)[:4000] if issues else None
         except Exception as exc:
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
-                if row is not None:
+                if row is not None and not refresh_kinds:
                     row.codex_metadata_status = "failed"
                     row.codex_metadata_error = _error_text(exc)
 
@@ -487,6 +524,7 @@ class SnapshotIngestor:
                     & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
                 )
                 .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
+                .where(CodexTitleObservationRow.title.is_not(None))
                 # Matching below depends only on native ID and physical path.
                 # Older observations of that pair cannot win the title rank.
                 # Reduce them in PostgreSQL before SQLAlchemy buffers ORM rows:
@@ -501,6 +539,7 @@ class SnapshotIngestor:
                 )
             )
             for observation, captured_at in observations:
+                assert observation.title is not None
                 match = by_path.get(observation.source_path) if observation.source_path else None
                 if match is not None and match.native_session_id != observation.native_session_id:
                     continue
@@ -512,6 +551,38 @@ class SnapshotIngestor:
                 rank = (captured_at, observation.snapshot_id, observation.title)
                 if match.id not in latest or rank > latest[match.id]:
                     latest[match.id] = rank
+
+            latest_kinds: dict[UUID, tuple[datetime, str, str]] = {}
+            kind_observations = db.execute(
+                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
+                .join(
+                    ResticSnapshotRow,
+                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
+                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
+                )
+                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
+                .where(CodexTitleObservationRow.session_kind.is_not(None))
+                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
+                .order_by(
+                    CodexTitleObservationRow.native_session_id,
+                    CodexTitleObservationRow.source_path,
+                    ResticSnapshotRow.captured_at.desc(),
+                    CodexTitleObservationRow.snapshot_id.desc(),
+                )
+            )
+            for observation, captured_at in kind_observations:
+                assert observation.session_kind is not None
+                match = by_path.get(observation.source_path) if observation.source_path else None
+                if match is not None and match.native_session_id != observation.native_session_id:
+                    continue
+                if match is None and not observation.source_path and allow_index_only:
+                    candidates = by_native.get(observation.native_session_id, [])
+                    match = candidates[0] if len(candidates) == 1 else None
+                if match is None:
+                    continue
+                rank = (captured_at, observation.snapshot_id, observation.session_kind)
+                if match.id not in latest_kinds or rank > latest_kinds[match.id]:
+                    latest_kinds[match.id] = rank
             for row in sessions:
                 if row.id in latest:
                     row.title = latest[row.id][2]
@@ -519,6 +590,81 @@ class SnapshotIngestor:
                 elif row.codex_title_from_metadata and allow_index_only:
                     row.title = None
                     row.codex_title_from_metadata = False
+                if row.id in latest_kinds:
+                    row.session_kind = latest_kinds[row.id][2]
+
+    def _project_missing_session_kinds(self) -> None:
+        with self._session_factory() as db, db.begin():
+            latest_version_id = (
+                select(FileVersionRow.id)
+                .where(FileVersionRow.session_id == SessionRow.id)
+                .order_by(FileVersionRow.last_seen_at.desc(), FileVersionRow.id.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+
+            missing_sessions = (
+                select(SessionRow.id.label("session_id"), latest_version_id.label("latest_version_id"))
+                .where(SessionRow.machine_id == self._source.machine_id, SessionRow.session_kind.is_(None))
+                .cte("missing_session_kinds")
+            )
+            lineage = (
+                select(
+                    missing_sessions.c.session_id,
+                    FileVersionRow.id.label("version_id"),
+                    FileVersionRow.parent_version_id,
+                    FileVersionRow.shared_prefix_record_count,
+                    literal(0).label("depth"),
+                )
+                .select_from(missing_sessions)
+                .join(FileVersionRow, FileVersionRow.id == missing_sessions.c.latest_version_id)
+                .cte("session_kind_version_lineage", recursive=True)
+            )
+            parent_version = aliased(FileVersionRow)
+            lineage = lineage.union_all(
+                select(
+                    lineage.c.session_id,
+                    parent_version.id,
+                    parent_version.parent_version_id,
+                    parent_version.shared_prefix_record_count,
+                    lineage.c.depth + 1,
+                )
+                .join(parent_version, parent_version.id == lineage.c.parent_version_id)
+                .where(lineage.c.shared_prefix_record_count > 0, lineage.c.depth < CHECKPOINT_INTERVAL - 1)
+            )
+            first_payloads = (
+                select(lineage.c.session_id, FileVersionRecordRow.payload_id)
+                .select_from(lineage)
+                .join(
+                    FileVersionRecordRow,
+                    and_(
+                        FileVersionRecordRow.file_version_id == lineage.c.version_id, FileVersionRecordRow.ordinal == 0
+                    ),
+                )
+                .where(lineage.c.shared_prefix_record_count == 0)
+                .cte("session_kind_first_payloads")
+            )
+            rows = db.execute(
+                select(SessionRow, RecordPayloadRow.raw_bytes)
+                .select_from(SessionRow)
+                .outerjoin(first_payloads, first_payloads.c.session_id == SessionRow.id)
+                .outerjoin(RecordPayloadRow, RecordPayloadRow.id == first_payloads.c.payload_id)
+                .where(SessionRow.machine_id == self._source.machine_id, SessionRow.session_kind.is_(None))
+                .order_by(SessionRow.id)
+            )
+            for row, raw_bytes in rows.yield_per(32):
+                kind = None
+                if raw_bytes is not None:
+                    parsed = parse_record_json(raw_bytes)
+                    if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
+                        kind = _session_kind_from_record(Harness(row.harness), parsed.parsed)
+                if (
+                    kind is None
+                    and row.harness == Harness.CLAUDE.value
+                    and row.parent_link_kind == "claude_path_inferred"
+                ):
+                    kind = SessionKind.SUBAGENT
+                row.session_kind = (kind or SessionKind.UNKNOWN).value
 
     def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
         try:
@@ -638,7 +784,7 @@ class SnapshotIngestor:
         ordinal = 0
         matching_prefix = not is_checkpoint
         parent_ranks = _version_lineage_ranks(db, previous) if matching_prefix and previous is not None else {}
-        while batch := _read_record_batch(contents, metadata, limit=500):
+        while batch := _read_record_batch(contents, metadata, limit=500, harness=location.harness):
             payloads = self._get_payloads(db, batch)
             parent_ids = (
                 _effective_payload_ids(db, previous, parent_ranks, ordinal, ordinal + len(batch))
@@ -668,6 +814,7 @@ class SnapshotIngestor:
             ordinal += len(batch)
         if ordinal != record_count:
             raise RuntimeError(f"file changed while parsing: expected {record_count} JSONL records, read {ordinal}")
+        metadata.setdefault("session_kind", SessionKind.UNKNOWN.value)
         row.shared_prefix_record_count = 0 if is_checkpoint else shared_prefix
         row.parse_issue_count = issue_count
         row.complete = issue_count == 0
@@ -813,6 +960,13 @@ class SnapshotIngestor:
                 self._resolve_codex_parent_link(db, row)
         if row.cwd is None and metadata.get("cwd"):
             row.cwd = str(metadata["cwd"])
+        session_kind = metadata.get("session_kind")
+        if (
+            isinstance(session_kind, str)
+            and session_kind in {kind.value for kind in SessionKind}
+            and (session_kind != SessionKind.UNKNOWN.value or row.session_kind is None)
+        ):
+            row.session_kind = session_kind
         # An unchanged known version returns no metadata; a parsed version replaces the projection.
         if row.harness == Harness.CLAUDE.value and metadata:
             title: ClaudeTitle | None = metadata.get("claude_title")
@@ -828,8 +982,8 @@ class SnapshotIngestor:
     def _apply_latest_codex_title(self, db: DbSession, row: SessionRow) -> None:
         if row.native_session_id_conflict or not row.native_session_id:
             return
-        observations = db.execute(
-            select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
+        observations = (
+            select(CodexTitleObservationRow)
             .join(
                 ResticSnapshotRow,
                 (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
@@ -838,14 +992,27 @@ class SnapshotIngestor:
             .where(
                 CodexTitleObservationRow.machine_id == row.machine_id,
                 CodexTitleObservationRow.native_session_id == row.native_session_id,
+                CodexTitleObservationRow.source_path == row.source_path,
             )
             .order_by(ResticSnapshotRow.captured_at.desc(), CodexTitleObservationRow.snapshot_id.desc())
         )
-        for observation, _ in observations:
-            if observation.source_path == row.source_path:
-                row.title = observation.title
-                row.codex_title_from_metadata = True
-                return
+        title, kind = db.execute(
+            select(
+                observations.with_only_columns(CodexTitleObservationRow.title)
+                .where(CodexTitleObservationRow.title.is_not(None))
+                .limit(1)
+                .scalar_subquery(),
+                observations.with_only_columns(CodexTitleObservationRow.session_kind)
+                .where(CodexTitleObservationRow.session_kind.is_not(None))
+                .limit(1)
+                .scalar_subquery(),
+            )
+        ).one()
+        if title is not None:
+            row.title = title
+            row.codex_title_from_metadata = True
+        if kind is not None:
+            row.session_kind = kind
 
     def _resolve_codex_parent_link(self, db: DbSession, child: SessionRow) -> None:
         if child.parent_native_session_id_conflict:
@@ -977,14 +1144,16 @@ def _fingerprint_file(source: BinaryIO) -> tuple[str, int, int]:
     return digest.hexdigest(), byte_size, record_count
 
 
-def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int) -> list[_ParsedRecord]:
+def _read_record_batch(
+    source: BinaryIO, metadata: dict[str, Any], *, limit: int, harness: Harness
+) -> list[_ParsedRecord]:
     records: list[_ParsedRecord] = []
     batch_bytes = 0
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
         parsed = parse_record_json(raw_bytes)
         if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-            _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp)
+            _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
         records.append(
             _ParsedRecord(
                 raw_bytes=raw_bytes, byte_offset=byte_offset, sha256=hashlib.sha256(raw_bytes).hexdigest(), json=parsed
@@ -997,7 +1166,7 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
 
 
 def _extract_session_metadata(
-    record: Mapping[str, Any], metadata: dict[str, Any], *, timestamp: datetime | None
+    record: Mapping[str, Any], metadata: dict[str, Any], *, timestamp: datetime | None, harness: Harness
 ) -> None:
     payload = record.get("payload")
     data = payload if isinstance(payload, dict) else {}
@@ -1006,6 +1175,10 @@ def _extract_session_metadata(
             _remember_metadata_value(metadata, "native_session_id", data["id"])
         if isinstance(data.get("parent_thread_id"), str):
             _remember_metadata_value(metadata, "parent_native_session_id", data["parent_thread_id"])
+        if harness == Harness.CODEX:
+            _remember_session_kind(metadata, classify_codex_source(data.get("source")))
+    if harness == Harness.CLAUDE and isinstance(record.get("isSidechain"), bool):
+        _remember_session_kind(metadata, SessionKind.SUBAGENT if record["isSidechain"] else SessionKind.MAIN)
     for candidate in (record.get("cwd"), data.get("cwd")):
         if isinstance(candidate, str):
             metadata.setdefault("cwd", candidate)
@@ -1016,6 +1189,30 @@ def _extract_session_metadata(
         metadata["first_timestamp"] = timestamp if first is None else min(first, timestamp)
         metadata["last_timestamp"] = timestamp if last is None else max(last, timestamp)
     metadata["claude_title"] = select_claude_title(metadata.get("claude_title"), record)
+
+
+def _session_kind_from_record(harness: Harness, record: Mapping[str, Any]) -> SessionKind | None:
+    if harness == Harness.CODEX and record.get("type") == "session_meta":
+        payload = record.get("payload")
+        data = payload if isinstance(payload, Mapping) else {}
+        return classify_codex_source(data.get("source"))
+    if harness == Harness.CLAUDE and isinstance(record.get("isSidechain"), bool):
+        return SessionKind.SUBAGENT if record["isSidechain"] else SessionKind.MAIN
+    return None
+
+
+def _remember_session_kind(metadata: dict[str, Any], kind: SessionKind) -> None:
+    if metadata.get("session_kind_conflict"):
+        return
+    existing = metadata.get("session_kind")
+    if kind == SessionKind.UNKNOWN:
+        metadata.setdefault("session_kind", SessionKind.UNKNOWN.value)
+        return
+    if existing is None or existing == SessionKind.UNKNOWN.value:
+        metadata["session_kind"] = kind.value
+    elif existing != kind.value:
+        metadata["session_kind"] = SessionKind.UNKNOWN.value
+        metadata["session_kind_conflict"] = True
 
 
 def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> None:

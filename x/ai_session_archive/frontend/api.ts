@@ -53,6 +53,7 @@ function sessionQuery(query: SessionQuery): string {
   if (query.harness !== undefined) params.set("harness", query.harness);
   if (query.cursor !== undefined) params.set("cursor", query.cursor);
   if (query.parentSessionId !== undefined) params.set("parent_session_id", query.parentSessionId);
+  for (const kind of query.kinds ?? []) params.append("kind", kind);
   return params.toString();
 }
 

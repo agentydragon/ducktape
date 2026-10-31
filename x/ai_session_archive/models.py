@@ -13,6 +13,13 @@ class Harness(StrEnum):
     CODEX = "codex"
 
 
+class SessionKind(StrEnum):
+    MAIN = "main"
+    SUBAGENT = "subagent"
+    GUARDIAN = "guardian"
+    UNKNOWN = "unknown"
+
+
 class TranscriptStatus(StrEnum):
     CAPTURED = "captured"
     PENDING = "pending"
@@ -60,6 +67,7 @@ class SessionSummary(BaseModel):
     id: UUID
     machine_id: str
     harness: Harness
+    session_kind: SessionKind
     title: str | None
     cwd: str | None
     parent_session_id: UUID | None = None

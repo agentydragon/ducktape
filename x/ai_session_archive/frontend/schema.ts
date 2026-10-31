@@ -1,4 +1,5 @@
 export type Harness = "claude" | "codex";
+export type SessionKind = "main" | "subagent" | "guardian" | "unknown";
 export type TranscriptStatus = "captured" | "pending" | "failed" | "unavailable";
 
 export type Machine = {
@@ -35,6 +36,7 @@ export type SessionSummary = {
   id: string;
   machine_id: string;
   harness: Harness;
+  session_kind: SessionKind;
   title: string | null;
   cwd: string | null;
   started_at: string | null;
@@ -89,4 +91,5 @@ export type SessionQuery = {
   cursor?: string;
   limit?: number;
   parentSessionId?: string;
+  kinds?: SessionKind[];
 };

@@ -4,6 +4,7 @@ exports_files(
     [
         "0001_initial_archive.py",
         "0002_codex_titles.py",
+        "0003_session_kind.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
 )
@@ -13,6 +14,7 @@ filegroup(
     srcs = [
         "0001_initial_archive.py",
         "0002_codex_titles.py",
+        "0003_session_kind.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
 )
@@ -29,6 +31,15 @@ py_library(
 py_library(
     name = "0001_initial_archive",
     srcs = ["0001_initial_archive.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0003_session_kind",
+    srcs = ["0003_session_kind.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
