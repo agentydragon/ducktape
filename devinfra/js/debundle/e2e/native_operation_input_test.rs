@@ -1272,7 +1272,10 @@ fn unrelated_global_write_preserves_exact_symbol_input() {
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert_eq!(native_input_uses(&graph).len(), 1);
     // A literal source names only `unrelated`, which holds no intrinsic.
-    assert!(program_graph["native_integrity_witnesses"].is_null(), "{program_graph}");
+    assert!(
+        program_graph["native_integrity_witnesses"].is_null(),
+        "{program_graph}"
+    );
 }
 
 #[test]
