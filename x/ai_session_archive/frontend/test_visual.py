@@ -27,14 +27,18 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
         await expect(progress).to_contain_text("ThinkPad")
-        await expect(progress).to_contain_text("42/53 · 2 failed")
-        await expect(progress).not_to_contain_text("Complete fixture machine")
+        await expect(progress).to_contain_text("72/198 snapshots remaining")
+        await expect(progress).to_contain_text("Complete fixture machine")
+        await expect(progress.get_by_role("status", name="Complete fixture machine synced")).to_be_visible()
         await expect(progress).not_to_contain_text("Snapshots: 3 of 5 registered complete")
-        rugged_progress = page.get_by_role("progressbar", name="Rugged file-entry progress")
-        await expect(rugged_progress).to_have_attribute("aria-valuenow", "42")
-        await expect(rugged_progress).to_have_attribute("aria-valuemax", "53")
+        await expect(page.get_by_role("progressbar", name="Complete fixture machine snapshot progress")).to_have_count(
+            0
+        )
+        rugged_progress = page.get_by_role("progressbar", name="Rugged snapshot progress")
+        await expect(rugged_progress).to_have_attribute("aria-valuenow", "126")
+        await expect(rugged_progress).to_have_attribute("aria-valuemax", "198")
         await expect(rugged_progress).to_have_attribute(
-            "aria-valuetext", "42 processed, 9 pending, 2 failed of 53 inventoried file entries"
+            "aria-valuetext", "126 of 198 registered snapshots complete, 0 failed"
         )
         heading = await page.get_by_role("heading", name="Local agent sessions").bounding_box()
         import_bounds = await progress.bounding_box()
@@ -96,7 +100,8 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
         session_list_toggle = page.get_by_role("button", name="Session list")
         await expect(progress).to_contain_text("27/31")
-        await expect(progress).not_to_contain_text("Complete fixture machine")
+        await expect(progress).to_contain_text("Complete fixture machine")
+        await expect(progress.get_by_role("status", name="Complete fixture machine synced")).to_be_visible()
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
         await expect(session_list_toggle).to_be_visible()
         await expect(progress.get_by_role("link", name="Import details")).to_be_visible()
