@@ -419,7 +419,9 @@ atomic group or loss there.
   `interpreter.rs` assumes. `ts_enum_iife.rs` stays until then as the
   pre-purity admission shape for the heap scan and the initializer's own
   purity, both of which run before execution evaluates the IIFE; it is deleted
-  in that layer.
+  in that layer. Known precision loss to recover there: a coercion inside a
+  function body no longer resolves an enum member, since a body runs at no
+  fixed program point.
 - TODO: revisit one least fixpoint over growing prefix states (the
   alternative that design section rejects) if per-prefix heap state would
   make enough statements pure on the canonical inputs to matter for
@@ -532,14 +534,16 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 
 ### Step 8 — promotion and fallback
 
-- Remaining: `safe_plain_array_at_init_fallback_sources` becomes `Clean`
-  array resolution after 4c. Its callbacks must be evaluated against the
-  elements' state (`props ⊆ Prim`), not just a `Clean` array: today it admits
-  a root only when the callbacks use elements by identity, strict equality or
-  truthiness, or when 4b's heap state proves the elements primitive. The rule
-  lost the two Tana sites in `index-DI2GynTv.js` that need element state:
-  `lV` (tool objects read through `n.name` and `n.systemNodeId`, lines
-  69844–69850) and `eet` (command objects, line 109391).
+- Landed: `safe_plain_array_at_init_fallback_sources` reads each plain
+  array's element state settled at the statement (`SettledElements`): object
+  elements admit static reads of keys every element holds a primitive under
+  (purity_soundness § Plain-array at-init fallback). Its soundness is the
+  settled heap-taint invariant (purity_soundness § Settled heap taint),
+  which an incomplete execution now upholds by tainting everything its reads
+  reach. Remaining: confirm on the Tana replay that the two sites that need
+  element state, `lV` (tool objects read through `n.name` and
+  `n.systemNodeId`, `index-DI2GynTv.js` lines 69844–69850) and `eet`
+  (command objects, line 109391), leave the fallback reach.
 - `promote_at_init_calls` already consumes complete synchronous summaries and
   takes the syntactic reach (`at_init_unresolved_sources`, closed by
   `source_unit_read_closure.rs`) only for incomplete ones. An incomplete

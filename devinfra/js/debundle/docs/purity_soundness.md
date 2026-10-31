@@ -729,6 +729,39 @@ monotonically invalidates that copy site. Unsupported object spreads preserve
 possible getter effects during the callback invocation, even when no result is
 consumed. General object spread and accessor execution stay conservative.
 
+## Settled heap taint
+
+Several proofs read the synchronous interpreter's `tainted_objects` at a
+statement's program point as "nothing outside the analyzed writes reached this
+object": the mapped `Object.fromEntries` storage proof below, the array
+iteration's fresh primitive-write receivers, and the at-init fallback's
+plain-array element state. That reading is an engine invariant. Every object
+that, before statement _n_, is written through an unproven receiver, escapes
+to an unknown or incomplete call, is stored into a container that escapes
+(an Array, a Set, a Map, an object property), is captured by a closure that
+code the interpreter does not follow may run, is returned to such code, or
+reaches `Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a
+`Proxy`, is in `tainted_objects` at `Prefix(n)`. Tainting follows stored
+references, so a tainted container taints what it holds. An execution the
+interpreter cannot complete taints every value of every binding the statement
+or its summarized callees read, since the unsupported operation may have
+reached any of them. `facts/at_init_fallback_tests.rs` pins each route
+against the plain-array element state.
+
+## Plain-array at-init fallback
+
+An incomplete statement's at-init fallback skips a plain-array binding it
+iterates only through `forEach`/`map`/`filter` with call-free callbacks that
+run no user code on the elements (`facts/at_init_fallback.rs`). Primitive
+elements are silent under A11. Object elements are admitted when, at the
+statement's program point, every element is an untainted plain-data object
+literal with static keys, the chain is the statement's only mention of the
+binding, and no other binding the statement reads reaches an element: then a
+static read of a key every element holds a primitive under as an own property
+runs no accessor and yields a primitive, which any use converts silently. A
+key some element lacks would fall through to `%Object.prototype%`; such reads
+are not admitted.
+
 ## Callback storage through mapped `Object.fromEntries`
 
 Synchronous callback analysis has a separate, narrow storage proof for

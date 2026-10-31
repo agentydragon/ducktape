@@ -49,6 +49,8 @@ pub mod abstract_domain;
 mod analyze;
 mod array_spreads;
 mod at_init_fallback;
+#[cfg(test)]
+mod at_init_fallback_tests;
 mod callable_inference;
 mod collector;
 mod dynamic_scope;
@@ -98,7 +100,7 @@ pub use statement_facts::{
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, HeapContentCells, LocalRecordFactoryPurityCertificate,
+    ConstructorFacts, HeapContentCells, LocalRecordFactoryPurityCertificate, SettledElements,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
