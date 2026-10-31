@@ -28,6 +28,11 @@ durable ownership and failure behavior still need to be sound in this first slic
 cooperation remains a product goal; the broader requirements below are not all prerequisites for
 same-privilege spawning.
 
+The [delegation workflow proposal](session_delegation_workflows.md) supplies the concrete call
+sequences, source audit and implementation gaps for that review. It recommends existing-target
+reuse with backend-enforced same-SA admission and narrow result reads, including external MCP
+callers. These are proposed choices; the DAG retains the selection gate before implementation.
+
 ## Requirements and preferences
 
 - Agents with different access must be able to collaborate across separate Sandboxes. Useful
