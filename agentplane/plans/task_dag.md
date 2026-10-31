@@ -368,6 +368,11 @@ Do not equate creating a resource, reading history, sending a message or receivi
 selects service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s.
 Resource-owning backends share evaluation code and enforce their own APIs. Native RBAC variants
 remain alternatives if implementation reveals a poor fit; comparing or building them is not a gate.
+**Operator clarification, 2026-10-30 PDT:** inbox tags and history tags are the current direction
+for cross-ServiceAccount sends and reads, and may be reconsidered. Their presence in implementation
+or existing plans does not make them a permanent domain constraint. Use the realistic workflow
+examples to evaluate the mechanism; an alternative may require backend work and replanning.
+Existing authorization continues to apply until a replacement contract is selected and implemented.
 SA-level caller attribution, configurable topology and live shared bundles are agreed constraints.
 Replacing the authorization machinery across services is a separate deferred evaluation, not a
 multiagent prerequisite. Preserve existing auth semantics; a concrete limitation must justify any
@@ -900,6 +905,11 @@ Exit: the named incident classes have focused regression coverage and a continue
 without lost authored history or duplicate external work. Exercise the affected JS/exec workflow
 with an agent, including partial output and meaningful failures. Related to planned-roll ownership,
 but the tool/runtime failure outcome is independently finishable.
+
+The desired JS error surface has native structured properties such as `error.observed_output.text`
+and `cause`. Current pinned-host string rejections are an explicit compatibility limitation;
+review central normalization when changing its host/delegate adapter, without making a host
+replacement prerequisite for the current fixes. See the [runtime direction](session_runtime_model.md#tool-access-disconnects-and-recovery).
 
 ### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
 

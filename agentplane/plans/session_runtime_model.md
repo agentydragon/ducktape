@@ -123,6 +123,14 @@ return output observed so far together with the follower connection failure; do 
 the process exited or that no effects occurred. Preserve unknown mutation outcomes without
 automatically replaying them.
 
+The desired JavaScript interface rejects with an `Error` carrying structured fields such as
+`observed_output`, the observation cursor, remote outcome and `cause`, alongside `message`.
+Agent code should be able to read `error.observed_output.text` directly. The current pinned host
+rejects delegated calls with a primitive string; JSON-encoded failure details are a transport
+constraint, not the target agent interface. When changing the host or delegate adapter, normalize
+that boundary centrally and preserve the original cause/evidence. This does not require replacing
+the host before shipping independently useful recovery fixes.
+
 Define the reconnection protocol before relying on it: what connection/session identity survives,
 how it relates to environment and executor generations, and whether existing processes/handles can
 be rediscovered. A retained process inventory may be useful, but is not yet required; agents can
@@ -150,8 +158,12 @@ interchangeable. Preserve existing Action authorization and outcomes rather than
 execution owner.
 
 An Agentplane-owned Code Mode executor and execution server are possible future implementations.
-Reducing Codex WebSocket/gRPC adaptation is a motivation, not a prerequisite or an implementation
-decision. Preserve sandbox-hosted app-server plus separate execution-container operation.
+Owning the JS host would also let Agentplane design its agent-facing APIs as ordinary libraries:
+structured errors and results, environment references across cells, direct Action calls, and
+explicit cancellation, waiting and state lifetimes. Translate transport quirks at the adapter
+boundary. Evaluate host ownership against concrete workflow ergonomics as well as the cost of
+Codex WebSocket/gRPC adaptation; no implementation choice is selected here. Preserve sandbox-hosted
+app-server plus separate execution-container operation.
 
 ## Resource visibility and placement
 
