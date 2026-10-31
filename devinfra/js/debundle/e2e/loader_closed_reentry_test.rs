@@ -835,3 +835,61 @@ fn native_addon_loader_requires_the_native_addon_premise() {
         &["program_premises.non_literal_loader_calls: native_addons_only"],
     );
 }
+
+/// protobufjs `inquire` reaches the module-scope `require` through a direct
+/// eval of constant code; that eval is a loader read, not dynamic scope.
+#[test]
+fn direct_eval_of_require_is_a_loader_call_not_dynamic_scope() {
+    let user = r#"import { load } from "./runtime.js";
+export function inquire(name) {
+  try { return name === "fs" ? load("fs") : eval("quire".replace(/^/, "re"))(name); } catch (e) { return null; }
+}
+"#;
+    let extra = [("static/runtime", RUNTIME), ("static/user", user)];
+    let report = accepted_provider_report_under(
+        &extra,
+        HostBehavior {
+            reentry_free_builtin_modules: [NodeBuiltinModule::Path, NodeBuiltinModule::Fs]
+                .into_iter()
+                .collect(),
+            ..audited_host()
+        },
+        native_addon_premise(),
+    );
+    assert_eq!(report["loader"]["premised_sites"], 1);
+
+    let derivation = rejected_loader_derivation(
+        PROVIDER,
+        &[
+            ("static/helper", HELPER),
+            ("static/runtime", RUNTIME),
+            ("static/user", user),
+        ],
+        audited_host(),
+    );
+    assert_eq!(
+        failure(&derivation, "opaque_loader_site")["first"]["site"]["kind"],
+        "evaluated_require_dynamic_call"
+    );
+}
+
+/// Any other eval code may read the imported loader under any name.
+#[test]
+fn direct_eval_of_other_code_exposes_imported_loaders() {
+    let user = r#"import { load } from "./runtime.js";
+export function run(code) { return eval(code + ""); }
+"#;
+    let derivation = rejected_loader_derivation(
+        PROVIDER,
+        &[
+            ("static/helper", HELPER),
+            ("static/runtime", RUNTIME),
+            ("static/user", user),
+        ],
+        audited_host(),
+    );
+    assert_eq!(
+        failure(&derivation, "opaque_loader_site")["first"]["site"]["source_chunk"],
+        "static/user"
+    );
+}

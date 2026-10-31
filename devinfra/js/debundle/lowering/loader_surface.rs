@@ -207,6 +207,8 @@ fn is_loader_site(kind: InteropUseKind) -> bool {
         | InteropUseKind::ImportMetaRequireReference
         | InteropUseKind::GlobalThisRequire
         | InteropUseKind::UnboundRequire
+        | InteropUseKind::EvaluatedRequireLiteralCall
+        | InteropUseKind::EvaluatedRequireDynamicCall
         | InteropUseKind::UnboundModule
         | InteropUseKind::ImportMetaDynamicProperty
         | InteropUseKind::ImportMetaValue
@@ -600,7 +602,18 @@ pub(super) fn loader_surfaces(
                     }
                     continue;
                 }
-                InteropUseKind::ImportMetaRequireDynamicCall => LoaderUse::NonLiteralCall,
+                // The module-scope `require` a direct eval reads is the
+                // module's own host loader.
+                InteropUseKind::EvaluatedRequireLiteralCall => LoaderUse::Literal {
+                    specifier: site
+                        .specifier
+                        .as_deref()
+                        .expect("literal loader calls carry their specifier"),
+                    resolve_from: source,
+                    data_read_only: false,
+                },
+                InteropUseKind::ImportMetaRequireDynamicCall
+                | InteropUseKind::EvaluatedRequireDynamicCall => LoaderUse::NonLiteralCall,
                 kind if !is_loader_site(kind) => continue,
                 _ => LoaderUse::Opaque,
             };

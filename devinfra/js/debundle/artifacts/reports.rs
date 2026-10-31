@@ -297,6 +297,11 @@ pub enum InteropUseKind {
     ImportMetaRequireReference,
     GlobalThisRequire,
     UnboundRequire,
+    /// A call of a direct `eval` whose code folds to exactly `require`:
+    /// `eval("require")("x")` with one string literal.
+    EvaluatedRequireLiteralCall,
+    /// The same with any other argument list.
+    EvaluatedRequireDynamicCall,
     UnboundModule,
     /// `module.exports`: the export object, which cannot load a module.
     UnboundModuleExports,

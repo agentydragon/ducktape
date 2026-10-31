@@ -93,6 +93,66 @@ fn is_host_require_member(member: &MemberExpr, unresolved_context: SyntaxContext
         }
 }
 
+/// A direct call of the global `eval` with one argument whose value folds to
+/// exactly `"require"`.
+fn is_eval_of_require(call: &CallExpr, unresolved_context: SyntaxContext) -> bool {
+    matches!(&call.callee, Callee::Expr(callee)
+        if matches!(callee.unwrap_parens(), Expr::Ident(id)
+            if id.sym == *"eval" && id.ctxt == unresolved_context))
+        && matches!(call.args.as_slice(), [arg]
+            if arg.spread.is_none() && fold_string(&arg.expr).as_deref() == Some("require"))
+}
+
+/// The value of a string expression built only from literals, `+` and
+/// `String.prototype.replace` with a literal pattern (a string, or the empty
+/// `/^/` regex, which prepends) and a replacement without `$` patterns.
+fn fold_string(expr: &Expr) -> Option<String> {
+    match expr.unwrap_parens() {
+        Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+        Expr::Tpl(tpl) if tpl.exprs.is_empty() => tpl
+            .quasis
+            .first()?
+            .cooked
+            .as_ref()
+            .map(|cooked| cooked.to_string_lossy().into_owned()),
+        Expr::Bin(bin) if bin.op == BinaryOp::Add => {
+            Some(fold_string(&bin.left)? + &fold_string(&bin.right)?)
+        }
+        Expr::Call(call) => {
+            let Callee::Expr(callee) = &call.callee else {
+                return None;
+            };
+            let Expr::Member(member) = callee.unwrap_parens() else {
+                return None;
+            };
+            if !member_is_named(member, "replace") {
+                return None;
+            }
+            let receiver = fold_string(&member.obj)?;
+            let [pattern, replacement] = call.args.as_slice() else {
+                return None;
+            };
+            if pattern.spread.is_some() || replacement.spread.is_some() {
+                return None;
+            }
+            let replacement = fold_string(&replacement.expr)?;
+            if replacement.contains('$') {
+                return None;
+            }
+            match pattern.expr.unwrap_parens() {
+                Expr::Lit(Lit::Regex(regex)) if &*regex.exp == "^" && regex.flags.is_empty() => {
+                    Some(replacement + &receiver)
+                }
+                pattern => {
+                    let pattern = fold_string(pattern)?;
+                    Some(receiver.replacen(&pattern, &replacement, 1))
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
 fn is_import_meta_require_member(member: &MemberExpr) -> bool {
     member_is_named(member, "require")
         && matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
@@ -838,6 +898,9 @@ struct ModuleScanVisitor {
     item_index: usize,
     interop_uses: Vec<(usize, Span, InteropUseKind, Option<String>)>,
     direct_call_members: BTreeSet<u32>,
+    /// Direct `eval` calls already classified as the callee of an
+    /// `EvaluatedRequire*Call`.
+    evaluated_require_callees: BTreeSet<u32>,
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
@@ -946,9 +1009,44 @@ impl Visit for ModuleScanVisitor {
             self.interop_uses
                 .push((self.item_index, node.span, kind, literal));
         }
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Call(inner) = callee.unwrap_parens()
+            && is_eval_of_require(inner, self.unresolved_context)
+        {
+            let literal = match node.args.as_slice() {
+                [arg] if arg.spread.is_none() => match arg.expr.unwrap_parens() {
+                    Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let kind = if literal.is_some() {
+                InteropUseKind::EvaluatedRequireLiteralCall
+            } else {
+                InteropUseKind::EvaluatedRequireDynamicCall
+            };
+            self.evaluated_require_callees.insert(inner.span.lo.0);
+            self.has_cjs_interop = true;
+            self.interop_uses
+                .push((self.item_index, node.span, kind, literal));
+        }
         if matches!(&node.callee, Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "eval"))
         {
-            self.dynamic_scope = true;
+            // Direct eval of code that is exactly `require` reads that binding
+            // and nothing else; any other code may read or write any binding.
+            if is_eval_of_require(node, self.unresolved_context) {
+                self.has_cjs_interop = true;
+                if !self.evaluated_require_callees.contains(&node.span.lo.0) {
+                    self.interop_uses.push((
+                        self.item_index,
+                        node.span,
+                        InteropUseKind::UnboundRequire,
+                        None,
+                    ));
+                }
+            } else {
+                self.dynamic_scope = true;
+            }
         }
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
@@ -1071,5 +1169,39 @@ impl Visit for ModuleScanVisitor {
             self.has_rewritable_specifier = true;
         }
         node.visit_children_with(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::GLOBALS;
+
+    #[test]
+    fn folds_constant_string_expressions() {
+        for (source, expected) in [
+            (r#""require""#, Some("require")),
+            (r#""quire".replace(/^/, "re")"#, Some("require")),
+            (r#""re" + "quire""#, Some("require")),
+            (r#""rexquire".replace("x", "")"#, Some("require")),
+            ("`require`", Some("require")),
+            (r#""quire".replace(/^/g, "re")"#, None),
+            (r#""quire".replace(/q/, "re")"#, None),
+            (r#""quire".replace(/^/, "$&")"#, None),
+            ("name", None),
+        ] {
+            GLOBALS.set(&Default::default(), || {
+                let parsed =
+                    js_ast::parse_js_module("fixture.js", &format!("({source});")).expect("parse");
+                let ModuleItem::Stmt(Stmt::Expr(statement)) = &parsed.module.body[0] else {
+                    panic!("expression statement");
+                };
+                assert_eq!(
+                    fold_string(&statement.expr).as_deref(),
+                    expected,
+                    "{source}"
+                );
+            });
+        }
     }
 }
