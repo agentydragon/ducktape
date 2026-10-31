@@ -285,11 +285,9 @@ it says otherwise.
 5. Path-independent evidence (C6): landed; numbering kept for references.
 6. Serializable artifact: landed; numbering kept for references.
 7. CLI and equivalence tests: landed; numbering kept for references.
-8. **`pipeline.bzl`** three actions. gaffer-private repins separately.
+8. `pipeline.bzl` three actions: landed; numbering kept for references.
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.
-
-7 needs all before it.
 
 ## Interaction with other work
 

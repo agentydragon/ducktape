@@ -480,7 +480,10 @@ The projection holds everything analysis reads from the spec; its bytes stay
 the same across assignment edits, module renames, notes and
 `commuting_statements`. `run --analysis` refuses an artifact computed by
 another engine, from other sources, or for another projection, naming what
-differs; rerun the first two commands then. Its output equals `debundle run`'s.
+differs; rerun the first two commands then. Its output equals `debundle run`'s. Under Bazel, `debundle_pipeline` runs
+these as three actions, so an assignment edit reuses the cached
+`DebundleAnalyze` result; its `analysis` output group holds the projection and
+the artifact for running the last command locally.
 
 Selector failures follow the keep-going (default) and `--fail-fast` modes of
 <../SPEC.md> § Modes, in the order of `docs/selector_resolution.md` § Order. Bulk
