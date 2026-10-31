@@ -400,6 +400,15 @@ pub struct ProofDependencies {
     pub host_behavior: BTreeSet<HostBehaviorKey>,
 }
 
+/// Global properties that hold only fresh ordinary objects created by
+/// analyzed code (SPEC.md § Bundle-owned globals).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BundleGlobalNames {
+    pub names: BTreeSet<String>,
+    /// Every property keyed by a `Symbol.for` symbol.
+    pub registered_symbols: bool,
+}
+
 /// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
 /// The value is not repeated: a key enters a proof only with the one value its
 /// reader accepts, which the spec echo in the same report shows.
@@ -671,6 +680,9 @@ pub struct AnalysisAssumptions {
     /// `host_behavior.predefined_globals`: whether the host predefines only
     /// standard global properties.
     pub predefined_globals: spec::PredefinedGlobals,
+    /// The whole-program bundle-owned global properties (SPEC.md §
+    /// Bundle-owned globals); empty unless `predefined_globals: standard`.
+    pub bundle_globals: BundleGlobalNames,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,

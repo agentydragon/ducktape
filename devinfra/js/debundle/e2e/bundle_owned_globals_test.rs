@@ -120,3 +120,25 @@ fn a_slot_holding_the_global_object_can_replace_map() {
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
 }
+
+#[test]
+fn a_store_in_another_chunk_keeps_the_slot_unknown() {
+    let bundle = "import './poison.js';\nconst root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }";
+    let source = source(bundle);
+    let extra = [(
+        "static/poison",
+        "export function poison(value) { globalThis.registry = value; }\n",
+    )];
+    expect_atomic_conflict_rejection(
+        opts(&source, &["root", "install"], &[], true).with_extra_chunks(&extra),
+        &["values/native", "values/later"],
+        &[],
+    );
+    let clean = [(
+        "static/poison",
+        "export function poison(value) { globalThis.registry = { value }; }\n",
+    )];
+    let fixture =
+        run_fixture(opts(&source, &["root", "install"], &[], true).with_extra_chunks(&clean));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+}
