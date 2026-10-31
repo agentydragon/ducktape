@@ -38,7 +38,7 @@ use crate::facts::semantic_inference::{
     NativeCallee, NativePremise, NativePremises, SemanticFact, SemanticFacts, SemanticKey,
     SemanticRules, native_premise,
 };
-use crate::facts::standard_globals::is_standard_global;
+use crate::facts::standard_globals::is_predefined_global;
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
@@ -1544,10 +1544,11 @@ type NativeReceiverRoots = BTreeSet<NativeReceiverRoot>;
 pub(super) struct GlobalNames {
     /// Unshadowed bindings that evaluate to the global object.
     aliases: BTreeSet<&'static str>,
-    /// Node's `global` is one of `aliases` under `predefined_globals: standard`.
+    /// Node's and Bun's `global` is one of `aliases` under a
+    /// `predefined_globals` claim.
     node_global: bool,
-    /// `predefined_globals: standard`: bundle-owned globals may be inferred.
-    standard_host: bool,
+    /// Bundle-owned globals may be inferred unless this is `unknown`.
+    predefined: spec::PredefinedGlobals,
     bundle: BundleGlobals,
 }
 
@@ -5981,7 +5982,7 @@ impl ExecutionIndex {
     /// object, the start of the greatest fixed point (SPEC.md § Bundle-owned
     /// globals).
     pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
-        if !self.census_globals.standard_host {
+        if self.census_globals.predefined.is_unknown() {
             return BundleGlobalNames::default();
         }
         let declared = self.declared_bindings();
@@ -6014,7 +6015,7 @@ impl ExecutionIndex {
             match property_key_evidence(key, &self.property_key_assignments, &declared).domain {
                 PropertyKeyDomain::FiniteStrings(keys) => {
                     candidates.names.extend(keys.into_iter().filter(|name| {
-                        !is_standard_global(name)
+                        !is_predefined_global(name, self.census_globals.predefined)
                             && self.census_globals.binding_root(name).is_none()
                     }));
                 }
@@ -6049,7 +6050,7 @@ impl ExecutionIndex {
             ValueExpr::Member(base, property, _) => {
                 if let Some(name) = property
                     && !reads.contains(name)
-                    && !is_standard_global(name)
+                    && !is_predefined_global(name, self.census_globals.predefined)
                     && self.census_globals.binding_root(name).is_none()
                     && context.roots(base).contains(&NativeReceiverRoot::Intrinsic(
                         NativeIntrinsic::GlobalObject,
@@ -6096,7 +6097,7 @@ impl ExecutionIndex {
         candidates: &BundleGlobalNames,
         premises: &[ResolvedNoAccessorInstall],
     ) -> BundleGlobalNames {
-        if !self.census_globals.standard_host {
+        if self.census_globals.predefined.is_unknown() {
             return BundleGlobalNames::default();
         }
         let declared = self.declared_bindings();
@@ -8074,7 +8075,7 @@ impl ExecutionIndex {
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         // A standard host defines `global` only as Node's global object.
-        let node_global = hints.assumptions.predefined_globals == spec::PredefinedGlobals::Standard
+        let node_global = !hints.assumptions.predefined_globals.is_unknown()
             && unshadowed_global_names(body, &["global"]).contains("global");
         let mut index = Self {
             source_chunk_id: hints.current_chunk_id.clone(),
@@ -8109,8 +8110,7 @@ impl ExecutionIndex {
                     .chain(node_global.then_some("global"))
                     .collect(),
                 node_global,
-                standard_host: hints.assumptions.predefined_globals
-                    == spec::PredefinedGlobals::Standard,
+                predefined: hints.assumptions.predefined_globals,
                 bundle: BundleGlobals::default(),
             },
             plain_array_bindings: plain_array_bindings.clone(),
@@ -8452,7 +8452,7 @@ impl ExecutionIndex {
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
         let declared = index.declared_bindings();
-        if index.census_globals.standard_host {
+        if !index.census_globals.predefined.is_unknown() {
             index.census_globals.bundle =
                 index.bundle_globals(&hints.assumptions.bundle_globals, &declared);
         }

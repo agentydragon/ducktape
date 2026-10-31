@@ -1,10 +1,13 @@
-//! The global properties a `predefined_globals: standard` host may define
-//! before the program runs (SPEC.md § Predefined globals): the `globals`
-//! package's lists for ECMAScript, browser windows and workers and Node, plus
-//! `%Object.prototype%`'s own properties, which every global object inherits.
+//! The global properties a `predefined_globals` host may define before the
+//! program runs (SPEC.md § Predefined globals): the `globals` package's lists
+//! for ECMAScript, browser windows and workers and Node, plus
+//! `%Object.prototype%`'s own properties, which every global object inherits,
+//! and for `bun` Bun's own globals.
 
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
+
+use spec::PredefinedGlobals;
 
 /// The `globals` environments a standard host draws from; every ECMAScript
 /// edition list (`es*`) is included too.
@@ -63,6 +66,27 @@ pub fn is_standard_global(name: &str) -> bool {
     NAMES.contains(name)
 }
 
+/// Bun's own global properties outside the standard lists: every string key
+/// on Bun 1.x's `globalThis` and its prototype chain not in `NAMES`, as probed
+/// on the pinned Claude Code executable (BuildBuddy invocation
+/// e9adf31f-abf0-4cf0-94dd-b3af48eab689; gaffer-private
+/// claude/cli/re/2.1.292/debug/2026-10-31-native-census-opaque-writes-audit.md).
+const BUN: &[&str] = &[
+    "Bun",
+    "HTMLRewriter",
+    "BuildError",
+    "BuildMessage",
+    "ResolveError",
+    "ResolveMessage",
+    "ShadowRealm",
+];
+
+/// Whether a `host` claiming its predefined globals may predefine a global
+/// property named `name`.
+pub(crate) fn is_predefined_global(name: &str, host: PredefinedGlobals) -> bool {
+    is_standard_global(name) || host == PredefinedGlobals::Bun && BUN.contains(&name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,14 +107,27 @@ mod tests {
             "process",
             "hasOwnProperty",
         ] {
-            assert!(is_standard_global(name), "{name}");
+            assert!(
+                is_predefined_global(name, PredefinedGlobals::Standard),
+                "{name}"
+            );
         }
         for name in [
             "_sentryDebugIds",
             "analyticsConnectorInstances",
             "experimentInstances",
         ] {
-            assert!(!is_standard_global(name), "{name}");
+            assert!(
+                !is_predefined_global(name, PredefinedGlobals::Standard),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn bun_globals_are_outside_the_standard_lists() {
+        for name in BUN {
+            assert!(!NAMES.contains(*name), "{name}");
         }
     }
 }
