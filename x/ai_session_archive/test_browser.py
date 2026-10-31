@@ -425,7 +425,7 @@ def _add_archive_version(
     )
     offset = sum(len(record[0]) for record in records[:shared_prefix_record_count])
     stored = records[shared_prefix_record_count:] if stored_records is None else stored_records
-    for ordinal, (raw, parsed, timestamp, kind, parse_error) in enumerate(stored, start=shared_prefix_record_count):
+    for ordinal, (raw, _, timestamp, kind, parse_error) in enumerate(stored, start=shared_prefix_record_count):
         payload_id = uuid4()
         db.add(
             RecordPayloadRow(
@@ -433,7 +433,6 @@ def _add_archive_version(
                 sha256=hashlib.sha256(raw).hexdigest(),
                 parser_version=_PARSER_VERSION,
                 raw_bytes=raw,
-                parsed=parsed,
                 parse_error=parse_error,
                 timestamp=timestamp,
                 kind=kind,

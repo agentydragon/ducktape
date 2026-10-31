@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -12,7 +11,7 @@ from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import JSON, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DbSession, load_only
 
 from x.ai_session_archive.codex_metadata import read_codex_titles
@@ -26,9 +25,12 @@ from x.ai_session_archive.database import (
     SessionRootRow,
     SessionRow,
     SnapshotFileRow,
+    UsageObservationRow,
 )
 from x.ai_session_archive.models import Harness
+from x.ai_session_archive.record_json import parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from x.ai_session_archive.usage_observations import usage_observations_for_record
 
 PARSER_VERSION = "jsonl-v1"
 CHECKPOINT_INTERVAL = 64
@@ -94,14 +96,6 @@ class _ParsedRecord:
     raw_bytes: bytes
     byte_offset: int
     sha256: str
-    parsed: Any | None
-    parse_error: str | None
-    timestamp: datetime | None
-    kind: str | None
-
-
-@dataclass(frozen=True)
-class _ParsedJson:
     parsed: Any | None
     parse_error: str | None
     timestamp: datetime | None
@@ -703,13 +697,32 @@ class SnapshotIngestor:
                 sha256=record.sha256,
                 parser_version=PARSER_VERSION,
                 raw_bytes=record.raw_bytes,
-                parsed=JSON.NULL if record.parsed is None and record.parse_error is None else record.parsed,
                 parse_error=record.parse_error,
                 timestamp=record.timestamp,
                 kind=record.kind,
             )
             db.add(payload)
             payload_by_hash[record.sha256] = payload
+            if record.parse_error is None:
+                for observation_index, observation in enumerate(usage_observations_for_record(record.parsed)):
+                    db.add(
+                        UsageObservationRow(
+                            payload_id=payload.id,
+                            observation_index=observation_index,
+                            source_field=observation.source_field,
+                            counter_kind=observation.counter_kind,
+                            model=observation.model,
+                            response_id=observation.response_id,
+                            message_id=observation.message_id,
+                            turn_id=observation.turn_id,
+                            input_tokens=observation.input_tokens,
+                            output_tokens=observation.output_tokens,
+                            cache_read_input_tokens=observation.cache_read_input_tokens,
+                            cache_write_input_tokens=observation.cache_write_input_tokens,
+                            reasoning_output_tokens=observation.reasoning_output_tokens,
+                            total_tokens=observation.total_tokens,
+                        )
+                    )
         db.flush()
         return [payload_by_hash[record.sha256] for record in records]
 
@@ -969,10 +982,9 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
     batch_bytes = 0
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
-        content = raw_bytes[:-1] if raw_bytes.endswith(b"\n") else raw_bytes
-        if content.endswith(b"\r"):
-            content = content[:-1]
-        parsed = _parse_record_content(content, metadata)
+        parsed = parse_record_json(raw_bytes)
+        if isinstance(parsed.parsed, Mapping):
+            _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp)
         records.append(
             _ParsedRecord(
                 raw_bytes=raw_bytes,
@@ -990,49 +1002,9 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
     return records
 
 
-def _parse_record_content(content: bytes, metadata: dict[str, Any] | None = None) -> _ParsedJson:
-    try:
-        text = content.decode("utf-8", errors="strict")
-        parsed = json.loads(text, parse_constant=_reject_json_constant)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError, RecursionError) as exc:
-        return _ParsedJson(None, f"{type(exc).__name__}: {exc}"[:1000], None, None)
-
-    if isinstance(parsed, dict):
-        timestamp = _record_timestamp(parsed)
-        kind = _record_kind(parsed)
-        if metadata is not None:
-            _extract_session_metadata(parsed, metadata)
-    else:
-        timestamp = None
-        kind = None
-    return _ParsedJson(parsed, None, timestamp, kind)
-
-
-def _reject_json_constant(token: str) -> None:
-    raise ValueError(f"invalid JSON numeric constant {token}")
-
-
-def _record_timestamp(record: Mapping[str, Any]) -> datetime | None:
-    for key in ("timestamp", "created_at", "createdAt", "ts"):
-        value = record.get(key)
-        if isinstance(value, str):
-            try:
-                parsed = datetime.fromisoformat(value)
-                return parsed if parsed.tzinfo is not None and parsed.utcoffset() is not None else None
-            except ValueError:
-                continue
-    return None
-
-
-def _record_kind(record: Mapping[str, Any]) -> str | None:
-    for key in ("type", "kind", "event_type"):
-        value = record.get(key)
-        if isinstance(value, str):
-            return value[:200]
-    return None
-
-
-def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any]) -> None:
+def _extract_session_metadata(
+    record: Mapping[str, Any], metadata: dict[str, Any], *, timestamp: datetime | None
+) -> None:
     payload = record.get("payload")
     data = payload if isinstance(payload, dict) else {}
     if record.get("type") == "session_meta":
@@ -1044,7 +1016,6 @@ def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any
         if isinstance(candidate, str):
             metadata.setdefault("cwd", candidate)
             break
-    timestamp = _record_timestamp(record)
     if timestamp is not None:
         first = metadata.get("first_timestamp")
         last = metadata.get("last_timestamp")
