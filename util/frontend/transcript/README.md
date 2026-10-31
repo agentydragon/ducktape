@@ -39,8 +39,11 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
   `showJumpToLatest` controls the explicit return-to-tail button.
 - `earlier` offers optional prepend loading near the start; `tail` holds provisional
   content or an empty state. The library owns neither API nor cursor semantics.
-- `diagnostics` optionally receives geometry and interaction events. Agentplane
-  adapts these into its own opt-in recorder; the shared library installs no recorder.
+- `diagnostics` optionally receives geometry and interaction events. Applications can pass a
+  `HistoryRecorder` directly; the virtualized history installs no recorder by itself.
+- `HistoryRecorder` provides bounded, opt-in User Timing, browser-performance, and layout capture.
+  `HistoryRecorderTools` supplies a reusable local recording menu; applications provide the
+  recorder, label, download prefix, and menu position.
 
 The viewport exposes `data-scroll-mode` and `data-layout-settled` for browser
 checks. A settled layout has measured the mounted rows, reconciled the reader's

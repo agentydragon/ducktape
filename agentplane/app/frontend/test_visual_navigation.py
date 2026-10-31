@@ -143,7 +143,7 @@ async def test_thread_view_recorder_in_sidebar_footer(view: VisualPage, app: Age
     await view.capture(target=page.locator("#app"))
 
 
-async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_thread_view_recording_contains_thread_scope_layouts(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
@@ -166,9 +166,9 @@ async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, a
     path = await download.path()
     assert path is not None
     recording = json.loads(path.read_text())
-    assert recording["version"] == 3
+    assert recording["version"] == 4
     layouts = recording["layouts"]
-    assert {entry["layout"]["threadId"] for entry in layouts} == {IDLE_THREAD, RUNNING_THREAD}
+    assert {entry["layout"]["scopeId"] for entry in layouts} == {IDLE_THREAD, RUNNING_THREAD}
     assert len({entry["layout"]["viewId"] for entry in layouts}) == 2
     assert any(entry["phase"] == "frame" for entry in layouts)
     assert any(entry["phase"] == "virtual-change" for entry in layouts)

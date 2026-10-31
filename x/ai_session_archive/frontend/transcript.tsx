@@ -21,6 +21,7 @@ import {
   type TranscriptRow,
 } from "./transcript-rows";
 import type { EventRecord } from "./schema";
+import { historyRecorder } from "./history-recorder";
 
 function formatDateTime(value: string | null): string {
   if (value === null) return "Unknown time";
@@ -51,6 +52,7 @@ export function ArchiveTranscript({
         earlier={earlier}
         label="Conversation records"
         showJumpToLatest={true}
+        diagnostics={historyRecorder}
         rows={transcriptRows(records).map((row) => ({
           key: row.key,
           revision: `${row.kind}:${row.records.length}:${row.records[0].ordinal}:${row.kind === "activity" ? row.steps.map((step) => step.key).join(",") : ""}`,

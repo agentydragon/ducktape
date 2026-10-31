@@ -1,24 +1,12 @@
 import { type JSX, type ReactNode, memo, useCallback } from "react";
 import { VirtualizedHistory as History } from "../../../../util/frontend/transcript/virtualized_history";
-import type { HistoryDiagnostics } from "../../../../util/frontend/transcript/history_diagnostics";
 import { type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";
 import { revealEvidenceOnTap } from "./thread_evidence";
-import { threadViewRecorder, markThreadViewEvent } from "./thread_view_recorder";
+import { threadViewRecorder } from "./thread_view_recorder";
 
 const MemoizedHistoryRowView = memo(HistoryRowView);
-const diagnostics: HistoryDiagnostics = {
-  mark: markThreadViewEvent,
-  snapshotView: (phase, viewId, reason) => threadViewRecorder.snapshotView(phase, viewId, reason),
-  register: (viewId, source) =>
-    threadViewRecorder.register(viewId, () => {
-      const layout = source();
-      if (!layout) return null;
-      const { scopeId, ...geometry } = layout;
-      return { ...geometry, threadId: scopeId };
-    }),
-};
 
 export interface VirtualizedHistoryProps {
   threadId: string;
@@ -50,7 +38,7 @@ export function VirtualizedHistory({
       earlier={{ available: history.olderAvailable, loading: history.loadingOlder, load: history.loadOlder }}
       tail={tail}
       onClick={revealEvidenceOnTap}
-      diagnostics={diagnostics}
+      diagnostics={threadViewRecorder}
       rows={rows.map((row) => ({
         key: rowKey(row),
         revision:

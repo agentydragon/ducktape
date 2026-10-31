@@ -60,6 +60,49 @@ ts_library(
 )
 
 ts_library(
+    name = "history_recorder",
+    srcs = ["history_recorder.ts"],
+    tsconfig = "//util/frontend:tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [":history_diagnostics"],
+)
+
+vitest_test(
+    name = "history_recorder_test",
+    srcs = ["history_recorder.test.ts"],
+    config = "//util/frontend:vitest_config",
+    tsconfig = "//util/frontend:tsconfig",
+    deps = [
+        ":history_diagnostics",
+        ":history_recorder",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "history_recorder_tools",
+    srcs = [
+        "history_recorder_tools.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = "//util/frontend:tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":history_recorder",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "history_viewport",
     srcs = ["history_viewport.ts"],
     tsconfig = "//util/frontend:tsconfig",
