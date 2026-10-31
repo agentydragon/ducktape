@@ -1,6 +1,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 
 # gazelle:exclude test_visual.py
+# gazelle:exclude test_visual_layout.py
 # gazelle:exclude test_visual_claude_tools.py
 # gazelle:exclude test_visual_recorder.py
 load("@aspect_rules_js//js:defs.bzl", "js_library")
@@ -283,6 +284,27 @@ py_visual_test(
 )
 
 py_visual_test(
+    name = "visual_layout",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_layout",
+    test_srcs = ["test_visual_layout.py"],
+    title = "Archive compact layout",
+)
+
+py_visual_test(
     name = "visual_claude_tools",
     assets = [
         "harness/index.html",
@@ -362,7 +384,9 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:code_block",
         "//util/frontend:disclosure",
+        "//util/frontend:json_view",
         "//util/frontend:markdown",
         "//util/frontend/transcript:inspection",
         "//util/frontend/transcript:message",

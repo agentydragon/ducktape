@@ -24,6 +24,7 @@ afterEach(async () => {
   container = null;
   localStorage.removeItem("ai-session-archive-sidebar-width");
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
@@ -45,6 +46,27 @@ async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<
 
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function scrollToEarlierRecords(view: HTMLElement): Promise<void> {
+  const history = view.querySelector<HTMLElement>('[role="region"][aria-label="Conversation records"]')!;
+  // Happy DOM has no layout; supply a visible viewport at the earlier-page boundary.
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return this.closest('[aria-label="Conversation records"]') ? new DOMRect(0, 0, 640, 40) : original.call(this);
+  });
+  Object.defineProperty(history, "clientHeight", { configurable: true, value: 200 });
+  await act(async () => {
+    history.scrollTop = 0;
+    history.dispatchEvent(new Event("scroll"));
+    await flush();
+  });
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await flush();
+    });
+    expect(history.getAttribute("data-layout-settled")).toBe("true");
+  });
 }
 
 async function toggleKind(view: HTMLElement, kind: string): Promise<void> {
@@ -398,13 +420,10 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   const malformed = view.querySelector<HTMLElement>('[data-event-ordinal="3"]');
   expect(malformed?.textContent).toContain("Malformed JSONL");
   await act(async () => findControl(malformed!, "Raw JSONL record").click());
-  expect(malformed!.querySelector("pre")?.textContent).toBe('{"type":"response_item","payload":');
+  expect(malformed!.querySelector(".cm-content")?.textContent).toBe('{"type":"response_item","payload":');
 
   expect(view.querySelector('[data-event-ordinal="1"]')).toBeNull();
-  await act(async () => {
-    findControl(view, "Load earlier records").click();
-    await flush();
-  });
+  await scrollToEarlierRecords(view);
   expect(view.querySelector('[data-event-ordinal="1"]')).not.toBeNull();
   const structured = view.querySelector('[data-event-ordinal="4"]');
   expect(structured?.textContent).toContain("Context compacted");
@@ -897,10 +916,7 @@ it("does not prepend an older event page after switching sessions", async () => 
   };
   const view = await renderViewer(api, "/?kind=main&kind=subagent&kind=unknown");
 
-  await act(async () => {
-    findControl(view, "Load earlier records").click();
-    await Promise.resolve();
-  });
+  await scrollToEarlierRecords(view);
   await act(async () => {
     findControl(view, "Inspect a local transcript").click();
     await flush();
@@ -1002,8 +1018,8 @@ it("keeps commentary visible and pairs a tool's arguments, output and source rec
   const rawControl = findControl(tool, "Raw JSONL record");
   await act(async () => rawControl.click());
   const rawPanel = document.getElementById(rawControl.getAttribute("aria-controls")!)!;
-  expect(rawPanel.querySelectorAll("pre")).toHaveLength(3);
-  expect(rawPanel.textContent).toContain('"call_id":"build-log"');
+  expect(rawPanel.querySelectorAll('[role="region"][aria-label="Raw JSONL record"]')).toHaveLength(3);
+  expect(rawPanel.textContent).toContain('"call_id": "build-log"');
   expect(rawPanel.textContent).toContain("function_call_output");
 });
 
@@ -1022,10 +1038,7 @@ it("retains an open result step when prepend supplies its matching call", async 
     findControl(view.querySelector<HTMLElement>('[data-activity-step="tool"]')!, "Tool result").click()
   );
   expect(view.textContent).toContain("The call is outside the loaded records");
-  await act(async () => {
-    findControl(view, "Load earlier records").click();
-    await flush();
-  });
+  await scrollToEarlierRecords(view);
   expect(
     findControl(view.querySelector<HTMLElement>('[data-activity-step="tool"]')!, "read_build_log").getAttribute(
       "aria-expanded"
@@ -1080,7 +1093,7 @@ it("keeps records without readable content compact and inspectable", async () =>
     expect(record.textContent).toContain(label);
     const inspect = findControl(record, "Raw JSONL record");
     await act(async () => inspect.click());
-    expect(record.querySelector("pre")?.textContent).toBe(raw);
+    expect(JSON.parse(record.querySelector(".cm-content")!.textContent!)).toEqual(JSON.parse(raw));
   }
 });
 
@@ -1098,7 +1111,9 @@ it("renders Claude attachments as individually expandable widgets", async () => 
   await act(async () => findControl(attachments[0], "Attachment · hook success").click());
   expect(attachments[0].textContent).toContain("fixture hook completed");
   await act(async () => findControl(attachments[1], "Raw JSONL record").click());
-  expect(attachments[1].querySelector("pre")?.textContent).toContain('"type":"attachment"');
+  expect(attachments[1].querySelector(".archive-raw-record .cm-content")?.textContent).toContain(
+    '"type": "attachment"'
+  );
 });
 
 it("pairs multiple Claude tool blocks and leaves mixed-message prose visible", async () => {
@@ -1118,9 +1133,9 @@ it("pairs multiple Claude tool blocks and leaves mixed-message prose visible", a
   expect(failed.textContent).toContain("The captured test could not find the required setting.");
   await act(async () => findControl(read, "Raw JSONL record").click());
   const raw = document.getElementById(findControl(read, "Raw JSONL record").getAttribute("aria-controls")!)!;
-  expect(raw.querySelectorAll("pre")).toHaveLength(2);
-  expect(raw.textContent).toContain('"id":"read-doc"');
-  expect(raw.textContent).toContain('"tool_use_id":"read-doc"');
+  expect(raw.querySelectorAll('[role="region"][aria-label="Raw JSONL record"]')).toHaveLength(2);
+  expect(raw.textContent).toContain('"id": "read-doc"');
+  expect(raw.textContent).toContain('"tool_use_id": "read-doc"');
 });
 
 it("retains the selected Claude result block when prepend supplies multiple calls", async () => {
@@ -1140,10 +1155,7 @@ it("retains the selected Claude result block when prepend supplies multiple call
   )!;
   await act(async () => findControl(result, "Tool result").click());
   expect(result.textContent).toContain("The call is outside the loaded records");
-  await act(async () => {
-    findControl(view, "Load earlier records").click();
-    await flush();
-  });
+  await scrollToEarlierRecords(view);
   const paired = [...view.querySelectorAll<HTMLElement>('[data-activity-step="tool"]')].find((tool) =>
     tool.textContent?.includes("README.md")
   )!;

@@ -109,8 +109,8 @@ and filename or hook name, with bounded structured details. Consecutive attachme
 can share an activity group. Unknown record types and parse failures remain standalone;
 records without readable content show only their label and source inspection. Explicit
 tool errors stay visible or mark the enclosing tool group as failed. Every original
-record remains accessible through a compact inspection button and its exact-byte
-view. Assistant replies use plain Markdown; user inputs use the shared right-aligned
+record remains accessible through a compact inspection button with pretty-printed
+JSON and a separate exact-byte view. Assistant replies use plain Markdown; user inputs use the shared right-aligned
 bubble. Inspection actions appear on hover, keyboard focus or touch selection
 without reserving a separate disclosure row.
 
@@ -125,6 +125,6 @@ bounded and opt-in. The JSON includes session/version and row identifiers, but n
 text, tool arguments, output or resource URLs. Review its identifiers before sharing.
 
 The conversation opens at the latest captured records. Scrolling upward loads older
-pages while retaining the reading position; “Load earlier records” also supports
-keyboard navigation. Event API requests default to forward pagination;
+pages automatically while retaining the reading position, including when scrolling
+with the keyboard. Event API requests default to forward pagination;
 `direction=backward` returns records before the exclusive cursor in ascending order.
