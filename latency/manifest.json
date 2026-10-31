@@ -1,10 +1,7 @@
 {
-  "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-  "window_start_utc": "2026-10-29T20:50:01Z",
-  "window_end_utc": "2026-10-30T22:10:00Z",
-  "published_at_utc": "2026-10-30T23:27:37.523237+00:00",
-  "attribution": "not collected",
-  "followup_checked_at_utc": "2026-10-31T09:55:46+00:00",
-  "followup_source_devel_commit": "d68802c8cfe189f41a195b6979230df068652dcb",
-  "followup_scope": "Current PR states, intervention pointers and bounded probes; original measurement window, source and distributions unchanged."
+  "source_devel_commit": "61d18e604e37757ebc9838404a292fec6348181f",
+  "window_start_utc": "2026-10-31T08:30:00Z",
+  "window_end_utc": "2026-10-31T12:30:00Z",
+  "published_at_utc": "2026-10-31T13:06:19.686235+00:00",
+  "attribution": "not collected"
 }
