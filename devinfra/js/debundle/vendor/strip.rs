@@ -555,7 +555,13 @@ fn sweep_unreachable_top_level(
                     .get(id)
                     .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
         };
-        let mut reached: Vec<&Id> = an.eager_bindings.iter().collect();
+        // The statement's own writes are its cells; what it reads at init
+        // matters only as an argument its callees may mutate.
+        let mut reached: Vec<&Id> = if an.at_init.calls.is_empty() {
+            Vec::new()
+        } else {
+            an.eager_bindings.iter().collect()
+        };
         let mut lexical: Vec<&Id> = an.at_init.unresolved_sources.iter().collect();
         let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
         // A closure handed to an unresolved call at init (an IIFE among them)
