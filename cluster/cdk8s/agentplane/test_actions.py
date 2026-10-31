@@ -88,10 +88,7 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     server = one(item for item in pod["containers"] if item["name"] == "actions")
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert not pod.get("initContainers")
-    assert server["startupProbe"]["grpc"] == {
-        "port": server["readinessProbe"]["grpc"]["port"],
-        "service": "livez",
-    }
+    assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
     assert server["startupProbe"]["periodSeconds"] == 5
     assert server["startupProbe"]["failureThreshold"] == 60
 

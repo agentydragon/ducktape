@@ -33,7 +33,9 @@ def test_concurrent_and_repeated_service_migration_mode(postgres_admin_url: str,
             stdout, stderr = runner.communicate(timeout=60)
             assert runner.returncode == 0, (stdout, stderr)
 
-        repeated = subprocess.run([str(_SERVICE), "--migrate-only"], env=env, capture_output=True, text=True, check=False)
+        repeated = subprocess.run(
+            [str(_SERVICE), "--migrate-only"], env=env, capture_output=True, text=True, check=False
+        )
         assert repeated.returncode == 0, (repeated.stdout, repeated.stderr)
 
         engine = create_engine(url)
