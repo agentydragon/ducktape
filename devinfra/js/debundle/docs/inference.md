@@ -186,6 +186,12 @@ outside the source-origin table. Global escape taint, Set aliases, native and
 namespace aliases, capability rejection, primitive/fluent value classes, and
 read/rebind closure use the same typed transfer interface.
 
+A family whose contribution is a join over its reads can set
+`EVALUATES_CHANGES`: a re-evaluated rule then receives the keys it read that
+changed after it read them and joins only those, since its earlier
+contribution is already merged. Candidate reachability does; its carriers are
+final when it runs.
+
 Recursive purity grows body-completion facts and direct/call-site effects.
 The canonical classifier emits an obligation at an inferred local or imported
 call instead of reading an optimistic Pure verdict. All function effects in an
