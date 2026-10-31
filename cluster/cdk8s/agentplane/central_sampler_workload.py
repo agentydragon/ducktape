@@ -2,22 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    DeploymentStrategy,
-    EnvValue,
-    MemoryResources,
-    PathMapping,
-    Secret,
-    Volume,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources, PathMapping, Secret, Volume
 from constructs import Construct
 
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -41,7 +30,7 @@ _LOGS_PATH = "/var/log/central-sampler"
 
 
 class CentralSampler(Construct):
-    """A single sampler replica owns one shared host for concurrent logical Sessions."""
+    """Sampler replicas each host Sessions selected through the database lease."""
 
     def __init__(
         self,
@@ -125,9 +114,7 @@ class CentralSampler(Construct):
             termination_grace=Duration.seconds(60),
             # Provider Secret files are reread per request; rotating them must not restart the shared host.
             annotations={"configmap.reloader.stakater.com/reload": settings_file.config_map.name},
-            replica_profile=replace(
-                env.replicas, count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
-            ),
+            replica_profile=props.replicas or env.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,
         )
