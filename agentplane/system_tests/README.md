@@ -150,6 +150,16 @@ failure or process kill. An unfinished span is not exported if the process is ki
 contain test/Sandbox identities and phase names; command bodies and model transcripts are not
 added to the trace attributes.
 
+K3s suites also write `test.outputs/process-spans.jsonl` from a fixture-owned OTLP receiver. The
+stack exposes it at the production `monitoring/alloy` Service name, so service, Pod Runner and VM
+Runner exporters use their usual configuration without an external collector. Each line records
+the emitting service, span name and timing, trace/span/parent IDs, outcome, and selected identity
+and numeric attributes. The test HTTP client propagates the active `vm.case` trace context through
+the app; asynchronous controller work can start a separate trace, so join those spans by
+`session.id`, `thread.id` or Sandbox identity. The receiver flushes each export immediately; SDKs
+batch their own exports, so a process killed without shutdown can still lose its final spans.
+Request bodies, model transcripts, headers and authentication values are not retained.
+
 ## VM workspace ownership
 
 The `vm_workspace_ownership` scenario creates one uniquely named VM Sandbox and

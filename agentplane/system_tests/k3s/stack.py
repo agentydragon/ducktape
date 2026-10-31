@@ -35,7 +35,14 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
-from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s import (
+    block_storage,
+    certificates,
+    guest_logs,
+    process_traces,
+    rendered_fixture,
+    vm_sandboxes,
+)
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.testing import tls
@@ -192,6 +199,8 @@ class K3s:
                 run("mount", "-t", "tmpfs", "tmpfs", str(layers))
         self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
         log = self.log_path.open("wb")
+        # The image store survives runner recycling; a previous stack's daemon log need not.
+        (self.data_dir / "agent/containerd/containerd.log").unlink(missing_ok=True)
         process = subprocess.Popen(
             [
                 str(self.binary),
@@ -242,17 +251,24 @@ class K3s:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            self._preserve_containerd_log()
             raise
         return process
+
+    def _preserve_containerd_log(self) -> None:
+        source = self.data_dir / "agent/containerd/containerd.log"
+        if source.exists():
+            shutil.copyfile(source, self.log_path.with_name("containerd.log"))
 
     def stop(self, process: subprocess.Popen[bytes]) -> None:
         """End k3s, then remove every Pod, so the next stack on a recycled runner finds only images.
 
         k3s's containerd dies with it (a parent-death signal) while the Pods' shims outlive it, so a containerd
         started here removes the Pods, with no kubelet to recreate them or remove them concurrently. Pausing
-        k3s instead would block containerd, whose output k3s copies to its log."""
+        k3s instead would block containerd. Preserve its separate log before the cleanup process starts."""
         process.terminate()
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        self._preserve_containerd_log()
         binaries = self.data_dir / "data/current/bin"
         crictl_config = self.work / "crictl.yaml"
         crictl_config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {STOP_TIMEOUT_SECONDS}\n")
@@ -499,13 +515,21 @@ def running_stack(
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, inputs.binary)
-    # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-    process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
-    timeline.mark("node Ready")
-    cluster = Cluster(
-        kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
-    )
-    with contextlib.ExitStack() as cleanup:
+    with (
+        contextlib.ExitStack() as trace_cleanup,
+        contextlib.ExitStack() as block_cleanup,
+        contextlib.ExitStack() as cleanup,
+    ):
+        traces = trace_cleanup.enter_context(
+            process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
+        )
+        # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
+        process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+        cleanup.callback(k3s.stop, process)
+        timeline.mark("node Ready")
+        cluster = Cluster(
+            kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
+        )
         raw_block = block_storage.BlockStorage(work)
 
         def remove_work() -> None:
@@ -514,9 +538,12 @@ def running_stack(
             else:
                 logger.error("preserving %s because a fixture loop device did not detach", work)
 
-        cleanup.callback(remove_work)
-        cleanup.enter_context(raw_block)
-        cleanup.callback(k3s.stop, process)
+        block_cleanup.callback(remove_work)
+        block_cleanup.enter_context(raw_block)
+        k3s.kubectl(
+            "apply", "-f", "-", input_text=yaml.safe_dump_all(process_traces.collector_objects(k3s.node_ip, traces))
+        )
+        timeline.mark("trace collector ready")
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()

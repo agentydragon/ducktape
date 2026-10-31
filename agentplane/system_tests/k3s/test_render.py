@@ -293,9 +293,11 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
     pod_containers = {container["name"]: container for container in template["spec"]["pod"]["spec"]["containers"]}
     runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["runner"]["env"]}
-    assert runner_env["OTEL_SDK_DISABLED"] == "true"
+    assert "OTEL_SDK_DISABLED" not in runner_env
+    assert runner_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://127.0.0.1:3132"
     sidecar_env = {entry["name"]: entry.get("value") for entry in pod_containers["egress-sidecar"]["env"]}
-    assert sidecar_env["OTEL_SDK_DISABLED"] == "true"
+    assert "OTEL_SDK_DISABLED" not in sidecar_env
+    assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://alloy.monitoring.svc.cluster.local:4317"
     assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
     executor = pod_containers["codex-executor"]
     assert executor["livenessProbe"]["initialDelaySeconds"] == 5

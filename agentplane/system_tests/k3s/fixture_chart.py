@@ -526,8 +526,6 @@ def build_chart(
             if env.vm_sandboxes
             else None
         ),
-        # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
-        disable_otel_sdk=True,
     )
     sandbox_controller.SandboxController(
         chart,

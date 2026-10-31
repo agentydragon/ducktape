@@ -192,6 +192,7 @@ py_library(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
     ],
 )
@@ -206,6 +207,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
