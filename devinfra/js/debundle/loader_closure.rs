@@ -13,9 +13,8 @@
 //! declared reentry-free module or for an analyzed chunk whose static and
 //! loader closure excludes the target and loads no unproved code.
 //!
-//! `Reach` grows to each chunk's static and loader closure. `LoaderClosed`
-//! failures grow with it, so a target is closed only in the completed closure;
-//! no rule consumes an intermediate verdict.
+//! A load evaluates the loaded chunk's static closure; the requests in it are
+//! counted on their own merits once they run, iterated to a fixpoint.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -213,10 +212,7 @@ pub fn solve_loader_closure<W: Clone + Ord>(
         host_behavior,
         static_importers,
     };
-    let producers = chunks
-        .keys()
-        .map(|chunk| Rule::Reach(*chunk))
-        .chain(targets.iter().map(|target| Rule::LoaderClosed(*target)));
+    let producers = targets.iter().map(|target| Rule::LoaderClosed(*target));
     let facts = IterativeInference::new(rules).solve_values_resumable(producers);
     targets
         .iter()
@@ -224,9 +220,7 @@ pub fn solve_loader_closure<W: Clone + Ord>(
             let judgment = facts
                 .get(&Key::LoaderClosed(*target))
                 .expect("every target rule proposes its verdict");
-            let Fact::LoaderClosed(verdict) = judgment.value() else {
-                unreachable!("loader-closed key holds a verdict");
-            };
+            let Fact::LoaderClosed(verdict) = judgment.value();
             (
                 *target,
                 LoaderClosure {
@@ -246,20 +240,15 @@ pub fn solve_loader_closure<W: Clone + Ord>(
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 enum Key {
-    Reach(ChunkId),
     LoaderClosed(ChunkId),
 }
 
-/// Reach rules order before target rules, so a round settles reachability
-/// before evaluating the verdicts that read it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 enum Rule {
-    Reach(ChunkId),
     LoaderClosed(ChunkId),
 }
 
 enum Fact<W> {
-    Reach(BTreeSet<ChunkId>),
     LoaderClosed(Verdict<W>),
 }
 
@@ -378,6 +367,29 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
         }
     }
 
+    /// Every exported function node of `source`'s namespace.
+    fn namespace_nodes(
+        &self,
+        source: ChunkId,
+        seen: &mut BTreeSet<(ChunkId, String)>,
+        out: &mut Vec<(ChunkId, u32)>,
+    ) {
+        let Some(namespace) = self.chunks.get(&source) else {
+            return;
+        };
+        let names: Vec<_> = namespace
+            .callables
+            .exports
+            .keys()
+            .chain(namespace.callables.reexports.keys())
+            .cloned()
+            .collect();
+        for name in names {
+            self.export_nodes(source, &name, seen, out);
+            seen.clear();
+        }
+    }
+
     /// Function nodes that can run while the target evaluates. The roots are
     /// the top-level code of the chunks whose bodies run in the window, and
     /// every pooled function of every chunk that can have run before the
@@ -422,7 +434,9 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                 seen.clear();
             }
             // A loader request hands its caller the loaded chunk's namespace,
-            // whose functions anyone holding it may call.
+            // whose functions anyone holding it may call. The request may have
+            // run before the window and published that namespace, so whether
+            // its code runs in the window does not matter.
             let requested = surface
                 .requests
                 .iter()
@@ -432,19 +446,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     | LoaderRequestTarget::EmbeddedFile(_) => None,
                 });
             for source in callables.namespace_sources.iter().copied().chain(requested) {
-                if let Some(namespace) = self.chunks.get(&source) {
-                    let names: Vec<_> = namespace
-                        .callables
-                        .exports
-                        .keys()
-                        .chain(namespace.callables.reexports.keys())
-                        .cloned()
-                        .collect();
-                    for name in names {
-                        self.export_nodes(source, &name, &mut seen, &mut exported);
-                        seen.clear();
-                    }
-                }
+                self.namespace_nodes(source, &mut seen, &mut exported);
             }
         }
         for node in exported.drain(..) {
@@ -472,43 +474,16 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
         reached
     }
 
-    fn evaluate_reach(&self, chunk: ChunkId, context: &mut impl FactContext<Key, Fact<W>>) {
-        let Some(surface) = self.chunks.get(&chunk) else {
-            return;
-        };
-        let direct: BTreeSet<_> = surface
-            .static_targets
-            .iter()
-            .copied()
-            .chain(
-                surface
-                    .requests
-                    .iter()
-                    .filter_map(|request| match request.target {
-                        LoaderRequestTarget::Chunk(target) => Some(target),
-                        LoaderRequestTarget::ReentryFreeBuiltin(_)
-                        | LoaderRequestTarget::EmbeddedFile(_) => None,
-                    }),
-            )
-            .collect();
-        let mut reach = direct.clone();
-        for next in direct {
-            if let Some(Fact::Reach(transitive)) = context.read(Key::Reach(next)) {
-                reach.extend(transitive.iter().copied());
-            }
-        }
-        context.propose(Key::Reach(chunk), Fact::Reach(reach));
-    }
-
-    /// The chunk a request loads, with its static and loader closure.
-    fn loaded_closure(
-        loaded: ChunkId,
-        context: &mut impl FactContext<Key, Fact<W>>,
-    ) -> BTreeSet<ChunkId> {
-        let mut closure = BTreeSet::from([loaded]);
-        if let Some(Fact::Reach(reach)) = context.read(Key::Reach(loaded)) {
-            closure.extend(reach.iter().copied());
-        }
+    /// The chunk a request loads, with its static closure: the chunks whose
+    /// bodies the load evaluates. Requests in them are counted on their own
+    /// merits once they run.
+    fn loaded_closure(&self, loaded: ChunkId) -> BTreeSet<ChunkId> {
+        let mut closure = closure_over(loaded, |chunk| {
+            self.chunks
+                .get(&chunk)
+                .map(|surface| surface.static_targets.clone())
+        });
+        closure.insert(loaded);
         closure
     }
 
@@ -583,7 +558,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     if let LoaderRequestTarget::Chunk(loaded) = request.target
                         && counted(chunk, request.placement, &window_loaded, &reached)
                     {
-                        grown.extend(Self::loaded_closure(loaded, context));
+                        grown.extend(self.loaded_closure(loaded));
                     }
                 }
             }
@@ -639,7 +614,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     }
                     LoaderRequestTarget::Chunk(loaded) => loaded,
                 };
-                let closure = Self::loaded_closure(loaded, context);
+                let closure = self.loaded_closure(loaded);
                 if closure.contains(&target) {
                     verdict.target_requested |= loaded == target;
                     verdict.reentry_window.extend(closure.iter().copied());
@@ -682,18 +657,12 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
 
     fn evaluate(&self, rule: &Rule, context: &mut impl FactContext<Key, Fact<W>>) {
         match *rule {
-            Rule::Reach(chunk) => self.evaluate_reach(chunk, context),
             Rule::LoaderClosed(target) => self.evaluate_loader_closed(target, context),
         }
     }
 
     fn merge(_key: &Key, current: &mut Fact<W>, contribution: Fact<W>) -> bool {
         match (current, contribution) {
-            (Fact::Reach(current), Fact::Reach(contribution)) => {
-                let before = current.len();
-                current.extend(contribution);
-                current.len() != before
-            }
             (Fact::LoaderClosed(current), Fact::LoaderClosed(contribution)) => {
                 let before = current.loaded_chunks.len();
                 current.loaded_chunks.extend(contribution.loaded_chunks);
@@ -721,7 +690,6 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
                 }
                 changed
             }
-            _ => unreachable!("each key holds one fact family"),
         }
     }
 }
@@ -787,13 +755,15 @@ mod tests {
             ),
         ]);
         let closure = solve_one(&chunks, &audited_host(), 0);
+        // Loading 1 evaluates 1 and 2; 2's request then runs in the window
+        // and reaches the target.
         assert_eq!(
             closure.failures[&LoaderClosureFailureKind::LoaderRequestReachesTarget].first,
-            LoaderClosureWitness::Site("0->1"),
+            LoaderClosureWitness::Site("2->0"),
         );
         assert_eq!(
             closure.failures[&LoaderClosureFailureKind::LoaderRequestReachesTarget].occurrences,
-            2,
+            1,
         );
         assert!(closure.dependencies.is_empty());
     }
