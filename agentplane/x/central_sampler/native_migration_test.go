@@ -4,14 +4,59 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io/fs"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/google/uuid"
+	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
+
+func TestPriorSamplerMigrationProviderStartsAfterHostMarkerMigration(t *testing.T) {
+	store := newTestStore(t)
+	files := fstest.MapFS{}
+	paths, err := fs.Glob(migrationFiles, "schema/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if strings.HasPrefix(path, "schema/0008_") {
+			continue
+		}
+		contents, err := fs.ReadFile(migrationFiles, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[strings.TrimPrefix(path, "schema/")] = &fstest.MapFile{Data: contents}
+	}
+	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(7241821))
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorProvider, err := goose.NewProvider(goose.DialectPostgres, store.DB(), files,
+		goose.WithTableName("central_sampler_goose_version"), goose.WithSessionLocker(locker),
+		goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := priorProvider.Up(t.Context()); err != nil {
+		t.Fatalf("previous sampler binary cannot start against additive schema: %v", err)
+	}
+	// The prior binary uses explicit column lists for conversation reads and writes.
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Read(t.Context(), owner); err != nil {
+		t.Fatalf("conversation columns changed for prior binary: %v", err)
+	}
+}
 
 func migrationRaw(value any) json.RawMessage {
 	encoded, err := json.Marshal(value)
