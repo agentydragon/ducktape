@@ -11,7 +11,6 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from x.ai_session_archive.postgres_text import is_safe_postgres_text
 from x.ai_session_archive.restic import ResticCommandError, ResticOutputError, ResticRepository
 
 SQLITE_MANIFEST = PurePosixPath("/.local/state/ducktape/ai-session-backup-sqlite/manifest.json")
@@ -56,9 +55,7 @@ def _index_titles(
             if (
                 not isinstance(native_id, str)
                 or not native_id
-                or not is_safe_postgres_text(native_id)
                 or not isinstance(title, str)
-                or not is_safe_postgres_text(title)
                 or not isinstance(timestamp, str)
             ):
                 raise ValueError("missing id, thread_name, or updated_at")
@@ -132,12 +129,7 @@ def _sqlite_titles(
             rows = database.execute("SELECT id, rollout_path, name, title FROM threads")
             titles = {}
             for native_id, rollout_path, name, title in rows:
-                if (
-                    not isinstance(native_id, str)
-                    or not isinstance(rollout_path, str)
-                    or not is_safe_postgres_text(native_id)
-                    or not is_safe_postgres_text(rollout_path)
-                ):
+                if not isinstance(native_id, str) or not isinstance(rollout_path, str):
                     continue
                 try:
                     relative = PurePosixPath(rollout_path).relative_to(physical_root)
@@ -145,17 +137,14 @@ def _sqlite_titles(
                     continue
                 if relative.parts[:1] not in (("sessions",), ("archived_sessions",)) or relative.suffix != ".jsonl":
                     continue
-                value = None
-                title_source = None
-                for candidate, candidate_source in ((name, "sqlite_name"), (title, "sqlite_title")):
-                    if isinstance(candidate, str) and candidate.strip() and is_safe_postgres_text(candidate):
-                        value = candidate
-                        title_source = candidate_source
-                        break
-                source_path = str(codex_root / relative)
-                if not isinstance(value, str) or title_source is None or not is_safe_postgres_text(source_path):
+                value = name if isinstance(name, str) and name.strip() else title
+                if not isinstance(value, str) or not value.strip():
                     continue
-                titles[native_id] = (source_path, value.strip()[:500], title_source)
+                titles[native_id] = (
+                    str(codex_root / relative),
+                    value.strip()[:500],
+                    "sqlite_name" if name else "sqlite_title",
+                )
             return titles
         finally:
             database.close()

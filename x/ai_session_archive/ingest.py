@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -30,7 +28,6 @@ from x.ai_session_archive.database import (
     SnapshotFileRow,
 )
 from x.ai_session_archive.models import Harness
-from x.ai_session_archive.postgres_text import is_safe_postgres_text
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 
 PARSER_VERSION = "jsonl-v1"
@@ -88,7 +85,7 @@ class _Location:
     root: HarnessRoot
     relative_path: PurePosixPath
     source_path: str
-    native_session_id: str | None
+    native_session_id: str
     parent_source_path: str | None
 
 
@@ -98,7 +95,6 @@ class _ParsedRecord:
     byte_offset: int
     sha256: str
     parsed: Any | None
-    parsed_from_raw: bool
     parse_error: str | None
     timestamp: datetime | None
     kind: str | None
@@ -107,14 +103,9 @@ class _ParsedRecord:
 @dataclass(frozen=True)
 class _ParsedJson:
     parsed: Any | None
-    parsed_from_raw: bool
     parse_error: str | None
     timestamp: datetime | None
     kind: str | None
-
-
-class _JsonbIncompatibleError(ValueError):
-    """The JSON text is valid, but PostgreSQL JSONB cannot represent its value."""
 
 
 class SnapshotIngestor:
@@ -343,7 +334,7 @@ class SnapshotIngestor:
                 root=root,
                 relative_path=relative,
                 source_path=path,
-                native_session_id=relative.stem if is_safe_postgres_text(relative.stem) else None,
+                native_session_id=relative.stem,
                 parent_source_path=parent_source_path,
             )
         return None
@@ -712,12 +703,7 @@ class SnapshotIngestor:
                 sha256=record.sha256,
                 parser_version=PARSER_VERSION,
                 raw_bytes=record.raw_bytes,
-                # JSONB cannot represent every valid JSON value (for example NUL
-                # strings and unpaired surrogate escapes). Keep raw_bytes as the
-                # authority for those rows and never send the Python value to the
-                # JSONB driver.
-                parsed=(None if record.parsed_from_raw else JSON.NULL if record.parsed is None else record.parsed),
-                parsed_from_raw=record.parsed_from_raw,
+                parsed=JSON.NULL if record.parsed is None and record.parse_error is None else record.parsed,
                 parse_error=record.parse_error,
                 timestamp=record.timestamp,
                 kind=record.kind,
@@ -993,7 +979,6 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
                 byte_offset=byte_offset,
                 sha256=hashlib.sha256(raw_bytes).hexdigest(),
                 parsed=parsed.parsed,
-                parsed_from_raw=parsed.parsed_from_raw,
                 parse_error=parsed.parse_error,
                 timestamp=parsed.timestamp,
                 kind=parsed.kind,
@@ -1008,16 +993,9 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
 def _parse_record_content(content: bytes, metadata: dict[str, Any] | None = None) -> _ParsedJson:
     try:
         text = content.decode("utf-8", errors="strict")
-        parsed = json.loads(text, parse_constant=_reject_json_constant, parse_int=_parse_json_integer)
+        parsed = json.loads(text, parse_constant=_reject_json_constant)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError, RecursionError) as exc:
-        return _ParsedJson(None, False, f"{type(exc).__name__}: {exc}"[:1000], None, None)
-
-    try:
-        _validate_jsonb(parsed)
-    except _JsonbIncompatibleError:
-        parsed_from_raw = True
-    else:
-        parsed_from_raw = False
+        return _ParsedJson(None, f"{type(exc).__name__}: {exc}"[:1000], None, None)
 
     if isinstance(parsed, dict):
         timestamp = _record_timestamp(parsed)
@@ -1027,49 +1005,11 @@ def _parse_record_content(content: bytes, metadata: dict[str, Any] | None = None
     else:
         timestamp = None
         kind = None
-    return _ParsedJson(parsed, parsed_from_raw, None, timestamp, kind)
+    return _ParsedJson(parsed, None, timestamp, kind)
 
 
 def _reject_json_constant(token: str) -> None:
     raise ValueError(f"invalid JSON numeric constant {token}")
-
-
-def _parse_json_integer(token: str) -> int | Decimal:
-    digits = token.lstrip("-")
-    if len(digits) > 4300:
-        return Decimal(token)
-    return int(token)
-
-
-def _validate_jsonb(value: Any, path: str = "$", depth: int = 0) -> None:
-    if depth > 200:
-        raise _JsonbIncompatibleError(f"JSONB cannot store nesting beyond the Postgres safety limit at {path}")
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise _JsonbIncompatibleError(f"JSONB cannot store NUL at {path}")
-        try:
-            value.encode("utf-8", errors="strict")
-        except UnicodeEncodeError as exc:
-            raise _JsonbIncompatibleError(f"JSONB cannot store an unpaired surrogate at {path}") from exc
-    elif isinstance(value, bool) or value is None:
-        return
-    elif isinstance(value, int):
-        if len(str(abs(value))) > 131072:
-            raise _JsonbIncompatibleError(f"JSONB numeric is too large at {path}")
-    elif isinstance(value, float):
-        if not math.isfinite(value):
-            raise _JsonbIncompatibleError(f"JSONB cannot store a non-finite number at {path}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            _validate_jsonb(item, f"{path}[{index}]", depth + 1)
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise _JsonbIncompatibleError(f"JSON object key is not text at {path}")
-            _validate_jsonb(key, f"{path}.<key>", depth + 1)
-            _validate_jsonb(item, f"{path}.{key}", depth + 1)
-    else:
-        raise _JsonbIncompatibleError(f"Unsupported JSON value {type(value).__name__} at {path}")
 
 
 def _record_timestamp(record: Mapping[str, Any]) -> datetime | None:
@@ -1087,7 +1027,7 @@ def _record_timestamp(record: Mapping[str, Any]) -> datetime | None:
 def _record_kind(record: Mapping[str, Any]) -> str | None:
     for key in ("type", "kind", "event_type"):
         value = record.get(key)
-        if isinstance(value, str) and is_safe_postgres_text(value):
+        if isinstance(value, str):
             return value[:200]
     return None
 
@@ -1101,7 +1041,7 @@ def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any
         if isinstance(data.get("parent_thread_id"), str):
             _remember_metadata_value(metadata, "parent_native_session_id", data["parent_thread_id"])
     for candidate in (record.get("cwd"), data.get("cwd")):
-        if isinstance(candidate, str) and is_safe_postgres_text(candidate):
+        if isinstance(candidate, str):
             metadata.setdefault("cwd", candidate)
             break
     timestamp = _record_timestamp(record)
@@ -1112,35 +1052,23 @@ def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any
         metadata["last_timestamp"] = timestamp if last is None else max(last, timestamp)
     if metadata.get("title"):
         return
-    for title in (record.get("title"), record.get("summary")):
-        if isinstance(title, str) and title.strip() and is_safe_postgres_text(title.strip()):
-            metadata["title"] = title.strip()[:500]
-            return
+    title = record.get("title") or record.get("summary")
+    if isinstance(title, str) and title.strip():
+        metadata["title"] = title.strip()[:500]
+        return
     message = record.get("message")
     if isinstance(message, dict):
         content = message.get("content")
-        if (
-            isinstance(content, str)
-            and content.strip()
-            and is_safe_postgres_text(content.strip())
-            and record.get("type") == "user"
-        ):
+        if isinstance(content, str) and content.strip() and record.get("type") == "user":
             metadata["title"] = content.strip()[:500]
         elif isinstance(content, list) and record.get("type") == "user":
             for part in content:
-                if (
-                    isinstance(part, dict)
-                    and isinstance(part.get("text"), str)
-                    and part["text"].strip()
-                    and is_safe_postgres_text(part["text"].strip())
-                ):
+                if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"].strip():
                     metadata["title"] = part["text"].strip()[:500]
                     break
 
 
 def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> None:
-    if not is_safe_postgres_text(value):
-        return
     candidates = metadata.setdefault(f"{key}_candidates", [])
     if value not in candidates:
         candidates.append(value)

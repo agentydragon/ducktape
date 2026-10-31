@@ -18,7 +18,6 @@ from x.ai_session_archive.database import (
     SessionRow,
     SnapshotFileRow,
 )
-from x.ai_session_archive.ingest import _parse_record_content
 from x.ai_session_archive.models import (
     Event,
     EventPage,
@@ -367,34 +366,18 @@ def list_events(
 
     has_more = len(result_rows) > limit
     page_rows = result_rows[:limit]
-    events = []
-    for _, record, payload in page_rows:
-        if payload.parsed_from_raw:
-            content = payload.raw_bytes[:-1] if payload.raw_bytes.endswith(b"\n") else payload.raw_bytes
-            if content.endswith(b"\r"):
-                content = content[:-1]
-            parsed = _parse_record_content(content)
-            if parsed.parse_error is not None:
-                raise RuntimeError(f"record payload {payload.id} is not valid raw JSON fallback content")
-            try:
-                parsed_json_fragment = content.decode("utf-8", errors="strict")
-            except UnicodeDecodeError as exc:
-                raise RuntimeError(f"record payload {payload.id} is not valid UTF-8 JSON") from exc
-            parsed_value = parsed.parsed
-        else:
-            parsed_json_fragment = None
-            parsed_value = payload.parsed
-        event = Event(
+    events = [
+        Event(
             ordinal=record.ordinal,
             byte_offset=record.byte_offset,
             timestamp=payload.timestamp,
             kind=payload.kind,
-            parsed=parsed_value,
+            parsed=payload.parsed,
             parse_error=payload.parse_error,
             raw=payload.raw_bytes.decode("utf-8", errors="replace").rstrip("\r\n"),
             raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
         )
-        event._parsed_json_fragment = parsed_json_fragment
-        events.append(event)
+        for _, record, payload in page_rows
+    ]
     next_cursor = events[-1].ordinal if has_more and events else None
     return EventPage(data=events, next_cursor=next_cursor)
