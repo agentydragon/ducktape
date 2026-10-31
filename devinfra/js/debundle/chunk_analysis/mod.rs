@@ -73,7 +73,28 @@ where
         source_path,
         line_range_for_span,
     );
-    report_redundant_hints_to_stderr(chunk_id, &fact_analysis);
+    check_chunk_facts(
+        chunk_id,
+        module,
+        &fact_analysis,
+        admission_overrides,
+        resolve_dynamic_import,
+    )?;
+    Ok(fact_analysis)
+}
+
+/// What [`compute_chunk_facts`] does once the facts exist: the redundant-hint
+/// warnings, the top-level `await` bail and the admission scan. A run that
+/// takes its facts from an analysis artifact calls it directly, so its
+/// diagnostics and verdict match a run that computes them.
+pub fn check_chunk_facts(
+    chunk_id: &str,
+    module: &Module,
+    fact_analysis: &ChunkFactAnalysis,
+    admission_overrides: AdmissionOverrides,
+    resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
+) -> Result<()> {
+    report_redundant_hints_to_stderr(chunk_id, fact_analysis);
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
@@ -88,8 +109,7 @@ where
         module,
         admission_overrides,
         resolve_dynamic_import,
-    )?;
-    Ok(fact_analysis)
+    )
 }
 
 /// Build the chunk's dependency graph and structural atomic groups from its

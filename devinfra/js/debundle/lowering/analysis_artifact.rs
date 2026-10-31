@@ -27,7 +27,9 @@ use super::cross_module::CrossModulePurities;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisArtifactHeader {
     pub engine_sha256: String,
-    pub projection_sha256: String,
+    /// `AnalysisSpec::encode` of the analysed projection, kept whole so a
+    /// mismatch can name what differs.
+    pub projection: Vec<u8>,
     /// Parser-input SHA-256 of each analyzed chunk, by chunk name.
     pub chunk_sources: BTreeMap<String, String>,
 }
@@ -78,7 +80,10 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 mod tests {
     use super::*;
     use crate::analysis_projection::AnalysisProjection;
-    use crate::cross_module::{CrossModuleAnalysisOptions, collect_cross_module_imported_purities};
+    use crate::cross_module::{
+        CrossModuleAnalysisOptions, collect_cross_module_imported_purities,
+        reparse_unretained_entries,
+    };
     use analysis::AnalysisInputs;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
     use artifact::{
@@ -206,6 +211,7 @@ mod tests {
                 replacement_packages: &BTreeMap::new(),
             },
             None,
+            &reparse_unretained_entries(artifact, None),
         )
         .expect("cross-module analysis succeeds");
         let chunks = artifact
@@ -236,7 +242,7 @@ mod tests {
     fn header() -> AnalysisArtifactHeader {
         AnalysisArtifactHeader {
             engine_sha256: "engine-digest-fixture".to_string(),
-            projection_sha256: "projection-digest-fixture".to_string(),
+            projection: b"projection-fixture".to_vec(),
             chunk_sources: CHUNKS
                 .iter()
                 .map(|(name, _)| (name.to_string(), format!("{name}-digest-fixture")))

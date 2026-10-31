@@ -43,7 +43,9 @@ use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::{join_module_path, normalize_module_path};
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
-use chunk_analysis::{DynamicImportTarget, build_chunk_graph, compute_chunk_facts};
+use chunk_analysis::{
+    DynamicImportTarget, build_chunk_graph, check_chunk_facts, compute_chunk_facts,
+};
 use gate::{
     AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
@@ -173,13 +175,13 @@ pub(super) struct ClaimedLogicalChunk<'a> {
     declared_assumptions: AnalysisAssumptions,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct ResolvedMemberDeclaration {
     pub(super) binding: String,
     pub(super) body_index: usize,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct ResolvedMemberSite {
     pub(super) provider_chunk: String,
     pub(super) module: String,
@@ -219,24 +221,8 @@ pub(super) fn prepare_logical_chunk(
         .get(chunk_id)
         .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
     emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
-    let target_file = file
-        .map(normalize_module_path)
-        .transpose()?
-        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-        .with_context(|| {
-            format!(
-                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-            )
-        })?;
-    let runtime_file = artifact
-        .js_chunk(chunk_id_interned)?
-        .get_file(&target_file)
-        .with_context(|| {
-            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-        })?;
-    let runtime_ast = runtime_file.ast().with_context(|| {
-        format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
-    })?;
+    let (target_file, runtime_file, runtime_ast) =
+        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
     // Chunk-wide `top_level_mark` for resolving spec-derived String
     // binding names to hygiene-aware `Id`s via `top_level_id`.
     let chunk_top_level_mark = runtime_ast.top_level_mark;
@@ -328,6 +314,82 @@ pub(super) fn prepare_logical_chunk(
     ))
 }
 
+/// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
+/// else the chunk's entry) and its retained AST.
+pub(super) fn chunk_runtime_entry<'a>(
+    artifact: &'a ChunkBundle,
+    chunk_id: &str,
+    chunk_id_interned: ChunkId,
+    file: Option<&str>,
+) -> Result<(String, &'a JsFile, &'a ParsedJsModule)> {
+    let target_file = file
+        .map(normalize_module_path)
+        .transpose()?
+        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
+        .with_context(|| {
+            format!(
+                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
+            )
+        })?;
+    let runtime_file = artifact
+        .js_chunk(chunk_id_interned)?
+        .get_file(&target_file)
+        .with_context(|| {
+            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
+        })?;
+    let runtime_ast = runtime_file.ast().with_context(|| {
+        format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
+    })?;
+    Ok((target_file, runtime_file, runtime_ast))
+}
+
+/// One chunk's facts for `debundle analyze`: what `finish_logical_chunk`
+/// computes, from the chunk's source, the projection and the cross-module
+/// summaries, with no plan.
+pub(super) fn analyze_logical_chunk(
+    artifact: &ChunkBundle,
+    artifact_indexes: &ArtifactIndexes,
+    chunk_id: &str,
+    file: Option<&str>,
+    export_reentry_policies: &BTreeMap<ChunkId, ExportReentryPolicy>,
+    projection: &AnalysisProjection<'_>,
+    cross_module_purities: &super::cross_module::CrossModulePurities,
+) -> Result<ChunkFactAnalysis> {
+    let chunk_id_interned = artifact
+        .chunk_table
+        .get(chunk_id)
+        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
+    let (target_file, runtime_file, runtime_ast) =
+        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
+    let source_path = runtime_file.metadata.source_path.clone();
+    let line_index = runtime_ast.line_index();
+    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+        &runtime_ast.module,
+        Some(&source_path),
+        |span| line_index.line_range_and_start_column_for_span(span),
+    );
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    let (facts, _) = compute_logical_chunk_facts(
+        ChunkFactsContext {
+            artifact,
+            artifact_indexes,
+            chunk_id,
+            chunk_id_interned,
+            target_file: &target_file,
+            runtime_ast,
+            source_path: &source_path,
+            export_reentry_policy: export_reentry_policies
+                .get(&chunk_id_interned)
+                .unwrap_or(&ExportReentryPolicy::Conservative),
+        },
+        ChunkFacts::Compute(structural_analysis),
+        projection,
+        cross_module_purities,
+    )?;
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    Ok(facts)
+}
+
 /// Resolve source-selected bindings before the cross-chunk purity oracle runs.
 /// The same resolved hints are later used by this chunk's source unit analysis.
 pub(super) fn claim_prepared_chunk<'a>(
@@ -370,6 +432,10 @@ pub(super) fn claim_prepared_chunk<'a>(
 }
 
 impl ClaimedLogicalChunk<'_> {
+    pub(super) fn chunk_id(&self) -> &str {
+        self.prepared.context.chunk_id
+    }
+
     pub(super) fn resolved_member_sites(&self) -> Vec<ResolvedMemberSite> {
         let prepared = &self.prepared;
         let owned = prepared.builder.owned_binding_destinations();
@@ -425,6 +491,7 @@ pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     projection: &AnalysisProjection<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
+    loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
     commuting_context: CommutingStatementsContext<'_>,
 ) -> Result<MaterializedLogicalChunk> {
@@ -498,7 +565,10 @@ pub(super) fn finish_logical_chunk(
                 .get(&chunk_id_interned)
                 .unwrap_or(&ExportReentryPolicy::Conservative),
         },
-        structural_analysis,
+        match loaded_facts {
+            Some(facts) => ChunkFacts::Loaded(facts),
+            None => ChunkFacts::Compute(structural_analysis),
+        },
         projection,
         cross_module_purities,
     )?;
@@ -755,12 +825,21 @@ struct ChunkFactsContext<'a> {
     export_reentry_policy: &'a ExportReentryPolicy,
 }
 
+/// Where a chunk's facts come from.
+enum ChunkFacts<'a> {
+    /// Analyze the chunk from its structural facts.
+    Compute(StructuralChunkSourceFacts<'a>),
+    /// Facts an analysis artifact holds for this chunk.
+    Loaded(ChunkFactAnalysis),
+}
+
 /// Analyze one chunk's facts from its source, its spec projection and the
-/// cross-module summaries. Also returns the imported callable summaries the
-/// analysis consumed, which the chunk report records.
+/// cross-module summaries, or check facts loaded for it. Also returns the
+/// imported callable summaries the analysis consumed, which the chunk report
+/// records.
 fn compute_logical_chunk_facts(
     context: ChunkFactsContext<'_>,
-    structural_analysis: StructuralChunkSourceFacts<'_>,
+    facts: ChunkFacts<'_>,
     projection: &AnalysisProjection<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
 ) -> Result<(ChunkFactAnalysis, BTreeMap<String, CallableSummary>)> {
@@ -967,30 +1046,44 @@ fn compute_logical_chunk_facts(
             .clone();
         inputs
     };
-    let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
-        structural_analysis,
-        cross_module_purities
-            .native_operation_inputs
-            .get(chunk_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default(),
-        cross_module_purities
-            .stable_set_spreads
-            .get(chunk_id)
-            .unwrap_or(&BTreeMap::new()),
-        &analysis_inputs.assumptions.argument_inputs,
-    );
-    let facts = compute_chunk_facts(
-        chunk_id,
-        &runtime_ast.module,
-        structural_analysis,
-        &analysis_inputs,
-        Some(source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
-        dependency_graph_options.admission_overrides,
-        export_reentry_policy,
-        &resolve_dynamic_import,
-    )?;
+    let facts = match facts {
+        ChunkFacts::Loaded(facts) => {
+            check_chunk_facts(
+                chunk_id,
+                &runtime_ast.module,
+                &facts,
+                dependency_graph_options.admission_overrides,
+                &resolve_dynamic_import,
+            )?;
+            facts
+        }
+        ChunkFacts::Compute(structural_analysis) => {
+            let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
+                structural_analysis,
+                cross_module_purities
+                    .native_operation_inputs
+                    .get(chunk_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                cross_module_purities
+                    .stable_set_spreads
+                    .get(chunk_id)
+                    .unwrap_or(&BTreeMap::new()),
+                &analysis_inputs.assumptions.argument_inputs,
+            );
+            compute_chunk_facts(
+                chunk_id,
+                &runtime_ast.module,
+                structural_analysis,
+                &analysis_inputs,
+                Some(source_path),
+                |span| line_index.line_range_and_start_column_for_span(span),
+                dependency_graph_options.admission_overrides,
+                export_reentry_policy,
+                &resolve_dynamic_import,
+            )?
+        }
+    };
     Ok((facts, analysis_inputs.imported_callables))
 }
 

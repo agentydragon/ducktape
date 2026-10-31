@@ -60,7 +60,7 @@ cause spurious cache misses.
 | `program_premises.*`                                                                                                                                                  | S2                       | Reports only after S2.                                                                        |
 | `vendor` marks                                                                                                                                                        | S0, S2, S5               | S2 needs replacement packages and closure blockers.                                           |
 | `swap_vendor_chunks.*`, `write_js_tree`, `emit_browser_harness`, `materialize_logical_modules.report_out_dir`                                                         | S5                       | Output only.                                                                                  |
-| `logical_modules` key set, `chunk_renames` key set, `unassigned_mode` key set                                                                                         | S0 (chunk set), S2 scope | Which chunks are analysed (C7).                                                               |
+| `logical_modules` key set, `chunk_renames` key set, `unassigned_mode` key set                                                                                         | S0 (chunk set), S2 scope | Which chunks are analysed; recorded in the projection.                                        |
 | `materialize_logical_modules.prune_other_chunks`                                                                                                                      | S2 scope                 | Changes the S2 universe.                                                                      |
 | `materialize_logical_modules.{file,target_dir}`                                                                                                                       | S1, S5                   | Request paths; analysis sees destinations by index only.                                      |
 | members' selectors, `source_matches`, `anonymous_statements[].source_match`                                                                                           | S1, S4, S5               | The assignment. Only `resolved_member` premise names reach S2 (C3).                           |
@@ -105,10 +105,6 @@ input path and note (`reports/author_inputs.rs`). Still path-dependent: S2's
 `GraphProvenance` parameter, read for each input chunk's source digest and
 path. Cut: the projection carries the source digests;
 `GraphProvenance` stays a report-writer input.
-
-**C7 — the analysed chunk set comes from assignment key sets.** Cut: the
-projection file (step 7) lists the analysed chunks and `prune_other_chunks`
-explicitly.
 
 **C8 — selector anchors couple modules within S1.** `cross_ref.anchor`,
 `reads_member.object` and similar name other members, so the selector solve
@@ -259,9 +255,10 @@ A stage may read only what its key covers. Enforced, not documented:
 
 1. **Process boundary.** `analyze` parses no YAML but the projection and
    accepts no spec-tree flag. On RBE the action sees only declared inputs.
-   Locally (`no-sandbox`), `InputCapture` already records every read; `analyze`
-   fails if a read falls outside the projection, the source root and the
-   package roots, and writes the digests it read into the header.
+   Locally nothing confines its reads: source roots are symlink trees (Bazel
+   runfiles, staged inputs) whose files resolve outside the root, so a path
+   check would refuse legitimate runs. The header's parser-input digests
+   cover the sources; the projection covers the spec.
 2. **Types.** `AnalysisProjection` is the only spec-derived type in S2 and S3
    signatures. `MaterializeSpecInputs` splits into `AnalysisProjection` and the
    assignment half; `DependencyGraphOptions` splits into analysis and graph
@@ -287,10 +284,7 @@ it says otherwise.
 
 5. Path-independent evidence (C6): landed; numbering kept for references.
 6. Serializable artifact: landed; numbering kept for references.
-7. **CLI**: `spec project-analysis` (serializes `AnalysisProjection`, adding the
-   analysed chunk set for C7), `analyze`, `run --analysis`, equivalence
-   tests. Graduate the boundary to docs/design.md § Pipeline split and update
-   the lessons-learned note.
+7. CLI and equivalence tests: landed; numbering kept for references.
 8. **`pipeline.bzl`** three actions. gaffer-private repins separately.
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.

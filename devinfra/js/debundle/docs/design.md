@@ -2478,12 +2478,29 @@ dependencies:
   applies resolved claims afterward, then `finish_logical_chunk` performs
   chunk analysis, assignment assembly, the gate, and lowering.
 
-The materializer is the composition of both, and chunk analysis is computed
-in memory at one call site in `finish_logical_chunk`. The boundary is
-explicit without committing the pipeline to cross-process fact reuse. If
-future work tries to cache chunk analysis across processes, it must first
-solve SWC hygiene replay for pre-filter facts; see
-`docs/wire_format.md` and `docs/lessons_learned/cross_process_stage_b.md`.
+The materializer is the composition of both. Analysis (the cross-module
+pass and each chunk's facts) reads the spec only through
+`lowering::analysis_projection::AnalysisProjection`, built after the selector
+solve, so it can also run in another process:
+
+- `debundle spec project-analysis` writes the projection as canonical bytes
+  (`AnalysisSpec`): the spec sections analysis reads, notes and graph-only
+  options removed, source paths relative to the source root, premises
+  resolved to bindings.
+- `debundle analyze --projection` computes the analysis from the projection
+  and the sources alone and writes an analysis artifact
+  (`lowering::analysis_artifact`): a header naming the engine, the projection
+  and every chunk's parser-input digest, then the encoded body.
+- `debundle run --analysis` checks that header against its own engine,
+  parser inputs and projection, refuses a mismatch naming the differing
+  fields, and otherwise skips analysis. It still runs the facts' admission
+  and top-level `await` checks and prints the same warnings, so its output,
+  reports and exit code equal a run that computes the analysis.
+
+Facts cross the process boundary through `analysis_codec`, which writes
+hygiene contexts as first-occurrence ordinals of the re-parsed modules; see
+`docs/lessons_learned/cross_process_stage_b.md` for why simpler encodings
+are wrong.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but

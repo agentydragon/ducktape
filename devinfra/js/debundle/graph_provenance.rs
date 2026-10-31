@@ -384,6 +384,15 @@ impl InputCapture {
     }
 
     pub fn finish(self) -> Result<GraphProvenance> {
+        let provenance = self.finish_inputs()?;
+        provenance.verify(&CurrentRoots::default())?;
+        Ok(provenance)
+    }
+
+    /// The captured inputs without `finish`'s replay check, for `debundle
+    /// analyze`: its provenance keys an analysis artifact (engine, parser
+    /// inputs) and is never replayed as a `debundle run`.
+    pub fn finish_inputs(self) -> Result<GraphProvenance> {
         {
             let mut provenance = self
                 .state
@@ -406,7 +415,6 @@ impl InputCapture {
             provenance
                 .yaml_memberships
                 .sort_by(|a, b| (&a.root, &a.directory).cmp(&(&b.root, &b.directory)));
-            provenance.verify(&CurrentRoots::default())?;
             Ok(provenance)
         }
     }
