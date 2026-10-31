@@ -183,27 +183,29 @@ fn accessor_opts<'a>(
 
 #[test]
 fn a_premise_on_the_calling_function_keeps_the_slot() {
-    let source = source(ACCESSOR_CALL);
-    let fixture = run_fixture(accessor_opts(
-        &source,
-        no_accessor_install(
+    const DIRECT: &str = "function call(method, key, value) { root[method](key, value); }";
+    // A nested closure is part of the selected function.
+    const NESTED: &str =
+        "function call(method, key, value) { const run = () => root[method](key, value); run(); }";
+    for declaration in [DIRECT, NESTED] {
+        let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
+        let fixture = run_fixture(accessor_opts(
             &source,
-            "function call(method, key, value) { root[method](key, value); }",
-            "call",
-        ),
-    ));
-    assert_preserved_entry_output(&fixture, "0 42\n");
-    assert_all_emitted_js_checks(&fixture);
-    // `new Map()` consumes the census the premise kept intact.
-    let graph = fixture.dependency_graph();
-    let node_id = source_unit_for_binding(&graph, "collection");
-    let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
-    let report = serde_json::to_value(node).unwrap();
-    assert_eq!(
-        report["synchronous_execution"]["native_integrity_uses"][0]["no_accessor_install_refs"],
-        serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
-        "{report}"
-    );
+            no_accessor_install(&source, declaration, "call"),
+        ));
+        assert_preserved_entry_output(&fixture, "0 42\n");
+        assert_all_emitted_js_checks(&fixture);
+        // `new Map()` consumes the census the premise kept intact.
+        let graph = fixture.dependency_graph();
+        let node_id = source_unit_for_binding(&graph, "collection");
+        let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+        let report = serde_json::to_value(node).unwrap();
+        assert_eq!(
+            report["synchronous_execution"]["native_integrity_uses"][0]["no_accessor_install_refs"],
+            serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
+            "{report}"
+        );
+    }
 }
 
 #[test]
@@ -240,20 +242,23 @@ fn a_premise_needs_one_function_with_a_computed_call() {
             "no computed-key method call",
         ],
     );
-    let nested = source.replace(
+    let pair = source.replace(
         "function other(target, key) { target[key](); }",
-        "function other(target, key) { return () => target[key](); }",
+        "const other = [(target, key) => target[key](), () => 0];",
     );
     expect_rejection_containing_all(
         accessor_opts(
-            &nested,
+            &pair,
             no_accessor_install(
-                &nested,
-                "function other(target, key) { return () => target[key](); }",
+                &pair,
+                "const other = [(target, key) => target[key](), () => 0];",
                 "other",
             ),
         ),
-        &["no_accessor_install_callables[0]", "exactly one function"],
+        &[
+            "no_accessor_install_callables[0]",
+            "exactly one outermost function",
+        ],
     );
     let mut stale = no_accessor_install(
         &source,

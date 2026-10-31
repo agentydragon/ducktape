@@ -43,8 +43,8 @@ use source_match::source_match_claim_member_selectors;
 use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Decl, Function, GetterProp, Id, MemberProp, Module, ModuleDecl,
-    ModuleItem, Pat, SetterProp, Stmt, VarDeclarator,
+    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
+    ModuleDecl, ModuleItem, Pat, SetterProp, Stmt, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -1508,10 +1508,10 @@ fn resolve_no_accessor_install_callables(
                 .get(body_index)
                 .context("selected source item is missing")?
                 .visit_with(&mut callables);
-            let [function_span] = callables.functions[..] else {
+            let [function_span] = callables.outermost[..] else {
                 bail!(
-                    "{request_id} must select a statement containing exactly one function, found {}",
-                    callables.functions.len()
+                    "{request_id} must select a statement containing exactly one outermost function, found {}",
+                    callables.outermost.len()
                 );
             };
             ensure!(
@@ -1531,32 +1531,47 @@ fn resolve_no_accessor_install_callables(
     Ok(resolved)
 }
 
-/// The functions of one selected statement, accessors included.
+/// The outermost functions of one selected statement, accessors included;
+/// a nested function is part of the one enclosing it.
 #[derive(Default)]
 struct SelectedCallables {
-    functions: Vec<Span>,
+    outermost: Vec<Span>,
+    depth: usize,
     computed_method_call: bool,
+}
+
+impl SelectedCallables {
+    fn enclose(&mut self, span: Span, visit: impl FnOnce(&mut Self)) {
+        if self.depth == 0 {
+            self.outermost.push(span);
+        }
+        self.depth += 1;
+        visit(self);
+        self.depth -= 1;
+    }
 }
 
 impl Visit for SelectedCallables {
     fn visit_function(&mut self, function: &Function) {
-        self.functions.push(function.span);
-        function.visit_children_with(self);
+        self.enclose(function.span, |this| function.visit_children_with(this));
     }
 
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
-        self.functions.push(arrow.span);
-        arrow.visit_children_with(self);
+        self.enclose(arrow.span, |this| arrow.visit_children_with(this));
+    }
+
+    fn visit_constructor(&mut self, constructor: &Constructor) {
+        self.enclose(constructor.span, |this| {
+            constructor.visit_children_with(this)
+        });
     }
 
     fn visit_getter_prop(&mut self, getter: &GetterProp) {
-        self.functions.push(getter.span);
-        getter.visit_children_with(self);
+        self.enclose(getter.span, |this| getter.visit_children_with(this));
     }
 
     fn visit_setter_prop(&mut self, setter: &SetterProp) {
-        self.functions.push(setter.span);
-        setter.visit_children_with(self);
+        self.enclose(setter.span, |this| setter.visit_children_with(this));
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
