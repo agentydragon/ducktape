@@ -635,7 +635,7 @@ host_behavior:
   reentry_free_bun_modules: [bun:ffi, ws]
   reentry_free_embedded_loaders: [text]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
-  predefined_globals: unknown # standard
+  predefined_globals: unknown # standard, bun
   note: "Audited against <executable identity, revision, digest>"
 ```
 
@@ -682,9 +682,13 @@ windows, never this realm's intrinsics. The list is the union of the `globals` n
 `pnpm-lock.yaml`) `builtin`, `es*`, `browser`, `worker`, `serviceworker`,
 `sharedWorker`, `audioWorklet`, `paintWorklet`, `node`, `nodeBuiltin`,
 `commonjs` and `shared-node-browser` lists, plus the own properties of
-`%Object.prototype%`. `unknown` asserts nothing. The author checks that the
-audited executable, its preloads and any script loaded before the program add
-no other global.
+`%Object.prototype%`. `predefined_globals: bun` makes the same claim for a Bun
+host whose list also holds Bun's own globals: `Bun`, `HTMLRewriter`,
+`BuildError`, `BuildMessage`, `ResolveError`, `ResolveMessage` and
+`ShadowRealm`, the string keys of Bun 1.x's global object and its prototype
+chain outside the standard list. `unknown` asserts nothing. The author checks
+that the audited executable, its preloads and any script loaded before the
+program add no other global.
 
 ### Synchronous module loader
 
@@ -1588,12 +1592,12 @@ the external obligation for code outside the analyzed program.
 
 ### Bundle-owned globals
 
-Under `host_behavior.predefined_globals: standard` a write through the value of
+Under `host_behavior.predefined_globals: standard` or `bun` a write through the value of
 a bundle-owned global property reaches no intrinsic slot, whatever its key.
 Without that key every global-slot read-back stays an unknown value.
 
 A property `g` of the global object is bundle-owned when it is not in the
-standard list (§ Predefined globals), is not a census binding name, and every
+host's list (§ Predefined globals), is not a census binding name, and every
 census write that may store into `g` stores a fresh object (inline, or a
 top-level binding every write of which stores an object literal, a primitive, or
 the result of an inline function whose every `return` is one), a primitive, a

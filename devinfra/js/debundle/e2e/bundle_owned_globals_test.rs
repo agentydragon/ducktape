@@ -13,6 +13,20 @@ fn opts<'a>(
     anonymous: &[&str],
     standard: bool,
 ) -> FixtureOpts<'a> {
+    let host = if standard {
+        PredefinedGlobals::Standard
+    } else {
+        PredefinedGlobals::Unknown
+    };
+    opts_on(source, members, anonymous, host)
+}
+
+fn opts_on<'a>(
+    source: &'a str,
+    members: &[&'static str],
+    anonymous: &[&str],
+    host: PredefinedGlobals,
+) -> FixtureOpts<'a> {
     let mut native: Vec<Member> = members.iter().map(|member| Member::new(member)).collect();
     native.push(Member::new("collection"));
     let mut anonymous = anonymous.to_vec();
@@ -24,9 +38,7 @@ fn opts<'a>(
             logical_module("values/later", &[Member::new("later")]),
         ],
     );
-    if standard {
-        opts.host_behavior.predefined_globals = PredefinedGlobals::Standard;
-    }
+    opts.host_behavior.predefined_globals = host;
     opts
 }
 
@@ -303,4 +315,35 @@ fn a_global_holding_a_fresh_binding_is_bundle_owned() {
         &["values/native", "values/later"],
         &[],
     );
+}
+
+/// A bundle that creates its own `Bun` registry, as on a non-Bun host.
+const BUN_REGISTRY: &str = "const root = globalThis;\nfunction getInstance(name) { root.Bun || (root.Bun = {}); root.Bun[name] || (root.Bun[name] = { name }); return root.Bun[name]; }";
+
+#[test]
+fn a_bun_host_predefines_its_own_globals() {
+    let registry = source(BUN_REGISTRY);
+    let members = ["root", "getInstance"];
+    let fixture = run_fixture(opts_on(
+        &registry,
+        &members,
+        &[],
+        PredefinedGlobals::Standard,
+    ));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    expect_atomic_conflict_rejection(
+        opts_on(&registry, &members, &[], PredefinedGlobals::Bun),
+        &["values/native", "values/later"],
+        &[],
+    );
+    for (bundle, members, anonymous) in cases() {
+        let source = source(bundle);
+        let fixture = run_fixture(opts_on(
+            &source,
+            &members,
+            &anonymous,
+            PredefinedGlobals::Bun,
+        ));
+        assert_preserved_entry_output(&fixture, "0 42\n");
+    }
 }

@@ -219,10 +219,13 @@ pub enum PredefinedGlobals {
     /// Only names in the standard global lists (SPEC.md § Predefined
     /// globals), each with its standard definition.
     Standard,
+    /// The standard names plus Bun's own globals (SPEC.md § Predefined
+    /// globals), each with its documented definition.
+    Bun,
 }
 
 impl PredefinedGlobals {
-    fn is_unknown(&self) -> bool {
+    pub fn is_unknown(&self) -> bool {
         *self == Self::Unknown
     }
 }

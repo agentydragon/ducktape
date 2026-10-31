@@ -809,7 +809,7 @@ pub fn resolve_imported_callable_summaries(
     let (mut prepared, mut resolved_value_inputs, mut resolved_native_operation_inputs) =
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
-    if predefined_globals == spec::PredefinedGlobals::Standard {
+    if !predefined_globals.is_unknown() {
         bundle_globals.fresh_collections = true;
         for module in prepared.values() {
             let candidates = module.bundle_global_candidates();
