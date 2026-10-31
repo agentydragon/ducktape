@@ -29,10 +29,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func run(ctx context.Context, settings centralsampler.Settings, initialize bool) error {
+func run(ctx context.Context, settings centralsampler.Settings) error {
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
-	if initialize {
-		return migrate.Run(ctx, databaseURL, centralsampler.Migrate)
+	if err := migrate.Run(ctx, databaseURL, centralsampler.Migrate); err != nil {
+		return err
 	}
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
 	db, err := postgres.Open(ctx, databaseURL, 2*settings.MaxLiveSessions+8+16, 16)
@@ -115,14 +115,20 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize bool)
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", centralsampler.Migrate); handled {
+		if err != nil {
+			slog.Error("central sampler migration stopped", "error_type", fmt.Sprintf("%T", err))
+			os.Exit(1)
+		}
+		return
+	}
 	configuration := flag.String("config", os.Getenv("AGENTPLANE_CENTRAL_SAMPLER_CONFIG"), "JSON settings path")
-	initialize := flag.Bool("initialize", false, "Apply isolated sampler schema migrations")
 	flag.Parse()
 	settings, err := centralsampler.LoadSettings(*configuration)
 	if err == nil {
-		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer cancel()
-		err = run(ctx, settings, *initialize)
+		err = run(ctx, settings)
 	}
 	if err != nil {
 		slog.Error("central sampler stopped", "error_type", fmt.Sprintf("%T", err))

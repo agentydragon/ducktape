@@ -1,6 +1,7 @@
 -- +goose Up
 -- A fresh database creates the final native schema. A completed version-7 database is adopted
 -- without rewriting retained conversations, commands, evidence, or Goose history.
+-- The nullable host marker is added to the adopted table in this same transaction.
 -- +goose StatementBegin
 DO $sampler_final_schema$
 DECLARE
@@ -81,6 +82,7 @@ BEGIN
         THEN
             RAISE EXCEPTION 'Sampler version 7 native schema is incomplete; run the previous image or repair before migration 8';
         END IF;
+        ALTER TABLE sampler_conversation ADD COLUMN code_host_instance UUID;
         RETURN;
     END IF;
 
@@ -112,6 +114,7 @@ BEGIN
         executor_shell VARCHAR,
         environment_context JSONB,
         code_session_epoch INTEGER NOT NULL DEFAULT 0,
+        code_host_instance UUID,
         api TEXT NOT NULL CONSTRAINT sampler_conversation_api_check
             CHECK (api IN ('responses', 'anthropic_messages'))
     );

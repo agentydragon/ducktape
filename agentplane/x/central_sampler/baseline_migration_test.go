@@ -33,7 +33,8 @@ func migrationCount(t *testing.T, db *sql.DB, query string, args ...any) int {
 
 func seedCompletedNativeSeven(t *testing.T, db *sql.DB) {
 	t.Helper()
-	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id IN (8,9)`)
+	migrationExec(t, db, `ALTER TABLE sampler_conversation DROP COLUMN code_host_instance`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
 	migrationExec(t, db, `INSERT INTO central_sampler_goose_version(version_id,is_applied)
 		SELECT version_id,true FROM generate_series(1,7) AS version_id`)
 }
@@ -95,25 +96,17 @@ func TestFreshNativeBaseline(t *testing.T) {
 	}
 }
 
-func TestNativeBaselineAdoptsSevenWithoutLockingServingRows(t *testing.T) {
+func TestNativeBaselineAdoptsSevenAndPreservesRows(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	migrationExec(t, store.DB(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record)
 		VALUES($1,1,'{"type":"reasoning","provider_id":9007199254740993}'::jsonb)`, session.ConversationID)
 	seedCompletedNativeSeven(t, store.DB())
 	beforeNodes := samplerRelationNodes(t, store.DB())
-	serving, err := store.DB().BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer serving.Rollback()
-	if _, err := serving.ExecContext(t.Context(), `UPDATE sampler_conversation SET stopped=stopped WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	if err := migrateBaselineEight(ctx, store.DB()); err != nil {
-		t.Fatalf("adopt native version 7 while a conversation is serving: %v", err)
+		t.Fatalf("adopt native version 7: %v", err)
 	}
 	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version
 		WHERE version_id BETWEEN 1 AND 7 AND is_applied`); got != 7 {
@@ -126,8 +119,10 @@ func TestNativeBaselineAdoptsSevenWithoutLockingServingRows(t *testing.T) {
 	if after := samplerRelationNodes(t, store.DB()); !reflect.DeepEqual(beforeNodes, after) {
 		t.Fatalf("adoption rewrote sampler tables: before %v, after %v", beforeNodes, after)
 	}
-	if err := serving.Commit(); err != nil {
-		t.Fatal(err)
+	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema=current_schema() AND table_name='sampler_conversation'
+		AND column_name='code_host_instance' AND data_type='uuid' AND is_nullable='YES'`); got != 1 {
+		t.Fatalf("adopted nullable host marker columns = %d, want 1", got)
 	}
 	if got := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_conversation_item
 		WHERE conversation_id=$1 AND record->>'provider_id'='9007199254740993'`, session.ConversationID); got != 1 {
@@ -167,7 +162,7 @@ func TestNativeBaselineRejectsIncompleteSevenWithoutMarkingAdopted(t *testing.T)
 
 func TestNativeBaselineRejectsUnmarkedExistingSchema(t *testing.T) {
 	store := newTestStore(t)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id IN (8,9)`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
 	if err := migrateBaselineEight(t.Context(), store.DB()); err == nil || !strings.Contains(err.Error(), "without completed version 7 history") {
 		t.Fatalf("Migrate error = %v, want unmarked schema rejection", err)
 	}
@@ -202,10 +197,11 @@ func TestNativeBaselineConcurrentAdoption(t *testing.T) {
 	}
 }
 
-func TestPriorBaselineProviderStartsAfterHostMarkerMigration(t *testing.T) {
+func TestBaselineProviderStartsAfterAdoptingHostMarker(t *testing.T) {
 	store := newTestStore(t)
+	seedCompletedNativeSeven(t, store.DB())
 	if err := migrateBaselineEight(t.Context(), store.DB()); err != nil {
-		t.Fatalf("prior baseline image cannot start after nullable host marker migration: %v", err)
+		t.Fatalf("baseline cannot adopt nullable host marker: %v", err)
 	}
 	session := openSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)

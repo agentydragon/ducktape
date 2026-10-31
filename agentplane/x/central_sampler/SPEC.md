@@ -428,9 +428,9 @@ not evidence payloads. Existing History reader authorization continues to govern
 The service and provider/tool loop run in Go; the pinned upstream JavaScript host is a child
 process of the sampler. Production requires no Python interpreter. The existing gRPC API and
 sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
-initializer creates that schema from its Goose SQL baseline. Repeated initialization preserves
+service applies its Goose SQL baseline before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
-Acceptance tests initialize through the actual Go binary and inspect its database separately.
+Acceptance tests start the actual Go binary and inspect its database separately.
 
 `sampler_conversation.api` pins the native protocol. Ordered, immutable native records live in
 `sampler_conversation_item.record`. `sampler_conversation.context` optionally holds the compacted
@@ -443,8 +443,11 @@ Migration 8 is the final native-schema baseline. A fresh, empty sampler database
 tables directly. An existing database is adopted only with complete Goose version-7 history and
 the native API, status constraints, columns, and indexes already installed. Adoption preserves all
 prior Goose rows, Session identities, provider payloads, raw exchange evidence, commands, events,
-and unresolved-effect state without copying data or locking serving conversation rows. A partial
-version-7 conversion or older database fails initialization and requires the previous image or
-explicit repair; initialization no longer classifies or converts legacy provider records. Later
+and unresolved-effect state without copying data. It adds a nullable Code Mode host marker to
+the adopted conversation table in the same transaction, which briefly requires a table schema
+lock. Startup migration connections cap DDL lock waits at five seconds; timeout rolls back
+migration 8 so a later startup can retry. A partial version-7 conversion or older database fails
+startup and requires the previous
+image or explicit repair; startup no longer classifies or converts legacy provider records. Later
 schema changes use new additive Goose migrations. Schema rollback requires restoring the
 pre-migration database backup together with the old service image.

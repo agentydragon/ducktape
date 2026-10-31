@@ -32,15 +32,18 @@ reason and linked evidence without replaying an uncertain operation.
 ## Running
 
 Build `//agentplane/x/central_sampler:main_bin`. Supply a JSON file matching
-[`Settings`](settings.go), then run the binary with `--config PATH --initialize` to apply its
-Goose SQL baseline. Run with `--config PATH` to serve. Use a PostgreSQL URL (`postgresql://`). No
-schema is created implicitly on server startup. Initialize a dedicated empty DB, or adopt a
-completed native version-7 DB through migration 8. Repeating initialization retains Session
-identities, conversation state, evidence and outbox.
+[`Settings`](settings.go), then run the binary with `--config PATH` to serve. Use a PostgreSQL URL
+(`postgresql://`). Startup applies Goose migrations before opening the service database connection
+or starting workers. Migration 8 creates a dedicated empty database's native schema or adopts a
+completed native version-7 database and adds the nullable Code Mode host marker. Repeated startup
+retains Session identities, conversation state, evidence and outbox.
+For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` and pass
+`--migrate-only` as the sole argument. Normal service startup performs the same migration before
+it serves.
 
 `//agentplane/x/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../../system_tests/README.md#central-sampler) run that image in its
-own Pod, initialize its DB with an init container, and use projected service-account tokens for
+own Pod, migrate before serving, and use projected service-account tokens for
 Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
 CPU and memory limits.
 
