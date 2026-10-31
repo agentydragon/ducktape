@@ -28,7 +28,7 @@ from x.ai_session_archive.database import (
     UsageObservationRow,
 )
 from x.ai_session_archive.models import Harness
-from x.ai_session_archive.record_json import parse_record_json
+from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from x.ai_session_archive.usage_observations import usage_observations_for_record
 
@@ -96,10 +96,7 @@ class _ParsedRecord:
     raw_bytes: bytes
     byte_offset: int
     sha256: str
-    parsed: Any | None
-    parse_error: str | None
-    timestamp: datetime | None
-    kind: str | None
+    json: ParsedRecordJson | RecordJsonParseError
 
 
 class SnapshotIngestor:
@@ -649,7 +646,7 @@ class SnapshotIngestor:
             )
             additions = []
             for index, (record, payload) in enumerate(zip(batch, payloads, strict=True)):
-                if record.parse_error is not None:
+                if isinstance(record.json, RecordJsonParseError):
                     issue_count += 1
                 if matching_prefix:
                     parent_index = index
@@ -697,14 +694,14 @@ class SnapshotIngestor:
                 sha256=record.sha256,
                 parser_version=PARSER_VERSION,
                 raw_bytes=record.raw_bytes,
-                parse_error=record.parse_error,
-                timestamp=record.timestamp,
-                kind=record.kind,
+                parse_error=record.json.parse_error if isinstance(record.json, RecordJsonParseError) else None,
+                timestamp=record.json.timestamp if isinstance(record.json, ParsedRecordJson) else None,
+                kind=record.json.kind if isinstance(record.json, ParsedRecordJson) else None,
             )
             db.add(payload)
             payload_by_hash[record.sha256] = payload
-            if record.parse_error is None:
-                for observation_index, observation in enumerate(usage_observations_for_record(record.parsed)):
+            if isinstance(record.json, ParsedRecordJson):
+                for observation_index, observation in enumerate(usage_observations_for_record(record.json.parsed)):
                     db.add(
                         UsageObservationRow(
                             payload_id=payload.id,
@@ -983,17 +980,11 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
         parsed = parse_record_json(raw_bytes)
-        if isinstance(parsed.parsed, Mapping):
+        if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
             _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp)
         records.append(
             _ParsedRecord(
-                raw_bytes=raw_bytes,
-                byte_offset=byte_offset,
-                sha256=hashlib.sha256(raw_bytes).hexdigest(),
-                parsed=parsed.parsed,
-                parse_error=parsed.parse_error,
-                timestamp=parsed.timestamp,
-                kind=parsed.kind,
+                raw_bytes=raw_bytes, byte_offset=byte_offset, sha256=hashlib.sha256(raw_bytes).hexdigest(), json=parsed
             )
         )
         byte_offset += len(raw_bytes)
