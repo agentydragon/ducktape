@@ -17,12 +17,14 @@ go_binary(
     name = "boot_init",
     srcs = ["boot_init.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/boot_init",
+    race = "off",
 )
 
 go_binary(
     name = "child_exec",
     srcs = ["child_exec.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/child_exec",
+    race = "off",
 )
 
 pkg_files(

@@ -83,11 +83,15 @@ Aspect definitions in `devinfra/lint/linters.bzl`:
 | `bazel-ci.yml`     | `bazel test` (Go race detection), then `bazel build` (lint runs by default)          |
 | `ansible-lint.yml` | Full ansible-lint (thorough mode)                                                    |
 
-.bazelrc enables Go race detection for every `bazel test`, including local and
-publication test runs. CI runs tests once, then builds with the normal
-configuration. Publication reuses output digests only from that build invocation;
-test verdicts come separately from the test invocation. Tests that explicitly
-require `pure = "on"` retain that mode and cannot use Go's cgo-based race detector.
+`.bazelrc` enables the rules_go race setting at the `build` command level, so
+`bazel test` and the following `bazel build` retain the same global setting and
+can reuse analysis. Go tests and standalone `go_library` targets inherit race
+instrumentation. Each non-pure `go_binary` root that produces a normal
+executable sets `race = "off"`; its linked Go dependencies use that mode too.
+`pure = "on"` binaries and tests retain their no-cgo mode. Apply the same
+`race = "off"` policy to new non-pure Go binaries, including test helpers and
+generated Gazelle binaries. Publication reuses output digests only from the
+build invocation; test verdicts come separately from the test invocation.
 
 ## Formatting
 

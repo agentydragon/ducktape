@@ -60,6 +60,7 @@ go_library(
 go_binary(
     name = "bbapi",
     embed = [":bbapi_lib"],
+    race = "off",
     visibility = ["//visibility:public"],
 )
 

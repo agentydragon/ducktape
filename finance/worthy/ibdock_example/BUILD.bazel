@@ -4,6 +4,7 @@ go_binary(
     name = "ibdock_example",
     srcs = ["ibdock_example.go"],
     importpath = "github.com/agentydragon/worthy/ibdock_example",
+    race = "off",
     visibility = ["//visibility:public"],
     deps = [
         "//finance/worthy/ibdock",

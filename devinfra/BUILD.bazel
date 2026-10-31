@@ -43,6 +43,7 @@ gazelle_binary(
         "@bazel_gazelle//language/proto",
         "@rules_python_gazelle_plugin//python",
     ],
+    race = "off",
 )
 
 gazelle(
