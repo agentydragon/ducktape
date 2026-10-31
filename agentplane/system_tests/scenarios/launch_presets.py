@@ -100,7 +100,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     assert still_suspended.pod is None
 
     await client.resume_sandbox(view.name)
-    resumed = await wait_until_running(client, view.name)
+    resumed = await wait_until_running(client, view.name, expected_uid=view.uid)
     assert resumed.uid == view.uid
     assert resumed.pod is not None
     assert resumed.pod.uid != previous_incarnation

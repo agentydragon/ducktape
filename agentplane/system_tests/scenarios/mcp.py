@@ -579,7 +579,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
     assert target["name"] == name
     deleted = False
     try:
-        view = await wait_until_running(client, name)
+        view = await wait_until_running(client, name, expected_uid=UUID(target["uid"]))
         assert str(view.uid) == target["uid"]
         assert view.pod is not None
         # The Action Service holds the grant once it acknowledges the binding.

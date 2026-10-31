@@ -221,7 +221,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     await client.suspend_sandbox(view.name)
     await _wait_suspended(client, view.name)
     await client.resume_sandbox(view.name)
-    resumed = await wait_until_running(client, view.name)
+    resumed = await wait_until_running(client, view.name, expected_uid=view.uid)
     assert resumed.uid == view.uid
     assert resumed.pod is not None
     new_pod_uid, new_credential_id = await _identity(cluster, resumed.pod.name)

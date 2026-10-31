@@ -376,7 +376,6 @@ py_library(
         "//agentplane/app/testing:models",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
-        "@pypi//tenacity",
     ],
 )
 
@@ -395,6 +394,7 @@ py_test(
         ":sandbox",
         "//:conftest",
         "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "@pypi//httpx",

@@ -196,7 +196,7 @@ class _ResumeRun:
         self.save()
         await self.client.resume_sandbox(self.view.name)
 
-        resumed = await wait_until_running(self.client, self.view.name)
+        resumed = await wait_until_running(self.client, self.view.name, expected_uid=self.view.uid)
         assert resumed.uid == self.view.uid
         assert resumed.pod is not None
         assert resumed.pod.uid != self.original_incarnation
