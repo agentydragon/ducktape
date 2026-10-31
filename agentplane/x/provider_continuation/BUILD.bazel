@@ -1,0 +1,24 @@
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+# gazelle:exclude test_reasoning.py
+
+live_openai_py_test(
+    name = "test_reasoning",
+    # Seven bounded network requests, with no model tool execution.
+    size = "medium",
+    srcs = ["test_reasoning.py"],
+    credential_secret = "CLIPROXY_CLIENT_KEY",
+    live_env = [
+        "CLIPROXY_BASE_URL",
+        "CLIPROXY_KEY_FILE",
+        "SPIKE_PROVIDER",
+        "SSL_CERT_FILE",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//:conftest",  # keep: macro owns the test's conftest chain
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
