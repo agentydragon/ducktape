@@ -381,13 +381,12 @@ flowchart TD
     HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
-    SESSION_OPEN_UID_FENCE[In review: UID-fenced opening]
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_CALLER_AUTHORITY[In flight: trusted same-SA authority]
     SESSION_PRINCIPAL_READS[Retained same-principal History reads]
-    SESSION_TARGET_DISCOVERY[Ready: existing target discovery]
-    SESSION_DELEGATION_TOOLS[In flight: CLI, remaining MCP delegation tools]
-    SESSION_DELEGATION_TRANSPORT[Ready: workload proxy route for Session calls]
+    SESSION_TARGET_DISCOVERY[In flight: existing target discovery]
+    SESSION_DELEGATION_TOOLS[CLI in review, remaining MCP delegation tools]
+    SESSION_DELEGATION_TRANSPORT[In flight: workload proxy route for Session calls]
     ACTION_CALLER_UID[Deferred: retain approved caller UID]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
@@ -398,7 +397,6 @@ flowchart TD
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    SESSION_OPEN_UID_FENCE --> THREAD_CREATE_AUTHORIZATION
     SESSION_PLATFORM_GUIDANCE --> THREAD_CREATE_AUTHORIZATION
     SESSION_CALLER_AUTHORITY --> SESSION_PRINCIPAL_READS
     SESSION_CALLER_AUTHORITY --> THREAD_CREATE_AUTHORIZATION
@@ -514,15 +512,6 @@ start against the approved contracts while enforcing backends are built in paral
 caller exposure waits for those checks. A real data/protocol prerequisite still gates work that
 cannot be specified until it exists. File conflicts alone do not serialize independent PRs.
 
-### `SESSION_OPEN_UID_FENCE` — UID-fence Dispatcher opening
-
-**In review, [#13383](https://github.com/agentydragon/ducktape/pull/13383),
-`/root/delegation_open_uid`, 2026-10-31.** Require the expected Sandbox UID in the
-existing `OpenSession` RPC, enforce it at backend admission and preserve it in deduplication.
-Update every caller and the contract together. The rollout/rollback description must state the
-mixed-version behavior; existing running Sessions are not opening calls. This does not itself
-open the Dispatcher to normal callers.
-
 ### `SESSION_PLATFORM_GUIDANCE` — platform guidance independent of presets
 
 **In review, [#13384](https://github.com/agentydragon/ducktape/pull/13384),
@@ -555,7 +544,9 @@ live Sandbox. This approved slice does not wait for held broader cross-SA archiv
 
 ### `SESSION_TARGET_DISCOVERY` — discover usable existing environments
 
-**Ready; selected P1.** Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
+**In flight, `/root/delegation_target_discovery`, operator dispatch 2026-10-31.** Implement as
+an independent PR, with an early review of API ownership, authentication and runtime/configuration
+sources before broad changes. Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
 inventory and runtime/configuration owners: full target handle, freshness/readiness, useful paths,
 instructions and offered harness/model/effort values. No new `cwd_policy` API; use existing backend
 path validation. Extract shared config from app-owned defaults; no backend app call. Discovery
@@ -563,9 +554,10 @@ and admission remain separate checks, with same-name/UID replacement refused.
 
 ### `SESSION_DELEGATION_TOOLS` — usable Session CLI/MCP operations
 
-**In flight, `/root/delegation_session_cli`, 2026-10-31:** direct Dispatcher CLI commands,
-stacked on #13383. MCP and compact History/result projection remain to dispatch; full workflow
-exposure waits for backend enforcement.
+**CLI in review, [#13386](https://github.com/agentydragon/ducktape/pull/13386),
+`/root/delegation_session_cli`, 2026-10-31:** direct Dispatcher commands against `devel`, following
+the merged UID contract. MCP and compact History/result projection remain to dispatch; full
+workflow exposure waits for backend enforcement.
 Expose open, submit, get, command-correlated observe, retained turn reads, queued cancel and exact
 turn interruption. Existing direct Dispatcher gRPC mappings and CLI support should land now where
 simple. Extract neutral result projections, preserving source, lag/gaps, partial facts/errors,
@@ -575,7 +567,7 @@ instructions/tool descriptions and executable workflows rather than depending on
 
 ### `SESSION_DELEGATION_TRANSPORT` — workload Session calls through the existing proxy
 
-**Ready; source audit, `/root/delegation_dispatcher_authority`, 2026-10-31.** Reuse the
+**In flight, `/root/delegation_proxy_wiring`, operator dispatch 2026-10-31; independent PR.** Reuse the
 Actions CLI's `HTTPS_PROXY`/CONNECT path and inert bearer placeholder for Dispatcher gRPC.
 Project the configured Dispatcher-audience token into the egress sidecar only; extend the existing
 credential substitution, scoped service route and network policies as required. Publish matching
