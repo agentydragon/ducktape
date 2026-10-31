@@ -111,13 +111,10 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
-    for workload, migration in {
-        "app": "agentplane-app-migrate",
-    }.items():
-        pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")
-        assert init["image"] == f"git.allegedly.works/ducktape-ci/{migration}:unset"
-        assert init["imagePullPolicy"] == "IfNotPresent"
+    app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
+    assert not app_pod.get("initContainers")
+    app_container = app_pod["containers"][0]
+    assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     assert (
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"
