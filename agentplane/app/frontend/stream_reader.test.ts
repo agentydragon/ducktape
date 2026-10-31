@@ -28,7 +28,9 @@ function follow(): void {
   stop = followResponse("/test/stream", {
     accept: "text/plain",
     frames: (body) => body,
-    onFrame: (frame) => frames.push(frame),
+    onFrame: (frame) => {
+      frames.push(frame);
+    },
     onConnection: (connection) => connections.push(connection),
   });
 }

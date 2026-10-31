@@ -12,12 +12,13 @@
 import { displayableError, fetchWithLogin, HttpError } from "./client";
 
 /** `since` is when the stream entered the phase; `reconnecting` covers every failure since it was
- * last live, a failed first connection included, and `attempt` counts them. `lastError` is why the
- * last one failed, or null when the server ended the response. */
+ * last live, a failed first connection included, and `attempt` counts them. `lastError` explains a
+ * failed connection or an invalid frame. */
 export type StreamConnection =
   | { phase: "connecting"; since: number }
   | { phase: "live"; since: number }
-  | { phase: "reconnecting"; since: number; attempt: number; lastError: string | null };
+  | { phase: "reconnecting"; since: number; attempt: number; lastError: string | null }
+  | { phase: "invalid"; since: number; lastError: string };
 
 const FIRST_RETRY_MS = 1_000;
 const LAST_RETRY_MS = 30_000;
@@ -36,8 +37,8 @@ export interface ReaderHandlers<F> {
   frames: (body: ReadableStream<string>) => ReadableStream<F>;
   /** A response was accepted: the frames that follow start from the server's current state. */
   onOpen?: () => void;
-  /** One frame, which makes the stream live. Throwing ends the connection. */
-  onFrame: (frame: F) => void;
+  /** One frame. A returned reason marks it invalid; throwing ends the connection. */
+  onFrame: (frame: F) => string | void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
 }
@@ -68,8 +69,14 @@ export function followResponse<F>(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
-      onFrame(value);
-      if (connection.phase !== "live") {
+      const invalidReason = onFrame(value);
+      if (typeof invalidReason === "string") {
+        report({
+          phase: "invalid",
+          since: connection.phase === "invalid" ? connection.since : Date.now(),
+          lastError: invalidReason,
+        });
+      } else if (connection.phase !== "live") {
         retries = 0;
         report({ phase: "live", since: Date.now() });
       }

@@ -689,6 +689,7 @@ ts_library(
     srcs = ["notification_types.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":live_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/proto:notification_operator_proto_js",
     ],

@@ -54,10 +54,9 @@ import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
   GitHubSubject,
-  InboxNoticeState,
+  InboxNoticeStateProtoJson,
   InboxStatus,
   SandboxNotificationStatus,
-  SessionNoticeStates,
   SubscriptionStatus,
 } from "../notification_types";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
@@ -78,6 +77,12 @@ localStorage.clear();
 // The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
+type NoticeStateFixture = Omit<Partial<InboxNoticeStateProtoJson>, "notice" | "noticeWaitReason"> & {
+  // The wire is ProtoJSON: newer enum values are numbers. The normalized UI model represents them
+  // as `{ unknown: number }` only after the generated decoder accepts the frame.
+  notice?: InboxNoticeStateProtoJson["notice"] | number;
+  noticeWaitReason?: InboxNoticeStateProtoJson["noticeWaitReason"] | number;
+};
 const NULL_SANDBOX_FIELDS = {
   binding: null,
   preset: null,
@@ -3361,7 +3366,7 @@ function liveEvents(url: URL): ServerSentEvent[] {
     return [{ event: "snapshot", data: snapshot }];
   }
   if (url.pathname === "/threads/notices/stream") {
-    const states: Record<string, Partial<InboxNoticeState>> = {
+    const states: Record<string, NoticeStateFixture> = {
       [THREE_UNPROCESSED_THREAD]: {
         queued: 2,
         unacknowledged: 1,
@@ -3371,19 +3376,19 @@ function liveEvents(url: URL): ServerSentEvent[] {
       },
       [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
       [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
-      [FUTURE_DELIVERY_THREAD]: { unacknowledged: 1, notice: { unknown: 999 } },
+      [FUTURE_DELIVERY_THREAD]: { unacknowledged: 1, notice: 999 },
     };
     const inboxes = url.searchParams
       .getAll("thread_id")
       .filter((session) => session in states)
-      .map((session): InboxNoticeState => ({
+      .map((session) => ({
         inboxId: `inbox-${session}`,
         sessionId: session,
         queued: 0,
         unacknowledged: 0,
         ...states[session],
       }));
-    const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
+    const snapshot = { observedAt: ago(0), inboxes };
     return [{ event: "snapshot", data: snapshot }];
   }
   const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
