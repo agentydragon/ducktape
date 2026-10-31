@@ -273,6 +273,17 @@ On a selected model/effort capability gap. [Runtime control contract](../docs/ru
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.
 
+### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
+
+Deferred by the operator on 2026-10-31; revisit when selective sampling recovery is prioritized.
+Consider preserving completed reasoning/items from an interrupted response only where the actual
+provider and route accept the resulting continuation. The [Luna/Haiku spike](https://github.com/agentydragon/ducktape/pull/13344)
+found that a complete reasoning tail is accepted by Luna and rejected by Haiku; adding a recovery
+notice is a separate request shape. Check opaque signatures/encrypted content, message ordering,
+call/result pairing and proxy transformations. Preserve earlier executed tools and report retained,
+absent or revised items through `ConversationReconciled`. This does not gate whole-response
+abandonment or authorize automatic replay.
+
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
 The central-sampling portion shipped as the opt-in [central sampler](../x/central_sampler/README.md)
