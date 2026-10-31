@@ -160,7 +160,6 @@ export function MachineImportProgressSummary({
                   size={12}
                   role="status"
                   aria-label={`Syncing ${machine.display_name}`}
-                  title={`Syncing ${machine.display_name}`}
                   className="session-import-machine-state"
                 />
               ) : (
