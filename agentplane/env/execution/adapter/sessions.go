@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
@@ -52,7 +52,7 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 			}
 		}
 		if a.opening+len(a.sessions) >= maxOpenConnections {
-			return status.Error(codes.ResourceExhausted, "Runner has too many open execution connections")
+			return status.Error(codes.ResourceExhausted, "environment has too many open execution connections")
 		}
 		ctx, cancel := context.WithCancel(admittedCtx)
 		stopRoot := context.AfterFunc(a.ctx, cancel)

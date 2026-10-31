@@ -1,6 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = [
+    "//agentplane/env:__subpackages__",
     "//agentplane/runner:__pkg__",
     "//agentplane/runner:__subpackages__",
 ])
@@ -13,13 +14,13 @@ go_library(
         "resources.go",
         "server.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/codexexecserver",
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver",
     deps = [
+        "//agentplane/env/execution/companion/control",
         "//agentplane/env/oneoff",
         "//agentplane/env/supervision",
         "//agentplane/observability",
         "//agentplane/runner/cosi",
-        "//agentplane/runner/executor/control",
         "//agentplane/runner/lifecycle",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller",

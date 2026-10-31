@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

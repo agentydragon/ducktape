@@ -11,9 +11,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/configuration",
     deps = [
+        "//agentplane/env/execution/codexexecserver",
         "//agentplane/env/supervision",
         "//agentplane/runner/codexappserver",
-        "//agentplane/runner/codexexecserver",
         "//agentplane/runner/harness",
         "//agentplane/runner/session",
         "//agentplane/runner_transport",

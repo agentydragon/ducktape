@@ -64,7 +64,7 @@ logical Sessions through it. The host retains per-Session `store()` / `load()` v
 and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
 Provider continuation stays in the sampler.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
-Gateway proxies the sandbox-owned [Executor service](../executor/executor.proto) to the Runner,
+Gateway proxies the sandbox-owned [Executor service](../env/execution/executor.proto) to the Runner,
 whose execution adapter owns the local
 Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
 connection; process and file operations use unary RPCs. Native frames return as evidence for the
@@ -118,6 +118,32 @@ The Pod executor has a private PID namespace and Kubernetes resource limits. The
 sibling systemd slice budget. Both share the Sandbox's identity and filesystem paths with the harness.
 Runner owns restart and fences old commands before reopening Session state or sealing journals.
 Local execution remains a deployment mode. See [executor isolation](../runner/docs/codex_executor.md).
+
+## Standalone execution service
+
+The separately runnable [`agentplane-execution-service`](../env/execution/README.md) owns the same
+Executor adapter and native backend without a Runner or native agent harness. Its real container
+acceptance client uses the private Unix socket. Production Gateway routing still reaches the
+Runner's embedded adapter; deploying the separate process and changing that route are separate work.
+
+```mermaid
+flowchart LR
+    caller[Trusted environment client]
+    subgraph environment[One Sandbox incarnation]
+        service[agentplane-execution-service]
+        native[Codex exec-server]
+        containment[Pod PID 1 or service-owned systemd scope]
+        service -->|loopback WebSocket: typed operation adaptation| native
+        service -->|launch, stop, fence| containment
+        containment -->|whole execution domain| native
+    end
+    caller -->|private Unix socket: Executor gRPC| service
+```
+
+The private directory and lifetime lock admit one local owner. Scope validation precedes dispatch;
+closing a unary caller does not imply its native operation stopped. Backend exit closes sessions and
+ends the service lifetime without replaying mutations. No new persistence or environment-attachment
+API is introduced.
 
 ## Telemetry
 
@@ -286,6 +312,6 @@ external MCP bearers and forwards workload calls under the bound ServiceAccount'
 
 ## Service definitions
 
-- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Runner RPCs](../runner/runner_service.proto), [Executor](../executor/executor.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Runner and Executor services over a direct mTLS connection to each runner.
+- gRPC: [Actions](../action_service/action_service.proto), [operator Actions](../action_service/operator_action_service.proto), [Connections](../mcp_edge/connection_service.proto), [Web Push](../action_service/web_push_service.proto), [Runner RPCs](../runner/runner_service.proto), [Executor](../env/execution/executor.proto), [RunnerIngress](../history_service/runner_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/session_dispatcher.proto), [History Service](../history_service/history_service.proto), and the Notification Service's [workload](../notification_service/notifications.proto) and [operator](../notification_service/notifications_operator.proto) APIs (the workload API also has an HTTP form). The Runner Gateway also serves standard gRPC health and proxies the Runner and Executor services over a direct mTLS connection to each runner.
 - HTTP and streaming APIs: [Integration app](../app/api.py), [Electric proxy](../app/electric.py), [Action Service generated facade](../action_service/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../sandbox_controller/controller.go), [Policy Controller](../policy_controller/controller.go), [central egress proxy](../egress/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).

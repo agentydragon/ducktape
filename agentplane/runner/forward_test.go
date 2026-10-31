@@ -16,8 +16,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"

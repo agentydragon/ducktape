@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/runner/execution"
+	"github.com/agentydragon/ducktape/agentplane/env/execution/adapter"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"google.golang.org/grpc"
 )
 

@@ -1,0 +1,25 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_service",
+    srcs = ["test_service.py"],
+    data = [
+        "//agentplane/env/execution/cmd:agentplane-execution-service",  # keep: real standalone PID-1 service
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: real execution backend
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//agentplane/env/execution:executor_pb2",
+        "//agentplane/env/execution:executor_pb2_grpc",
+        "//agentplane/proto:sandboxes_pb2",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

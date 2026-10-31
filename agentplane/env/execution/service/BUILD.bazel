@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/env:__subpackages__"])
+
+go_library(
+    name = "service",
+    srcs = [
+        "config.go",
+        "service.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/execution/service",
+    deps = [
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/execution/adapter:execution",
+        "//agentplane/env/execution/codexexecserver",
+        "//agentplane/env/supervision",
+        "//agentplane/grpc/graceful",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "service_test",
+    srcs = ["service_test.go"],
+    embed = [":service"],
+    race = "on",
+    deps = [
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

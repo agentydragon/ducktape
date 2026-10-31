@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
+	"github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
 )
 
 func TestHealthUnavailable(t *testing.T) {

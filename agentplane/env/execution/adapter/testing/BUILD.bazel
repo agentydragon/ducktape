@@ -10,8 +10,8 @@ go_binary(
     srcs = ["main.go"],
     race = "off",
     deps = [
-        "//agentplane/executor:executor_go_proto",
-        "//agentplane/runner/execution",
+        "//agentplane/env/execution:executor_go_proto",
+        "//agentplane/env/execution/adapter:execution",
         "@org_golang_google_grpc//:grpc",
     ],
 )
