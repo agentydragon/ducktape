@@ -4,8 +4,10 @@ from agentplane.runner.configuration import GuestResources, ResourceLimits
 
 SUPERVISION_TEMPLATE = "runner-vm-supervision"
 SUPERVISION_KERNEL_ARG = "agentplane.supervision-checks=1"
+OOM_TEMPLATE = "runner-vm-codex-oom"
 
 _MIB = 1024 * 1024
+OOM_EXECUTOR_MEMORY_BYTES = 96 * _MIB
 # The test guest gets a smaller work budget than staging while keeping enough room for the
 # harnesses exercised by the VM system tests.
 RESOURCES = GuestResources(
