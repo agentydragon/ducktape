@@ -107,15 +107,16 @@ Array iterator.
 ## Property-key domains in native writes
 
 The canonical execution index retains a separate key domain for native-write
-facts: a finite set of strings, definitely Symbol, or unknown. This refines
+facts: a finite set of strings, strings with a constant prefix and suffix,
+definitely Symbol, or unknown. This refines
 which own data properties of the global object and of each census constructor
 or namespace a write can replace (SPEC.md § Native integrity inputs). A write
 on `Map`, `Object`, or another intrinsic, under any key, still invalidates that
 family's prototype slots. Key evaluation, callbacks, effects, throws and
 returned values retain their ordinary analysis.
 
-A stable alias of an unshadowed `Symbol.for` call with one literal string
-argument has a Symbol domain only while the Symbol family remains intact.
+A stable alias of an unshadowed `Symbol.for` call with one argument has a
+Symbol domain only while `%Symbol%` and `%Symbol.for%` remain intact.
 A lexical two-identifier `[key, value]` loop over unshadowed `Object.entries`
 of an immediate object containing only noncomputed own data properties has
 that object's finite string-key set. Its premises include the Object family

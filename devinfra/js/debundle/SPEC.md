@@ -1181,12 +1181,23 @@ and publication premise still requires the same independent source audit.
 
 ## Inferred native property-key domains
 
-Native mutation analysis distinguishes finite string keys, definitely Symbol
-keys and unknown keys. Stable aliases of unshadowed `Symbol.for(literal)` and
-lexical `[key, value]` loops over closed data-object `Object.entries` inputs
-can preserve unrelated named global bindings. The latter requires intact
-Object operations and Array iterators for both the result and pair
-destructuring. Mutation directly on a native object still invalidates that
+Native mutation analysis distinguishes finite string keys, affixed string
+keys, definitely Symbol keys and unknown keys. Stable aliases of unshadowed
+`Symbol.for(value)` and lexical `[key, value]` loops over closed data-object
+`Object.entries` inputs can preserve unrelated named global bindings. The latter
+requires intact Object operations and Array iterators for both the result and
+pair destructuring. `Symbol.for` returns a Symbol whatever its argument; a
+throwing conversion leaves no key.
+
+An affixed key is a string with a constant prefix and suffix: an untagged
+template with substitutions (its first and last literal parts), or `left +
+right` where an operand is a string literal, template, affixed key or stable
+alias of one. `+` with a string operand is string concatenation, so the result
+starts with a string left operand's prefix and ends with a string right
+operand's suffix; the other operand's conversion may run user code but cannot
+change those characters. A numeric literal is a key, not a string operand. An
+affixed key may name exactly the strings at least as long as its affixes that
+start and end with them. Mutation directly on a native object still invalidates that
 family's prototype slots, regardless of key domain.
 
 A11 supplies initial native identity. All analyzed chunks contribute their
@@ -1290,8 +1301,11 @@ delete or reflective definition changes only its receiver's own property under
 its key: a setter or Proxy trap it runs is analyzed source with census writes
 of its own, and A11 excludes host code changing intrinsics. So:
 
-- A string key reaches only same-named slots, on every object its receiver may
-  be; a Symbol key reaches none. `Error.prepareStackTrace = f` leaves `%Error%`
+- A string key reaches only slots its domain may name, on every object its
+  receiver may be; a Symbol key reaches none. Slot names are the finite set of
+  census global bindings and builtin static names, none of them `__proto__`:
+  a `__proto__` write changes the receiver's prototype, not an own slot, and a
+  key whose write runs an accessor runs analyzed source or host code (A11). `Error.prepareStackTrace = f` leaves `%Error%`
   intact, and `location.href = url` leaves every own slot not named `href`
   intact.
 - A global-object receiver reaches only global slots. A constructor or

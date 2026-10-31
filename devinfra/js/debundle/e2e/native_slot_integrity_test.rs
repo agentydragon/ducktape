@@ -234,3 +234,38 @@ fn symbol_keyed_constructor_write_keeps_the_global_binding() {
         "0 42\n",
     );
 }
+
+#[test]
+fn affixed_string_keys_keep_slots_they_cannot_name() {
+    for mutations in [
+        &[
+            "globalThis.storage = {};",
+            "globalThis.storage[`migration.${1 + 1}`] = 1;",
+        ][..],
+        &["globalThis[\"pLPCommand\" + (1 + 1)] = 1;"][..],
+        &["globalThis[(1 + 1) + \"-callback\"] = 1;"][..],
+        &["globalThis[Symbol.for(\"registry.\" + (1 + 1))] = 1;"][..],
+    ] {
+        assert_split(mutations, MAP, "collection", "collection.size", "0 42\n");
+    }
+}
+
+#[test]
+fn affixed_string_keys_reach_slots_they_may_name() {
+    for mutations in [
+        &[
+            "globalThis[\"M\" + \"ap\"] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
+        ][..],
+        &[
+            "globalThis[`${[\"M\"][0]}ap`] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
+        ][..],
+    ] {
+        assert_refused(
+            mutations,
+            MAP,
+            "collection",
+            "collection.size",
+            "ReferenceError 42\n",
+        );
+    }
+}
