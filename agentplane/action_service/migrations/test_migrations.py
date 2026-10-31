@@ -1,4 +1,4 @@
-"""The production migrator serializes init containers on a fresh database."""
+"""The service's migration-only mode serializes concurrent starts on a fresh database."""
 
 import subprocess
 
@@ -12,12 +12,10 @@ from util.testing.postgres import DatabaseNames, create_temporary_database
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_MIGRATOR = get_required_path(
-    own_repo_rlocation("agentplane/action_service/migrations/cmd/actions-migrate_/actions-migrate")
-)
+_SERVICE = get_required_path(own_repo_rlocation("agentplane/action_service/actions_/actions"))
 
 
-def test_concurrent_and_repeated_init_containers(postgres_admin_url: str, database_names: DatabaseNames) -> None:
+def test_concurrent_and_repeated_service_migration_mode(postgres_admin_url: str, database_names: DatabaseNames) -> None:
     with create_temporary_database(postgres_admin_url, database_names()) as url:
         wire_url = (
             make_url(url)
@@ -26,14 +24,18 @@ def test_concurrent_and_repeated_init_containers(postgres_admin_url: str, databa
         )
         env = {"AGENTPLANE_ACTIONS_DATABASE_URL": wire_url}
         runners = [
-            subprocess.Popen([str(_MIGRATOR)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            subprocess.Popen(
+                [str(_SERVICE), "--migrate-only"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
             for _ in range(2)
         ]
         for runner in runners:
             stdout, stderr = runner.communicate(timeout=60)
             assert runner.returncode == 0, (stdout, stderr)
 
-        repeated = subprocess.run([str(_MIGRATOR)], env=env, capture_output=True, text=True, check=False)
+        repeated = subprocess.run(
+            [str(_SERVICE), "--migrate-only"], env=env, capture_output=True, text=True, check=False
+        )
         assert repeated.returncode == 0, (repeated.stdout, repeated.stderr)
 
         engine = create_engine(url)

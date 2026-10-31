@@ -58,8 +58,9 @@ Worker failures propagate to fixture teardown. This gives the VM test guest a re
 device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as staging, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
-Actions runs Goose migrations from its service image through `/usr/local/bin/actions-migrate`,
-with native gRPC readiness and `livez` probes.
+Actions and Notifications apply Goose migrations from their serving processes before opening
+listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
+separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
 The standalone MCP edge runs in every stack because the app's Connection Service endpoint targets it;
 its own PostgreSQL database, Goose init migrator, caller-token RBAC and gRPC readiness are rendered

@@ -34,8 +34,11 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 
 ## Running and deployment
 
-`:service_image` contains `notification-service` and `notifications-migrate`. The Deployment's init container
-runs `notifications-migrate` from that same image before the service starts. The service needs its own
+`:service_image` contains `notification-service`, which applies Goose migrations before opening
+listeners or starting workers. A startup probe delays health checks until that initialization has
+completed. Replicas use the environment's rolling profile, so migrations must remain compatible with
+both old and new writers during rollout. Goose serializes concurrent starts with a PostgreSQL
+advisory session lock. The service needs its own
 PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
 service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
@@ -47,10 +50,10 @@ history and stored rows, removing the completed cutover checkpoint. Databases pr
 must first finish the native-storage conversion with the preceding migration-capable image. Do not
 renumber this baseline; later schema changes use subsequent Goose versions.
 
-The Notification Deployment uses `Recreate`, so old writers stop before the init container migrates
-and the new service starts. Goose's PostgreSQL advisory session lock serializes init containers.
-This interrupts Notification and webhook handling for migration and restart. Inspect and redeliver
-failed GitHub webhooks from this window; GitHub does not retry them automatically.
+The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
+requests while replacement replicas apply migrations and start. The migration lock serializes schema
+updates, while migration changes must keep old and new service versions compatible throughout the
+rollout.
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.

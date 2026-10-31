@@ -555,8 +555,6 @@ def build_chart(
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     notifications.Notifications(
         chart,
@@ -577,8 +575,6 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     command_sandbox.CommandSandbox(
         chart,

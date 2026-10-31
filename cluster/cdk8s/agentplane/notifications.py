@@ -2,7 +2,6 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -10,9 +9,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
-    DeploymentStrategy,
     EnvValue,
-    ImagePullPolicy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -34,7 +31,6 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -56,7 +52,6 @@ _LIVENESS_HEALTH_SERVICE = "livez"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -95,8 +90,6 @@ class Notifications(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
         """Any ServiceAccount in the namespace may call with its workload token, a Sandbox's through the
         egress proxy, so `callers` (gRPC) and `http_callers` (HTTP) are the Pods the requests come from,
@@ -154,6 +147,13 @@ class Notifications(Construct):
         liveness = grpc_probe(
             port=endpoint.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=20, period_seconds=30
         )
+        startup = grpc_probe(
+            port=endpoint.pod_port,
+            initial_delay_seconds=0,
+            period_seconds=5,
+            service=_LIVENESS_HEALTH_SERVICE,
+            failure_threshold=60,
+        )
         workload = add_service_workload(
             self,
             env,
@@ -163,21 +163,13 @@ class Notifications(Construct):
             env_variables=variables,
             readiness=readiness,
             liveness=liveness,
+            startup=startup,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            # Stop every old writer before the replacement Pods run the schema migration.
-            replica_profile=replace(env.replicas, strategy=DeploymentStrategy.recreate()),
-            migrate=migrate_init_container(
-                f"{_IMAGE}:unset",
-                name="migrate",
-                env_variables=variables,
-                command=["/usr/local/bin/notifications-migrate"],
-                image_pull_policy=migrate_pull_policy,
-                memory_limit=migrate_memory_limit,
-            ),
+            replica_profile=env.replicas,
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
