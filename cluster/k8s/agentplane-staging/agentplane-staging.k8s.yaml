@@ -6153,7 +6153,6 @@ data:
     host: 0.0.0.0
     port: 8080
     token_audience: agentplane-egress
-    integrated_connection_service: false
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
@@ -6163,7 +6162,6 @@ data:
       - agentplane-staging
       - public-coder-agent
     direct_wait_seconds: 30
-    max_wait_seconds: 180
     web_push:
       subject: mailto:agentydragon@gmail.com
       public_base_url: https://agentplane-staging.allegedly.works

@@ -83,7 +83,7 @@ class Settings(YamlFileSettings):
         allow_inf_nan=False,
         description="Maximum duration for orchestration_v1 Session operations.",
     )
-    # CLEANUP(added 2026-10-27): Retained up to the generated maximum until the key is removed after rollout.
+    # CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once that config is deployed.
     max_wait_seconds: float = Field(
         default=DEFAULT_MAX_WAIT_SECONDS,
         ge=0,
@@ -93,7 +93,7 @@ class Settings(YamlFileSettings):
     )
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
-    # CLEANUP(added 2026-10-27): Keep the generated false value until its manifest key is removed after rollout.
+    # CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once that config is deployed.
     integrated_connection_service: Literal[False] = Field(
         default=False, description="Retired; true is rejected and the Action Service serves no Connection API."
     )

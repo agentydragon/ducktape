@@ -57,11 +57,11 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
-	// CLEANUP(added 2026-10-27): Accept the generated false value until it is removed from manifests after this image
-	// has rolled out. A true value is rejected; this binary does not serve the integrated Connection API.
+	// CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once #13179's config is
+	// deployed. A true value is rejected; this binary does not serve the integrated Connection API.
 	IntegratedConnectionService bool `mapstructure:"integrated_connection_service"`
-	// CLEANUP(added 2026-10-27): Accept the generated value (up to 180 seconds) until it is removed after this image
-	// rolls out. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
+	// CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once #13179's config is
+	// deployed. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
 	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
 	// DirectWaitSeconds bounds orchestration_v1 Session operations.
 	DirectWaitSeconds float64 `mapstructure:"direct_wait_seconds"`
