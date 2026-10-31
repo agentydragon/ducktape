@@ -85,9 +85,10 @@ To inspect the artifacts in the repository Nix devshell, run
 then `go tool pprof -top -cum syscall.pprof`. Both standard tool subcommands
 parsed the retained artifacts with the pinned Go 1.26.8 toolchain.
 
+For current test-driver timings, see [Phase tracing](../../README.md#phase-tracing).
 For reproduction, run `bbr test //agentplane/system_tests/suites:test_vm --nocache_test_results`
 or a smaller k3s suite, then download `test.outputs/process-spans.jsonl`,
-`test.outputs/k3s-timeline.jsonl`, `test.outputs/containerd.log` and (for VM suites)
+`test.outputs/test-spans.jsonl`, `test.outputs/containerd.log` and (for VM suites)
 the two `containerd-import.*` profiles from the child Bazel
 invocation. The collector unit test, HTTP traceparent client test and rendered-fixture test passed
 before the VM run; the final live VM and dispatcher targets above passed on RBE.

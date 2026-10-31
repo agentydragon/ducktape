@@ -412,6 +412,7 @@ py_library(
     name = "session_setup",
     srcs = ["session_setup.py"],
     deps = [
+        ":tracing",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",

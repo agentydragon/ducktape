@@ -100,15 +100,22 @@ def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
 
 
 @pytest.fixture
-async def offered_model(client: Client, harness: runner_pb2.Harness) -> str:
+async def offered_model(client: Client, harness: runner_pb2.Harness, phase_tracer: trace.Tracer) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
-    return (await models_offered_for(client, [harness]))[harness]
+    with phase_tracer.start_as_current_span(
+        "system_test.model.discovery", record_exception=False, set_status_on_exception=False
+    ):
+        offered = await models_offered_for(client, [harness])
+    return offered[harness]
 
 
 @pytest.fixture
-async def model(offered_model: str) -> str:
+async def model(offered_model: str, phase_tracer: trace.Tracer) -> str:
     """`offered_model`, loaded first if Ollama serves it: a real model's turn does not wait out a cold load."""
-    await warm_ollama(offered_model)
+    with phase_tracer.start_as_current_span(
+        "system_test.model.warmup", record_exception=False, set_status_on_exception=False
+    ):
+        await warm_ollama(offered_model)
     return offered_model
 
 
