@@ -31,6 +31,10 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
   a captured version when its contents must have independent state.
 - Change a row's `revision` when its contents change; retain its `key` when extending
   an existing group. `anchorKeys` map stable content identities to their current row.
+  Mark nested semantic landmarks with `data-history-anchor-key` and include those
+  stable, scope-unique keys in `anchorKeys`; while reading, the viewport anchors the
+  deepest visible landmark at the viewport's top edge and can recover it after a React
+  remount.
 - History opens at the bottom and follows the tail until the reader scrolls up.
   `showJumpToLatest` controls the explicit return-to-tail button.
 - `earlier` offers optional prepend loading near the start; `tail` holds provisional

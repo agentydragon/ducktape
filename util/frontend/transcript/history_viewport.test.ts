@@ -188,7 +188,13 @@ class ViewportRig {
       node.style.top = `${row.start}px`;
     }
     const entities = new Map<string, string>();
-    for (const { key } of this.rows) entities.set(key, key);
+    for (const { key, node } of this.rows) {
+      entities.set(key, key);
+      for (const anchor of node.querySelectorAll<HTMLElement>("[data-history-anchor-key]")) {
+        const anchorKey = anchor.dataset.historyAnchorKey;
+        if (anchorKey) entities.set(anchorKey, key);
+      }
+    }
     this.controller.commit(plan, entities, this.presentations);
     return plan;
   }
@@ -363,6 +369,107 @@ describe("HistoryViewport DOM boundary", () => {
       originalAnchorTop + 40
     );
     expect(rig.writes).toEqual([800, 420]);
+  });
+
+  it("keeps a nested reader anchor steady when older records prepend within the same row", () => {
+    const rig = new ViewportRig(
+      [
+        { key: "group:stable", height: 500 },
+        { key: "group:following-a", height: 100 },
+        { key: "group:following-b", height: 100 },
+      ],
+      400,
+      200
+    );
+    const group = rig.rows[0];
+    const step = document.createElement("div");
+    step.dataset.historyAnchorKey = "step:group";
+    group.node.append(step);
+    let stepHeight = 300;
+    Object.defineProperties(step, {
+      getBoundingClientRect: {
+        configurable: true,
+        value: () =>
+          rect((Number.parseFloat(group.node.style.top) || 0) + 200 - rig.viewport.scrollTop, 400, stepHeight),
+      },
+      getClientRects: {
+        configurable: true,
+        value: () => [step.getBoundingClientRect()],
+      },
+    });
+    let readerRecordInset = 250;
+    const makeReaderRecord = (): HTMLDivElement => {
+      const record = document.createElement("div");
+      record.dataset.historyAnchorKey = "reasoning:reader";
+      Object.defineProperties(record, {
+        getBoundingClientRect: {
+          configurable: true,
+          value: () =>
+            rect((Number.parseFloat(group.node.style.top) || 0) + readerRecordInset - rig.viewport.scrollTop, 400, 20),
+        },
+        getClientRects: {
+          configurable: true,
+          value: () => [record.getBoundingClientRect()],
+        },
+      });
+      return record;
+    };
+    let readerRecord = makeReaderRecord();
+    step.append(readerRecord);
+
+    rig.mount();
+    rig.flush();
+    rig.controller.pointerDown();
+    rig.userScrollTo(250);
+    rig.controller.scrolled();
+    rig.controller.pointerUp();
+    rig.flush();
+
+    const viewportTop = rig.viewport.getBoundingClientRect().top;
+    const originalReaderOffset = readerRecord.getBoundingClientRect().top - viewportTop;
+    expect(originalReaderOffset).toBe(0);
+    expect(rig.viewport.dataset.scrollMode).toBe("reading");
+
+    const olderRecord = document.createElement("div");
+    olderRecord.dataset.historyAnchorKey = "reasoning:older";
+    Object.defineProperties(olderRecord, {
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => rect((Number.parseFloat(group.node.style.top) || 0) + 200 - rig.viewport.scrollTop, 400, 80),
+      },
+      getClientRects: {
+        configurable: true,
+        value: () => [olderRecord.getBoundingClientRect()],
+      },
+    });
+    step.insertBefore(olderRecord, readerRecord);
+    group.height += 80;
+    group.revision = "revision-2";
+    stepHeight += 80;
+    readerRecordInset += 80;
+    const removedReaderRecord = readerRecord;
+    const replacementReaderRecord = makeReaderRecord();
+    readerRecord.replaceWith(replacementReaderRecord);
+    readerRecord = replacementReaderRecord;
+
+    const prepend = {
+      type: "childList",
+      target: step,
+      addedNodes: [olderRecord],
+      removedNodes: [],
+    } as unknown as MutationRecord;
+    const remount = {
+      type: "childList",
+      target: step,
+      addedNodes: [replacementReaderRecord],
+      removedNodes: [removedReaderRecord],
+    } as unknown as MutationRecord;
+    rig.contentObserver.deliverDelayed([prepend, remount]);
+    const updatedPlan = rig.flush();
+
+    expect(updatedPlan.rows[0].height).toEqual({ kind: "observed", pixels: 580 });
+    expect(rig.viewport.scrollTop).toBe(330);
+    expect(readerRecord.getBoundingClientRect().top - viewportTop).toBe(originalReaderOffset);
   });
 
   it("preserves following through an intermediate browser clamp after content shrinks", () => {

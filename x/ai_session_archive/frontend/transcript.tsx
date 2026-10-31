@@ -55,7 +55,11 @@ export function ArchiveTranscript({
           key: String(row.records.at(-1)!.ordinal),
           revision: `${row.kind}:${row.records.length}:${row.records[0].ordinal}`,
           value: row,
-          anchorKeys: row.records.map((record) => String(record.ordinal)),
+          anchorKeys: [
+            ...row.records.map((record) => String(record.ordinal)),
+            ...row.records.map((record) => `record:${record.ordinal}`),
+            ...(row.kind === "activity" ? row.steps.map((step) => `step:${step.records.at(-1)!.ordinal}`) : []),
+          ],
           presentation: { kind: row.kind, entityCount: row.records.length },
         }))}
         renderRow={(row) => <TranscriptRowView row={row} />}
@@ -180,7 +184,12 @@ function ActivityStepView({
           ? step.text
           : "Recorded activity";
   return (
-    <Box className="transcript-inspection-owner" data-activity-step={step.kind} data-open={open}>
+    <Box
+      className="transcript-inspection-owner"
+      data-activity-step={step.kind}
+      data-history-anchor-key={id}
+      data-open={open}
+    >
       {records.map((record) => (
         <span key={record.ordinal} data-event-ordinal={record.ordinal} />
       ))}
@@ -287,7 +296,7 @@ function EventRow({ record }: { record: EventRecord }): JSX.Element {
     />
   );
   return (
-    <Box data-event-ordinal={record.ordinal}>
+    <Box data-event-ordinal={record.ordinal} data-history-anchor-key={`record:${record.ordinal}`}>
       {presentation === "user" ? (
         <UserMessage
           bubbleAttributes={{ className: "transcript-inspection-owner", title: metadata }}
