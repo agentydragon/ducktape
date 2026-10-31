@@ -84,7 +84,8 @@ reachable code can enter), and `failures`. Each failure has a `reason`, its
 `namespace_request` with `item`, `specifier` and `resolved_target`;
 `top_level_await`; `vendor_chunk`).
 `host_builtin_leaves`, when nonempty, lists each consumed
-`reentry_free_builtin_modules` static request. The typed
+`reentry_free_builtin_modules` or `reentry_free_bun_modules` static request;
+`builtin` holds the module ID either way. The typed
 `global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
 references are canonical chunk IDs; static-request entries carry the source
 chunk and original specifier, with `resolved_target: {"chunk", "file"}` when

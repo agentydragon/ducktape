@@ -60,14 +60,9 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
 `callback_pool_limit` losses, with no conflict guaranteed to move.
 
 1. **Literal requests outside the closed list** (119 sites).
-   - **Node builtins** `assert`, `constants` and `querystring` are missing from
-     the closed list. Adding them is engine work. Admitting one is an audited
-     host fact: extend the probe's builtin IDs and the leaf audit.
-   - **Bun modules** `bun:ffi` and `undici` (and `ws`, the static blocker in 55
-     graphs) belong in a separate closed list of host-provided non-Node modules.
-     The audit must also show that a bare `undici` or `ws` request from a
-     `$bunfs` module always resolves to the host override, never to a
-     filesystem `node_modules` package.
+   - **Node builtins** `assert`, `constants`, `querystring` and **Bun
+     modules** `bun:ffi`, `undici`, `ws` (`reentry_free_bun_modules`) are in
+     the closed lists. Admitting them is the project's audit.
    - **Embedded assets** (about 100: `.md`, `.txt`, two `.mjs`, two `.node`).
      The rule depends on the loader Bun assigns each embedded file, which is
      recorded in the standalone graph's per-file loader byte; the extractor

@@ -131,6 +131,11 @@ pub struct HostBehavior {
     /// reentry during module evaluation. Independent of `reentry_free_operations`.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub reentry_free_builtin_modules: BTreeSet<NodeBuiltinModule>,
+    /// Closed host-provided non-Node module IDs the author audited the same
+    /// way, including that a bare request always resolves to the host module
+    /// rather than an installed package.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_bun_modules: BTreeSet<BunModule>,
     /// Exact zero-argument host operations the author audited as unable to run
     /// application code synchronously. Grants timing only, never purity.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -204,14 +209,16 @@ pub enum ReentryFreeOperation {
 }
 
 /// Exact Node builtin module identities admissible in
-/// `reentry_free_builtin_modules`. Unknown bare packages and Bun package
-/// replacements (including `ws`) are intentionally absent.
+/// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
+/// package replacements are [`BunModule`]s.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeBuiltinModule {
+    Assert,
     AsyncHooks,
     Buffer,
     ChildProcess,
+    Constants,
     Crypto,
     Dns,
     #[serde(rename = "dns/promises")]
@@ -232,6 +239,7 @@ pub enum NodeBuiltinModule {
     PathWin32,
     PerfHooks,
     Process,
+    Querystring,
     Readline,
     Stream,
     #[serde(rename = "stream/consumers")]
@@ -256,9 +264,11 @@ impl NodeBuiltinModule {
     /// bare-package or `node:` prefix fallback resolver.
     pub fn from_static_specifier(specifier: &str) -> Option<Self> {
         Some(match specifier {
+            "assert" | "node:assert" => Self::Assert,
             "async_hooks" | "node:async_hooks" => Self::AsyncHooks,
             "buffer" | "node:buffer" => Self::Buffer,
             "child_process" | "node:child_process" => Self::ChildProcess,
+            "constants" | "node:constants" => Self::Constants,
             "crypto" | "node:crypto" => Self::Crypto,
             "dns" | "node:dns" => Self::Dns,
             "dns/promises" | "node:dns/promises" => Self::DnsPromises,
@@ -275,6 +285,7 @@ impl NodeBuiltinModule {
             "path/win32" | "node:path/win32" => Self::PathWin32,
             "perf_hooks" | "node:perf_hooks" => Self::PerfHooks,
             "process" | "node:process" => Self::Process,
+            "querystring" | "node:querystring" => Self::Querystring,
             "readline" | "node:readline" => Self::Readline,
             "stream" | "node:stream" => Self::Stream,
             "stream/consumers" | "node:stream/consumers" => Self::StreamConsumers,
@@ -290,6 +301,62 @@ impl NodeBuiltinModule {
             "zlib" | "node:zlib" => Self::Zlib,
             _ => return None,
         })
+    }
+}
+
+/// Exact host-provided modules outside Node's builtin namespace admissible in
+/// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
+/// replaces with built-in implementations.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+pub enum BunModule {
+    #[serde(rename = "bun:ffi")]
+    BunFfi,
+    #[serde(rename = "undici")]
+    Undici,
+    #[serde(rename = "ws")]
+    Ws,
+}
+
+impl BunModule {
+    /// Recognize only the exact request spellings.
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        Some(match specifier {
+            "bun:ffi" => Self::BunFfi,
+            "undici" => Self::Undici,
+            "ws" => Self::Ws,
+            _ => return None,
+        })
+    }
+}
+
+/// A module the host provides itself, named in one of the closed lists.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum HostModule {
+    Node(NodeBuiltinModule),
+    Bun(BunModule),
+}
+
+impl HostModule {
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        NodeBuiltinModule::from_static_specifier(specifier)
+            .map(Self::Node)
+            .or_else(|| BunModule::from_static_specifier(specifier).map(Self::Bun))
+    }
+}
+
+impl HostBehavior {
+    /// Whether the author declared `module` reentry-free.
+    pub fn admits(&self, module: HostModule) -> bool {
+        match module {
+            HostModule::Node(builtin) => self.reentry_free_builtin_modules.contains(&builtin),
+            HostModule::Bun(bun) => self.reentry_free_bun_modules.contains(&bun),
+        }
+    }
+
+    /// The declared reentry-free host module `specifier` names.
+    pub fn reentry_free_module(&self, specifier: &str) -> Option<HostModule> {
+        HostModule::from_static_specifier(specifier).filter(|module| self.admits(*module))
     }
 }
 

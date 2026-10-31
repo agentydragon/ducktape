@@ -410,7 +410,18 @@ pub enum HostBehaviorKey {
     SynchronousLoadRunsAppCallbacks,
     SynchronousLoadDrainsMicrotasks,
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
+    ReentryFreeBunModule(spec::BunModule),
     PredefinedGlobals,
+}
+
+impl HostBehaviorKey {
+    /// The list entry that declared `module` reentry-free.
+    pub fn reentry_free_module(module: spec::HostModule) -> Self {
+        match module {
+            spec::HostModule::Node(builtin) => Self::ReentryFreeBuiltinModule(builtin),
+            spec::HostModule::Bun(bun) => Self::ReentryFreeBunModule(bun),
+        }
+    }
 }
 
 impl ProofDependencies {

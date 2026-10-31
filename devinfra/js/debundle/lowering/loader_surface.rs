@@ -99,7 +99,7 @@ pub struct ExportReentryLoaderRequest {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderRequestReportTarget {
-    Builtin(spec::NodeBuiltinModule),
+    Builtin(spec::HostModule),
     Chunk(ExportReentryTarget),
 }
 
@@ -324,18 +324,11 @@ impl Classifier<'_> {
                     return Ok(());
                 }
             },
-            None => match spec::NodeBuiltinModule::from_static_specifier(specifier) {
-                Some(builtin)
-                    if self
-                        .host_behavior
-                        .reentry_free_builtin_modules
-                        .contains(&builtin) =>
-                {
-                    (
-                        LoaderRequestTarget::ReentryFreeBuiltin(builtin),
-                        LoaderRequestReportTarget::Builtin(builtin),
-                    )
-                }
+            None => match spec::HostModule::from_static_specifier(specifier) {
+                Some(builtin) if self.host_behavior.admits(builtin) => (
+                    LoaderRequestTarget::ReentryFreeBuiltin(builtin),
+                    LoaderRequestReportTarget::Builtin(builtin),
+                ),
                 Some(_) => {
                     surface.site_failures.push((
                         LoaderClosureFailureKind::NonReentryFreeBuiltinRequest,
@@ -439,12 +432,9 @@ pub(super) fn loader_surfaces(
                     classifier.entry_chunk(reference)?.is_some()
                 }
                 Some(_) => false,
-                None => spec::NodeBuiltinModule::from_static_specifier(&request.specifier)
-                    .is_some_and(|builtin| {
-                        host_behavior
-                            .reentry_free_builtin_modules
-                            .contains(&builtin)
-                    }),
+                None => host_behavior
+                    .reentry_free_module(&request.specifier)
+                    .is_some(),
             };
             if !closed_request || request.mode != StaticModuleRequestMode::OrdinaryEsm {
                 surface.load_failures.push((
