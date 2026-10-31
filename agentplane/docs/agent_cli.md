@@ -1,15 +1,15 @@
 # Agent CLI
 
 `agentplane` ([`cli/`](../cli/)) is a Go command an agent runs from its shell to call the generated
-Action Service gRPC API and the Notification Service and Egress rules HTTP APIs through the egress proxy.
-It adds no authority, no state and no backend path. What it takes off each agent
+Action Service and Session Dispatcher gRPC APIs and the Notification Service and Egress rules HTTP APIs
+through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
 
 The CLI overlaps `curl` and the Action Service's MCP tools on purpose. All three reach one backend
 authority (the Sandbox's ServiceAccount, through the proxy) and differ in what the caller has to write.
-The Actions proto is the reference for the generated gRPC client and its HTTP/JSON facade; the served
+The Actions and Session Dispatcher protos are the references for the generated gRPC clients; the served
 `/llms.txt` guides and `/openapi.json` are the HTTP reference. The older hand-written Actions route
 reference is removed when this API ships. MCP serves clients that only speak MCP
 ([principles](principles.md#agent-facing-affordances-are-scriptable-apis)); the CLI serves an agent scripting
@@ -20,36 +20,59 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `notifications` only the Notification Service, `egress` only the Egress rules
-API. A group whose configuration is absent exits `2` naming the missing variables and leaves the others
-usable. Output, configuration, errors and exit codes are shared by every group, so another service
-joins as one more group under them.
+only the Action Service, `sessions` only the Session Dispatcher, `notifications` only the Notification
+Service, and `egress` only the Egress rules API. Session commands operate on an existing Sandbox; they
+do not create an environment. A group whose configuration is absent exits `2` naming the missing
+variables and leaves the others usable. Output, configuration, errors and exit codes are shared by every
+group, so another service joins as one more group under them.
 
-| Command                                                                                                                                        | Request                                           |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `actions groups`                                                                                                                               | `ActionService.ListActionGroups`                  |
-| `actions list [GROUP]`                                                                                                                         | the same, one Action per line                     |
-| `actions show GROUP/ACTION`                                                                                                                    | `ActionService.GetAction`                         |
-| `actions policy`                                                                                                                               | `ActionService.GetActionPolicy`                   |
-| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]` | `SubmitActionRequest`, then optional watch        |
-| `actions get {ID \| --key KEY}`                                                                                                                | `GetActionRequest` or `ListActionRequests` by key |
-| `actions result {ID \| --key KEY}`                                                                                                             | watch to terminal, then the stored result         |
-| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                  | `GetActionRequest` and `WatchActionRequest`       |
-| `actions requests [--state STATE]...`                                                                                                          | `ListActionRequests`, paged                       |
-| `actions events ID [--after SEQUENCE]`                                                                                                         | `ListActionRequestEvents`, paged                  |
-| `actions cancel ID`                                                                                                                            | `CancelActionRequest`                             |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]` | `POST /v1/subscriptions`                          |
-| `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                     | `GET /v1/inboxes/{id}/entries`, one page          |
-| `notifications inbox ack ID --through CURSOR`                                                                                                  | `PUT /v1/inboxes/{id}/acknowledgement`            |
-| `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`, paged                    |
-| `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                      |
-| `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`       |
-| `notifications cancel ID`                                                                                                                      | `DELETE /v1/subscriptions/{id}`                   |
-| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`             | `POST /v1/messages`                               |
-| `notifications message ID`                                                                                                                     | `GET /v1/messages/{id}`                           |
-| `egress rules`                                                                                                                                 | `GET /v1/rules`                                   |
+| Command                                                                                                                                            | Request                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `actions groups`                                                                                                                                   | `ActionService.ListActionGroups`                  |
+| `actions list [GROUP]`                                                                                                                             | the same, one Action per line                     |
+| `actions show GROUP/ACTION`                                                                                                                        | `ActionService.GetAction`                         |
+| `actions policy`                                                                                                                                   | `ActionService.GetActionPolicy`                   |
+| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`     | `SubmitActionRequest`, then optional watch        |
+| `actions get {ID \| --key KEY}`                                                                                                                    | `GetActionRequest` or `ListActionRequests` by key |
+| `actions result {ID \| --key KEY}`                                                                                                                 | watch to terminal, then the stored result         |
+| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                      | `GetActionRequest` and `WatchActionRequest`       |
+| `actions requests [--state STATE]...`                                                                                                              | `ListActionRequests`, paged                       |
+| `actions events ID [--after SEQUENCE]`                                                                                                             | `ListActionRequestEvents`, paged                  |
+| `actions cancel ID`                                                                                                                                | `CancelActionRequest`                             |
+| `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                   |
+| `sessions submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT`                                                    | `SessionDispatcher.SubmitInput`                   |
+| `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`             |
+| `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                   |
+| `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                |
+| `sessions interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID`                                                 | `SessionDispatcher.InterruptTurn`                 |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]`     | `POST /v1/subscriptions`                          |
+| `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                         | `GET /v1/inboxes/{id}/entries`, one page          |
+| `notifications inbox ack ID --through CURSOR`                                                                                                      | `PUT /v1/inboxes/{id}/acknowledgement`            |
+| `notifications subscriptions`                                                                                                                      | `GET /v1/subscriptions`, paged                    |
+| `notifications subscription ID`                                                                                                                    | `GET /v1/subscriptions/{id}`                      |
+| `notifications renew ID [--lifetime-days N]`                                                                                                       | `GET`, then `PATCH` with the read `version`       |
+| `notifications cancel ID`                                                                                                                          | `DELETE /v1/subscriptions/{id}`                   |
+| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`                 | `POST /v1/messages`                               |
+| `notifications message ID`                                                                                                                         | `GET /v1/messages/{id}`                           |
+| `egress rules`                                                                                                                                     | `GET /v1/rules`                                   |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
+
+Session mutations require caller-supplied IDs; the CLI does not mint or replace them and gRPC retries
+are disabled. `SESSION_ID` is the idempotency key for `open`; `COMMAND_ID` is the caller's key for
+`submit-input` and the correlation ID for `interrupt-turn`. After an unknown open or input outcome,
+inspect it with `get-opening` or `get-dispatch` using the same ID before deciding what to do. `open`
+returns the Dispatcher opening record and does not create a model turn; the caller sends input separately.
+An optional setup script may execute during opening. `interrupt-turn` is delivered directly to a Ready
+Sandbox and is not queued; its response contains the result of that call, while `get-dispatch` cannot
+observe it. `--sandbox-uid` is the expected UID of the Kubernetes Sandbox object, not a Pod or VM
+incarnation identifier. `get-opening` reports only the Dispatcher record, not a combined History snapshot.
+
+**Integration gap at this branch's base:** Dispatcher calls are admitted only for configured
+`dispatcher_callers`. The staging config currently lists `agentplane-staging/app`,
+`agentplane-staging/notifications` and `agentplane-staging/actions`; this CLI adds no caller grant or
+identity. Same-ServiceAccount admission is tracked separately, so a caller outside the current allowlist
+cannot use these commands until that backend change lands.
 
 Left out on purpose:
 
@@ -67,8 +90,8 @@ Left out on purpose:
 ## Output
 
 - **`--json`** prints one value for a unary command and one value per line for a list, in the service's
-  order. `jq` reads either form, and `jq -s` collects the lines. It adds no envelope. Action commands
-  print canonical ProtoJSON from the generated gRPC messages: protobuf field names are lowerCamelCase,
+  order. `jq` reads either form, and `jq -s` collects the lines. It adds no envelope. Action and Session
+  commands print canonical ProtoJSON from the generated gRPC messages: protobuf field names are lowerCamelCase,
   enum values keep their protobuf names, and 64-bit integers such as `version` are strings. For example,
   ActionRequest fields `idempotency_key`, `created_at` and `updated_at` become `idempotencyKey`,
   `createdAt` and `updatedAt`; nested `decided_at`, `started_at`, `completed_at` and `reconciled_at`
@@ -78,6 +101,8 @@ Left out on purpose:
   `ACTION_STATE_DENIED`, `ACTION_STATE_DISPATCHING`, `ACTION_STATE_RUNNING`, `ACTION_STATE_SUCCEEDED`,
   `ACTION_STATE_FAILED`, `ACTION_STATE_CANCELLED` and `ACTION_STATE_EXECUTION_UNKNOWN`. Other enum
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
+  Session JSON preserves the full returned `SessionOpening`, `Dispatch` or `InterruptTurnResponse`, including
+  UID, delivery state, reason and timestamps where present.
   Action JSON is therefore a deliberate format change from the previous HTTP client's snake_case fields
   and lowercase state names; update scripts that read `--json` before using this CLI version.
 - Notifications and Egress keep their service JSON objects. A gRPC-Gateway response wraps each answer in
@@ -110,26 +135,31 @@ Left out on purpose:
 ## Configuration and credentials
 
 The CLI reads the environment of the harness and of every command it runs. There are no config files and
-no discovery calls, so no command depends on a service it does not talk to. Actions use generated gRPC
-over HTTP/2; Notifications and Egress rules use HTTP.
+no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
+generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 
-| Variable                                                                                               | Value                                                                                                              |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `AGENTPLANE_ACTIONS_URL`                                                                               | the Action Service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                  |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                                |
-| `AGENTPLANE_DESTINATION`                                                                               | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                            |
+| Variable                                                                                                                                 | Value                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`                                                                                      | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                  | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
+| `AGENTPLANE_DESTINATION`                                                                                                                 | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
+
+At this branch's base the default runner deployments do not set `AGENTPLANE_SESSIONS_URL` or
+`AGENTPLANE_SESSIONS_CREDENTIAL`, or configure the egress route for Session Dispatcher calls. This CLI
+only consumes the configured placeholder; it does not project a Dispatcher audience token or add that
+route. Deployment wiring is a separate integration prerequisite.
 
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
-Action gRPC client uses `HTTPS_PROXY` for proxy resolution even when its configured service URL is
-`http`; it opens an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
+Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
+`http`; they open an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
 from both clients. `subscribe` also accepts `--destination JSON` (the same object, and it wins over the
 variable) for a Session started without the variable. The object holds
 `destination_ref` (`namespace`, `name`, `uid`) and `session_id` and nothing else; anything else is exit `2`.
 
 Credential scope:
 
-- The CLI holds only a placeholder. Actions sends it as `authorization: Bearer <placeholder>` gRPC
+- The CLI holds only a placeholder. Actions and Sessions send it as `authorization: Bearer <placeholder>` gRPC
   metadata on each RPC; Notifications and Egress send it as an HTTP `Authorization` header. It never
   prints the value and has no flag to supply another credential, bypass the proxy, or skip certificate
   verification. The HTTP clients follow no redirect.
@@ -142,7 +172,7 @@ Credential scope:
 
 ## Errors and exit codes
 
-Action RPC failures use the returned gRPC status code and message. HTTP API failures use the HTTP status,
+Action and Session RPC failures use the returned gRPC status code and message. HTTP API failures use the HTTP status,
 refusal headers, and, for a gRPC-Gateway service, the response body. The central proxy sets
 `x-agentplane-egress` (`denied; reason=...`) and the Pod sidecar sets `x-agentplane-egress-sidecar`
 (`reason=...`) on their HTTP refusals ([egress spec](../egress/SPEC.md)). Error envelopes use the same
@@ -208,15 +238,15 @@ Propagating a payload verdict would be a new code after `17`, without renumberin
 
 Codes below `11` are shared by every group and never change meaning:
 
-| Exit | Meaning                                                                                                  | Next step                                     |
-| ---- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `0`  | Success. For `wait`, `result` and `submit --wait`: the awaited condition holds and the Action succeeded. | Proceed.                                      |
-| `1`  | Refused or invalid, or an unclassified CLI error.                                                        | Report; do not retry unchanged.               |
-| `2`  | Usage or configuration error, found before any request.                                                  | Fix the command or environment.               |
-| `3`  | Transient: unreachable, deadline, rate limit, draining.                                                  | Retry a read; see `submit` below for a write. |
-| `4`  | Conflict: a repeated idempotency key, a stale subscription `version`, or a cancelled key.                | Read the existing object.                     |
-| `5`  | Not found, or not owned by this account.                                                                 |                                               |
-| `10` | Deadline reached before the condition. The current receipt is on stdout.                                 | Keep waiting, or subscribe.                   |
+| Exit | Meaning                                                                                                  | Next step                                              |
+| ---- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `0`  | Success. For `wait`, `result` and `submit --wait`: the awaited condition holds and the Action succeeded. | Proceed.                                               |
+| `1`  | Refused or invalid, or an unclassified CLI error.                                                        | Report; do not retry unchanged.                        |
+| `2`  | Usage or configuration error, found before any request.                                                  | Fix the command or environment.                        |
+| `3`  | Transient: unreachable, deadline, rate limit, draining.                                                  | Retry a read; reconcile a write by its caller-held ID. |
+| `4`  | Conflict: a repeated idempotency key, a stale subscription `version`, or a cancelled key.                | Read the existing object.                              |
+| `5`  | Not found, or not owned by this account.                                                                 |                                                        |
+| `10` | Deadline reached before the condition. The current receipt is on stdout.                                 | Keep waiting, or subscribe.                            |
 
 A group defines outcome codes only for answers the caller must branch on, from `11` up. They are
 allocated once and never reused, so a script's `case` on an exit status means the same thing whichever
@@ -309,9 +339,11 @@ cut the list. A list prints only once complete, so a failure on a later page lea
 receipt as ProtoJSON; it reconnects a transiently failed stream from the request ID and does not replay
 mutations. `events` has no `--follow` because the service has no push source for it.
 
-`SIGINT` and `SIGTERM` end the local command and exit `128 + signal`. They never cancel anything: a wait,
-a disconnect or a killed `submit` leaves the Action and any subscription as they were. `actions cancel`
-and `notifications cancel` are the two explicit operations, and neither implies the other.
+`SIGINT` and `SIGTERM` end the local command and exit `128 + signal`; they do not issue a remote cancel,
+and a mutation's outcome may be unknown. Use the command's caller-held ID to inspect the result where a
+read operation exists before deciding what to do next. `sessions interrupt-turn` has no `get-dispatch`
+record; its direct response is the only result returned by that RPC. `actions cancel` and
+`notifications cancel` are explicit operations, and neither implies the other.
 
 ## What the CLI relies on in the Action Service
 

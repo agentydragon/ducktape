@@ -57,7 +57,7 @@ func TestActionTextUsesGeneratedProtoJSON(t *testing.T) {
 	}
 }
 
-func TestActionGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
+func TestGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
 	cases := []struct {
 		origin string
 		want   string
@@ -77,7 +77,7 @@ func TestActionGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := actionGRPCTarget(parsed, "AGENTPLANE_ACTIONS_URL")
+			got, err := grpcTarget(parsed, "AGENTPLANE_ACTIONS_URL")
 			if tc.bad {
 				if err == nil {
 					t.Fatalf("target = %q; want invalid origin", got)
