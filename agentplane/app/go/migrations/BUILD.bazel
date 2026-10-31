@@ -8,6 +8,7 @@ go_library(
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
         "@com_github_pressly_goose_v3//:goose",
+        "@com_github_pressly_goose_v3//lock",
     ],
 )
 

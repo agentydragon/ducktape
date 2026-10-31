@@ -11,11 +11,10 @@ token. Check constraints keep a row from holding part of a login. ID tokens are 
 Neither identity nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest
 of the handle.
 
-The table and its expiry index originated in the app's Alembic history. The current Go app's
-embedded Goose migrations carry that schema forward and run through the `agentplane-app-migrate`
-init container before the API starts; the app itself never creates or checks tables. The
-`alembic_version_app` marker remains as a Python rollback bridge until retirement is explicitly
-decided. The Action schema is unchanged.
+The table and its expiry index originated in the app's Alembic history. The Go app runs its
+embedded Goose migrations before workers or HTTP serving begin. The baseline adopts the existing
+schema without changing its rows, and migration 2 removes the retired `alembic_version_app`
+marker. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 
