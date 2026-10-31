@@ -619,12 +619,12 @@
                   <a href="https://github.com/agentydragon/ducktape/pull/13309"
                     >#13309</a
                   >
-                  saw Quiesce <code>UNAVAILABLE</code> 14 times before an
-                  approximately 60 s retry; Gateway observed and published
-                  transitions within milliseconds. Later Runner spans are
-                  missing, so the source of those 14 unavailable observations
-                  remains unresolved. No latency saving is attributed to these
-                  tracing changes.
+                  saw one Quiesce call return gRPC status code
+                  <code>14</code> (<code>UNAVAILABLE</code>); a retry succeeded
+                  about 60 s later. Gateway observed and published transitions
+                  within milliseconds. The source of the rejection remains
+                  unresolved in the available Runner trace. No latency saving is
+                  attributed to these tracing changes.
                 </td>
               </tr>
               <tr>
