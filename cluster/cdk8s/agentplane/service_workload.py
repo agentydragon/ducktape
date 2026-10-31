@@ -89,6 +89,7 @@ def add_service_workload(
     liveness: Probe,
     resources: ContainerResources,
     termination_grace: Duration,
+    startup: Probe | None = None,
     extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
@@ -162,6 +163,7 @@ def add_service_workload(
         ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
         liveness=liveness,
+        startup=startup,
         resources=resources,
         # API services' writes remain unaudited; static workloads opt into a read-only root.
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=read_only_root_filesystem),
