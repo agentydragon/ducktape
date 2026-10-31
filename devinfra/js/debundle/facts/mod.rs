@@ -47,7 +47,6 @@ pub(crate) use crate::purity::{
 
 pub mod abstract_domain;
 mod analyze;
-mod array_content_effects;
 mod array_spreads;
 mod at_init_fallback;
 mod callable_inference;
@@ -55,6 +54,7 @@ mod collector;
 mod dynamic_scope;
 mod fresh_receiver;
 mod global_object;
+mod heap_contents;
 mod item_views;
 mod lazy_boundary;
 mod local_class_construction;
@@ -99,7 +99,7 @@ pub use statement_facts::{
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, HeapContentEffects, LocalRecordFactoryPurityCertificate,
+    ConstructorFacts, HeapContentCells, LocalRecordFactoryPurityCertificate,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 

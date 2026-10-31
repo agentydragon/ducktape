@@ -153,10 +153,16 @@ pub struct StatementFacts {
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
     pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
-    /// Heap-content effects on uniquely identified array allocations. These
-    /// are distinct from binding effects: mutating an array changes its
-    /// contents, not the binding that names it.
-    pub(crate) heap_contents: HeapContentEffects,
+    /// Heap-content cells of the statement's own at-init syntax. These are
+    /// distinct from binding effects: mutating an array changes its contents,
+    /// not the binding that names it. Its calls' cells are
+    /// `SynchronousCalls::heap_contents`.
+    pub(crate) heap_contents: HeapContentCells,
+    /// The whole initializer of a single-declarator top-level declaration,
+    /// when it is an array literal: its allocation runs at this statement.
+    pub(crate) heap_one_shot_allocation: Option<EffectCell>,
+    /// Allocation sites in this statement's deferred positions, at any depth.
+    pub(crate) deferred_heap_allocations: BTreeSet<EffectCell>,
     /// Author-conditioned native premises consumed by certified local-class
     /// heap construction at this source unit.
     pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
@@ -225,6 +231,8 @@ pub(crate) struct SynchronousCalls {
     /// conservative paths contributed, each with the first such path.
     pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
+    /// Heap-content cells of the callables this statement invoked.
+    pub(crate) heap_contents: HeapContentCells,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -372,8 +380,8 @@ impl StatementFacts {
         for key in &self.global_reads {
             reads.insert(EffectCell::GlobalProp(key.clone()));
         }
-        writes.extend(self.heap_contents.writes.eager.iter().cloned());
-        reads.extend(self.heap_contents.reads.eager.iter().cloned());
+        writes.extend(self.heap_contents.writes.iter().cloned());
+        reads.extend(self.heap_contents.reads.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
 }
@@ -407,25 +415,26 @@ pub struct StatementEffectSummary {
     pub reads: BTreeSet<EffectCell>,
 }
 
-/// Heap-content effects attributed to one source unit. First-order lazy
-/// effects are inherited by synchronous at-init calls; nested closures remain
-/// deferred. Opaque effects become heap-frontier barriers in the graph builder,
-/// rather than being copied onto every canonical array identity.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct HeapContentEffects {
-    /// Canonical local call targets whose heap summaries still need promotion.
-    /// Certified construction sites are excluded before sites are unioned.
-    pub calls: PositionBucketed<BTreeSet<Id>>,
+/// Heap-content cells one body touches: allocations it performs, cells it
+/// reads and writes, and whether an operation may touch contents the cells do
+/// not name (a heap-frontier barrier in the graph builder).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HeapContentCells {
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
-    pub allocations: PositionBucketed<BTreeSet<EffectCell>>,
-    /// One eager, whole top-level literal site whose allocation cannot have
-    /// run before this source unit. Used only to discharge an older heap
-    /// frontier for precise observations of that newly born cell.
-    pub one_shot_allocations: BTreeSet<EffectCell>,
-    pub reads: PositionBucketed<BTreeSet<EffectCell>>,
-    pub writes: PositionBucketed<BTreeSet<EffectCell>>,
-    pub opaque: PositionBucketed<bool>,
+    pub allocations: BTreeSet<EffectCell>,
+    pub reads: BTreeSet<EffectCell>,
+    pub writes: BTreeSet<EffectCell>,
+    pub opaque: bool,
+}
+
+impl HeapContentCells {
+    pub(crate) fn extend(&mut self, other: &Self) {
+        self.allocations.extend(other.allocations.iter().cloned());
+        self.reads.extend(other.reads.iter().cloned());
+        self.writes.extend(other.writes.iter().cloned());
+        self.opaque |= other.opaque;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

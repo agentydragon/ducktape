@@ -751,52 +751,35 @@ globalThis`) marks the bindings it flows into (transitively,
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
-  The graph also keeps an identity-based `ArrayContents(origin)` timeline for
-  tracked array literals. Allocation seeds a separate pending frontier, so
-  a later opaque barrier remains connected even if unsupported syntax hides
-  every read or mutation. Allocation alone does not depend on preceding
-  opaque operations or reset content writers/readers: one source origin can
-  represent multiple runtime allocations. Opaque calls before the first live
-  eager literal-origin array do not start an array-content chain. Any lazy
-  allocation origin is conservatively live initially because hoisted or escaped
-  functions may create it before its lexical statement. It follows aliases
-  through the chunk value-flow
-  facts and promotes first-order reads from directly invoked chunk functions,
-  including pure readers that the S-chain intentionally omits. Per-array
+  The graph also keeps a heap-content timeline over `ArrayContents(origin)`
+  and `SetContents(origin)` cells (`facts/heap_contents.rs`). Each body's
+  cells are syntax over the chunk value-flow identities: a statement's own
+  at-init syntax and each callable's first-order pre-await body. A
+  statement's cells are its own plus those of every callable its synchronous
+  execution invoked; an execution the interpreter cannot complete is a
+  barrier, as are array member writes, method calls such as `push`, escaped
+  arrays, key enumeration (`for-in`), optional calls and tagged templates.
+  Allocation seeds a separate pending frontier, so a later barrier remains
+  connected even if unsupported syntax hides every read or mutation;
+  allocation alone does not depend on preceding barriers or reset content
+  writers/readers, since one source origin can represent multiple runtime
+  allocations. Barriers before the first live eager allocation do not start a
+  chain; a deferred allocation origin is live from the start because hoisted or
+  escaped functions may create it before its lexical statement. Per-cell
   last-writer and readers-since-write frontiers preserve read-after-write,
-  write-after-write, and write-after-read order in both graph modes. Array
-  member writes, method calls such as `push`, escaped arrays, unresolved
-  callees, and inline or constructor calls whose bodies lack the graph's direct
-  call summary remain opaque heap barriers. The shared synchronous-call
-  analysis also makes a source unit a heap barrier when it reports incomplete
-  execution effects, regardless of a purity hint. This reuses its canonical
-  precision-loss facts for observations through unsupported coercion or
-  property-access protocols and unresolved synchronous calls. Key enumeration
-  (`for-in`), optional calls, and tagged templates stay barriers when their
-  array effects are not represented precisely. A barrier depends on the
-  current array-content frontier and later array observations depend on that
-  barrier; the frontier resets there, so unknown operations do not materialize
-  edges against every array cell. A selected `set_from_primitive_array`
-  operation adds a typed fresh Set origin to the same value-flow solve and a
-  `SetContents(origin)` allocation to this heap timeline. Alias and container
-  reachability use the shared flow facts. Construction identity does not
-  establish later method or iterator identity, so unsupported Set
-  observations retain opaque barriers. Recursive callable heap summaries
-  use the shared incremental inference solver for both Array and Set cells.
-  A separately certified `set_from_set_spread` operation contributes another
-  typed fresh Set origin only when its spread reads a selected fresh Set across
-  a source-order interval of independently certified inert constructors in
-  one original declaration. That exact spread records a `SetContents` read;
-  later aliases and mutations still use the shared cell frontier. This source
-  certificate precedes value-flow inference and depends on neither the
-  assignment nor the emitted graph's schedule conclusion; the gate stage
-  refuses a placement that splits the interval across output modules.
-  These facts constrain scheduling only: they
-  do not reclassify calls as pure or establish a
-  no-reentry/descriptor-integrity premise. In particular,
-  `trusted_dataflow_summaries` does not make an array member write safe to
-  summarize; absent a separate array-specific proof, it remains an opaque
-  barrier.
+  write-after-write and write-after-read order in both graph modes, including
+  for pure readers the S-chain omits. A barrier depends on the current
+  frontier, later observations depend on the barrier, and the frontier resets
+  there. A selected `set_from_primitive_array` operation adds a typed fresh
+  Set origin; a separately certified `set_from_set_spread` operation adds one
+  only when its spread reads a selected fresh Set across a source-order
+  interval of certified inert constructors in one declaration, and the gate
+  refuses a placement that splits that interval. Construction identity does
+  not establish later method or iterator identity, so unsupported Set
+  observations stay barriers. These facts constrain scheduling only: they do
+  not reclassify calls as pure or establish a no-reentry/descriptor-integrity
+  premise. In particular, `trusted_dataflow_summaries` does not make an array
+  member write safe to summarize.
 
   An exact checked implicit local construction can omit its own opaque heap
   effect. The shared local-class proof supplies accepted field shapes and stable
@@ -805,12 +788,9 @@ globalThis`) marks the bindings it flows into (transitively,
   table (`facts/abstract_domain/builtins.rs`, `allocates`) separately supply
   the fresh-allocation heap capability for zero-argument collection
   construction.
-  This is not derived from purity or synchronous-call completeness. The array
-  collector projects call promotions per operation before unioning a source
-  unit, using the same value-flow call-target query as ordinary call facts.
+  This is not derived from purity or synchronous-call completeness.
   Suppressing one certified `new` does not suppress another invocation of its
   callee, argument evaluation, or unrelated operations in that statement.
-  Unresolved direct identifiers retain their syntactic opaque fallback.
   Deferred methods, callbacks and getters retain their later-use obligations.
 
   The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the

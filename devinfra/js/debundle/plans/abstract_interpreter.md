@@ -40,7 +40,7 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 | 10  | Fresh receiver and fresh record            | `facts/fresh_receiver.rs`, `purity/fresh_record.rs`                                                                                                                                                                   | Ordered writes to pre-existing own data fields of one fresh literal, then return                                                                                                       | Exact body shape; no aliases, calls or publication                                                       | `local_record_factory_contract`, `fresh_returned_record_destructuring`                                                                                                                                                                                                        | purity_soundness § Fresh local record field writes, § Source-composed returned records                                                    |
 | 11  | Callable certificates                      | `facts/callable_inference.rs`, `facts/semantic_inference.rs` (`StableFunction`, `StableProvider`, `NamespaceWrapper`, `ArgumentNoEscape`, `DescriptorCopyProvider`/`Call`), `facts/sync_effects/namespace_wrapper.rs` | Stable identity; namespace facade; descriptor-copy wrapper; parameter non-escape                                                                                                       | No dynamic scope or rebind; exact body shapes; Object/WeakMap/Array/Function integrity                   | `imported_callback_timing`, `retained_callback_factory`, `retained_constructor_callback`, `namespace_wrapper`, `descriptor_copy_factory`, `argument_input`, `wrapper_argument_native_integrity`                                                                               | inference; SPEC §§ Inferred returned-record construction timing, Inferred namespace-wrapper timing, Audited callback factories            |
 | 12  | Native integrity and identity certificates | `facts/abstract_domain/integrity.rs` (`IntrinsicSlot`, `IntegrityFlags`, `IntrinsicIntact`); `facts/semantic_inference.rs` (`LocalClass`, `PrimitiveSetIteration`, `StablePrimitiveArraySpread`)                      | Slot integrity flags (census or exact-site author axiom); exact callee identity; fresh empty collection; getter-free own-data read                                                     | Completed census; no dynamic scope; unshadowed binding or `globalThis` qualification                     | `native_constructor_identity_order`, `empty_collection_timing`, `native_own_data_read`, `prototype_property_integrity`, `intrinsic_alias_lowering`                                                                                                                            | inference; SPEC §§ Native integrity inputs, Synchronous execution diagnostics; purity_soundness § Empty intrinsic collection construction |
-| 13  | Heap content effects and frontier          | `facts/array_content_effects.rs`, `graph/build.rs` (`emit_heap_content_order`, `emit_cell_order_events`, `OneShotEagerAllocations`, `HeapContentRules`, `CellOrderBarrier`)                                           | `ArrayContents`/`SetContents` cell reads, writes, allocations; one-shot births; opaque barriers; RAW/WAW/WAR edges                                                                     | Value-flow identities; synchronous-call completeness; certified construction sites                       | `local_array_push_order`, `stable_array_spread`, `at_init_s_chain_dataflow`, `graph_provenance`; unit `graph/build.rs::array_heap_frontier_tests`                                                                                                                             | design § Emission modes                                                                                                                   |
+| 13  | Heap content effects and frontier          | `facts/heap_contents.rs` (per-body cells; the interpreter unions invoked callables'), `graph/build.rs` (`emit_heap_content_order`, `emit_cell_order_events`, `OneShotEagerAllocations`, `CellOrderBarrier`)           | `ArrayContents`/`SetContents` cell reads, writes, allocations; one-shot births; opaque barriers; RAW/WAW/WAR edges                                                                     | Value-flow identities; synchronous-call completeness; certified construction sites                       | `local_array_push_order`, `stable_array_spread`, `at_init_s_chain_dataflow`, `graph_provenance`; unit `graph/build.rs::array_heap_frontier_tests`                                                                                                                             | design § Emission modes                                                                                                                   |
 | 14  | S-chain emission                           | `graph/build.rs::emit_s_chain`                                                                                                                                                                                        | Strict adjacent-impure chain or dataflow-aware cell edges                                                                                                                              | #1, #24 verdicts; `trusted_dataflow_summaries`                                                           | `lemma_five_side_effect_order`, `s_chain_dataflow_soundness`, `runtime_tdz_on_imported_class`                                                                                                                                                                                 | design § S — the side-effect order graph                                                                                                  |
 
 ### Synchronous execution (`facts/sync_effects/`)
@@ -118,7 +118,8 @@ and foreign values with 5b and 5c, which fold the interpreter carriers
 `Closure`, `ClassMembers`, `Instance`, `CallbackFactory`,
 `InlineCallbackFactory`, `DeferredCallbacks`, `OwnDescriptorMap`,
 `ForeignDeferredRecord`, `ObjectAssign`, `ArrayIntrinsic` and `GlobalObject`
-into `Value`). Multiplicity is a heap property and arrives with step 6.
+into `Value`). Multiplicity is a heap property; its `One` is today the
+one-shot top-level allocation `facts/heap_contents.rs` records.
 
 ### 2.2 Heap
 
@@ -355,15 +356,17 @@ and 8 are covered by the public controls and the e2e suite.
 
 Pipeline order (<../docs/design.md> § Purity and synchronous execution share
 one context): source facts, function effects (`ChunkCodeGraph`) and the
-whole-chunk heap state (`facts/abstract_domain/heap.rs`) → heap-content
-effects → synchronous execution, which computes each statement's purity at its
-own program point (`RuntimeKey::Purity`) and consumes it there. Dependencies
-run forward only: nothing at a source prefix refines an earlier prefix's
-purity, function effects or the whole-chunk heap state. The vendor-prune path
+whole-chunk heap state (`facts/abstract_domain/heap.rs`) → per-body
+heap-content cells (`facts/heap_contents.rs`) → synchronous execution, which
+computes each statement's purity at its own program point
+(`RuntimeKey::Purity`) and consumes it there, and unions the heap-content
+cells of the callables each statement invokes. Dependencies run forward only:
+nothing at a source prefix refines an earlier prefix's purity, function
+effects or the whole-chunk heap state. The vendor-prune path
 (`analyze_vendor_prune_chunk`) runs the same purity transfer without
-execution. A step that derives from the interpreter a fact that heap-content
-effects or function effects consume lands after 6, or owns that reorder and
-measures its cost.
+execution. A step that derives from the interpreter a fact that per-body
+heap-content cells or function effects consume owns that reorder and measures
+its cost.
 
 ### Step 0 — baseline
 
@@ -483,23 +486,6 @@ ArgumentNoEscape, DescriptorCopy*}` → the
   precision regression shows up as a red canonical gate. Mitigation: 5a–5d
   land only after the private corpus replays accept the same assignments
   (debug/runtime_transfers.md's paired-measurement protocol).
-
-### Step 6 — heap frontier from effect sets
-
-- `array_content_effects.rs` and `HeapContentEffects` are deleted;
-  `emit_heap_content_order` reads `Read/Write(Contents(site))`, `Alloc(site)`
-  with `mult = One`, and `Havoc` directly from statement summaries.
-  `OneShotEagerAllocations` is the `One` multiplicity; `CellOrderBarrier`
-  stays.
-- Tests: `local_array_push_order`, `stable_array_spread`,
-  `at_init_s_chain_dataflow`, `graph_provenance`, `s_chain_dataflow_soundness`,
-  `lemma_five_side_effect_order`; unit `array_heap_frontier_tests` stays.
-- SPEC/docs: design § Emission modes' array-content paragraphs become a
-  reference to the `Contents` cell.
-- Soundness: the frontier algorithm is unchanged; only its input cells change
-  source. An allocation the interpreter cannot see is `Havoc`, which is the
-  existing barrier.
-- Risk: medium. Edge counts must not grow (§ 6).
 
 ### Step 7 — statement cell summaries and taint
 

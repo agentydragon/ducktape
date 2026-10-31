@@ -9,7 +9,6 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::{EffectCell, SourceUnitReadClosure};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
 /// The per-chunk options dependency-graph construction reads. Every other
@@ -576,13 +575,7 @@ pub fn build_dependency_graph_with(
     }
 
     emit_s_chain(facts, options, &mut raw_edges);
-    emit_heap_content_order(
-        facts,
-        &binding_source_unit,
-        &shared_vars,
-        &stmt_by_source_unit,
-        &mut raw_edges,
-    );
+    emit_heap_content_order(facts, &mut raw_edges);
 
     // Sort + assign stable `DependencyEdgeId` indices, then build CSR
     // adjacency in one pass.
@@ -833,11 +826,12 @@ fn apply_commuting_statements(
 /// Preserve source-order observations of mutable array contents. Binding-cell
 /// ordering cannot do this: an array initializer writes the object binding,
 /// while a later `push` or indexed write changes the object behind it.
+///
+/// A statement's cells are its own at-init cells and those of the callables
+/// its synchronous execution invoked; an execution the interpreter could not
+/// complete may touch any contents and is a heap-frontier barrier.
 fn emit_heap_content_order(
     facts: &[StatementFacts],
-    binding_source_unit: &HashMap<Id, SourceUnitId>,
-    shared_vars: &BTreeSet<Id>,
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
     // Only one eager occurrence with no deferred occurrence proves that a
@@ -845,102 +839,47 @@ fn emit_heap_content_order(
     // have allocated before an intervening opaque call, even if invoked again
     // afterwards, so its site cannot discharge the old frontier.
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
-    let rebound: BTreeSet<_> = facts
-        .iter()
-        .flat_map(|stmt| stmt.rebinds.eager.iter().chain(&stmt.rebinds.lazy).cloned())
-        .collect();
-
-    let resolved_callee = |binding: &swc_ecma_ast::Id| -> Option<SourceUnitId> {
-        resolve_direct_function_source_unit(
-            binding,
-            binding_source_unit,
-            shared_vars,
-            stmt_by_source_unit,
-            &rebound,
-        )
-    };
 
     // A hoisted or escaped callable can allocate before its lexical statement.
     // Keep those origins live from the start; eager-only arrays become live
     // when their allocation or first precise content effect is encountered.
     let mut has_live_heap_contents = facts
         .iter()
-        .any(|stmt| !stmt.heap_contents.allocations.lazy.is_empty());
-    let local_lazy_effects: Vec<_> = facts
-        .iter()
-        .map(|stmt| HeapContentSummary {
-            allocations: stmt.heap_contents.allocations.first_order_lazy.clone(),
-            effects: heap_content_cells(
-                &stmt.heap_contents.reads.first_order_lazy,
-                &stmt.heap_contents.writes.first_order_lazy,
-            ),
-            opaque: stmt.heap_contents.opaque.first_order_lazy,
-        })
-        .collect();
-    // The shared incremental solver owns recursive and mutually recursive
-    // callable promotion. Unresolved targets are terminal opaque roots.
-    let mut successors = vec![Vec::new(); facts.len()];
-    let mut lazy_effects = local_lazy_effects;
-    for stmt in facts {
-        for callee in &stmt.heap_contents.calls.first_order_lazy {
-            if let Some(target) = resolved_callee(callee) {
-                successors[stmt.ordinal.0].push(target.0);
-            } else {
-                lazy_effects[stmt.ordinal.0].opaque = true;
-            }
-        }
-    }
-    let mut inference = IterativeInference::new(HeapContentRules { successors });
-    for (source, effects) in lazy_effects.into_iter().enumerate() {
-        inference.seed(source, effects);
-    }
-    let lazy_effects: Vec<_> = inference
-        .solve(0..facts.len())
-        .into_values()
-        .into_values()
-        .collect();
-
+        .any(|stmt| !stmt.deferred_heap_allocations.is_empty());
     let mut events = Vec::new();
     for stmt in facts {
-        let mut allocations = stmt.heap_contents.allocations.eager.clone();
-        let mut effects = heap_content_cells(
-            &stmt.heap_contents.reads.eager,
-            &stmt.heap_contents.writes.eager,
-        );
+        let own = &stmt.heap_contents;
+        let mut allocations = own.allocations.clone();
+        let mut effects = heap_content_cells(&own.reads, &own.writes);
         // Every disjunct that holds is retained as a `HeapBarrierCause`
         // on the edges the barrier emits.
         let mut opaque_causes = BTreeSet::new();
-        if stmt.heap_contents.opaque.eager {
+        if own.opaque {
             opaque_causes.insert(HeapBarrierCause::ArrayContentEffects);
         }
         if !stmt.dataflow_summarizable() && !stmt.purity.is_pure() {
             opaque_causes.insert(HeapBarrierCause::NonSummarizableImpure);
         }
-        // The shared synchronous interpreter owns call-target and
-        // protocol precision. If it cannot completely summarize this
-        // source unit, an otherwise-pure expression may still observe
-        // mutable array contents through coercion, a getter, or a
-        // callable that the array collector does not resolve. Keep one
-        // heap-frontier barrier instead of duplicating that resolver.
-        if stmt
+        if let Some(calls) = &stmt.synchronous_calls {
+            let callees = &calls.heap_contents;
+            allocations.extend(callees.allocations.iter().cloned());
+            union_effects(
+                &mut effects,
+                &heap_content_cells(&callees.reads, &callees.writes),
+            );
+            if callees.opaque {
+                opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
+            }
+        }
+        // If the interpreter cannot completely summarize this source unit, an
+        // otherwise-pure expression may still observe mutable array contents
+        // through coercion, a getter, or a callable it did not resolve.
+        if !stmt
             .synchronous_calls
             .as_ref()
-            .is_some_and(|calls| !calls.complete)
+            .is_some_and(|calls| calls.complete)
         {
             opaque_causes.insert(HeapBarrierCause::IncompleteSynchronousExecution);
-        }
-        // Function declarations are inert; only a recognized synchronous
-        // at-init call inherits their first-order effects.
-        for callee in &stmt.heap_contents.calls.eager {
-            if let Some(target) = resolved_callee(callee) {
-                allocations.extend(lazy_effects[target.0].allocations.iter().cloned());
-                union_effects(&mut effects, &lazy_effects[target.0].effects);
-                if lazy_effects[target.0].opaque {
-                    opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
-                }
-            } else {
-                opaque_causes.insert(HeapBarrierCause::UnresolvedCallee);
-            }
         }
         let opaque = !opaque_causes.is_empty();
         has_live_heap_contents |=
@@ -1023,12 +962,12 @@ impl OneShotEagerAllocations {
     fn from_facts(facts: &[StatementFacts]) -> Self {
         let lazy: BTreeSet<_> = facts
             .iter()
-            .flat_map(|stmt| stmt.heap_contents.allocations.lazy.iter().cloned())
+            .flat_map(|stmt| stmt.deferred_heap_allocations.iter().cloned())
             .collect();
         let mut eager_counts = BTreeMap::<EffectCell, usize>::new();
         for cell in facts
             .iter()
-            .flat_map(|stmt| stmt.heap_contents.one_shot_allocations.iter().cloned())
+            .filter_map(|stmt| stmt.heap_one_shot_allocation.clone())
         {
             *eager_counts.entry(cell).or_default() += 1;
         }
@@ -1072,47 +1011,6 @@ fn union_effects(
     into.reads.extend(from.reads.iter().cloned());
     into.writes.extend(from.writes.iter().cloned());
     old_reads != into.reads.len() || old_writes != into.writes.len()
-}
-
-#[derive(Clone, Default)]
-struct HeapContentSummary {
-    allocations: BTreeSet<EffectCell>,
-    effects: crate::StatementEffectSummary,
-    opaque: bool,
-}
-
-struct HeapContentRules {
-    successors: Vec<Vec<usize>>,
-}
-
-impl IterativeRules for HeapContentRules {
-    type Key = usize;
-    type Fact = HeapContentSummary;
-    type Rule = usize;
-
-    fn evaluate(&self, source: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
-        let mut inherited = HeapContentSummary::default();
-        for target in &self.successors[*source] {
-            if let Some(effects) = context.read(*target) {
-                inherited
-                    .allocations
-                    .extend(effects.allocations.iter().cloned());
-                union_effects(&mut inherited.effects, &effects.effects);
-                inherited.opaque |= effects.opaque;
-            }
-        }
-        context.propose(*source, inherited);
-    }
-
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let old_allocations = current.allocations.len();
-        current.allocations.extend(contribution.allocations);
-        let mut changed = current.allocations.len() != old_allocations;
-        changed |= union_effects(&mut current.effects, &contribution.effects);
-        changed |= contribution.opaque && !current.opaque;
-        current.opaque |= contribution.opaque;
-        changed
-    }
 }
 
 #[derive(Clone, PartialEq, Eq)]

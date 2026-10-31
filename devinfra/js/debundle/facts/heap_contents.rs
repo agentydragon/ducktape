@@ -1,9 +1,12 @@
-//! Identity-based heap-content effects for dependency ordering.
+//! Heap-content cells each body touches: a top-level statement's own at-init
+//! syntax and each callable's first-order pre-await body.
 //!
 //! This pass deliberately does not classify calls as pure. It records only
-//! which array or certified native Set allocation an operation may observe or mutate, using
-//! the shared chunk value-flow identities. Unresolved calls and exports remain
-//! conservative barriers in the graph emitter.
+//! which array or certified native Set allocation an operation may observe or
+//! mutate, using the shared chunk value-flow identities. The synchronous
+//! interpreter composes a statement's calls: it unions the bodies of the
+//! callables it invokes (`SynchronousCalls::heap_contents`), and an execution
+//! it cannot complete is a heap-frontier barrier in the graph emitter.
 
 use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -16,15 +19,24 @@ pub(crate) struct HeapContentProofs<'a> {
     pub native_facts: &'a ValidatedNativeOperationFacts,
 }
 
-pub(crate) fn annotate_heap_content_effects(
+/// The heap-content cells of a chunk's bodies, and the report uses of the
+/// native-read certificates the collection consumed per statement.
+pub(crate) struct ChunkHeapContents {
+    /// First-order pre-await body cells of each callable, keyed like the
+    /// execution index's callables (the body's span start).
+    pub callables: BTreeMap<u32, HeapContentCells>,
+    pub native_read_uses: Vec<(
+        Vec<crate::reports::schema::InferenceUse>,
+        Vec<crate::reports::schema::NativeOperationInputUse>,
+    )>,
+}
+
+pub(crate) fn annotate_heap_contents(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
     proofs: HeapContentProofs<'_>,
     facts: &mut [StatementFacts],
-) -> Vec<(
-    Vec<crate::reports::schema::InferenceUse>,
-    Vec<crate::reports::schema::NativeOperationInputUse>,
-)> {
+) -> ChunkHeapContents {
     let mut origins = ArrayOriginCollector::default();
     for item in body {
         item.as_module_item().visit_with(&mut origins);
@@ -38,7 +50,8 @@ pub(crate) fn annotate_heap_content_effects(
             .map(|site| Value::Alloc(Kind::Set, site)),
     );
     let reachability = value_flow.candidate_object_index(&candidates);
-    let mut proof_uses = Vec::with_capacity(body.len());
+    let mut callables = BTreeMap::new();
+    let mut native_read_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
             value_flow,
@@ -49,7 +62,10 @@ pub(crate) fn annotate_heap_content_effects(
             native_facts: proofs.native_facts,
             array_reachability: &reachability,
             array_origins: &origins.0,
-            effects: HeapContentEffects::default(),
+            eager: HeapContentCells::default(),
+            callables: &mut callables,
+            deferred_allocations: BTreeSet::new(),
+            bodies: Vec::new(),
             heap_native_integrity_uses: BTreeSet::new(),
             native_read_inferences: BTreeMap::new(),
             native_read_inputs: BTreeMap::new(),
@@ -58,29 +74,34 @@ pub(crate) fn annotate_heap_content_effects(
             may_skip_await_depth: 0,
         };
         item.as_module_item().visit_with(&mut collector);
-        if let Some(declaration) = var_decl_of_item(item.as_module_item())
-            && let [declarator] = declaration.decls.as_slice()
-            && matches!(declarator.name, Pat::Ident(_))
-            && let Some(initializer) = &declarator.init
-            && let Expr::Array(array) = initializer.unwrap_parens()
-        {
-            collector
-                .effects
-                .one_shot_allocations
-                .insert(EffectCell::ArrayContents(array.span.lo.0));
+        if fact.kind == StatementKind::Export {
+            collector.eager.opaque = true;
         }
-        fact.heap_contents = collector.effects;
+        fact.heap_one_shot_allocation =
+            var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+                match declaration.decls.as_slice() {
+                    [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
+                        match declarator.init.as_deref()?.unwrap_parens() {
+                            Expr::Array(array) => Some(EffectCell::ArrayContents(array.span.lo.0)),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            });
+        fact.heap_contents = collector.eager;
+        fact.deferred_heap_allocations = collector.deferred_allocations;
         fact.heap_native_integrity_uses =
             collector.heap_native_integrity_uses.into_iter().collect();
-        proof_uses.push((
+        native_read_uses.push((
             collector.native_read_inferences.into_values().collect(),
             collector.native_read_inputs.into_values().collect(),
         ));
-        if fact.kind == StatementKind::Export {
-            record_opaque(&mut fact.heap_contents.opaque, 0, false);
-        }
     }
-    proof_uses
+    ChunkHeapContents {
+        callables,
+        native_read_uses,
+    }
 }
 
 pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
@@ -119,7 +140,18 @@ struct ArrayContentCollector<'a> {
     native_facts: &'a ValidatedNativeOperationFacts,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
-    effects: HeapContentEffects,
+    /// The statement's own at-init cells.
+    eager: HeapContentCells,
+    callables: &'a mut BTreeMap<u32, HeapContentCells>,
+    /// Allocation sites in any deferred position: their allocation may run
+    /// any number of times, at or after this statement.
+    deferred_allocations: BTreeSet<EffectCell>,
+    /// The bodies entered around the cursor, innermost last, each with the
+    /// lazy depth its code runs at: an execution-index callable key, or `None`
+    /// for an object-literal accessor body, which the interpreter does not
+    /// invoke as a callable. A class member's eager parts run in the
+    /// enclosing body although its entry is already pushed.
+    bodies: Vec<(Option<u32>, u32)>,
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
     native_read_inferences: BTreeMap<u32, crate::reports::schema::InferenceUse>,
     native_read_inputs: BTreeMap<u32, crate::reports::schema::NativeOperationInputUse>,
@@ -129,35 +161,64 @@ struct ArrayContentCollector<'a> {
 }
 
 impl ArrayContentCollector<'_> {
-    fn position(&self) -> (u32, bool) {
-        (self.lazy_depth, self.past_await)
+    /// The cells the cursor's position records into: the statement's at-init
+    /// cells, the innermost callable's first-order pre-await body, or none
+    /// for code that runs only after a suspension or in an accessor body.
+    fn cells(&mut self) -> Option<&mut HeapContentCells> {
+        if self.lazy_depth == 0 {
+            return Some(&mut self.eager);
+        }
+        if self.past_await {
+            return None;
+        }
+        let (key, depth) = *self
+            .bodies
+            .iter()
+            .rev()
+            .find(|(_, depth)| *depth <= self.lazy_depth)?;
+        // Code nested in a body the collector does not key (a getter of an
+        // object literal inside a class field) is no callable's body.
+        let key = key.filter(|_| depth == self.lazy_depth)?;
+        Some(self.callables.entry(key).or_default())
     }
 
     fn record(&mut self, ids: &BTreeSet<u32>, read: bool, write: bool, opaque: bool) {
-        let (depth, past_await) = self.position();
+        let Some(cells) = self.cells() else {
+            return;
+        };
         if read {
-            for id in ids {
-                record_set(
-                    &mut self.effects.reads,
-                    EffectCell::ArrayContents(*id),
-                    depth,
-                    past_await,
-                );
-            }
+            cells
+                .reads
+                .extend(ids.iter().map(|id| EffectCell::ArrayContents(*id)));
         }
         if write {
-            for id in ids {
-                record_set(
-                    &mut self.effects.writes,
-                    EffectCell::ArrayContents(*id),
-                    depth,
-                    past_await,
-                );
-            }
+            cells
+                .writes
+                .extend(ids.iter().map(|id| EffectCell::ArrayContents(*id)));
         }
-        if opaque {
-            record_opaque(&mut self.effects.opaque, depth, past_await);
+        cells.opaque |= opaque;
+    }
+
+    fn record_opaque(&mut self) {
+        if let Some(cells) = self.cells() {
+            cells.opaque = true;
         }
+    }
+
+    fn record_allocation(&mut self, cell: EffectCell) {
+        if self.lazy_depth > 0 {
+            self.deferred_allocations.insert(cell.clone());
+        }
+        if let Some(cells) = self.cells() {
+            cells.allocations.insert(cell);
+        }
+    }
+
+    /// Visit a callable as `key`; its body runs one lazy level deeper.
+    fn descend_body(&mut self, key: Option<u32>, visit: impl FnOnce(&mut Self)) {
+        self.bodies.push((key, self.lazy_depth + 1));
+        visit(self);
+        self.bodies.pop();
     }
 
     fn array_ids(&self, expr: &Expr) -> (BTreeSet<u32>, bool) {
@@ -195,41 +256,31 @@ impl ArrayContentCollector<'_> {
             }
         }
         let ambiguous = unknown || count > 1;
-        let has_known_set = !sets.is_empty();
-        let (depth, past_await) = self.position();
-        for site in sets {
-            if read {
-                record_set(
-                    &mut self.effects.reads,
-                    EffectCell::SetContents(site),
-                    depth,
-                    past_await,
-                );
-            }
-            if write {
-                record_set(
-                    &mut self.effects.writes,
-                    EffectCell::SetContents(site),
-                    depth,
-                    past_await,
-                );
-            }
-        }
         // An unknown receiver may alias any certified Set, while an unrelated
         // receiver must not create a Set frontier merely for being a member.
-        if (has_known_set && (opaque || ambiguous))
-            || (unknown && !self.value_flow.native_set_allocations().is_empty())
-        {
-            record_opaque(&mut self.effects.opaque, depth, past_await);
+        let opaque = (!sets.is_empty() && (opaque || ambiguous))
+            || (unknown && !self.value_flow.native_set_allocations().is_empty());
+        let Some(cells) = self.cells() else {
+            return;
+        };
+        if read {
+            cells
+                .reads
+                .extend(sets.iter().map(|site| EffectCell::SetContents(*site)));
         }
+        if write {
+            cells
+                .writes
+                .extend(sets.iter().map(|site| EffectCell::SetContents(*site)));
+        }
+        cells.opaque |= opaque;
     }
 
     fn record_array_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
         let (arrays, ambiguous) = self.array_ids(expr);
         if arrays.is_empty() {
             if ambiguous {
-                let (depth, past_await) = self.position();
-                record_opaque(&mut self.effects.opaque, depth, past_await);
+                self.record_opaque();
             }
             return;
         }
@@ -249,13 +300,12 @@ impl ArrayContentCollector<'_> {
                 }
                 _ => {}
             });
-        if !arrays.is_empty() {
-            let (depth, past_await) = self.position();
-            for cell in arrays {
-                record_set(&mut self.effects.reads, cell.clone(), depth, past_await);
-                record_set(&mut self.effects.writes, cell, depth, past_await);
-            }
-            record_opaque(&mut self.effects.opaque, depth, past_await);
+        if !arrays.is_empty()
+            && let Some(cells) = self.cells()
+        {
+            cells.reads.extend(arrays.iter().cloned());
+            cells.writes.extend(arrays);
+            cells.opaque = true;
         }
     }
 
@@ -320,24 +370,6 @@ impl ArrayContentCollector<'_> {
             self.record_array_expr(&member.obj, read, true, true);
         }
     }
-
-    fn record_call_target(&mut self, callee: &Expr) {
-        let (depth, past_await) = self.position();
-        let targets = self.value_flow.call_targets(callee);
-        if !targets.complete
-            && let Expr::Ident(binding) = callee.unwrap_parens()
-        {
-            record_set(&mut self.effects.calls, binding.to_id(), depth, past_await);
-        }
-        for binding in targets.bindings {
-            record_set(&mut self.effects.calls, binding, depth, past_await);
-        }
-    }
-
-    fn record_opaque_call(&mut self) {
-        let (depth, past_await) = self.position();
-        record_opaque(&mut self.effects.opaque, depth, past_await);
-    }
 }
 
 impl LazyBoundary for ArrayContentCollector<'_> {
@@ -359,13 +391,7 @@ impl Visit for ArrayContentCollector<'_> {
         // Materialization initializes this fresh identity's contents. Keep an
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
-        let (depth, past_await) = self.position();
-        record_set(
-            &mut self.effects.allocations,
-            EffectCell::ArrayContents(node.span.lo.0),
-            depth,
-            past_await,
-        );
+        self.record_allocation(EffectCell::ArrayContents(node.span.lo.0));
         node.visit_children_with(self);
     }
 
@@ -425,15 +451,12 @@ impl Visit for ArrayContentCollector<'_> {
         if self.native_facts.symbol_for_literal_proof(node).is_some() {
             return;
         }
-        if let Callee::Expr(callee) = &node.callee {
-            self.record_call_target(callee);
-        }
         match &node.callee {
             Callee::Expr(callee) if let Expr::Member(member) = callee.unwrap_parens() => {
                 self.record_set_expr(&member.obj, true, true, true);
                 self.record_array_expr(&member.obj, true, true, true);
                 self.visit_member_children(member);
-                self.record_opaque_call();
+                self.record_opaque();
             }
             Callee::Expr(callee) => {
                 let callee_values = self.value_flow.values_of_expr(callee);
@@ -445,11 +468,11 @@ impl Visit for ArrayContentCollector<'_> {
                         .iter()
                         .all(|value| matches!(value, Value::Alloc(Kind::Function, _)));
                 if !known_local {
-                    self.record_opaque_call();
+                    self.record_opaque();
                 }
                 callee.visit_with(self);
             }
-            Callee::Import(_) | Callee::Super(_) => self.record_opaque_call(),
+            Callee::Import(_) | Callee::Super(_) => self.record_opaque(),
         }
         for arg in &node.args {
             self.record_escaped_expr(&arg.expr);
@@ -459,19 +482,17 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_opt_call(&mut self, node: &OptCall) {
-        self.record_call_target(&node.callee);
         // Optional invocation can reach a callable whose captured heap effects
         // are not represented by this source-unit summary.
-        self.record_opaque_call();
+        self.record_opaque();
         node.visit_children_with(self);
     }
 
     fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
-        self.record_call_target(&node.tag);
         // A tag is a call with an arbitrary protocol. The synchronous-call
         // interpreter also records its precision loss; retain the barrier
         // here for analyses that do not request that interpreter pass.
-        self.record_opaque_call();
+        self.record_opaque();
         node.visit_children_with(self);
     }
 
@@ -481,13 +502,7 @@ impl Visit for ArrayContentCollector<'_> {
             .native_set_allocations()
             .contains_key(&node.span.lo.0);
         if certified_set {
-            let (depth, past_await) = self.position();
-            record_set(
-                &mut self.effects.allocations,
-                EffectCell::SetContents(node.span.lo.0),
-                depth,
-                past_await,
-            );
+            self.record_allocation(EffectCell::SetContents(node.span.lo.0));
         }
         if certified_set {
             // The exact author premise covers the constructor and the dense
@@ -511,8 +526,7 @@ impl Visit for ArrayContentCollector<'_> {
         } else {
             // Only this operation's body is certified. Other invocations of
             // the same callee still contribute their own promotion/barrier.
-            self.record_call_target(&node.callee);
-            self.record_opaque_call();
+            self.record_opaque();
         }
         node.callee.visit_with(self);
         if let Some(args) = &node.args {
@@ -577,16 +591,20 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_with_stmt(&mut self, node: &WithStmt) {
-        self.record_opaque_call();
+        self.record_opaque();
         node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
+        self.descend_body(Some(node.span.lo.0), |collector| {
+            lazy_visit_function(collector, node);
+        });
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
+        self.descend_body(Some(node.span.lo.0), |collector| {
+            lazy_visit_arrow_expr(collector, node);
+        });
     }
 
     fn visit_method_prop(&mut self, node: &MethodProp) {
@@ -594,11 +612,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
+        self.descend_body(None, |collector| lazy_visit_getter_prop(collector, node));
     }
 
     fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
+        self.descend_body(None, |collector| lazy_visit_setter_prop(collector, node));
     }
 
     fn visit_if_stmt(&mut self, node: &IfStmt) {
@@ -621,7 +639,22 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
-        lazy_visit_class_member(self, member);
+        // The execution index keys a constructor and an instance field or
+        // accessor initializer by the member's span; methods by their
+        // function, which `visit_function` enters.
+        let key = match member {
+            ClassMember::Constructor(constructor) => constructor.span.lo.0,
+            ClassMember::ClassProp(prop) if !prop.is_static => prop.span.lo.0,
+            ClassMember::PrivateProp(prop) if !prop.is_static => prop.span.lo.0,
+            ClassMember::AutoAccessor(accessor) if !accessor.is_static => accessor.span.lo.0,
+            _ => {
+                lazy_visit_class_member(self, member);
+                return;
+            }
+        };
+        self.descend_body(Some(key), |collector| {
+            lazy_visit_class_member(collector, member);
+        });
     }
 }
 
@@ -646,33 +679,6 @@ fn assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
             _ => None,
         },
         _ => None,
-    }
-}
-
-fn record_set<T: Ord + Clone>(
-    bucketed: &mut PositionBucketed<BTreeSet<T>>,
-    id: T,
-    lazy_depth: u32,
-    past_await: bool,
-) {
-    if lazy_depth == 0 {
-        bucketed.eager.insert(id);
-        return;
-    }
-    bucketed.lazy.insert(id.clone());
-    if lazy_depth == 1 && !past_await {
-        bucketed.first_order_lazy.insert(id);
-    }
-}
-
-fn record_opaque(bucketed: &mut PositionBucketed<bool>, lazy_depth: u32, past_await: bool) {
-    if lazy_depth == 0 {
-        bucketed.eager = true;
-    } else {
-        bucketed.lazy = true;
-        if lazy_depth == 1 && !past_await {
-            bucketed.first_order_lazy = true;
-        }
     }
 }
 

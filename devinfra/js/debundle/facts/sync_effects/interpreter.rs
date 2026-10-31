@@ -31,7 +31,7 @@ use crate::facts::semantic_inference::{
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
-    ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
+    HeapContentCells, ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
@@ -461,6 +461,8 @@ pub(super) struct ExecutionInputs<'source> {
     set_iterable_proof: &'source SetIterableProof,
     shadowed: &'source BTreeSet<&'static str>,
     imported_values: &'source BTreeMap<String, Value>,
+    /// First-order pre-await body cells of each callable.
+    callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
     /// Stable own primitive fields, admitted using canonical rebind facts.
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     /// Hashed: effect promotion tests every lazy read of every promoted
@@ -548,6 +550,9 @@ pub(super) struct ExecutionState {
     /// Callables run so far by the current top-level owner; joins
     /// `prior_effect_owners` when it finishes.
     statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Callables the current top-level owner invoked, memoized invocations
+    /// included; their bodies' heap-content cells are the statement's.
+    statement_invoked_callables: BTreeSet<u32>,
     accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
@@ -6764,6 +6769,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .as_ref()
             .map_or(&empty_context, |captured| captured.values.as_ref());
         self.record_executed_owner(callable_owner);
+        self.state.statement_invoked_callables.insert(key);
         // Memoized outcomes still represent an invocation at this point.
         self.activate_native_effects(callable_owner, Some(key));
         if callable_opaque {
@@ -7944,6 +7950,7 @@ pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) set_iterable: &'a SetIterableProof,
     pub(crate) graph: &'a ChunkCodeGraph,
     pub(crate) purity: &'a StatementPurityContext<'a>,
+    pub(crate) callable_heap_contents: &'a BTreeMap<u32, HeapContentCells>,
     pub(crate) index: PreparedSynchronousCallIndex,
 }
 
@@ -8504,6 +8511,7 @@ pub(crate) fn annotate_synchronous_calls(
         set_iterable_proof: proofs.set_iterable,
         shadowed,
         imported_values: &hints.imported_values,
+        callable_heap_contents: proofs.callable_heap_contents,
         enum_data_members,
         top_bindings,
         binding_owner: facts
@@ -8570,6 +8578,7 @@ pub(crate) fn annotate_synchronous_calls(
         checking_record_factory_contract: false,
         prior_effect_owners: BTreeSet::new(),
         statement_executed_owners: BTreeSet::new(),
+        statement_invoked_callables: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
         frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),
@@ -9070,6 +9079,11 @@ impl Executor<'_, '_> {
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
         self.state.statement_executed_owners.clear();
+        for key in std::mem::take(&mut self.state.statement_invoked_callables) {
+            if let Some(cells) = inputs.callable_heap_contents.get(&key) {
+                outcome.effects.heap_contents.extend(cells);
+            }
+        }
         self.state.returned_callback_owners.clear();
         self.state.private_constructor_result_owners.clear();
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
