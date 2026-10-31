@@ -625,13 +625,10 @@ spec:
         agentplane_mcp_origin = "https://agentplane-actions-staging.allegedly.works"
         agentplane_mcp_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_mcp.slug}/"
         agentplane_mcp_oauth = {
-          config_url                  = "${local.agentplane_mcp_issuer}.well-known/openid-configuration"
           upstream_client_id          = authentik_provider_oauth2.agentplane_mcp.client_id
           upstream_client_secret_file = "/etc/agentplane-mcp/client-secret"
           base_url                    = local.agentplane_mcp_origin
           integration_app_url         = "https://agentplane-staging.allegedly.works"
-          jwt_signing_key_file        = "/etc/agentplane-mcp/jwt-signing-key"
-          encryption_key_file         = "/etc/agentplane-mcp/encryption-key"
           upstream_issuer             = local.agentplane_mcp_issuer
           upstream_subject            = data.authentik_user.agentydragon.uuid
           # The Actions provider issues `sub_mode = "hashed_user_id"` tokens, whose subject is the

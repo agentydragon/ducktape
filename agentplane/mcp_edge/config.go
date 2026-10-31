@@ -40,7 +40,8 @@ type config struct {
 }
 
 type oauthSettings struct {
-	// CLEANUP(added 2026-10-23): Drop these legacy FastMCP keys after the GitOps OAuth secret no longer writes them.
+	// CLEANUP(added 2026-10-23): Drop these legacy FastMCP keys, which loadConfig's UnmarshalExact would otherwise
+	//   reject, once the tofu controller has applied #13181 and the agentplane-mcp-oauth Secret's oauth no longer has them.
 	ConfigURL         string `mapstructure:"config_url" yaml:"config_url"`
 	JWTSigningKeyFile string `mapstructure:"jwt_signing_key_file" yaml:"jwt_signing_key_file"`
 	EncryptionKeyFile string `mapstructure:"encryption_key_file" yaml:"encryption_key_file"`
