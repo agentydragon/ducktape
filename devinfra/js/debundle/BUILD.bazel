@@ -632,6 +632,7 @@ rust_library(
         "realizability/incremental_quotient.rs",
         "realizability/mod.rs",
         "realizability/tests.rs",
+        "realizability/translation_validation.rs",
         "report_builders.rs",
         "validation.rs",
     ],

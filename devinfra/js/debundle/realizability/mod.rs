@@ -50,10 +50,15 @@ mod condensation_order;
 mod condensation_order_proptest;
 mod esm_simulator;
 mod incremental_quotient;
+mod translation_validation;
 
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
+pub use translation_validation::{
+    SwappedConflict, SwappedConflictReport, TranslationValidation, TranslationValidationReport,
+    translation_validate,
+};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a

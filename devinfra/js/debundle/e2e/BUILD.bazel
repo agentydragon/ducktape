@@ -605,6 +605,7 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
+    env = {"DEBUNDLE_TV_ORACLE": "1"},
     deps = [":support"],
 )
 

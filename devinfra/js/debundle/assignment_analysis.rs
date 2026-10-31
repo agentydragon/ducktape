@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use thiserror::Error;
 
@@ -15,6 +15,7 @@ use analysis::{
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
+use crate::realizability::{TranslationValidationReport, translation_validate};
 use crate::validation::{AssignmentReport, validate_assignment};
 
 #[derive(Debug, Error)]
@@ -192,14 +193,11 @@ impl AssignmentAnalysis {
         // Every output module and the entry destination need a deterministic
         // source-order slot for emit stability, even singletons that don't
         // participate in any canonical edge.
-        let mut extra_nodes: BTreeSet<ModuleId> =
-            (0..planned_modules.len()).map(ModuleId).collect();
-        extra_nodes.insert(entry_module_id);
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
         let import_order = EsmImportOrder::build(
             &constraining_pairs,
             &canonical_edges.i_successors,
-            &extra_nodes,
+            &emitted_modules(planned_modules.len(), entry_module_id),
         );
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
@@ -253,6 +251,39 @@ impl AssignmentAnalysis {
         report
     }
 
+    /// Translation validation of the emitted order beside the gate's verdict
+    /// in `report` (plans/translation_validation_gate.md, migration step 1).
+    /// The gate stays authoritative. Their agreement is a theorem, so with
+    /// `DEBUNDLE_TV_ORACLE` set a disagreement panics: it is a bug in the
+    /// loader model, the sweep or the gate.
+    pub fn translation_validation(&self, report: &AssignmentReport) -> TranslationValidationReport {
+        let dependency_graph = self.inputs.dependency_graph();
+        let verdict = translation_validate(
+            dependency_graph,
+            &self.assignment,
+            &emitted_modules(
+                self.inputs.planned_modules().len(),
+                self.assignment.entry_destination().module_id(),
+            ),
+            &self.import_order,
+        );
+        let wire = TranslationValidationReport::new(
+            &verdict,
+            report.cycles.is_empty()
+                && report.atomic_group_conflicts.is_empty()
+                && report.cross_rebinds.is_empty(),
+            dependency_graph,
+            &self.assignment,
+            &|id| self.module_path(id),
+        );
+        assert!(
+            wire.accepts == wire.gate_accepts || !tv_oracle_enabled(),
+            "DEBUNDLE_TV_ORACLE: chunk {}: translation validation disagrees with the gate: {wire:#?}",
+            self.inputs.chunk_id(),
+        );
+        wire
+    }
+
     pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {
         let report = self.validate();
         if !report.atomic_group_conflicts.is_empty()
@@ -281,4 +312,16 @@ impl AssignmentAnalysis {
     ) -> DependencyGraphReport {
         build_dependency_graph_report(self, program_graph, author_inputs)
     }
+}
+
+/// The modules the emitted entry imports, plus the entry itself.
+fn emitted_modules(planned_module_count: usize, entry: ModuleId) -> BTreeSet<ModuleId> {
+    let mut modules: BTreeSet<ModuleId> = (0..planned_module_count).map(ModuleId).collect();
+    modules.insert(entry);
+    modules
+}
+
+fn tv_oracle_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_TV_ORACLE").is_some())
 }
