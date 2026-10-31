@@ -392,6 +392,7 @@ async def test_session_kind_filters(visual: VisualHarness, capture_name: str, vi
         await expect(sidebar.get_by_role("link", name="Compare two captured versions")).to_be_visible()
         await expect(sidebar.get_by_role("link", name="Guardian automation fixture")).to_have_count(0)
         await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_have_count(0)
+        await expect(sidebar.get_by_role("button", name="Refresh session list")).to_be_enabled()
         await view.check(context="default kinds keep the session list focused on main and unclassified sessions")
         await view.capture(target=page.locator("#root"))
         await sidebar.get_by_role("checkbox", name="Guardian", exact=True).click()
@@ -400,4 +401,5 @@ async def test_session_kind_filters(visual: VisualHarness, capture_name: str, vi
         await expect(sidebar.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
         await expect(sidebar.get_by_role("link", name="Guardian automation fixture")).to_be_visible()
         await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_be_visible()
+        await expect(sidebar.get_by_role("button", name="Refresh session list")).to_be_enabled()
         await view.capture(name=f"{capture_name}_all_kinds", target=page.locator("#root"))
