@@ -7,6 +7,16 @@ case " $(cat /proc/cmdline) " in
     *" agentplane.supervision-checks=1 "*) /usr/sbin/agentplane-supervision-check ;;
 esac
 
+case " $(cat /proc/cmdline) " in
+    *" agentplane.boot-probe=1 "*)
+        echo AGENTPLANE_BOOT_CRITICAL_CHAIN_BEGIN >/dev/ttyS0
+        /usr/bin/systemd-analyze --no-pager critical-chain agentplane-runner.service >/dev/ttyS0 2>&1 || :
+        echo AGENTPLANE_BOOT_BLAME_BEGIN >/dev/ttyS0
+        /usr/bin/systemd-analyze --no-pager blame >/dev/ttyS0 2>&1 || :
+        echo AGENTPLANE_STARTUP_PROBE_END >/dev/ttyS0
+        ;;
+esac
+
 # KubeVirt's virtiofs Secret mount cannot set a file mode. The production guest protects it with a
 # root-only parent; prove the native-agent account (uid 107) cannot read the runner's private key.
 test -r /run/agentplane/runner-tls/tls.key
