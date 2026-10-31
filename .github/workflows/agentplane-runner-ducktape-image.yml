@@ -1,4 +1,4 @@
-# Build agentplane's Nix runner-ducktape image (agentplane/runner/image.nix plus the repository's
+# Build agentplane's Nix runner-ducktape image (agentplane/env/images/image.nix plus the repository's
 # hook and build tools) and push it to the Forgejo registry, through nix-image.yml. The archive also
 # goes to the Attic cache. The tools include released executables (bb, bbr, gazelle, ...), so any
 # artifact pin bump rebuilds it. The runner and `agentplane` are not in the image: they come from
@@ -15,11 +15,11 @@ on:
       - ".github/workflows/agentplane-runner-ducktape-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/ducktape_image_smoke.sh"
-      - "agentplane/runner/ducktape_tools_check.nix"
-      - "agentplane/runner/image.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
@@ -39,11 +39,11 @@ on:
       - ".github/workflows/agentplane-runner-ducktape-image.yml"
       - ".github/workflows/nix-image.yml"
       - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/ducktape_image_smoke.sh"
-      - "agentplane/runner/ducktape_tools_check.nix"
-      - "agentplane/runner/image.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
@@ -65,11 +65,11 @@ on:
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/trusted-fork-pr-context.yml"
       - ".pre-commit-config.yaml"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/image.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
-      - "agentplane/runner/ducktape_image_smoke.sh"
-      - "agentplane/runner/ducktape_tools_check.nix"
-      - "agentplane/runner/image.nix"
       - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
@@ -112,7 +112,7 @@ jobs:
       # Starts each harness the runner SandboxTemplate names, once, as the image's own user, and
       # checks the repository tools. Nothing here runs a turn, and the system tests run a Bazel-built
       # runner image of their own: this image's first turn is on staging.
-      smoke: bash agentplane/runner/ducktape_image_smoke.sh
+      smoke: bash agentplane/env/images/ducktape_image_smoke.sh
       source_commit: ${{ needs.fork-context.outputs.source_commit }}
       allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
       environment: ${{ needs.fork-context.outputs.environment }}
