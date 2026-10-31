@@ -8,13 +8,17 @@ from typing import Any
 
 @dataclass(frozen=True)
 class ParsedRecordJson:
-    parsed: Any | None
-    parse_error: str | None
+    parsed: Any
     timestamp: datetime | None
     kind: str | None
 
 
-def parse_record_json(content: bytes) -> ParsedRecordJson:
+@dataclass(frozen=True)
+class RecordJsonParseError:
+    parse_error: str
+
+
+def parse_record_json(content: bytes) -> ParsedRecordJson | RecordJsonParseError:
     if content.endswith(b"\n"):
         content = content[:-1]
     if content.endswith(b"\r"):
@@ -23,11 +27,11 @@ def parse_record_json(content: bytes) -> ParsedRecordJson:
         text = content.decode("utf-8", errors="strict")
         parsed = json.loads(text, parse_constant=_reject_json_constant)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
-        return ParsedRecordJson(None, f"{type(exc).__name__}: {exc}"[:1000], None, None)
+        return RecordJsonParseError(f"{type(exc).__name__}: {exc}"[:1000])
 
     timestamp = _record_timestamp(parsed) if isinstance(parsed, dict) else None
     kind = _record_kind(parsed) if isinstance(parsed, dict) else None
-    return ParsedRecordJson(parsed, None, timestamp, kind)
+    return ParsedRecordJson(parsed, timestamp, kind)
 
 
 def _reject_json_constant(token: str) -> None:

@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor, _extract_session_metadata
 from x.ai_session_archive.models import Harness
-from x.ai_session_archive.record_json import parse_record_json
+from x.ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticRepository
 
 
@@ -36,7 +36,9 @@ def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:
 
 @pytest.mark.parametrize("timestamp", ["2026-01-01T00:00:00", "not-a-timestamp"])
 def test_unit_timezone_naive_or_invalid_record_timestamps_are_unknown(timestamp: str) -> None:
-    assert parse_record_json(json.dumps({"timestamp": timestamp}).encode()).timestamp is None
+    record = parse_record_json(json.dumps({"timestamp": timestamp}).encode())
+    assert isinstance(record, ParsedRecordJson)
+    assert record.timestamp is None
 
 
 def test_unit_codex_parent_id_requires_session_meta_record() -> None:

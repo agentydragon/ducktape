@@ -30,7 +30,7 @@ from x.ai_session_archive.models import (
     SnapshotImportState,
     TranscriptStatus,
 )
-from x.ai_session_archive.record_json import parse_record_json
+from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 
 MAX_EVENT_PAGE_SIZE = 500
 MAX_DELTA_DEPTH = 63
@@ -376,8 +376,8 @@ def list_events(
                 byte_offset=record.byte_offset,
                 timestamp=payload.timestamp,
                 kind=payload.kind,
-                parsed=parsed.parsed,
-                parse_error=parsed.parse_error,
+                parsed=parsed.parsed if isinstance(parsed, ParsedRecordJson) else None,
+                parse_error=parsed.parse_error if isinstance(parsed, RecordJsonParseError) else None,
                 raw=payload.raw_bytes.decode("utf-8", errors="replace").rstrip("\r\n"),
                 raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
             )

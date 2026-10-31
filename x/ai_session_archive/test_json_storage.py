@@ -16,7 +16,7 @@ from x.ai_session_archive.database import RecordPayloadRow, SessionRow, Snapshot
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.queries import list_events, list_sessions, list_versions
-from x.ai_session_archive.record_json import parse_record_json
+from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.testing import _backup, _new_repository
 from x.ai_session_archive.usage_observations import UsageCounterKind
 from x.ai_session_archive.web import create_app
@@ -29,10 +29,10 @@ def test_json_null_and_syntax_errors_keep_distinct_parse_state() -> None:
     json_null = parse_record_json(b"null")
     invalid = parse_record_json(b'{"type": }')
 
+    assert isinstance(json_null, ParsedRecordJson)
     assert json_null.parsed is None
-    assert json_null.parse_error is None
-    assert invalid.parsed is None
-    assert invalid.parse_error is not None
+    assert isinstance(invalid, RecordJsonParseError)
+    assert invalid.parse_error
 
 
 def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, postgres_engine: Engine) -> None:
@@ -94,11 +94,9 @@ def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, pos
     nul_payload = next(payload for payload in payloads if payload.raw_bytes == lines[1])
     json_null_payload = next(payload for payload in payloads if payload.raw_bytes == lines[3])
     invalid_payload = next(payload for payload in payloads if payload.raw_bytes == lines[4])
-    assert parse_record_json(nul_payload.raw_bytes).parsed == {
-        "type": "assistant",
-        "timestamp": "2026-01-01T00:00:00Z",
-        "nested": {"nul": "\x00"},
-    }
+    nul_record = parse_record_json(nul_payload.raw_bytes)
+    assert isinstance(nul_record, ParsedRecordJson)
+    assert nul_record.parsed == {"type": "assistant", "timestamp": "2026-01-01T00:00:00Z", "nested": {"nul": "\x00"}}
     assert nul_payload.parse_error is None
     assert json_null_payload.raw_bytes == lines[3]
     assert json_null_payload.parse_error is None
