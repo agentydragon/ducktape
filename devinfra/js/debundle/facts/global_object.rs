@@ -121,7 +121,7 @@ pub(crate) fn apply_global_escape_taint(
     for (index, facts) in per_statement.iter_mut().enumerate() {
         if closure.get(&Key::Statement(index)).is_some() {
             facts
-                .dataflow_opacity
+                .havoc
                 .insert(DataflowOpacityCause::GlobalObjectAliasEscape);
         }
     }

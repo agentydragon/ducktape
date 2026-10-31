@@ -507,10 +507,19 @@ ArgumentNoEscape, DescriptorCopy*}` → the
 
 ### Step 7 — statement cell summaries and taint
 
-- `StatementEffectSummary`, `dataflow_summarizable`, `cell_writes_summarizable`
-  and `global_object.rs` taint become projections of the interpreter's effect
-  set (`Binding`/`GlobalProp` cells; a bail shape is a `Havoc`). `collector.rs`
-  keeps only syntax collection (declarations, lazy boundaries, TLA).
+- Landed: a statement's bail shapes are one `havoc` set beside its cells;
+  `dataflow_summarizable` and `cell_writes_summarizable` are its projections,
+  and `trusted_dataflow_summaries` clears every havoc but `DynamicCellWrites`.
+- Remaining: the cells and `global_object.rs` taint become projections of the
+  interpreter's effect set (`Binding`/`GlobalProp` cells). A member access
+  whose receiver evaluates to the global object is a `GlobalProp` cell, in the
+  statement and in callees it executes; havoc only where the global object
+  escapes somewhere the interpreter cannot follow. `collector.rs` keeps only
+  syntax collection (declarations, lazy boundaries, TLA). Needs canonical
+  replays: it changes precision both ways, and `needed` grows to every
+  eagerly read binding. Callee `GlobalProp` writes are ordered today by the
+  `OpaqueAtInitCall` havoc (an impure callee makes the call opaque), so
+  folding them adds edges only where that havoc goes.
 - Tests: `s_chain_dataflow_soundness`, `soundness_at_init_value_flow`,
   `at_init_s_chain_dataflow`, `repeated_var_loop`, `hoisted_var_declaration`.
 - Soundness: every current bail shape produces `Havoc` under the domain

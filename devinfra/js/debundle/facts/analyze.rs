@@ -213,8 +213,7 @@ where
                 declares_direct_function: declares_direct_function(item),
                 global_writes: collector.global_writes,
                 global_reads: collector.global_reads,
-                cell_writes_summarizable: collector.cell_writes_summarizable,
-                dataflow_opacity: collector.dataflow_opacity,
+                havoc: collector.havoc,
             }
         })
         .collect();
@@ -865,8 +864,7 @@ fn assemble_statement_facts(
         declares_direct_function,
         global_writes,
         global_reads,
-        cell_writes_summarizable,
-        mut dataflow_opacity,
+        mut havoc,
         argument_value_escapes: _,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
@@ -877,11 +875,14 @@ fn assemble_statement_facts(
     // calls are exempt: Pure guarantees no observable writes and no
     // global-prop reads, and binding-cell ordering is enforced by
     // binding edges + rebind co-location rather than the S-chain.
-    let trusted_summary = hints.assumptions.trusted_dataflow_summaries && cell_writes_summarizable;
-    if trusted_summary {
-        dataflow_opacity.clear();
+    // The trusted syntactic summary stands in for every havoc but a
+    // dynamic cell write, which no summary can name.
+    if hints.assumptions.trusted_dataflow_summaries
+        && !havoc.contains(&DataflowOpacityCause::DynamicCellWrites)
+    {
+        havoc.clear();
     } else if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
-        dataflow_opacity.insert(DataflowOpacityCause::OpaqueAtInitCall);
+        havoc.insert(DataflowOpacityCause::OpaqueAtInitCall);
     }
     let no_sync_arg_sources = no_sync_member_argument_fallback_sources(item, hints);
     for id in &no_sync_arg_sources.first_order_lazy {
@@ -914,8 +915,7 @@ fn assemble_statement_facts(
         declares_direct_function,
         global_writes,
         global_reads,
-        cell_writes_summarizable,
-        dataflow_opacity,
+        havoc,
         heap_contents: super::HeapContentCells::default(),
         heap_one_shot_allocation: None,
         deferred_heap_allocations: BTreeSet::new(),

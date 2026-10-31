@@ -232,7 +232,7 @@ pub enum CellEffectClass {
     /// Exact `(reads, writes)` cell summary (`StatementEffectSummary`).
     Summarized,
     /// Not dataflow-summarizable (`causes` is the statement's
-    /// `dataflow_opacity`): treated as touching every cell, so it
+    /// `havoc`): treated as touching every cell, so it
     /// depends on every prior impure source unit and is the barrier
     /// every later summarized source unit depends on.
     OpaqueBarrier {

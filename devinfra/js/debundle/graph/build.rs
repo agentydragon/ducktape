@@ -642,7 +642,7 @@ pub enum PremiseVerdict {
 ///   `BarrierAfterPrior`, `FrontierAfterCell`) exists because one side's
 ///   effects are not summarizable; that is what the premise certifies.
 /// - `StrictChain` consults no cells, so the endpoints' facts decide: an
-///   unsummarizable endpoint (`dataflow_opacity` non-empty) makes the edge
+///   unsummarizable endpoint (`havoc` non-empty) makes the edge
 ///   inertable; two summarized endpoints are already decided by the
 ///   analysis and the premise buys nothing (`Summarized`).
 /// - Before accepting any edge, the two recorded summaries are compared:
@@ -1135,7 +1135,7 @@ fn emit_s_chain(
                     SourceUnitId(stmt.ordinal.0),
                     stmt.ordinal,
                     stmt.effects(),
-                    CellOrderBarrier::from_opacity(&stmt.dataflow_opacity),
+                    CellOrderBarrier::from_opacity(&stmt.havoc),
                 )
             }),
         raw_edges,
