@@ -439,3 +439,5 @@ ambiguous classification or invalid conversion fails initialization. A live conv
 prevents conversion. The sampler Deployment uses Recreate, so the old writer exits before the new
 initializer changes the schema. Schema rollback requires restoring the pre-migration database
 backup together with the old service image.
+After native constraints are installed, repeated initializers inspect the schema and skip the
+conversion transaction and table DDL, so a joining sampler does not lock serving conversations.

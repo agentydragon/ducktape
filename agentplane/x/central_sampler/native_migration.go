@@ -34,6 +34,13 @@ type convertedLegacyContext struct {
 // constraint installation in one transaction. If any conversation is ambiguous or malformed,
 // PostgreSQL rolls back the whole archive conversion and leaves its records available for retry.
 func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[string]protocol.APIStyle) error {
+	// Every sampler Pod runs initialization. Once the native schema is constrained,
+	// taking row locks and repeating ALTER TABLE can deadlock with a serving writer:
+	// the writer waits for its conversation row while ALTER waits for its table lock.
+	complete, err := nativeConversationSchemaComplete(ctx, db)
+	if err != nil || complete {
+		return err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -41,6 +48,15 @@ func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[s
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, nativeMigrationAdvisoryLockID); err != nil {
 		return fmt.Errorf("lock native conversation migration: %w", err)
+	}
+	// Another initializer may have completed conversion while this one waited for
+	// the advisory lock. Recheck before locking any serving conversation row.
+	complete, err = nativeConversationSchemaComplete(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if complete {
+		return tx.Commit()
 	}
 
 	var liveConversation string
@@ -140,6 +156,25 @@ func migrateNativeConversations(ctx context.Context, db *sql.DB, modelAPIs map[s
 		return err
 	}
 	return nil
+}
+
+type nativeSchemaQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func nativeConversationSchemaComplete(ctx context.Context, query nativeSchemaQuerier) (bool, error) {
+	var nonnull, checked bool
+	err := query.QueryRowContext(ctx, `SELECT a.attnotnull, EXISTS (
+		SELECT 1 FROM pg_constraint c WHERE c.conrelid=t.oid
+		AND c.conname='sampler_conversation_api_check' AND c.contype='c' AND c.convalidated)
+		FROM pg_attribute a JOIN pg_class t ON t.oid=a.attrelid
+		JOIN pg_namespace n ON n.oid=t.relnamespace
+		WHERE n.nspname=current_schema() AND t.relname='sampler_conversation'
+		AND a.attname='api' AND NOT a.attisdropped`).Scan(&nonnull, &checked)
+	if err != nil {
+		return false, fmt.Errorf("inspect native conversation schema: %w", err)
+	}
+	return nonnull && checked, nil
 }
 
 func loadLegacyConversations(ctx context.Context, tx *sql.Tx) ([]legacyConversation, error) {

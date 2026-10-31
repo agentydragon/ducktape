@@ -2,6 +2,7 @@ package centralsampler
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"strings"
@@ -12,6 +13,24 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/google/uuid"
 )
+
+func TestNativeMigrationDoesNotLockServingConversationOnRepeatedStartup(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	serving, err := store.DB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serving.Rollback()
+	if _, err := serving.ExecContext(t.Context(), `UPDATE sampler_conversation SET stopped=stopped WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := Migrate(ctx, store.DB(), nil); err != nil {
+		t.Fatalf("repeated initializer blocked a serving conversation: %v", err)
+	}
+}
 
 func migrationRaw(value any) json.RawMessage {
 	encoded, err := json.Marshal(value)
