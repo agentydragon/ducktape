@@ -557,9 +557,9 @@ fn sweep_unreachable_top_level(
             writers.entry(root).or_default().push(j);
         }
     }
-    // Each retained binding a dropped statement may mutate, with the item
-    // whose code exposes it (`None`: rebound).
-    let shared_roots = |i: usize| -> BTreeMap<Id, Option<usize>> {
+    // Each retained binding a dropped statement may mutate, with what exposes
+    // it.
+    let shared_roots = |i: usize| -> BTreeMap<Id, String> {
         let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
@@ -614,14 +614,17 @@ fn sweep_unreachable_top_level(
         let mut region: BTreeSet<usize> = entered;
         region.insert(i);
         let mut candidates = BTreeSet::new();
-        let mut worklist: Vec<(&Id, bool)> = reached
+        // Each item followed into the region: the binding that led there and
+        // the item that binding was read from (`None`: the statement's reach).
+        let mut via: BTreeMap<usize, (&Id, Option<usize>)> = BTreeMap::new();
+        let mut worklist: Vec<(&Id, bool, Option<usize>)> = reached
             .into_iter()
-            .map(|id| (id, false))
-            .chain(lexical.into_iter().map(|id| (id, true)))
+            .map(|id| (id, false, None))
+            .chain(lexical.into_iter().map(|id| (id, true, None)))
             .collect();
         let mut seen = BTreeSet::new();
         let mut expanded = BTreeSet::new();
-        while let Some((id, code_may_run)) = worklist.pop() {
+        while let Some((id, code_may_run, from)) = worklist.pop() {
             if !seen.insert((id, code_may_run)) {
                 continue;
             }
@@ -637,7 +640,9 @@ fn sweep_unreachable_top_level(
             }
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
-                    region.insert(k);
+                    if region.insert(k) {
+                        via.insert(k, (id, from));
+                    }
                     // A value this statement itself computes (a loop variable,
                     // say) derives from what it reads at init; its closures
                     // are covered above.
@@ -646,7 +651,7 @@ fn sweep_unreachable_top_level(
                     } else {
                         &analyses[k].reads
                     };
-                    worklist.extend(reads.iter().map(|read| (read, code_may_run)));
+                    worklist.extend(reads.iter().map(|read| (read, code_may_run, Some(k))));
                 }
             }
         }
@@ -658,11 +663,32 @@ fn sweep_unreachable_top_level(
             let mut exposed = ExposedBindings::default();
             module.body[k].visit_with(&mut exposed);
             for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
-                roots.entry((*id).clone()).or_insert(Some(k));
+                roots.entry((*id).clone()).or_insert_with(|| {
+                    let mut trail = Vec::new();
+                    let mut item = Some(k);
+                    while let Some(at) = item
+                        && let Some(&(binding, from)) = via.get(&at)
+                        && trail.len() < 8
+                    {
+                        trail.push(format!("item {at} via `{}`", id_name(binding)));
+                        item = from;
+                    }
+                    format!(
+                        "exposed by item {k} `{}`{}",
+                        module_item_snippet(&module.body[k]),
+                        if trail.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", reached as {}", trail.join(" <- "))
+                        }
+                    )
+                });
             }
         }
         for id in candidates.into_iter().filter(|id| rebound.contains(*id)) {
-            roots.entry(id.clone()).or_insert(None);
+            roots
+                .entry(id.clone())
+                .or_insert_with(|| "rebound".to_string());
         }
         roots
     };
@@ -704,14 +730,7 @@ fn sweep_unreachable_top_level(
         };
         let shared = shared_roots(i)
             .iter()
-            .map(|(id, exposed_by)| {
-                let exposure = match exposed_by {
-                    Some(k) => format!(
-                        "exposed by item {k} `{}`",
-                        module_item_snippet(&module.body[*k])
-                    ),
-                    None => "rebound".to_string(),
-                };
+            .map(|(id, exposure)| {
                 format!(
                     "`{}` (declared by retained item {}, {exposure})",
                     id_name(id),
