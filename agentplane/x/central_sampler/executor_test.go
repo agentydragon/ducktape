@@ -1,6 +1,7 @@
 package centralsampler
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -10,10 +11,12 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -247,6 +250,146 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 	process, err := store.ProcessByModelSession(t.Context(), newOwner, 77)
 	if err != nil || process.Status != "abandoned" {
 		t.Fatalf("abandoned process=%+v error=%v", process, err)
+	}
+}
+
+func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	if err := store.RegisterModelProcess(t.Context(), owner, "observed-process", 78, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "observed-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	output := newHeadTailBuffer(unifiedExecOutputMaxBytes)
+	output.push([]byte("stdout before failure\n"))
+	cursor := uint64(8)
+	transport := &executorTransportError{
+		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		retainedSession: "retained-executor", afterSequence: &cursor, output: output,
+		cause: status.Error(codes.Unavailable, "read reply lost"),
+	}
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	err := executor.outcomeToolError(t.Context(), transport)
+	var rejected *toolOutcomeError
+	if !errors.As(err, &rejected) {
+		t.Fatalf("observed read failure=%v, want nested promise rejection", err)
+	}
+	var message observedProcessFailure
+	if err := json.Unmarshal([]byte(rejected.Error()), &message); err != nil {
+		t.Fatalf("rejected promise is not parseable JSON: %v: %s", err, rejected.Error())
+	}
+	if message.RemoteOutcome != "unknown" || message.AutomaticReplay || message.Method != "process/read" ||
+		message.IntentID != "read-intent" || message.ProcessID != "observed-process" || message.AfterSeq == nil || *message.AfterSeq != cursor ||
+		message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
+		!strings.Contains(message.Message, "read reply lost") || !strings.Contains(message.Message, "mutation was not replayed") {
+		t.Fatalf("observed read rejection=%+v", message)
+	}
+	process, err := store.Process(t.Context(), owner, "observed-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != cursor ||
+		string(process.BufferedOutput) != "stdout before failure\n" {
+		t.Fatalf("observed output/cursor were not retained: %+v", process)
+	}
+	if encoded, _ := rejected.evidence["buffered_output_base64"].(string); encoded != base64.StdEncoding.EncodeToString(output.retained()) {
+		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
+	}
+}
+
+func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := &executorpb.ExecutionNativeFrame{Direction: "receive", Payload: []byte("native notification")}
+	journal := func(owner Owner, operationID string) error {
+		t.Helper()
+		streamCtx := &cancelDuringJournalContext{Context: context.Background(), done: make(chan struct{})}
+		close(streamCtx.done)
+		stream := &fakeExecutionStream{ctx: streamCtx, initial: &executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{frame}}}
+		executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+		executor.sessionGeneration = 1
+		done := make(chan struct{})
+		executor.watchSession(streamCtx, stream, operationID, "retained-executor", 1, func() {}, done)
+		<-done
+		return executor.sessionError
+	}
+	if err := journal(owner, "active-notification"); err != nil {
+		t.Fatalf("received notification lost to stream cancellation: %v", err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(t.Context(), session.ConversationID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var lost *LostOwnershipError
+	if err := journal(owner, "stale-notification"); !errors.As(err, &lost) {
+		t.Fatalf("stale watcher journal error=%v, want owner fence", err)
+	}
+	events, err := store.Events(t.Context(), session.ID, 0, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, stale := 0, 0
+	for _, entry := range events {
+		boundary := entry.GetEvent().GetBoundaryRecord()
+		if boundary == nil || boundary.GetBoundary() != "executor" {
+			continue
+		}
+		switch boundary.GetCorrelationId() {
+		case "active-notification":
+			active++
+		case "stale-notification":
+			stale++
+		}
+	}
+	if active != 1 || stale != 0 {
+		t.Fatalf("native notification journal active=%d stale=%d, want one durable active frame and no stale frame", active, stale)
+	}
+}
+
+// The first Err check models a stream cancellation just after the caller checked
+// the context and before the evidence transaction begins.
+type cancelDuringJournalContext struct {
+	context.Context
+	checks atomic.Uint32
+	done   chan struct{}
+}
+
+func (c *cancelDuringJournalContext) Err() error {
+	if c.checks.Add(1) == 1 {
+		return nil
+	}
+	return context.Canceled
+}
+
+func (c *cancelDuringJournalContext) Done() <-chan struct{} { return c.done }
+
+func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
+	output := newHeadTailBuffer(16 * 1024)
+	output.push(bytes.Repeat([]byte("a"), 32*1024))
+	cursor := uint64(12)
+	message, err := observedProcessFailureMessage(&executorTransportError{
+		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed observedProcessFailure
+	if err := json.Unmarshal([]byte(message), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	view := parsed.ObservedOutput
+	if !view.Truncated || view.RetainedBytes != 16*1024 || view.OmittedBytes != 16*1024 ||
+		view.DisplayOmittedBytes != 8*1024 || view.ShownHeadBytes != 4*1024 || view.ShownTailBytes != 4*1024 ||
+		!strings.Contains(view.Text, "8192 retained bytes not shown; 16384 earlier bytes omitted") {
+		t.Fatalf("truncation metadata=%+v", view)
 	}
 }
 

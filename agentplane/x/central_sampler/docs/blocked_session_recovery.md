@@ -12,6 +12,26 @@ error. Future executor calls first resume the same retained session under the or
 incarnation fence. An abandoned `write_stdin` handle rejects before sending input. Reconcile any
 possibly completed external effect before asking the model to repeat it.
 
+When a `process/read` transport failure follows observed output, catching JavaScript can inspect
+that output and continue with unrelated work:
+
+```javascript
+try {
+  await tools.write_stdin({ session_id: processId, chars: "" });
+} catch (error) {
+  const failure = JSON.parse(String(error));
+  text(failure.observed_output.text);
+  text(failure.message);
+}
+```
+
+`after_seq` is the last observed read cursor, not proof of process exit. The error view shows at most
+8 KiB of retained bytes plus an omission marker and labels both retained and display omissions. To
+inspect all retained bytes, call `FollowEvents` for the public Session and find the `tool` result
+`BoundaryRecord` whose JSON payload
+has `intent_id` equal to `failure.intent_id`; its `buffered_output_base64` contains the bytes. This
+does not authorize repeating the failed operation.
+
 If idle process reconciliation loses the transport while reading a process, it marks the process
 abandoned with its last observed cursor and buffered output, then returns control to the scheduler.
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -286,7 +287,12 @@ func (e *Executor) watchSession(streamCtx context.Context, stream executorSessio
 			e.sessionStateMu.Unlock()
 			return
 		}
-		if err := e.recordNativeFrames(streamCtx, operationID, sessionID, "session_notification", response.NativeFrames); err != nil {
+		// Reconnect cancels streamCtx while this watcher may already be recording a
+		// received notification. Keep that evidence write alive for a bounded time.
+		journalCtx, cancelJournal := context.WithTimeout(context.WithoutCancel(streamCtx), 5*time.Second)
+		err = e.recordNativeFrames(journalCtx, operationID, sessionID, "session_notification", response.NativeFrames)
+		cancelJournal()
+		if err != nil {
 			e.sessionStateMu.Lock()
 			if e.sessionGeneration == generation {
 				e.sessionError = fmt.Errorf("record execution session notification evidence: %w", err)
@@ -599,7 +605,10 @@ func (e *executorTransportError) evidence(retainedSession string) map[string]any
 		result["after_seq"] = *e.afterSequence
 	}
 	if e.output != nil {
-		result["buffered_output"] = lossyUTF8(e.output.retained())
+		buffered := e.output.retained()
+		result["buffered_output"] = lossyUTF8(buffered)
+		result["buffered_output_base64"] = base64.StdEncoding.EncodeToString(buffered)
+		result["buffered_bytes"] = len(buffered)
 		result["omitted_bytes"] = e.output.omitted
 	}
 	return result

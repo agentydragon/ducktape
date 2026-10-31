@@ -70,6 +70,14 @@ continuation are checkpointed in PostgreSQL. Lost live cells and unresolved effe
 continuation; executor operations whose transport outcome is unknown are settled as abandoned and
 remain inspectable without blocking the JavaScript cell, model step, or Session. Model-facing `exec`
 and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream protocol.
+If `process/read` loses its transport after observing output, its nested tool promise rejects with a
+JSON rejection string containing the original failure, `remote_outcome: unknown`,
+`automatic_replay: false`, the last observed `after_seq` cursor, process and executor intent IDs,
+and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte counts distinguish
+bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
+retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents` by its
+payload `intent_id`. The process remains abandoned and no exit is inferred. Other nested failures
+retain their ordinary string messages.
 Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
