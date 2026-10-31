@@ -9,9 +9,12 @@ go_library(
     deps = [
         "//agentplane/executor:executor_go_proto",
         "//agentplane/grpc/streaming",
+        "//agentplane/observability",
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner_transport",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health",

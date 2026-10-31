@@ -27,6 +27,7 @@ go_library(
         "//agentplane/sandbox_controller:__subpackages__",
     ],
     deps = [
+        "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:applyconfiguration_api",
         "//agentplane/proto:runner_go_proto",
@@ -60,6 +61,7 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
         "@io_kubevirt_api//core/v1:core",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/timestamppb",

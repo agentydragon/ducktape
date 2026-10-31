@@ -39,8 +39,18 @@ _SAFE_ATTRIBUTES = frozenset(
         "rpc.grpc.status_code",
         "agentplane.session.opening.position",
         "agentplane.codex.generation",
+        "agentplane.runner.quiesce.stage",
     }
 )
+_SAFE_EVENTS = frozenset(
+    {
+        "agentplane.runner.quiesce_stage",
+        "agentplane.gateway.runner.quiesce_stage_observed",
+        "agentplane.gateway.runner.quiesce_stage_published",
+    }
+)
+_SAFE_QUIESCE_STAGES = frozenset({"none", "draining", "flushing", "quiesced"})
+_QUIESCE_STAGE_ATTRIBUTE = "agentplane.runner.quiesce.stage"
 
 
 def _attributes(items: Iterable[KeyValue]) -> dict[str, str | int | bool]:
@@ -56,6 +66,20 @@ def _attributes(items: Iterable[KeyValue]) -> dict[str, str | int | bool]:
         elif kind == "bool_value":
             values[item.key] = item.value.bool_value
     return values
+
+
+def _events(items: Iterable[Span.Event]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for item in items:
+        if item.name not in _SAFE_EVENTS:
+            continue
+        stage = _attributes(item.attributes).get(_QUIESCE_STAGE_ATTRIBUTE)
+        if stage not in _SAFE_QUIESCE_STAGES:
+            continue
+        events.append(
+            {"name": item.name, "time_unix_nano": item.time_unix_nano, "attributes": {_QUIESCE_STAGE_ATTRIBUTE: stage}}
+        )
+    return events
 
 
 class _Receiver(trace_service_pb2_grpc.TraceServiceServicer):
@@ -94,6 +118,7 @@ class _Receiver(trace_service_pb2_grpc.TraceServiceServicer):
                     "service": resource.get("service.name"),
                     "resource": resource,
                     "attributes": _attributes(span.attributes),
+                    "events": _events(span.events),
                     "scope": scope,
                     "source": source,
                     "status": span.status.code,
