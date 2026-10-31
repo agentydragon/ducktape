@@ -336,13 +336,11 @@ Runner's Executor API. Its README records the placement and coexistence rulings.
 
 ### Anthropic extension
 
-Planning request, 2026-10-30: support organization-paid Anthropic Messages with server-side
-compaction. The selected direction is direct sampler-to-Anthropic calls with full
-request/response content in the sampler DB; optional Langfuse export can follow independently.
-The [component plan](../x/central_sampler/plans/anthropic.md) records the routing/credential decision,
-direct real-model acceptance and later background compaction. Status and dependencies are in
-[`CENTRAL_SAMPLER_ANTHROPIC_ROUTING`](task_dag.md#central_sampler_anthropic_routing--direct-provider-connections-and-credentials)
-and its downstream nodes. This is a planned extension, not a change to the deployed provider path.
+The central sampler supports organization-paid Anthropic Messages directly, with native
+conversation storage, server-side on-demand compaction and request/response content in its own DB.
+The [acceptance record](../x/central_sampler/docs/anthropic_acceptance.md) records merged changes,
+live-test scope and the observed staging rollout. The [remaining plan](../x/central_sampler/plans/anthropic.md)
+covers deferred BuildBuddy credentials, background compaction, dynamic tools and optional Langfuse export.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

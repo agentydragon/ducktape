@@ -9,8 +9,9 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 
 ## Open plans and gates
 
-- [Central Anthropic sampling](../x/central_sampler/plans/anthropic.md) — selected direct organization
-  API access, durable provider exchanges, server-side compaction and later background compaction
+- [Central Anthropic follow-ups](../x/central_sampler/plans/anthropic.md) — deferred BuildBuddy
+  credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
+  and ordinary compaction are deployed
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
