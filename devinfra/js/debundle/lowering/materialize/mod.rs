@@ -12,6 +12,7 @@ use std::io::Write;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
+use super::analysis_projection::AnalysisProjection;
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
@@ -31,7 +32,8 @@ use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
     GateRejectionPolicy, ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::{ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::analysis_inputs::CallableSummary;
+use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
     AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
     EntryDestination, GraphOptions, LocalEffectPolicy, ModuleId, ModuleRole, PlannedModule,
@@ -54,15 +56,12 @@ use output_layout::{
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
-use spec::{
-    ChunkRenames, DependencyGraphOptions, InitializerPurity, LogicalModule, MemberPurity,
-    UnassignedMode,
-};
+use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
 use spec_resolution::{
     LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
     logical_requests_for_chunk, project_chunk,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use swc_ecma_ast::*;
 
 const DEBUNDLE_PROGRESS_ENV: &str = "DUCKTAPE_DEBUNDLE_PROGRESS";
@@ -106,15 +105,14 @@ pub(super) struct ChunkContext<'a> {
     pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }
 
-/// Spec-derived per-chunk inputs: logical-module layout, chunk
-/// renames, unassigned-mode, and analysis-options. Bundled into
+/// Spec-derived per-chunk planning inputs: logical-module layout, chunk
+/// renames and unassigned-mode. Analysis reads the spec through
+/// `AnalysisProjection` instead. Bundled into
 /// `MaterializeLogicalChunkInputs::spec`.
 pub(super) struct ChunkSpec<'a> {
     pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
-    pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
-    pub(super) host_behavior: &'a spec::HostBehavior,
 }
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
@@ -163,7 +161,6 @@ pub(super) struct PreparedLogicalChunk<'a> {
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
     builder: ChunkPlanBuilder,
-    declared_assumptions: AnalysisAssumptions,
 }
 
 /// A prepared chunk after exact selector resolution has claimed its selected
@@ -172,13 +169,17 @@ pub(super) struct PreparedLogicalChunk<'a> {
 pub(super) struct ClaimedLogicalChunk<'a> {
     prepared: PreparedLogicalChunk<'a>,
     structural_analysis: StructuralChunkSourceFacts<'a>,
+    /// Taken into the `AnalysisProjection` before analysis.
+    declared_assumptions: AnalysisAssumptions,
 }
 
+#[derive(Clone)]
 pub(super) struct ResolvedMemberDeclaration {
     pub(super) binding: String,
     pub(super) body_index: usize,
 }
 
+#[derive(Clone)]
 pub(super) struct ResolvedMemberSite {
     pub(super) provider_chunk: String,
     pub(super) module: String,
@@ -322,7 +323,6 @@ pub(super) fn prepare_logical_chunk(
             requests,
             explicit_requests,
             builder,
-            declared_assumptions: AnalysisAssumptions::default(),
         },
         projected,
     ))
@@ -356,7 +356,7 @@ pub(super) fn claim_prepared_chunk<'a>(
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    prepared.declared_assumptions = collect_analysis_assumptions(
+    let declared_assumptions = collect_analysis_assumptions(
         &prepared.explicit_requests,
         &prepared.builder,
         prepared.spec.chunk_renames.get(prepared.context.chunk_id),
@@ -365,6 +365,7 @@ pub(super) fn claim_prepared_chunk<'a>(
     Ok(ClaimedLogicalChunk {
         prepared,
         structural_analysis,
+        declared_assumptions,
     })
 }
 
@@ -410,10 +411,10 @@ impl ClaimedLogicalChunk<'_> {
         )
     }
 
-    pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
+    pub(super) fn take_declared_assumptions(&mut self) -> (String, AnalysisAssumptions) {
         (
-            self.prepared.context.chunk_id,
-            &self.prepared.declared_assumptions.declared_pure_new,
+            self.prepared.context.chunk_id.to_owned(),
+            std::mem::take(&mut self.declared_assumptions),
         )
     }
 }
@@ -429,6 +430,7 @@ pub(super) struct CommutingStatementsContext<'a> {
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
+    projection: &AnalysisProjection<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
     program_graph: &ProgramGraphOutput<'_>,
     commuting_context: CommutingStatementsContext<'_>,
@@ -436,6 +438,7 @@ pub(super) fn finish_logical_chunk(
     let ClaimedLogicalChunk {
         prepared,
         structural_analysis,
+        ..
     } = claimed;
     let PreparedLogicalChunk {
         context,
@@ -449,7 +452,6 @@ pub(super) fn finish_logical_chunk(
         ast_analysis,
         requests,
         mut builder,
-        declared_assumptions,
         ..
     } = prepared;
     let ChunkContext {
@@ -464,12 +466,7 @@ pub(super) fn finish_logical_chunk(
         export_reentry_reports,
         ..
     } = context;
-    let ChunkSpec {
-        chunk_renames,
-        chunk_analysis_options,
-        host_behavior,
-        ..
-    } = spec;
+    let ChunkSpec { chunk_renames, .. } = spec;
     let ChunkAstAnalysis {
         runtime_import_facts,
         declarations,
@@ -479,193 +476,11 @@ pub(super) fn finish_logical_chunk(
         ..
     } = ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    // Fetched before hints assembly: `local_property_effects` selects
-    // the facts pass's local-effect policy, which travels in the hints.
-    let dependency_graph_options = chunk_analysis_options
+    let dependency_graph_options = projection
+        .chunk_analysis_options
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
-    let line_index = runtime_ast.line_index();
-    // A3 admission resolver: where does a dynamic-import specifier in
-    // this chunk's entry land? Same artifact resolution the specifier
-    // rewriter uses; `SameChunk` marks a debundled internal module.
-    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
-        .resolve_runtime_import_reference(
-            specifier,
-            chunk_id_interned,
-            &target_file,
-            &artifact.chunk_table,
-        ) {
-        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
-            DynamicImportTarget::SameChunk
-        }
-        Some(_) => DynamicImportTarget::OtherChunk,
-        None => DynamicImportTarget::External,
-    };
-    let analysis_inputs: AnalysisInputs = {
-        let mut inputs = AnalysisInputs {
-            assumptions: declared_assumptions,
-            native_integrity: cross_module_purities.native_integrity.clone(),
-            current_chunk_id: Some(chunk_id.to_string()),
-            ..AnalysisInputs::default()
-        };
-        inputs.assumptions.captured_value_inputs = cross_module_purities
-            .value_inputs
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.assumptions.native_operation_inputs = cross_module_purities
-            .native_operation_inputs
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.stable_set_spreads = cross_module_purities
-            .stable_set_spreads
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.assumptions.argument_inputs = cross_module_purities
-            .argument_inputs
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
-        inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
-        inputs.assumptions.bundle_globals = cross_module_purities.bundle_globals.clone();
-        inputs.imported_purities = cross_module_purities
-            .bindings
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.imported_values = cross_module_purities
-            .values
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        // Definition-side `pure_members` assertions projected onto this
-        // chunk's local import bindings; merged (not overwritten) so spec
-        // member annotations and cross-module assertions coexist.
-        if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
-            for (binding, members) in member_sets {
-                inputs
-                    .assumptions
-                    .declared_pure_members
-                    .entry(binding.clone())
-                    .or_default()
-                    .extend(members.iter().cloned());
-            }
-        }
-        // Definition-side `fluent_exports` assertions projected onto this
-        // chunk's local import bindings (deep-purity chain roots).
-        if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
-            inputs
-                .assumptions
-                .fluent_bindings
-                .extend(fluent.iter().cloned());
-        }
-        if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
-            inputs
-                .assumptions
-                .declared_pure_new
-                .extend(constructors.iter().cloned());
-        }
-        if let Some(callables) = cross_module_purities.imported_callables.get(chunk_id) {
-            inputs.merge_imported_callables(callables.clone());
-        }
-        if let Some(factories) = cross_module_purities
-            .retained_callback_factories
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_factories
-                .extend(factories.clone());
-        }
-        if let Some(callbacks) = cross_module_purities
-            .no_reentry_callback_exports
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .no_reentry_callback_exports
-                .extend(callbacks.clone());
-        }
-        if let Some(constructors) = cross_module_purities
-            .retained_callback_constructors
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_constructors
-                .extend(constructors.clone());
-        }
-        if let Some(members) = cross_module_purities
-            .retained_callback_factory_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_factory_members
-                .extend(members.clone());
-        }
-        if let Some(factories) = cross_module_purities
-            .inline_callback_factories
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .inline_callback_factories
-                .extend(factories.iter().cloned());
-        }
-        if let Some(members) = cross_module_purities
-            .namespace_independent_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .namespace_independent_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
-            inputs
-                .assumptions
-                .callback_factory_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
-            inputs
-                .assumptions
-                .no_reentry_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities
-            .no_reentry_record_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .no_reentry_record_members
-                .extend(members.clone());
-        }
-        if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
-            inputs
-                .assumptions
-                .no_reentry_exports
-                .extend(bindings.iter().cloned());
-        }
-        if dependency_graph_options.local_property_effects {
-            inputs.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
-        }
-        inputs.assumptions.trusted_dataflow_summaries =
-            dependency_graph_options.trusted_dataflow_summaries;
-        inputs.assumptions.deferred_global_publications = dependency_graph_options
-            .deferred_global_publications
-            .clone();
-        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
-            .non_reentrant_global_membership
-            .clone();
-        inputs
-    };
     let graph_options = GraphOptions::from(&dependency_graph_options);
     let commuting_statements = resolve_chunk_commuting_statements(
         chunk_id,
@@ -677,31 +492,22 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
+    let (analysis, imported_callables) = compute_logical_chunk_facts(
+        ChunkFactsContext {
+            artifact,
+            artifact_indexes,
+            chunk_id,
+            chunk_id_interned,
+            target_file: &target_file,
+            runtime_ast,
+            source_path: &source_path,
+            export_reentry_policy: export_reentry_policies
+                .get(&chunk_id_interned)
+                .unwrap_or(&ExportReentryPolicy::Conservative),
+        },
         structural_analysis,
-        cross_module_purities
-            .native_operation_inputs
-            .get(chunk_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default(),
-        cross_module_purities
-            .stable_set_spreads
-            .get(chunk_id)
-            .unwrap_or(&BTreeMap::new()),
-        &analysis_inputs.assumptions.argument_inputs,
-    );
-    let analysis = compute_chunk_facts(
-        chunk_id,
-        &runtime_ast.module,
-        structural_analysis,
-        &analysis_inputs,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
-        dependency_graph_options.admission_overrides,
-        export_reentry_policies
-            .get(&chunk_id_interned)
-            .unwrap_or(&ExportReentryPolicy::Conservative),
-        &resolve_dynamic_import,
+        projection,
+        cross_module_purities,
     )?;
     let precomputed =
         match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
@@ -911,7 +717,7 @@ pub(super) fn finish_logical_chunk(
                 residual: request.residual,
             })
             .collect(),
-        imported_callables: analysis_inputs.imported_callables.clone(),
+        imported_callables,
         redundant_purity_hints,
     };
     Ok(MaterializedLogicalChunk {
@@ -928,6 +734,259 @@ pub(super) fn finish_logical_chunk(
         vendor_reference_rewrites,
         gate_rejection,
     })
+}
+
+/// What a chunk's fact analysis reads besides the projection and the
+/// cross-module summaries: the chunk's source and where its dynamic imports
+/// land. It never sees the chunk's plan builder or assignment.
+struct ChunkFactsContext<'a> {
+    artifact: &'a ChunkBundle,
+    artifact_indexes: &'a ArtifactIndexes,
+    chunk_id: &'a str,
+    chunk_id_interned: ChunkId,
+    target_file: &'a str,
+    runtime_ast: &'a ParsedJsModule,
+    source_path: &'a str,
+    export_reentry_policy: &'a ExportReentryPolicy,
+}
+
+/// Analyze one chunk's facts from its source, its spec projection and the
+/// cross-module summaries. Also returns the imported callable summaries the
+/// analysis consumed, which the chunk report records.
+fn compute_logical_chunk_facts(
+    context: ChunkFactsContext<'_>,
+    structural_analysis: StructuralChunkSourceFacts<'_>,
+    projection: &AnalysisProjection<'_>,
+    cross_module_purities: &super::cross_module::CrossModulePurities,
+) -> Result<(ChunkFactAnalysis, BTreeMap<String, CallableSummary>)> {
+    let ChunkFactsContext {
+        artifact,
+        artifact_indexes,
+        chunk_id,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        source_path,
+        export_reentry_policy,
+    } = context;
+    // `local_property_effects` selects the facts pass's local-effect policy,
+    // which travels in the hints.
+    let dependency_graph_options = projection
+        .chunk_analysis_options
+        .get(chunk_id)
+        .cloned()
+        .unwrap_or_default();
+    let host_behavior = projection.host_behavior;
+    let line_index = runtime_ast.line_index();
+    // A3 admission resolver: where does a dynamic-import specifier in
+    // this chunk's entry land? Same artifact resolution the specifier
+    // rewriter uses; `SameChunk` marks a debundled internal module.
+    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
+        .resolve_runtime_import_reference(
+            specifier,
+            chunk_id_interned,
+            target_file,
+            &artifact.chunk_table,
+        ) {
+        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
+            DynamicImportTarget::SameChunk
+        }
+        Some(_) => DynamicImportTarget::OtherChunk,
+        None => DynamicImportTarget::External,
+    };
+    let analysis_inputs: AnalysisInputs = {
+        let mut inputs = AnalysisInputs {
+            assumptions: projection
+                .declared_assumptions
+                .get(chunk_id)
+                .cloned()
+                .unwrap_or_default(),
+            native_integrity: cross_module_purities.native_integrity.clone(),
+            current_chunk_id: Some(chunk_id.to_string()),
+            ..AnalysisInputs::default()
+        };
+        inputs.assumptions.captured_value_inputs = cross_module_purities
+            .value_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.assumptions.native_operation_inputs = cross_module_purities
+            .native_operation_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.stable_set_spreads = cross_module_purities
+            .stable_set_spreads
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.assumptions.argument_inputs = cross_module_purities
+            .argument_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
+        inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
+        inputs.assumptions.bundle_globals = cross_module_purities.bundle_globals.clone();
+        inputs.imported_purities = cross_module_purities
+            .bindings
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.imported_values = cross_module_purities
+            .values
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        // Definition-side `pure_members` assertions projected onto this
+        // chunk's local import bindings; merged (not overwritten) so spec
+        // member annotations and cross-module assertions coexist.
+        if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
+            for (binding, members) in member_sets {
+                inputs
+                    .assumptions
+                    .declared_pure_members
+                    .entry(binding.clone())
+                    .or_default()
+                    .extend(members.iter().cloned());
+            }
+        }
+        // Definition-side `fluent_exports` assertions projected onto this
+        // chunk's local import bindings (deep-purity chain roots).
+        if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
+            inputs
+                .assumptions
+                .fluent_bindings
+                .extend(fluent.iter().cloned());
+        }
+        if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
+            inputs
+                .assumptions
+                .declared_pure_new
+                .extend(constructors.iter().cloned());
+        }
+        if let Some(callables) = cross_module_purities.imported_callables.get(chunk_id) {
+            inputs.merge_imported_callables(callables.clone());
+        }
+        if let Some(factories) = cross_module_purities
+            .retained_callback_factories
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_factories
+                .extend(factories.clone());
+        }
+        if let Some(callbacks) = cross_module_purities
+            .no_reentry_callback_exports
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .no_reentry_callback_exports
+                .extend(callbacks.clone());
+        }
+        if let Some(constructors) = cross_module_purities
+            .retained_callback_constructors
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_constructors
+                .extend(constructors.clone());
+        }
+        if let Some(members) = cross_module_purities
+            .retained_callback_factory_members
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_factory_members
+                .extend(members.clone());
+        }
+        if let Some(factories) = cross_module_purities
+            .inline_callback_factories
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .inline_callback_factories
+                .extend(factories.iter().cloned());
+        }
+        if let Some(members) = cross_module_purities
+            .namespace_independent_members
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .namespace_independent_members
+                .extend(members.clone());
+        }
+        if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
+            inputs
+                .assumptions
+                .callback_factory_members
+                .extend(members.clone());
+        }
+        if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
+            inputs
+                .assumptions
+                .no_reentry_members
+                .extend(members.clone());
+        }
+        if let Some(members) = cross_module_purities
+            .no_reentry_record_members
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .no_reentry_record_members
+                .extend(members.clone());
+        }
+        if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
+            inputs
+                .assumptions
+                .no_reentry_exports
+                .extend(bindings.iter().cloned());
+        }
+        if dependency_graph_options.local_property_effects {
+            inputs.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
+        }
+        inputs.assumptions.trusted_dataflow_summaries =
+            dependency_graph_options.trusted_dataflow_summaries;
+        inputs.assumptions.deferred_global_publications = dependency_graph_options
+            .deferred_global_publications
+            .clone();
+        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
+            .non_reentrant_global_membership
+            .clone();
+        inputs
+    };
+    let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
+        structural_analysis,
+        cross_module_purities
+            .native_operation_inputs
+            .get(chunk_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+        cross_module_purities
+            .stable_set_spreads
+            .get(chunk_id)
+            .unwrap_or(&BTreeMap::new()),
+        &analysis_inputs.assumptions.argument_inputs,
+    );
+    let facts = compute_chunk_facts(
+        chunk_id,
+        &runtime_ast.module,
+        structural_analysis,
+        &analysis_inputs,
+        Some(source_path),
+        |span| line_index.line_range_and_start_column_for_span(span),
+        dependency_graph_options.admission_overrides,
+        export_reentry_policy,
+        &resolve_dynamic_import,
+    )?;
+    Ok((facts, analysis_inputs.imported_callables))
 }
 
 /// `// …` lines announcing a gate-rejected chunk at the top of its entry file.
