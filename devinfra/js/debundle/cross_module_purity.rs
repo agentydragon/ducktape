@@ -807,6 +807,7 @@ pub fn resolve_imported_callable_summaries(
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
     if predefined_globals == spec::PredefinedGlobals::Standard {
+        bundle_globals.fresh_collections = true;
         for module in prepared.values() {
             let candidates = module.bundle_global_candidates();
             bundle_globals.names.extend(candidates.names);
@@ -818,6 +819,7 @@ pub fn resolve_imported_callable_summaries(
                 let survivors = module.bundle_global_survivors(&bundle_globals);
                 next.names.retain(|name| survivors.names.contains(name));
                 next.registered_symbols &= survivors.registered_symbols;
+                next.fresh_collections &= survivors.fresh_collections;
             }
             if next == bundle_globals {
                 break;

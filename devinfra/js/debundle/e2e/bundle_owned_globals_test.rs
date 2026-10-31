@@ -41,7 +41,9 @@ const OTEL: &str = "const root = typeof globalThis == \"object\" ? globalThis : 
 const ANALYTICS: &str = "const root = typeof globalThis < \"u\" ? globalThis : self;\nfunction getInstance(name) { root.analyticsConnectorInstances || (root.analyticsConnectorInstances = {}); root.analyticsConnectorInstances[name] || (root.analyticsConnectorInstances[name] = { name }); return root.analyticsConnectorInstances[name]; }";
 const EXPERIMENTS: &str = "const root = typeof globalThis < \"u\" ? globalThis : self;\nroot.experimentInstances = {};\nvar instances = root.experimentInstances;\nfunction create(name) { instances[name] || (instances[name] = { name }); return instances[name]; }";
 
-fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 4] {
+const COLLECTION_REGISTRY: &str = "const root = typeof globalThis < \"u\" ? globalThis : {};\nconst contextKey = Symbol.for(\"context-registry\");\nfunction contexts() { root[contextKey] ??= new Map(); return root[contextKey]; }\nfunction set(name, value) { root[contextKey][name] = value; }";
+
+fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 5] {
     [
         (SENTRY, vec!["register"], vec![]),
         (OTEL, vec!["root", "key", "register", "unregister"], vec![]),
@@ -50,6 +52,11 @@ fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 4] {
             EXPERIMENTS,
             vec!["root", "instances", "create"],
             vec!["root.experimentInstances = {};"],
+        ),
+        (
+            COLLECTION_REGISTRY,
+            vec!["root", "contextKey", "contexts", "set"],
+            vec![],
         ),
     ]
 }

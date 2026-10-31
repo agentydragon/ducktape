@@ -1579,6 +1579,8 @@ pub(super) struct BundleGlobals {
     registered_symbols: bool,
     /// Bindings whose key domain is a `Symbol.for` symbol.
     symbol_keys: BTreeSet<Id>,
+    /// `new Map()` and its kin allocate fresh objects.
+    fresh_collections: bool,
 }
 
 impl BundleGlobals {
@@ -5743,6 +5745,8 @@ fn key_domain_may_name(domain: &PropertyKeyDomain, name: &str) -> bool {
     }
 }
 
+const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
+
 /// One global data property a bundle-owned value may sit in: a name, or any
 /// property keyed by a `Symbol.for` symbol.
 #[derive(Clone, Copy)]
@@ -5770,7 +5774,8 @@ impl BundleGlobalContext<'_> {
     }
 
     /// Whether storing `value` into `slot` keeps it bundle-owned: a fresh
-    /// object, a primitive, or the slot's own current value.
+    /// object, a primitive, or the value of a bundle-owned property, the
+    /// slot's own current value included.
     fn keeps(&self, value: &ValueExpr, slot: BundleSlot<'_>) -> bool {
         match value {
             ValueExpr::ObjectLiteral(..)
@@ -5780,27 +5785,30 @@ impl BundleGlobalContext<'_> {
             ValueExpr::Alternatives(options) => {
                 options.iter().all(|option| self.keeps(option, slot))
             }
-            ValueExpr::Binding(id) => {
-                !self.declared.contains(id)
-                    && matches!(slot, BundleSlot::Name(name) if *id.0 == *name)
+            // A keyed collection the program never replaces allocates a fresh
+            // object whatever its argument.
+            ValueExpr::New(callee, _, _)
+                if self.globals.bundle.fresh_collections
+                    && matches!(callee.as_ref(), ValueExpr::Binding(id)
+                        if !self.declared.contains(id)
+                            && KEYED_COLLECTIONS.contains(&id.0.as_ref())) =>
+            {
+                true
             }
-            ValueExpr::Member(base, property, key) => {
-                let reads_slot = match slot {
-                    BundleSlot::Name(name) => property.as_deref() == Some(name),
-                    BundleSlot::RegisteredSymbol => {
-                        property.is_none()
-                            && matches!(key, MemberKey::Computed(Some(binding))
-                                if self.globals.bundle.symbol_keys.contains(binding))
-                    }
-                };
-                let base = self.roots(base);
-                reads_slot
-                    && !base.is_empty()
-                    && base.iter().all(|root| {
-                        *root == NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject)
-                    })
+            // A sloppy read of the undeclared global itself.
+            ValueExpr::Binding(id)
+                if !self.declared.contains(id)
+                    && matches!(slot, BundleSlot::Name(name) if *id.0 == *name) =>
+            {
+                true
             }
-            _ => false,
+            _ => {
+                let roots = self.roots(value);
+                !roots.is_empty()
+                    && roots
+                        .iter()
+                        .all(|root| *root == NativeReceiverRoot::BundleGlobal)
+            }
         }
     }
 }
@@ -5843,6 +5851,7 @@ impl ExecutionIndex {
             names: names.names.clone(),
             registered_symbols: names.registered_symbols,
             symbol_keys: self.symbol_key_bindings(declared),
+            fresh_collections: names.fresh_collections,
         }
     }
 
@@ -5861,7 +5870,10 @@ impl ExecutionIndex {
             globals: &self.census_globals,
             declared: &declared,
         };
-        let mut candidates = BundleGlobalNames::default();
+        let mut candidates = BundleGlobalNames {
+            fresh_collections: true,
+            ..BundleGlobalNames::default()
+        };
         for write in &self.intrinsic_writes {
             if write.value.is_none()
                 || !context
@@ -5920,8 +5932,8 @@ impl ExecutionIndex {
             let mut next = current.clone();
             let mut next_symbol_for_intact = true;
             for write in &self.intrinsic_writes {
-                if context
-                    .roots(&write.receiver)
+                let roots = context.roots(&write.receiver);
+                if roots
                     .iter()
                     .all(|root| *root == NativeReceiverRoot::BundleGlobal)
                 {
@@ -5933,6 +5945,25 @@ impl ExecutionIndex {
                 let Some(key) = &write.key else {
                     return BundleGlobalNames::default();
                 };
+                // A delete stores nothing: on a prototype it leaves an
+                // inherited read absent. A delete that may name a property of
+                // the global object itself still drops that property.
+                if write.operation == NativeMutationOperation::Delete {
+                    if roots.contains(&NativeReceiverRoot::Intrinsic(
+                        NativeIntrinsic::GlobalObject,
+                    )) {
+                        let domain = evidence(key).domain;
+                        next.names
+                            .retain(|name| !key_domain_may_name(&domain, name));
+                        if matches!(
+                            domain,
+                            PropertyKeyDomain::Symbol | PropertyKeyDomain::Unknown
+                        ) {
+                            next.registered_symbols = false;
+                        }
+                    }
+                    continue;
+                }
                 for evidence in std::iter::once(key)
                     .chain(&write.additional_keys)
                     .map(evidence)
@@ -5953,6 +5984,12 @@ impl ExecutionIndex {
                     if key_domain_may_name(&domain, "for") || key_domain_may_name(&domain, "Symbol")
                     {
                         next_symbol_for_intact = false;
+                    }
+                    if KEYED_COLLECTIONS
+                        .iter()
+                        .any(|name| key_domain_may_name(&domain, name))
+                    {
+                        next.fresh_collections = false;
                     }
                     let stores = |slot: BundleSlot<'_>| {
                         write.operation == NativeMutationOperation::PropertyAssignment
@@ -5985,14 +6022,31 @@ impl ExecutionIndex {
                 if binding.0.as_ref() == "Symbol" {
                     next_symbol_for_intact = false;
                 }
+                if KEYED_COLLECTIONS.contains(&binding.0.as_ref()) {
+                    next.fresh_collections = false;
+                }
             }
-            // A legacy accessor install can run any getter on a read.
+            // A legacy accessor install can run any getter on a read. A method
+            // named through an unknown key is a hidden descriptor path (A11),
+            // as for `Object.defineProperty` reached through an alias.
+            let installs_accessor = |property: &Option<String>, key: &MemberKey| {
+                let domain = match (property, key) {
+                    (Some(name), _) => {
+                        PropertyKeyDomain::FiniteStrings(BTreeSet::from([name.clone()]))
+                    }
+                    (None, MemberKey::Computed(Some(binding))) => {
+                        evidence(&PropertyKeyExpr::Binding(binding.clone())).domain
+                    }
+                    (None, _) => return false,
+                };
+                !matches!(domain, PropertyKeyDomain::Unknown)
+                    && (key_domain_may_name(&domain, "__defineGetter__")
+                        || key_domain_may_name(&domain, "__defineSetter__"))
+            };
             if self.prototype_calls.iter().any(|call| {
                 call.kind == CallKind::Call
-                    && matches!(&call.callee, ValueExpr::Member(base, property, _)
-                        if property.as_deref().is_none_or(|property| {
-                            matches!(property, "__defineGetter__" | "__defineSetter__")
-                        }) && !context
+                    && matches!(&call.callee, ValueExpr::Member(base, property, key)
+                        if installs_accessor(property, key) && !context
                             .roots(base)
                             .iter()
                             .all(|root| *root == NativeReceiverRoot::BundleGlobal))
