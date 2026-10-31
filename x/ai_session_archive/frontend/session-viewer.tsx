@@ -956,23 +956,20 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         <>
                           {requestedVersionUnavailable && <Menu.Item disabled>Requested capture unavailable</Menu.Item>}
                           {versions.map((version) => (
-                            <Menu.Item
+                            <Menu.RadioItem
                               key={version.id}
+                              value={version.id}
                               data-version-id={version.id}
-                              role="menuitemradio"
-                              aria-checked={selectedVersionId === version.id}
+                              checked={selectedVersionId === version.id}
+                              closeMenuOnClick
+                              checkIcon="✓"
                               style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                              leftSection={
-                                <span aria-hidden="true" style={{ width: 14, textAlign: "center" }}>
-                                  {selectedVersionId === version.id ? "✓" : ""}
-                                </span>
-                              }
                               onClick={() =>
                                 changeVersion(version.id === selectedSession.latest_version_id ? "" : version.id)
                               }
                             >
                               {`${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`}
-                            </Menu.Item>
+                            </Menu.RadioItem>
                           ))}
                           {versions.length === 0 && !requestedVersionUnavailable && (
                             <Menu.Item disabled>No captured versions</Menu.Item>
