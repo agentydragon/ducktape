@@ -11,8 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column(
-        "record_payloads",
-        sa.Column("parsed_from_raw", sa.Boolean(), server_default=sa.false(), nullable=False),
+        "record_payloads", sa.Column("parsed_from_raw", sa.Boolean(), server_default=sa.false(), nullable=False)
     )
 
 

@@ -716,13 +716,7 @@ class SnapshotIngestor:
                 # strings and unpaired surrogate escapes). Keep raw_bytes as the
                 # authority for those rows and never send the Python value to the
                 # JSONB driver.
-                parsed=(
-                    None
-                    if record.parsed_from_raw
-                    else JSON.NULL
-                    if record.parsed is None
-                    else record.parsed
-                ),
+                parsed=(None if record.parsed_from_raw else JSON.NULL if record.parsed is None else record.parsed),
                 parsed_from_raw=record.parsed_from_raw,
                 parse_error=record.parse_error,
                 timestamp=record.timestamp,

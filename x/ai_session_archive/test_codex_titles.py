@@ -60,10 +60,7 @@ def test_codex_text_metadata_that_postgres_cannot_store_is_skipped(tmp_path: Pat
     transcript(home)
     index = home / ".codex/session_index.jsonl"
     index.write_text(
-        json.dumps(
-            {"id": "bad\x00id", "thread_name": "bad\ud800title", "updated_at": "2026-01-01T00:00:00Z"}
-        )
-        + "\n"
+        json.dumps({"id": "bad\x00id", "thread_name": "bad\ud800title", "updated_at": "2026-01-01T00:00:00Z"}) + "\n"
     )
     snapshot_sqlite(home, "bad\x00sqlite-name")
     _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)

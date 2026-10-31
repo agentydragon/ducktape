@@ -148,22 +148,14 @@ def _sqlite_titles(
                 value = None
                 title_source = None
                 for candidate, candidate_source in ((name, "sqlite_name"), (title, "sqlite_title")):
-                    if (
-                        isinstance(candidate, str)
-                        and candidate.strip()
-                        and is_safe_postgres_text(candidate)
-                    ):
+                    if isinstance(candidate, str) and candidate.strip() and is_safe_postgres_text(candidate):
                         value = candidate
                         title_source = candidate_source
                         break
                 source_path = str(codex_root / relative)
                 if not isinstance(value, str) or title_source is None or not is_safe_postgres_text(source_path):
                     continue
-                titles[native_id] = (
-                    source_path,
-                    value.strip()[:500],
-                    title_source,
-                )
+                titles[native_id] = (source_path, value.strip()[:500], title_source)
             return titles
         finally:
             database.close()

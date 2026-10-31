@@ -77,7 +77,9 @@ def test_ingest_and_http_serve_valid_jsonb_fallbacks(tmp_path: Path, postgres_en
     assert report.files_partial == 1
 
     with factory() as db:
-        session = list_sessions(db, machine_id="json-storage-test", harness=Harness.CLAUDE, cursor=None, limit=10).data[0]
+        session = list_sessions(db, machine_id="json-storage-test", harness=Harness.CLAUDE, cursor=None, limit=10).data[
+            0
+        ]
         version = list_versions(db, session_id=session.id)[0]
         events = list_events(db, session_id=session.id, version_id=version.id, cursor=None, limit=10)
         session_row = db.get(SessionRow, session.id)

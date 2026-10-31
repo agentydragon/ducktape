@@ -60,7 +60,9 @@ def backfill_jsonb_payloads(
                     or_(
                         RecordPayloadRow.parse_error.like("ValueError: JSONB cannot store %"),
                         RecordPayloadRow.parse_error.like("ValueError: JSON nesting exceeds Postgres safety limit %"),
-                        RecordPayloadRow.parse_error.like("ValueError: Exceeds the limit (% for integer string conversion:%"),
+                        RecordPayloadRow.parse_error.like(
+                            "ValueError: Exceeds the limit (% for integer string conversion:%"
+                        ),
                     ),
                 )
                 .order_by(RecordPayloadRow.id)
@@ -96,8 +98,7 @@ def backfill_jsonb_payloads(
             )
         )
         session_ids = sorted(
-            set(db.scalars(select(FileVersionRow.session_id).where(FileVersionRow.id.in_(direct_version_ids)))),
-            key=str,
+            set(db.scalars(select(FileVersionRow.session_id).where(FileVersionRow.id.in_(direct_version_ids)))), key=str
         )
         repaired_occurrences = _repaired_occurrences(db, payload_ids, max_versions=max_versions)
         affected_version_ids = set(repaired_occurrences)
@@ -177,9 +178,9 @@ def _repaired_occurrences(db: DbSession, payload_ids: list[UUID], *, max_version
         if not frontier:
             break
         children = db.execute(
-            select(FileVersionRow.id, FileVersionRow.parent_version_id, FileVersionRow.shared_prefix_record_count).where(
-                FileVersionRow.parent_version_id.in_(frontier)
-            )
+            select(
+                FileVersionRow.id, FileVersionRow.parent_version_id, FileVersionRow.shared_prefix_record_count
+            ).where(FileVersionRow.parent_version_id.in_(frontier))
         )
         next_frontier = set()
         for child_id, parent_id, shared_prefix_record_count in children:
@@ -211,7 +212,10 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=100, help=f"maximum payloads per run (1-{_BATCH_LIMIT})")
     parser.add_argument(
-        "--max-versions", type=int, default=_VERSION_LIMIT, help=f"maximum affected versions per run (1-{_VERSION_LIMIT})"
+        "--max-versions",
+        type=int,
+        default=_VERSION_LIMIT,
+        help=f"maximum affected versions per run (1-{_VERSION_LIMIT})",
     )
     return parser.parse_args(arguments)
 
@@ -223,9 +227,7 @@ def main(arguments: list[str] | None = None) -> None:
         raise SystemExit("DATABASE_URL must configure the Postgres connection")
     engine = make_engine(database_url)
     try:
-        report = backfill_jsonb_payloads(
-            make_session_factory(engine), limit=args.limit, max_versions=args.max_versions
-        )
+        report = backfill_jsonb_payloads(make_session_factory(engine), limit=args.limit, max_versions=args.max_versions)
         print(json.dumps(asdict(report), sort_keys=True))
     finally:
         engine.dispose()
