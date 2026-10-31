@@ -638,6 +638,9 @@ fn sweep_unreachable_top_level(
             if !code_may_run && item_declares_code_or_primitive(&module.body[j]) {
                 continue;
             }
+            // Calling a native container's methods runs no chunk code, but what
+            // is stored in it may still alias retained state.
+            let code_may_run = code_may_run && !item_declares_native_container(&module.body[j]);
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
                     if region.insert(k) {
@@ -1559,6 +1562,27 @@ fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
                 || is_symbol_var(var)
         }),
     }
+}
+
+/// `var seen = new Set()` (or `Map`, `WeakMap`, `WeakSet`, `[]`): a fresh
+/// native container. Its methods run no chunk code beyond the callbacks a
+/// call hands them, which the calling statement's own facts cover. Assumes
+/// the standard globals are not shadowed or patched (the `predefined_globals`
+/// host claim).
+fn item_declares_native_container(item: &ModuleItem) -> bool {
+    item_var_decl(item).is_some_and(|var| {
+        var.decls
+            .iter()
+            .all(|decl| match decl.init.as_deref().map(Expr::unwrap_parens) {
+                Some(Expr::New(new)) => {
+                    matches!(&*new.callee, Expr::Ident(ident)
+                    if matches!(ident.sym.as_ref(), "Set" | "Map" | "WeakMap" | "WeakSet"))
+                        && new.args.as_ref().is_none_or(|args| args.is_empty())
+                }
+                Some(Expr::Array(array)) => array.elems.is_empty(),
+                _ => false,
+            })
+    })
 }
 
 /// `var key = Symbol("description")` (or `Symbol.for(...)`): a primitive.
