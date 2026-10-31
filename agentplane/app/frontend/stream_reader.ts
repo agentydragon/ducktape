@@ -70,7 +70,7 @@ export function followResponse<F>(
       const { done, value } = await reader.read();
       if (done) return;
       const invalidReason = onFrame(value);
-      if (invalidReason !== undefined) {
+      if (typeof invalidReason === "string") {
         report({
           phase: "invalid",
           since: connection.phase === "invalid" ? connection.since : Date.now(),

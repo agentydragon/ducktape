@@ -15,8 +15,12 @@ beforeEach(() => {
   fetchMock = stubWatchFetch();
   stop = followStream("/test/stream", {
     events: {
-      snapshot: (message) => events.push(["snapshot", message.data]),
-      message: (message) => events.push(["message", message.data]),
+      snapshot: (message) => {
+        events.push(["snapshot", message.data]);
+      },
+      message: (message) => {
+        events.push(["message", message.data]);
+      },
     },
     onConnection: (connection) => connections.push(connection),
   });
