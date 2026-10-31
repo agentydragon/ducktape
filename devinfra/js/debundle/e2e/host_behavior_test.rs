@@ -128,6 +128,36 @@ fn loader_keys_require_a_present_loader() {
 }
 
 #[test]
+fn process_accessor_builtins_require_the_program_premise() {
+    for builtin in [NodeBuiltinModule::Process, NodeBuiltinModule::WorkerThreads] {
+        let host_behavior = HostBehavior {
+            reentry_free_builtin_modules: [builtin].into_iter().collect(),
+            ..HostBehavior::default()
+        };
+        expect_rejection_containing_all(
+            accepted_provider().with_host_behavior(host_behavior.clone()),
+            &["program_premises.process_prototype_chain_accessors: none"],
+        );
+        let fixture = run_fixture(
+            accepted_provider()
+                .with_host_behavior(host_behavior)
+                .with_program_premises(ProgramPremises {
+                    process_prototype_chain_accessors: ProcessPrototypeChainAccessors::None,
+                    note: Some("Audited against a synthetic fixture program.".to_string()),
+                    ..ProgramPremises::default()
+                }),
+        );
+        assert_eq!(
+            export_reentry_report(&fixture)["program_premises"],
+            json!({
+                "process_prototype_chain_accessors": "none",
+                "note": "Audited against a synthetic fixture program.",
+            })
+        );
+    }
+}
+
+#[test]
 fn retired_keys_are_rejected_beside_host_behavior() {
     for (key, value) in [
         ("execution_runtime", json!("native_browser_esm")),

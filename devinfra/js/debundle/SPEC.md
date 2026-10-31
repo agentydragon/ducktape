@@ -711,7 +711,11 @@ all of the following hold:
   (an alias, including an exported loader value), `globalThis.require`, an
   unbound `require` or `module` (other than `module.exports`), `import.meta` as
   a value or with a computed key, a TypeScript `import =`, and any request for
-  the `module` builtin keep every target open. A dynamic `import()` is not a
+  the `module` builtin keep every target open. Under
+  `program_premises.non_literal_loader_calls: native_addons_only` (§ Program
+  premises) a direct non-literal call, of `import.meta.require` or of a loader
+  alias, is excluded and counted in `premised_sites`; every other form stays
+  open. A dynamic `import()` is not a
   synchronous loader site: ECMA-262 evaluates its target in a later job
   (`ContinueDynamicImport`), never on the requester's stack. Whether it names
   a debundled internal module stays the A3 admission check
@@ -838,6 +842,36 @@ This leaf rule grants no purity, call safety, return shape, or later callback
 fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and
 cycle blockers retain their normal rules. The closed set is specific to the
 audited host, not a promise about future runtimes or all Node modules.
+
+## Program premises
+
+`program_premises` declares facts about the analyzed program that the engine
+cannot derive, one assertion per key, beside `host_behavior` in flat and tree
+specs. An omitted key asserts nothing. Each is an author assertion over the
+whole program, including code the analyzer never sees; the audit and its
+provenance go in `note`, which the engine does not read. `export_reentry.json`
+echoes a non-empty block, and a closed loader certificate lists each premise it
+consumed under `premise_keys`.
+
+```yaml
+program_premises:
+  process_prototype_chain_accessors: none # or unknown
+  non_literal_loader_calls: native_addons_only # or unknown
+  note: "Audit: <where the premise was checked>"
+```
+
+- `process_prototype_chain_accessors: none`: no code in the program defines or
+  redefines an accessor property on `process` or on any object in its
+  prototype chain (including `EventEmitter.prototype` and `Object.prototype`),
+  or changes that chain. Building the `process` namespace reads every property
+  along that chain, and `worker_threads` sets `process` members inside a
+  worker, so `reentry_free_builtin_modules` accepts `process` and
+  `worker_threads` only with this premise; otherwise the spec is rejected.
+- `non_literal_loader_calls: native_addons_only`: every loader call whose
+  argument is not one string literal either fails or loads a native addon, and
+  no native addon's initializer calls application JavaScript or a module
+  loader. The loader-closed derivation then excludes such calls (§ Loader-closed
+  derivation).
 
 ## Hoisted function imports
 

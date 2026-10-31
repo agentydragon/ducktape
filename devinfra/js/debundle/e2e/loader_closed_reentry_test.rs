@@ -377,12 +377,13 @@ fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
 }
 
 fn accepted_provider_report(extra: &[(&'static str, &'static str)]) -> Value {
-    accepted_provider_report_under(extra, audited_host())
+    accepted_provider_report_under(extra, audited_host(), ProgramPremises::default())
 }
 
 fn accepted_provider_report_under(
     extra: &[(&'static str, &'static str)],
     host: HostBehavior,
+    premises: ProgramPremises,
 ) -> Value {
     let mut extra_chunks = vec![("static/helper", HELPER), ("static/provider", PROVIDER)];
     extra_chunks.extend_from_slice(extra);
@@ -392,7 +393,8 @@ fn accepted_provider_report_under(
             .with_chunk_id("static/consumer")
             .with_extra_chunks(&extra_chunks)
             .with_extra_chunk_logical_modules(&provider_modules)
-            .with_host_behavior(host),
+            .with_host_behavior(host)
+            .with_program_premises(premises),
     );
     let report = export_reentry_report(&fixture.report_root);
     assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
@@ -512,6 +514,7 @@ export function legacy() { return import.meta.require("constants"); }
             reentry_free_bun_modules: [BunModule::BunFfi, BunModule::Undici].into_iter().collect(),
             ..audited_host()
         },
+        ProgramPremises::default(),
     );
     let targets: Vec<_> = report["loader"]["requests"]
         .as_array()
@@ -533,5 +536,89 @@ export function legacy() { return import.meta.require("constants"); }
     assert_eq!(
         failure(&derivation, "non_reentry_free_builtin_request")["occurrences"],
         3
+    );
+}
+
+fn native_addon_premise() -> ProgramPremises {
+    ProgramPremises {
+        non_literal_loader_calls: NonLiteralLoaderCalls::NativeAddonsOnly,
+        ..ProgramPremises::default()
+    }
+}
+
+/// Under the native-addon premise a non-literal loader call, direct or through
+/// an exported alias, loads no module that can reenter the target.
+#[test]
+fn non_literal_loader_calls_are_excluded_under_the_native_addon_premise() {
+    for extra in [
+        vec![(
+            "static/sidecar",
+            "export function loadNamed(name) { return import.meta.require(name); }\n",
+        )],
+        vec![
+            ("static/runtime", RUNTIME),
+            (
+                "static/user",
+                "import { load } from \"./runtime.js\";\nexport function readNamed(name) { return load(name); }\n",
+            ),
+        ],
+    ] {
+        let report = accepted_provider_report_under(&extra, audited_host(), native_addon_premise());
+        assert_eq!(report["loader"]["premised_sites"], 1, "{extra:?}");
+        assert_eq!(
+            report["loader"]["premise_keys"],
+            json!(["non_literal_loader_calls"]),
+            "{extra:?}"
+        );
+        assert_eq!(
+            report["program_premises"],
+            json!({ "non_literal_loader_calls": "native_addons_only" })
+        );
+    }
+}
+
+/// The premise covers calls only: a loader value that escapes stays opaque.
+#[test]
+fn escaping_loader_values_stay_opaque_under_the_native_addon_premise() {
+    let sidecar = "export function loader() { return import.meta.require; }\n";
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(PROVIDER, provider_modules())
+            .with_chunk_id(PROVIDER_CHUNK)
+            .with_extra_chunks(&[("static/helper", HELPER), ("static/sidecar", sidecar)])
+            .with_host_behavior(audited_host())
+            .with_program_premises(native_addon_premise()),
+    );
+    let derivation = export_reentry_report(&rejected.report_root)["loader"].clone();
+    assert_eq!(
+        failure(&derivation, "opaque_loader_site")["first"]["site"]["kind"],
+        "import_meta_require_reference"
+    );
+}
+
+#[test]
+fn process_request_is_a_leaf_under_the_accessor_premise() {
+    let sidecar = "export function proc() { return import.meta.require(\"node:process\"); }\n";
+    let report = accepted_provider_report_under(
+        &[("static/sidecar", sidecar)],
+        HostBehavior {
+            reentry_free_builtin_modules: [NodeBuiltinModule::Path, NodeBuiltinModule::Process]
+                .into_iter()
+                .collect(),
+            ..audited_host()
+        },
+        ProgramPremises {
+            process_prototype_chain_accessors: ProcessPrototypeChainAccessors::None,
+            ..ProgramPremises::default()
+        },
+    );
+    assert_eq!(
+        report["loader"]["premise_keys"],
+        json!(["process_prototype_chain_accessors"])
+    );
+    assert!(
+        report["loader"]["host_keys"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({ "reentry_free_builtin_module": "process" }))
     );
 }

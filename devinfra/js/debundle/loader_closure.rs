@@ -21,7 +21,7 @@ use spec::{
     HostBehavior, HostModule, LoaderResultForEvaluatingModule, SynchronousLoadRunsAppCallbacks,
 };
 
-use crate::analysis_inputs::{HostBehaviorKey, ProofDependencies};
+use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
 use crate::ids::ChunkId;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
@@ -82,6 +82,11 @@ pub struct ChunkLoaderSurface<W> {
     /// `synchronous_load_drains_microtasks: never`: they run in a promise job,
     /// which no synchronous load can start.
     pub suspended_sites: Vec<W>,
+    /// Non-literal loader calls the caller excluded under
+    /// `program_premises.non_literal_loader_calls: native_addons_only`: each
+    /// fails or loads a native addon whose initializer runs no application
+    /// code.
+    pub premised_sites: Vec<W>,
 }
 
 impl<W> ChunkLoaderSurface<W> {
@@ -89,6 +94,7 @@ impl<W> ChunkLoaderSurface<W> {
         !self.requests.is_empty()
             || !self.site_failures.is_empty()
             || !self.suspended_sites.is_empty()
+            || !self.premised_sites.is_empty()
     }
 }
 
@@ -114,6 +120,8 @@ pub struct LoaderClosure<W> {
     pub loaded_chunks: BTreeSet<ChunkId>,
     /// Mandatorily suspended sites excluded from the closure.
     pub suspended_sites: usize,
+    /// Non-literal loader calls excluded under the program premise.
+    pub premised_sites: usize,
     /// Host keys the certificate consumed; empty unless closed.
     pub dependencies: ProofDependencies,
 }
@@ -154,6 +162,7 @@ pub fn solve_loader_closure<W: Clone + Ord>(
                     failures: verdict.failures.clone(),
                     loaded_chunks: verdict.loaded_chunks.clone(),
                     suspended_sites: verdict.suspended_sites,
+                    premised_sites: verdict.premised_sites,
                     dependencies: judgment.dependencies().clone(),
                 },
             )
@@ -184,6 +193,7 @@ struct Verdict<W> {
     failures: BTreeMap<LoaderClosureFailureKind, LoaderClosureFailure<W>>,
     loaded_chunks: BTreeSet<ChunkId>,
     suspended_sites: usize,
+    premised_sites: usize,
 }
 
 impl<W: Ord> Verdict<W> {
@@ -192,6 +202,7 @@ impl<W: Ord> Verdict<W> {
             failures: BTreeMap::new(),
             loaded_chunks: BTreeSet::new(),
             suspended_sites: 0,
+            premised_sites: 0,
         }
     }
 
@@ -309,6 +320,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
         }
         for surface in self.chunks.values() {
             verdict.suspended_sites += surface.suspended_sites.len();
+            verdict.premised_sites += surface.premised_sites.len();
             for (kind, witness) in &surface.site_failures {
                 verdict.add(*kind, LoaderClosureWitness::Site(witness.clone()));
             }
@@ -318,6 +330,12 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                         dependencies
                             .host_behavior
                             .insert(HostBehaviorKey::reentry_free_module(builtin));
+                        if matches!(builtin, HostModule::Node(node) if node.reads_process_accessors())
+                        {
+                            dependencies
+                                .program_premises
+                                .insert(ProgramPremiseKey::ProcessPrototypeChainAccessors);
+                        }
                         continue;
                     }
                     LoaderRequestTarget::Chunk(loaded) => loaded,
@@ -346,6 +364,11 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
             dependencies
                 .host_behavior
                 .insert(HostBehaviorKey::SynchronousLoadDrainsMicrotasks);
+        }
+        if verdict.premised_sites > 0 {
+            dependencies
+                .program_premises
+                .insert(ProgramPremiseKey::NonLiteralLoaderCalls);
         }
         if verdict.failures.is_empty() {
             context.assume(&dependencies);
@@ -381,6 +404,10 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
                     current.suspended_sites = contribution.suspended_sites;
                     changed = true;
                 }
+                if contribution.premised_sites > current.premised_sites {
+                    current.premised_sites = contribution.premised_sites;
+                    changed = true;
+                }
                 for (kind, failure) in contribution.failures {
                     changed |= current.join_failure(kind, failure, usize::max);
                 }
@@ -412,6 +439,7 @@ mod tests {
             site_failures: Vec::new(),
             load_failures: Vec::new(),
             suspended_sites: Vec::new(),
+            premised_sites: Vec::new(),
         }
     }
 

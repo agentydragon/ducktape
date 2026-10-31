@@ -35,6 +35,10 @@ pub struct TransformSpec {
     /// generic host with no audited behavior.
     #[serde(default)]
     pub host_behavior: HostBehavior,
+    /// Author premises about the analyzed program the engine cannot derive
+    /// (SPEC.md § Program premises). An absent block asserts nothing.
+    #[serde(default)]
+    pub program_premises: ProgramPremises,
 
     // --- declarative data sections ---
     #[serde(default)]
@@ -149,6 +153,58 @@ pub struct HostBehavior {
     pub note: Option<String>,
 }
 
+/// Author premises about the analyzed program itself, as opposed to its host.
+/// Each key is one assertion with one engine reader; an omitted key asserts
+/// nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProgramPremises {
+    #[serde(
+        default,
+        skip_serializing_if = "ProcessPrototypeChainAccessors::is_unknown"
+    )]
+    pub process_prototype_chain_accessors: ProcessPrototypeChainAccessors,
+    #[serde(default, skip_serializing_if = "NonLiteralLoaderCalls::is_unknown")]
+    pub non_literal_loader_calls: NonLiteralLoaderCalls,
+    /// Audit provenance. YAML-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Whether the program defines accessors on `process` or its prototype chain.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessPrototypeChainAccessors {
+    /// No code in the program defines or redefines an accessor property on
+    /// `process` or any object in its prototype chain, or changes that chain.
+    None,
+    #[default]
+    Unknown,
+}
+
+impl ProcessPrototypeChainAccessors {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
+/// What a loader call with a non-literal argument can load.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NonLiteralLoaderCalls {
+    /// Every such call fails or loads a native addon, and no native addon's
+    /// initializer calls application JavaScript or a module loader.
+    NativeAddonsOnly,
+    #[default]
+    Unknown,
+}
+
+impl NonLiteralLoaderCalls {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
 /// The global object's host-defined properties before the program runs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -256,6 +312,7 @@ pub enum NodeBuiltinModule {
     #[serde(rename = "util/types")]
     UtilTypes,
     Vm,
+    WorkerThreads,
     Zlib,
 }
 
@@ -298,6 +355,7 @@ impl NodeBuiltinModule {
             "util" | "node:util" => Self::Util,
             "util/types" | "node:util/types" => Self::UtilTypes,
             "vm" | "node:vm" => Self::Vm,
+            "worker_threads" | "node:worker_threads" => Self::WorkerThreads,
             "zlib" | "node:zlib" => Self::Zlib,
             _ => return None,
         })
@@ -342,6 +400,14 @@ impl HostModule {
         NodeBuiltinModule::from_static_specifier(specifier)
             .map(Self::Node)
             .or_else(|| BunModule::from_static_specifier(specifier).map(Self::Bun))
+    }
+}
+
+impl NodeBuiltinModule {
+    /// Building this builtin's namespace, or loading it, can run accessors the
+    /// program defines on `process` or its prototype chain.
+    pub fn reads_process_accessors(self) -> bool {
+        matches!(self, Self::Process | Self::WorkerThreads)
     }
 }
 

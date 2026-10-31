@@ -150,7 +150,8 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   `reentry_free_operations`, `reentry_free_builtin_modules` and
   `reentry_free_bun_modules` for audited host calls and module leaves. Omitted keys stay conservative; the audited
   executable's identity goes in `note:`. Keys, readers and prerequisites:
-  <SPEC.md#host-behavior>.
+  <SPEC.md#host-behavior>. `program_premises` holds author premises about the
+  program itself (<SPEC.md#program-premises>).
 
 - **`comment:`** emits into generated JS; **`note:`** is YAML-only authoring
   metadata: <docs/spec_editing.md> § Comments and notes.

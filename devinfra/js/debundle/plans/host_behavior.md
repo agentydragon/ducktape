@@ -72,22 +72,16 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
      the loader per file (an input fact) and the probe to show the host honours
      it.
 2. **`process`** (6 loader requests, 13 loaded-closure requests, and the static
-   blocker in 70 graphs). Building the namespace reads every property along
-   `process`'s prototype chain, so admitting it needs proof that no
-   application accessor exists on that chain. The engine can't derive this. The
-   bundle's own export helpers install getters on arbitrary receivers, and the
-   per-chunk integrity guard fails on opaque receivers. This needs an author
-   premise (wording in the debug note). The same premise would admit
-   `worker_threads`, whose only audited hazard is `set` on `process` inside a
-   worker.
+   blocker in 70 graphs) and `worker_threads` are admitted under
+   `program_premises.process_prototype_chain_accessors: none` (SPEC.md
+   § Program premises). The engine can't derive it: the bundle's own export
+   helpers install getters on arbitrary receivers.
 3. **Non-literal loader calls** (5 sites, 4 distinct). `computer-use-swift`'s
    environment-path addon load follows an unconditional `throw`, so callable
    reachability excludes it.
    - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
-     paths, and protobufjs `inquire` loads its parameter. Neither is
-     engine-derivable. A `.node` load runs the addon's native initializer,
-     which the census can't see. This needs an author premise or a per-site
-     assertion of the possible specifiers.
+     paths, and protobufjs `inquire` loads its parameter. They are excluded
+     under `program_premises.non_literal_loader_calls: native_addons_only`.
 4. **`module`** (3 sites). The sites are a `builtinModules` read
    (stack-utils), a `createRequire` result used only for `.resolve`, and
    fflate's top-level `createRequire("/")("worker_threads")`.

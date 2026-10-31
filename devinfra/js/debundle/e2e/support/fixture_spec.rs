@@ -661,6 +661,7 @@ pub fn logical_module_with_anon_comment(
 
 pub struct FixtureOpts<'a> {
     pub host_behavior: spec::HostBehavior,
+    pub program_premises: spec::ProgramPremises,
     /// Top-level spec keys written verbatim beside the typed spec, for text the
     /// typed builder cannot express (keys the schema must reject).
     pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
@@ -746,6 +747,7 @@ impl<'a> FixtureOpts<'a> {
         // override with [`unassigned_mode_per_atomic_group`].
         Self {
             host_behavior: spec::HostBehavior::default(),
+            program_premises: spec::ProgramPremises::default(),
             raw_spec_keys: Vec::new(),
             source,
             logical_modules,
@@ -854,6 +856,11 @@ impl<'a> FixtureOpts<'a> {
         pairs: Vec<spec::CommutingStatementsContract>,
     ) -> Self {
         self.commuting_statements.push((chunk.into(), pairs));
+        self
+    }
+
+    pub fn with_program_premises(mut self, program_premises: spec::ProgramPremises) -> Self {
+        self.program_premises = program_premises;
         self
     }
 
@@ -1319,6 +1326,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
 
     TransformSpec {
         host_behavior: opts.host_behavior.clone(),
+        program_premises: opts.program_premises.clone(),
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),

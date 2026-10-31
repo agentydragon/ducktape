@@ -39,6 +39,8 @@ struct AuthoringConfig {
     inputs: AuthoringInputs,
     #[serde(default)]
     host_behavior: spec::HostBehavior,
+    #[serde(default)]
+    program_premises: spec::ProgramPremises,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
     /// browser-harness emit step entirely.
@@ -247,6 +249,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
 
     Ok(TransformSpec {
         host_behavior: config.host_behavior,
+        program_premises: config.program_premises,
         inputs: LoadJsChunksArgs {
             input_root: input_root.clone(),
             js_list_path,
