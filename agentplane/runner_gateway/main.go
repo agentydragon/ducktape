@@ -58,6 +58,9 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Dispatcher ownership checks and renewals share this client with Sandbox watches. The
+	// client-go default of five requests per second queues Lease acquisition behind those watches.
+	kubeConfig.QPS = -1
 	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	return kubeConfig, nil
 }
