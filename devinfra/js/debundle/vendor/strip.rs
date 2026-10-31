@@ -607,8 +607,8 @@ fn sweep_unreachable_top_level(
         }
         // Follow every reached binding to the retained state behind it: a
         // binding the statement does not retain may alias state through its
-        // initializer or what is written into it, and a lexical one's code
-        // may run.
+        // initializer or what is written into it. Where unresolved code may
+        // run, functions it reaches may run too.
         let mut region: BTreeSet<usize> = entered;
         region.insert(i);
         let mut candidates = BTreeSet::new();
@@ -618,6 +618,7 @@ fn sweep_unreachable_top_level(
             .chain(lexical.into_iter().map(|id| (id, true)))
             .collect();
         let mut seen = BTreeSet::new();
+        let mut expanded = BTreeSet::new();
         while let Some((id, code_may_run)) = worklist.pop() {
             if !seen.insert((id, code_may_run)) {
                 continue;
@@ -633,8 +634,9 @@ fn sweep_unreachable_top_level(
                 continue;
             }
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
-                if region.insert(k) {
-                    worklist.extend(analyses[k].reads.iter().map(|read| (read, true)));
+                if expanded.insert((k, code_may_run)) {
+                    region.insert(k);
+                    worklist.extend(analyses[k].reads.iter().map(|read| (read, code_may_run)));
                 }
             }
         }
