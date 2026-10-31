@@ -27,12 +27,23 @@ import (
 var errRunnerOwned = status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
 
 type fencedRunnerConn struct {
-	conn     *grpc.ClientConn
-	identity metadata.MD
+	conn       *grpc.ClientConn
+	identity   metadata.MD
+	connection *runnerConnection
 }
 
+// Invoke reports a call its connection's end cancelled (conn closing under a call that held it, or
+// the executor's end-of-connection cancel) as that end, which callers retry, rather than Canceled.
 func (c *fencedRunnerConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
-	return c.conn.Invoke(metadata.NewOutgoingContext(ctx, c.identity.Copy()), method, args, reply, opts...)
+	err := c.conn.Invoke(metadata.NewOutgoingContext(ctx, c.identity.Copy()), method, args, reply, opts...)
+	if status.Code(err) == codes.Canceled {
+		select {
+		case <-c.connection.ended:
+			return c.connection.error()
+		default:
+		}
+	}
+	return err
 }
 
 func (c *fencedRunnerConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -264,17 +275,17 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 				return err
 			}
 			if connection == nil {
-				direct := &fencedRunnerConn{conn: conn, identity: metadata.Pairs(
+				connection = &runnerConnection{
+					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
+					bootID: response.RunnerBootId, ended: make(chan struct{}), closeDirect: cancel,
+				}
+				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
 					"agentplane-sandbox-uid", destination.identity.UID,
 					"agentplane-incarnation-uid", destination.podUID,
 					"agentplane-runner-boot-id", response.RunnerBootId,
 					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
 				)}
-				connection = &runnerConnection{
-					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
-					bootID: response.RunnerBootId, direct: direct, runner: runnerservicepb.NewRunnerClient(direct),
-					ended: make(chan struct{}), closeDirect: cancel,
-				}
+				connection.runner = runnerservicepb.NewRunnerClient(connection.direct)
 				g.connections.accept(connection)
 			}
 			if !liveness.Stop() {
