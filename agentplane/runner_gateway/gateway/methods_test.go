@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"

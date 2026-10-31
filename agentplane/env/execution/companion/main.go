@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -28,7 +28,7 @@ import (
 // Returning to main exits that namespace, letting the runtime kill even children
 // that escaped their process group. This mode never runs as an ordinary VM child.
 func Main(args []string) int {
-	flags := flag.NewFlagSet("agentplane-runner executor", flag.ContinueOnError)
+	flags := flag.NewFlagSet("agentplane-execution-service companion", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")

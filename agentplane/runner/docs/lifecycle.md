@@ -168,7 +168,7 @@ dispatch; inspection runs away from stdout so it can wait for native history rep
 
 ## Codex exec-server and app-server
 
-The `codexexecserver/` package owns the exec-server input/runtime resources, its COSI controller,
+The [`env/execution/codexexecserver/`](../../env/execution/codexexecserver) package owns the exec-server input/runtime resources, its COSI controller,
 the host's one-shot probe slot and result, and the native launch and container-fencing adapters. The
 Runner constructs this host after its shared process host exists and registers the controller in the
 same COSI runtime as the aggregate Runner controller. It receives the shared state, process host,

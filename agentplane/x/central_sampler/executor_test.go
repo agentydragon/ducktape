@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

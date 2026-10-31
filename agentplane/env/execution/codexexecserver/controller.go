@@ -207,7 +207,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.ConsecutiveProbeFailures++
 				current.Error = probeErr.Error()
 				zap.L().Warn("Codex exec-server health probe failed", zap.Int("consecutive_failures", int(current.ConsecutiveProbeFailures)), zap.Error(probeErr))
-				if current.ConsecutiveProbeFailures >= 3 {
+				if current.ConsecutiveProbeFailures >= healthFailureLimit {
 					current.Error = fmt.Sprintf("executor failed %d consecutive health probes: %v", current.ConsecutiveProbeFailures, probeErr)
 					current.RestartFailures++
 					current.Phase = Stopping

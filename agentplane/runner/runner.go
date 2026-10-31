@@ -9,14 +9,14 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	"github.com/agentydragon/ducktape/agentplane/env/execution/adapter"
+	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/execution"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"

@@ -19,6 +19,8 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
   integration app and the Notification service.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
   sandbox and journal what they do.
+- [Environment execution service](env/execution/README.md): standalone typed process/filesystem API;
+  production Runner currently embeds its adapter and backend lifecycle.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant.
@@ -95,6 +97,13 @@ flowchart LR
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]
       end
+    end
+    subgraph execution_only[Standalone execution target: not yet deployed]
+      localclient[Environment client]
+      execservice[agentplane-execution-service]
+      execnative[Codex exec-server]
+      localclient -->|private Unix Executor gRPC| execservice
+      execservice -->|loopback WebSocket and process lifetime| execnative
     end
     k8s[Kubernetes API]
     subgraph independent[Independent service]

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"

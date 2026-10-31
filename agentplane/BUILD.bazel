@@ -4,8 +4,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:proto file
 # gazelle:resolve py agentplane.egress.egress_admin_pb2 //agentplane/egress:egress_admin_pb2
 # gazelle:resolve py agentplane.egress.egress_admin_pb2_grpc //agentplane/egress:egress_admin_pb2_grpc
-# gazelle:resolve py agentplane.executor.executor_pb2 //agentplane/executor:executor_pb2
-# gazelle:resolve py agentplane.executor.executor_pb2_grpc //agentplane/executor:executor_pb2_grpc
+# gazelle:resolve py agentplane.env.execution.executor_pb2 //agentplane/env/execution:executor_pb2
+# gazelle:resolve py agentplane.env.execution.executor_pb2_grpc //agentplane/env/execution:executor_pb2_grpc
 # gazelle:resolve py agentplane.history_service.history_service_pb2 //agentplane/history_service:history_service_pb2
 # gazelle:resolve py agentplane.history_service.history_service_pb2_grpc //agentplane/history_service:history_service_pb2_grpc
 # gazelle:resolve py agentplane.proto.sandboxes_pb2 //agentplane/proto:sandboxes_pb2

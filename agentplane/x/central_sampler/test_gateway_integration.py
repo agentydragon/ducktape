@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from agentplane.executor import executor_pb2, executor_pb2_grpc
+from agentplane.env.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream

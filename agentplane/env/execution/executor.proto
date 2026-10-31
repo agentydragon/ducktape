@@ -1,9 +1,10 @@
 syntax = "proto3";
+// The published wire identity is stable across source/package relocation.
 package agentplane.executor;
 
 import "agentplane/proto/sandboxes.proto";
 
-// The Gateway authorizes and resolves this scope; Runner checks it against its current incarnation.
+// The Gateway authorizes and resolves this scope; the execution owner checks its current incarnation.
 message ExecutionScope {
   agentplane.proto.SandboxDestination destination = 1;
   string expected_incarnation_uid = 2;
@@ -55,6 +56,7 @@ message StartProcessRequest {
   string request_id = 3;
   string process_id = 4;
   repeated string argv = 5;
+  // Absolute file URI, following the native executor path contract.
   string cwd = 6;
   ExecutionEnvironmentPolicy environment_policy = 7;
   map<string, string> environment = 8;
@@ -72,6 +74,7 @@ message ReadProcessRequest {
   string execution_session_id = 2;
   string request_id = 3;
   string process_id = 4;
+  // Exclusive last-consumed sequence; absent starts at the retained beginning.
   optional uint64 after_seq = 5;
   uint32 max_bytes = 6;
   uint32 wait_ms = 7;
@@ -84,6 +87,8 @@ message ExecutionOutputChunk {
 message ReadProcessResponse {
   ExecutionStatus status = 1;
   repeated ExecutionOutputChunk chunks = 2;
+  // One past the last-consumed sequence. For the next read use next_seq - 1
+  // as after_seq when nonzero; zero means no sequence was consumed.
   uint64 next_seq = 3;
   bool exited = 4;
   optional int32 exit_code = 5;
@@ -130,6 +135,7 @@ message GetFileMetadataRequest {
   ExecutionScope scope = 1;
   string execution_session_id = 2;
   string request_id = 3;
+  // Absolute file URI.
   string path = 4;
 }
 message GetFileMetadataResponse {
@@ -145,6 +151,7 @@ message OpenFileRequest {
   string execution_session_id = 2;
   string request_id = 3;
   string handle_id = 4;
+  // Absolute file URI.
   string path = 5;
 }
 message OpenFileResponse {

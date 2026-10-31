@@ -13,18 +13,19 @@ import (
 	"strconv"
 	"time"
 
+	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/execution/companion/control"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
 )
 
 const (
-	healthInterval    = 5 * time.Second
-	healthDeadline    = 3 * time.Second
-	fenceDeadline     = 90 * time.Second
-	executorStopGrace = 5 * time.Second
+	healthInterval     = 5 * time.Second
+	healthDeadline     = 3 * time.Second
+	healthFailureLimit = 3
+	fenceDeadline      = 90 * time.Second
+	executorStopGrace  = 5 * time.Second
 )
 
 // Config selects local systemd supervision or ownership of the Pod executor container.
@@ -36,7 +37,7 @@ type Config struct {
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
-	if err := validateURL(c.URL); err != nil {
+	if err := ValidateURL(c.URL); err != nil {
 		return err
 	}
 	if _, err := c.Readiness.Resolve(); err != nil {
@@ -129,7 +130,36 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-func validateURL(value string) error {
+// Monitor bounds dispatcher liveness for a standalone service. The same probe
+// windows and failure budget are used by the embedded lifecycle controller.
+func Monitor(ctx context.Context, endpoint string) error {
+	ticker := time.NewTicker(healthInterval)
+	defer ticker.Stop()
+	failures := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		attempt, cancel := context.WithTimeout(ctx, healthDeadline)
+		err := probe(attempt, endpoint)
+		cancel()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err == nil {
+			failures = 0
+			continue
+		}
+		failures++
+		if failures >= healthFailureLimit {
+			return fmt.Errorf("execution backend stopped responding: %w", err)
+		}
+	}
+}
+
+func ValidateURL(value string) error {
 	u, err := url.Parse(value)
 	if err != nil {
 		return err

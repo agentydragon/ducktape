@@ -19,7 +19,7 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.executor import executor_pb2, executor_pb2_grpc
+from agentplane.env.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent

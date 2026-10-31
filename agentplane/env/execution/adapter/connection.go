@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 	"github.com/coder/websocket"
 )

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"

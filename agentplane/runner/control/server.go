@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"

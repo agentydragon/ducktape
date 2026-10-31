@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/execution/companion"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
-	"github.com/agentydragon/ducktape/agentplane/runner/executor"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 )
 

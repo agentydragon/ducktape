@@ -38,7 +38,7 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   supplies the synchronous admission barrier and shared process, workspace and ingress facilities.
   Its native connection owns stream framing, reader joins and handshake waiters; Session supplies
   frame translation and lifecycle callbacks and retains the exact-turn native-write gate.
-- `codexexecserver/`: isolated executor configuration, COSI resources and controller, host-owned probe
+- [`env/execution/codexexecserver/`](../env/execution/codexexecserver): isolated executor configuration, COSI resources and controller, host-owned probe
   operations, native launch adapter, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission
   dependencies and owns no Runner lifecycle coordinator.
@@ -47,13 +47,13 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 - `../env/oneoff/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
   ordering and worker joins. Session, bootstrap and Codex app-server retain their typed COSI result
   publication and deletion adapters.
-- `executor/`: the PID-1 companion mode for Pod Codex execution, its Unix control protocol and reaper.
+- [`env/execution/companion/`](../env/execution/companion): the PID-1 companion mode for Pod Codex execution, its Unix control protocol and reaper.
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
 - `control/`: the gRPC listener, explicit transport security, state observer epochs, RPC fencing,
   state watch and standard gRPC health service. Runner supplies domain RPCs and facts.
-- `execution/`: typed process/file RPCs and the local Codex JSON-RPC adapter. An `OpenSession`
+- [`env/execution/adapter/`](../env/execution/adapter): typed process/file RPCs and the local Codex JSON-RPC adapter. An `OpenSession`
   server stream owns each WebSocket connection; unary calls carry typed operations and return native
   evidence. Runner supplies admission and readiness; shutdown drains adapter sessions before fencing
   the exec-server. This adapter owns no persistent state or operation receipts.

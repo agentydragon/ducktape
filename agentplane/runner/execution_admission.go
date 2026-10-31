@@ -3,8 +3,8 @@ package runner
 import (
 	"context"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/execution/codexexecserver"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"google.golang.org/grpc/codes"

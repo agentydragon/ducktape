@@ -12,7 +12,7 @@ import (
 	"io"
 	"time"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )

@@ -1,4 +1,4 @@
-// Package execution translates typed Runner RPCs to the local Codex exec-server protocol.
+// Package execution translates typed Executor RPCs to the local Codex exec-server protocol.
 package execution
 
 import (
@@ -6,7 +6,7 @@ import (
 	"errors"
 	"sync"
 
-	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
