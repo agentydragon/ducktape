@@ -70,7 +70,61 @@ claimed feature of this slice.
 Sharing a target and giving each child a working directory matches the stakeholder's current
 workflow. It creates no security isolation between those Sessions. Parentage is optional provenance
 and confers no permission. No parent transcript is copied automatically; the creator supplies the
-child's standing instructions and initial task.
+child's additional standing instructions and initial task; platform guidance is supplied separately.
+
+## Instruction composition
+
+**Proposed correction following review:** the spawning tool accepts `additional_instructions`,
+separate from `spec`. It is an additive child briefing, not the child's entire effective prompt.
+Omitting it or supplying an empty string never removes Agentplane platform guidance.
+
+Keep these sources distinct:
+
+- **Harness base instructions:** retain the native harness's normal base prompt, or the central
+  sampler's own equivalent. Agentplane orientation must not replace that base prompt.
+- **Platform guidance:** deployment-owned Agentplane orientation, tool/API discovery and recovery
+  guidance, included by default independently of optional launch presets. Render it for the
+  actual harness/tool surface; a central loop or MCP client must not be told that it runs inside
+  the target environment or has local tools it lacks.
+- **Environment context:** the selected target's description and instructions, with the child's
+  own identity/notification destination where supported. Never copy the parent's destination.
+  This describes the environment and does not establish new execution permissions.
+- **Role/preset instructions, when selected:** optional role-specific text such as public-coder
+  contribution practices. A caller's additional briefing appends to the selected role text.
+  Generic Agentplane guidance currently bundled with a preset belongs in the platform layer.
+- **Additional instructions:** the creator's child-specific standing brief. The first task is
+  still submitted separately through `sessions_submit_input`.
+
+The first tools need not accept preset names or introduce a backend preset registry. A client
+using an optional role preset combines its concrete role text and child briefing in
+`additional_instructions`. The backend adds the platform/environment layers regardless of whether
+that client uses a preset or the integration app.
+A child does not implicitly inherit the parent's role, private instructions or transcript.
+
+Today the [native Runner](../runner/admission.go) already prepends configured platform guidance
+and the Session's destination using [its composer](../runner/configuration/resolved.go), then
+stores the combined instructions. Its [configuration](../runner/configuration/configuration.go)
+requires nonempty platform instructions. Preset text is a separate caller-supplied layer.
+The central path currently [forwards the supplied spec](../runner_gateway/dispatcher/central_runner.go)
+and [stores its instructions](../x/central_sampler/store.go) without that Runner composition.
+Central provider adapters add their own base prompt, which is not the Agentplane platform guide.
+Providing a short delegation brief therefore cannot be assumed to preserve the same platform
+orientation across runtimes today.
+
+Resolve the applicable guidance once when a new Session opening is durably admitted, retaining
+its effective content and source provenance for execution and inspection. Native and central
+paths share the same composition semantics through neutral code/configuration; no new service,
+app dependency, parent Session or live executor is required to supply platform guidance.
+Repeated opening of the same UUID/request recovers that resolved snapshot instead of appending
+again or resolving against a newly edited deployment prompt. Resume/rollover retains it; changed
+default guidance applies to newly opened Sessions. Retaining that prompt does not freeze live
+permissions, tool availability or environment state; those remain discoverable runtime facts.
+
+A deliberate omission/replacement of platform guidance should require a separate, explicit
+advanced option, never an empty `instructions` value or ordinary additional briefing. This draft
+selects safe additive behavior for the normal spawning tool; the advanced override's exact
+interface remains a review question. Prompts are not an authorization boundary: changing or
+omitting guidance does not change backend RBAC, Action policy or environment isolation.
 
 ## Proposed workflow A: agent reuses its environment
 
@@ -114,8 +168,7 @@ use MCP tools without Agentplane owning their JavaScript host.
        {
          "harness": "HARNESS_CODEX",
          "model": "offered-model",
-         "reasoning_efforts": ["low", "high"],
-         "cwd_policy": "workspace_descendants"
+         "reasoning_efforts": ["low", "high"]
        }
      ],
      "observed_at": "2026-10-31T18:00:00Z"
@@ -126,10 +179,11 @@ use MCP tools without Agentplane owning their JavaScript host.
    model guessed from these docs. This whole descriptor is proposed. Configuration must come from
    the owning runtime or a shared deployment catalog checked against that runtime. Launch presets
    alone cannot establish what an existing target supports. Discovery includes freshness and
-   pagination; readiness/configuration may change before admission. Cwd policy is backend-specific:
-   native Runner enforces its configured workspace root; the current central sampler accepts an
-   absolute path without that confinement. Discovery must describe the actual rule, not imply
-   that placement in one Sandbox makes those checks equivalent.
+   pagination; readiness/configuration may change before admission. `cwd` is an absolute path.
+   Native Runner also rejects paths outside or equal to its workspace root when one is configured;
+   the current central sampler does not apply that root restriction. These are existing backend
+   checks, not a new selectable `cwd_policy`. Returned workspace information and environment
+   instructions guide directory selection; admission remains authoritative.
 
 2. Match the full target reference against the agent's supplied destination and choose an offered
    harness/model/effort. Inspect the existing repository with ordinary execution tools. Prepare a
@@ -149,9 +203,9 @@ use MCP tools without Agentplane owning their JavaScript host.
        "harness": "HARNESS_CODEX",
        "model": "offered-model",
        "reasoning_effort": "high",
-       "cwd": "/workspace/ci-latency-worker",
-       "instructions": "Investigate delegated CI latency work. Use this directory; state uncertainty and link evidence."
-     }
+       "cwd": "/workspace/ci-latency-worker"
+     },
+     "additional_instructions": "Investigate delegated CI latency work. Use this directory; state uncertainty and link evidence."
    }
    ```
 
@@ -243,8 +297,8 @@ execution host, parent Session or notification inbox.
 1. `tools/list` exposes the new environment and Session tools. Call `environments_list({"limit":20})`;
    it evaluates the connection's verified bound SA, rather than asking the model to provide one.
    With an eligible target, use the full reference and offered configuration exactly as in workflow A.
-2. Call `sessions_open` with a retained UUID and usable absolute cwd, respecting the selected
-   runtime's workspace rule. The runtime creates a missing directory. Repository preparation can
+2. Call `sessions_open` with a retained UUID and usable absolute cwd, respecting the backend's
+   existing path validation. The runtime creates a missing directory. Repository preparation can
    use an explicit `setup_script`, with its result visible through `sessions_get`; a clone needs
    an explicit source and authorized credentials. Opening does not implicitly copy another repo.
 3. Call `sessions_submit_input`, retain the command UUID, and use `sessions_observe_input` to read
@@ -264,10 +318,11 @@ The proposed creation path uses dedicated environment tools and an Action backed
 provisioning API. It is not currently callable; it has no dependency on `orchestration_v1`.
 
 1. Discover `environments_list_templates` through `tools/list` and call `{"limit":20}`. Select a
-   returned VM or Pod configuration and retain its complete `template` reference, including its
+   deployment-published VM or Pod configuration and retain its complete `template` reference, including its
    revision. The returned configuration includes the caller's actual execution account, resources,
-   mounts and policies. The agent does not guess template names, revisions or resource defaults.
-   Discover `environments/create` and its current schema/policy through the normal Action catalog.
+   mounts and policies. Publication means the configuration is offered for submission, not that
+   the caller is approved to create it. No new per-SA template-eligibility rule is proposed.
+   The agent does not guess template names, revisions or resource defaults. Discover `environments/create` and its current schema/policy through the normal Action catalog.
 2. Retain a creation UUID and a separate Action key before submitting. For example, after discovering
    the illustrative `ci-vm` template reference below, call the existing `request_action` tool:
 
@@ -348,24 +403,30 @@ types; the linked existing protobufs remain authoritative for reused messages an
 Examples use protobuf field names; JSON Schema must pin that field spelling explicitly. New
 projections belong to neutral shared clients/backends, with no `orchestration_v1` DTO dependency.
 
-| Name                             | Purpose                                                                                                                                                                                     | Approval / authorization                                                                                                                                                      | Input schema                                                                                        | Success-output schema                                                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `environments_list_templates`    | Discover requestable Pod/VM configurations, exact revision handles and the configuration an operator would approve. Use when no eligible environment exists; it creates nothing.            | Automatic read for the authenticated account; return only configurations it may request.                                                                                      | `{limit: integer (1..100), after?: OpaqueCursor}`                                                   | `Page<TemplateDescriptor>`                                                                                                 |
-| `environments_list`              | Discover existing environments eligible for Session work, including their full handles, readiness, instructions and runtime choices. An empty list is valid; a backend failure is an error. | Automatic, filtered to the caller's eligible same-SA targets.                                                                                                                 | `{limit: integer (1..100), after?: OpaqueCursor}`                                                   | `Page<EnvironmentDescriptor>`                                                                                              |
-| `environments_get`               | Refresh one environment's state and usable Session configuration. Use the complete handle; a same-name replacement is refused.                                                              | Automatic for an authorized target.                                                                                                                                           | `{target: TargetRef}`                                                                               | `EnvironmentDescriptor`                                                                                                    |
-| `environments_get_creation`      | Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                            | Automatic for the creation's authenticated owner.                                                                                                                             | `{creation_id: UUID}`                                                                               | `CreationObservation`                                                                                                      |
-| **Action `environments/create`** | Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                    | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                        | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`       | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
-| `sessions_open`                  | Durably open a child Session; optional one-time setup. Same UUID/spec/target recovers the original; conflicting reuse fails. Admission does not mean harness/model acceptance.              | Caller is authenticated; target's actual SA UID equals caller's verified SA UID; target UID and allowed runtime configuration are checked atomically at Dispatcher admission. | `{target: TargetRef, session_id: UUID, spec: SessionSpec, setup_script?: string (maxLength 65536)}` | `{opening: Dispatcher.SessionOpening}`; normally queued initially.                                                         |
-| `sessions_submit_input`          | Durably admit input separately from opening; same command ID/request recovers its original admission.                                                                                       | Same trusted logical Session principal and actual target execution account as caller; target/Session binding and target UID match.                                            | `{target: TargetRef, session_id: UUID, command_id: UUID, text: string (nonempty)}`                  | `{dispatch: Dispatcher.Dispatch}`; stored is not consumed.                                                                 |
-| `sessions_observe_input`         | Bounded, read-only observation correlated to one command; timeout does not cancel work.                                                                                                     | Same retained logical principal under the narrow read rule; live environment not required.                                                                                    | `{session_id: UUID, command_id: UUID, wait_seconds: integer (0..30), resume_token?: OpaqueToken}`   | `{session_id: UUID, command_id: UUID, dispatch: SourcePart<Dispatcher.Dispatch, "dispatcher">, observation: Observation}`. |
-| `sessions_get`                   | Read opening plus retained History snapshot, including setup/harness state and active turn when observed.                                                                                   | Same retained logical principal under the narrow read rule; live environment not required.                                                                                    | `{session_id: UUID}`                                                                                | `SessionSnapshot`; missing History remains distinct from a missing Dispatcher opening.                                     |
-| `sessions_read_turns`            | Page through compact retained turns; debug/evidence reads remain separate.                                                                                                                  | Same retained logical principal under the narrow read rule; live environment not required.                                                                                    | `{session_id: UUID, count: integer (1..100), page_cursor?: OpaqueCursor}`                           | `TurnPage`.                                                                                                                |
-| `sessions_cancel_input`          | Cancel only an unclaimed queued dispatch.                                                                                                                                                   | Same control authority; named command must belong to the Session.                                                                                                             | `{session_id: UUID, command_id: UUID}`                                                              | `{dispatch: Dispatcher.Dispatch}`.                                                                                         |
-| `sessions_interrupt_turn`        | Interrupt exactly the observed turn; never targets a successor turn.                                                                                                                        | Same control authority; Session, target incarnation and observed turn must match; use a fresh interrupt command UUID; runtime must be reachable.                              | `{target: TargetRef, session_id: UUID, command_id: UUID, turn_id: OpaqueId}`                        | `Dispatcher.InterruptTurnResponse`; includes existing state/reason/admission.                                              |
+| Name                             | Purpose                                                                                                                                                                                                                             | Approval / authorization                                                                                                                                                                          | Input schema                                                                                                                          | Success-output schema                                                                                                      |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `environments_list_templates`    | Discover deployment-published Pod/VM configurations, exact revision handles and what a creation approval would cover. Use when no eligible environment exists; it creates nothing.                                                  | Authenticated read of the deployment-published catalogue; discovery is not creation approval.                                                                                                     | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<TemplateDescriptor>`                                                                                                 |
+| `environments_list`              | Discover existing environments eligible for Session work, including their full handles, readiness, instructions and runtime choices. An empty list is valid; a backend failure is an error.                                         | Automatic, filtered to the caller's eligible same-SA targets.                                                                                                                                     | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<EnvironmentDescriptor>`                                                                                              |
+| `environments_get`               | Refresh one environment's state and usable Session configuration. Use the complete handle; a same-name replacement is refused.                                                                                                      | Automatic for an authorized target.                                                                                                                                                               | `{target: TargetRef}`                                                                                                                 | `EnvironmentDescriptor`                                                                                                    |
+| `environments_get_creation`      | Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                                                                    | Automatic for the creation's authenticated owner.                                                                                                                                                 | `{creation_id: UUID}`                                                                                                                 | `CreationObservation`                                                                                                      |
+| **Action `environments/create`** | Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                                                            | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                                            | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`                                         | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
+| `sessions_open`                  | Durably open a child Session with default platform guidance plus an optional additive brief and one-time setup. Same UUID/request recovers the original; conflicting reuse fails. Admission does not mean harness/model acceptance. | Caller is authenticated; target's actual SA UID equals caller's verified SA UID; target UID is fenced at Dispatcher admission; the owning runtime validates the requested harness/model settings. | `{target: TargetRef, session_id: UUID, spec: SessionSpec, additional_instructions?: string, setup_script?: string (maxLength 65536)}` | `{opening: Dispatcher.SessionOpening}`; normally queued initially.                                                         |
+| `sessions_submit_input`          | Durably admit input separately from opening; same command ID/request recovers its original admission.                                                                                                                               | Same trusted logical Session principal and actual target execution account as caller; target/Session binding and target UID match.                                                                | `{target: TargetRef, session_id: UUID, command_id: UUID, text: string (nonempty)}`                                                    | `{dispatch: Dispatcher.Dispatch}`; stored is not consumed.                                                                 |
+| `sessions_observe_input`         | Bounded, read-only observation correlated to one command; timeout does not cancel work.                                                                                                                                             | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, command_id: UUID, wait_seconds: integer (0..30), resume_token?: OpaqueToken}`                                     | `{session_id: UUID, command_id: UUID, dispatch: SourcePart<Dispatcher.Dispatch, "dispatcher">, observation: Observation}`. |
+| `sessions_get`                   | Read opening plus retained History snapshot, including setup/harness state and active turn when observed.                                                                                                                           | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID}`                                                                                                                  | `SessionSnapshot`; missing History remains distinct from a missing Dispatcher opening.                                     |
+| `sessions_read_turns`            | Page through compact retained turns; debug/evidence reads remain separate.                                                                                                                                                          | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, count: integer (1..100), page_cursor?: OpaqueCursor}`                                                             | `TurnPage`.                                                                                                                |
+| `sessions_cancel_input`          | Cancel only an unclaimed queued dispatch.                                                                                                                                                                                           | Same control authority; named command must belong to the Session.                                                                                                                                 | `{session_id: UUID, command_id: UUID}`                                                                                                | `{dispatch: Dispatcher.Dispatch}`.                                                                                         |
+| `sessions_interrupt_turn`        | Interrupt exactly the observed turn; never targets a successor turn.                                                                                                                                                                | Same control authority; Session, target incarnation and observed turn must match; use a fresh interrupt command UUID; runtime must be reachable.                                                  | `{target: TargetRef, session_id: UUID, command_id: UUID, turn_id: OpaqueId}`                                                          | `Dispatcher.InterruptTurnResponse`; includes existing state/reason/admission.                                              |
 
 ### Environment records and creation semantics
 
-The initial creation schema selects a complete reviewed configuration; it has no arbitrary Pod
+The catalogue is deployment configuration exposed by its owning backend, not a new per-account
+permission system. Catalogue reads expose published configurations; ordinary Action schema and
+policy/Decision processing governs a creation request. Initially creation requires human approval.
+Any future per-template request restriction needs an explicit policy owner and enforcement
+contract; it must not be inferred from catalogue membership or a preset.
+
+The initial creation schema selects a complete configuration for review; it has no arbitrary Pod
 spec, alternate-account or resource-override field. The reviewed configuration fixes the namespace;
 `name` must be a valid Sandbox object name there. `TemplateDescriptor.configuration` shows the
 selected Pod/VM resources, mounts, policies and bootstrap before submission. The trusted approval
@@ -402,7 +463,6 @@ type RuntimeConfiguration = {
   harness: Harness;
   model: string;
   reasoning_efforts: string[];
-  cwd_policy: "workspace_descendants" | "absolute";
 };
 type EnvironmentDescriptor = {
   target: TargetRef;
@@ -433,9 +493,9 @@ type CreationObservation = { creation_id: UUID; source: "environment" } & (
 );
 ```
 
-`TemplateDescriptor` is a caller-specific view of existing `SandboxTemplate` configuration and
-reviewed launch defaults, not a new persisted template entity. Its revision covers the complete
-resolved configuration, including the execution account. `SandboxTemplateSpec` reuses the
+`TemplateDescriptor` projects deployment-published `SandboxTemplate` configuration and launch
+defaults, resolved with the verified caller's execution account. It is not a new persisted template
+entity. Its revision covers the complete resolved configuration, including the execution account. `SandboxTemplateSpec` reuses the
 [existing public Pod/VM and volume schema](../sandboxes/api/types.go); Kubernetes quantities retain
 their explicit units. `Harness` reuses the [Runner enum](../proto/runner.proto), limited to offered
 non-unspecified values. Unsupported or unavailable runtime configuration is explicit; a failed
@@ -453,9 +513,8 @@ facts and the read-only recovery lookup. Backend errors return `ToolError`, not 
 type SessionSpec = {
   harness: Harness; // an offered, non-unspecified value
   model: string; // nonempty offered ID
-  cwd: string; // absolute; satisfies that runtime's advertised workspace rule
+  cwd: string; // absolute; existing backend path validation still applies
   reasoning_effort?: string; // an offered value
-  instructions?: string;
 };
 type SourcePart<T, S> =
   | { kind: "observed"; source: S; observed_at: Timestamp; value: T }
@@ -523,6 +582,11 @@ type ToolError = {
 type Failure<T> = { error: ToolError; observed?: Partial<T> };
 ```
 
+The proposed tool's `SessionSpec` contains runtime settings only; `additional_instructions` is an
+opening argument. Backend adaptation fills the existing protobuf instructions field according to
+the composition contract above. This is new facade/composition work, not an existing protobuf
+field named `additional_instructions`.
+
 Every success schema in the table also permits `Failure<SuccessSchema>`. A backend/follower
 failure preserves any facts already observed and an explicit error. Missing History, a retention
 gap, and an unavailable source remain distinct. `SessionSummary.attached` supplies the existing
@@ -572,6 +636,7 @@ a reply address nor a creator/parent edge grants send/read access.
 | Current identity records can identify intermediary services                  | `sampler_session.account_uid` currently identifies its authenticated Dispatcher peer; central History's writer is the sampler SA. Neither can be reinterpreted as the child/creator's authority. Add explicit logical-principal/provenance fields and validate their source.                                                                                                              |
 | No trusted retained logical-principal association for the proposed read rule | Dispatcher owns admission and supplies its immutable association over an authenticated, designated backend path to sampler/History. History stores it separately from writer and execution Sandbox. Ordinary callers cannot assert another principal. Preserve existing evidence; unassociated old records need an explicit adoption policy, not guessed ownership.                       |
 | Account-token external callers do not fit every current workload method      | MCP edge resolves the verified OAuth connection and its allowed account UID. Reuse `ResolveServiceAccountToken` for explicitly account-authorized methods/audiences; current Dispatcher/History workload admission requires Pod binding. Limit TokenRequest permissions and recheck account identity/revocation. Do not relax every workload endpoint or trust a forwarded caller string. |
+| Native and central opening do not share platform-instruction composition     | Extract backend-owned composition; preserve harness base guidance and default platform/environment context, append the child briefing, and freeze effective content/provenance at opening. Optional presets must not be required to obtain platform guidance; expose deliberate prompt overrides separately.                                                                              |
 | Existing presets describe fresh launch inputs, not eligible existing targets | Dispatcher target inventory plus runtime/configuration owners expose a bounded, authorized descriptor. Extract any shared configuration from the app; no backend calls the app or reads its private tables. Runtime admission remains authoritative.                                                                                                                                      |
 | `OpenSession` pre-check cannot fence replacement during the RPC              | Add expected UID to the backend opening contract and check it there, including deduplication. Scope all subsequent lookups to authenticated authority.                                                                                                                                                                                                                                    |
 | Raw wait/read flow is cumbersome and not command-specific                    | Neutral shared client projection implements `observe_input` over scoped Dispatcher and History APIs. CLI/MCP invoke both as the caller, without a new privileged result database, queue or task owner. Reuse existing command correlation/folding where possible.                                                                                                                         |
@@ -593,7 +658,8 @@ has a reviewed migration. Avoid a second general authorization owner in the new 
 ## Implementation sequence after selection
 
 1. **Pin admission/identity and read contracts.** Specify trusted association propagation,
-   target UID fencing, exact same-SA rule, revocation and existing-record handling. A shared
+   target UID fencing, exact same-SA rule, revocation, existing-record handling and additive
+   instruction composition. A shared
    execution account is a real authority boundary; per-Session credentials are not introduced.
 2. **Implement backend scope and target/configuration discovery.** Mutation and result-read
    authorization are prerequisites for exposing a working delegation loop. Existing-target

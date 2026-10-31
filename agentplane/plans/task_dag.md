@@ -493,6 +493,11 @@ new-environment creation human-approved initially. Dedicated environment managem
 The proposal includes a combined tool/schema reference and a concrete creation-to-Session sequence.
 Existing-target `environments_list`/`environments_get` discovery belongs to the selected delegation
 slice and does not wait for fresh provisioning.
+Spawning adds a child briefing to backend-owned platform/environment guidance; it must not clear
+that guidance when a preset is omitted or the caller supplies its own instructions. Resolve and
+retain the effective prompt once for opening retries and resume, consistently across native and
+central runtimes. Catalogue discovery exposes published configurations; it is not an extra per-SA
+template-eligibility policy. Creation approval stays with Action policy and the operator.
 
 Review the bounded API and authority contract: which existing same-account targets may be used,
 defaults/cwd, creation provenance, message/result delivery and caller-visible lifecycle controls.
