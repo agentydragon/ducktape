@@ -1375,13 +1375,13 @@ binding with a `Symbol.for` key domain, while `%Symbol%` and `%Symbol.for%`
 have no census write. The set is a greatest fixed point: a write through a
 bundle-owned value is not itself a store into a global or prototype.
 
-Every bundle-owned property is unknown if the global object or a container
-holding it escapes into a call, a property, a return or an export, if any
-global-chain write has an unknown key or may name `__proto__`, if a keyless
-reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
-receiver, or if a legacy accessor method (`__defineGetter__`) is called on one.
-A sloppy assignment to an undeclared `g` is a store into `g`; `delete`,
-updates, destructuring and reflective writes naming `g` drop it.
+The set is computed over every analyzed chunk's writes, since all chunks share
+one global object. Every bundle-owned property is unknown if any global-chain
+write has an unknown key or may name `__proto__`, if a keyless reflective write
+(`Object.assign`, `Object.setPrototypeOf`) reaches such a receiver, or if a
+legacy accessor method (`__defineGetter__`) is called on one. A sloppy
+assignment to an undeclared `g` is a store into `g`; `delete`, updates,
+destructuring and reflective writes naming `g` drop it.
 
 Soundness, by induction over execution: initially `g` is absent from the
 global object and, by the host claim, from its host prototypes, or is a named
@@ -1391,8 +1391,9 @@ object, a primitive or `g`'s current value, so `g` never holds an intrinsic. Wri
 through `g`'s value land on fresh objects, so they cannot store into `g` on
 the global chain either. Setters and Proxy traps a write runs are analyzed
 source with census writes of their own; A11 excludes host code changing
-intrinsics or adding globals, and covers hidden native-alias paths (an aliased
-`Object.defineProperty`) as for every census fact. Analyzed chunks are ES
+intrinsics or adding globals, and covers hidden native-alias paths as for
+every census fact: an aliased `Object.defineProperty`, or a write through a
+parameter or container field that holds the global object. Analyzed chunks are ES
 modules, so top-level declarations create no global property, and dynamic
 scope leaves the census open. A descendant of `g`'s value stays unknown.
 Proofs that use the discharge record `predefined_globals` among their host

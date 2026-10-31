@@ -176,6 +176,8 @@ pub(super) struct CrossModulePurities {
     pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub(super) native_integrity: Option<NativeIntegrity>,
+    /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
+    pub(super) bundle_globals: analysis::analysis_inputs::BundleGlobalNames,
     /// Source-resolved author inputs for the provider's own local analysis.
     pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
@@ -702,6 +704,7 @@ pub(super) fn collect_cross_module_imported_purities(
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
+        bundle_globals: callable_summaries.bundle_globals,
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
