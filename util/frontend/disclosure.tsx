@@ -75,11 +75,7 @@ export function DisclosureCard({
   const nested = useContext(DisclosureCardContext);
   return (
     <DisclosureCardContext.Provider value={true}>
-      <Paper
-        className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`}
-        data-open={open}
-        data-nested={nested}
-      >
+      <Paper className={`ui-collapsible-card${className ? ` ${className}` : ""}`} data-open={open} data-nested={nested}>
         {children}
       </Paper>
     </DisclosureCardContext.Provider>
@@ -88,15 +84,15 @@ export function DisclosureCard({
 
 /** Terminal content inherits the inset computed by its owning section, exactly like its label. */
 export function DisclosureBody({ children }: { children: ReactNode }): JSX.Element {
-  return <div className="agentplane-disclosure-body">{children}</div>;
+  return <div className="ui-disclosure-body">{children}</div>;
 }
 
 function DisclosureAside({ children }: { children?: ReactNode }): JSX.Element | null {
-  return children ? <div className="agentplane-disclosure-aside">{children}</div> : null;
+  return children ? <div className="ui-disclosure-aside">{children}</div> : null;
 }
 
 function disclosureIndent(depth: number): CSSProperties {
-  return { "--agentplane-disclosure-depth": depth } as CSSProperties;
+  return { "--ui-disclosure-depth": depth } as CSSProperties;
 }
 
 /** A non-interactive step shares the disclosure row's typography, spacing and nesting inset. */
@@ -111,11 +107,8 @@ export function DisclosureRow({
 }): JSX.Element {
   const { depth } = useContext(StickyStackContext);
   return (
-    <div
-      className={`agentplane-disclosure-header agentplane-disclosure-static ${className}`}
-      style={disclosureIndent(depth)}
-    >
-      <div className="agentplane-disclosure-static-content">{children}</div>
+    <div className={`ui-disclosure-header ui-disclosure-static ${className}`} style={disclosureIndent(depth)}>
+      <div className="ui-disclosure-static-content">{children}</div>
       <DisclosureAside>{summaryAside}</DisclosureAside>
     </div>
   );
@@ -160,27 +153,27 @@ export function Disclosure({
 
   return (
     <Accordion
-      className={`agentplane-disclosure${className ? ` ${className}` : ""}`}
+      className={`ui-disclosure${className ? ` ${className}` : ""}`}
       style={disclosureIndent(stackPosition.depth)}
       transitionDuration={0}
-      chevronSize="var(--agentplane-disclosure-chevron-size)"
+      chevronSize="var(--ui-disclosure-chevron-size)"
       keepMounted={keepMounted}
       keepMountedMode={keepMounted ? "display-none" : undefined}
       value={expanded ? "content" : null}
       onChange={(value) => setExpanded(value === "content")}
       classNames={{
-        item: "agentplane-disclosure-item",
-        control: "agentplane-disclosure-summary",
-        label: "agentplane-disclosure-summary-content",
-        chevron: "agentplane-disclosure-chevron",
-        panel: "agentplane-disclosure-panel",
-        content: "agentplane-disclosure-content",
+        item: "ui-disclosure-item",
+        control: "ui-disclosure-summary",
+        label: "ui-disclosure-summary-content",
+        chevron: "ui-disclosure-chevron",
+        panel: "ui-disclosure-panel",
+        content: "ui-disclosure-content",
       }}
     >
       <Accordion.Item value="content" {...dataAttributes}>
         <div
           ref={headingRef}
-          className="agentplane-disclosure-header agentplane-disclosure-heading"
+          className="ui-disclosure-header ui-disclosure-heading"
           data-expanded={expanded}
           data-depth={stackPosition.depth}
           hidden={!headingVisible}

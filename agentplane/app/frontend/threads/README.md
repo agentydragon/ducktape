@@ -8,16 +8,17 @@ the status indicator, and the Thread tab favicon belong with that navigation.
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
 and send/interrupt controls; `history_row_views.tsx` renders history rows,
-and `virtualized_history.tsx` renders immutable geometry plans. `history_geometry.ts` owns height evidence and row positions;
+and `virtualized_history.tsx` adapts Thread rows to the shared `util/frontend/transcript` viewport.
+The shared `history_geometry.ts` owns height evidence and row positions;
 `history_viewport.ts` verifies committed DOM geometry and owns reader intent and scroll writes.
-`thread_view_recorder.ts` owns opt-in diagnostic recording and its event schema, and
+`thread_view_recorder.ts` owns opt-in diagnostic recording and its recording format, and
 `thread_view_recorder_tools.tsx` exposes recording controls in the sidebar. `command_delivery.ts`
 owns retained command submission, receipts, and retries; `thread_commands.tsx` renders command
 outcomes. `thread_sync.ts`
 defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
-owns their lazy evidence paging. History rows, local commands, disclosures, Thread
-status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The shared sidebar shell, HTTP transport, Sandbox status model, and generic rendering components stay in the parent frontend package.
+owns their lazy evidence paging. History rows, local commands, Thread
+status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The sidebar shell, HTTP transport and Sandbox status model stay in the parent frontend package. Generic transcript rendering lives in `util/frontend/transcript`.
 
 The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
 declarations are local copies of the parent package declarations: each TypeScript
@@ -29,7 +30,7 @@ guarantees, `scrolling_verification.md` for engineering checks, and
 
 ## Disclosure layout ownership
 
-The shared primitives live in `../disclosure.tsx` and `../disclosure.css`:
+The shared primitives live in `util/frontend/disclosure.tsx` and `disclosure.css`:
 
 - `DisclosureCard` owns the outer frame. Its context selects outer/nested variants;
   consumers do not remove ancestor borders with descendant selectors.

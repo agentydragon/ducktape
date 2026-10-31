@@ -1,8 +1,8 @@
 import { Stack, Text } from "@mantine/core";
 import { type JSX } from "react";
 
-import { ClampedBlock } from "../clamped_block";
-import { Disclosure, DisclosureBody } from "../disclosure";
+import { ClampedBlock } from "../../../../util/frontend/clamped_block";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 
 const ABOVE_COPY = Array.from(
   { length: 4 },

@@ -5,7 +5,7 @@ import { IconHistory } from "../icons";
 
 import { threadObservationEntry, threadObservations } from "./client";
 import { displayableError } from "../client";
-import { Disclosure, DisclosureBody } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../json_view";
 
 type PageRequest = { before?: string; after?: string };

@@ -34,14 +34,14 @@ it("restores an open disclosure after its virtualized row remounts", async () =>
     );
 
   await render(true);
-  const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary")!;
+  const control = container.querySelector<HTMLButtonElement>(".ui-disclosure-summary")!;
   await act(async () => control.click());
   expect(container.textContent).toContain("selected output");
 
   await render(false);
-  expect(container.querySelector(".agentplane-disclosure")).toBeNull();
+  expect(container.querySelector(".ui-disclosure")).toBeNull();
   await render(true);
-  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
   expect(container.textContent).toContain("selected output");
 });
 
@@ -133,16 +133,16 @@ it("evicts old disclosure choices and keeps a replacement source closed", async 
 
   for (let item = 0; item < 129; item++) {
     await render("original", item);
-    const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary")!;
+    const control = container.querySelector<HTMLButtonElement>(".ui-disclosure-summary")!;
     await act(async () => control.click());
     expect(container.querySelector("[data-retained-content]")?.textContent).toBe(`original evidence ${item}`);
   }
   await render("original", 0);
-  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
+  expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("[data-retained-content]")).toBeNull();
   await render("original", 128);
-  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
   await render("replacement", 128);
-  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
+  expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("[data-retained-content]")).toBeNull();
 });

@@ -64,12 +64,12 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:operation_section",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions:github_action_schemas",
+        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -131,10 +131,10 @@ ts_library(
         "//:node_modules/yaml",
         "//:node_modules/zod",
         "//agentplane/app/frontend:argv_text",
-        "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:shell_command_view",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions:kubernetes_action_schemas",
+        "//util/frontend:clamped_block",
     ],
 )
 

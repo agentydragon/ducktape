@@ -1,7 +1,7 @@
 import { Text } from "@mantine/core";
 import type { JSX, ReactNode, Ref } from "react";
 
-import { Disclosure, DisclosureBody, DisclosureRow } from "../disclosure";
+import { Disclosure, DisclosureBody, DisclosureRow } from "../../../../util/frontend/disclosure";
 
 /** How a step stands, as its title shows it while the step is folded. A streaming step breathes; an
  * incomplete one, which nothing is working on, does not. */

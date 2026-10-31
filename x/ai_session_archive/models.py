@@ -20,6 +20,11 @@ class TranscriptStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class EventDirection(StrEnum):
+    FORWARD = "forward"
+    BACKWARD = "backward"
+
+
 class Machine(BaseModel):
     id: str
     display_name: str

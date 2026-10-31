@@ -80,14 +80,14 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:models",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -205,9 +205,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:clamped_block",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:raw_switch",
@@ -217,6 +215,8 @@ ts_library(
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
     ],
 )
 

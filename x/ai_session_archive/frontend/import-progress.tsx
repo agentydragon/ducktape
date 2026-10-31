@@ -116,92 +116,93 @@ export function MachineImportProgressSummary({
 }): JSX.Element {
   const incompleteMachines = progress.filter(machineImportIsIncomplete);
   return (
-    <Paper component="section" aria-label="Import progress by machine" withBorder radius="sm" p="xs">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center">
-          <Text size="sm" fw={600}>
-            Archive import
-          </Text>
-          <Button
-            component={Link}
-            to={{ pathname: "/", search: "?view=import-progress" }}
-            state={{ returnTo }}
-            size="xs"
-            variant="subtle"
-          >
-            Import details
-          </Button>
-        </Group>
-        {error !== null && (
-          <Text size="xs" c="red">
-            Could not refresh import progress: {error}
-          </Text>
-        )}
-        {progress.length === 0 && loading ? (
-          <Center h={28}>
-            <Loader size="xs" aria-label="Loading import progress" />
-          </Center>
-        ) : progress.length === 0 ? (
-          <Text size="xs" c="dimmed">
-            No machines are registered yet.
-          </Text>
-        ) : incompleteMachines.length === 0 ? (
-          <Text size="xs" c="dimmed">
-            All known imports are complete.
-          </Text>
-        ) : (
-          <Stack gap="xs">
-            {incompleteMachines.map((machine) => {
-              const totalFileCount =
-                machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
-              const processedPercentage =
-                totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
-              const pendingPercentage = totalFileCount === 0 ? 0 : (machine.pending_file_count / totalFileCount) * 100;
-              const failedPercentage = totalFileCount === 0 ? 0 : (machine.failed_file_count / totalFileCount) * 100;
+    <Group
+      component="section"
+      aria-label="Import progress by machine"
+      className="session-import-summary"
+      gap="xs"
+      wrap="wrap"
+    >
+      {error !== null && (
+        <Text size="xs" c="red" role="status" title={`Could not refresh import progress: ${error}`}>
+          Import progress unavailable
+        </Text>
+      )}
+      {progress.length === 0 && loading ? (
+        <Loader size="xs" aria-label="Loading import progress" />
+      ) : progress.length === 0 ? (
+        <Text size="xs" c="dimmed">
+          No machines registered
+        </Text>
+      ) : incompleteMachines.length === 0 ? (
+        <Text size="xs" c="dimmed">
+          All imports complete
+        </Text>
+      ) : (
+        incompleteMachines.map((machine) => {
+          const totalFileCount = machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
+          const processedPercentage = totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
+          const pendingPercentage = totalFileCount === 0 ? 0 : (machine.pending_file_count / totalFileCount) * 100;
+          const failedPercentage = totalFileCount === 0 ? 0 : (machine.failed_file_count / totalFileCount) * 100;
 
-              return (
-                <Box component="section" key={machine.machine_id} aria-label={`${machine.display_name} import status`}>
-                  <Group justify="space-between" gap="xs" wrap="wrap">
-                    <Text size="sm" fw={500}>
-                      {machineImportIsActive(machine)
-                        ? `Syncing ${machine.display_name}`
-                        : `${machine.display_name} needs attention`}
-                    </Text>
-                    {totalFileCount > 0 && (
-                      <Text size="xs" c="dimmed">
-                        {machine.processed_file_count}/{totalFileCount} inventoried file entries processed
-                        {machine.failed_file_count > 0 ? ` · ${machine.failed_file_count} failed` : ""}
-                      </Text>
-                    )}
-                  </Group>
-                  {totalFileCount > 0 ? (
-                    <Progress.Root
-                      role="progressbar"
-                      aria-label={`${machine.display_name} file-entry progress`}
-                      aria-valuemin={0}
-                      aria-valuemax={totalFileCount}
-                      aria-valuenow={machine.processed_file_count}
-                      aria-valuetext={`${machine.processed_file_count} processed, ${machine.pending_file_count} pending, ${machine.failed_file_count} failed of ${totalFileCount} inventoried file entries`}
-                      size="sm"
-                    >
-                      {processedPercentage > 0 && <Progress.Section value={processedPercentage} color="blue" />}
-                      {pendingPercentage > 0 && <Progress.Section value={pendingPercentage} color="yellow" />}
-                      {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
-                    </Progress.Root>
-                  ) : (
-                    <Text size="xs" c="dimmed">
-                      {machine.oldest_unfinished_snapshot_state === null
-                        ? "No file entries inventoried yet."
-                        : snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
-                    </Text>
-                  )}
-                </Box>
-              );
-            })}
-          </Stack>
-        )}
-      </Stack>
-    </Paper>
+          return (
+            <Box
+              component="section"
+              key={machine.machine_id}
+              aria-label={`${machine.display_name} import status`}
+              className="session-import-machine"
+            >
+              <Text size="xs" fw={500} className="session-import-machine-name" title={machine.display_name}>
+                {machine.display_name}
+              </Text>
+              <Badge
+                size="xs"
+                variant="light"
+                color={machineImportIsActive(machine) ? "yellow" : "red"}
+                className="session-import-machine-state"
+              >
+                {machineImportIsActive(machine) ? "Syncing" : "Needs attention"}
+              </Badge>
+              {totalFileCount > 0 ? (
+                <>
+                  <Progress.Root
+                    role="progressbar"
+                    aria-label={`${machine.display_name} file-entry progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={totalFileCount}
+                    aria-valuenow={machine.processed_file_count}
+                    aria-valuetext={`${machine.processed_file_count} processed, ${machine.pending_file_count} pending, ${machine.failed_file_count} failed of ${totalFileCount} inventoried file entries`}
+                    size="xs"
+                    className="session-import-machine-progress"
+                  >
+                    {processedPercentage > 0 && <Progress.Section value={processedPercentage} color="blue" />}
+                    {pendingPercentage > 0 && <Progress.Section value={pendingPercentage} color="yellow" />}
+                    {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
+                  </Progress.Root>
+                  <Text size="xs" c="dimmed" className="session-import-machine-counts">
+                    {machine.processed_file_count}/{totalFileCount}
+                    {machine.failed_file_count > 0 ? ` · ${machine.failed_file_count} failed` : ""}
+                  </Text>
+                </>
+              ) : (
+                <Text size="xs" c="dimmed" className="session-import-machine-counts">
+                  {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                </Text>
+              )}
+            </Box>
+          );
+        })
+      )}
+      <Button
+        component={Link}
+        to={{ pathname: "/", search: "?view=import-progress" }}
+        state={{ returnTo }}
+        size="xs"
+        variant="subtle"
+      >
+        Import details
+      </Button>
+    </Group>
   );
 }
 

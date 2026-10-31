@@ -313,7 +313,7 @@ export function ProjectedControlCommand({
   if (row.entityKind !== "command" || !("outcome" in row.state) || row.state.operation === "submit_input") return null;
   return (
     <ControlCommandFrame id={row.entityId}>
-      <Box className="agentplane-evidence-owner" onClick={revealEvidenceOnTap}>
+      <Box className="transcript-inspection-owner" onClick={revealEvidenceOnTap}>
         <EvidenceToggle entity={row} />
         <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
           <Text size="sm" className="agentplane-command-card-description">

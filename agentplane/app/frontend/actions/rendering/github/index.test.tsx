@@ -30,10 +30,10 @@ function shownText(container: HTMLElement): string {
 
 /** Each file block's summary and, once opened, its text. */
 function fileBlocks(container: HTMLElement): Array<{ summary: HTMLButtonElement; text: () => string }> {
-  return [...container.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")].map((summary) => ({
+  return [...container.querySelectorAll<HTMLButtonElement>(".ui-disclosure-summary")].map((summary) => ({
     summary,
     text: () =>
-      [...(summary.closest(".agentplane-disclosure")?.querySelectorAll(".cm-line") ?? [])]
+      [...(summary.closest(".ui-disclosure")?.querySelectorAll(".cm-line") ?? [])]
         .map((line) => line.textContent ?? "")
         .join("\n"),
   }));
@@ -84,8 +84,8 @@ describe("GitHub push_files", () => {
     const [markdown, code] = fileBlocks(opened);
     await act(async () => markdown.summary.click());
     await act(async () => code.summary.click());
-    const fonts = [...opened.querySelectorAll(".agentplane-code-block-block")].map((block) =>
-      block.classList.contains("agentplane-code-font-prose")
+    const fonts = [...opened.querySelectorAll(".ui-code-block-block")].map((block) =>
+      block.classList.contains("ui-code-font-prose")
     );
     // The commit message, then the two opened files.
     expect(fonts).toEqual([true, true, false]);
@@ -148,7 +148,7 @@ describe("GitHub update_pull_request", () => {
     expect(collapsed.textContent).toContain("Test description.");
     expect(opened.textContent).toContain("New title: Test title");
     expect(opened.querySelector("[data-operation-heading]")?.textContent).toBe("New description");
-    expect(opened.querySelector(".agentplane-code-font-prose")?.textContent).toBe("Test description.");
+    expect(opened.querySelector(".ui-code-font-prose")?.textContent).toBe("Test description.");
   });
 
   it("leaves nothing below the label when it names every change", async () => {
