@@ -35,6 +35,10 @@ on the next two turns, including after the effort change, and checks unchanged s
 input and preserved message prefixes. The separate staging evidence below uses unpadded input;
 neither case establishes a fleet-wide hit rate.
 
+The [unpadded cache regression run](https://app.buildbuddy.io/invocation/0ebf010f-7c50-41ff-84e6-ba39a4aae1e2)
+passed the real Haiku cache case and the test library's lint/type checks. Only that case was
+selected; the other two live scenarios were not rerun for this test-only change.
+
 The [recursive sampler run](https://app.buildbuddy.io/invocation/89794c99-f6f1-4c7c-b5a5-e5dedce11344)
 passed both native Go suites and all five Python service integration suites. That run exposed
 root Go test references missed during extraction; after those test-only corrections, the
