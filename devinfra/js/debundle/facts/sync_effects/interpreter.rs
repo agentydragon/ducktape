@@ -2442,6 +2442,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
+        if self.promotes_nothing(&promoted_reads, &promoted_rebinds, effect_owner, outcome) {
+            return;
+        }
         let uninitialized: Vec<&Id> = promoted_reads
             .iter()
             .copied()
@@ -2476,6 +2479,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         insert_effects(&mut effects.rebinds, &promoted_rebinds, |id| {
             (id.clone(), effect_owner)
         });
+    }
+
+    /// Whether `promote_top_effects` would leave `outcome` unchanged: every
+    /// read and rebind is already held for `effect_owner`, every read that is
+    /// not yet initialized is already an uninitialized read, and, when the
+    /// promotion is observed, none of them carries an assumed-path tag to
+    /// clear. Escaped and deferred callback promotion repeats the same owners
+    /// at every opaque call, so most promotions are such repeats.
+    fn promotes_nothing(
+        &self,
+        promoted_reads: &[&Id],
+        promoted_rebinds: &[&Id],
+        effect_owner: SourceUnitOrdinal,
+        outcome: &Outcome,
+    ) -> bool {
+        let effects = &outcome.effects;
+        let assumed = &effects.fallback_only;
+        let observed = self.state.assumption.is_none();
+        promoted_reads.iter().all(|&id| {
+            effects.reads.contains(&(id.clone(), effect_owner))
+                && (self.state.initialized_bindings.contains(id)
+                    || effects.uninitialized_reads.contains(id))
+                && !(observed
+                    && (assumed.reads.contains_key(id)
+                        || assumed.uninitialized_reads.contains_key(id)))
+        }) && promoted_rebinds.iter().all(|&id| {
+            effects.rebinds.contains(&(id.clone(), effect_owner))
+                && !(observed && assumed.rebinds.contains_key(id))
+        })
     }
 
     fn roots_for_owner(&self, owner: SourceUnitOrdinal) -> BTreeSet<SourceUnitOrdinal> {
