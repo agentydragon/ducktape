@@ -254,10 +254,17 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 		// Initialization errors may be published before cancellation has finished draining a
 		// process that was started concurrently with executor readiness. Do not release waiters
 		// until the controller has settled that process.
-		if runtime.Phase == Stopped && runtime.Attempt >= demand && runtime.Error != "" {
-			return false, errors.New(runtime.Error)
-		}
 		if runtime.Phase == Stopped && runtime.Attempt >= demand {
+			terminal := runtime.Error
+			if runtime.StopError != "" {
+				if terminal != "" {
+					terminal += "; "
+				}
+				terminal += "Codex app-server stop failed: " + runtime.StopError
+			}
+			if terminal != "" {
+				return false, errors.New(terminal)
+			}
 			return false, errors.New("Codex app-server stopped before the Session could attach")
 		}
 		return false, nil
