@@ -563,10 +563,8 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check and standard-mode compaction]
-    CENTRAL_SAMPLER_ANTHROPIC_ROUTING[In review: direct Anthropic connections and credentials]
-    CENTRAL_SAMPLER_ANTHROPIC_ROUTING --> CENTRAL_SAMPLER_ANTHROPIC_MESSAGES[In review: Messages, durable exchanges and compaction]
-    CENTRAL_SAMPLER_ANTHROPIC_MESSAGES --> CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
-    CENTRAL_SAMPLER_ANTHROPIC_MESSAGES --> CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
+    CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
+    CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
@@ -625,50 +623,13 @@ dialect and exec encoding; standard mode sends top-level function tools and reje
 - Compaction for standard-mode routes, or an explicit decision that those routes run without it.
 
 Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
-payloads, or replay already dispatched effects. Independent of `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES`;
+payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../x/central_sampler/docs/anthropic_acceptance.md);
 no implementation or rollout is scheduled by this entry.
-
-### `CENTRAL_SAMPLER_ANTHROPIC_ROUTING` — direct provider connections and credentials
-
-**In review; [PR #13085](https://github.com/agentydragon/ducktape/pull/13085), Codex,
-2026-10-30 PDT.** Named connections, sampler-only organization credential wiring, direct TLS egress
-and the independent central-sampler model roster are implemented. No deployment has changed.
-[Component plan](../x/central_sampler/plans/anthropic.md#provider-route-and-credentials).
-Implement server-owned connection/model bindings for direct organization Anthropic access, with
-request/response content owned by the sampler DB. Wire the declarative credential source, direct
-egress and usage/budget ownership. The existing BuildBuddy key authenticates to LiteLLM, so provision
-an organization testing credential later ([#13063](https://github.com/agentydragon/ducktape/issues/13063)).
-The operator authorized bounded acceptance with the existing organization key through ephemeral
-secret headers. Exit: strict settings validation and
-reviewable chart/credential wiring for the selected route; no deployed cutover has occurred.
-
-### `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES` — Messages, durable exchanges and compaction
-
-**In review with `CENTRAL_SAMPLER_ANTHROPIC_ROUTING`;
-[PR #13085](https://github.com/agentydragon/ducktape/pull/13085), Codex, 2026-10-30 PDT.**
-Implementation and bounded real Haiku acceptance are complete; retained thinking, manual/automatic
-compaction, restart, tools and cache reads through an effort change pass.
-[Validation evidence](../debug/2026-10-30-anthropic-compaction-compatibility.md#implementation-acceptance).
-Review and rollout remain distinct; no live staging cutover has occurred.
-[Component plan](../x/central_sampler/plans/anthropic.md#messages-and-ordinary-compaction).
-Support organization-paid Anthropic models with the shared code-mode host/executor, native
-continuation and full request/response content in the sampler DB. Include manual and automatic
-server-side on-demand compaction in the acceptance contract. Also include selected
-[request features](../x/central_sampler/plans/anthropic.md#selected-request-features): prompt caching
-and diagnostics, thinking-block validation, cache-preserving effort changes, strict JSON tool input
-and eager argument streaming. Preserve original History, signed provider blocks and uncertain-effect
-handling. Temporary system instructions and task budgets are out of current scope.
-No subscription integration or Langfuse dependency.
-Exit: deterministic acceptance for tool/stream/context-replacement failures, plus a bounded direct
-real-model BuildBuddy case that executes, compacts, restarts and continues with another tool
-operation. Require a real Haiku cache-write/read test including an effort change on a supported
-Haiku version, and verify thinking continuity on a model that checks prefix binding. Code, chart
-routing and credential changes carry their own review and rollback.
 
 ### `CENTRAL_SAMPLER_BACKGROUND_COMPACTION` — summarize while sampling continues
 
-**Unscheduled; technical prerequisite `CENTRAL_SAMPLER_ANTHROPIC_MESSAGES`; operator requested
-tracking, 2026-10-30 PDT.** [Design and acceptance](../x/central_sampler/plans/anthropic.md#background-compaction).
+**Unscheduled; operator requested tracking, 2026-10-30 PDT.** Ordinary Anthropic compaction is
+[implemented and deployed](../x/central_sampler/docs/anthropic_acceptance.md). [Design and acceptance](../x/central_sampler/plans/anthropic.md#background-compaction).
 Use Anthropic on-demand compaction concurrently with ordinary turns. Persist the exact summarized
 prefix and atomically replace only it, retaining the appended suffix. Separate the background
 operation from the foreground pending-effect fence; reject stale results after context/ownership
@@ -679,8 +640,8 @@ or priority is assigned, and this follow-up does not gate ordinary Anthropic com
 ### `CENTRAL_SAMPLER_DYNAMIC_TOOLS` — change tool definitions during a Session
 
 **Deferred; operator requested DAG tracking, 2026-10-30 PDT.** Revisit when a concrete Actions/MCP
-workflow needs tools or schemas to change mid-Session. Technical prerequisite:
-`CENTRAL_SAMPLER_ANTHROPIC_MESSAGES`; this follow-up does not gate its fixed-tool implementation.
+workflow needs tools or schemas to change mid-Session. The
+[fixed-tool Anthropic adapter](../x/central_sampler/docs/anthropic_acceptance.md) is implemented and deployed.
 [Component design](../x/central_sampler/plans/anthropic.md#dynamic-tool-definitions) distinguishes
 provider-visible inline tools from nested code-mode tools and the existing Actions-as-tools work.
 Exit when selected: tool additions/removals reach model input and runtime consistently, retain the
