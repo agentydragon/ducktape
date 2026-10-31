@@ -105,9 +105,9 @@ fn pass_two_rejection_cycles_json_has_nonempty_cut() {
 /// `mod_a` and `mod_b` at-init read each other through interleaved
 /// statements (Pass 1, no statement-level cycle); `mod_c` at-init reads
 /// `mod_a`, whose `read_c` lazily reads `mod_c`. The I-SCC
-/// {mod_a, mod_b, mod_c} contains the Pass-1 SCC, so the simulator runs
-/// without a linker order: the summary names the Pass-1 cycle as the root
-/// cause and `cycles.json` marks the Pass-2 SCC consequential.
+/// {mod_a, mod_b, mod_c} contains the Pass-1 SCC. Without a linker order
+/// Pass 2 does not run, so only the Pass-1 SCC is reported; collapsing it
+/// leaves {mod_a+mod_b, mod_c}, which Lemma 2 rescues.
 fn pass_one_superset_fixture<'a>() -> FixtureOpts<'a> {
     FixtureOpts::new(
         r#"const a_seed = 1;
@@ -132,17 +132,8 @@ export { read_c };
     )
 }
 
-#[test]
-fn pass_two_scc_under_a_pass_one_cycle_is_reported_as_consequential() {
-    expect_rejection_containing_all(
-        pass_one_superset_fixture(),
-        &[
-            "Root cause: 1 mutual constraining cycle(s) (Pass 1)",
-            "[Pass 1: mutual constraining cycle]",
-            "[Pass 2, consequential: no linker order while Pass 1 rejects]",
-        ],
-    );
-    let rejected = run_rejection_fixture(pass_one_superset_fixture());
+fn cycle_kinds(fixture: FixtureOpts<'_>) -> Vec<(usize, String)> {
+    let rejected = run_rejection_fixture(fixture);
     let cycles: Vec<Value> = read_json(
         &rejected
             .report_root
@@ -150,21 +141,29 @@ fn pass_two_scc_under_a_pass_one_cycle_is_reported_as_consequential() {
             .join("app")
             .join("cycles.json"),
     );
-    let kinds: Vec<(usize, &str)> = cycles
+    cycles
         .iter()
         .map(|entry| {
             (
                 entry["modules"].as_array().unwrap().len(),
-                entry["rejection"].as_str().unwrap(),
+                entry["rejection"].as_str().unwrap().to_owned(),
             )
         })
-        .collect();
-    assert_eq!(
-        kinds,
-        [
-            (2, "mutual_constraining_cycle"),
-            (3, "tdz_without_linker_order")
+        .collect()
+}
+
+#[test]
+fn pass_one_superset_reports_only_the_pass_one_scc() {
+    expect_rejection_containing_all(
+        pass_one_superset_fixture(),
+        &[
+            "Root cause: 1 mutual constraining cycle(s) (Pass 1)",
+            "0 conditional SCC(s)",
+            "[Pass 1: mutual constraining cycle]",
         ],
-        "{cycles:?}"
+    );
+    assert_eq!(
+        cycle_kinds(pass_one_superset_fixture()),
+        [(2, "mutual_constraining_cycle".to_owned())],
     );
 }

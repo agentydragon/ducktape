@@ -195,12 +195,10 @@ fn assert_ladder_matches_reference(
         .unrealizable_sccs
         .iter()
         .any(|scc| scc.rejection == SccRejection::MutualConstrainingCycle);
-    let tdz = reference.unrealizable_sccs.iter().any(|scc| {
-        matches!(
-            scc.rejection,
-            SccRejection::EsmEvaluationTdz | SccRejection::TdzWithoutLinkerOrder
-        )
-    });
+    let tdz = reference
+        .unrealizable_sccs
+        .iter()
+        .any(|scc| scc.rejection == SccRejection::EsmEvaluationTdz);
     match ladder {
         LadderDecision::ConstrainingCycleReject => assert!(
             mutual_cycle,

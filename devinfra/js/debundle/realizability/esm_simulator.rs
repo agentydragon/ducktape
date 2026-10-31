@@ -85,15 +85,6 @@ impl EsmEvaluationSimulator {
         }
     }
 
-    /// The rejection a TDZ pair from this simulation proves.
-    pub(super) fn tdz_rejection(&self) -> super::SccRejection {
-        if self.linker_order_available {
-            super::SccRejection::EsmEvaluationTdz
-        } else {
-            super::SccRejection::TdzWithoutLinkerOrder
-        }
-    }
-
     /// Yields the `(from, to)` constraining pairs inside `modules`
     /// whose simulator-derived post-order has `to` evaluating at or
     /// after `from` — i.e. the at-init read of `to`'s binding from
@@ -102,7 +93,9 @@ impl EsmEvaluationSimulator {
     /// rescues the SCC.
     ///
     /// Endpoints unreachable from entry are skipped — ESM never
-    /// loads them, so they can't fire a TDZ at runtime.
+    /// loads them, so they can't fire a TDZ at runtime. Without a linker
+    /// order (cyclic constraining pairs, which Pass 1 rejects) there is no
+    /// import order to check, so nothing is yielded.
     pub(super) fn tdz_pairs<'a>(
         &'a self,
         modules: &'a BTreeSet<ModuleId>,
@@ -111,6 +104,7 @@ impl EsmEvaluationSimulator {
         constraining_pairs
             .iter()
             .copied()
+            .filter(|_| self.linker_order_available)
             .filter(move |&(from, to)| {
                 if !modules.contains(&from) || !modules.contains(&to) {
                     return false;

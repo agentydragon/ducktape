@@ -252,11 +252,12 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
 /// Modules 1 and 2 at-init read each other (Pass 1). Module 3 at-init reads
 /// module 1, which lazily reads module 3, so the I-SCC {1, 2, 3} strictly
 /// contains the Pass-1 SCC. With a cyclic constraining subgraph there is no
-/// linker order: Pass 2 still rejects the I-SCC (its mutual pair cannot both
-/// hold), but marks it as computed without one. Breaking the mutual pair
-/// gives the simulator a linker order, which rescues {1, 3}.
+/// linker order, so Pass 2 does not run and only the Pass-1 SCC is reported
+/// (a simulator run under `ModuleId` order would always reject the superset,
+/// since its mutual pair cannot both hold). Breaking the mutual pair gives
+/// the simulator a linker order, which rescues {1, 3}.
 #[test]
-fn pass_two_under_a_pass_one_cycle_is_marked_without_linker_order() {
+fn pass_two_is_skipped_while_pass_one_has_a_cycle() {
     let nodes = |count: usize| {
         (0..count)
             .map(|i| {
@@ -286,12 +287,24 @@ fn pass_two_under_a_pass_one_cycle_is_marked_without_linker_order() {
             analysis::EntryDestination::from_module_id(ModuleId(0)),
         );
         let pure = check_realizability(&graph, &assignment);
+        let touching: Vec<_> = (1..4)
+            .map(|m| check_realizability_touching(&graph, &assignment, ModuleId(m)))
+            .collect();
         let index = RealizabilityIndex::from_assignment(&graph, assignment);
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(pure.clone()),
             "incremental and pure gates must classify alike",
         );
+        // The touching paths see only the local Pass-1 SCC, so they must
+        // skip Pass 2 through the simulator's missing linker order.
+        for (m, reference) in (1..4).zip(touching) {
+            assert_eq!(
+                normalize_verdict(index.verdict_touching(ModuleId(m))),
+                normalize_verdict(reference),
+                "touching verdict for module {m}",
+            );
+        }
         pure
     };
 
@@ -302,16 +315,10 @@ fn pass_two_under_a_pass_one_cycle_is_marked_without_linker_order() {
         .collect();
     assert_eq!(
         rejections,
-        BTreeSet::from([
-            (
-                vec![ModuleId(1), ModuleId(2)],
-                SccRejection::MutualConstrainingCycle
-            ),
-            (
-                vec![ModuleId(1), ModuleId(2), ModuleId(3)],
-                SccRejection::TdzWithoutLinkerOrder
-            ),
-        ]),
+        BTreeSet::from([(
+            vec![ModuleId(1), ModuleId(2)],
+            SccRejection::MutualConstrainingCycle
+        )]),
     );
 
     let acyclic = verdict_of(shared);
@@ -1298,5 +1305,75 @@ fn entry_dependency_is_rejected_by_reference_overlay_and_committed_gates() {
     // Moving the dependency into the same emitted module repairs the violation.
     assert!(
         assert_ladder_matches_verdict(&index, &graph, &[SourceUnitId(0)], ModuleId(1)).accepts()
+    );
+}
+
+/// Modules 5 and 6 at-init read each other (Pass 1), so the verdict skips
+/// Pass 2. Separately, module 4 at-init reads module 1 while 1 lazily reads 4
+/// and 3 lazily reads 1: the ESM DFS enters 1 through 3 and evaluates 4
+/// first, a TDZ that collapsing {5, 6} does not rescue. The report lists it
+/// after the Pass-1 SCC as conditional.
+#[test]
+fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
+    let nodes = (0..7)
+        .map(|i| {
+            let name = format!("unit:{i}");
+            if i == 0 {
+                residual_source_unit(&name, i + 1, &["Seed"], 1)
+            } else {
+                active_source_unit(&name, i + 1, &["Value"], 1, "ui/m")
+            }
+        })
+        .collect();
+    let edges = vec![
+        dependency_edge("e:23", "unit:2", "unit:3", DepKind::EagerUse, true),
+        dependency_edge("e:41", "unit:4", "unit:1", DepKind::EagerUse, true),
+        dependency_edge("e:14", "unit:1", "unit:4", DepKind::LazyUse, false),
+        dependency_edge("e:31", "unit:3", "unit:1", DepKind::LazyUse, false),
+        dependency_edge("e:56", "unit:5", "unit:6", DepKind::EagerUse, true),
+        dependency_edge("e:65", "unit:6", "unit:5", DepKind::EagerUse, true),
+    ];
+    let graph = DependencyGraph::from_report(&singleton_graph(nodes, edges)).unwrap();
+    let assignment = ModuleAssignment::from_assignments(
+        (0..7).map(ModuleId).collect(),
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    let verdict = check_realizability(&graph, &assignment);
+    assert_eq!(
+        verdict
+            .unrealizable_sccs
+            .iter()
+            .map(|scc| (scc.core.modules.clone(), scc.rejection))
+            .collect::<Vec<_>>(),
+        [(
+            BTreeSet::from([ModuleId(5), ModuleId(6)]),
+            SccRejection::MutualConstrainingCycle
+        )],
+    );
+    let report = crate::validation::validate_assignment(&graph, &assignment, &|module| {
+        spec::ModulePath::parse(&format!("m{}", module.0), "").unwrap()
+    });
+    let cycles: Vec<(Vec<&str>, crate::validation::BlockingRejection)> = report
+        .cycles
+        .iter()
+        .map(|cycle| {
+            (
+                cycle.modules.iter().map(|path| path.as_str()).collect(),
+                cycle.rejection,
+            )
+        })
+        .collect();
+    assert_eq!(
+        cycles,
+        [
+            (
+                vec!["m5", "m6"],
+                crate::validation::BlockingRejection::MutualConstrainingCycle
+            ),
+            (
+                vec!["m1", "m4"],
+                crate::validation::BlockingRejection::TdzAfterCollapsingPassOne
+            ),
+        ],
     );
 }

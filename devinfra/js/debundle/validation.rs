@@ -6,7 +6,7 @@ use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
-use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
+use crate::realizability::{RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability};
 use analysis::assignment_assembly::AtomicGroupConflict;
 use analysis::graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use analysis::module_assignment::ModuleAssignment;
@@ -135,12 +135,13 @@ pub enum BlockingRejection {
     /// Pass 1: a cycle of constraining edges. The root cause whenever
     /// present.
     MutualConstrainingCycle,
-    /// Pass 2 under the real linker order: an independent blocker.
+    /// Pass 2 under the linker order: an independent blocker.
     EsmEvaluationTdz,
-    /// Pass 2 while a Pass-1 cycle exists: computed under `ModuleId`
-    /// import order, a consequence of the Pass-1 SCCs (see
-    /// [`SccRejection::TdzWithoutLinkerOrder`]).
-    TdzWithoutLinkerOrder,
+    /// Reported only alongside Pass-1 cycles, which leave no linker order
+    /// for Pass 2. Pass 2 run on the same assignment with each Pass-1 SCC
+    /// collapsed into one module: what still blocks once those cycles are
+    /// resolved by co-location. Conditional, not a verdict of its own.
+    TdzAfterCollapsingPassOne,
     /// Written by a newer engine; readers treat it as a blocker.
     #[serde(other)]
     Unrecognized,
@@ -151,14 +152,7 @@ impl BlockingRejection {
         match rejection {
             SccRejection::MutualConstrainingCycle => Self::MutualConstrainingCycle,
             SccRejection::EsmEvaluationTdz => Self::EsmEvaluationTdz,
-            SccRejection::TdzWithoutLinkerOrder => Self::TdzWithoutLinkerOrder,
         }
-    }
-
-    /// A consequence of another reported SCC rather than an independent
-    /// blocker.
-    pub fn is_consequential(self) -> bool {
-        self == Self::TdzWithoutLinkerOrder
     }
 }
 
@@ -386,13 +380,13 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
         .iter()
         .filter(|c| c.rejection == BlockingRejection::MutualConstrainingCycle)
         .count();
-    let consequential = cycles
-        .iter()
-        .filter(|c| c.rejection.is_consequential())
-        .count();
-    if consequential > 0 {
+    if roots > 0 {
+        let conditional = cycles
+            .iter()
+            .filter(|c| c.rejection == BlockingRejection::TdzAfterCollapsingPassOne)
+            .count();
         out.push_str(&format!(
-            "Root cause: {roots} mutual constraining cycle(s) (Pass 1). With a Pass-1 cycle there is no linker order, so {consequential} Pass-2 SCC(s) below were checked under ModuleId import order and are marked consequential; resolve the Pass-1 cycle(s) and re-run before acting on them.\n",
+            "Root cause: {roots} mutual constraining cycle(s) (Pass 1). Pass 2 needs a linker order, which a Pass-1 cycle rules out, so it did not run on this assignment. {conditional} conditional SCC(s) below are what Pass 2 reports with each Pass-1 SCC collapsed into one module.\n",
         ));
     }
     for (i, cycle) in cycles.iter().enumerate() {
@@ -401,8 +395,8 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             match cycle.rejection {
                 BlockingRejection::MutualConstrainingCycle => " [Pass 1: mutual constraining cycle]",
                 BlockingRejection::EsmEvaluationTdz => " [Pass 2: ESM evaluation TDZ]",
-                BlockingRejection::TdzWithoutLinkerOrder =>
-                    " [Pass 2, consequential: no linker order while Pass 1 rejects]",
+                BlockingRejection::TdzAfterCollapsingPassOne =>
+                    " [Pass 2, conditional: after collapsing the Pass-1 SCCs]",
                 BlockingRejection::Unrecognized => "",
             },
             cycle.modules.len(),
@@ -638,10 +632,8 @@ pub fn validate_assignment(
                 .map(|id| (node.statement_ordinal, id.0.clone()))
         })
         .collect();
-    let cycles = verdict
-        .unrealizable_sccs
-        .iter()
-        .map(|diagnosis| {
+    let report =
+        |diagnosis: &SccDiagnosis, rejection: BlockingRejection, modules: &BTreeSet<ModuleId>| {
             let (cut, lazy_closure) = match diagnosis.rejection {
                 SccRejection::MutualConstrainingCycle => (
                     compute_realizability_cut(
@@ -667,39 +659,21 @@ pub fn validate_assignment(
                     nonconstraining_closure_edges(
                         dependency_graph,
                         assignment,
-                        &diagnosis.core.modules,
+                        modules,
                         module_path,
                         &from_binding_by_ordinal,
                     ),
-                ),
-                // The SCC's constraining subgraph is cyclic, so no lazy
-                // back-edges are needed to explain the I-cycle.
-                SccRejection::TdzWithoutLinkerOrder => (
-                    cycle_edges_for(
-                        dependency_graph,
-                        assignment,
-                        diagnosis.core.constraining_dependency_edges.iter().copied(),
-                        module_path,
-                        &from_binding_by_ordinal,
-                    ),
-                    Vec::new(),
                 ),
             };
             CycleReport {
-                rejection: BlockingRejection::of(diagnosis.rejection),
-                modules: diagnosis
-                    .core
-                    .modules
-                    .iter()
-                    .copied()
-                    .map(module_path)
-                    .collect(),
+                rejection,
+                modules: modules.iter().copied().map(module_path).collect(),
                 cut,
                 lazy_closure,
                 inert_commuting_edges: inert_commuting_edges(
                     dependency_graph,
                     assignment,
-                    &diagnosis.core.modules,
+                    modules,
                     module_path,
                     &from_binding_by_ordinal,
                 ),
@@ -709,13 +683,105 @@ pub fn validate_assignment(
                     .map(|premise| (premise.reference.clone(), premise.spec_location.clone()))
                     .collect(),
             }
+        };
+    let mut cycles: Vec<CycleReport> = verdict
+        .unrealizable_sccs
+        .iter()
+        .map(|diagnosis| {
+            report(
+                diagnosis,
+                BlockingRejection::of(diagnosis.rejection),
+                &diagnosis.core.modules,
+            )
         })
         .collect();
+    let pass_one: Vec<&BTreeSet<ModuleId>> = verdict
+        .unrealizable_sccs
+        .iter()
+        .filter(|diagnosis| diagnosis.rejection == SccRejection::MutualConstrainingCycle)
+        .map(|diagnosis| &diagnosis.core.modules)
+        .collect();
+    if !pass_one.is_empty() {
+        let collapsed = collapse_modules(dependency_graph, assignment, &pass_one);
+        let reported: BTreeSet<&BTreeSet<ModuleId>> = verdict
+            .unrealizable_sccs
+            .iter()
+            .map(|diagnosis| &diagnosis.core.modules)
+            .collect();
+        for diagnosis in check_realizability(dependency_graph, &collapsed.assignment)
+            .unrealizable_sccs
+            .iter()
+            .filter(|diagnosis| diagnosis.rejection == SccRejection::EsmEvaluationTdz)
+        {
+            let modules = collapsed.expand(&diagnosis.core.modules);
+            if !reported.contains(&modules) {
+                cycles.push(report(
+                    diagnosis,
+                    BlockingRejection::TdzAfterCollapsingPassOne,
+                    &modules,
+                ));
+            }
+        }
+    }
     AssignmentReport {
         cycles,
         atomic_group_conflicts: Vec::new(),
         linker_order: Vec::new(),
         cross_rebinds,
+    }
+}
+
+/// `assignment` with every module of each Pass-1 SCC moved into one
+/// representative: the entry when the SCC contains it, else its smallest
+/// module. Collapsing whole SCCs of the constraining graph leaves it acyclic.
+struct CollapsedAssignment {
+    assignment: ModuleAssignment,
+    members: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+}
+
+impl CollapsedAssignment {
+    fn expand(&self, modules: &BTreeSet<ModuleId>) -> BTreeSet<ModuleId> {
+        modules
+            .iter()
+            .flat_map(|module| {
+                self.members
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_else(|| BTreeSet::from([*module]))
+            })
+            .collect()
+    }
+}
+
+fn collapse_modules(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    sccs: &[&BTreeSet<ModuleId>],
+) -> CollapsedAssignment {
+    let entry = assignment.entry_destination().module_id();
+    let mut representative = BTreeMap::new();
+    let mut members = BTreeMap::new();
+    for scc in sccs {
+        let target = if scc.contains(&entry) {
+            entry
+        } else {
+            *scc.first().expect("a Pass-1 SCC has at least two modules")
+        };
+        for &module in *scc {
+            representative.insert(module, target);
+        }
+        members.insert(target, (*scc).clone());
+    }
+    let of = dependency_graph
+        .iter_nodes()
+        .map(|node| {
+            let module = assignment.of(node.id);
+            representative.get(&module).copied().unwrap_or(module)
+        })
+        .collect();
+    CollapsedAssignment {
+        assignment: ModuleAssignment::from_assignments(of, assignment.entry_destination()),
+        members,
     }
 }
 

@@ -69,9 +69,8 @@ pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 /// - [`SccRejection::MutualConstrainingCycle`]: every constraining
 ///   cross-module source unit edge whose endpoints both fall inside
 ///   `core.modules`.
-/// - [`SccRejection::EsmEvaluationTdz`] and
-///   [`SccRejection::TdzWithoutLinkerOrder`]: only the source unit edges
-///   backing the constraining `(from, to)` pairs whose simulated post-order
+/// - [`SccRejection::EsmEvaluationTdz`]: only the source unit edges backing
+///   the constraining `(from, to)` pairs whose simulated post-order
 ///   check failed — the surgical set whose removal (by co-locating the
 ///   binding pair) lifts the violation.
 ///
@@ -100,14 +99,11 @@ pub enum SccRejection {
     /// constraining edge's target evaluates at or after its source
     /// under the materializer's actual import-order choices. This also includes
     /// the implicit entry-to-module edge: entry always evaluates last.
+    ///
+    /// Pass 2 runs only when Pass 1 finds no cycle. A cyclic constraining
+    /// subgraph has no linker order, so the materializer has no import
+    /// order for the simulator to check; every path skips Pass 2 then.
     EsmEvaluationTdz,
-    /// Pass 2 while Pass 1 also rejects: the constraining subgraph is
-    /// cyclic, so no linker order exists and the simulator ordered imports
-    /// by `ModuleId`. The TDZ is proved only under that stand-in order, and
-    /// an I-SCC containing a Pass-1 SCC always yields one. Still a
-    /// rejection, but a consequence of the `MutualConstrainingCycle`
-    /// diagnoses, not an independent blocker: re-run after resolving them.
-    TdzWithoutLinkerOrder,
 }
 
 /// Cross-destination rebinding write. ESM imports are read-only in the
@@ -325,7 +321,9 @@ fn verdict_from_canonical(
         })
         .collect();
 
-    if !candidate_sccs.is_empty() {
+    // Pass 2 needs the linker order, which exists only when Pass 1 found
+    // no constraining cycle.
+    if reported.is_empty() && !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         let simulation = EsmEvaluationSimulator::build(
             &canonical.i_successors,
@@ -349,7 +347,7 @@ fn verdict_from_canonical(
                     modules,
                     constraining_dependency_edges: dependency_edges,
                 },
-                rejection: simulation.tdz_rejection(),
+                rejection: SccRejection::EsmEvaluationTdz,
             });
         }
     }

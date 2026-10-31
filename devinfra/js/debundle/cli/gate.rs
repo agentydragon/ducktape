@@ -965,8 +965,8 @@ fn rejection_label(rejection: Option<BlockingRejection>) -> &'static str {
     match rejection {
         Some(BlockingRejection::MutualConstrainingCycle) => "  [pass 1: mutual constraining cycle]",
         Some(BlockingRejection::EsmEvaluationTdz) => "  [pass 2: ESM evaluation TDZ]",
-        Some(BlockingRejection::TdzWithoutLinkerOrder) => {
-            "  [pass 2, consequential: checked without a linker order while pass 1 rejects]"
+        Some(BlockingRejection::TdzAfterCollapsingPassOne) => {
+            "  [pass 2, conditional: after collapsing the pass-1 SCCs]"
         }
         Some(BlockingRejection::Unrecognized) => "  [unrecognized rejection kind]",
         None => "",
