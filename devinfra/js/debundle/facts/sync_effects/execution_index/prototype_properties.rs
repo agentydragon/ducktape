@@ -30,7 +30,7 @@ fn prototype_intrinsic_roots(
     intrinsic_roots(
         value,
         aliases,
-        &index.global_object_names,
+        &index.census_globals,
         declared,
         &BTreeMap::new(),
         &CallableReturnInputs::default(),
@@ -43,7 +43,8 @@ fn prototype_intrinsic_roots(
         NativeReceiverRoot::OrdinaryDirect { .. }
         | NativeReceiverRoot::OrdinaryDescendant { .. }
         | NativeReceiverRoot::ArrayIteratorPrototype
-        | NativeReceiverRoot::SetIteratorPrototype => None,
+        | NativeReceiverRoot::SetIteratorPrototype
+        | NativeReceiverRoot::BundleGlobal => None,
     })
     .collect()
 }

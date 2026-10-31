@@ -451,6 +451,7 @@ pub fn materialize_logical_modules(
             explicit_binding_destinations: &explicit_binding_destinations,
             resolved_member_sites: &resolved_member_sites,
             replacement_packages: &vendor_plan.replacement_packages(),
+            predefined_globals: host_behavior.predefined_globals,
         },
         &declared_pure_new,
         Some(&cross_module_chunk_closure),

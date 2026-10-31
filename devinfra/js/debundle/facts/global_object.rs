@@ -16,6 +16,14 @@ const GLOBAL_OBJECT_ALIASES: [&str; 5] = ["globalThis", "window", "self", "frame
 pub(crate) fn unshadowed_global_object_aliases(
     body: &[TopLevelItemView<'_>],
 ) -> BTreeSet<&'static str> {
+    unshadowed_global_names(body, &GLOBAL_OBJECT_ALIASES)
+}
+
+/// The subset of `names` no chunk-top-level declaration or import shadows.
+pub(crate) fn unshadowed_global_names(
+    body: &[TopLevelItemView<'_>],
+    names: &[&'static str],
+) -> BTreeSet<&'static str> {
     let mut declared: BTreeSet<String> = BTreeSet::new();
     for item in body {
         let item = item.as_module_item();
@@ -33,7 +41,7 @@ pub(crate) fn unshadowed_global_object_aliases(
             }
         }
     }
-    GLOBAL_OBJECT_ALIASES
+    names
         .iter()
         .copied()
         .filter(|alias| !declared.contains(*alias))

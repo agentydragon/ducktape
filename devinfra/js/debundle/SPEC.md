@@ -620,6 +620,7 @@ host_behavior:
   synchronous_load_drains_microtasks: unknown # never
   reentry_free_builtin_modules: [path, fs/promises]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
+  predefined_globals: unknown # standard
   note: "Audited against <executable identity, revision, digest>"
 ```
 
@@ -631,6 +632,7 @@ host_behavior:
 | `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
 | `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
+| `predefined_globals`                  | `unknown` | Native census: bundle-owned globals (below)     |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
 
 The three loader keys describe a loader, so each requires
@@ -649,6 +651,21 @@ mutation guard does not establish that full-program premise, and it neither
 runs nor authenticates the executable. Debugger-initiated evaluation and state
 changes are outside the behavior-equivalence contract; ordinary
 program-accessible hooks and getters remain in scope.
+
+### Predefined globals
+
+`predefined_globals: standard` declares that before the program runs the host
+defines no global-object property, own or inherited through the global
+object's host prototypes, outside a closed list, and gives each listed
+property its standard definition; in particular a host-defined `global` is the
+global object. The list is the union of the `globals` npm package's
+(<https://github.com/sindresorhus/globals>, the version pinned in
+`pnpm-lock.yaml`) `builtin`, `es*`, `browser`, `worker`, `serviceworker`,
+`sharedWorker`, `audioWorklet`, `paintWorklet`, `node`, `nodeBuiltin`,
+`commonjs` and `shared-node-browser` lists, plus the own properties of
+`%Object.prototype%`. `unknown` asserts nothing. The author checks that the
+audited executable, its preloads and any script loaded before the program add
+no other global.
 
 ### Synchronous module loader
 
@@ -1208,7 +1225,8 @@ a spec assumption or configurable override. Unknown keys, unstable bindings,
 shadowing, unsupported patterns and visible native replacement fall back
 conservatively. Global-slot value reads retain unresolved native identity
 through aliases and descendants, so a write through one may reach any native
-object, under its key. A11 remains an author obligation for hidden
+object, under its key; a bundle-owned global's value (§ Bundle-owned globals)
+reaches none. A11 remains an author obligation for hidden
 native-alias paths, including a descriptor method called through an alias.
 Key precision grants no call, purity, throw or return summary.
 
@@ -1320,6 +1338,48 @@ of its own, and A11 excludes host code changing intrinsics. So:
 
 A prototype slot covers every property on the object, including inherited
 lookups, so it is unknown after any write to its family or the global object.
+
+### Bundle-owned globals
+
+Under `host_behavior.predefined_globals: standard` a write through the value of
+a bundle-owned global property reaches no intrinsic slot, whatever its key.
+Without that key every global-slot read-back stays an unknown value.
+
+A property `g` of the global object is bundle-owned when it is not in the
+standard list (§ Predefined globals), is not a census binding name, and every
+census write that may store into `g` stores a fresh object, a primitive or
+`g`'s own current value: `root.g = {}`, `root.g = root.g || {}`,
+`root.g ??= {}`, `root[key] = root[key] ?? { ... }`. A store that may name `g`
+is any write whose key domain may be `g` and whose receiver may be the global
+object, an unknown value, a native descendant or a prototype; `g`'s own value
+is a read of `g` from a receiver that is only the global object. Properties
+keyed by `Symbol.for` symbols form one bundle-owned slot, read through a stable
+binding with a `Symbol.for` key domain, while `%Symbol%` and `%Symbol.for%`
+have no census write. The set is a greatest fixed point: a write through a
+bundle-owned value is not itself a store into a global or prototype.
+
+Every bundle-owned property is unknown if the global object or a container
+holding it escapes into a call, a property, a return or an export, if any
+global-chain write has an unknown key or may name `__proto__`, if a keyless
+reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
+receiver, or if a legacy accessor method (`__defineGetter__`) is called on one.
+A sloppy assignment to an undeclared `g` is a store into `g`; `delete`,
+updates, destructuring and reflective writes naming `g` drop it.
+
+Soundness, by induction over execution: initially `g` is absent from the
+global object and, by the host claim, from its host prototypes; the
+`%Object.prototype%` names are in the list. Every later store into `g`, on the
+global object or a prototype it inherits from, writes a fresh object, a
+primitive or `g`'s current value, so `g` never holds an intrinsic. Writes
+through `g`'s value land on fresh objects, so they cannot store into `g` on
+the global chain either. Setters and Proxy traps a write runs are analyzed
+source with census writes of their own; A11 excludes host code changing
+intrinsics or adding globals, and covers hidden native-alias paths (an aliased
+`Object.defineProperty`) as for every census fact. Analyzed chunks are ES
+modules, so top-level declarations create no global property, and dynamic
+scope leaves the census open. A descendant of `g`'s value stays unknown.
+Proofs that use the discharge record `predefined_globals` among their host
+behavior dependencies.
 Each consumer names every slot its operation reads: the callee's binding and
 member, and any constructor static or prototype method the algorithm looks up.
 

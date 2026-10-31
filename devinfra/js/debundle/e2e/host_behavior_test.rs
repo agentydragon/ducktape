@@ -67,6 +67,7 @@ fn declared_block_is_echoed_as_read_and_unknown_is_accepted() {
         synchronous_load_drains_microtasks: Some(SynchronousLoadDrainsMicrotasks::Unknown),
         reentry_free_builtin_modules: [NodeBuiltinModule::Path].into_iter().collect(),
         reentry_free_operations: [ReentryFreeOperation::PromiseResolve].into_iter().collect(),
+        predefined_globals: PredefinedGlobals::Standard,
         note: Some("Audited against a synthetic fixture host.".to_string()),
     }));
     assert_eq!(
@@ -78,6 +79,7 @@ fn declared_block_is_echoed_as_read_and_unknown_is_accepted() {
             "synchronous_load_drains_microtasks": "unknown",
             "reentry_free_builtin_modules": ["path"],
             "reentry_free_operations": ["promise_resolve"],
+            "predefined_globals": "standard",
             "note": "Audited against a synthetic fixture host.",
         })
     );

@@ -472,6 +472,15 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
+# The `globals` package's environment lists name the hosts' standard global
+# properties (SPEC.md § Predefined globals).
+genrule(
+    name = "standard_globals_json",
+    srcs = ["//:node_modules/globals"],
+    outs = ["standard_globals.json"],
+    cmd = "for f in $(SRCS); do if [ -f $$f/globals.json ]; then cp $$f/globals.json $@; fi; done; test -s $@",
+)
+
 rust_library(
     name = "analysis",
     srcs = [
@@ -506,6 +515,7 @@ rust_library(
         "facts/semantic_inference.rs",
         "facts/set_iterables.rs",
         "facts/source_unit_read_closure.rs",
+        "facts/standard_globals.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/sync_effects/execution_index.rs",
@@ -551,8 +561,10 @@ rust_library(
         "reports/mod.rs",
         "reports/schema.rs",
     ],
+    compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
     edition = "2024",
+    rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
     deps = [
         ":binding_targets",
         ":graph_provenance",
