@@ -58,11 +58,12 @@ remain separate candidates until identity/ambiguity checks resolve them.
 ## Read API and browser
 
 Claude display names prefer the last captured `custom-title` record, then the last
-`summary`, then the first ordinary user prompt. Prompt fallback excludes `isMeta`
-records and local-command markers; fork prompts use the directive following
+`ai-title`, then the last `summary`, then the first ordinary user prompt. Prompt
+fallback excludes `isMeta` records and local-command markers; fork prompts use the directive following
 `fork-boilerplate`. New transcript versions recompute the projected name so later
-native titles and renames replace a prompt fallback. Already indexed versions are
-not reparsed solely to refresh this projection.
+native titles and renames replace a prompt fallback. A versioned title projection
+refreshes existing sessions from stored raw record payloads during ingestion, without
+rereading transcript bytes from Restic.
 
 The browser frontend lives in `//x/ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
 

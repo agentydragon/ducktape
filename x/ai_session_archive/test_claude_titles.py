@@ -77,5 +77,27 @@ def test_native_titles_override_prompt_fallback_and_custom_renames_win() -> None
     assert title == ClaudeTitle(text="Renamed session", source=ClaudeTitleSource.CUSTOM)
 
 
+def test_latest_ai_title_overrides_summary_and_prompt_but_not_custom_title() -> None:
+    records: list[dict[str, Any]] = [
+        {"type": "user", "message": {"content": "Inspect the parser"}},
+        {"type": "summary", "summary": "Generated summary", "leafUuid": "example-leaf"},
+        {"type": "ai-title", "aiTitle": "First generated title", "sessionId": "example-session"},
+        {"type": "ai-title", "aiTitle": "Verify-docs skill conversion", "sessionId": "example-session"},
+        {"type": "summary", "summary": "Later summary", "leafUuid": "example-leaf"},
+    ]
+    title = None
+    for record in records:
+        title = select_claude_title(title, record)
+    assert title == ClaudeTitle(text="Verify-docs skill conversion", source=ClaudeTitleSource.AI_TITLE)
+
+    title = select_claude_title(
+        title, {"type": "custom-title", "customTitle": "Explicit custom name", "sessionId": "example-session"}
+    )
+    title = select_claude_title(
+        title, {"type": "ai-title", "aiTitle": "A later generated title", "sessionId": "example-session"}
+    )
+    assert title == ClaudeTitle(text="Explicit custom name", source=ClaudeTitleSource.CUSTOM)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

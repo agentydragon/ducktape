@@ -34,6 +34,7 @@ from x.ai_session_archive.restic import ResticChange, ResticFile, ResticReposito
 from x.ai_session_archive.usage_observations import usage_observations_for_record
 
 PARSER_VERSION = "jsonl-v1"
+CLAUDE_TITLE_PROJECTION_VERSION = 1
 CHECKPOINT_INTERVAL = 64
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
 _KNOWN_DIFF_MODIFIERS = frozenset(("+", "-", "M", "T", "?", "U"))
@@ -133,6 +134,7 @@ class SnapshotIngestor:
                 )
             )
         self._project_codex_titles(allow_index_only=all_inventoried)
+        self._project_claude_titles()
         return self._report(available_snapshot_ids)
 
     def _discover_snapshots(self, snapshots: list[ResticSnapshot]) -> None:
@@ -971,6 +973,7 @@ class SnapshotIngestor:
         if row.harness == Harness.CLAUDE.value and metadata:
             title: ClaudeTitle | None = metadata.get("claude_title")
             row.title = title.text if title is not None else None
+            row.claude_title_projection_version = CLAUDE_TITLE_PROJECTION_VERSION
         if row.harness == Harness.CODEX.value:
             self._apply_latest_codex_title(db, row)
         first = metadata.get("first_timestamp")
@@ -1013,6 +1016,62 @@ class SnapshotIngestor:
             row.codex_title_from_metadata = True
         if kind is not None:
             row.session_kind = kind
+
+    def _project_claude_titles(self) -> None:
+        """Refresh stale Claude title projections from already stored record payloads."""
+        latest_version_id = (
+            select(SnapshotFileRow.file_version_id)
+            .join(
+                ResticSnapshotRow,
+                and_(
+                    ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id,
+                    ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id,
+                ),
+            )
+            .where(
+                SnapshotFileRow.session_id == SessionRow.id,
+                SnapshotFileRow.status.in_(("complete", "partial")),
+                SnapshotFileRow.file_version_id.is_not(None),
+            )
+            .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        with self._session_factory() as db, db.begin():
+            rows = db.execute(
+                select(SessionRow, FileVersionRow)
+                .join(FileVersionRow, FileVersionRow.id == latest_version_id)
+                .where(
+                    SessionRow.machine_id == self._source.machine_id,
+                    SessionRow.harness == Harness.CLAUDE.value,
+                    (SessionRow.claude_title_projection_version.is_(None))
+                    | (SessionRow.claude_title_projection_version != CLAUDE_TITLE_PROJECTION_VERSION),
+                )
+                .order_by(SessionRow.id)
+            )
+            for session_row, version_row in rows.yield_per(8):
+                title: ClaudeTitle | None = None
+                ranks = _version_lineage_ranks(db, version_row)
+                for start in range(0, version_row.record_count, 500):
+                    batch_ids = _effective_payload_ids(
+                        db, version_row, ranks, start, min(start + 500, version_row.record_count)
+                    )
+                    raw_by_id: dict[UUID, bytes] = dict(
+                        db.execute(
+                            select(RecordPayloadRow.id, RecordPayloadRow.raw_bytes).where(
+                                RecordPayloadRow.id.in_(batch_ids)
+                            )
+                        )
+                        .tuples()
+                        .all()
+                    )
+                    for payload_id in batch_ids:
+                        raw_bytes = raw_by_id[payload_id]
+                        parsed = parse_record_json(raw_bytes)
+                        if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
+                            title = select_claude_title(title, parsed.parsed)
+                session_row.title = title.text if title is not None else None
+                session_row.claude_title_projection_version = CLAUDE_TITLE_PROJECTION_VERSION
 
     def _resolve_codex_parent_link(self, db: DbSession, child: SessionRow) -> None:
         if child.parent_native_session_id_conflict:
