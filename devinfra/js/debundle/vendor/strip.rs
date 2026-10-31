@@ -616,8 +616,8 @@ fn sweep_unreachable_top_level(
         let mut candidates = BTreeSet::new();
         // Each item followed into the region: the binding that led there and
         // the item that binding was read from (`None`: the statement's reach).
-        let mut via: BTreeMap<(usize, bool), (&Id, Option<(usize, bool)>)> = BTreeMap::new();
-        let mut worklist: Vec<(&Id, bool, Option<(usize, bool)>)> = reached
+        let mut via: BTreeMap<RegionStep, (&Id, Option<RegionStep>)> = BTreeMap::new();
+        let mut worklist: Vec<(&Id, bool, Option<RegionStep>)> = reached
             .into_iter()
             .map(|id| (id, false, None))
             .chain(lexical.into_iter().map(|id| (id, true, None)))
@@ -646,18 +646,24 @@ fn sweep_unreachable_top_level(
                     region.insert(k);
                     via.insert((k, code_may_run), (id, from));
                     // A value this statement itself computes (a loop variable,
-                    // say) derives from what it reads at init; its closures
-                    // are covered above.
-                    let reads = if k == i {
-                        &an.eager_bindings
+                    // say) derives from what it reads at init; its own calls
+                    // and closures are covered above.
+                    let step = Some((k, code_may_run));
+                    if k == i {
+                        worklist.extend(
+                            an.eager_bindings
+                                .iter()
+                                .filter(|read| !an.at_init.calls.contains(*read))
+                                .map(|read| (read, code_may_run, step)),
+                        );
                     } else {
-                        &analyses[k].reads
-                    };
-                    worklist.extend(
-                        reads
-                            .iter()
-                            .map(|read| (read, code_may_run, Some((k, code_may_run)))),
-                    );
+                        worklist.extend(
+                            analyses[k]
+                                .reads
+                                .iter()
+                                .map(|read| (read, code_may_run, step)),
+                        );
+                    }
                 }
             }
         }
@@ -1415,6 +1421,10 @@ fn run_first_order_body<'a>(
         callees.extend(&body.lazy_calls);
     }
 }
+
+/// An item followed into the swap-privacy region, and whether its code may run
+/// (`false`: only the values it holds are followed).
+type RegionStep = (usize, bool);
 
 /// How code uses bindings' values: every occurrence except a plain property
 /// read (`x.a`, `x.a.b`, `typeof x.a`) exposes the binding — a member write
