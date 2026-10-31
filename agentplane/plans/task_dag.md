@@ -558,6 +558,7 @@ flowchart LR
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
+    CENTRAL_SAMPLER_REPLICA_ROLLOUT[Decision, unscheduled: multiple sampler replicas and rolls that preserve agents]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -606,6 +607,29 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 `openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
+
+### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
+
+**Decision, unscheduled; operator requested tracking, 2026-10-30 PDT.** An ordinary sampler
+rollout interrupted an active Session's provider-response ingestion and left it durably blocked
+on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_aborts_sampling.md)).
+The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
+excludes sampling uncertainty, and draining inbound gRPC does not drain the independent agent loop.
+
+Design how multiple sampler replicas admit and own Sessions, transfer or drain ownership during
+rolls, and survive replica loss without duplicate sampling or executor effects. Include provider
+streams and durable completion, JavaScript host/cell state, retained executor bindings, lease renewal
+and generation fencing, and routing commands to the current owner. Compare finishing in-flight work
+under the old owner with durable handoff/adoption; recommend draining to a durable continuation
+boundary for planned rolls, with an explicit recovery contract when the owner dies before one.
+Decide how an already-blocked sampling intent can be reconciled or explicitly abandoned without
+replaying external effects or discarding conversation/workspace history.
+
+Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and an
+acceptance plan covering two competing replicas, a roll during provider ingestion and a live cell,
+owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
+Create implementation and rollout nodes after that design is selected. No worker or priority is
+assigned, and this entry authorizes no live recovery or deployment.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
