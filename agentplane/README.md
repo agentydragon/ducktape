@@ -40,6 +40,9 @@ use LLM ingress with the projected workload token, while Anthropic calls use a s
 key and a host-pinned Cilium egress rule. The [k3s sampler scenarios](system_tests/README.md#central-sampler)
 use the same workload construct, including its database migration and projected service-account credentials.
 
+PostgreSQL-backed services follow the shared [database migration contract](postgres/go/migrate/README.md).
+The Runner's SQLite journal has its own startup migration path.
+
 ## Go service images
 
 The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway, queue migrator, Policy Controller, Sandbox

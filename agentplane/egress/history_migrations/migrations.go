@@ -14,7 +14,7 @@ import (
 //go:embed history/*.sql
 var scripts embed.FS
 
-// Up applies authored SQL with Goose in a dedicated init container, never while serving traffic.
+// Up applies authored SQL with Goose before this Pod serves; older proxies may still write.
 func Up(ctx context.Context, db *sql.DB) error {
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4547_5244))
 	if err != nil {

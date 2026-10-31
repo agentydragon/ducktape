@@ -141,7 +141,7 @@ def add_service_workload(
             else None
         ),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-        # A migration failure blocks startup; no migration command has a retry loop.
+        # A migration failure blocks this Pod's server; the shared migrator retries initial DB connections.
         init_containers=[migrate] if migrate is not None else None,
     )
     service_environment = (

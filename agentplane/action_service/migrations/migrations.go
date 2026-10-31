@@ -14,7 +14,7 @@ import (
 //go:embed actions/*.sql
 var scripts embed.FS
 
-// Up applies SQL migrations with Goose in a dedicated init container, never while serving traffic.
+// Up applies SQL migrations with Goose before this Pod serves; Recreate stops old Action writers.
 func Up(ctx context.Context, db *sql.DB) error {
 	// The advisory lock key of the Alembic runner (`database_migrate.py`): the two migrators never run at once.
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4143_544E))

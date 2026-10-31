@@ -39,9 +39,10 @@ Agentplane has only a staging tier, so its deployed state is disposable (agentpl
 only; another component's is not unless its own `AGENTS.md` says so). A schema, CRD or wire change
 need not keep existing rows, custom resources or messages readable: change the shape and
 delete/recreate whatever no longer parses. No migration, tolerant reader or compatibility field to
-carry old data, and no staged rollout to avoid a disagreement window. The schema change itself is
-still a new migration; the migrate step fails the rollout when schema and models differ. Root
-`AGENTS.md` § Refactoring limits (person-authored data, roll-safety) still bind.
+carry old data. The schema change itself is still a new migration; the migrate step fails the
+rollout when schema and models differ. Rolling Pods may overlap older writers, so follow the
+[database migration contract](postgres/go/migrate/README.md) for compatibility or stop writers.
+Root `AGENTS.md` § Refactoring limits (person-authored data, roll-safety) still bind.
 
 ## Preserve staging data during service extractions
 
@@ -58,6 +59,12 @@ Sandbox template, a database change) merges once the [system tests](system_tests
 and its PR states the rollback: what to revert, and what to check once Flux applies it. Agentplane's Flux, Cilium,
 CNPG, External Secrets, cert-manager, Gateway API and Kyverno objects have no system test, so staging is the first
 cluster they reach; the PR says so.
+
+## Database migrations
+
+PostgreSQL schema changes follow the [migration contract](postgres/go/migrate/README.md):
+versioned Goose migrations in the owning service's init container, stable
+per-database history and advisory lock, and explicit writer cutovers when needed.
 
 ## Task DAG maintenance
 

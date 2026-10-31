@@ -14,8 +14,8 @@ import (
 //go:embed notifications/*.sql
 var scripts embed.FS
 
-// Up applies schema changes before the service starts. The Deployment uses Recreate
-// to stop writers, and Goose serializes concurrent init containers with a session lock.
+// Up applies schema changes before this Pod serves. Recreate stops old Notification writers,
+// and Goose serializes concurrent init containers with a session lock.
 func Up(ctx context.Context, db *sql.DB) error {
 	// Keep the lock key used by previous Goose and Alembic migrators.
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4E4F_5446))

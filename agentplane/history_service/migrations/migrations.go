@@ -14,7 +14,7 @@ import (
 //go:embed history/*.sql
 var scripts embed.FS
 
-// Up applies history schema migrations with Goose in a dedicated init container, never while serving traffic.
+// Up applies history schema migrations with Goose before this Pod serves; older replicas may still write.
 func Up(ctx context.Context, db *sql.DB) error {
 	provider, err := newProvider(db)
 	if err != nil {
