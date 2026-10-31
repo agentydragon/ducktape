@@ -70,13 +70,13 @@ The queue is on exactly when its database URL is set. There is no separate flag,
 per-Session cap, `wake_callers`) are rejected at startup when set without the URL, so a deployment cannot say
 "off" and also configure a wake.
 
-|                     | Queue on                                                                       | Queue off                                                                                |
-| ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Accepting a command | stores it in Postgres, then answers                                            | delivers it to the connected runner, then answers                                        |
-| Runner unavailable  | waits as `QUEUED_IN_DISPATCHER`, with a `reason`                               | refused at once, with the same `reason`                                                  |
-| Wake-on-send        | yes, with `spec.wakeOnSend` and a wake caller                                  | no, whatever `spec.wakeOnSend` says                                                      |
-| Database            | `session_dispatcher`, the queue migrator init container, a `LISTEN` connection | none                                                                                     |
-| Replicas            | any number                                                                     | one in practice: a command landing on a replica that does not hold the runner is refused |
+|                     | Queue on                                                                          | Queue off                                                                                |
+| ------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Accepting a command | stores it in Postgres, then answers                                               | delivers it to the connected runner, then answers                                        |
+| Runner unavailable  | waits as `QUEUED_IN_DISPATCHER`, with a `reason`                                  | refused at once, with the same `reason`                                                  |
+| Wake-on-send        | yes, with `spec.wakeOnSend` and a wake caller                                     | no, whatever `spec.wakeOnSend` says                                                      |
+| Database            | `session_dispatcher`, the embedded Goose startup migration, a `LISTEN` connection | none                                                                                     |
+| Replicas            | any number                                                                        | one in practice: a command landing on a replica that does not hold the runner is refused |
 
 **Immediately** means the Sandbox exists, is `Ready` (the controller's condition) and the receiving replica
 holds its runner connection. Anything else is refused with the queue's own reason vocabulary: a missing Sandbox is
@@ -161,8 +161,8 @@ It removes the Gateway's database, not CNPG. The shared cluster's logical databa
 (History), `actions`, `egress`, `mcp_edge`, `notifications`, `session_dispatcher` and, where enabled,
 `central_sampler` (`cluster/cdk8s/agentplane/database.py:34`), and Indexing has its own. A deployment is
 database-free only if it also omits every other consumer, as the tier in `CNPG_FREE_K3S_INTEGRATION_TIER` does for
-Notifications, History and Electric. The Gateway sheds the `session_dispatcher` database and Secret, the Goose queue migrator init
-container and its Flux health-check gate, the `LISTEN` connection, the delivery worker and the wake budget. That
+Notifications, History and Electric. The Gateway sheds the `session_dispatcher` database and Secret, its embedded queue migration path,
+the `LISTEN` connection, the delivery worker and the wake budget. That
 node's edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` stays; its other blockers are unchanged.
 
 ## What callers see
@@ -197,7 +197,7 @@ are independent once step 3 has landed.
    in the Gateway README's schema steps. Afterwards the `dispatcher-<uid>` Lease RBAC rule and the Gateway's own
    caller account are removed, once no replica of the old version runs.
 5. **Queue off.** Image first: the database URL becomes optional and the immediate path lands. Then a manifest
-   renders a Gateway without the queue database, Secret and migrator Job, and the K3s fixture drops the Gateway's
+   renders a Gateway without the queue database, Secret or embedded queue migration path, and the K3s fixture drops the Gateway's
    PostgreSQL.
 
 On approval, the ADR row about the Dispatcher being its own service is replaced, the Gateway and Dispatcher

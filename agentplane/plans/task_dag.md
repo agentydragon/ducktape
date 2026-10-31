@@ -147,7 +147,7 @@ flowchart LR
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
         CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
         CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
-        CONTROL_PLANE_ROLLING_SERVICES[Rolling control-plane deployment review]
+        CONTROL_PLANE_ROLLING_SERVICES[In review: eight PG services rolling deployment]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -741,7 +741,7 @@ flowchart LR
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
     CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
     CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
-    CONTROL_PLANE_ROLLING_SERVICES[In-flight review: rolling control-plane services]
+    CONTROL_PLANE_ROLLING_SERVICES[In review: eight PG services rolling deployment]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -863,6 +863,9 @@ acceptance plan covering two competing replicas, a roll during provider ingestio
 owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
 The bounded planned-drain contract below was selected by `/root` after reviewing the runtime/store
 evidence on 2026-10-30 PDT. The operator then selected rolling updates with at least two replicas.
+The draft assembled-system test [#13246](https://github.com/agentydragon/ducktape/pull/13246)
+records a separate K3s kernel prerequisite for proving the sampler roll; it does not gate the other
+control-plane service conversions.
 Review shared-DB admission, ownership, command routing and migration overlap before the deployment
 change; retain drain as an independently finishable improvement. Sampling-abandonment decisions
 also remain here. Create implementation and rollout nodes after their contracts are selected.
@@ -913,26 +916,25 @@ replacement prerequisite for the current fixes. See the [runtime direction](sess
 
 ### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
 
-**In-flight review; `/root`, operator direction, 2026-10-30 PDT.** Use rolling updates with at least
-two replicas as the control-plane deployment target, except for Electric's accepted single-replica
-`Recreate` deployment. Treat that as deployment policy, not an intrinsic minimum in service or environment APIs.
-Select component changes after reviewing their coordination, state, migration overlap and client
-reconnect behavior; preserve data and identities.
+**In review; `/root`, operator direction, 2026-10-30 PDT.** The production target is a rolling
+update with at least two replicas for each of the eight PostgreSQL-backed service deployments:
+App, Actions, Notifications, History, MCP edge, Runner Gateway/Dispatcher, Egress, and the central
+sampler. Electric is the accepted single-replica `Recreate` exception described below. This is a
+deployment target, not an intrinsic minimum in service or environment APIs.
 
-Source and committed staging manifests currently show singleton `Recreate` deployments for the
-sampler, MCP edge and Electric. Actions and Notifications already have two replicas but still use
-`Recreate` for migration sequencing. The general staging profile is two replicas with rolling
-updates, and egress uses three. These are configuration observations, not a live-cluster audit.
+The shared startup migration contract from [#13240](https://github.com/agentydragon/ducktape/pull/13240)
+is merged. Each service embeds Goose migrations in its serving binary and runs them during normal
+startup before listeners or workers; the same binary's `--migrate-only` mode remains for fixture and
+CLI initialization. A migration failure keeps that replica from becoming ready. Schema ownership
+and service-specific migration behavior remain with each service.
 
-The sampler belongs to `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; keep the other service changes independent.
-For Actions and Notifications, resolve old/new writer migration overlap before removing the
-`Recreate` policy. Electric is an accepted single-replica exception: its fixed
-replication stream permits one active writer, while each current Pod has its own empty shape store
-and the App proxy has no stable backend routing. The operator accepts a brief sync interruption,
-refetch, or page reload during replacement; the current `Recreate` strategy may stay. The
-[Electric audit](electric_ha.md) records why a replica-setting change alone is unsound and the
-optional, unscheduled rolling and multi-active HA designs. Other singleton exceptions need an owner
-and reason.
+The service conversions are independent review units: [App #13245](https://github.com/agentydragon/ducktape/pull/13245), [Actions and Notifications #13247](https://github.com/agentydragon/ducktape/pull/13247), [History, MCP edge, Runner Gateway/Dispatcher and Egress #13249](https://github.com/agentydragon/ducktape/pull/13249), and [sampler source #13241](https://github.com/agentydragon/ducktape/pull/13241) with its [chart #13243](https://github.com/agentydragon/ducktape/pull/13243). The current integration branch combines these source changes for review; none has been deployed. The final removal of `migrate_container.py`, its BUILD target/dependencies, and the shared `service_workload` init-container parameter follows these caller conversions. Verify that active services, fixtures, generators and operator instructions no longer rely on that path; keep dated incident and handoff evidence intact.
+
+The sampler's assembled rolling and same-Session acceptance remains under `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; it is a separate system-acceptance gate and does not block the other seven service conversions. The [draft acceptance #13246](https://github.com/agentydragon/ducktape/pull/13246) currently records a K3s/RBE failure before the scenario starts: the Firecracker guest kernel lacks `CONFIG_NETFILTER_XT_MATCH_STATISTIC`, so Service ClusterIP rules cannot be installed. The rollout, successor continuation and no-duplicate-effect assertions remain unproven until that environment prerequisite is resolved.
+
+Electric remains an accepted single-replica `Recreate` exception, as selected in [#13250](https://github.com/agentydragon/ducktape/pull/13250). The operator accepts a brief sync interruption, refetch, or page reload during replacement; no Electric rollout change is scheduled. Its fixed replication stream permits one active writer, while each Pod has its own empty shape store and the App proxy has no stable backend routing. The [Electric audit](electric_ha.md) explains why a replica-setting change alone is unsound and records optional, unscheduled rolling and multi-active HA designs. This exception is independent of the eight PostgreSQL service conversions.
+
+Exit: the eight service conversions and shared-helper cleanup are merged; regenerated manifests show the selected rolling profiles, startup probes and absence of migration init containers; focused existing service and fixture checks pass. This records source and acceptance status only, not deployment or live-cluster proof. Other replica exceptions require an explicit owner and reason.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 

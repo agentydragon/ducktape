@@ -220,11 +220,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Retention defaults to seven days and is a visibility bound: queries exclude expired records, and
   bounded indexed cleanup deletes them eventually. Database outages delay physical cleanup, not
   the visible time window.
-- Schema changes are Goose-managed and run separately from proxy startup. The migrator preserves
-  existing history when taking over the verified Alembic baseline. Runtime never creates
-  or migrates tables. Deployment gates each new Pod on its migration init container while the
-  proxies it replaces keep enforcing, so a migration must stay compatible with them. Request
-  admission remains independent of diagnostic DB availability.
+- Schema changes are Goose-managed in the serving binary and run before it opens listeners. The
+  embedded migrations preserve existing history when taking over the verified Alembic baseline;
+  Goose serializes concurrent startup migrations. A startup probe gates readiness, while old
+  replicas may continue enforcing, so every migration must support writer overlap. Request admission
+  remains independent of diagnostic DB availability.
 
 ## Replica scope
 

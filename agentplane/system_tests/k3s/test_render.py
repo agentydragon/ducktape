@@ -73,7 +73,7 @@ def _filled_vm_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
+def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     fixture = _filled_fixture()
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
@@ -171,7 +171,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert proxy_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        for container in (*pod_spec["containers"], *pod_spec.get("initContainers", [])):
+        for container in pod_spec["containers"]:
             sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
             assert sslmode == "disable", (workload, container["name"])
 

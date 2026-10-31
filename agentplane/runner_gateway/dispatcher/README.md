@@ -88,6 +88,6 @@ the Sandboxes with pending work that it does not own.
 The serving binary and image live under `//agentplane/runner_gateway` and
 `//agentplane/runner_gateway:image`. It reads the audience and caller settings described in
 <../README.md>, a projected Gateway token for calls to other holder replicas, and
-`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving Pod runs the Goose queue
-migrator in its init container before starting the Gateway; `grpc.health.v1` is available on
-the shared listener.
+`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving binary applies the embedded Goose queue migrations before opening the Gateway
+listener; the same binary accepts `--migrate-only` for explicit fixture or maintenance use. The
+startup probe waits for initialization before `grpc.health.v1` readiness on the shared listener.

@@ -538,7 +538,7 @@ concurrency remain separate decisions.
 
 The implementation changes protocol and callers together; publish a staging image-promotion hold
 before merging it. Testing receives the release first. The held staging image families are the app,
-Gateway/Dispatcher, Notification and History services (including their migration images), `runner`,
+Gateway/Dispatcher, Notification and History services (with migrations embedded in those images), `runner`,
 `runner-ducktape` and the runner VM. Testing acceptance must identify the exact tested tags rather
 than assuming every image shares a build SHA.
 

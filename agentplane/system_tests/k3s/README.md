@@ -55,24 +55,25 @@ claims in the stack namespace and creates one sparse 10 GiB file, loop device, a
 `Block` PV for each matching claim. Volumes survive claim deletion; a replacement UID gets fresh
 storage. The provisioner stops before k3s, and its devices detach after k3s removes its Pods.
 Worker failures propagate to fixture teardown. This gives the VM test guest a real raw block
-device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
-and Goose history migrator through the same construct as staging, with fixture-only PostgreSQL TLS
-settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
+device while keeping state on the fixture's filesystem class. The fixture runs the Go egress service through the same construct as staging, with fixture-only
+PostgreSQL TLS settings. Its serving process applies the embedded Goose migrations before opening
+listeners. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
 Actions and Notifications apply Goose migrations from their serving processes before opening
 listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
 separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
 The standalone MCP edge runs in every stack because the app's Connection Service endpoint targets it;
-its own PostgreSQL database, Goose init migrator, caller-token RBAC and gRPC readiness are rendered
-through the shared construct. MCP fixture stacks add the edge OAuth Secret and Dex trust.
+its own PostgreSQL database, embedded Goose migrations, caller-token RBAC and startup/readiness
+probes are rendered through the shared construct. The serving binary migrates before opening its
+gRPC listener. MCP fixture stacks add the edge OAuth Secret and Dex trust.
 One PostgreSQL 18 Deployment uses the
 pinned published CNPG minimal image, an emptyDir data volume and
 [`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
 the service-owned databases. Unsupported Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
 construction. VM stacks install Kyverno for the launcher relay. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
-Service names remain. A Goose init container runs before the Go server container and uses the
-Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
+Service names remain. The serving process applies the embedded Dispatcher migrations before opening
+the listener, using the Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so no action downloads K3s at runtime.
 
@@ -90,7 +91,7 @@ Node readiness and the appearance of the bundled DNS/storage Deployments share a
 bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;
 bootstrap failures include the last probe result and k3s log tail and stop the server process.
 
-The image list includes the Go Runner Gateway and Goose queue migration images. A fast
+The image list includes the serving binaries, which apply their embedded migrations at startup. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes.
 The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
@@ -199,7 +200,7 @@ binaries; it does not boot the production NixOS image or force exec-server death
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
-fixture images import. Fixture images (services, migrations, shared runner and optional MCP fixtures)
+fixture images import. Fixture images (services, shared runner and optional MCP fixtures)
 and VM guest images are collected separately. Both guest boot and root images import after the fixture
 manifests are applied, while their Deployments start. The stack finishes those imports before yielding
 to a test that can create a VM Sandbox. Deployments must use fixture images, never guest images.
