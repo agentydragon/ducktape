@@ -6,6 +6,7 @@ type Anchor = {
   readonly offset: number;
   readonly inset: number;
   readonly target: HTMLElement | null;
+  readonly targetKey: string | null;
 };
 type Intent =
   | { readonly kind: "following" }
@@ -268,12 +269,55 @@ export class HistoryViewport {
     const row = selected ?? [...this.nodes.values()].find((node) => node.getBoundingClientRect().bottom > top);
     if (!row) return null;
     const visibleTarget = target?.isConnected && target.getClientRects().length > 0 ? target : null;
+    const contentTarget = visibleTarget ? null : this.contentAnchor(row, top);
+    const anchorTarget = visibleTarget ?? contentTarget;
+    const targetKey = contentTarget?.dataset.historyAnchorKey || null;
     return {
-      entity: row.dataset.historyRowKey!,
-      offset: (visibleTarget ?? row).getBoundingClientRect().top - top,
-      inset: visibleTarget ? visibleTarget.getBoundingClientRect().top - row.getBoundingClientRect().top : 0,
-      target: visibleTarget,
+      entity: targetKey ?? row.dataset.historyRowKey!,
+      offset: (anchorTarget ?? row).getBoundingClientRect().top - top,
+      inset: anchorTarget ? anchorTarget.getBoundingClientRect().top - row.getBoundingClientRect().top : 0,
+      target: anchorTarget,
+      targetKey,
     };
+  }
+
+  private contentAnchor(row: HTMLElement, top: number): HTMLElement | null {
+    const element = this.element;
+    if (!element) return null;
+    const bottom = top + element.clientHeight;
+    const visible = [...row.querySelectorAll<HTMLElement>("[data-history-anchor-key]")]
+      .filter((node) => node.dataset.historyAnchorKey && node.getClientRects().length > 0)
+      .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom > top && rect.top < bottom);
+    const atReadingEdge = visible.filter(({ rect }) => rect.top <= top);
+    const candidates = atReadingEdge.length ? atReadingEdge : visible;
+    if (candidates.length === 0) return null;
+    if (atReadingEdge.length === 0) {
+      const nearestTop = Math.min(...candidates.map(({ rect }) => rect.top));
+      return this.deepestAnchor(candidates.filter(({ rect }) => rect.top === nearestTop));
+    }
+    return this.deepestAnchor(candidates);
+  }
+
+  private deepestAnchor(
+    candidates: readonly { readonly node: HTMLElement; readonly rect: DOMRect }[]
+  ): HTMLElement | null {
+    const first = candidates[0];
+    if (!first) return null;
+    let selected = first;
+    for (const candidate of candidates.slice(1)) {
+      if (selected.node.contains(candidate.node)) selected = candidate;
+      else if (!candidate.node.contains(selected.node) && candidate.rect.top < selected.rect.top) selected = candidate;
+    }
+    return selected.node;
+  }
+
+  private findContentAnchor(row: HTMLElement, key: string): HTMLElement | null {
+    return (
+      [...row.querySelectorAll<HTMLElement>("[data-history-anchor-key]")].find(
+        (node) => node.dataset.historyAnchorKey === key && node.getClientRects().length > 0
+      ) ?? null
+    );
   }
 
   private setIntent(intent: Intent, reason: FollowReason): void {
@@ -354,9 +398,13 @@ export class HistoryViewport {
     if (this.intent.kind !== "following") {
       let anchor = this.intent.anchor;
       const row = this.nodes.get(this.entities.get(anchor.entity) ?? anchor.entity);
-      const nested = anchor.target?.isConnected && anchor.target.getClientRects().length > 0 ? anchor.target : null;
+      let nested = anchor.target?.isConnected && anchor.target.getClientRects().length > 0 ? anchor.target : null;
+      if (!nested && row && anchor.targetKey) nested = this.findContentAnchor(row, anchor.targetKey);
       if (anchor.target && !nested) {
-        anchor = { ...anchor, target: null, offset: anchor.offset - anchor.inset, inset: 0 };
+        anchor = { ...anchor, target: null, targetKey: null, offset: anchor.offset - anchor.inset, inset: 0 };
+        this.intent = { ...this.intent, anchor };
+      } else if (nested && nested !== anchor.target) {
+        anchor = { ...anchor, target: nested };
         this.intent = { ...this.intent, anchor };
       }
       const node = nested ?? row;
