@@ -9,7 +9,7 @@ activation ordering.
 
 `//agentplane/system_tests/suites:test_vm_profile` is a manual variant of the
 ordinary VM suite. Bazel supplies Debian `linux-perf` only to its profile guest
-image; the ordinary root image is 552,833,024 bytes, and the profile root is
+image. An image-size probe measured an ordinary root of 552,833,024 bytes and a profile root of
 597,110,784 bytes (+44,277,760 bytes, 8.0%). The 4,096-byte difference between
 the ordinary root here and the earlier 552,828,928-byte ordinary image is the
 opt-in service/script in the root archive. The manual target imports only the
@@ -67,8 +67,9 @@ The raw file has 1,026 `cpu-clock` samples and no lost samples. The OOM Session'
 app-server TGID was 432, including `codex-main`, `tokio-rt-worker`, and
 `sqlx-sqlite-worker` threads. Within its 35.728-second `app_server.start` span,
 195 of 561 system-wide samples belonged to this TGID, roughly four seconds of
-sampled user-space CPU at 49 Hz. Its overlapping 30.474-second initialize span
-contained 187 of 468 samples. The guest clock markers map `perf` sample uptime
+sampled user-space CPU at 49 Hz. No separate initialize span was retained for
+this OOM Session; an initialize interval from another Session must not be joined
+to its PID. The guest clock markers map `perf` sample uptime
 to OTel UTC within about one second. The remaining wall time is not attributed
 by this user-space profile: kernel CPU, scheduling, TCG effects, and waits are
 not distinguished. The pinned Codex ELF is stripped. Its exact 0.162.1
@@ -98,5 +99,61 @@ manifest rendering. It is not a profiler-overhead control. Runtime fixture
 selection now reads the flag after rendering, with a focused
 [`test_render` pass](https://app.buildbuddy.io/invocation/a666ae7c-6600-4be1-99d0-ea1bd8fa1f9d).
 
-<!-- Add the raw-profile/control invocation IDs, exact PID and time-sliced sample
-     findings, and paired action/OTel durations after the current runs finish. -->
+## Passing single-root profile and unprofiled control
+
+The [single-root profile](https://app.buildbuddy.io/invocation/44d682a7-5b89-4544-ae8e-259557148aa6)
+and [unprofiled control](https://app.buildbuddy.io/invocation/83f4fdd3-3722-4987-8f57-b68f8ee421c3)
+both passed all six scenarios without increasing the 600-second pytest deadline.
+The profile's outer remote-runner invocation was `d23f2ba8-58cf-4c37-a0ec-b92c6113d952`;
+the control's was `7bdb8978-0842-4bf6-b186-efc516ce3b12`.
+
+The profiled build checked out `61d18e604e37757ebc9838404a292fec6348181f` and applied workspace
+patch `98771aff4fd8e6feeac6c9a4318ee4659d6ba7b70da724cc638e250347f00cec` plus documentation
+patch `32993579e4015a758eb5af0c0140143e7ffe80e366a9e07c8baf09ada2db6f25`.
+The control checked out `c544fff5391b2b422e8026ec29daf190373fe706`, which includes later
+guest summary/report-argument changes. Both traces record the manual profile-root and boot-image
+labels, but their exact image-byte identity is unverified. These measurements precede the merge
+of the boot and resource-identity changes into this branch.
+
+| Measurement               |   Profile |  Control |
+| ------------------------- | --------: | -------: |
+| VM test action            |   376.6 s |  284.0 s |
+| Fixture setup span        | 171.012 s | 94.315 s |
+| Profile-root import       |  29.864 s | 21.820 s |
+| OOM guest ready span      |  75.433 s | 73.057 s |
+| OOM app-server start span |  20.072 s | 19.098 s |
+
+These are individual observations, not a causal estimate of profiler overhead or an improvement.
+Source snapshots differ, and worker/cache conditions were uncontrolled. Both OOM commands exited
+137, both follow-up commands exited 0, and both Runners remained ready. The control produced no
+profile artifact.
+
+The passing profile retained `test.outputs/vm-artifacts/profiles/59593079-8554-4fd4-947b-feec389cb07a.perf.data`,
+3,687,840 bytes, SHA-256 `3c6fde75c61be22a8f5b79fb7be8d0f0834f88c532d570deda9f4c9df024d75a`.
+It contains 1,054 samples with zero lost. The OOM Session was
+`c93426ee-8f4b-40c8-a7a6-555cec7c5c91`, and its app-server TGID was 400.
+The whole recorded interval contains 434 samples from that TGID, across its worker threads.
+
+Use the **guest's emitted** clock fields to align samples, rather than the CRI log's host receipt
+timestamp. The begin/end pairs were `unix_seconds=1793456145 uptime_seconds=32.33` and
+`unix_seconds=1793456216 uptime_seconds=103.07`. Their nominal UNIX-minus-uptime offset is
+`1793456112.8` seconds, with about one second of uncertainty from the integer wall clock and
+the separate clock reads. The matching Session's `app_server.start` span was
+`14:16:00.403830`–`14:16:20.476289` UTC, giving a nominal sample interval
+`47.603830`–`67.676289` seconds. It contains 108 TGID-400 samples out of 315 sampled userspace
+events in this guest, roughly 2.2 sampled user-CPU seconds at 49 Hz. Shifting the entire interval
+by minus/plus one second yields 96/120 TGID samples; the boundary precision does not support
+finer CPU claims. No separate initialize span was retained for this Session either.
+
+```sh
+perf report -f --stdio --no-inline -i <passing-perf.data> --symfs <symfs> \
+  --pid 400 --time 47.603830,67.676289 --percent-limit 0 \
+  --sort comm,dso,symbol --no-children
+```
+
+The control's watch RPC ended with `ResourceExhausted: Log index limit exceeded`; direct invocation
+and test artifacts establish that execution succeeded. This log-following failure is distinct
+from the HTTP/2 `RST_STREAM INTERNAL_ERROR` investigation. An earlier profile dispatch also lost
+its event-log stream during authentication. Its retained analysis output proves that the command
+had been accepted; the subsequent manual retry was mistaken. `DISCONNECTED` plus zero recorded
+actions does not establish that an accepted command never ran.
