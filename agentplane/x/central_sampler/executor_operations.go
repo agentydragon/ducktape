@@ -14,6 +14,8 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/execution/executorpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -152,7 +154,44 @@ func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.Op
 	return c.ExecutorClient.OpenSession(ctx, req, opts...)
 }
 
+// openSession follows a verified incarnation change only at the session-open boundary. Process
+// mutations are never replayed; old handles are retired before opening a fresh native session.
+// TODO: Expose the current incarnation UID to the model and add an expected incarnation UID
+// argument to exec, potentially optional for callers that do not require fencing. A mismatch
+// should reject the promise with the current UID before executing the command, letting the
+// model decide whether to continue in the replacement incarnation.
 func (e *Executor) openSession(ctx context.Context, resume *string) error {
+	err := e.openSessionAtScope(ctx, resume)
+	if err == nil {
+		return nil
+	}
+	var transport *executorTransportError
+	if !errors.As(err, &transport) || status.Code(transport.cause) != codes.FailedPrecondition {
+		return err
+	}
+	for _, detail := range status.Convert(transport.cause).Details() {
+		changed, ok := detail.(*executorpb.SandboxIncarnationChanged)
+		if !ok || changed.GetSandboxUid() == "" || changed.GetSandboxUid() != e.scope.GetDestination().GetSandboxUid() ||
+			changed.GetIncarnationUid() == "" || changed.GetIncarnationUid() == e.scope.GetExpectedIncarnationUid() {
+			continue
+		}
+		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, changed.SandboxUid, e.scope.ExpectedIncarnationUid, changed.IncarnationUid, ""); err != nil {
+			return fmt.Errorf("record execution Sandbox incarnation change: %w", err)
+		}
+		e.scope.ExpectedIncarnationUid = changed.IncarnationUid
+		e.sessionID, e.shell = "", nil
+		e.workspacePrepared = false
+		e.lostSessionConfirmed = false
+		// One fresh open, with no retained process or file handles and no recursive retries.
+		if err := e.openSessionAtScope(ctx, nil); err != nil {
+			return err
+		}
+		return &executorIncarnationReplacedError{}
+	}
+	return err
+}
+
+func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error {
 	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
 	defer cancelHandshake()
 	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, map[string]any{"method": "initialize", "resume_session_id": resume})
@@ -381,6 +420,12 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method, processID st
 	} else if reconnectRequired {
 		err = e.reconnectLocked(ctx, processID)
 	}
+	// Workspace preparation has no native handle or previously dispatched mutation. It can
+	// continue immediately after the durable incarnation notice and fresh session open.
+	var changed *executorIncarnationReplacedError
+	if errors.As(err, &changed) && method == "process/start" && processID == "" {
+		return nil
+	}
 	if err == nil || !isExecutorConnectionFailure(err) {
 		return err
 	}
@@ -391,7 +436,8 @@ func isExecutorConnectionFailure(err error) bool {
 	var transport *executorTransportError
 	var rejected *executorRejectedError
 	var replaced *executorSessionReplacedError
-	return errors.As(err, &transport) || errors.As(err, &rejected) || errors.As(err, &replaced)
+	var changed *executorIncarnationReplacedError
+	return errors.As(err, &changed) || errors.As(err, &transport) || errors.As(err, &rejected) || errors.As(err, &replaced)
 }
 
 func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
@@ -719,6 +765,12 @@ type executorRejectedError struct {
 
 func (e *executorRejectedError) Error() string {
 	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
+}
+
+type executorIncarnationReplacedError struct{}
+
+func (*executorIncarnationReplacedError) Error() string {
+	return "execution Sandbox changed incarnation; old execution handles were abandoned and a fresh session was opened. The requested operation was not dispatched"
 }
 
 type executorSessionReplacedError struct {

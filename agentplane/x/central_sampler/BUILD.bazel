@@ -436,6 +436,7 @@ go_test(
         "codemode_protocol_test.go",
         "codemode_test.go",
         "environment_context_test.go",
+        "executor_resume_test.go",
         "executor_test.go",
         "exporter_test.go",
         "host_test.go",

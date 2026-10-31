@@ -11,6 +11,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/responses"
@@ -115,120 +116,135 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 }
 
 func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T) {
-	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
-		t.Run(string(api), func(t *testing.T) {
-			store := newTestStore(t)
-			request := &samplerpb.OpenSessionRequest{
-				SessionId: uuid.NewString(),
-				Spec:      &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"},
+	for _, incarnationChange := range []bool{false, true} {
+		for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
+			name := string(api) + "/lost-session"
+			if incarnationChange {
+				name = string(api) + "/incarnation-change"
 			}
-			session, err := store.OpenSession(t.Context(), request, "fixture-account", api)
-			if err != nil {
-				t.Fatal(err)
-			}
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-				t.Fatal(err)
-			}
-			startTurnForStore(t, store, session, owner, "turn")
-			sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var records []json.RawMessage
-			if api == protocol.APIStyleResponses {
-				call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "text(1)", ID: "item-1"}
-				records = nativeResponsesRecords(t, call)
-			} else {
-				records = []json.RawMessage{json.RawMessage(`{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}
-			}
-			if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, records, nil); err != nil {
-				t.Fatal(err)
-			}
-			if err := store.RetireLostExecutorSession(t.Context(), owner, "retained-executor", ""); err != nil {
-				t.Fatal(err)
-			}
-			if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
-				t.Fatalf("loss notice queued=%d, want 1", count)
-			}
-			conversation, err := store.Read(t.Context(), owner)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if pending, err := conversation.Archive.PendingCalls(); err != nil || len(pending) != 1 || pending[0].CallID != "call-1" {
-				t.Fatalf("retiring executor changed pending model call: calls=%+v err=%v", pending, err)
-			}
-			beforeResult, err := conversation.Archive.Records()
-			if err != nil || len(beforeResult) == 0 {
-				t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
-			}
-			cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
-			if err != nil {
-				t.Fatal(err)
-			}
-			call, err := conversation.Archive.FindCall("call-1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := store.FinishTool(t.Context(), owner, cell, map[string]any{}, call, []protocol.ContentPart{{Type: "input_text", Text: "session was lost; operation not dispatched"}}); err != nil {
-				t.Fatal(err)
-			}
-			if drained, err := store.DrainNotifications(t.Context(), owner); err != nil || !drained {
-				t.Fatalf("loss notice drained=%v err=%v", drained, err)
-			}
-			conversation, err = store.Read(t.Context(), owner)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := conversation.Archive.CheckSettled(); err != nil {
-				t.Fatalf("loss notice broke provider tool-result ordering: %v", err)
-			}
-			if api == protocol.APIStyleResponses {
-				items := responsesItems(t, conversation.Archive)
-				callIndex := -1
-				for i, item := range items {
-					if item.CallID == "call-1" && item.Type == responses.ItemCustomToolCall {
-						callIndex = i
-						break
+			t.Run(name, func(t *testing.T) {
+				store := newTestStore(t)
+				request := &samplerpb.OpenSessionRequest{
+					SessionId:              uuid.NewString(),
+					Executor:               &sandboxpb.SandboxDestination{SandboxUid: "sandbox-uid"},
+					ExpectedIncarnationUid: "original",
+					Spec:                   &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"},
+				}
+				session, err := store.OpenSession(t.Context(), request, "fixture-account", api)
+				if err != nil {
+					t.Fatal(err)
+				}
+				owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
+					t.Fatal(err)
+				}
+				startTurnForStore(t, store, session, owner, "turn")
+				sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var records []json.RawMessage
+				if api == protocol.APIStyleResponses {
+					call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "text(1)", ID: "item-1"}
+					records = nativeResponsesRecords(t, call)
+				} else {
+					records = []json.RawMessage{json.RawMessage(`{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}
+				}
+				if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, records, nil); err != nil {
+					t.Fatal(err)
+				}
+				noticeText := "retained exec-server session was definitively lost"
+				if incarnationChange {
+					noticeText = "execution Sandbox changed incarnation"
+					err = store.RebindExecutorIncarnation(t.Context(), owner, "sandbox-uid", "original", "replacement", "")
+				} else {
+					err = store.RetireLostExecutorSession(t.Context(), owner, "retained-executor", "")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if count := queuedNotifications(t, store, session.ConversationID); count != 1 {
+					t.Fatalf("loss notice queued=%d, want 1", count)
+				}
+				conversation, err := store.Read(t.Context(), owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if pending, err := conversation.Archive.PendingCalls(); err != nil || len(pending) != 1 || pending[0].CallID != "call-1" {
+					t.Fatalf("retiring executor changed pending model call: calls=%+v err=%v", pending, err)
+				}
+				beforeResult, err := conversation.Archive.Records()
+				if err != nil || len(beforeResult) == 0 {
+					t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
+				}
+				cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
+				if err != nil {
+					t.Fatal(err)
+				}
+				call, err := conversation.Archive.FindCall("call-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := store.FinishTool(t.Context(), owner, cell, map[string]any{}, call, []protocol.ContentPart{{Type: "input_text", Text: "session was lost; operation not dispatched"}}); err != nil {
+					t.Fatal(err)
+				}
+				if drained, err := store.DrainNotifications(t.Context(), owner); err != nil || !drained {
+					t.Fatalf("loss notice drained=%v err=%v", drained, err)
+				}
+				conversation, err = store.Read(t.Context(), owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := conversation.Archive.CheckSettled(); err != nil {
+					t.Fatalf("loss notice broke provider tool-result ordering: %v", err)
+				}
+				if api == protocol.APIStyleResponses {
+					items := responsesItems(t, conversation.Archive)
+					callIndex := -1
+					for i, item := range items {
+						if item.CallID == "call-1" && item.Type == responses.ItemCustomToolCall {
+							callIndex = i
+							break
+						}
+					}
+					if callIndex < 0 || len(items) < callIndex+3 || !items[callIndex+1].IsToolOutput() || items[callIndex+1].Output[0].Text != "session was lost; operation not dispatched" ||
+						!items[callIndex+2].IsToolOutput() || !strings.Contains(items[callIndex+2].Output[0].Text, noticeText) {
+						t.Fatalf("Responses notice ordering is invalid: %+v", items)
+					}
+				} else {
+					context := conversation.Archive.(*anthropic.Context)
+					wireMessages, err := context.WireMessages()
+					if err != nil {
+						t.Fatalf("Anthropic archive is not valid provider input: %v", err)
+					}
+					var result, notice struct {
+						Role    string `json:"role"`
+						Content []struct {
+							Type      string `json:"type"`
+							ToolUseID string `json:"tool_use_id"`
+							Text      string `json:"text"`
+						} `json:"content"`
+					}
+					archiveRecords, err := conversation.Archive.Records()
+					if err != nil || len(archiveRecords) < 2 || len(wireMessages) != len(archiveRecords) {
+						t.Fatalf("Anthropic records=%d wire messages=%d err=%v", len(archiveRecords), len(wireMessages), err)
+					}
+					if err := json.Unmarshal(archiveRecords[len(archiveRecords)-2], &result); err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(archiveRecords[len(archiveRecords)-1], &notice); err != nil {
+						t.Fatal(err)
+					}
+					if result.Role != "user" || len(result.Content) != 1 || result.Content[0].Type != "tool_result" || result.Content[0].ToolUseID != "call-1" ||
+						notice.Role != "user" || len(notice.Content) != 1 || notice.Content[0].Type != "text" || !strings.Contains(notice.Content[0].Text, noticeText) {
+						t.Fatalf("Anthropic tool-result/notice ordering is invalid: result=%+v notice=%+v", result, notice)
 					}
 				}
-				if callIndex < 0 || len(items) < callIndex+3 || !items[callIndex+1].IsToolOutput() || items[callIndex+1].Output[0].Text != "session was lost; operation not dispatched" ||
-					!items[callIndex+2].IsToolOutput() || !strings.Contains(items[callIndex+2].Output[0].Text, "retained exec-server session was definitively lost") {
-					t.Fatalf("Responses notice ordering is invalid: %+v", items)
-				}
-			} else {
-				context := conversation.Archive.(*anthropic.Context)
-				wireMessages, err := context.WireMessages()
-				if err != nil {
-					t.Fatalf("Anthropic archive is not valid provider input: %v", err)
-				}
-				var result, notice struct {
-					Role    string `json:"role"`
-					Content []struct {
-						Type      string `json:"type"`
-						ToolUseID string `json:"tool_use_id"`
-						Text      string `json:"text"`
-					} `json:"content"`
-				}
-				archiveRecords, err := conversation.Archive.Records()
-				if err != nil || len(archiveRecords) < 2 || len(wireMessages) != len(archiveRecords) {
-					t.Fatalf("Anthropic records=%d wire messages=%d err=%v", len(archiveRecords), len(wireMessages), err)
-				}
-				if err := json.Unmarshal(archiveRecords[len(archiveRecords)-2], &result); err != nil {
-					t.Fatal(err)
-				}
-				if err := json.Unmarshal(archiveRecords[len(archiveRecords)-1], &notice); err != nil {
-					t.Fatal(err)
-				}
-				if result.Role != "user" || len(result.Content) != 1 || result.Content[0].Type != "tool_result" || result.Content[0].ToolUseID != "call-1" ||
-					notice.Role != "user" || len(notice.Content) != 1 || notice.Content[0].Type != "text" || !strings.Contains(notice.Content[0].Text, "retained exec-server session was definitively lost") {
-					t.Fatalf("Anthropic tool-result/notice ordering is invalid: result=%+v notice=%+v", result, notice)
-				}
-			}
-		})
+			})
+		}
 	}
 }
 

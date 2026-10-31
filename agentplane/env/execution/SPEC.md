@@ -12,6 +12,10 @@ call carries the destination, incarnation and attributing Session; a foreign des
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Production embedding delegates admission to Runner's authenticated
 watch and lifecycle barrier; Gateway retains remote authorization and routing in either model.
+When the expected incarnation is stale, Gateway or Runner may attach the typed
+`SandboxIncarnationChanged` status detail only after verifying the same destination Sandbox UID and
+observing a nonempty current incarnation. Invalid or foreign destinations and unavailable
+incarnations carry no rebind detail.
 
 The state-directory owner lock precedes socket replacement and native startup. Pod ownership is
 PID 1 plus the outer runtime's whole-namespace cleanup. VM ownership is a systemd unit, its lifetime

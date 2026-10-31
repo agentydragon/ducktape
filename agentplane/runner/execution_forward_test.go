@@ -19,7 +19,9 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type directExecutionTestClient struct {
@@ -223,5 +225,60 @@ func TestOpenSessionEndsWhenObserverEpochIsSuperseded(t *testing.T) {
 	}
 	if r.execution.Active() {
 		t.Fatal("observer supersession left an execution slot active")
+	}
+}
+
+func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
+	url, _, _ := startNativeExecutionTestServer(t, false)
+	r := newExecutorLifecycleRunnerWithURL(t, url, func(context.Context) (*supervision.Instance, error) {
+		return newTestExecutorInstance(&atomic.Int32{}), nil
+	}, nil)
+	client := startDirectExecutionTestClient(t, r, "current-incarnation")
+	open := func(scope *executorpb.ExecutionScope, requestID string) error {
+		stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		_, err = stream.Recv()
+		return err
+	}
+
+	stale := client.scope("sampler-session")
+	stale.ExpectedIncarnationUid = "previous-incarnation"
+	err := open(stale, "stale-incarnation")
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale OpenSession = %v, want FailedPrecondition", err)
+	}
+	var changed *executorpb.SandboxIncarnationChanged
+	for _, detail := range status.Convert(err).Details() {
+		if candidate, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+			changed = candidate
+		}
+	}
+	if changed == nil || changed.GetSandboxUid() != client.identity.UID || changed.GetIncarnationUid() != "current-incarnation" {
+		t.Fatalf("stale OpenSession details = %v, want verified Sandbox %q and incarnation %q", status.Convert(err).Details(), client.identity.UID, "current-incarnation")
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*executorpb.ExecutionScope)
+		code   codes.Code
+	}{
+		{name: "incomplete scope", mutate: func(scope *executorpb.ExecutionScope) { scope.ExpectedIncarnationUid = "" }, code: codes.InvalidArgument},
+		{name: "foreign Sandbox", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.SandboxUid = "another-sandbox" }, code: codes.PermissionDenied},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			scope := client.scope("sampler-session")
+			test.mutate(scope)
+			err := open(scope, "rejected-scope")
+			if status.Code(err) != test.code {
+				t.Fatalf("OpenSession = %v, want %s", err, test.code)
+			}
+			for _, detail := range status.Convert(err).Details() {
+				if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+					t.Fatalf("rejected request carried a rebind detail: %v", detail)
+				}
+			}
+		})
 	}
 }

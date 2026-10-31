@@ -33,6 +33,17 @@ func (r *Runner) admitExecution(
 			return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
 		}
 		if scope.GetExpectedIncarnationUid() != epoch.IncarnationUID() {
+			if identity.UID != "" && epoch.SandboxUID() == identity.UID && epoch.IncarnationUID() != "" {
+				changed, err := status.New(codes.FailedPrecondition, "Sandbox incarnation changed").WithDetails(
+					&executorpb.SandboxIncarnationChanged{
+						SandboxUid: identity.UID, IncarnationUid: epoch.IncarnationUID(),
+					},
+				)
+				if err != nil {
+					return err
+				}
+				return changed.Err()
+			}
 			return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 		}
 

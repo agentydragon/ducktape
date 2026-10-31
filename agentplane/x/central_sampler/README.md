@@ -124,8 +124,9 @@ container limits stop meeting the production resource contract.
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.
 
-Readiness for the first open still requires a running executor. Binding is fixed to Sandbox UID
-and incarnation. A subsequent missing/suspended executor fails tool connection or execution;
+Readiness for the first open still requires a running executor. Binding is fixed to the Sandbox UID. After suspend/resume or replacement of its execution Pod,
+initialization can adopt the authenticated new incarnation, abandon old execution handles, and
+notify the model before continuing with a fresh execution session. Previous mutations are never replayed. A subsequent missing/suspended executor fails tool connection or execution;
 central controls and persisted conversation remain on the sampler. Dispatcher commands still need
 the extant bound Sandbox object; the standalone API can inspect/control its own persisted Session.
 

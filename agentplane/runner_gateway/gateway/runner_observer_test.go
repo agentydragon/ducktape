@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -207,6 +208,89 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	}
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("closed Runner connection remained callable: %v", err)
+	}
+}
+
+func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	server := &executorServer{gateway: g}
+	scope := &executorpb.ExecutionScope{
+		Destination: &sandboxespb.SandboxDestination{
+			Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+			Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+		},
+		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
+	}
+	setConnection := func(podUID string) {
+		g.connections.accept(&runnerConnection{
+			identity: sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, UID: string(f.sandbox.UID)},
+			podUID:   podUID, ended: make(chan struct{}),
+		})
+	}
+	setConnection("previous-incarnation")
+
+	_, _, _, err := server.executionConnection(t.Context(), scope, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale execution scope = %v, want FailedPrecondition", err)
+	}
+	for _, detail := range status.Convert(err).Details() {
+		if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+			t.Fatalf("stale Gateway holder carried a rebind detail: %v", detail)
+		}
+	}
+	setConnection(string(f.pod.UID))
+	_, _, _, err = server.executionConnection(t.Context(), scope, false)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("stale execution scope with current holder = %v, want FailedPrecondition", err)
+	}
+	var changed *executorpb.SandboxIncarnationChanged
+	for _, detail := range status.Convert(err).Details() {
+		if candidate, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+			changed = candidate
+		}
+	}
+	if changed == nil || changed.GetSandboxUid() != string(f.sandbox.UID) || changed.GetIncarnationUid() != string(f.pod.UID) {
+		t.Fatalf("stale execution details = %v, want verified Sandbox %q and incarnation %q", status.Convert(err).Details(), f.sandbox.UID, f.pod.UID)
+	}
+
+	for _, test := range []struct {
+		name   string
+		scope  *executorpb.ExecutionScope
+		mutate func(*sandboxapi.Sandbox)
+		code   codes.Code
+	}{
+		{name: "invalid scope", scope: &executorpb.ExecutionScope{Destination: scope.Destination, SessionId: scope.SessionId}, code: codes.InvalidArgument},
+		{name: "foreign Sandbox", scope: &executorpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: f.sandbox.Name, SandboxUid: "another-sandbox",
+				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			},
+			ExpectedIncarnationUid: scope.ExpectedIncarnationUid, SessionId: scope.SessionId,
+		}, code: codes.NotFound},
+		{name: "unavailable incarnation", scope: scope, mutate: func(sandbox *sandboxapi.Sandbox) {
+			sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+			sandbox.Status.Incarnation = nil
+		}, code: codes.Unavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.mutate != nil {
+				sandbox := f.sandbox.DeepCopy()
+				test.mutate(sandbox)
+				if err := f.objects.Status().Update(t.Context(), sandbox); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, _, _, err := server.executionConnection(t.Context(), test.scope, false)
+			if status.Code(err) != test.code {
+				t.Fatalf("execution scope = %v, want %s", err, test.code)
+			}
+			for _, detail := range status.Convert(err).Details() {
+				if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
+					t.Fatalf("rejected request carried a rebind detail: %v", detail)
+				}
+			}
+		})
 	}
 }
 

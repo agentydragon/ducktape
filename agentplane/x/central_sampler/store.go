@@ -1809,65 +1809,116 @@ func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sess
 		if err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT `+processColumns+` FROM sampler_process
-			WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') FOR UPDATE`, conversation.ID)
+		return s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, lostExecutorSessionNotice)
+	})
+}
+
+// RebindExecutorIncarnation accepts an authenticated execution-owner observation for the same
+// Sandbox UID. The new fence, handle retirement and model notice commit atomically before any
+// command can use the replacement incarnation.
+func (s *Store) RebindExecutorIncarnation(ctx context.Context, owner Owner, sandboxUID, previousUID, replacementUID, notDispatchedProcessID string) error {
+	if sandboxUID == "" || previousUID == "" || replacementUID == "" || previousUID == replacementUID {
+		return protocol.ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		var processes []*RemoteProcess
-		for rows.Next() {
-			process, err := scanProcess(rows)
-			if err != nil {
-				rows.Close()
-				return err
-			}
-			processes = append(processes, process)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		for _, process := range processes {
-			outcome := "unknown"
-			if process.ID == notDispatchedProcessID && process.Status == "starting" {
-				outcome = "not_dispatched"
-			}
-			if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
-				return err
-			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, "process", "abandoned", map[string]any{
-				"remote_outcome": outcome, "automatic_replay": false, "executor_session_id": sessionID,
-				"previous_status": process.Status, "after_seq": process.AfterSequence, "exit_code": process.ExitCode,
-				"buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
-			}); err != nil {
-				return err
-			}
-		}
-		conversation.ExecutorSession = nil
-		conversation.ExecutorShell = nil
-		// The session can be retired while the model's outer exec call is still pending.
-		// Queue the notice against that call so it is appended after its tool result. This
-		// preserves Anthropic's tool_result ordering while keeping the notice durable in the
-		// same transaction as session retirement. With no pending call, append it directly.
-		pendingCalls, err := conversation.Archive.PendingCalls()
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		if len(pendingCalls) > 0 {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,'',$3)`,
-				conversation.ID, pendingCalls[0].CallID, lostExecutorSessionNotice); err != nil {
-				return err
-			}
-		} else if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: lostExecutorSessionNotice}})
+		request := &samplerpb.OpenSessionRequest{}
+		if err := proto.Unmarshal(session.Configuration, request); err != nil {
+			return err
+		}
+		if request.GetExecutor().GetSandboxUid() != sandboxUID || request.GetExpectedIncarnationUid() != previousUID {
+			return protocol.ErrPrecondition
+		}
+		request.ExpectedIncarnationUid = replacementUID
+		wire, err := proto.Marshal(request)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_session SET configuration=$2,workspace_prepared=false WHERE id=$1`, session.ID, wire); err != nil {
+			return err
+		}
+		session.Configuration = wire
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), "executor", "incarnation_changed", map[string]any{
+			"sandbox_uid": sandboxUID, "previous_incarnation_uid": previousUID, "replacement_incarnation_uid": replacementUID,
+			"remote_outcome": "unknown", "automatic_replay": false,
 		}); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, conversation)
+		notice := fmt.Sprintf("The execution Sandbox changed incarnation from %s to %s while retaining Sandbox UID %s (for example, after suspend and resume). A fresh execution session is being opened. Old process and file handles cannot be reused; unfinished process outcomes remain unknown and no previous command was replayed. Persistent workspace files may remain, but verify any required process or temporary state before continuing.", previousUID, replacementUID, sandboxUID)
+		return s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, notice)
 	})
+}
+
+func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session, notDispatchedProcessID, notice string) error {
+	sessionID := ""
+	if conversation.ExecutorSession != nil {
+		sessionID = *conversation.ExecutorSession
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT `+processColumns+` FROM sampler_process
+		WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') FOR UPDATE`, conversation.ID)
+	if err != nil {
+		return err
+	}
+	var processes []*RemoteProcess
+	for rows.Next() {
+		process, err := scanProcess(rows)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		processes = append(processes, process)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, process := range processes {
+		outcome := "unknown"
+		if process.ID == notDispatchedProcessID && process.Status == "starting" {
+			outcome = "not_dispatched"
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
+			return err
+		}
+		if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, "process", "abandoned", map[string]any{
+			"remote_outcome": outcome, "automatic_replay": false, "executor_session_id": sessionID,
+			"previous_status": process.Status, "after_seq": process.AfterSequence, "exit_code": process.ExitCode,
+			"buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
+		}); err != nil {
+			return err
+		}
+	}
+	conversation.ExecutorSession = nil
+	conversation.ExecutorShell = nil
+	// The session can be retired while the model's outer exec call is still pending.
+	// Queue the notice against that call so it is appended after its tool result. This
+	// preserves Anthropic's tool_result ordering while keeping the notice durable in the
+	// same transaction as session retirement. With no pending call, append it directly.
+	pendingCalls, err := conversation.Archive.PendingCalls()
+	if err != nil {
+		return err
+	}
+	if len(pendingCalls) > 0 {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,'',$3)`,
+			conversation.ID, pendingCalls[0].CallID, notice); err != nil {
+			return err
+		}
+	} else if err := conversation.apply(func(state protocol.Context) error {
+		return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+	}); err != nil {
+		return err
+	}
+	return updateConversation(ctx, tx, conversation)
 }
 
 func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
