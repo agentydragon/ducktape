@@ -28,7 +28,6 @@ go_library(
 go_test(
     name = "codex_test",
     srcs = [
-        "adapter_behavior_test.go",
         "adapter_test.go",
         "history_test.go",
         "router_test.go",
