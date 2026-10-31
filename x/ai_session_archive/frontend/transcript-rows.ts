@@ -14,6 +14,7 @@ export type ActivityStep =
     }
   | { kind: "reasoning"; records: EventRecord[]; text: string }
   | { kind: "subagent"; records: EventRecord[]; author: string; recipient: string | null; text: string }
+  | { kind: "attachment"; records: EventRecord[]; title: string; preview: string }
   | { kind: "record"; records: EventRecord[] };
 
 export type TranscriptRow =
@@ -65,7 +66,6 @@ function toolEvent(record: EventRecord): ToolEvent | null {
 }
 
 const CLAUDE_METADATA = new Set([
-  "attachment",
   "queue-operation",
   "pr-link",
   "last-prompt",
@@ -98,6 +98,7 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   const parsed = object(record.parsed);
   if (!parsed) return "record";
   const message = object(parsed.message);
+  if (parsed.type === "attachment" && object(parsed.attachment) !== null) return "activity";
   if (parsed.type === "user" || parsed.type === "assistant") {
     const content = message?.content;
     if (Array.isArray(content) && content.length > 0) {
@@ -204,6 +205,22 @@ function activitySteps(records: readonly EventRecord[], pairs: ToolPairs): Activ
   const rowOrdinals = new Set(records.map((record) => record.ordinal));
 
   for (const record of records) {
+    const parsed = object(record.parsed);
+    const attachment = parsed?.type === "attachment" ? object(parsed.attachment) : null;
+    if (attachment !== null && record.parse_error == null) {
+      steps.push({
+        kind: "attachment",
+        records: [record],
+        title: `Attachment · ${(string(attachment.type) ?? "unknown").replaceAll("_", " ")}`,
+        preview:
+          string(attachment.displayPath) ??
+          string(attachment.filename) ??
+          string(attachment.hookName) ??
+          string(attachment.description) ??
+          "",
+      });
+      continue;
+    }
     const event = toolEvent(record);
     if (event?.kind === "call") {
       const output = pairs.outputByCallOrdinal.get(record.ordinal);
@@ -357,6 +374,7 @@ export function summarizeActivity(steps: readonly ActivityStep[]): string {
   const results = steps.filter((step) => step.kind === "tool" && step.missingCall);
   const reasoning = steps.filter((step) => step.kind === "reasoning");
   const agents = steps.filter((step) => step.kind === "subagent");
+  const attachments = steps.filter((step) => step.kind === "attachment");
   const records = steps.filter((step) => step.kind === "record");
   const summary: string[] = [];
 
@@ -364,6 +382,7 @@ export function summarizeActivity(steps: readonly ActivityStep[]): string {
   if (results.length > 0) summary.push(countLabel(results.length, "tool result"));
   if (reasoning.length > 0) summary.push(countLabel(reasoning.length, "reasoning step"));
   if (agents.length > 0) summary.push(countLabel(agents.length, "agent message"));
+  if (attachments.length > 0) summary.push(countLabel(attachments.length, "attachment"));
   if (records.length > 0) summary.push(countLabel(records.length, "activity record"));
   return summary.join(", ");
 }

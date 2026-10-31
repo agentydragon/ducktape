@@ -5,6 +5,7 @@ import { CodeBlock } from "../../../util/frontend/code_block";
 import { Markdown } from "../../../util/frontend/markdown";
 import { DisclosureBody } from "../../../util/frontend/disclosure";
 import { RetainedDisclosure } from "../../../util/frontend/transcript/retained_disclosures";
+import { TextBlock } from "../../../util/frontend/transcript/text_block";
 import type { EventRecord } from "./schema";
 
 export function recordLabel(record: EventRecord): string {
@@ -39,6 +40,8 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
 
   const parsed = object(record.parsed);
   if (parsed === null) return null;
+  const attachment = parsed.type === "attachment" ? object(parsed.attachment) : null;
+  if (attachment !== null) return <TextBlock label="Details" text={formatValue(attachment)} language="json" />;
 
   const content = claudeContent(parsed) ?? codexContent(parsed) ?? [];
   if (content.length > 0) {

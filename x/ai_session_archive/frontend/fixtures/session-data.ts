@@ -179,9 +179,37 @@ const sessions: SessionSummary[] = [
     parent_native_session_id: null,
     identity_inferred: false,
   },
+  {
+    id: "claude-attachments-fixture",
+    machine_id: "atlas",
+    harness: "claude",
+    title: "Claude attachment disclosures",
+    cwd: "/fixture/project",
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: "claude-attachments-version",
+    version_count: 1,
+    latest_version_record_count: 4,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
 ];
 
 const versions: Record<string, SessionVersion[]> = {
+  "claude-attachments-fixture": [
+    {
+      id: "claude-attachments-version",
+      captured_at: "2026-10-31T06:30:00Z",
+      sha256: "a".repeat(64),
+      byte_size: 1000,
+      source_path: "/fixture/claude.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
   "codex-work-fixture": [
     {
       id: "codex-work-version",
@@ -395,6 +423,37 @@ const claudeEvents: EventRecord[] = [
   ),
 ];
 
+const claudeAttachmentEvents: EventRecord[] = [
+  record(1, { type: "user", message: { content: "Inspect the attached changes." } }, "user"),
+  record(
+    2,
+    {
+      type: "attachment",
+      attachment: {
+        type: "hook_success",
+        hookName: "PostToolUse",
+        stdout: "fixture hook completed",
+        stderr: "",
+        exitCode: 0,
+      },
+    },
+    "attachment"
+  ),
+  record(
+    3,
+    {
+      type: "attachment",
+      attachment: { type: "edited_text_file", filename: "/fixture/config.ts", snippet: "export const enabled = true;" },
+    },
+    "attachment"
+  ),
+  record(
+    4,
+    { type: "assistant", message: { content: "The captured attachment records are available for inspection." } },
+    "assistant"
+  ),
+];
+
 export const sessionFixtureApi: SessionBrowserApi = {
   async listMachines() {
     return machines;
@@ -423,18 +482,22 @@ export const sessionFixtureApi: SessionBrowserApi = {
   async listEvents(sessionId, versionId, cursor) {
     if (sessionId === "inferred-claude-parent") return { data: [], next_cursor: null };
     const selected =
-      sessionId === "codex-work-fixture"
-        ? codexWorkRecords
-        : sessionId === "mixed-transcript-fixture"
-          ? mixedEvents
-          : sessionId === "codex-thread-1"
-            ? versionId === "codex-version-1"
-              ? codexOlderEvents
-              : codexLatestEvents
-            : claudeEvents;
+      sessionId === "claude-attachments-fixture"
+        ? claudeAttachmentEvents
+        : sessionId === "codex-work-fixture"
+          ? codexWorkRecords
+          : sessionId === "mixed-transcript-fixture"
+            ? mixedEvents
+            : sessionId === "codex-thread-1"
+              ? versionId === "codex-version-1"
+                ? codexOlderEvents
+                : codexLatestEvents
+              : claudeEvents;
     const data = selected
       .filter((record) => cursor === undefined || record.ordinal < cursor)
-      .slice(-(["mixed-transcript-fixture", "codex-work-fixture"].includes(sessionId) ? 50 : 3));
+      .slice(
+        -(["mixed-transcript-fixture", "codex-work-fixture", "claude-attachments-fixture"].includes(sessionId) ? 50 : 3)
+      );
     const first = data.at(0)?.ordinal ?? null;
     return {
       data,

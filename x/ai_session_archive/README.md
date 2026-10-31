@@ -99,7 +99,10 @@ messages show their sender and readable content, or an unavailable-content label
 Compaction is a compact marker with source inspection.
 
 Claude `user` records containing only tool results are activity; mixed text/content
-stays visible. Unknown record types and parse failures remain standalone. Explicit
+stays visible. Claude attachments have individual disclosures labeled by subtype
+and filename or hook name, with bounded structured details. Consecutive attachments
+can share an activity group. Unknown record types and parse failures remain standalone;
+records without readable content show only their label and source inspection. Explicit
 tool errors stay visible or mark the enclosing tool group as failed. Every original
 record remains accessible through a compact inspection button and its exact-byte
 view. Assistant replies use plain Markdown; user inputs use the shared right-aligned

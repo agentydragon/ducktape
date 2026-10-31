@@ -170,7 +170,9 @@ function ActivityStepView({
         ? "Reasoning"
         : step.kind === "subagent"
           ? `Agent message · ${step.author}`
-          : recordLabel(records[0]);
+          : step.kind === "attachment"
+            ? step.title
+            : recordLabel(records[0]);
   const preview =
     step.kind === "tool"
       ? (step.input ?? step.output ?? "No recorded input or output")
@@ -178,7 +180,9 @@ function ActivityStepView({
         ? reasoning
         : step.kind === "subagent"
           ? step.text
-          : "Recorded activity";
+          : step.kind === "attachment"
+            ? step.preview
+            : "";
   return (
     <Box className="transcript-inspection-owner" data-activity-step={step.kind} data-open={open}>
       {records.map((record) => (

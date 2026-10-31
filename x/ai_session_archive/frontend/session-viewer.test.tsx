@@ -1083,3 +1083,20 @@ it("keeps records without readable content compact and inspectable", async () =>
     expect(record.querySelector("pre")?.textContent).toBe(raw);
   }
 });
+
+it("renders Claude attachments as individually expandable widgets", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/claude-attachments-fixture");
+  expect(view.textContent).not.toContain("fixture hook completed");
+  await act(async () => findControl(view, "2 attachments").click());
+  const attachments = view.querySelectorAll<HTMLElement>('[data-activity-step="attachment"]');
+  expect(attachments).toHaveLength(2);
+  expect(attachments[0].textContent).toContain("Attachment · hook success");
+  expect(attachments[1].textContent).toContain("/fixture/config.ts");
+  expect(view.textContent).not.toContain("export const enabled");
+  await act(async () => findControl(attachments[1], "Attachment · edited text file").click());
+  expect(attachments[1].textContent).toContain("export const enabled = true;");
+  await act(async () => findControl(attachments[0], "Attachment · hook success").click());
+  expect(attachments[0].textContent).toContain("fixture hook completed");
+  await act(async () => findControl(attachments[1], "Raw JSONL record").click());
+  expect(attachments[1].querySelector("pre")?.textContent).toContain('"type":"attachment"');
+});
