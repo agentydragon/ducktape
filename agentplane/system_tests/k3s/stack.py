@@ -16,10 +16,11 @@ import io
 import json
 import logging
 import os
+import re
+import selectors
 import shutil
 import socket
 import subprocess
-import sys
 import tarfile
 import tempfile
 import threading
@@ -29,7 +30,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -40,6 +40,8 @@ from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
+from util.net import Listener, listen_tcp
+from util.testing.tcp_relay import relay_tcp_sync
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -402,46 +404,72 @@ class Stack:
     mcp_fixtures: McpFixtureAccess | None
 
 
-def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
+def _mcp_inputs(work: Path, dex_host: str, *, mcp_edge_origin: str, app_origin: str) -> rendered_fixture.McpInputs:
     ca = tls.make_ca("test-k3s-fixture-ca")
     cert, key = tls.issue_leaf(ca, dex_host, work)
-    # Free ports now; port-forwards listen once the app and MCP edge are Available.
-    with socket.socket() as probe, socket.socket() as app_probe:
-        probe.bind(("127.0.0.1", 0))
-        app_probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-        app_port = app_probe.getsockname()[1]
     return rendered_fixture.McpInputs(
         dex_ca_cert=ca.cert_pem.decode(),
         dex_cert=cert.read_text(),
         dex_key=key.read_text(),
-        mcp_edge_origin=f"http://127.0.0.1:{port}",
-        app_origin=f"http://127.0.0.1:{app_port}",
+        mcp_edge_origin=mcp_edge_origin,
+        app_origin=app_origin,
     )
 
 
 @contextlib.contextmanager
-def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int) -> Iterator[None]:
-    """Forward the loopback `origin` to `service`'s `port` from when kubectl says it listens."""
-    local = urlsplit(origin)
-    with subprocess.Popen(
-        [
-            *(str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
-            *(f"--address={local.hostname}", f"service/{service}", f"{local.port}:{port}"),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as forward:
+def _port_forward(k3s: K3s, namespace: str, service: str, listener: Listener, port: int) -> Iterator[None]:
+    """Keep the advertised binding; relay it to kubectl's own port-zero listener."""
+    log_path = undeclared_outputs_dir() / f"port-forward-{service}-{listener.port}.log"
+    with (
+        log_path.open("wb") as log,
+        subprocess.Popen(
+            [
+                *(str(k3s.binary), "kubectl", "--kubeconfig", str(k3s.kubeconfig), "port-forward", "-n", namespace),
+                *("--address=127.0.0.1", f"service/{service}", f":{port}"),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        ) as forward,
+    ):
+        drain: threading.Thread | None = None
         try:
             assert forward.stdout is not None
-            if not (line := forward.stdout.readline()).startswith("Forwarding from"):
-                raise RuntimeError(f"kubectl port-forward {service}: {line!r}")
-            # Its log of each connection, which would fill the pipe unread.
-            threading.Thread(target=shutil.copyfileobj, args=(forward.stdout, sys.stdout), daemon=True).start()
-            yield
+            deadline = time.monotonic() + 30
+            pending = b""
+            address = None
+            with selectors.DefaultSelector() as readable:
+                readable.register(forward.stdout, selectors.EVENT_READ)
+                while address is None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not readable.select(timeout=remaining):
+                        raise TimeoutError(f"kubectl port-forward {service} did not start")
+                    chunk = os.read(forward.stdout.fileno(), 4096)
+                    if not chunk:
+                        raise RuntimeError(f"kubectl port-forward {service} exited: {pending!r}")
+                    log.write(chunk)
+                    log.flush()
+                    pending += chunk
+                    while b"\n" in pending:
+                        line, pending = pending.split(b"\n", 1)
+                        if match := re.match(rb"Forwarding from 127\.0\.0\.1:(\d+) ->", line):
+                            address = ("127.0.0.1", int(match[1]))
+                            break
+            drain = threading.Thread(target=shutil.copyfileobj, args=(forward.stdout, log), daemon=True)
+            drain.start()
+            with relay_tcp_sync(listener.socket, address):
+                yield
         finally:
-            forward.terminate()
+            if forward.poll() is None:
+                forward.terminate()
+            try:
+                forward.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                forward.kill()
+                forward.wait()
+            if drain is not None:
+                drain.join(timeout=5)
+                if drain.is_alive():
+                    raise RuntimeError(f"kubectl log drain did not stop: {log_path}")
 
 
 def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
@@ -520,7 +548,16 @@ def running_stack(
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
-        mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
+        mcp = None
+        if fixture.mcp_fixtures is not None:
+            mcp_edge_listener = cleanup.enter_context(listen_tcp())
+            app_listener = cleanup.enter_context(listen_tcp())
+            mcp = _mcp_inputs(
+                work,
+                fixture.mcp_fixtures.dex_host,
+                mcp_edge_origin=f"http://127.0.0.1:{mcp_edge_listener.port}",
+                app_origin=f"http://127.0.0.1:{app_listener.port}",
+            )
         fixture = rendered_fixture.fill(
             fixture,
             rendered_fixture.RuntimeInputs(
@@ -607,7 +644,7 @@ def running_stack(
                     k3s,
                     fixture.namespace,
                     fixture.mcp_fixtures.mcp_edge_service,
-                    mcp.mcp_edge_origin,
+                    mcp_edge_listener,
                     fixture.mcp_fixtures.mcp_edge_port,
                 )
             )
@@ -616,7 +653,7 @@ def running_stack(
                     k3s,
                     fixture.namespace,
                     fixture.mcp_fixtures.app_service,
-                    mcp.app_origin,
+                    app_listener,
                     fixture.mcp_fixtures.app_port,
                 )
             )

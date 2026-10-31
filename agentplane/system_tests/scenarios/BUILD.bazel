@@ -76,7 +76,6 @@ py_library(
         "//agentplane/system_tests:cleanup_diagnostics",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:sandbox",
-        "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
