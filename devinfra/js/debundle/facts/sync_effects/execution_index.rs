@@ -11,10 +11,10 @@ use super::value_model::{
     static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind,
+    NativeIntegrity, NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
+    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
 use crate::facts::abstract_domain::integrity::{
@@ -1579,6 +1579,8 @@ pub(super) struct BundleGlobals {
     registered_symbols: bool,
     /// Bindings whose key domain is a `Symbol.for` symbol.
     symbol_keys: BTreeSet<Id>,
+    /// `new Map()` and its kin allocate fresh objects.
+    fresh_collections: bool,
 }
 
 impl BundleGlobals {
@@ -5743,6 +5745,8 @@ fn key_domain_may_name(domain: &PropertyKeyDomain, name: &str) -> bool {
     }
 }
 
+const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
+
 /// One global data property a bundle-owned value may sit in: a name, or any
 /// property keyed by a `Symbol.for` symbol.
 #[derive(Clone, Copy)]
@@ -5770,7 +5774,8 @@ impl BundleGlobalContext<'_> {
     }
 
     /// Whether storing `value` into `slot` keeps it bundle-owned: a fresh
-    /// object, a primitive, or the slot's own current value.
+    /// object, a primitive, or the value of a bundle-owned property, the
+    /// slot's own current value included.
     fn keeps(&self, value: &ValueExpr, slot: BundleSlot<'_>) -> bool {
         match value {
             ValueExpr::ObjectLiteral(..)
@@ -5780,69 +5785,50 @@ impl BundleGlobalContext<'_> {
             ValueExpr::Alternatives(options) => {
                 options.iter().all(|option| self.keeps(option, slot))
             }
-            ValueExpr::Binding(id) => {
-                !self.declared.contains(id)
-                    && matches!(slot, BundleSlot::Name(name) if *id.0 == *name)
+            // A keyed collection the program never replaces allocates a fresh
+            // object whatever its argument.
+            ValueExpr::New(callee, _, _)
+                if self.globals.bundle.fresh_collections
+                    && matches!(callee.as_ref(), ValueExpr::Binding(id)
+                        if !self.declared.contains(id)
+                            && KEYED_COLLECTIONS.contains(&id.0.as_ref())) =>
+            {
+                true
             }
-            ValueExpr::Member(base, property, key) => {
-                let reads_slot = match slot {
-                    BundleSlot::Name(name) => property.as_deref() == Some(name),
-                    BundleSlot::RegisteredSymbol => {
-                        property.is_none()
-                            && matches!(key, MemberKey::Computed(Some(binding))
-                                if self.globals.bundle.symbol_keys.contains(binding))
-                    }
-                };
-                let base = self.roots(base);
-                reads_slot
-                    && !base.is_empty()
-                    && base.iter().all(|root| {
-                        *root == NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject)
-                    })
+            // A sloppy read of the undeclared global itself.
+            ValueExpr::Binding(id)
+                if !self.declared.contains(id)
+                    && matches!(slot, BundleSlot::Name(name) if *id.0 == *name) =>
+            {
+                true
             }
-            _ => false,
-        }
-    }
-
-    /// Whether `value` may evaluate to, or hold, the global object.
-    fn carries_global(&self, value: &ValueExpr) -> bool {
-        self.roots(value).contains(&NativeReceiverRoot::Intrinsic(
-            NativeIntrinsic::GlobalObject,
-        )) || self.holds_global(value)
-    }
-
-    /// Whether `value` may be a fresh container holding the global object; a
-    /// binding to the global object itself is an alias the census follows.
-    fn holds_global(&self, value: &ValueExpr) -> bool {
-        match value {
-            ValueExpr::ObjectLiteral(_, fields) => {
-                fields.iter().any(|(_, field)| self.carries_global(field))
+            _ => {
+                let roots = self.roots(value);
+                !roots.is_empty()
+                    && roots
+                        .iter()
+                        .all(|root| *root == NativeReceiverRoot::BundleGlobal)
             }
-            ValueExpr::Alternatives(options) => {
-                options.iter().any(|option| self.holds_global(option))
-            }
-            _ => false,
         }
     }
 }
 
 impl ExecutionIndex {
-    /// The bundle-owned global properties (SPEC.md § Bundle-owned globals): a
-    /// greatest fixed point from every non-standard name a global-object
-    /// write stores, dropping a property some census write could store
-    /// anything else into, and every property once the global object escapes
-    /// to code the census cannot follow or its prototype chain may change.
-    fn bundle_globals(
-        &self,
-        assignments: &[&(Id, ValueExpr)],
-        declared: &BTreeSet<Id>,
-    ) -> BundleGlobals {
-        if !self.census_globals.standard_host {
-            return BundleGlobals::default();
-        }
-        let mut globals = self.census_globals.clone();
-        let symbol_keys: BTreeSet<Id> = self
-            .property_key_assignments
+    fn bundle_assignments(&self) -> Vec<&(Id, ValueExpr)> {
+        self.top_assignments
+            .iter()
+            .flatten()
+            .chain(
+                self.callables
+                    .values()
+                    .flat_map(|callable| callable.local_assignments.iter()),
+            )
+            .collect()
+    }
+
+    /// Stable bindings whose key domain is a `Symbol.for` symbol.
+    fn symbol_key_bindings(&self, declared: &BTreeSet<Id>) -> BTreeSet<Id> {
+        self.property_key_assignments
             .keys()
             .filter(|binding| {
                 matches!(
@@ -5856,22 +5842,37 @@ impl ExecutionIndex {
                 )
             })
             .cloned()
-            .collect();
-        let evidence = |key: &Option<PropertyKeyExpr>| {
-            key.as_ref()
-                .map_or_else(PropertyKeyEvidence::unknown, |key| {
-                    property_key_evidence(key, &self.property_key_assignments, declared)
-                })
-        };
-        let aliases = close_raw_intrinsic_aliases(assignments, &globals, declared);
+            .collect()
+    }
+
+    /// The whole-program bundle-owned set as this module reads it.
+    fn bundle_globals(&self, names: &BundleGlobalNames, declared: &BTreeSet<Id>) -> BundleGlobals {
+        BundleGlobals {
+            names: names.names.clone(),
+            registered_symbols: names.registered_symbols,
+            symbol_keys: self.symbol_key_bindings(declared),
+            fresh_collections: names.fresh_collections,
+        }
+    }
+
+    /// Every non-standard global property this module stores into the global
+    /// object, the start of the greatest fixed point (SPEC.md § Bundle-owned
+    /// globals).
+    pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
+        if !self.census_globals.standard_host {
+            return BundleGlobalNames::default();
+        }
+        let declared = self.declared_bindings();
+        let assignments = self.bundle_assignments();
+        let aliases = close_raw_intrinsic_aliases(&assignments, &self.census_globals, &declared);
         let context = BundleGlobalContext {
             aliases: &aliases,
-            globals: &globals,
-            declared,
+            globals: &self.census_globals,
+            declared: &declared,
         };
-        let mut candidates = BundleGlobals {
-            symbol_keys,
-            ..BundleGlobals::default()
+        let mut candidates = BundleGlobalNames {
+            fresh_collections: true,
+            ..BundleGlobalNames::default()
         };
         for write in &self.intrinsic_writes {
             if write.value.is_none()
@@ -5883,26 +5884,53 @@ impl ExecutionIndex {
             {
                 continue;
             }
-            match evidence(&write.key).domain {
+            let Some(key) = &write.key else {
+                continue;
+            };
+            match property_key_evidence(key, &self.property_key_assignments, &declared).domain {
                 PropertyKeyDomain::FiniteStrings(keys) => {
                     candidates.names.extend(keys.into_iter().filter(|name| {
-                        !is_standard_global(name) && globals.binding_root(name).is_none()
+                        !is_standard_global(name)
+                            && self.census_globals.binding_root(name).is_none()
                     }));
                 }
                 PropertyKeyDomain::Symbol => candidates.registered_symbols = true,
                 _ => {}
             }
         }
+        candidates
+    }
+
+    /// The `candidates` this module's writes keep bundle-owned: a greatest
+    /// fixed point dropping a property some census write could store anything
+    /// else into, and every property once a global-chain write has an unknown
+    /// key or may change a prototype chain. A key derived through `Symbol.for`
+    /// is exact while no write may replace `%Symbol%` or `%Symbol.for%`.
+    pub(crate) fn bundle_global_survivors(
+        &self,
+        candidates: &BundleGlobalNames,
+    ) -> BundleGlobalNames {
+        if !self.census_globals.standard_host {
+            return BundleGlobalNames::default();
+        }
+        let declared = self.declared_bindings();
+        let assignments = self.bundle_assignments();
+        let evidence = |key: &PropertyKeyExpr| {
+            property_key_evidence(key, &self.property_key_assignments, &declared)
+        };
+        let mut current = candidates.clone();
+        let mut symbol_for_intact = true;
         loop {
-            globals.bundle = candidates.clone();
-            let aliases = close_raw_intrinsic_aliases(assignments, &globals, declared);
+            let mut globals = self.census_globals.clone();
+            globals.bundle = self.bundle_globals(&current, &declared);
+            let aliases = close_raw_intrinsic_aliases(&assignments, &globals, &declared);
             let context = BundleGlobalContext {
                 aliases: &aliases,
                 globals: &globals,
-                declared,
+                declared: &declared,
             };
-            let mut next = candidates.clone();
-            let mut drop_all = false;
+            let mut next = current.clone();
+            let mut next_symbol_for_intact = true;
             for write in &self.intrinsic_writes {
                 let roots = context.roots(&write.receiver);
                 if roots
@@ -5911,27 +5939,39 @@ impl ExecutionIndex {
                 {
                     continue;
                 }
+                // A keyless reflective write (`Object.assign`,
+                // `Object.setPrototypeOf`) may change any property or the
+                // prototype chain.
                 let Some(key) = &write.key else {
-                    // A keyless reflective write (`Object.assign`,
-                    // `Object.setPrototypeOf`) may change any property or
-                    // the prototype chain.
-                    drop_all = true;
-                    break;
+                    return BundleGlobalNames::default();
                 };
-                let mut domains = vec![evidence(&Some(key.clone()))];
-                domains.extend(
-                    write
-                        .additional_keys
-                        .iter()
-                        .map(|key| evidence(&Some(key.clone()))),
-                );
-                for evidence in domains {
-                    // A key derived through `Symbol.for` stays exact only while
-                    // that operation is; other derivations stay unknown.
-                    let domain = if evidence.dependencies.is_empty()
+                // A delete stores nothing: on a prototype it leaves an
+                // inherited read absent. A delete that may name a property of
+                // the global object itself still drops that property.
+                if write.operation == NativeMutationOperation::Delete {
+                    if roots.contains(&NativeReceiverRoot::Intrinsic(
+                        NativeIntrinsic::GlobalObject,
+                    )) {
+                        let domain = evidence(key).domain;
+                        next.names
+                            .retain(|name| !key_domain_may_name(&domain, name));
+                        if matches!(
+                            domain,
+                            PropertyKeyDomain::Symbol | PropertyKeyDomain::Unknown
+                        ) {
+                            next.registered_symbols = false;
+                        }
+                    }
+                    continue;
+                }
+                for evidence in std::iter::once(key)
+                    .chain(&write.additional_keys)
+                    .map(evidence)
+                {
+                    let exact = evidence.dependencies.is_empty()
                         || evidence.dependencies == BTreeSet::from([NativeIntrinsic::Symbol])
-                            && next.registered_symbols
-                    {
+                            && symbol_for_intact;
+                    let domain = if exact {
                         evidence.domain
                     } else {
                         PropertyKeyDomain::Unknown
@@ -5939,12 +5979,17 @@ impl ExecutionIndex {
                     if matches!(domain, PropertyKeyDomain::Unknown)
                         || key_domain_may_name(&domain, "__proto__")
                     {
-                        drop_all = true;
-                        break;
+                        return BundleGlobalNames::default();
                     }
                     if key_domain_may_name(&domain, "for") || key_domain_may_name(&domain, "Symbol")
                     {
-                        next.registered_symbols = false;
+                        next_symbol_for_intact = false;
+                    }
+                    if KEYED_COLLECTIONS
+                        .iter()
+                        .any(|name| key_domain_may_name(&domain, name))
+                    {
+                        next.fresh_collections = false;
                     }
                     let stores = |slot: BundleSlot<'_>| {
                         write.operation == NativeMutationOperation::PropertyAssignment
@@ -5961,21 +6006,9 @@ impl ExecutionIndex {
                     {
                         next.registered_symbols = false;
                     }
-                    // A value holding the global object can be written through
-                    // where the census cannot follow it.
-                    if write
-                        .value
-                        .as_ref()
-                        .is_some_and(|value| context.carries_global(value))
-                    {
-                        drop_all = true;
-                    }
-                }
-                if drop_all {
-                    break;
                 }
             }
-            for (binding, value) in assignments {
+            for (binding, value) in &assignments {
                 if declared.contains(binding) {
                     continue;
                 }
@@ -5987,41 +6020,47 @@ impl ExecutionIndex {
                     next.names.remove(binding.0.as_ref());
                 }
                 if binding.0.as_ref() == "Symbol" {
-                    next.registered_symbols = false;
+                    next_symbol_for_intact = false;
+                }
+                if KEYED_COLLECTIONS.contains(&binding.0.as_ref()) {
+                    next.fresh_collections = false;
                 }
             }
-            // The global object escaping into a call, a container, a return
-            // or an export reaches code whose writes the census cannot name.
-            drop_all |= self
-                .prototype_calls
-                .iter()
-                .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-                .any(|call| call.args.iter().any(|value| context.carries_global(value)))
-                || assignments.iter().any(|(_, value)| context.holds_global(value))
-                || self
-                    .callables
-                    .values()
-                    .flat_map(|callable| &callable.returns)
-                    .chain(self.top_exported_values.iter().flatten())
-                    .any(|value| context.carries_global(value))
-                // A legacy accessor install can run any getter on a read.
-                || self.prototype_calls.iter().any(|call| {
-                    call.kind == CallKind::Call
-                        && matches!(&call.callee, ValueExpr::Member(base, property, _)
-                        if property.as_deref().is_none_or(|property| {
-                            matches!(property, "__defineGetter__" | "__defineSetter__")
-                        }) && !context
+            // A legacy accessor install can run any getter on a read. A method
+            // named through an unknown key is a hidden descriptor path (A11),
+            // as for `Object.defineProperty` reached through an alias.
+            let installs_accessor = |property: &Option<String>, key: &MemberKey| {
+                let domain = match (property, key) {
+                    (Some(name), _) => {
+                        PropertyKeyDomain::FiniteStrings(BTreeSet::from([name.clone()]))
+                    }
+                    (None, MemberKey::Computed(Some(binding))) => {
+                        evidence(&PropertyKeyExpr::Binding(binding.clone())).domain
+                    }
+                    (None, _) => return false,
+                };
+                !matches!(domain, PropertyKeyDomain::Unknown)
+                    && (key_domain_may_name(&domain, "__defineGetter__")
+                        || key_domain_may_name(&domain, "__defineSetter__"))
+            };
+            if self.prototype_calls.iter().any(|call| {
+                call.kind == CallKind::Call
+                    && matches!(&call.callee, ValueExpr::Member(base, property, key)
+                        if installs_accessor(property, key) && !context
                             .roots(base)
                             .iter()
                             .all(|root| *root == NativeReceiverRoot::BundleGlobal))
-                });
-            if drop_all {
-                return BundleGlobals::default();
+            }) {
+                return BundleGlobalNames::default();
             }
-            if next == candidates {
+            if !next_symbol_for_intact {
+                next.registered_symbols = false;
+            }
+            if next == current && next_symbol_for_intact == symbol_for_intact {
                 return next;
             }
-            candidates = next;
+            current = next;
+            symbol_for_intact = next_symbol_for_intact;
         }
     }
 }
@@ -8188,7 +8227,10 @@ impl ExecutionIndex {
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
         let declared = index.declared_bindings();
-        index.census_globals.bundle = index.bundle_globals(&namespace_assignments, &declared);
+        if index.census_globals.standard_host {
+            index.census_globals.bundle =
+                index.bundle_globals(&hints.assumptions.bundle_globals, &declared);
+        }
         let raw_intrinsic_aliases =
             close_raw_intrinsic_aliases(&namespace_assignments, &index.census_globals, &declared);
         index.validate_value_inputs(
@@ -11979,6 +12021,17 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
+        self.index.bundle_global_candidates()
+    }
+
+    pub(crate) fn bundle_global_survivors(
+        &self,
+        candidates: &BundleGlobalNames,
+    ) -> BundleGlobalNames {
+        self.index.bundle_global_survivors(candidates)
+    }
+
     pub(crate) fn value_input_errors(&self) -> &[String] {
         &self.index.value_input_errors
     }
@@ -12215,6 +12268,7 @@ pub(crate) fn prepare_callable_capabilities(
     selected_value_inputs: Vec<SelectedBindingValueInput>,
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
     predefined_globals: spec::PredefinedGlobals,
+    bundle_globals: BundleGlobalNames,
 ) -> PreparedCallableCapabilities {
     let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
@@ -12225,6 +12279,7 @@ pub(crate) fn prepare_callable_capabilities(
                 selected_native_operation_inputs,
                 assumptions: crate::analysis_inputs::AnalysisAssumptions {
                     predefined_globals,
+                    bundle_globals,
                     ..Default::default()
                 },
                 ..AnalysisInputs::default()

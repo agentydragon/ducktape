@@ -35,10 +35,11 @@ use swc_ecma_ast::{Id, ModuleItem};
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
-    CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    DescriptorCopyFactorySummary, ForeignCallSummary, NamespaceWrapperSummary, NativeInputKind,
-    NativeIntegrity, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
+    BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
+    DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
+    SelectedBindingValueInput, SelectedNativeOperationInput,
 };
 use crate::facts::abstract_domain::value::{PrimKinds, Value};
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
@@ -502,6 +503,8 @@ pub struct ResolvedCallableSummaries {
     pub stable_set_spreads:
         BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
     pub argument_inputs: BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    /// The whole-program bundle-owned globals the census used.
+    pub bundle_globals: BundleGlobalNames,
     /// Structural value flows already solved while deriving summaries, which
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
@@ -724,71 +727,112 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let mut prepared = BTreeMap::new();
-    let mut resolved_value_inputs = BTreeMap::new();
-    let mut resolved_native_operation_inputs = BTreeMap::new();
-    for (module, facts) in modules {
-        let locals = facts
-            .exports
-            .iter()
-            .filter(|(export, _)| {
-                required.contains(&CallableExportKey {
-                    module: module.clone(),
-                    export: (*export).clone(),
+    // The bundle-owned globals are a whole-program greatest fixed point over
+    // every module's writes; a second preparation reads them.
+    let prepare = |bundle_globals: &BundleGlobalNames| -> Result<_> {
+        let mut prepared = BTreeMap::new();
+        let mut resolved_value_inputs = BTreeMap::new();
+        let mut resolved_native_operation_inputs = BTreeMap::new();
+        for (module, facts) in modules {
+            let locals = facts
+                .exports
+                .iter()
+                .filter(|(export, _)| {
+                    required.contains(&CallableExportKey {
+                        module: module.clone(),
+                        export: (*export).clone(),
+                    })
                 })
-            })
-            .map(|(_, local)| local.clone())
-            .collect();
-        let views = top_level_item_views(facts.body);
-        let mut prepared_module =
-            crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
-                &views,
-                crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
-                locals,
-                selected_value_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                selected_native_operation_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                predefined_globals,
-            );
-        if !prepared_module.value_input_errors().is_empty() {
-            bail!(
-                "invalid captured value input for provider {module}: {}",
-                prepared_module.value_input_errors().join("; ")
-            );
+                .map(|(_, local)| local.clone())
+                .collect();
+            let views = top_level_item_views(facts.body);
+            let mut prepared_module =
+                crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
+                    &views,
+                    crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
+                    locals,
+                    selected_value_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    selected_native_operation_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    predefined_globals,
+                    bundle_globals.clone(),
+                );
+            if !prepared_module.value_input_errors().is_empty() {
+                bail!(
+                    "invalid captured value input for provider {module}: {}",
+                    prepared_module.value_input_errors().join("; ")
+                );
+            }
+            prepared_module.locate_value_inputs(facts.source.as_ref());
+            let module_inputs = prepared_module.resolved_value_inputs();
+            if !module_inputs.is_empty() && facts.source.is_none() {
+                bail!(
+                    "captured value input for provider {module} has no retained parser source locations"
+                );
+            }
+            if !module_inputs.is_empty() {
+                resolved_value_inputs.insert(module.clone(), module_inputs);
+            }
+            if !prepared_module.native_operation_input_errors().is_empty() {
+                bail!(
+                    "invalid native operation input for provider {module}: {}",
+                    prepared_module.native_operation_input_errors().join("; ")
+                );
+            }
+            prepared_module.locate_native_operation_inputs(facts.source.as_ref());
+            let module_native_inputs = prepared_module.resolved_native_operation_inputs();
+            if !module_native_inputs.is_empty() && facts.source.is_none() {
+                bail!(
+                    "native operation input for provider {module} has no retained parser source locations"
+                );
+            }
+            if !module_native_inputs.is_empty() {
+                resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
+            }
+            prepared_module.locate_native_writes(module, facts.source.as_ref());
+            prepared.insert(module, prepared_module);
         }
-        prepared_module.locate_value_inputs(facts.source.as_ref());
-        let module_inputs = prepared_module.resolved_value_inputs();
-        if !module_inputs.is_empty() && facts.source.is_none() {
-            bail!(
-                "captured value input for provider {module} has no retained parser source locations"
-            );
+        Ok((
+            prepared,
+            resolved_value_inputs,
+            resolved_native_operation_inputs,
+        ))
+    };
+    let (mut prepared, mut resolved_value_inputs, mut resolved_native_operation_inputs) =
+        prepare(&BundleGlobalNames::default())?;
+    let mut bundle_globals = BundleGlobalNames::default();
+    if predefined_globals == spec::PredefinedGlobals::Standard {
+        bundle_globals.fresh_collections = true;
+        for module in prepared.values() {
+            let candidates = module.bundle_global_candidates();
+            bundle_globals.names.extend(candidates.names);
+            bundle_globals.registered_symbols |= candidates.registered_symbols;
         }
-        if !module_inputs.is_empty() {
-            resolved_value_inputs.insert(module.clone(), module_inputs);
+        loop {
+            let mut next = bundle_globals.clone();
+            for module in prepared.values() {
+                let survivors = module.bundle_global_survivors(&bundle_globals);
+                next.names.retain(|name| survivors.names.contains(name));
+                next.registered_symbols &= survivors.registered_symbols;
+                next.fresh_collections &= survivors.fresh_collections;
+            }
+            if next == bundle_globals {
+                break;
+            }
+            bundle_globals = next;
         }
-        if !prepared_module.native_operation_input_errors().is_empty() {
-            bail!(
-                "invalid native operation input for provider {module}: {}",
-                prepared_module.native_operation_input_errors().join("; ")
-            );
+        if bundle_globals != BundleGlobalNames::default() {
+            (
+                prepared,
+                resolved_value_inputs,
+                resolved_native_operation_inputs,
+            ) = prepare(&bundle_globals)?;
         }
-        prepared_module.locate_native_operation_inputs(facts.source.as_ref());
-        let module_native_inputs = prepared_module.resolved_native_operation_inputs();
-        if !module_native_inputs.is_empty() && facts.source.is_none() {
-            bail!(
-                "native operation input for provider {module} has no retained parser source locations"
-            );
-        }
-        if !module_native_inputs.is_empty() {
-            resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
-        }
-        prepared_module.locate_native_writes(module, facts.source.as_ref());
-        prepared.insert(module, prepared_module);
     }
     for input in selected_native_operation_inputs
         .values()
@@ -1385,6 +1429,7 @@ pub fn resolve_imported_callable_summaries(
         .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
         .collect();
     Ok(ResolvedCallableSummaries {
+        bundle_globals,
         imported_callables,
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
