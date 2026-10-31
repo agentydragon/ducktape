@@ -34,7 +34,7 @@ use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
 use binding_targets::binding_name_strings;
 use graph_provenance::{CurrentRoots, GraphProvenance};
-use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement};
+use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement, split_var_declarators};
 use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
@@ -44,7 +44,7 @@ use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
-    ModuleDecl, ModuleItem, Pat, SetterProp, Stmt, VarDeclarator,
+    ModuleDecl, ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -1293,20 +1293,6 @@ fn resolve_source_unit_endpoint(
         source_unit: SourceUnitOrdinal(first_ordinal.0 + declarator_offset),
         selected_binding,
     })
-}
-
-/// The declarators of a top-level variable declaration the analysis view
-/// splits into several source units; `None` for every single-unit item.
-fn split_var_declarators(item: &ModuleItem) -> Option<&[VarDeclarator]> {
-    let decl = match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
-        _ => return None,
-    };
-    match decl {
-        Decl::Var(var) if var.decls.len() > 1 => Some(var.decls.as_slice()),
-        _ => None,
-    }
 }
 
 fn resolve_argument_inputs(

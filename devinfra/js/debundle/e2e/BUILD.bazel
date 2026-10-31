@@ -355,6 +355,16 @@ debundle_e2e_test(
     deps = ["//devinfra/js/debundle:spec"],
 )
 
+debundle_e2e_test(
+    name = "propose_commutations_scale_test",
+    timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
+    deps = ["@crates//:serde_json"],
+)
+
 # Full-size stress regression; run explicitly when checking value-set sharing.
 debundle_e2e_test(
     name = "value_flow_sharing_scale_test",

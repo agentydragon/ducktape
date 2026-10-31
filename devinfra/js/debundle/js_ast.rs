@@ -13,6 +13,7 @@ use swc_ecma_ast::{
     ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
     IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
     Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
+    VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -412,18 +413,21 @@ fn strip_nth_paren_expr(module: &mut Module, target: usize) {
 /// = ...;` is one body item but two statement ordinals; other
 /// top-level items count as one.
 fn post_split_top_level_count(item: &ModuleItem) -> usize {
-    fn decl_count(decl: &Decl) -> usize {
-        match decl {
-            Decl::Var(var) if var.decls.len() > 1 => var.decls.len(),
-            _ => 1,
-        }
-    }
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl_count(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            decl_count(&export_decl.decl)
-        }
-        _ => 1,
+    split_var_declarators(item).map_or(1, <[VarDeclarator]>::len)
+}
+
+/// The declarators of a top-level variable declaration the source-unit view
+/// splits into one source unit each, in ordinal order; `None` for every
+/// single-unit item.
+pub fn split_var_declarators(item: &ModuleItem) -> Option<&[VarDeclarator]> {
+    let decl = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+        _ => return None,
+    };
+    match decl {
+        Decl::Var(var) if var.decls.len() > 1 => Some(var.decls.as_slice()),
+        _ => None,
     }
 }
 

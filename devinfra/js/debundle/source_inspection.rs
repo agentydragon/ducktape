@@ -9,7 +9,7 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use swc_common::{DUMMY_SP, Spanned};
+use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::{
     DefaultDecl, ExportDecl, ExportDefaultDecl, Module, ModuleDecl, ModuleItem, Stmt,
 };
@@ -17,7 +17,7 @@ use swc_ecma_ast::{
 use binding_targets::declaration_name_strings;
 use js_ast::{
     ParsedJsModule, emit_module_source, parse_js_module_consuming,
-    statements_for_source_unit_ordinals,
+    source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
@@ -169,8 +169,48 @@ impl PreparedSource {
         self.item_coordinates(index, item)
     }
 
+    /// Original source of one graph source unit inside raw item
+    /// `body_index`: its own declarator when the item is a comma-list
+    /// declaration the graph splits, else the whole item.
+    pub fn source_unit_original_source(
+        &self,
+        body_index: usize,
+        ordinal: SourceUnitOrdinal,
+    ) -> Result<&str> {
+        let body = &self.parsed.module.body;
+        let item = body
+            .get(body_index)
+            .with_context(|| format!("body[{body_index}] is outside the parsed source"))?;
+        let span = match split_var_declarators(item) {
+            Some(declarators) => {
+                let first = source_unit_ordinal_for_statement(body, StatementId(body_index));
+                ordinal
+                    .0
+                    .checked_sub(first.0)
+                    .and_then(|offset| declarators.get(offset))
+                    .with_context(|| {
+                        format!(
+                            "source unit ordinal {} is not in body[{body_index}]",
+                            ordinal.0
+                        )
+                    })?
+                    .span
+            }
+            None => item.span(),
+        };
+        let coordinates = self.span_coordinates(body_index, span)?;
+        self.source
+            .get(coordinates.byte_start..coordinates.byte_end)
+            .with_context(|| {
+                format!("source span in body[{body_index}] is not on UTF-8 boundaries")
+            })
+    }
+
     fn item_coordinates(&self, index: usize, item: &ModuleItem) -> Result<StatementCoordinates> {
-        let span = item.span();
+        self.span_coordinates(index, item.span())
+    }
+
+    fn span_coordinates(&self, index: usize, span: Span) -> Result<StatementCoordinates> {
         if span.is_dummy() {
             bail!("parsed source item body[{index}] has no original source span");
         }
