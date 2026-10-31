@@ -213,7 +213,8 @@ nested bodies and unsupported contexts keep their conservative witnesses.
 This does not change purity, callback effects, exceptions or loader return
 property reads.
 
-Each `dependency_graph.json` written by `debundle run` carries input provenance:
+Each `dependency_graph.json` written by `debundle run` references the run's
+`program_graph.json`, which carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,
 vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
 chunk, and vendor package files consulted by planning. Module YAML path
@@ -2562,7 +2563,8 @@ The classification is a report: both reaches promote the same effects.
 Property-specific Object prototype premises appear in
 `synchronous_execution.native_prototype_property_checks`: each entry names the
 property, the absence verdict, and the number of blocking source operations.
-The graph shares those operations once under `native_prototype_mutations`, with
+`program_graph.json` shares those operations once per run under
+`native_prototype_mutations`, with
 chunk, source unit, source location, kind and possible property names. A null
 property set means any name; an empty set means Symbol keys only. These are
 conservative possible writers, not proof that a mutation executes. `describe`

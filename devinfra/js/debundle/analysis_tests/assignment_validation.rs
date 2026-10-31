@@ -212,7 +212,7 @@ fn empty_dependency_graph_report_includes_entry_destination() {
         EntryDestination::after_planned_modules(0),
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report("../program_graph.json".into());
     assert_eq!(report.quotient.nodes.len(), 1);
     let entry = &report.quotient.nodes[0];
     assert_eq!(entry.key.as_str(), "logical:0");
@@ -228,7 +228,7 @@ fn dependency_graph_report_emits_atomic_graph() {
         &["Existing"],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report("../program_graph.json".into());
     assert_eq!(report.atomic_graph.nodes.len(), 3);
     assert_eq!(
         report
@@ -272,7 +272,7 @@ fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_ed
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report("../program_graph.json".into());
     let source_unit_of = |binding: &str| {
         report
             .nodes
@@ -312,7 +312,7 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report("../program_graph.json".into());
     let cycle_atomic_group = report
         .atomic_graph
         .nodes
@@ -333,7 +333,7 @@ fn atomic_graph_preserves_direction_between_atomic_groups() {
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = assignment_analysis.dependency_graph_report("../program_graph.json".into());
     assert_eq!(report.atomic_graph.nodes.len(), 2);
     assert_eq!(report.atomic_graph.edges.len(), 1);
     let edge = &report.atomic_graph.edges[0];

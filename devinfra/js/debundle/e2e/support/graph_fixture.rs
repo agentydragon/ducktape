@@ -281,4 +281,8 @@ impl GraphFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
         read_json(&self.graph)
     }
+
+    pub fn program_graph(&self) -> ProgramGraphReport {
+        read_program_graph(&self.graph)
+    }
 }

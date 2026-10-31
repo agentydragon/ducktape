@@ -522,8 +522,8 @@ The dependency graph is the right abstraction for tooling:
 Native-integrity diagnostics retain the write census produced during the shared
 AST analysis, including source chunk, statement, operation, and location. The
 receiver roots precede unknown-global-value widening; `through_local_alias`
-distinguishes an alias path from a direct receiver. Graph-level
-`native_integrity_witnesses` stores each census site once. Source units reference
+distinguishes an alias path from a direct receiver. `program_graph.json`'s
+`native_integrity_witnesses` stores each census site once for the run. Source units reference
 its affected native families through `synchronous_execution.native_integrity_checks`
 when the ordinary-object-prototype or array-intrinsics guard is evaluated and
 fails. These are failed premises, not claims that a write executed or that it

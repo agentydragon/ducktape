@@ -34,7 +34,7 @@ def _debundle_pipeline_impl(ctx):
         # Same relative path under `graphs_dir` as it had under `out_dir`.
         run = (
             "{{ {run}; }} && mkdir -p {graphs} && " +
-            "find {out}/reports -name dependency_graph.json -print0 | " +
+            "find {out}/reports \\( -name dependency_graph.json -o -name program_graph.json \\) -print0 | " +
             "while IFS= read -r -d '' f; do " +
             "d={graphs}/\"${{f#{out}/}}\"; mkdir -p \"$(dirname \"$d\")\" && mv \"$f\" \"$d\" || exit 1; done"
         ).format(
@@ -231,7 +231,8 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "split_dependency_graphs": attr.bool(
         default = False,
         doc = (
-            "Move every `reports/**/dependency_graph.json` out of the default " +
+            "Move every `reports/**/dependency_graph.json` and the " +
+            "`program_graph.json` they reference out of the default " +
             "output into the `dependency_graphs` output group " +
             "(`<name>.dependency_graphs/`, same relative paths). The graphs " +
             "dominate a large corpus's output; a reading target rarely needs " +

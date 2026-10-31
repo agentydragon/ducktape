@@ -37,6 +37,7 @@ struct AtomicEdgeAccumulator {
 
 pub(crate) fn build_dependency_graph_report(
     assignment_analysis: &AssignmentAnalysis,
+    program_graph: std::path::PathBuf,
 ) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
@@ -99,35 +100,9 @@ pub(crate) fn build_dependency_graph_report(
         .collect();
     let quotient_sccs =
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
-    let mut native_integrity_witnesses = assignment_analysis
-        .inputs()
-        .dependency_graph()
-        .iter_nodes()
-        .next()
-        .map(|source_unit| source_unit.native_integrity_witnesses.as_ref().clone())
-        .unwrap_or_default();
-    for witness in &mut native_integrity_witnesses {
-        if witness.chunk_id.is_empty() {
-            witness.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
-        }
-    }
-    let mut native_prototype_mutations = assignment_analysis
-        .inputs()
-        .dependency_graph()
-        .iter_nodes()
-        .next()
-        .map(|source_unit| source_unit.native_prototype_mutations.as_ref().clone())
-        .unwrap_or_default();
-    for mutation in &mut native_prototype_mutations {
-        if mutation.chunk_id.is_empty() {
-            mutation.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
-        }
-    }
     DependencyGraphReport {
-        native_prototype_mutations,
-        native_integrity_witnesses,
-        provenance: None,
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
+        program_graph,
         nodes,
         purity_causes,
         imported_callable_summaries,

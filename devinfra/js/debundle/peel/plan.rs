@@ -24,7 +24,8 @@ use serde::Serialize;
 
 use analysis::{
     AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind, DependencyEdgeReport,
-    DependencyGraphReport, QuotientEdgeReport, SourceLocation, SourceUnitReport,
+    DependencyGraphReport, ProgramGraphReport, QuotientEdgeReport, SourceLocation,
+    SourceUnitReport,
 };
 use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{
@@ -711,6 +712,7 @@ macro_rules! apply_limits {
 /// survives the invocation or suppresses the caller's compatibility check.
 pub struct ExplainSession {
     graph: DependencyGraphReport,
+    program_graph: ProgramGraphReport,
     common: CommonArgs,
     source_root: Option<PathBuf>,
     source_context: Option<VerifiedGraphSourceContext>,
@@ -732,8 +734,10 @@ impl ExplainSession {
         size_cap_lines: usize,
         source_context: Option<VerifiedGraphSourceContext>,
     ) -> Result<Self> {
+        let graph = load_graph(&common.dependency_graph_path)?;
         Ok(Self {
-            graph: load_graph(&common.dependency_graph_path)?,
+            program_graph: load_program_graph(&common.dependency_graph_path, &graph)?,
+            graph,
             common,
             source_root,
             source_context,
@@ -770,15 +774,8 @@ impl ExplainSession {
             )?);
         }
         explain_from_graph(
+            self,
             args,
-            &self.graph,
-            &self.common,
-            SourceLookup {
-                root: self.source_root.as_deref(),
-                verified: self.source_context.as_ref(),
-            },
-            self.size_cap_lines,
-            self.binding_homes.as_deref().expect("loaded above"),
             if needs_proposals {
                 self.proposals.as_ref()
             } else {
@@ -789,14 +786,28 @@ impl ExplainSession {
 }
 
 fn explain_from_graph(
+    session: &ExplainSession,
     args: &ExplainArgs,
-    graph: &DependencyGraphReport,
-    common: &CommonArgs,
-    source_lookup: SourceLookup<'_>,
-    size_cap_lines: usize,
-    homes: &[BindingHomeReport],
     propose: Option<&ProposalsReport>,
 ) -> Result<ExplainReport> {
+    let ExplainSession {
+        graph,
+        program_graph,
+        common,
+        source_root,
+        source_context,
+        size_cap_lines,
+        binding_homes,
+        ..
+    } = session;
+    let size_cap_lines = *size_cap_lines;
+    let source_lookup = SourceLookup {
+        root: source_root.as_deref(),
+        verified: source_context.as_ref(),
+    };
+    let homes = binding_homes
+        .as_deref()
+        .expect("loaded by ExplainSession::explain");
     let selection = &args.selection;
     let query = query_report(selection);
     let include_proposal_sections = propose.is_some();
@@ -1047,7 +1058,7 @@ fn explain_from_graph(
                 .map(|check| &check.property)
         })
         .collect();
-    let mut native_prototype_mutations: Vec<_> = graph
+    let mut native_prototype_mutations: Vec<_> = program_graph
         .native_prototype_mutations
         .iter()
         .filter(|mutation| {
@@ -1074,7 +1085,7 @@ fn explain_from_graph(
     );
     loop {
         let before = affected_roots.len();
-        for witness in &graph.native_integrity_witnesses {
+        for witness in &program_graph.native_integrity_witnesses {
             if !witness.affected_roots.is_disjoint(&affected_roots) {
                 affected_roots.extend(&witness.invalidated_key_dependencies);
             }
@@ -1083,7 +1094,7 @@ fn explain_from_graph(
             break;
         }
     }
-    let mut native_integrity_witnesses: Vec<_> = graph
+    let mut native_integrity_witnesses: Vec<_> = program_graph
         .native_integrity_witnesses
         .iter()
         .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
@@ -1228,6 +1239,17 @@ pub fn run_source_selection_report(
 fn load_graph(path: &Path) -> Result<DependencyGraphReport> {
     serde_json::from_str(
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
+    )
+    .with_context(|| format!("parsing {}", path.display()))
+}
+
+fn load_program_graph(
+    graph_path: &Path,
+    graph: &DependencyGraphReport,
+) -> Result<ProgramGraphReport> {
+    let path = graph_provenance::program_graph_path(graph_path, &graph.program_graph);
+    serde_json::from_str(
+        &fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?,
     )
     .with_context(|| format!("parsing {}", path.display()))
 }

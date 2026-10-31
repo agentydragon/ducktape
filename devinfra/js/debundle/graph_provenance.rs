@@ -80,19 +80,53 @@ pub struct GraphProvenance {
     pub generation_command: Vec<String>,
 }
 
-/// Header projection that skips graph nodes/edges during compatibility checks.
-/// Deserialization still scans the JSON stream, but it does not allocate the
-/// large graph collections or recompute dependency analysis.
-#[derive(Debug, Deserialize)]
+/// A saved graph's chunk, its `program_graph` reference as recorded, and the
+/// input provenance from that program graph.
+#[derive(Debug)]
 pub struct GraphHeader {
     pub chunk_id: String,
+    pub program_graph: PathBuf,
     pub provenance: Option<GraphProvenance>,
 }
 
-pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let file = fs::File::open(path).with_context(|| format!("reading graph {}", path.display()))?;
+/// Header projections that skip graph nodes/edges and the program census
+/// during compatibility checks. Deserialization still scans each JSON stream,
+/// but it does not allocate the large collections or recompute analysis.
+#[derive(Deserialize)]
+struct ChunkGraphHeader {
+    chunk_id: String,
+    program_graph: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct ProgramGraphHeader {
+    provenance: Option<GraphProvenance>,
+}
+
+/// Resolve a chunk graph's `program_graph` reference, which is relative to the
+/// graph file's directory.
+pub fn program_graph_path(graph_path: &Path, program_graph: &Path) -> PathBuf {
+    graph_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(program_graph)
+}
+
+fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    let file = fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_reader(BufReader::new(file))
-        .with_context(|| format!("parsing graph header {}", path.display()))
+        .with_context(|| format!("parsing header of {}", path.display()))
+}
+
+pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
+    let graph: ChunkGraphHeader = read_json_header(path)?;
+    let program: ProgramGraphHeader =
+        read_json_header(&program_graph_path(path, &graph.program_graph))?;
+    Ok(GraphHeader {
+        chunk_id: graph.chunk_id,
+        program_graph: graph.program_graph,
+        provenance: program.provenance,
+    })
 }
 
 #[derive(Debug, Clone, Default)]

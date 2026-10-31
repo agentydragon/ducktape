@@ -56,7 +56,8 @@ debundle snapshot verify /tmp/worker-one
 ```
 
 `--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
-returned JSON identifies the copied engine, graph, spec/source roots, complete
+returned JSON identifies the copied engine, graph (with the `program_graph.json`
+it references), spec/source roots, complete
 modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
 graph-backed query or edit in the snapshot, pass each map entry as the global
 `--graph-package-root NAME=DIR` alongside `--spec-root` and
@@ -1364,6 +1365,9 @@ Typical debundle outputs:
   `runtime.json`, `source_assets.json`, `provenance.json`,
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
+- `reports/tree/program_graph.json`: the program-wide graph sections every
+  chunk's `dependency_graph.json` references (input provenance, native
+  mutation census)
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
   `modules.json`, `dependency_graph.json`, `export_reentry.json`,
   `selector_diagnostics.json` when any selector did not resolve or resolved

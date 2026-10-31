@@ -21,6 +21,9 @@ pub const GATE_REJECTED_MARKER: &str = "GATE_REJECTED";
 pub const CHUNK_REPORT: &str = "chunk.json";
 pub const MODULES_REPORT: &str = "modules.json";
 pub const DEPENDENCY_GRAPH_REPORT: &str = "dependency_graph.json";
+/// Program-wide graph sections, written once at the report root and
+/// referenced by every chunk's `dependency_graph.json`.
+pub const PROGRAM_GRAPH_REPORT: &str = "program_graph.json";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_GROUP_CONFLICTS_REPORT: &str = "atomic_group_conflicts.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";

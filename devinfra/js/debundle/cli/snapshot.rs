@@ -54,6 +54,8 @@ struct VerifyArgs {
 struct SnapshotManifest {
     graph: PathBuf,
     graph_sha256: String,
+    program_graph: PathBuf,
+    program_graph_sha256: String,
     engine: PathBuf,
     roots: ProvenanceRoots,
     selector_source_root: PathBuf,
@@ -239,11 +241,26 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
         &staging.path().join(&engine),
         &provenance.engine_sha256,
     )?;
-    let graph_path = PathBuf::from("analysis/dependency_graph.json");
+    // The chunk's report-tree depth keeps the graph's relative
+    // `program_graph` reference inside `analysis/`.
+    let graph_path = Path::new("analysis")
+        .join(graph.chunk_id.split('/').collect::<PathBuf>())
+        .join("dependency_graph.json");
+    let program_graph = lexically_within(&graph_provenance::program_graph_path(
+        &graph_path,
+        &graph.program_graph,
+    ))?;
     let graph_sha256 = copy_file(&args.graph, &staging.path().join(&graph_path), None)?;
+    let program_graph_sha256 = copy_file(
+        &graph_provenance::program_graph_path(&args.graph, &graph.program_graph),
+        &staging.path().join(&program_graph),
+        None,
+    )?;
     let manifest = SnapshotManifest {
         graph: graph_path,
         graph_sha256,
+        program_graph,
+        program_graph_sha256,
         engine,
         browser_inputs,
         selector_source_root,
@@ -462,6 +479,18 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
         "snapshot graph contents changed"
     );
     let graph = read_graph_header(&graph_path)?;
+    ensure!(
+        lexically_within(&graph_provenance::program_graph_path(
+            &manifest.graph,
+            &graph.program_graph
+        ))? == manifest.program_graph,
+        "snapshot graph references a program graph other than the manifest's"
+    );
+    ensure!(
+        digest_file(&contained(&directory, &manifest.program_graph)?)?
+            == manifest.program_graph_sha256,
+        "snapshot program graph contents changed"
+    );
     let provenance = graph
         .provenance
         .as_ref()
@@ -539,6 +568,27 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
         );
     }
     outcome(&directory, &manifest)
+}
+
+/// Resolve `.` and `..` in a snapshot-relative path without touching the
+/// filesystem, refusing one that leaves the snapshot.
+fn lexically_within(relative: &Path) -> Result<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for part in relative.components() {
+        match part {
+            Component::Normal(name) => resolved.push(name),
+            Component::CurDir => {}
+            Component::ParentDir => ensure!(
+                resolved.pop(),
+                "snapshot path escapes its directory: {}",
+                relative.display()
+            ),
+            Component::RootDir | Component::Prefix(_) => {
+                bail!("snapshot path must be relative: {}", relative.display())
+            }
+        }
+    }
+    Ok(resolved)
 }
 
 fn contained(root: &Path, relative: &Path) -> Result<PathBuf> {
