@@ -733,6 +733,8 @@ fn sweep_unreachable_top_level(
             && an.observable_writes.iter().all(private_cell)
             && shared_roots(i).is_empty()
     };
+    // Every refusal of the pass, so one run shows them all.
+    let mut refusals = Vec::new();
     for i in 0..analyses.len() {
         if live[i]
             || swapped_reachability[i].is_empty()
@@ -781,8 +783,16 @@ fn sweep_unreachable_top_level(
             })
             .collect::<Vec<_>>()
             .join("; ");
+        refusals.push(format!(
+            "observable side-effect item {i} `{}` is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private; writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            module_item_snippet(&module.body[i]),
+        ));
+    }
+    if !refusals.is_empty() {
         bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s); writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: {} side effect(s) would be silently dropped although they may write a global / external cell residual code may read — restructure the spec so they do not read swapped binding(s):\n{}",
+            refusals.len(),
+            refusals.join("\n"),
         );
     }
 

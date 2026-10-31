@@ -966,6 +966,33 @@ fn partial_swap_rejects_island_internals_handed_to_chunk_code() {
     );
 }
 
+/// One run reports every refused side effect, not only the first.
+#[test]
+fn partial_swap_reports_every_refused_registration() {
+    let fixture = run_island_registration_fixture(
+        "const first = {};\n\
+         const second = {};\n\
+         const all = new Set();\n\
+         function register(target, name) { target[name] = true; all.add(name); }\n\
+         register(first, \"a\");\n\
+         register(second, \"b\");\n\
+         export const e6 = () => all.has(\"a\");\n\
+         export const keepMe = () => Object.keys(first).concat(Object.keys(second)).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "both registrations a residual reader observes must be refused\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    for retained in ["`first`", "`second`"] {
+        assert!(
+            fixture.result.stderr.contains(retained),
+            "expected {retained} named in stderr:\n{}",
+            fixture.result.stderr,
+        );
+    }
+}
+
 /// The same IIFE calling a function it declares, which fills the registry a
 /// residual reader prints: that body runs at init, so the strip must refuse.
 #[test]
