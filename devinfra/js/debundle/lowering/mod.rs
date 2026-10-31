@@ -464,6 +464,7 @@ pub fn materialize_logical_modules(
         chunk_analysis_options,
         chunk_export_purity,
         host_behavior,
+        program_premises.intrinsics_never_written.as_ref(),
         declared_assumptions,
         &resolved_member_sites,
     );
@@ -474,7 +475,6 @@ pub fn materialize_logical_modules(
         cross_module::CrossModuleAnalysisOptions {
             graph_provenance: options.graph_provenance.as_ref(),
             replacement_packages: &vendor_plan.replacement_packages(),
-            intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),
         },
         Some(&cross_module_chunk_closure),
     )?;

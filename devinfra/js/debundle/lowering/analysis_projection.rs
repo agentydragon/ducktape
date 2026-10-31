@@ -8,7 +8,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::AnalysisAssumptions;
-use spec::{ChunkExportPurity, DependencyGraphOptions, HostBehavior, SourceUnitSelector};
+use spec::{
+    ChunkExportPurity, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
+    SourceUnitSelector,
+};
 
 use super::materialize::ResolvedMemberSite;
 
@@ -19,6 +22,8 @@ pub(super) struct AnalysisProjection<'a> {
     /// With source-marker export policies already resolved.
     pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub(super) host_behavior: &'a HostBehavior,
+    /// Narrows the native census (SPEC.md § Intrinsics never written).
+    pub(super) intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
     /// Per analysed chunk: member and chunk-rename annotations and
     /// `no_reentry_call` premises, keyed by the bindings the selector solve
     /// resolved them to.
@@ -34,6 +39,7 @@ impl<'a> AnalysisProjection<'a> {
         chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
         chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
         host_behavior: &'a HostBehavior,
+        intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
         declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
         resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     ) -> Self {
@@ -53,6 +59,7 @@ impl<'a> AnalysisProjection<'a> {
             chunk_analysis_options,
             chunk_export_purity,
             host_behavior,
+            intrinsics_never_written,
             declared_assumptions,
             premise_members,
         }
