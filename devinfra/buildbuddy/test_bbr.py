@@ -159,7 +159,7 @@ class TestBuildCommand:
 
     def test_basic_test(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["test", "//foo:bar"], monkeypatch)
-        assert cmd == [BB, "remote", "test", f"--invocation_id={inv_id}", "//foo:bar"]
+        assert cmd == [BB, "remote", "--disable_retry=true", "test", f"--invocation_id={inv_id}", "//foo:bar"]
 
     def test_each_run_mints_fresh_id(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("devinfra.buildbuddy.bbr._find_bb", lambda: BB)
@@ -182,7 +182,15 @@ class TestBuildCommand:
 
     def test_basic_build_with_user_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["build", "--config=nolint", "//foo"], monkeypatch)
-        assert cmd == [BB, "remote", "build", f"--invocation_id={inv_id}", "--config=nolint", "//foo"]
+        assert cmd == [
+            BB,
+            "remote",
+            "--disable_retry=true",
+            "build",
+            f"--invocation_id={inv_id}",
+            "--config=nolint",
+            "//foo",
+        ]
 
     def test_session_bazelrc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         rc = tmp_path / "bbr.bazelrc"
@@ -191,6 +199,7 @@ class TestBuildCommand:
         assert cmd == [
             BB,
             "remote",
+            "--disable_retry=true",
             "build",
             f"--invocation_id={inv_id}",
             "--build_metadata=TAGS=session:xyz",
@@ -200,7 +209,15 @@ class TestBuildCommand:
 
     def test_remote_flags_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["--timeout=10m", "test", "//foo"], monkeypatch)
-        assert cmd == [BB, "remote", "--timeout=10m", "test", f"--invocation_id={inv_id}", "//foo"]
+        assert cmd == [
+            BB,
+            "remote",
+            "--disable_retry=true",
+            "--timeout=10m",
+            "test",
+            f"--invocation_id={inv_id}",
+            "//foo",
+        ]
 
     def test_all_layers(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Remote flags precede the verb; session metadata precedes user Bazel flags."""
@@ -212,6 +229,7 @@ class TestBuildCommand:
         assert cmd == [
             BB,
             "remote",
+            "--disable_retry=true",
             "--timeout=10m",
             "test",
             f"--invocation_id={inv_id}",
@@ -222,13 +240,26 @@ class TestBuildCommand:
 
     def test_startup_options_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["--output_base=/tmp/bazel", "build", "//foo"], monkeypatch)
-        assert cmd == [BB, "remote", "--output_base=/tmp/bazel", "build", f"--invocation_id={inv_id}", "//foo"]
+        assert cmd == [
+            BB,
+            "remote",
+            "--disable_retry=true",
+            "--output_base=/tmp/bazel",
+            "build",
+            f"--invocation_id={inv_id}",
+            "//foo",
+        ]
 
     def test_no_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When no verb is found, everything is startup options and no ID is minted."""
         cmd, inv_id = self._build(["--flag", "//foo"], monkeypatch)
         assert inv_id is None
-        assert cmd == [BB, "remote", "--flag", "//foo"]
+        assert cmd == [BB, "remote", "--disable_retry=true", "--flag", "//foo"]
+
+    def test_script_forwards_disable_retry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cmd, inv_id = self._build(["--script=echo one-time-write"], monkeypatch)
+        assert inv_id is None
+        assert cmd == [BB, "remote", "--disable_retry=true", "--script=echo one-time-write"]
 
 
 class TestExtractInvocationIdFile:

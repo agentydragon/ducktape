@@ -35,6 +35,17 @@ git-state sync: `--skip_auto_checkout` skips the runner's automatic GitHub
 checkout step; `--use_system_git_credentials` makes the runner use its own
 pre-configured GitHub auth instead of `--repo.url`-embedded HTTPS + token.
 
+`bbr` and the GitHub `bb-remote` action pass `--disable_retry=true` before the Bazel
+verb or `--script`. The CLI otherwise retries the **entire remote command** after
+some transient observer errors, even when the first runner accepted and ran it.
+If observing the run fails, treat its outcome as unknown and inspect the outer
+runner and child Bazel invocation IDs before manually resubmitting. This option
+does not change Bazel's RBE action retries or remote cache. See the
+[observed replay](../debug/ci_remote_cancellation/vm_shutdown_retry.md).
+The explicit `=true` is required by the pinned CLI: its remote-flag removal
+does not strip a bare boolean `--disable_retry` before forwarding Bazel startup
+options.
+
 **NOT a bb flag**: `--remote_header` is a Bazel flag. It must go after the
 subcommand, otherwise bb puts it in Bazel startup options and Bazel rejects it.
 
