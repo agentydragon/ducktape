@@ -474,6 +474,7 @@ pub fn materialize_logical_modules(
         cross_module::CrossModuleAnalysisOptions {
             graph_provenance: options.graph_provenance.as_ref(),
             replacement_packages: &vendor_plan.replacement_packages(),
+            intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),
         },
         Some(&cross_module_chunk_closure),
     )?;

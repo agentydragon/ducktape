@@ -960,6 +960,9 @@ consumed under `premise_keys`.
 program_premises:
   process_prototype_chain_accessors: none # or unknown
   non_literal_loader_calls: native_addons_only # or unknown
+  intrinsics_never_written:
+    families: all # or a list: [Object, Array, Map]
+    note: "Audit list: program_graph.json; runtime probe: <invocation>"
   note: "Audit: <where the premise was checked>"
 ```
 
@@ -975,6 +978,38 @@ program_premises:
   no native addon's initializer calls application JavaScript or a module
   loader. The loader-closed derivation then excludes such calls (§ Loader-closed
   derivation).
+- `intrinsics_never_written`: § Intrinsics never written.
+
+### Intrinsics never written
+
+`intrinsics_never_written.families` names native census families (`Error`,
+`FinalizationRegistry`, `Function`, `Object`, `Array`, `Math`, `RegExp`,
+`Symbol`, `Promise`, `Map`, `Set`, `WeakMap`, `WeakSet`), or `all` of them. It
+asserts that no execution of the program writes any slot of a named family:
+its global binding, its constructor's properties, its prototype object and
+properties (with `%ArrayIteratorPrototype%` for `Array` and
+`%SetIteratorPrototype%` for `Set`), or its `@@species`.
+
+The engine still runs the census (§ Inferred native property-key domains). A
+census write on a named family's exact object refutes the premise and the spec
+is rejected, naming each site: a write whose receiver is the family's
+constructor, prototype or iterator prototype, a global-object write keyed by
+its binding name, or an assignment to that binding. Every other witness that
+would reach a named family (an unknown receiver, a global-object write that
+couples every prototype slot, a descendant) is overridden: the family's slots
+stay intact and `%Object.prototype%` property checks pass when `Object` is
+named. `program_graph.json` lists each overridden witness under
+`intrinsics_never_written_overrides` with its source location, the families it
+would reach and why (`unknown_receiver`, `global_object`, `family`). That
+generated list is the author's audit list. Proofs that use an overridden slot
+record `intrinsics_never_written` among their program premises.
+
+The author audits every listed site: its receiver is never an intrinsic of a
+named family under any input the program and host can supply. Specs are per
+snapshot, so the audit is redone with each snapshot. Verify the premise at
+runtime as well: snapshot the identity, and where relevant the property
+descriptors, of every named family's slots before the bundle runs and after
+startup completes, and require them unchanged.
 
 ## Hoisted function imports
 

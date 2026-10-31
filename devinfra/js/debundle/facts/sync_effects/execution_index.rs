@@ -12,7 +12,7 @@ use super::value_model::{
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind,
     NativeIntegrity, NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef,
-    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    ProgramPremiseKey, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
@@ -4293,7 +4293,120 @@ pub(crate) fn resolve_native_integrity<'a>(
             .iter()
             .flat_map(|census| census.host_behavior.iter().copied())
             .collect(),
+        never_written: BTreeSet::new(),
+        never_written_overrides: Vec::new(),
     }
+}
+
+/// Applies `program_premises.intrinsics_never_written`: the named families'
+/// slots hold whatever the census witnesses, so they leave `mutated` and each
+/// witness reaching them joins the audit list. A witness writing such a family
+/// on its exact object refutes the premise; every such site is returned.
+pub(crate) fn apply_intrinsics_never_written(
+    integrity: &mut NativeIntegrity,
+    families: &BTreeSet<NativeIntrinsic>,
+) -> std::result::Result<(), Vec<String>> {
+    use crate::reports::schema::{NeverWrittenOverride, NeverWrittenReach};
+    let exact_family = |slot: &NativeWriteSlot| match &slot.receiver {
+        NativeReceiverPath::Constructor(family) | NativeReceiverPath::Prototype(family) => {
+            families.contains(family).then_some(*family)
+        }
+        NativeReceiverPath::ArrayIteratorPrototype => families
+            .contains(&NativeIntrinsic::Array)
+            .then_some(NativeIntrinsic::Array),
+        NativeReceiverPath::SetIteratorPrototype => families
+            .contains(&NativeIntrinsic::Set)
+            .then_some(NativeIntrinsic::Set),
+        NativeReceiverPath::GlobalObject => families.iter().copied().find(|family| {
+            matches!(&slot.key, NativePropertyKey::String(key)
+                if family.global_binding() == Some(key.as_str()))
+        }),
+        NativeReceiverPath::Descendant(_) | NativeReceiverPath::Unknown => None,
+    };
+    let mut refutations = Vec::new();
+    let mut overrides = Vec::new();
+    for (index, witness) in integrity.witnesses.iter().enumerate() {
+        if witness.unreachable_branch.is_some() {
+            continue;
+        }
+        let location = || {
+            format!(
+                "{}{}",
+                witness.chunk_id,
+                witness
+                    .source_location
+                    .as_ref()
+                    .map_or(String::new(), |location| format!(
+                        ":{}:{}",
+                        location.start_line,
+                        location.start_column.unwrap_or_default()
+                    ))
+            )
+        };
+        let exact: BTreeSet<_> = if witness.operation == NativeMutationOperation::BindingAssignment
+        {
+            witness
+                .affected_roots
+                .intersection(families)
+                .copied()
+                .collect()
+        } else {
+            witness
+                .target_slots
+                .iter()
+                .filter_map(exact_family)
+                .collect()
+        };
+        if !exact.is_empty() {
+            refutations.push(format!(
+                "{} writes {exact:?} on its exact object",
+                location()
+            ));
+            continue;
+        }
+        if witness.affected_roots.is_empty() {
+            continue;
+        }
+        let unknown_receiver = witness
+            .target_slots
+            .iter()
+            .any(|slot| slot.receiver == NativeReceiverPath::Unknown)
+            || witness.target_slots.is_empty();
+        let global_object = witness
+            .affected_roots
+            .contains(&NativeIntrinsic::GlobalObject);
+        let (reach, reached) = if unknown_receiver {
+            (NeverWrittenReach::UnknownReceiver, families.clone())
+        } else if global_object {
+            (NeverWrittenReach::GlobalObject, families.clone())
+        } else {
+            (
+                NeverWrittenReach::Family,
+                witness
+                    .affected_roots
+                    .intersection(families)
+                    .copied()
+                    .collect(),
+            )
+        };
+        if reached.is_empty() {
+            continue;
+        }
+        overrides.push(NeverWrittenOverride {
+            witness: index,
+            chunk_id: witness.chunk_id.clone(),
+            source_location: witness.source_location.clone(),
+            families: reached,
+            reach,
+        });
+    }
+    if !refutations.is_empty() {
+        return Err(refutations);
+    }
+    integrity.mutated.retain(|root| !families.contains(root));
+    integrity.never_written = families.clone();
+    integrity.never_written_overrides = overrides;
+    Ok(())
 }
 
 fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicRoots {
@@ -5525,6 +5638,10 @@ struct ExecutionIndex {
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
     native_integrity_host_behavior: BTreeSet<HostBehaviorKey>,
+    /// `program_premises.intrinsics_never_written` families, and whether that
+    /// premise overrode a census witness.
+    never_written: BTreeSet<NativeIntrinsic>,
+    never_written_overrode: bool,
     destructuring_source: Option<ValueExpr>,
     /// Visiting an assignment target: its identifiers are assigned, not
     /// declared.
@@ -5701,6 +5818,8 @@ impl Default for ExecutionIndex {
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
             native_integrity_host_behavior: BTreeSet::new(),
+            never_written: BTreeSet::new(),
+            never_written_overrode: false,
             destructuring_source: None,
             assignment_target: false,
             destructuring_member_writes: Vec::new(),
@@ -6328,6 +6447,11 @@ impl ExecutionIndex {
             } else {
                 BTreeSet::new()
             },
+            program_premises: if self.never_written_overrode {
+                BTreeSet::from([ProgramPremiseKey::IntrinsicsNeverWritten])
+            } else {
+                BTreeSet::new()
+            },
             ..Default::default()
         }
     }
@@ -6347,6 +6471,7 @@ impl ExecutionIndex {
                     .map(|mutation| mutation.properties.as_ref()),
             ),
         )
+        .with_never_written(self.never_written.clone())
     }
 
     /// Each validated input asserts the slots its operation reads, at the
@@ -8788,7 +8913,11 @@ impl ExecutionIndex {
         let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
             index.native_integrity_witnesses = integrity.witnesses.clone();
             index.native_prototype_mutations = integrity.prototype_mutations.clone();
-            resolve_native_integrity_roots(&censuses)
+            index.never_written = integrity.never_written.clone();
+            index.never_written_overrode = !integrity.never_written_overrides.is_empty();
+            let mut mutated = resolve_native_integrity_roots(&censuses);
+            mutated.retain(|root| !integrity.never_written.contains(root));
+            mutated
         } else {
             let integrity = resolve_native_integrity(censuses);
             index.native_integrity_host_behavior = integrity.consumed_host_behavior;
@@ -12559,6 +12688,8 @@ pub(crate) fn infer_callable_capabilities<'f>(
     index.native_integrity_witnesses = integrity.witnesses.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     index.native_integrity_host_behavior = integrity.consumed_host_behavior.clone();
+    index.never_written = integrity.never_written.clone();
+    index.never_written_overrode = !integrity.never_written_overrides.is_empty();
     index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
         foreign_calls: BTreeMap::new(),

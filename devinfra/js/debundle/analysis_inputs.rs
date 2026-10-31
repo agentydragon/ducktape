@@ -302,6 +302,26 @@ pub enum NativeIntrinsic {
     WeakSet,
 }
 
+impl From<spec::IntrinsicFamily> for NativeIntrinsic {
+    fn from(family: spec::IntrinsicFamily) -> Self {
+        match family {
+            spec::IntrinsicFamily::Error => Self::Error,
+            spec::IntrinsicFamily::FinalizationRegistry => Self::FinalizationRegistry,
+            spec::IntrinsicFamily::Function => Self::Function,
+            spec::IntrinsicFamily::Object => Self::Object,
+            spec::IntrinsicFamily::Array => Self::Array,
+            spec::IntrinsicFamily::Math => Self::Math,
+            spec::IntrinsicFamily::RegExp => Self::RegExp,
+            spec::IntrinsicFamily::Symbol => Self::Symbol,
+            spec::IntrinsicFamily::Promise => Self::Promise,
+            spec::IntrinsicFamily::Map => Self::Map,
+            spec::IntrinsicFamily::Set => Self::Set,
+            spec::IntrinsicFamily::WeakMap => Self::WeakMap,
+            spec::IntrinsicFamily::WeakSet => Self::WeakSet,
+        }
+    }
+}
+
 impl NativeIntrinsic {
     /// Every global property name `for_global_binding` recognizes.
     pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
@@ -411,6 +431,7 @@ pub struct ProofDependencies {
 pub enum ProgramPremiseKey {
     ProcessPrototypeChainAccessors,
     NonLiteralLoaderCalls,
+    IntrinsicsNeverWritten,
 }
 
 /// Global properties that hold only fresh ordinary objects created by
@@ -706,6 +727,11 @@ pub struct NativeIntegrity {
     pub consumed_value_inputs: BTreeSet<ValueInputRef>,
     /// Host claims a receiver discharge consumed.
     pub consumed_host_behavior: BTreeSet<HostBehaviorKey>,
+    /// Families `program_premises.intrinsics_never_written` names. Their slots
+    /// are intact whatever the census witnesses; `mutated` excludes them.
+    pub never_written: BTreeSet<NativeIntrinsic>,
+    /// The witnesses that premise overrides: the author's audit list.
+    pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
 }
 
 #[derive(Debug, Clone, Default)]

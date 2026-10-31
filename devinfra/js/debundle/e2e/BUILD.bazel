@@ -44,6 +44,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "intrinsics_never_written_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "argument_input_test",
     deps = [
         "@crates//:serde_json",

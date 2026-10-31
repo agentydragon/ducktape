@@ -170,9 +170,83 @@ pub struct ProgramPremises {
     pub process_prototype_chain_accessors: ProcessPrototypeChainAccessors,
     #[serde(default, skip_serializing_if = "NonLiteralLoaderCalls::is_unknown")]
     pub non_literal_loader_calls: NonLiteralLoaderCalls,
+    /// The program writes no slot of these intrinsic families, beyond the
+    /// writes the native census sees on their exact objects (SPEC.md §
+    /// Intrinsics never written).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsics_never_written: Option<IntrinsicsNeverWritten>,
     /// Audit provenance. YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// `program_premises.intrinsics_never_written`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntrinsicsNeverWritten {
+    pub families: IntrinsicFamilies,
+    /// Audit provenance: the generated audit list and the runtime probe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// `all`, or a list of census families.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum IntrinsicFamilies {
+    All(AllIntrinsicFamilies),
+    Listed(BTreeSet<IntrinsicFamily>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AllIntrinsicFamilies {
+    All,
+}
+
+/// A native census family, named by its global binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub enum IntrinsicFamily {
+    Error,
+    FinalizationRegistry,
+    Function,
+    Object,
+    Array,
+    Math,
+    RegExp,
+    Symbol,
+    Promise,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+}
+
+impl IntrinsicFamily {
+    pub const ALL: [Self; 13] = [
+        Self::Error,
+        Self::FinalizationRegistry,
+        Self::Function,
+        Self::Object,
+        Self::Array,
+        Self::Math,
+        Self::RegExp,
+        Self::Symbol,
+        Self::Promise,
+        Self::Map,
+        Self::Set,
+        Self::WeakMap,
+        Self::WeakSet,
+    ];
+}
+
+impl IntrinsicFamilies {
+    pub fn families(&self) -> BTreeSet<IntrinsicFamily> {
+        match self {
+            Self::All(_) => IntrinsicFamily::ALL.into_iter().collect(),
+            Self::Listed(families) => families.clone(),
+        }
+    }
 }
 
 /// Whether the program defines accessors on `process` or its prototype chain.

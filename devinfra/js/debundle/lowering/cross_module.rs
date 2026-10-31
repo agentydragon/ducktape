@@ -277,6 +277,7 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
     pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
+    pub(super) intrinsics_never_written: Option<&'a spec::IntrinsicsNeverWritten>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -289,6 +290,7 @@ pub(super) fn collect_cross_module_imported_purities(
     let CrossModuleAnalysisOptions {
         graph_provenance,
         replacement_packages,
+        intrinsics_never_written,
     } = options;
     let chunk_export_purity = projection.chunk_export_purity;
     let chunk_analysis_options = projection.chunk_analysis_options;
@@ -641,6 +643,16 @@ pub(super) fn collect_cross_module_imported_purities(
             argument_inputs: &argument_inputs,
             predefined_globals,
             no_accessor_install_callables: &no_accessor_install_callables,
+            intrinsics_never_written: intrinsics_never_written
+                .map(|premise| {
+                    premise
+                        .families
+                        .families()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect()
+                })
+                .unwrap_or_default(),
         },
     )?;
     Ok(CrossModulePurities {
@@ -1526,6 +1538,7 @@ mod tests {
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),
+                    intrinsics_never_written: None,
                 },
                 None,
             )
@@ -1586,6 +1599,7 @@ mod tests {
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),
+                    intrinsics_never_written: None,
                 },
                 None,
             )

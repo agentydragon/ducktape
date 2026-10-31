@@ -86,6 +86,10 @@ impl<'a> ProgramGraphOutput<'a> {
                     .native_integrity
                     .map(|integrity| integrity.prototype_mutations.as_ref().clone())
                     .unwrap_or_default(),
+                intrinsics_never_written_overrides: self
+                    .native_integrity
+                    .map(|integrity| integrity.never_written_overrides.clone())
+                    .unwrap_or_default(),
             };
             serde_json::to_writer(&mut output, &report)?;
             *written = true;
