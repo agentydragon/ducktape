@@ -181,25 +181,18 @@ on Tana (22,878 contexts) and covered every context of the 171k `Id`s checked
 in `declared`, `local_bindings`, `reads`, `calls` and `rebinds`, including
 closure-local ones; every Claude chunk had zero misses as well.
 
-### Format choice
+### Format
 
-- **Encoding:** `rmp-serde` with named fields on the existing derives, zstd-3
-  framed. Load is 1.5 s for Tana's largest artifact; the compressed artifact
-  is 4–15 MB. A dedicated positional wire format (`postcard` plus interned
-  atoms) would load faster but needs parallel wire types for about 250 types;
-  not worth it at 1.5 s.
-- **No versioning.** The engine binary digest is in every key, so the schema
-  may change in any PR; serde derives on internal types carry no
-  compatibility burden.
-- **Hygiene:** `SyntaxContext` written as its first-occurrence ordinal in the
-  chunk; the run stage re-parses (it parses anyway in S0), walks, and maps
-  ordinals back. This is the "hygiene replay" the lessons-learned note costed
-  as substantial, reduced to one walk because the resolver's scope structure,
-  not its numbering, is deterministic. Inner-scope contexts keep their own
-  ordinal, so the shadowing hazard in that note does not arise.
-- **Spans:** offsets relative to the chunk's file start.
-- **Header:** engine sha256, projection digest, per-chunk source sha256 (the
-  `GraphProvenance` `chunk_sources` shape), chunk list.
+Landed in PR 6: `analysis_codec.rs` (contexts as first-occurrence
+ordinals, named MessagePack, zstd-3) and `lowering/analysis_artifact.rs`
+(header with engine, projection and per-chunk source digests). Measured on
+`-c opt`, S2 plus all S3 facts, including the spans, purity causes and
+dependencies JSON reports omit:
+
+| Input  | MessagePack | Compressed | Encode    | Decode    | Two processes   |
+| ------ | ----------- | ---------- | --------- | --------- | --------------- |
+| Tana   | 199 MB      | 4.5 MB     | 1.3 s     | 1.4–1.7 s | identical bytes |
+| Claude | 835 MB      | 20.5 MB    | 5.1–5.7 s | 5.4–5.8 s | identical bytes |
 
 ## Projected agent loop
 
@@ -293,9 +286,7 @@ Each PR is byte-identical on the e2e suite and both canonical inputs unless
 it says otherwise.
 
 5. Path-independent evidence (C6): landed; numbering kept for references.
-6. **Serializable artifact.** Serde derives, `rmp-serde` (new dependency)
-   and `zstd` (already in `Cargo.Bazel.lock` transitively), context and
-   span canonicalization, round-trip and determinism tests.
+6. Serializable artifact: landed; numbering kept for references.
 7. **CLI**: `spec project-analysis` (serializes `AnalysisProjection`, adding the
    analysed chunk set for C7), `analyze`, `run --analysis`, equivalence
    tests. Graduate the boundary to docs/design.md § Pipeline split and update
@@ -304,7 +295,7 @@ it says otherwise.
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.
 
-PR 6 is independent of the landed PRs; 7 needs all before it.
+7 needs all before it.
 
 ## Interaction with other work
 

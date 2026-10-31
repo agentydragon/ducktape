@@ -52,7 +52,7 @@ pub enum CallbackFactoryEvidence {
         defining_module: String,
         export: String,
         local: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         source_location: Option<SourceLocation>,
     },
 }
@@ -94,7 +94,7 @@ pub struct NamespaceWrapperSummary {
     pub source_location: Option<SourceLocation>,
     pub inference: crate::reports::schema::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) dependencies: ProofDependencies,
 }
 
@@ -111,7 +111,7 @@ pub struct CallbackObjectArguments {
 
 /// Audited provider descriptor-copy behavior. The importer must separately
 /// prove an exact fresh literal at a single-execution call site.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DescriptorCopyFactorySummary {
     pub defining_module: String,
     pub export: String,
@@ -147,7 +147,7 @@ pub enum ForeignReturn {
 /// call runs no code other than the provider body itself: no getter, coercion,
 /// argument, host or export callback. It writes only to its own allocations.
 /// Arguments outside `retained_arguments` and `Argument` returns are dropped.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ForeignCallSummary {
     pub defining_module: String,
     pub export: String,
@@ -162,27 +162,27 @@ pub struct ForeignCallSummary {
     /// The vendor swap's replacement package when the emitted program runs it
     /// instead of this body; the summary then rests on the swap's equivalence
     /// promise (SPEC.md § Vendor swap equivalence).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_package: Option<String>,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) dependencies: ProofDependencies,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallableSummary {
     callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returned_record: Option<ReturnedRecordSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub namespace_wrapper: Option<NamespaceWrapperSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callback_object_arguments: Option<CallbackObjectArguments>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_call: Option<ForeignCallSummary>,
 }
 
@@ -436,7 +436,7 @@ pub enum ProgramPremiseKey {
 
 /// Global properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BundleGlobalNames {
     pub names: BTreeSet<String>,
     /// Every property keyed by a `Symbol.for` symbol.
@@ -618,7 +618,7 @@ pub struct ArgumentInputEvidence {
     pub declaration_location: Option<SourceLocation>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedArgumentInput {
     pub evidence: ArgumentInputEvidence,
     pub binding: Id,
@@ -627,7 +627,7 @@ pub struct ResolvedArgumentInput {
 
 /// Resolved author input for one canonical source binding. Spans and `Id` are
 /// session-local; serialized evidence uses the stable source locations above.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedBindingValueInput {
     pub evidence: ValueInputEvidence,
     pub binding: Id,
@@ -661,7 +661,7 @@ pub struct SelectedNativeOperationInput {
 
 /// Resolved author input for one exact native operation call. Spans and `Id`
 /// are session-local; serialized evidence uses stable source provenance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedNativeOperationInput {
     pub evidence: NativeOperationInputEvidence,
     pub binding: Id,
@@ -723,7 +723,7 @@ pub struct ResolvedCommutingStatements {
 /// Source-certified Set spread. This is independent, one-way evidence for the
 /// shared value-flow solve, not a result inferred from that solve or from the
 /// eventual dependency graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StableSetIterableUse {
     pub source_span: Span,
     pub spread_token_span: Span,
@@ -736,7 +736,7 @@ pub struct StableSetIterableUse {
 /// Resolved whole-program native integrity, derived from source facts and any
 /// explicitly recorded author input dependencies. This is never a serialized
 /// spec assertion.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,

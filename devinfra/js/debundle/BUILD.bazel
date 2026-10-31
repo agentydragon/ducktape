@@ -23,6 +23,22 @@ rust_library(
 )
 
 rust_library(
+    name = "analysis_codec",
+    srcs = ["analysis_codec.rs"],
+    crate_root = "analysis_codec.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:rmp-serde",
+        "@crates//:serde",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+        "@crates//:zstd",
+    ],
+)
+
+rust_library(
     name = "js_ast",
     srcs = ["js_ast.rs"],
     crate_root = "js_ast.rs",
@@ -568,6 +584,7 @@ rust_library(
     edition = "2024",
     rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
     deps = [
+        ":analysis_codec",
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
@@ -895,6 +912,7 @@ rust_test(
 rust_library(
     name = "lowering",
     srcs = [
+        "lowering/analysis_artifact.rs",
         "lowering/analysis_projection.rs",
         "lowering/anonymous.rs",
         "lowering/body_facts.rs",
@@ -936,6 +954,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_codec",
         ":artifact",
         ":binding_targets",
         ":chunk_analysis",
@@ -954,6 +973,7 @@ rust_library(
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
+        "@crates//:rmp-serde",
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",

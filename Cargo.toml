@@ -30,6 +30,9 @@ rustc-hash = "^2.1.3"
 # debundle selector index: roaring bitmaps for posting-list intersection
 roaring = "^0.11.5"
 imbl = "^7.0.2"
+# debundle analysis artifact: named MessagePack, zstd-framed
+rmp-serde = "^1.3.0"
+zstd = "^0.13.3"
 # debundle: derive enum -> wire-string (snake_case) so kind spellings aren't hand-rolled
 strum = { version = "^0.28.0", features = ["derive"] }
 #tokio = { version = "*", features = ["full", "time"] }

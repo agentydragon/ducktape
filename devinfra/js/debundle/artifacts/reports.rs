@@ -8,7 +8,7 @@ use std::path::Path;
 use analysis::DepKind;
 use analysis::cross_module_purity::StableExportValue;
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use swc_common::Span;
 
 use crate::FileRole;
@@ -292,7 +292,7 @@ pub struct NamespaceRequest {
     pub specifier: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InteropUseKind {
     ImportMetaRequireLiteralCall,

@@ -19,7 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use spec::{
     EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
     SynchronousLoadRunsAppCallbacks,
@@ -31,7 +31,7 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 /// Why a target is not loader-closed. A report keeps the first witness and the
 /// occurrence count per kind.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderClosureFailureKind {
     /// A loader key the derivation reads is omitted or `unknown`.
@@ -121,7 +121,7 @@ impl<W> ChunkLoaderSurface<W> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderClosureWitness<W> {
     HostBehavior(HostBehaviorKey),

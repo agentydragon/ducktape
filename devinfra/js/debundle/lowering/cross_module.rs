@@ -7,6 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, NativeInputKind, NativeIntegrity,
     NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
@@ -160,6 +162,7 @@ struct ReparsedEntry {
 }
 
 /// Output of the program-level purity pass, keyed by chunk name.
+#[derive(Serialize, Deserialize)]
 pub(super) struct CrossModulePurities {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,

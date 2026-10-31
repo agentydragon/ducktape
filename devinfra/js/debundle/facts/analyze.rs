@@ -1,10 +1,10 @@
 use super::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 /// Controls only which of the source module's exports contribute synthetic
 /// execution roots and exposed capabilities to unknown-call fallback.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportReentryPolicy {
     /// Every export.

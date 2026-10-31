@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail, ensure};
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use swc_common::GLOBALS;
 
 use analysis::RedundantPurityHint;
@@ -21,6 +21,7 @@ use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, LogicalModule, UnassignedMode,
 };
 
+pub mod analysis_artifact;
 mod analysis_projection;
 mod anonymous;
 mod body_facts;
@@ -145,22 +146,22 @@ pub struct RequestedLogicalModule {
 /// Why the unknown-call fallback includes the chunk's export surface.
 /// The policy remains conservative whenever either blocker list is non-empty
 /// or the loader derivation does not permit the proof.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReentryReport {
     /// The declared host behavior the policy was derived under, echoed as read.
     pub host_behavior: spec::HostBehavior,
     /// The declared program premises, echoed as read.
-    #[serde(skip_serializing_if = "is_default_premises")]
+    #[serde(default, skip_serializing_if = "is_default_premises")]
     pub program_premises: spec::ProgramPremises,
     pub policy: ExportReentryPolicy,
     pub loader: ExportReentryLoaderDerivation,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
     pub closure_blockers: Vec<ExportReentryClosureBlocker>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReentryHostBuiltinLeaf {
     pub source_chunk: String,
     pub specifier: String,
@@ -174,7 +175,7 @@ struct ExportReentryClosureInspection {
     host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum ExportReentryGlobalBlocker {
     IncompleteArtifact {
@@ -188,7 +189,7 @@ pub enum ExportReentryGlobalBlocker {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum ExportReentryClosureBlocker {
     NonEsmChunk {
@@ -225,7 +226,7 @@ pub enum ExportReentryClosureBlocker {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ExportReentryTarget {
     pub chunk: String,
     pub file: String,
