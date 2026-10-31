@@ -41,6 +41,14 @@ cycle guard, missing-parent behavior, deletion boundary, and independent
 inventory boundary as the prior Python walk. No ledger schema or stored data is
 changed.
 
+Read-only `EXPLAIN ANALYZE` against one existing `wyrm2` path with 208 absent
+ancestor records confirmed why the recursive lookup uses a lateral, one-row
+parent probe. A plain join made PostgreSQL scan 445 machine snapshots on each
+recursive step (9,108 shared buffer hits in the recursive branch). The lateral
+form used 207 `restic_snapshots_pkey` probes (621 shared hits, 4 reads) while
+the prior-path lookup used `snapshot_files_pkey`. This checks the query shape
+on one historical path; it is not a measured end-to-end importer speedup.
+
 The discovery ledger tests cover a dormant path, a deletion followed by an
 unchanged snapshot, and an independent inventory without the path. The
 modified, truncated/deleted, parent-link, and initial-import tests also pass.

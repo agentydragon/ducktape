@@ -725,8 +725,12 @@ class SnapshotIngestor:
                     SELECT parent.snapshot_id, parent.parent_snapshot_id, parent.comparison_snapshot_id,
                            ancestors.seen || parent.snapshot_id, ancestors.depth + 1
                     FROM ancestors
-                    JOIN restic_snapshots AS parent
-                      ON parent.machine_id = :machine_id AND parent.snapshot_id = ancestors.parent_snapshot_id
+                    JOIN LATERAL (
+                        SELECT snapshot_id, parent_snapshot_id, comparison_snapshot_id
+                        FROM restic_snapshots
+                        WHERE machine_id = :machine_id AND snapshot_id = ancestors.parent_snapshot_id
+                        LIMIT 1
+                    ) AS parent ON true
                     WHERE ancestors.comparison_snapshot_id IS NOT NULL
                       AND NOT parent.snapshot_id = ANY(ancestors.seen)
                 )
