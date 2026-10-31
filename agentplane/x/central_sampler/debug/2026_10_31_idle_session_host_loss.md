@@ -75,10 +75,11 @@ the operator did not author these two messages.
 
 Track the focused correction as
 [`CENTRAL_SAMPLER_HOST_AFFINITY`](../../../plans/task_dag.md#central_sampler_host_affinity--preserve-healthy-javascript-state-across-idle-turns).
-Keep turn-execution ownership distinct from the identity/liveness of the host retaining JavaScript
-state. Reuse or route to the healthy host across idle turns; invoke loss reconciliation only after
-the host is actually unavailable. Preserve generation fencing and uncertain-effect handling.
-Transparent restoration after actual host death is outside this correction.
+Retain the Session's authoritative database ownership lease on the replica holding its JavaScript
+state across idle turns, and invoke loss reconciliation only after the host is actually unavailable.
+Preserve generation fencing and uncertain-effect handling. Transparent restoration after actual
+host death is outside this correction. The approved resident ownership and work-wakeup contract is
+documented in the [sampler specification](../SPEC.md#session-residency-and-work-wakeups).
 
 The investigation used read-only Kubernetes logs/metadata and read-only PostgreSQL queries. No
 Session, command, environment or deployment was changed. Raw captures remain under
