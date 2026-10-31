@@ -38,10 +38,10 @@ The manual queue, replica and wake probes are documented in the
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
-- **Wire rollout**: deploy the updated app and Action callers first, then the Dispatcher. The old Dispatcher ignores
-  the new protobuf field, so the UID fence starts when the required-UID Dispatcher is deployed. An older caller that
-  omits `sandbox_uid` then gets `INVALID_ARGUMENT`. To roll back, restore the old Dispatcher before rolling back its
-  app and Action callers. Existing Session openings and running Sessions are unaffected.
+- **Wire rollout**: during mixed-version overlap, the old Dispatcher ignores the new protobuf field; an old caller
+  reaching the required-UID Dispatcher is rejected with `INVALID_ARGUMENT` when it omits `sandbox_uid`. To roll back,
+  restore the old Dispatcher before rolling back app and Action callers. Existing Session openings and running Sessions
+  are unaffected.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
