@@ -935,15 +935,14 @@ pub struct ArgumentInputContract {
     pub note: Option<String>,
 }
 
-/// One source-selected, SHA-bound callable whose computed-key method calls the
-/// author audited as never installing an accessor.
+/// One source-selected callable whose computed-key method calls the author
+/// audited as never installing an accessor.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NoAccessorInstallCallableContract {
     /// Selects one declaration whose statement contains exactly one outermost
     /// function.
     pub source_match: SourceMatchClaim,
-    pub audited_source_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
