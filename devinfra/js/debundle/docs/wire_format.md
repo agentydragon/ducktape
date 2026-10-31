@@ -140,6 +140,21 @@ never relaxes the proof.
 }
 ```
 
+### Translation validation
+
+`translation_validation.json` is written beside `dependency_graph.json`: the
+translation-validation verdict on the emitted order, report only (the gate
+decides). `gate_accepts` is
+the realizability gate's verdict and `accepts` translation validation's;
+`swapped_pairs` counts statement pairs the emit runs out of source order.
+`conflicts[]` names each swapped pair carrying a violated ordering edge
+(`runs_first`/`runs_later` as `unit` ordinal and `module`, the
+`dependency_edge` key and its `kind`). `forward_edges_kept` and
+`forward_edges_swapped` list ordering edges whose dependency follows the
+dependent in the source, by whether the emit keeps or swaps the pair;
+`placement_splits` lists split rebind, shared-declaration, co-location and
+local-effect edges.
+
 ### Why the convention works for these files
 
 These files all carry **post-filter** data — data that has already

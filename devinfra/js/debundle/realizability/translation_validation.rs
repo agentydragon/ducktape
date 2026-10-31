@@ -1,6 +1,7 @@
-//! Translation validation of the emitted evaluation order
-//! (plans/translation_validation_gate.md), migration step 1: conflicts are
-//! today's ordering edges, and the realizability gate stays authoritative.
+//! Translation validation of the emitted evaluation order: accept iff every
+//! statement pair the emit runs out of source order commutes. Conflicts are
+//! today's ordering edges, and the realizability gate stays authoritative;
+//! this verdict is reported beside it.
 //!
 //! The emitted order is the exact ESM loader model over the emitter's own
 //! import lists and `EsmImportOrder`, cyclic or not: module bodies in DFS
@@ -12,9 +13,9 @@
 //! precedes `u` in the source, violating it swaps the pair, which the sweep
 //! finds. A forward edge (`v` follows `u` in the source, as for an at-init
 //! read of a later declaration) is violated when the emit keeps source order,
-//! and satisfying it swaps the pair. Neither case is a swapped conflict in the
-//! plan's semantics; step 1 reports both beside the sweep, and only the
-//! violated forward edges count toward the verdict, as they do for the gate.
+//! and satisfying it swaps the pair. The sweep sees neither: both are reported
+//! beside it, and only the violated forward edges count toward the verdict,
+//! as they do for the gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -49,7 +50,8 @@ pub struct TranslationValidation {
     /// Forward ordering edges the emit leaves in source order.
     pub forward_edges_kept: Vec<DependencyEdgeId>,
     /// Forward ordering edges whose endpoints the emit swaps. Not part of the
-    /// verdict: the gate accepts them, and the plan's semantics would not.
+    /// verdict, as the gate accepts them, though a read of a binding before
+    /// its declaration conflicts with that declaration once swapped.
     pub forward_edges_swapped: Vec<DependencyEdgeId>,
     /// Placement-equality edges (rebinds, shared `var` declarations,
     /// co-location, local effects) whose endpoints the assignment splits.

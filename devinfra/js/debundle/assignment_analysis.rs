@@ -252,10 +252,10 @@ impl AssignmentAnalysis {
     }
 
     /// Translation validation of the emitted order beside the gate's verdict
-    /// in `report` (plans/translation_validation_gate.md, migration step 1).
-    /// The gate stays authoritative. Their agreement is a theorem, so with
-    /// `DEBUNDLE_TV_ORACLE` set a disagreement panics: it is a bug in the
-    /// loader model, the sweep or the gate.
+    /// in `report`. The gate stays authoritative. With conflicts read off the
+    /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
+    /// set a disagreement panics: it is a bug in the loader model, the sweep
+    /// or the gate.
     pub fn translation_validation(&self, report: &AssignmentReport) -> TranslationValidationReport {
         let dependency_graph = self.inputs.dependency_graph();
         let verdict = translation_validate(
