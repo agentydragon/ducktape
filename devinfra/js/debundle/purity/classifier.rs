@@ -139,18 +139,15 @@ pub(crate) fn classify_expr_purity(
                             "unary + throws on a BigInt operand".to_string(),
                         ))
                     } else {
-                        let admits = if u.op == UnaryOp::Plus {
-                            TO_NUMBER_SILENT
-                        } else {
-                            TO_STRING_SILENT
-                        };
+                        // Unary `+` rejects a BigInt; `-` and `~` of one can
+                        // outgrow the engine's BigInt size limit.
                         arg_purity.then(Effects::coerce(
                             CoerceSite::Operator,
                             u.span,
                             format!("unary {} runs ToNumber on a possibly-object operand", u.op),
                             coerce_operands(
                                 &[&u.arg],
-                                CoerceCheck::Within(admits),
+                                CoerceCheck::Within(TO_NUMBER_SILENT),
                                 graph,
                                 local_shadowed,
                             ),
@@ -1092,57 +1089,10 @@ fn binary_may_throw_on_numeric_mismatch(
     graph: &ChunkCodeGraph,
     local_shadowed: &BTreeSet<String>,
 ) -> bool {
-    if !matches!(
-        binary.op,
-        BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mul
-            | BinaryOp::Div
-            | BinaryOp::Mod
-            | BinaryOp::Exp
-            | BinaryOp::BitOr
-            | BinaryOp::BitXor
-            | BinaryOp::BitAnd
-            | BinaryOp::LShift
-            | BinaryOp::RShift
-            | BinaryOp::ZeroFillRShift
-    ) {
-        return false;
-    }
-
+    // Both operands are result-primitive, which excludes a Symbol.
     let scope = graph.binding_prims.scope(local_shadowed);
-    let left = evaluate(&binary.left, &scope).unwrap_or(PrimKinds::NONE);
-    let right = evaluate(&binary.right, &scope).unwrap_or(PrimKinds::NONE);
-    let non_bigint = PrimKinds::ANY
-        .without(PrimKinds::BIGINT)
-        .without(PrimKinds::SYMBOL);
-    let (left_number, right_number) = (
-        left.is_only(PrimKinds::NUMBER),
-        right.is_only(PrimKinds::NUMBER),
-    );
-    let (left_non_bigint, right_non_bigint) = (left.is_only(non_bigint), right.is_only(non_bigint));
-    let (left_bigint, right_bigint) = (
-        left.is_only(PrimKinds::BIGINT),
-        right.is_only(PrimKinds::BIGINT),
-    );
-
-    if binary.op == BinaryOp::ZeroFillRShift && (left_bigint || right_bigint) {
-        return true;
-    }
-    if (left_number && right_bigint) || (right_number && left_bigint) {
-        return true;
-    }
-    if left_bigint != right_bigint {
-        let other = if left_bigint { right } else { left };
-        if binary.op != BinaryOp::Add || !other.is_only(PrimKinds::STRING) {
-            return true;
-        }
-    }
-
-    if left_non_bigint && !right_non_bigint && !right_bigint {
-        return true;
-    }
-    right_non_bigint && !left_non_bigint && !left_bigint
+    let kinds = |operand: &Expr| evaluate(operand, &scope).unwrap_or(TO_STRING_SILENT);
+    binary_throws(binary.op, kinds(&binary.left), kinds(&binary.right))
 }
 
 /// Borrow the `(recv_ident_sym, prop_sym)` pair for a static-ident

@@ -190,11 +190,19 @@ fn primitive_copies_keep_mixed_numeric_throws() {
 
 #[test]
 fn throwing_primitive_kinds_keep_the_coercion() {
-    for (literal, expression) in [
-        ("2n", "4 * bytes + 256"),
-        ("2n", "+bytes"),
-        ("Symbol.for('limit')", "`${bytes}`"),
-        ("Symbol.for('limit')", "'prefix:' + bytes"),
+    // Each operation can throw for some value of the operands' types, so the
+    // coercion stays. `Ok` rows complete with these values but could throw for
+    // others (a BigInt result past the engine's size limit).
+    for (literal, expression, outcome) in [
+        ("2n", "4 * bytes + 256", Err("TypeError")),
+        ("2n", "+bytes", Err("TypeError")),
+        ("2n", "4n / (bytes - 2n)", Err("RangeError")),
+        ("2n", "4n % (bytes - 2n)", Err("RangeError")),
+        ("2n", "bytes ** -1n", Err("RangeError")),
+        ("2n", "4n * bytes + 256n", Ok("264n\n")),
+        ("2n", "1n << bytes", Ok("4n\n")),
+        ("Symbol.for('limit')", "`${bytes}`", Err("TypeError")),
+        ("Symbol.for('limit')", "'prefix:' + bytes", Err("TypeError")),
     ] {
         let source = format!(
             "import {{ limit as bytes }} from './peer.js';\n\
@@ -214,13 +222,16 @@ fn throwing_primitive_kinds_keep_the_coercion() {
             )
             .with_extra_chunks(&[("static/peer", &format!("export const limit = {literal};\n"))]),
         );
-        assert_preserved_entry_error(&fixture, "TypeError");
+        match outcome {
+            Err(error) => assert_preserved_entry_error(&fixture, error),
+            Ok(stdout) => assert_preserved_entry_output(&fixture, stdout),
+        }
         let graph = fixture.dependency_graph();
         let settled = source_unit_for_binding(&graph, "settled");
         let node = graph.nodes.iter().find(|node| node.id == settled).unwrap();
         assert!(
             !node.purity.is_pure(),
-            "{expression} with a {literal} operand throws: {:?}",
+            "{expression} with a {literal} operand can throw: {:?}",
             node.purity
         );
     }
@@ -315,7 +326,6 @@ fn other_literal_primitives_skip_callbacks_without_folding_operations() {
         ("'two'", "'prefix:' + bytes", "prefix:two 42\n"),
         ("true", "4 * bytes + 256", "260 42\n"),
         ("null", "4 * bytes + 256", "256 42\n"),
-        ("2n", "4n * bytes + 256n", "264n 42\n"),
     ] {
         let peer = format!("export const limit = {literal};\n");
         assert_primitive(

@@ -145,10 +145,14 @@ fn binary(op: BinaryOp, left: Option<PrimKinds>, right: Option<PrimKinds>) -> Op
 
 /// Whether `op` can throw on some pair of primitives of these types, before or
 /// after converting them: a Symbol through `ToNumber`/`ToString`, a BigInt
-/// combined arithmetically with another numeric kind, `>>>` on a BigInt.
-/// `in` and `instanceof` throw on every primitive right operand.
+/// combined arithmetically with another numeric kind, or a BigInt operation
+/// whose operand values the types do not bound: `/` and `%` by `0n` and `**`
+/// with a negative exponent throw a RangeError, and any operation that can
+/// grow a BigInt (`+`, `-`, `*`, `**`, shifts) can exceed the engine's size
+/// limit. `in` and `instanceof` throw on every primitive right operand.
 pub fn binary_throws(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> bool {
     let symbol = left.intersects(PrimKinds::SYMBOL) || right.intersects(PrimKinds::SYMBOL);
+    let bigint = left.intersects(PrimKinds::BIGINT) || right.intersects(PrimKinds::BIGINT);
     let bigint_with = |other: PrimKinds| {
         (left.intersects(PrimKinds::BIGINT) && right.intersects(other))
             || (right.intersects(PrimKinds::BIGINT) && left.intersects(other))
@@ -164,21 +168,23 @@ pub fn binary_throws(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> bool {
         | BinaryOp::NullishCoalescing => false,
         BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq => symbol,
         BinaryOp::In | BinaryOp::InstanceOf => true,
-        // A String operand makes `+` a concatenation, which converts a BigInt.
-        BinaryOp::Add => symbol || bigint_with(non_bigint.without(PrimKinds::STRING)),
-        BinaryOp::ZeroFillRShift => {
-            symbol || left.intersects(PrimKinds::BIGINT) || right.intersects(PrimKinds::BIGINT)
+        // A String operand makes `+` a concatenation, which converts a BigInt;
+        // two BigInts add.
+        BinaryOp::Add => {
+            symbol
+                || bigint_with(non_bigint.without(PrimKinds::STRING))
+                || (left.intersects(PrimKinds::BIGINT) && right.intersects(PrimKinds::BIGINT))
         }
+        // Bitwise conjunctions of BigInts never outgrow their operands.
+        BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::BitAnd => symbol || bigint_with(non_bigint),
         BinaryOp::Sub
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
         | BinaryOp::Exp
-        | BinaryOp::BitOr
-        | BinaryOp::BitXor
-        | BinaryOp::BitAnd
         | BinaryOp::LShift
-        | BinaryOp::RShift => symbol || bigint_with(non_bigint),
+        | BinaryOp::RShift
+        | BinaryOp::ZeroFillRShift => symbol || bigint,
     }
 }
 
