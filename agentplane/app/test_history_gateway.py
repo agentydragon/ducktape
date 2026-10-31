@@ -140,6 +140,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     assert resumed_session.native_session_id == native_session_id
     assert len(resumed.processes) == 1
     await runner.restart()
+    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
