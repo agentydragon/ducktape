@@ -186,7 +186,7 @@ impl<R: IterativeRules> IterativeInference<R> {
                 evaluations += 1;
             }
             let known = watched.entry(rule.clone()).or_default();
-            for key in context.reads {
+            for key in context.take_reads() {
                 if !known.contains(&key) {
                     watchers
                         .entry(key.clone())
@@ -242,7 +242,9 @@ impl<R: IterativeRules> IterativeInference<R> {
 /// reads install watchers, including reads made before a producer exists.
 pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
     facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
-    reads: BTreeSet<R::Key>,
+    /// In read order, with repeats: appending is cheaper than a set insert
+    /// for every read; `into_reads` sorts and deduplicates once.
+    reads: Vec<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
 }
@@ -251,10 +253,18 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
     fn new(facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
         Self {
             facts,
-            reads: BTreeSet::new(),
+            reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
         }
+    }
+
+    /// The distinct keys read, in key order.
+    fn take_reads(&mut self) -> Vec<R::Key> {
+        let mut reads = std::mem::take(&mut self.reads);
+        reads.sort_unstable();
+        reads.dedup();
+        reads
     }
 }
 
@@ -262,7 +272,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     for IterativeContext<'_, R, RETAIN_PREMISES>
 {
     fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
-        self.reads.insert(key.clone());
+        self.reads.push(key.clone());
         let fact = self.facts.get(&key)?;
         self.dependencies.extend(fact.dependencies());
         Some(fact.value())
@@ -277,7 +287,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                     value: contribution,
                     dependencies: self.dependencies.clone(),
                     premises: if RETAIN_PREMISES {
-                        self.reads.clone()
+                        self.reads.iter().cloned().collect()
                     } else {
                         BTreeSet::new()
                     },
@@ -287,12 +297,15 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             Entry::Occupied(mut entry) => {
                 let fact = entry.get_mut();
                 let changed = R::merge(&key, &mut fact.value, contribution);
-                let dependencies = fact.dependencies.clone();
-                fact.dependencies.extend(&self.dependencies);
+                let dependencies_grew = !self.dependencies.is_empty() && {
+                    let dependencies = fact.dependencies.clone();
+                    fact.dependencies.extend(&self.dependencies);
+                    fact.dependencies != dependencies
+                };
                 if RETAIN_PREMISES {
                     fact.premises.extend(self.reads.iter().cloned());
                 }
-                changed || fact.dependencies != dependencies
+                changed || dependencies_grew
             }
         };
         if changed {
@@ -314,7 +327,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
         let fact = self.facts.remove(&key)?;
         self.dependencies.extend(fact.dependencies());
-        self.reads.remove(&key);
+        self.reads.retain(|read| *read != key);
         self.changed.remove(&key);
         Some(fact.value)
     }
