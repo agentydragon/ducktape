@@ -764,7 +764,7 @@ fn embedded_files_are_leaves_under_their_declared_loaders() {
     let manifest = manifest_dir.path().join("embedded-loaders.json");
     std::fs::write(
         &manifest,
-        r#"{"$bunfs/root/guide.md": "text", "$bunfs/root/addon.node": "napi", "$bunfs/root/script.mjs": "js"}"#,
+        r#"{"$bunfs/root/guide.md": "text", "$bunfs/root/addon.node": "napi", "$bunfs/root/script.mjs": "file"}"#,
     )
     .unwrap();
     let sidecar = r#"export function guide() { return import.meta.require("/$bunfs/root/guide.md"); }
@@ -805,7 +805,8 @@ export function addon() { return import.meta.require("/$bunfs/root/addon.node");
         json!(["non_literal_loader_calls"])
     );
 
-    // A `js` asset or an undeclared loader keeps the target open.
+    // A `file` asset (loaded by extension, so `.mjs` runs as code) or an
+    // undeclared loader keeps the target open.
     extra_chunks[2] = (
         "static/sidecar",
         "export function script() { return import.meta.require(\"/$bunfs/root/script.mjs\"); }\nexport function guide() { return import.meta.require(\"/$bunfs/root/guide.md\"); }\n",

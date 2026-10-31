@@ -620,7 +620,7 @@ host_behavior:
   synchronous_load_drains_microtasks: unknown # never
   reentry_free_builtin_modules: [path, fs/promises]
   reentry_free_bun_modules: [bun:ffi, ws]
-  reentry_free_embedded_loaders: [text, file]
+  reentry_free_embedded_loaders: [text]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
   predefined_globals: unknown # standard
   note: "Audited against <executable identity, revision, digest>"
@@ -865,12 +865,13 @@ standalone module graph records it (`bun_standalone_extract.py
 --embedded-loaders`). It is a fact of the input, not an author assertion. An
 absolute literal loader request `/<path>` whose `<path>` the manifest lists is
 a request for that embedded file. `reentry_free_embedded_loaders` lists the
-loaders the author audited as running no application code: `text` and `file`
-return a string, `json` the parsed value, and `napi` runs only the native
-addon's initializer. `napi` therefore also requires
+loaders the author audited as running no application code: `text` returns the
+file's text and `napi` runs only the native addon's initializer. A `file` asset
+is not admissible: Bun's runtime loads it by extension, so a `.mjs` asset
+recorded as `file` runs as code. `napi` therefore also requires
 `program_premises.non_literal_loader_calls: native_addons_only`, whose second
 clause covers every addon initializer, and the spec is rejected without it. A
-`js` (or other code) loader keeps every target open as
+`file`, `js` or other loader keeps every target open as
 `non_reentry_free_embedded_file`. Relative requests and static imports of
 embedded files are not resolved.
 

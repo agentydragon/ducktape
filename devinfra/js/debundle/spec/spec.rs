@@ -1095,12 +1095,12 @@ pub enum BunLoader {
 }
 
 impl BunLoader {
-    /// The closed-list entry for a loader that evaluates no JavaScript.
+    /// The closed-list entry for a loader the host applies by the recorded
+    /// byte and that evaluates no JavaScript. A `file` entry is absent: the
+    /// host loads it by extension, so a `.js` or `.mjs` file runs as code.
     pub fn reentry_free(self) -> Option<EmbeddedLoader> {
         Some(match self {
             Self::Text => EmbeddedLoader::Text,
-            Self::File => EmbeddedLoader::File,
-            Self::Json => EmbeddedLoader::Json,
             Self::Napi => EmbeddedLoader::Napi,
             _ => return None,
         })
@@ -1113,10 +1113,6 @@ impl BunLoader {
 pub enum EmbeddedLoader {
     /// The file's text, as a string.
     Text,
-    /// The file's path, as a string.
-    File,
-    /// The parsed JSON value.
-    Json,
     /// A native addon: the host runs only its initializer.
     Napi,
 }
