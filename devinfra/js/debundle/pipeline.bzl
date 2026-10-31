@@ -5,6 +5,11 @@ output directory. All pipeline outputs (manifests, analysis, emitted JS) land
 under the rule's declared output directory in `bazel-bin/`. Each corpus may
 layer a `write_source_files` regen target on top to commit a subset of outputs
 into the source tree.
+
+Three actions: `DebundleProjectAnalysis` writes what analysis reads from the
+spec, `DebundleAnalyze` computes the analysis from that projection and the
+sources alone, and `DebundlePipeline` runs against the stored analysis. The
+`analysis` output group holds the projection and the analysis artifact.
 """
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -16,16 +21,59 @@ _GATE_REJECTED_EXIT_CODE = 3
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
+
+    # Analysis is computed by its own action, keyed only by what it reads:
+    # the projection, the sources and the package roots. An edit the
+    # projection does not cover (module assignment, renames, notes,
+    # `commuting_statements`) leaves the projection's bytes unchanged, so the
+    # `DebundleAnalyze` action hits the action cache and only
+    # `DebundlePipeline` reruns.
+    projection = ctx.actions.declare_file(ctx.label.name + ".analysis_projection")
+    analysis = ctx.actions.declare_file(ctx.label.name + ".analysis")
+    _run_debundler(
+        ctx,
+        inputs = plan.inputs,
+        outputs = [projection],
+        command = plan.debundler + " " + " ".join(
+            ["spec", "project-analysis"] + plan.spec_args + plan.package_args +
+            ["--out", shell.quote(projection.short_path)],
+        ),
+        mnemonic = "DebundleProjectAnalysis",
+        progress = "Projecting debundle analysis inputs for %{label}",
+    )
+    _run_debundler(
+        ctx,
+        inputs = depset([projection], transitive = [plan.source_inputs]),
+        outputs = [analysis],
+        command = plan.debundler + " " + " ".join(
+            [
+                "analyze",
+                "--projection",
+                shell.quote(projection.short_path),
+                "--tree-source-root",
+                plan.source_root,
+            ] + plan.package_args + ["--out", shell.quote(analysis.short_path)],
+        ),
+        mnemonic = "DebundleAnalyze",
+        progress = "Analyzing debundle input for %{label}",
+    )
+
+    run = plan.debundler + " " + " ".join(
+        ["run"] + plan.run_flags + plan.spec_args + plan.package_args +
+        ["--analysis", shell.quote(analysis.short_path)],
+    )
     if ctx.attr.emit_on_rejection:
         # Only the gate-rejected status passes; every other failure fails the action.
         run = "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
-            command = plan.command,
+            command = run,
             gate = _GATE_REJECTED_EXIT_CODE,
         )
-    else:
-        run = plan.command
     outputs = [out_dir]
-    output_groups = {}
+    output_groups = {
+        # The projection and analysis artifact, for a local
+        # `debundle run --analysis` loop.
+        "analysis": depset([projection, analysis]),
+    }
     if ctx.attr.split_dependency_graphs:
         graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
         outputs.append(graphs_dir)
@@ -42,11 +90,22 @@ def _debundle_pipeline_impl(ctx):
             out = shell.quote(out_dir.short_path),
             graphs = shell.quote(graphs_dir.short_path),
         )
+    _run_debundler(
+        ctx,
+        inputs = depset([analysis], transitive = [plan.inputs]),
+        outputs = outputs,
+        command = run,
+        mnemonic = "DebundlePipeline",
+        progress = "Running debundle pipeline for %{label}",
+    )
+    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+
+def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress):
     ctx.actions.run_shell(
-        inputs = plan.inputs,
+        inputs = inputs,
         tools = [ctx.executable.debundler],
         outputs = outputs,
-        command = "cd \"${{BAZEL_BINDIR}}\" && {run}".format(run = run),
+        command = "cd \"${{BAZEL_BINDIR}}\" && {command}".format(command = command),
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
@@ -54,13 +113,12 @@ def _debundle_pipeline_impl(ctx):
         # Bazel's linux-sandbox, package-dir entries are real directories
         # but their leaf files are symlinks to the host execroot's bazel-bin
         # — so `realpath(file)` lands outside `realpath(dir)` and the check
-        # spuriously fails. Disable sandboxing for this action; inputs are
+        # spuriously fails. Disable sandboxing for these actions; inputs are
         # declared via Bazel attrs, so reproducibility is preserved.
         execution_requirements = {"no-sandbox": "1"},
-        progress_message = "Running debundle pipeline for %{label}",
-        mnemonic = "DebundlePipeline",
+        progress_message = progress,
+        mnemonic = mnemonic,
     )
-    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
 
 def _debundle_pipeline_plan(ctx, out_root):
     bin_dir = ctx.bin_dir.path
@@ -77,16 +135,20 @@ def _debundle_pipeline_plan(ctx, out_root):
         fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
 
     # Each entry is a fully-rendered shell token (already quoted/escaped).
-    argv = ["run"]
+    run_flags = []
     if ctx.attr.fail_fast:
-        argv.append("--fail-fast")
+        run_flags.append("--fail-fast")
     if ctx.attr.emit_on_rejection:
-        argv.append("--emit-on-rejection")
+        run_flags.append("--emit-on-rejection")
     if has_flat:
-        argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
+        spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
+
+        # A flat spec's source paths resolve against the working directory.
+        source_root = "\"${PWD}\""
     else:
         pkg = ctx.label.package
-        argv += [
+        source_root = _tree_source_root_arg(ctx)
+        spec_args = [
             "--tree-config",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_config)),
             "--tree-modules",
@@ -96,11 +158,12 @@ def _debundle_pipeline_plan(ctx, out_root):
             # Source-relative paths embedded in the tree config YAML
             # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
-            _tree_source_root_arg(ctx),
+            source_root,
             "--out-root",
             shell.quote(out_root),
         ]
 
+    package_args = []
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
         pkg_files = pkg_label[DefaultInfo].files.to_list()
         if not pkg_files:
@@ -110,22 +173,30 @@ def _debundle_pipeline_plan(ctx, out_root):
         # already points directly at the package directory containing
         # `package.json`. Make it bin-dir-relative for the post-cd cwd.
         pkg_dir = paths.relativize(pkg_files[0].path, bin_dir)
-        argv += [
+        package_args += [
             shell.quote("--package-root"),
             shell.quote("{}={}".format(pkg_name, pkg_dir)),
         ]
 
-    inputs = depset(
-        direct = [ctx.file.spec] if ctx.file.spec else [],
-        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
-                     [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
+    # What analysis reads besides its projection: never the spec tree.
+    source_inputs = depset(
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
                      [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
                      [ctx.attr.tree_source_root[DefaultInfo].files],
     )
+    inputs = depset(
+        direct = [ctx.file.spec] if ctx.file.spec else [],
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
+                     [source_inputs],
+    )
 
     return struct(
-        argv = argv,
-        command = "\"${{OLDPWD}}/{}\" {}".format(ctx.executable.debundler.path, " ".join(argv)),
+        debundler = "\"${{OLDPWD}}/{}\"".format(ctx.executable.debundler.path),
+        run_flags = run_flags,
+        spec_args = spec_args,
+        package_args = package_args,
+        source_root = source_root,
+        source_inputs = source_inputs,
         inputs = inputs,
     )
 
