@@ -70,10 +70,7 @@ py_library(
 py_library(
     name = "go_service",
     srcs = ["go_service.py"],
-    data = [
-        "//agentplane/history_service:history-service",
-        "//agentplane/history_service/migrations/cmd:history-migrate",
-    ],
+    data = ["//agentplane/history_service:history-service"],
     deps = [
         "//agentplane:subjects",
         "//agentplane/grpc:calls",

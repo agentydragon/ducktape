@@ -1584,6 +1584,13 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8081
+              service: livez
+            initialDelaySeconds: 0
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-egress/ca
               name: ca
@@ -1598,30 +1605,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-egress
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       restartPolicy: Always
       securityContext:
         fsGroup: 1000
@@ -2597,6 +2580,12 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-history-service
               name: configmap-history-service-config
@@ -2605,30 +2594,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-service
-          image: git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
@@ -7399,15 +7364,18 @@ metadata:
   name: mcp-edge
   namespace: agentplane-staging
 spec:
-  minReadySeconds: 0
+  minReadySeconds: 5
   progressDeadlineSeconds: 600
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 10
   selector:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-mcp-edge-deployment-c88c8f8c
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -7480,6 +7448,13 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8080
+              service: livez
+            initialDelaySeconds: 0
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-mcp
               name: secret-agentplane-mcp-oauth
@@ -7491,30 +7466,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: AGENTPLANE_MCP_EDGE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-mcp-edge
-          image: git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
@@ -7563,6 +7514,17 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-mcp-edge-deployment-c88c8f8c
   type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mcp-edge
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-edge
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

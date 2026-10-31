@@ -27,7 +27,7 @@ def test_sandbox_service_resources_are_absent(staging_manifests: list[dict[str, 
     assert history_database_resource["spec"]["owner"] == "sandbox_service"
     assert any(
         value.get("secretKeyRef") == history_database
-        for container in [*history["initContainers"], *history["containers"]]
+        for container in history["containers"]
         for value in (item.get("valueFrom", {}) for item in container["env"])
     )
 

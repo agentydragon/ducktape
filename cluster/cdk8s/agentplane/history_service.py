@@ -1,6 +1,6 @@
 """The History Service: takes the Session journals runners push (agentplane/docs/runner_control.md
 § Event ingress), and serves and folds retained history from the `sandbox_service` database, whose
-schema its init container migrates.
+schema its serving binary initializes.
 
 Runners reach the ingress listener only through the egress proxy, which swaps the placeholder
 bearer for the Pod's own token for the ingress audience. It takes untrusted input, so it listens
@@ -15,7 +15,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     EnvValue,
-    ImagePullPolicy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -29,7 +28,6 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, egress
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -52,7 +50,6 @@ _PUSH = "/agentplane.history_service.RunnerIngress/Push"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -81,10 +78,7 @@ class HistoryService(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
-        migrate_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -154,18 +148,12 @@ class HistoryService(Construct):
             env_variables={env_name(Settings, "database_url"): database_url, **(container_env or {})},
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
+            startup=grpc_probe(port=endpoint.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            migrate=migrate_init_container(
-                "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
-                name="migrate",
-                env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url, **(migrate_env or {})},
-                image_pull_policy=migrate_pull_policy,
-                memory_limit=migrate_memory_limit,
-            ),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

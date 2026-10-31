@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
@@ -17,9 +16,6 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import Listener, listen_tcp
 
 _PROXY = get_required_path(own_repo_rlocation("agentplane/egress/cmd/egress-proxy_/egress-proxy"))
-_MIGRATOR = get_required_path(
-    own_repo_rlocation("agentplane/egress/history_migrations/cmd/egress-history-migrate_/egress-history-migrate")
-)
 _GRACE_SECONDS = 55
 
 
@@ -37,7 +33,7 @@ class GoReplica:
 
 @asynccontextmanager
 async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[GoReplica]:
-    """The Go proxy on `settings`, after the Goose migrator has taken over `settings.database_url`.
+    """The Go proxy on `settings`, with normal startup initializing `settings.database_url`.
 
     The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side
     gains without the other is rejected here rather than ignored.
@@ -47,12 +43,6 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
         .set(drivername="postgresql", query={"sslmode": "disable"})
         .render_as_string(hide_password=False)
     )
-    migrator = await asyncio.create_subprocess_exec(
-        _MIGRATOR, "--database-url", database_url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-    )
-    async with asyncio.timeout(60):
-        output, _ = await migrator.communicate()
-    assert migrator.returncode == 0, output.decode()
     with ExitStack() as listeners:
         proxy_listener = listeners.enter_context(listen_tcp())
         admin_listener = listeners.enter_context(listen_tcp())

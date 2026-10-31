@@ -1,6 +1,6 @@
 """Run the built Go History Service for consumer tests.
 
-The service runs on a database the Go migrator built. A consumer reads it through the Python
+The service initializes its database before serving. A consumer reads it through the Python
 `HistoryServiceClient` and writes it as a runner does, by pushing a journal to the ingress. A real
 API server answers the service's TokenReviews for real Pod-bound tokens.
 """
@@ -33,9 +33,6 @@ from util.testing.postgres import PostgresDatabaseTemplate
 # gazelle:include_dep @pypi//protobuf
 
 _SERVICE = get_required_path(own_repo_rlocation("agentplane/history_service/history-service_/history-service"))
-_MIGRATOR = get_required_path(
-    own_repo_rlocation("agentplane/history_service/migrations/cmd/history-migrate_/history-migrate")
-)
 _DATABASE_URL_ENV = "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"
 _CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 _GRACE_SECONDS = 10
@@ -61,9 +58,9 @@ def _go_database_url(database_url: str) -> str:
 
 
 def migrate_history_database(database_url: str) -> None:
-    """Bring a database to the History Service's schema with the Go migrator, as its init container does."""
+    """Bring a database to the History Service's schema with the serving binary's migration-only mode."""
     result = subprocess.run(
-        [_MIGRATOR],
+        [_SERVICE, "--migrate-only"],
         env={_DATABASE_URL_ENV: _go_database_url(database_url)},
         capture_output=True,
         text=True,
@@ -75,7 +72,7 @@ def migrate_history_database(database_url: str) -> None:
 
 @contextmanager
 def migrated_history_template(admin_url: str, template_name: str) -> Iterator[PostgresDatabaseTemplate]:
-    """A History database template the Go migrator built once, for tests that clone many History databases."""
+    """A History database template the serving binary initialized once, for tests that clone many History databases."""
     with PostgresDatabaseTemplate(admin_url, template_name) as template:
         migrate_history_database(template.url)
         yield template

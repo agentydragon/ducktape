@@ -44,7 +44,6 @@ py_test(
     srcs = ["test_proxy.py"],
     data = [
         "//agentplane/egress/cmd:egress-proxy",
-        "//agentplane/egress/history_migrations/cmd:egress-history-migrate",
         "//agentplane/egress/sidecar:egress-sidecar",
     ],
     requires_docker = True,

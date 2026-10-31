@@ -20,12 +20,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
+	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -115,6 +117,9 @@ func openListeners(c config) (net.Listener, net.Listener, error) {
 
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return err
+	}
 	kubeConfig, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -143,8 +148,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	if err != nil {
 		return err
 	}
-	// The migration init container owns the schema; the fold and the ingress write through their own pools, and
-	// the read API's never writes.
+	// Schema initialization precedes the runtime pools; the read API's pool never writes.
 	readURL, err := readOnly(c.DatabaseURL)
 	if err != nil {
 		return err
@@ -239,13 +243,20 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", migrations.Up); handled {
+		if err != nil {
+			slog.Error("History Service migration failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid History Service configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "history-service")
 	if err != nil {
 		slog.Error("History Service tracing setup failed", "error", err)

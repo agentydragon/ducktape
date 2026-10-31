@@ -1,24 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-
-pkg_tar(
-    name = "binary_layer",
-    srcs = ["//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_static_debian13_linux_amd64",
-    entrypoint = ["/usr/local/bin/runner-gateway-queue-migrate"],
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-    workdir = "/",
-)
 
 go_library(
     name = "migrations",
@@ -43,7 +24,7 @@ py_test(
     name = "test_migrations",
     size = "medium",
     srcs = ["test_migrations.py"],
-    data = ["//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate"],
+    data = ["//agentplane/runner_gateway:runner-gateway"],
     requires_docker = True,
     deps = [
         ":conftest",

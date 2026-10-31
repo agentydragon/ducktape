@@ -114,11 +114,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     for workload, migration in {
         "actions": "agentplane-action-service",
         "app": "agentplane-app-migrate",
-        "egress": "agentplane-egress-history-migrate",
-        "history-service": "agentplane-history-migrate",
-        "mcp-edge": "agentplane-mcp-edge-migrate",
         "notifications": "agentplane-notification-service",
-        "runner-gateway": "agentplane-runner-gateway-queue-migrate",
     }.items():
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")
@@ -150,9 +146,8 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
-    edge_migrator = edge_pod["initContainers"][0]
-    edge_migrator_env = {entry["name"]: entry for entry in edge_migrator["env"]}[edge_database_env_name]
-    assert edge_database_env["valueFrom"] == edge_migrator_env["valueFrom"]
+    assert not edge_pod.get("initContainers")
+    assert edge_container["startupProbe"]["failureThreshold"] == 60
     assert edge_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-mcp-edge"
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
@@ -169,15 +164,11 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         for mount in app_pod["containers"][0]["volumeMounts"]
     )
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    egress_migrator = next(container for container in egress_pod["initContainers"] if container["name"] == "migrate")
-    assert egress_migrator["image"] == fixture_chart.EGRESS_MIGRATOR_IMAGE
-    migrator_env = {entry["name"]: entry for entry in egress_migrator["env"]}
-    assert migrator_env["DATABASE_URL"]["valueFrom"] == proxy_env["AGENTPLANE_EGRESS_DATABASE_URL"]["valueFrom"]
-    assert "AGENTPLANE_EGRESS_DATABASE_URL" not in migrator_env
-    assert proxy_env["PGSSLMODE"]["value"] == migrator_env["PGSSLMODE"]["value"] == "disable"
+    assert not egress_pod.get("initContainers")
+    assert proxy_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        for container in (*pod_spec["containers"], *pod_spec["initContainers"]):
+        for container in (*pod_spec["containers"], *pod_spec.get("initContainers", [])):
             sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
             assert sslmode == "disable", (workload, container["name"])
 
@@ -189,12 +180,9 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
-    migrator = next(entry for entry in pod["initContainers"] if entry["name"] == "migrate")
-    assert migrator["image"] == fixture_chart.QUEUE_MIGRATOR_IMAGE
-    assert (
-        next(entry for entry in migrator["env"] if entry["name"] == "DATABASE_URL")["valueFrom"]
-        == database_env["valueFrom"]
-    )
+    assert not pod.get("initContainers")
+    assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-session-dispatcher"
+    assert container["startupProbe"]["failureThreshold"] == 60
     token_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
     token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
         "sources"
