@@ -876,6 +876,74 @@ fn partial_swap_rejects_island_registration_that_a_residual_reader_observes() {
     }
 }
 
+/// MobX's `var ObservableMap = (function () { … })()` shape: an island IIFE
+/// whose methods read retained state but never run at init.
+#[test]
+fn partial_swap_drops_island_iife_whose_uncalled_methods_read_retained_state() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = (function () { function Island() {} Island.prototype.peek = function () { return registry; }; return new Set([\"mouseout\"]); })();\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
+/// The island fills the registry through an alias it declares; the alias is
+/// dropped with the island, the registry it points at is not.
+#[test]
+fn partial_swap_rejects_island_registration_through_an_alias() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const view = registry;\n\
+         const all = new Set();\n\
+         function register(name) { view[name] = true; all.add(name); }\n\
+         register(\"onMouseEnter\");\n\
+         export const e6 = () => all.has(\"onMouseEnter\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "a registration through an alias must not be dropped\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("`registry`"),
+        "expected the retained registry named in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+/// The same IIFE calling a function it declares, which fills the registry a
+/// residual reader prints: that body runs at init, so the strip must refuse.
+#[test]
+fn partial_swap_rejects_island_iife_calling_its_own_registration() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = (function () { function fill(name) { registry[name] = true; } fill(\"onMouseEnter\"); return new Set([\"mouseout\"]); })();\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "the registration a residual reader observes must not be dropped\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("`registry`"),
+        "expected the retained registry named in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
 #[test]
 fn partial_swap_drops_original_package_island_with_local_mutations() {
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {

@@ -304,23 +304,45 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
-    /// Top-level bindings this statement's synchronous callees read or rebind:
-    /// the roots of any state a callee may mutate in place. `None` when
-    /// synchronous execution was not analyzed or could not summarize every
-    /// callee.
-    pub fn synchronous_callee_bindings(&self) -> Option<BTreeSet<Id>> {
-        let calls = self
-            .synchronous_calls
+    /// What one synchronous call of the function or class this statement
+    /// declares runs first-order (before nested closures and `await`):
+    /// a class runs its constructor. The view at-init call promotion uses.
+    pub fn first_order_reads(&self) -> &BTreeSet<Id> {
+        self.constructor
             .as_ref()
-            .filter(|calls| calls.complete)?;
-        Some(
-            calls
-                .reads
-                .iter()
-                .chain(&calls.rebinds)
-                .map(|(id, _)| id.clone())
-                .collect(),
-        )
+            .map_or(&self.reads.first_order_lazy, |ctor| &ctor.reads)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_rebinds(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.rebinds.first_order_lazy, |ctor| &ctor.rebinds)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_calls(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.calls.first_order_lazy, |ctor| &ctor.calls)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_unresolved_sources(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.first_order_unresolved_sources, |ctor| {
+                &ctor.unresolved_sources
+            })
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_unresolved_inline_fn(&self) -> bool {
+        self.constructor
+            .as_ref()
+            .map_or(self.first_order_unresolved_inline_fn, |ctor| {
+                ctor.unresolved_inline_fn
+            })
     }
 
     /// Per-statement (writes, reads) cell summary used by the

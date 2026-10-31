@@ -3431,12 +3431,14 @@ Value-flow call augmentation is required for its island reachability;
 `StatementFacts::effects()` supplies its observable binding and global-cell
 writes. Those cells cover a statement's own writes only, so the swap-privacy
 gate also asks which retained state the statement's callees may mutate in
-place: the bindings synchronous execution reports its callees reading or
-rebinding, or, when a callee was not summarized, the lexical reads reachable
-through dropped items and retained functions. A dropped statement reaching a
-retained non-function, non-primitive binding is not swap-private. Array and
-Set contents born in a dropped item are private: the residual never allocates
-them.
+place. Callees follow at-init call promotion's view (direct, never-rebound
+chunk functions run their first-order bodies; nested closures run only when
+handed to an unresolved call); what an unresolved call receives, and a chunk
+callee that is not a direct function, are followed through lexical reads. A
+dropped statement reaching a retained non-function, non-primitive binding is
+not swap-private. Array and Set contents born in a dropped item are private:
+the residual never allocates them. Synchronous execution is not run here: on a
+10 MB vendor chunk it costs over an hour.
 
 ### Swap equivalence is an author promise
 
