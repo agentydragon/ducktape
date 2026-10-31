@@ -76,7 +76,7 @@
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls
 # gazelle:resolve py skills.eval_infra.empty_skill.empty_skill_skill_spec //skills/eval_infra/empty_skill:empty_skill_skill_spec
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@image_pins//:pins.bzl", "RBE_CONTAINER_DIGEST", "RBE_CONTAINER_IMAGE")
@@ -162,6 +162,16 @@ js_library(
         ":node_modules/globals",
         ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
     ],
+)
+
+js_test(
+    name = "eslint_config_guard_test",
+    data = [
+        ":eslintrc",
+        ":node_modules/eslint",
+        ":package.json",
+    ],
+    entry_point = "eslint_config_guard.test.mjs",
 )
 
 # Prettier configuration as js_library
