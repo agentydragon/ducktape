@@ -18,7 +18,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_HISTORY_EXPORT`, `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                                                               |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_HISTORY_EXPORT`, `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                             |
 | P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                         |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
@@ -103,13 +103,13 @@ with preserved history, partial output and external-effect evidence, supported r
 generation fencing. Same-privilege Session spawning remains under stakeholder discussion and is
 not dispatched.
 
-| Owner                     | Scope                                                                             | Current state                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `/root/usable_rollout`    | Planned drain implementation; broader ownership and sampling-recovery contract    | In flight: bounded drain selected; sampling-abandonment contract under review                 |
-| `/root/usable_tools`      | `CENTRAL_SAMPLER_TOOL_RECOVERY`: tool failures and agent-visible partial output   | In flight: adopt #13033 maintenance and repair the observed-output error boundary             |
-| `/root/usable_acceptance` | Assembled-system acceptance for the selected rollout and tool contracts           | Prior draft #13246 remains optional; nested K3s two-replica roll gate is waived                  |
-| `/root/history_export_integration` | Concurrent History export correctness                                               | In flight, 2026-10-31 PDT: two independent exporters on shared PostgreSQL and real History     |
-| `/root`                   | Cross-lane domain-contract review, integration, DAG status and rollout sequencing | In flight                                                                                     |
+| Owner                              | Scope                                                                             | Current state                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `/root/usable_rollout`             | Planned drain implementation; broader ownership and sampling-recovery contract    | In flight: bounded drain selected; sampling-abandonment contract under review              |
+| `/root/usable_tools`               | `CENTRAL_SAMPLER_TOOL_RECOVERY`: tool failures and agent-visible partial output   | In flight: adopt #13033 maintenance and repair the observed-output error boundary          |
+| `/root/usable_acceptance`          | Assembled-system acceptance for the selected rollout and tool contracts           | Prior draft #13246 remains optional; nested K3s two-replica roll gate is waived            |
+| `/root/history_export_integration` | Concurrent History export correctness                                             | In flight, 2026-10-31 PDT: two independent exporters on shared PostgreSQL and real History |
+| `/root`                            | Cross-lane domain-contract review, integration, DAG status and rollout sequencing | In flight                                                                                  |
 
 Start with the rollout deadline/recovery decision and the tool-failure evidence inventory. Review
 existing work in [#13033](https://github.com/agentydragon/ducktape/pull/13033),
