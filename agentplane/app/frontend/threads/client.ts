@@ -1,4 +1,4 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import type {
   EvidencePage,
@@ -10,6 +10,7 @@ import type {
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import {
+  DeliveryState,
   DispatchSchema,
   InterruptTurnResponseSchema,
   type Dispatch,
@@ -142,20 +143,52 @@ export async function threadNativeFrames(
 /** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
 export class CommandSubmissionRefused extends Error {}
 
+export type UnknownDispatchState = { unknown: number };
+export type DispatchReceipt = Omit<Dispatch, "state"> & { state: Dispatch["state"] | UnknownDispatchState };
+
+export function isUnknownDispatchState(value: unknown): value is UnknownDispatchState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    "unknown" in value &&
+    typeof value.unknown === "number" &&
+    Number.isInteger(value.unknown)
+  );
+}
+
+function isKnownDeliveryState(value: number): boolean {
+  return Object.prototype.hasOwnProperty.call(DeliveryState, value);
+}
+
 export type CommandSubmission =
   | { kind: "archived_admission"; admission: EventEntry }
-  | { kind: "dispatch"; dispatch: Dispatch }
+  | { kind: "dispatch"; dispatch: DispatchReceipt }
   | { kind: "interrupt_result"; result: InterruptTurnResponse };
 
-export function dispatchFromJson(value: unknown): Dispatch {
+export function dispatchFromJson(value: unknown): DispatchReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid Dispatch");
   }
   const row = value as Record<string, unknown>;
-  if (typeof row.commandId !== "string" || typeof row.sessionId !== "string" || typeof row.state !== "string") {
+  if (typeof row.commandId !== "string" || typeof row.sessionId !== "string") {
     throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
   }
-  return fromJson(DispatchSchema, value as JsonValue);
+  const state = isUnknownDispatchState(row.state) ? row.state.unknown : row.state;
+  if (typeof state !== "string" && typeof state !== "number") {
+    throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
+  }
+  const dispatch = fromJson(DispatchSchema, { ...row, state } as JsonValue);
+  if (typeof dispatch.state === "number" && !isKnownDeliveryState(dispatch.state)) {
+    return { ...dispatch, state: { unknown: dispatch.state } };
+  }
+  return dispatch;
+}
+
+export function dispatchToJson(value: DispatchReceipt): JsonValue {
+  const state = isUnknownDispatchState(value.state) ? value.state.unknown : value.state;
+  return toJson(DispatchSchema, { ...value, state } as Dispatch);
 }
 
 function interruptTurnResponse(value: unknown): InterruptTurnResponse {
