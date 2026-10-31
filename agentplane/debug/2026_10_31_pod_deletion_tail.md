@@ -47,8 +47,19 @@ stopped the relay. Thus the old sample cannot establish a remaining
 native child grace problem. The Runner supervisor's five-second child
 grace is a separate safety fence and should not be changed from these data.
 
+The fresh, uncached filtered Pod storage case passed on current `devel`
+with the ordered relay in
+[`a8bdfa6f-dd8e-4848-a4dd-a335e127cafa`](https://app.buildbuddy.io/invocation/a8bdfa6f-dd8e-4848-a4dd-a335e127cafa).
+The real `test_fresh_workspace_storage_survives_replacement` case took
+20.38 seconds. Its first suspend took 2.96 seconds; final cleanup took
+3.44 seconds, including 3.07 seconds for suspend and 0.15 seconds for
+the Sandbox delete request. Containerd recorded both Runner exits in
+0.091 and 0.101 seconds; in each incarnation kubelet signaled the
+egress relay afterward. The old five-second Runner shutdown mode did
+not recur. This one selected case is evidence for the ordered lifecycle,
+not a population estimate for all 19 cleanup cases in the earlier suite.
+
 No timeout, force kill, finalizer, UID check, or volume-release barrier
-should change based on this result. A fresh filtered Pod storage run on
-current `devel` is needed to measure the remaining deletion tail after
-the ordered relay fix; compare its physical Pod and volume cleanup
-timestamps before proposing another lifecycle change.
+should change based on this result. The remaining roughly three-second
+storage-case cleanup includes real Pod termination and volume release;
+the trace does not justify a further control-plane change.
