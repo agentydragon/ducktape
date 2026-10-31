@@ -16,6 +16,7 @@ import time
 import urllib.parse
 from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -206,6 +207,7 @@ REPO_URL = "https://github.com/agentydragon/ducktape"
 
 INVOCATION_WAIT_SECONDS = 300
 INVOCATION_POLL_SECONDS = 2
+S3_IMAGE_UPLOAD_WORKERS = 8
 
 
 def search_ci_test_invocations(
@@ -644,14 +646,30 @@ def _classify_test_assets(
         return destination
 
     for asset in test.manifest.assets:
-        if asset.path not in baseline_by_path:
+        baseline_asset = baseline_by_path.get(asset.path)
+        if baseline_asset is None:
             enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
             continue
+        candidate_path = test.directory / asset.path
+        if baseline_asset.candidate_sha256 is not None:
+            candidate_digest = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+            if candidate_digest == baseline_asset.candidate_sha256:
+                # The baseline metadata identifies these exact bytes. Keep the
+                # candidate so upload_bundle can heal a missing shared object.
+                enriched.append(
+                    ReviewAsset(
+                        path=asset.path,
+                        label=asset.label,
+                        candidate_sha256=candidate_digest,
+                        classification="unchanged",
+                    )
+                )
+                continue
         baseline_png = materialize_baseline(asset.path)
         if baseline_png is None:
             enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
             continue
-        comparison = compare_pngs(test.directory / asset.path, baseline_png)
+        comparison = compare_pngs(candidate_path, baseline_png)
         if comparison.classification == "unchanged":
             baseline_png.unlink()
             enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="unchanged"))
@@ -683,10 +701,10 @@ def _classify_test_assets(
     return enriched
 
 
-def _share_png(image: Path, output_root: Path) -> str | None:
+def _share_png(image: Path, output_root: Path, *, known_digest: str | None = None) -> str | None:
     if not image.is_file():
         return None
-    digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    digest = known_digest or hashlib.sha256(image.read_bytes()).hexdigest()
     destination = output_root / _image_key(digest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
@@ -737,7 +755,9 @@ def build_bundle(
         else:
             assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
         for review_asset in assets:
-            review_asset.candidate_sha256 = _share_png(target_dir / review_asset.path, output_root)
+            review_asset.candidate_sha256 = _share_png(
+                target_dir / review_asset.path, output_root, known_digest=review_asset.candidate_sha256
+            )
             review_asset.baseline_sha256 = _share_png(target_dir / "baseline" / review_asset.path, output_root)
             review_asset.diff_sha256 = _share_png(target_dir / "diff" / review_asset.path, output_root)
         review_test = ReviewTest(
@@ -781,6 +801,28 @@ def build_bundle(
     return bundle
 
 
+def _upload_shared_image(s3: Any, *, bundle: Path, bucket: str, digest: str, cache_control: str) -> None:
+    image_key = _image_key(digest)
+    try:
+        s3.head_object(Bucket=bucket, Key=image_key)
+        return
+    except ClientError as error:
+        if not _is_not_found(error):
+            raise
+    try:
+        s3.put_object(
+            Bucket=bucket,
+            Key=image_key,
+            Body=(bundle.parent.parent / image_key).read_bytes(),
+            ContentType="image/png",
+            CacheControl=cache_control,
+            IfNoneMatch="*",
+        )
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") != "PreconditionFailed":
+            raise
+
+
 def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client: Any | None = None) -> None:
     s3 = client or boto3.client("s3", endpoint_url=endpoint)
     prefix = key.strip("/")
@@ -793,26 +835,23 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
         if digest is not None
     }
-    for digest in sorted(digests):
-        image_key = _image_key(digest)
-        try:
-            s3.head_object(Bucket=bucket, Key=image_key)
-            continue
-        except ClientError as error:
-            if not _is_not_found(error):
-                raise
-        try:
-            s3.put_object(
-                Bucket=bucket,
-                Key=image_key,
-                Body=(bundle.parent.parent / image_key).read_bytes(),
-                ContentType="image/png",
-                CacheControl=cache_control,
-                IfNoneMatch="*",
+    failures: list[Exception] = []
+    with ThreadPoolExecutor(max_workers=S3_IMAGE_UPLOAD_WORKERS) as executor:
+        futures = [
+            executor.submit(
+                _upload_shared_image, s3, bundle=bundle, bucket=bucket, digest=digest, cache_control=cache_control
             )
-        except ClientError as error:
-            if error.response.get("Error", {}).get("Code") != "PreconditionFailed":
-                raise
+            for digest in sorted(digests)
+        ]
+        # Drain every task before deciding whether review metadata may publish.
+        # This keeps the index barrier intact even when image requests fail.
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as error:
+                failures.append(error)
+    if failures:
+        raise failures[0]
     paths = sorted(
         bundle.rglob("*"), key=lambda path: (path.name == "index.html", path == bundle / "index.html", path.as_posix())
     )

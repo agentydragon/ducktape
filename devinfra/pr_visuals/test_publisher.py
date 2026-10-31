@@ -6,6 +6,7 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Event, Lock, Thread
 from typing import Any, NoReturn
 
 import pytest
@@ -17,6 +18,7 @@ from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     COMMENT_MARKER,
+    S3_IMAGE_UPLOAD_WORKERS,
     BaselinePointer,
     ClassificationCounts,
     DownloadedVisualTest,
@@ -1251,6 +1253,220 @@ def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
     ):
         assert f"https://s3.test/visuals/assets/{by_path[path][f'{variant}_sha256']}.png" in comment
     assert f"tests/{slug}/index.html#changed.png" in comment
+
+
+def test_exact_candidate_digest_skips_baseline_read_and_upload_heals_missing_image(tmp_path: Path) -> None:
+    slug = target_slug("//ex:visuals")
+    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
+    head_sha = "0123456789abcdef0123456789abcdef01234567"
+    source_test = _single_asset_test(tmp_path / "candidate")
+    candidate_bytes = (source_test.directory / "screen.png").read_bytes()
+    digest = hashlib.sha256(candidate_bytes).hexdigest()
+
+    class RecordingBaselineSource:
+        def __init__(self) -> None:
+            self.fetches: list[str] = []
+
+        def fetch(self, key: str) -> bytes | None:
+            self.fetches.append(key)
+            if key == f"reviews/{base_sha}/tests/{slug}/metadata.json":
+                return json.dumps(
+                    {"assets": [{"path": "screen.png", "label": "screen", "candidate_sha256": digest}]}
+                ).encode()
+            return None
+
+    baseline_source = RecordingBaselineSource()
+    output_root = tmp_path / "site"
+    bundle = build_bundle(
+        [source_test],
+        output_root,
+        commit_sha=head_sha,
+        repository="r",
+        base_sha=base_sha,
+        baseline_source=baseline_source,
+    )
+
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    asset = metadata.tests[0].assets[0]
+    assert asset.classification == "unchanged"
+    assert asset.candidate_sha256 == digest
+    assert f"assets/{digest}.png" not in baseline_source.fetches
+    assert (output_root / "assets" / f"{digest}.png").read_bytes() == candidate_bytes
+
+    client = PublishedObjects()
+    upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key=f"reviews/{head_sha}", client=client)
+    assert client.objects[f"assets/{digest}.png"] == candidate_bytes
+
+
+def test_digest_fast_path_preserves_legacy_missing_and_pixel_equivalent_baselines(tmp_path: Path) -> None:
+    slug = target_slug("//ex:visuals")
+    base_sha = "fedcba9876543210fedcba9876543210fedcba98"
+    head_sha = "0123456789abcdef0123456789abcdef01234567"
+    candidate_dir = tmp_path / "candidate"
+    candidate_dir.mkdir()
+    exact_bytes = _png(candidate_dir / "exact.png").read_bytes()
+    _png(candidate_dir / "legacy.png", (30, 40, 50, 255))
+    encoded_baseline = tmp_path / "encoded-baseline.png"
+    encoded_candidate = candidate_dir / "encoded.png"
+    Image.new("RGBA", (8, 8), (10, 20, 30, 255)).save(encoded_baseline, compress_level=0)
+    Image.new("RGBA", (8, 8), (10, 20, 30, 255)).save(encoded_candidate, compress_level=9)
+    baseline_bytes = encoded_baseline.read_bytes()
+    candidate_encoded_bytes = encoded_candidate.read_bytes()
+    assert baseline_bytes != candidate_encoded_bytes
+    exact_digest = hashlib.sha256(exact_bytes).hexdigest()
+    baseline_encoded_digest = hashlib.sha256(baseline_bytes).hexdigest()
+    manifest = VisualReviewManifest.model_validate(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": "Ex",
+            "assets": [
+                {"path": "exact.png", "label": "exact"},
+                {"path": "legacy.png", "label": "legacy"},
+                {"path": "encoded.png", "label": "encoded"},
+            ],
+        }
+    )
+    test = DownloadedVisualTest("//ex:visuals", slug, manifest, candidate_dir)
+
+    class RecordingBaselineSource:
+        def __init__(self) -> None:
+            self.fetches: list[str] = []
+
+        def fetch(self, key: str) -> bytes | None:
+            self.fetches.append(key)
+            if key == f"reviews/{base_sha}/tests/{slug}/metadata.json":
+                return json.dumps(
+                    {
+                        "assets": [
+                            {"path": "exact.png", "label": "exact", "candidate_sha256": exact_digest},
+                            {"path": "legacy.png", "label": "legacy"},
+                            {"path": "encoded.png", "label": "encoded", "candidate_sha256": baseline_encoded_digest},
+                        ]
+                    }
+                ).encode()
+            if key == f"assets/{baseline_encoded_digest}.png":
+                return baseline_bytes
+            return None
+
+    baseline_source = RecordingBaselineSource()
+    bundle = build_bundle(
+        [test],
+        tmp_path / "site",
+        commit_sha=head_sha,
+        repository="r",
+        base_sha=base_sha,
+        baseline_source=baseline_source,
+    )
+
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    assets = {asset.path: asset for asset in metadata.tests[0].assets}
+    assert assets["exact.png"].classification == "unchanged"
+    assert assets["legacy.png"].classification == "new"
+    assert assets["encoded.png"].classification == "unchanged"
+    assert f"assets/{exact_digest}.png" not in baseline_source.fetches
+    assert f"assets/{baseline_encoded_digest}.png" in baseline_source.fetches
+
+
+def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_path: Path) -> None:
+    source_dir = tmp_path / "candidate"
+    source_dir.mkdir()
+    assets: list[dict[str, str]] = []
+    for index in range(8):
+        path = f"screen-{index}.png"
+        _png(source_dir / path, (index, 20, 30, 255))
+        assets.append({"path": path, "label": path})
+    manifest = VisualReviewManifest.model_validate(
+        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": assets}
+    )
+    test = DownloadedVisualTest("//ex:visuals", target_slug("//ex:visuals"), manifest, source_dir)
+    bundle = build_bundle([test], tmp_path / "site", commit_sha="a" * 40, repository="r")
+
+    class BlockingS3(PublishedObjects):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = Event()
+            self.release = Event()
+            self.lock = Lock()
+            self.active = 0
+            self.max_active = 0
+
+        def head_object(self, **kwargs: str) -> dict[str, int]:
+            with self.lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                if self.active >= 2:
+                    self.started.set()
+            if not self.release.wait(timeout=5):
+                raise TimeoutError("test did not release blocked image checks")
+            with self.lock:
+                self.active -= 1
+            return {"ContentLength": 1}
+
+    client = BlockingS3()
+    failures: list[Exception] = []
+
+    def publish() -> None:
+        try:
+            upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/a", client=client)
+        except Exception as error:
+            failures.append(error)
+
+    publisher_thread = Thread(target=publish)
+    publisher_thread.start()
+    try:
+        assert client.started.wait(timeout=2), "image checks did not overlap"
+    finally:
+        client.release.set()
+    publisher_thread.join(timeout=10)
+
+    assert not publisher_thread.is_alive()
+    assert failures == []
+    assert 2 <= client.max_active <= S3_IMAGE_UPLOAD_WORKERS
+    first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
+    assert all(not key.endswith("index.html") for key in client.events[:first_index])
+    assert client.events[-1] == "reviews/a/index.html"
+
+
+def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp_path: Path) -> None:
+    source_dir = tmp_path / "candidate"
+    source_dir.mkdir()
+    assets: list[dict[str, str]] = []
+    for index in range(4):
+        path = f"screen-{index}.png"
+        _png(source_dir / path, (index, 20, 30, 255))
+        assets.append({"path": path, "label": path})
+    manifest = VisualReviewManifest.model_validate(
+        {"schema": "ducktape.visual-review.v1", "title": "Ex", "assets": assets}
+    )
+    test = DownloadedVisualTest("//ex:visuals", target_slug("//ex:visuals"), manifest, source_dir)
+    bundle = build_bundle([test], tmp_path / "site", commit_sha="a" * 40, repository="r")
+    metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
+    image_keys = {
+        f"assets/{asset.candidate_sha256}.png"
+        for review_test in metadata.tests
+        for asset in review_test.assets
+        if asset.candidate_sha256 is not None
+    }
+    failed_key = min(image_keys)
+
+    class OneFailureS3(PublishedObjects):
+        def __init__(self) -> None:
+            super().__init__()
+            self.head_calls: list[str] = []
+
+        def head_object(self, **kwargs: str) -> dict[str, int]:
+            key = kwargs["Key"]
+            self.head_calls.append(key)
+            if key == failed_key:
+                raise ClientError({"Error": {"Code": "AccessDenied"}}, "HeadObject")
+            return {"ContentLength": 1}
+
+    client = OneFailureS3()
+    with pytest.raises(ClientError, match="HeadObject"):
+        upload_bundle(bundle, endpoint="https://s3.test", bucket="visuals", key="reviews/a", client=client)
+
+    assert set(client.head_calls) == image_keys
+    assert client.events == []
 
 
 def _single_asset_test(directory: Path, label: str = "//ex:visuals") -> DownloadedVisualTest:

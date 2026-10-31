@@ -72,8 +72,11 @@ Per target, first hit wins:
 4. retained pointer `baselines/<slug>.json`;
 5. none → every asset is `new`.
 
-- Metadata records SHA-256 of candidate, Before, and diff PNGs; digest-less baselines
-  resolve their candidate PNG from the retained commit bundle. The `reviews/` and
+- Metadata records SHA-256 of candidate, Before, and diff PNGs. When candidate bytes
+  match the baseline's recorded candidate digest, classification skips the baseline
+  PNG read and pixel decode; digest-less or differently encoded images retain the
+  baseline-download and pixel-comparison path. Digest-less baselines resolve their
+  candidate PNG from the retained commit bundle. The `reviews/` and
   `baselines/reviews/` prefixes isolate overlapping publisher jobs on different
   released wheels: old jobs keep the old layout, and old URLs stay valid.
 - Devel pushes publish every re-executed target's artifacts even when an unrelated
@@ -105,9 +108,11 @@ Per target, first hit wins:
   commits, and candidate/Before/diff roles; review pages, styles, scripts, and
   metadata at `reviews/<sha>/`.
 - Missing images are uploaded with `PutObject` + `If-None-Match: *`, so concurrent
-  publishers can't replace a shared image. Order: every referenced image, then review
-  metadata and pages, then the aggregate gallery index last. A failed image upload
-  blocks review publication and pointer advancement.
+  publishers can't replace a shared image. Shared-image existence checks and uploads
+  run with a fixed worker limit; all finish before review metadata or pages upload.
+  Order: every referenced image, then review metadata and pages, then the aggregate
+  gallery index last. A failed image upload blocks review publication and pointer
+  advancement.
 - Existing commit bundles are not migrated.
 
 ## Released commands
