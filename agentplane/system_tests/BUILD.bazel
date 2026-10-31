@@ -398,6 +398,7 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
