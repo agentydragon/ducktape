@@ -391,7 +391,6 @@ go_library(
     deps = [
         ":sampler_go_proto",
         "//agentplane/executor:executor_go_proto",
-        "//agentplane/executor/rpcerrors",
         "//agentplane/grpc/bearer",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/postgres/go:postgres",
@@ -456,7 +455,6 @@ go_test(
     deps = [
         ":sampler_go_proto",
         "//agentplane/executor:executor_go_proto",
-        "//agentplane/executor/rpcerrors",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/history_service/threadfold",
         "//agentplane/postgres/go/wakeups",

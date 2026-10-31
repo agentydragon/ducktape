@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -38,76 +37,6 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		t.Fatal(err)
 	}
 	return session
-}
-
-func TestKnownNotDispatchedInitializationSettlesPendingToolOnlyWithoutOtherUncertainty(t *testing.T) {
-	for _, liveProcess := range []bool{false, true} {
-		name := "no other uncertain effect"
-		if liveProcess {
-			name = "live process remains uncertain"
-		}
-		t.Run(name, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
-			if err != nil {
-				t.Fatal(err)
-			}
-			call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "init-call", Name: "exec", Input: "text(1)", ID: "init-item"}
-			if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
-				t.Fatal(err)
-			}
-			if liveProcess {
-				if err := store.RegisterProcess(t.Context(), owner, "independent-live-process", false); err != nil {
-					t.Fatal(err)
-				}
-			}
-			failure := &protocol.KnownFailureError{Evidence: map[string]any{"reason": rpcerrors.OpenSessionNotDispatchedReason}}
-			if err := store.FailExecution(t.Context(), owner, session.ID, nil, failure); err != nil {
-				t.Fatal(err)
-			}
-			observed, err := store.GetSession(t.Context(), session.ID, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if observed.Blocked != liveProcess {
-				t.Fatalf("session blocked=%t, want %t", observed.Blocked, liveProcess)
-			}
-			conversation, err := store.Read(t.Context(), owner)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pending, err := conversation.Archive.PendingCalls()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if want := 0; liveProcess {
-				want = 1
-				if len(pending) != want {
-					t.Fatalf("pending archive calls=%v, want %d while another effect is uncertain", pending, want)
-				}
-			} else if len(pending) != 0 {
-				t.Fatalf("known-not-dispatched failure left archive calls pending: %v", pending)
-			}
-			if !liveProcess {
-				items := responsesItems(t, conversation.Archive)
-				if len(items) != 2 || items[1].Type != responses.ItemCustomToolOutput || items[1].CallID != call.CallID {
-					t.Fatalf("not-dispatched tool call response=%#v", items)
-				}
-				assertToolResultSucceeded(t, store, owner, call.CallID, false)
-				if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-					CommandId: "next-turn",
-					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}},
-				}, "fixture-account", nil); err != nil {
-					t.Fatalf("session did not accept a new turn after the known pre-dispatch failure: %v", err)
-				}
-			}
-		})
-	}
 }
 
 func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {

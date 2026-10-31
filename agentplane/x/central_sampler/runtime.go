@@ -526,7 +526,7 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 	}
 	setupCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 	defer cancel()
-	executor, closeTransport, err := ConnectExecutor(setupCtx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := NewExecutor(setupCtx, r.store, owner, session, r.settings)
 	if err != nil {
 		if ctx.Err() == nil {
 			finishCtx, finishCancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -589,7 +589,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 	if err != nil {
 		return nil, err
 	}
-	executor, closeTransport, err := ConnectExecutor(ctx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := NewExecutor(ctx, r.store, owner, session, r.settings)
 	if err != nil {
 		return nil, err
 	}

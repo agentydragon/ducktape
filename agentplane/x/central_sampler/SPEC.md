@@ -41,14 +41,24 @@ V1 fixes the binding and does not expose executor replacement.
 
 The executor `OpenSession` initialization handshake has its own positive
 `executor_initialize_timeout_seconds` setting, defaulting to 30 seconds independently of
-`rpc_timeout_seconds`. A timeout cancels the stream and records the initialization outcome as
-unknown; it does not claim that the executor did not initialize.
-Gateway admission failures carry structured `ErrorInfo` only when `OpenSession` failed in
-`executionConnection` before forwarding to Runner. The sampler records that initialization as
-rejected with `dispatch_state: not_dispatched`, fails the active turn, and returns any pending
-model tool calls with a not-run result. It leaves the session available only when no other
-unresolved effect or live handle exists. Generic gRPC errors, including `Unavailable`, remain
-unknown, and the sampler does not retry the failed initialization.
+`rpc_timeout_seconds`. The Code Mode host binding does not depend on executor reachability:
+attaching the JavaScript host does not open an executor stream. The sampler lazily acquires or
+resumes that stream when a command, patch, configured setup script, or other executor RPC needs it.
+Workspace creation is likewise deferred until `exec_command`, `apply_patch`, or configured setup
+needs the working directory.
+
+An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
+the requested nested operation is returned as a catchable JavaScript tool error when it was not
+dispatched; an unknown initialization result remains unknown in the journal. It does not by itself
+block the Session or poison the Code Mode host binding. A later explicit executor tool call may
+open a new empty native session if no ID was retained, or retry a resume if one was retained. An
+uncertain first open may leave an empty native session until Codex's normal 30-second
+detached-session expiry; no requested command was sent by that failed call. When a native session ID
+is retained, reconnect must resume that exact ID under the original Sandbox incarnation fence. The sampler never substitutes a fresh native
+session for a failed or ambiguous resume. Fresh-session substitution is allowed only after the
+documented definitive-loss rejection and complete native evidence are durably recorded; the
+operation that found the lost session is not dispatched, affected process handles are abandoned,
+and the model is notified before later operations can use the fresh session.
 
 Non-empty setup scripts (at most 65,536 UTF-8 bytes) execute once through the bound exec-server
 with `/bin/sh -eu -c`, before any provider request or queued command. Setup stdout and stderr
@@ -79,10 +89,10 @@ and `wait`, yielded process handles, stdin and external interrupts use the pinne
 If `process/read` loses its transport after observing output, its nested tool promise rejects with a
 JSON rejection string containing the original failure, `remote_outcome: unknown`,
 `automatic_replay: false`, the last observed `after_seq` cursor, process and executor intent IDs,
-and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte counts distinguish
+where available, and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte counts distinguish
 bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
-retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents` by its
-payload `intent_id`. The process remains abandoned and no exit is inferred. Other nested failures
+retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents`;
+correlate by process ID and the executor intent ID when available. The process remains abandoned and no exit is inferred. Other nested failures
 retain their ordinary string messages. Large result records use the normal `record_id` and
 `fragment_index` reassembly contract.
 
@@ -279,22 +289,26 @@ error is emitted before it starts a cell, so the result records that no executio
 later `execute/initialResponse` phase remain operational. An explicit wait or terminate error does not
 establish whether the request had effects: it leaves the observed cell state unchanged and reports neither
 a successful observation nor a confirmed termination. Missing replies, transport loss, malformed or
-unknown response statuses, missing error messages, and journal/store failures remain operational failures.
-Unresolved transport loss, streams without a terminal response and uncertain execution remain
-blocking failures. A transport failure in a nested executor call is instead returned as a rejected
-JavaScript tool promise with the exec-server method, intent ID and process ID where available. Its
-intent result records `remote_outcome: unknown` and `automatic_replay: false`; its process row is
-marked `abandoned`, retaining observed output and exit-code evidence without claiming the remote
-process exited. Abandoned handles are excluded from scheduling and global blocking but remain
-inspectable; `write_stdin` rejects them before sending input. JavaScript may catch the rejection and
-continue, or an uncaught rejection produces the normal `Script failed` result for the model to handle.
-Before a later executor operation, the broker reconnects under the original Sandbox incarnation
-fence and resumes the same retained exec-server session. If resume fails, that initialize intent is
-also settled as unknown and the requested operation is rejected as not dispatched. Only cursor-based
-`process/read` may be retried within the original call, because it does not consume remote output.
-If idle process reconciliation encounters a transport failure while reading a handle, it also marks
-that process abandoned with its last observed cursor and buffered output, then lets the scheduler
-continue.
+unknown response statuses, missing error messages, and journal/store failures for Code Mode host
+operations remain operational failures. Executor reachability and individual executor outcomes are
+scoped to the requested nested tool. An initial connection or reconnect failure rejects that tool
+promise and records the initialization intent separately; it does not stop the JavaScript cell or
+block the Session by itself. When a typed executor operation has an unknown outcome, its nested tool
+promise is also rejected with the method, intent ID, and process ID where available. Its result
+records `remote_outcome: unknown` and `automatic_replay: false`; an affected process is marked
+`abandoned`, retaining its last read cursor and observed output without claiming it exited.
+Abandoned handles are excluded from scheduling and global blocking but remain inspectable;
+`write_stdin` rejects them before sending input. JavaScript may catch the rejection and continue, or
+an uncaught rejection produces the normal `Script failed` result for the model to handle.
+
+After an ordinary connection failure, a later explicit executor tool call may reconnect under the
+original Sandbox incarnation fence and resume the same retained exec-server session. The failed
+call itself is never replayed. Only cursor-based `process/read` may be retried within its original
+call, because it does not consume remote output. If idle process reconciliation encounters a
+transport failure while reading a handle, it marks that process abandoned with its last observed
+cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
+native frames, or ownership state remain operational failures rather than catchable remote tool
+errors.
 Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
 or non-image files reject the cell's tool promise with upstream's message and resolve the intent.
 Its reads and result journal digests, not image bytes. Images a cell emits are prepared like upstream
@@ -309,10 +323,11 @@ process until `process/read` reports closed streams and an empty output page, pr
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
 releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
-including after the old executor session expires. Unresolved outcomes block continuation without
-advancing the retained read cursor. An abandoned process keeps its last observed cursor and buffered
-output for inspection, but retains no runtime slot. Truly running processes and live JS cells retain a
-runtime slot.
+including after the old executor session expires. The sampler never advances a read cursor until
+the corresponding page is durably recorded. Once an uncertain process operation is settled as abandoned,
+that operation does not by itself block continuation. An abandoned process keeps its last observed
+cursor and buffered output for inspection, but retains no runtime slot. Truly running processes and
+live JS cells retain a runtime slot.
 
 A transport failure during cursor-based `process/read` permits one reconnect and retry within the
 call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
@@ -343,7 +358,10 @@ for later tool calls; uncaught JavaScript promise rejections still follow the no
 behavior.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
-points operators to the linked boundary evidence. An authenticated caller for the same account can
+points operators to the linked boundary evidence. Ordinary executor connection or operation
+uncertainty is settled at its tool boundary and does not by itself block a Session. Existing blocked
+Sessions remain blocked until explicitly reviewed and recovered; this contract does not clear them.
+An authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
 to abandon a blocked cell/runtime failure. Its transaction locks the conversation before its session
 and requires an expired owner lease and an exact cursor match. It supports all unresolved cell,

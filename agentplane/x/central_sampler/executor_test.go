@@ -16,7 +16,6 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
 	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -120,72 +119,6 @@ func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestExecutorInitializationRequiresGatewayEvidenceToSettleNotDispatched(t *testing.T) {
-	if rpcerrors.IsOpenSessionNotDispatched(nil) {
-		t.Fatal("nil error matched OpenSession not-dispatched evidence")
-	}
-	marked := rpcerrors.WithOpenSessionNotDispatched(status.Error(codes.Unavailable, "routing unavailable"))
-	for _, tc := range []struct {
-		name      string
-		err       error
-		wantKnown bool
-	}{
-		{name: "Gateway admission detail", err: marked, wantKnown: true},
-		{name: "generic unavailable", err: status.Error(codes.Unavailable, "routing unavailable")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			store, owner := claimedExecutorStore(t)
-			var sessionID string
-			if err := store.DB().QueryRowContext(t.Context(), `SELECT id FROM sampler_session WHERE conversation_id=$1`, owner.ConversationID).Scan(&sessionID); err != nil {
-				t.Fatal(err)
-			}
-			client := &fakeExecutionClient{}
-			client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-				return failedExecutorStream{err: tc.err}, nil
-			}
-			executor := newFakeExecutor(t, store, owner, client)
-			err := executor.openSession(t.Context(), nil)
-			if tc.wantKnown {
-				var known *protocol.KnownFailureError
-				if !errors.As(err, &known) || errors.As(err, new(*executorTransportError)) {
-					t.Fatalf("marked Gateway error=%v, want a known failure", err)
-				}
-				if known.Evidence["dispatch_state"] != "not_dispatched" {
-					t.Fatalf("known failure evidence=%+v", known.Evidence)
-				}
-			} else if !errors.As(err, new(*executorTransportError)) || errors.As(err, new(*protocol.KnownFailureError)) {
-				t.Fatalf("generic Unavailable=%v, want unknown transport failure", err)
-			}
-			if err := store.FailExecution(t.Context(), owner, sessionID, nil, err); err != nil {
-				t.Fatal(err)
-			}
-			session, err := store.GetSession(t.Context(), sessionID, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if session.Blocked != !tc.wantKnown {
-				t.Fatalf("session blocked=%t, want %t", session.Blocked, !tc.wantKnown)
-			}
-			var raw []byte
-			if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize'`, owner.ConversationID).Scan(&raw); err != nil {
-				t.Fatal(err)
-			}
-			var result map[string]any
-			if err := json.Unmarshal(raw, &result); err != nil {
-				t.Fatal(err)
-			}
-			if tc.wantKnown {
-				if result["outcome"] != "rejected" || result["dispatch_state"] != "not_dispatched" {
-					t.Fatalf("known initialization result=%+v", result)
-				}
-			} else if result["remote_outcome"] != "unknown" {
-				t.Fatalf("generic initialization result=%+v", result)
-			}
-			assertNoUnresolvedNestedIntents(t, store, owner)
-		})
-	}
 }
 
 func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
@@ -900,9 +833,8 @@ func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T
 	}}
 	frameErr := errors.New("native response frame persistence failed")
 	err = executor.finishOpenFailure(t.Context(), intent, response, frameErr)
-	var rejected *executorRejectedError
-	if !errors.As(err, &rejected) || rejected.recorded || isDefinitiveLostExecutorSession(rejected, "retained-executor") {
-		t.Fatalf("partial response evidence qualified for session loss recovery: rejection=%+v error=%v", rejected, err)
+	if isExecutorConnectionFailure(err) {
+		t.Fatalf("native evidence persistence failure became an ordinary connection failure: %v", err)
 	}
 	if !errors.Is(err, frameErr) {
 		t.Fatalf("native frame persistence error was discarded: %v", err)
@@ -1264,7 +1196,7 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 
 func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
 	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute}
+	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute, workspacePrepared: true}
 }
 
 func completedExecutionStatus() *executorpb.ExecutionStatus {

@@ -7,7 +7,8 @@ import (
 
 // EnvironmentContext is the model-visible environment baseline that later updates diff against.
 // Codex rust-v0.162.1 core/src/context/world_state/environment.rs EnvironmentsSnapshot, for the
-// single always-available environment a central Session binds. Network, filesystem, permission
+// single configured environment a central Session binds, independently of its reachability.
+// Network, filesystem, permission
 // profile and subagents sections are omitted: Agentplane owns those boundaries.
 // TODO: Add `<timezone>` once the sampler has a configured or executor-reported timezone.
 type EnvironmentContext struct {

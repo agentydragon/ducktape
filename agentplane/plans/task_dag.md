@@ -110,7 +110,7 @@ not reports of active workers; confirm ownership before dispatching follow-up im
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CENTRAL_SAMPLER_REPLICA_ROLLOUT`   | Remaining: bounded same-Session continuation evidence; deployed exporter reconciliation is recorded in the [acceptance record](../x/central_sampler/docs/rollout_acceptance.md) |
 | `CENTRAL_SAMPLER_SAMPLING_RECOVERY` | In review: [#13217](https://github.com/agentydragon/ducktape/pull/13217), explicit abandonment of uncertain provider sampling                                                   |
-| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), truthful pre-dispatch exec failures; remaining agent-workflow acceptance below                        |
+| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), lazy executor attachment and catchable operation failures; remaining agent-workflow acceptance below  |
 
 File conflicts do not block independent PRs. Required system checks and a documented rollback
 precede staging changes; source merge is not deployment evidence. The
@@ -148,7 +148,7 @@ flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Remaining: same-Session rollout continuation]
         CENTRAL_SAMPLER_SAMPLING_RECOVERY[In review: uncertain provider sampling recovery]
-        CENTRAL_SAMPLER_TOOL_RECOVERY[In review: pre-dispatch exec failures]
+        CENTRAL_SAMPLER_TOOL_RECOVERY[In review: lazy executor attachment and tool failures]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -742,7 +742,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[P0 acceptance: same-Session rollout continuation]
     CENTRAL_SAMPLER_SAMPLING_RECOVERY[In-review P0: uncertain provider sampling recovery]
-    CENTRAL_SAMPLER_TOOL_RECOVERY[In-review P0: pre-dispatch exec failures and agent acceptance]
+    CENTRAL_SAMPLER_TOOL_RECOVERY[In-review P0: loose executor attachment and agent acceptance]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -875,27 +875,32 @@ or silently retry a provider operation.
 
 ### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
 
-**In review, P0; [#13182](https://github.com/agentydragon/ducktape/pull/13182).** Finish classification
-of Gateway-proven pre-dispatch exec initialization rejection so it fails the call/turn without
-permanently blocking the Session. Generic transport loss and independent unresolved effects must
-retain their uncertainty. Settle model tool calls with matching failed outputs when non-dispatch
-is proven; later input must have valid continuation context.
+**In review, P0; [#13182](https://github.com/agentydragon/ducktape/pull/13182).** Acquire the
+executor lazily at actual tool use so an unreachable environment does not prevent JavaScript or
+model continuation. Connection failures and uncertain executor operations reject the affected tool
+promise; retain initialization and operation evidence, observed output and process cursors without
+claiming exit or automatically replaying a mutation. Abandon only affected handles. Journal and
+ownership failures remain operational errors; existing blocked Sessions and required one-shot
+setup are separate recovery boundaries.
 
 The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) and
 [recovery guide](../x/central_sampler/docs/blocked_session_recovery.md) own nested tool errors,
-observed output, lost exec handles and host-generation recovery. Do not redispatch those
-implementations. Finish the agent-facing JS/exec workflow check against those contracts: useful
-continuation, meaningful partial-output failures and lost-state notices, without lost authored
-history or duplicated external work. Reuse existing regression coverage; add work only for a
-concrete uncovered failure.
+observed output, lost exec handles and host-generation recovery. Finish the agent-facing JS/exec
+workflow check against those contracts: useful continuation after initial connection and reconnect
+failures, meaningful partial-output failures and lost-state notices, without lost authored history
+or duplicated external work. Reuse existing regression coverage; add work only for a concrete
+uncovered failure. Keep native-session identity and Sandbox incarnation fencing on reconnection;
+an ambiguous resume must not silently substitute a fresh session.
 
 Review the overlapping blocked-Session UI [#12933](https://github.com/agentydragon/ducktape/pull/12933)
 before adding recovery affordances; it remains unmerged and is not a backend prerequisite.
 
-Exit: merged pre-dispatch rejection handling with denial/spoofing and unknown-outcome coverage,
-plus proportional agent-workflow evidence. Native Error properties and a replacement JS host
-remain future [runtime design](session_runtime_model.md#tool-access-disconnects-and-recovery),
-not prerequisites for the current recovery outcome.
+Exit: merged lazy acquisition and operation-scoped failure handling, with evidence that executor
+faults permit useful continuation while persistence failures and identity mismatches retain their
+proper boundaries, plus proportional agent-workflow evidence. Native Error properties and a
+replacement JS host remain future
+[runtime design](session_runtime_model.md#tool-access-disconnects-and-recovery), not prerequisites
+for the current recovery outcome.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
