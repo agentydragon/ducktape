@@ -512,15 +512,11 @@ and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-
 The synchronous-effect interpreter can omit callback promotion for implicit
 coercion of an exact named/default imported binding when the provider proves
 that every value read from the export is primitive; the importer receives the
-export's primitive types. The canonical shallow
-analysis recognizes primitive literals, untagged templates, unary/update and
-non-logical binary expressions that return a primitive when they complete, and
-the final value of a sequence. Conditional and logical expressions qualify
-only when every possible returned value is primitive. This is a result-type
-fact, not a purity fact: evaluating a template or operator may still coerce an
-object, call user code, or throw, and those initializer effects remain in the
-source-order graph. A `var` cell can also contain its hoisted `undefined`, which
-cannot execute a conversion callback.
+export's primitive types. The canonical shallow analysis recognizes primitive
+literals, untagged templates, unary/update and non-logical binary expressions
+that return a primitive when they complete, and the final value of a sequence.
+Conditional and logical expressions qualify only when every possible returned
+value is primitive. A `var` cell can also contain its hoisted `undefined`.
 
 Stable top-level `const` or `var` bindings can copy primitive values through
 local aliases, named/default imports, and named/default re-exports. Local
@@ -533,19 +529,26 @@ functions. The separate full CommonJS-interop fact still includes request-only
 host loaders and continues to guard generic importer-reentry analysis; those
 requests do not invalidate the primitive type of an explicit ESM binding.
 Primitive facts only project through artifact imports and re-exports that
-resolve to the target chunk's entry file. Duplicate
-declarations, assignment/update/loop writes, writes in closures, `let`, opaque
-initializers, and namespace properties remain conservative; a vendor-swapped
-provider's bundled body counts (SPEC.md § Vendor swap equivalence). A shadowing local binding does not inherit an import's fact.
+resolve to the target chunk's entry file. Duplicate declarations,
+assignment/update/loop writes, writes in closures, `let`, opaque initializers,
+and namespace properties remain conservative; a vendor-swapped provider's
+bundled body counts (SPEC.md § Vendor swap equivalence). A shadowing local
+binding does not inherit an import's fact.
 
-This is an inferred callback-timing fact, separate from purity and author
-assertions. It does not remove eager binding reads, relax live-binding or TDZ
-constraints, classify the operator as pure, fold source expressions, or suppress
-runtime exceptions such as mixed BigInt/Number arithmetic. Other protocols and
-ordinary opaque calls retain their existing behavior. `imported_primitive_test`
-pins split acceptance and Node output, unchanged imported reads and impure
-classification, conservative provider-write/dynamic-scope controls, and runtime
-throws.
+These types are a purity fact under kind-precise operands. A coercion of
+primitives runs no user code, so the only remaining effect is a throw, and the
+types gate exactly those: `ToNumber` and `ToString` of a Symbol (numeric
+operators, templates, string concatenation), a BigInt combined arithmetically
+with another numeric kind, unary `+` on a BigInt, and `>>>` on a BigInt. The
+statement's purity resolves a coercion only when every operand's possible
+types make that operation non-throwing (`primitive::binary_throws` for binary
+operators); an operand known only to be primitive does not resolve. Evaluating
+the operator's own sub-expressions keeps its effects. The binding read stays a
+read: eager binding reads, live-binding and TDZ constraints are unchanged, so a
+read before the provider's initializer is still ordered as a throwing read.
+Nothing is folded. `imported_primitive_test` pins split acceptance, Node
+output, purity, the throwing BigInt/Symbol controls, and conservative
+provider-write/dynamic-scope controls.
 
 ## Immutable Symbol computed keys
 

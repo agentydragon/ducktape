@@ -1,4 +1,5 @@
-//! Stable imported primitives cannot execute ToPrimitive callbacks.
+//! Stable imported primitives cannot execute ToPrimitive callbacks, and a
+//! coercion of operands whose types cannot throw is pure.
 use analysis::DepKind;
 use debundle_e2e_support::*;
 
@@ -61,8 +62,9 @@ fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) 
     }));
     let node = graph.nodes.iter().find(|node| node.id == computed).unwrap();
     assert!(
-        !node.purity.is_pure(),
-        "primitive inference is not a purity assertion"
+        node.purity.is_pure(),
+        "a coercion of non-throwing imported primitives is pure: {:?}",
+        node.purity
     );
 }
 
@@ -109,8 +111,9 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
     let node = graph.nodes.iter().find(|node| node.id == computed).unwrap();
     assert!(node.synchronous_execution.as_ref().unwrap().complete);
     assert!(
-        !node.purity.is_pure(),
-        "a primitive result is not a purity proof"
+        node.purity.is_pure(),
+        "local copies keep the imported Number type: {:?}",
+        node.purity
     );
 }
 
@@ -175,6 +178,52 @@ fn primitive_copies_keep_mixed_numeric_throws() {
         .with_extra_chunks(&[("static/peer", "export const limit = 2n;\n")]),
     );
     assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = fixture.dependency_graph();
+    let computed = source_unit_for_binding(&graph, "computed");
+    let node = graph.nodes.iter().find(|node| node.id == computed).unwrap();
+    assert!(
+        !node.purity.is_pure(),
+        "BigInt times Number throws, so the coercion stays: {:?}",
+        node.purity
+    );
+}
+
+#[test]
+fn throwing_primitive_kinds_keep_the_coercion() {
+    for (literal, expression) in [
+        ("2n", "4 * bytes + 256"),
+        ("2n", "+bytes"),
+        ("Symbol.for('limit')", "`${bytes}`"),
+        ("Symbol.for('limit')", "'prefix:' + bytes"),
+    ] {
+        let source = format!(
+            "import {{ limit as bytes }} from './peer.js';\n\
+             let computed;\ntry {{ computed = {expression}; }} catch (error) {{ computed = error.name; }}\n\
+             const settled = {expression};\nconsole.log(computed);\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "compute",
+                    &[Member::new("computed"), Member::new("settled")],
+                    &[&format!(
+                        "try {{ computed = {expression}; }} catch (error) {{ computed = error.name; }}"
+                    )],
+                )],
+            )
+            .with_extra_chunks(&[("static/peer", &format!("export const limit = {literal};\n"))]),
+        );
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let graph = fixture.dependency_graph();
+        let settled = source_unit_for_binding(&graph, "settled");
+        let node = graph.nodes.iter().find(|node| node.id == settled).unwrap();
+        assert!(
+            !node.purity.is_pure(),
+            "{expression} with a {literal} operand throws: {:?}",
+            node.purity
+        );
+    }
 }
 
 #[test]
@@ -214,15 +263,17 @@ fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
             && edge.edge_kind == DepKind::EagerUse
             && edge.constrains_init_order
     }));
+    // The provider's own template coerces an object; the importer's
+    // substitutions are Strings and a Number expression.
     assert!(
-        !graph
+        graph
             .nodes
             .iter()
             .find(|node| node.id == computed)
             .unwrap()
             .purity
             .is_pure(),
-        "primitive result inference must not erase coercion effects"
+        "imported String and Number substitutions convert without user code"
     );
 }
 

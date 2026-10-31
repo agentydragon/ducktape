@@ -1,7 +1,8 @@
 //! Steps a builtin performs on its operands that can run user code.
 
+use super::primitive::binary_throws;
 use super::value::PrimKinds;
-use swc_ecma_ast::Id;
+use swc_ecma_ast::{BinaryOp, Id};
 
 /// An abstract operation or internal method a builtin applies to one operand.
 /// Each can run user code: a conversion through a `ToPrimitive` hook, an
@@ -94,19 +95,30 @@ pub(crate) enum CoerceSite {
     ObjectSpread,
 }
 
-/// The operands whose values at the program point decide a coercion: it runs
-/// no user code and completes normally when each holds only primitives whose
-/// types are within `admits` (plan § 2.3 `Coerce` resolution). Every other
-/// operand of the step is already a primitive within `admits`.
+/// The operands whose values at the program point decide a coercion, and the
+/// condition on their primitive types under which it runs no user code and
+/// completes normally (plan § 2.3 `Coerce` resolution).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CoerceOperands {
     pub(crate) operands: Vec<CoerceOperand>,
-    pub(crate) admits: PrimKinds,
+    pub(crate) check: CoerceCheck,
+}
+
+/// When primitive operands of a coercion cannot throw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CoerceCheck {
+    /// Every operand's types are within these.
+    Within(PrimKinds),
+    /// The two operands of this binary operator combine without throwing
+    /// (`primitive::binary_throws`).
+    Binary(BinaryOp),
 }
 
 /// One operand a coercion's resolution reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CoerceOperand {
+    /// An operand already known to complete with one of these types.
+    Known(PrimKinds),
     /// A top-level binding's value.
     Binding(Id),
     /// A named own property of a `PlainData` binding's allocations.
@@ -114,10 +126,24 @@ pub(crate) enum CoerceOperand {
 }
 
 impl CoerceOperand {
-    pub(crate) fn binding(&self) -> &Id {
+    pub(crate) fn binding(&self) -> Option<&Id> {
         match self {
-            Self::Binding(binding) | Self::Member(binding, _) => binding,
+            Self::Known(_) => None,
+            Self::Binding(binding) | Self::Member(binding, _) => Some(binding),
         }
+    }
+}
+
+impl CoerceOperands {
+    /// Whether operands of these types (in operand order) satisfy the check.
+    pub(crate) fn resolved_by(&self, kinds: &[PrimKinds]) -> bool {
+        kinds.iter().all(|kinds| !kinds.is_empty())
+            && match self.check {
+                CoerceCheck::Within(admits) => kinds.iter().all(|kinds| kinds.is_only(admits)),
+                CoerceCheck::Binary(op) => {
+                    matches!(kinds, [left, right] if !binary_throws(op, *left, *right))
+                }
+            }
     }
 }
 
