@@ -29,10 +29,10 @@ Postgres `sandbox_ownership` fence. Dispatcher callers use `session-dispatcher`;
 public caller tokens.
 
 The Dispatcher delivers by dialing `<sandbox>-control` with the Gateway's own token (`ProxyRunner`,
-`dispatcher/runner_client.go:19`, wired at `main.go:188`), because the replica owning a Sandbox's queue is
+`dispatcher/runner_client.go:19`, wired at `main.go:237`), because the replica owning a Sandbox's queue is
 often not the replica holding its runner. That self-call costs a token check, a network hop and a third caller
 account. The ADR row "The Dispatcher is its own service, not part of the gateway or the controller" (2026-10-14,
-`docs/adr_sandbox_session_control.md:632`) no longer matches the code.
+`docs/adr_sandbox_session_control.md:608`) no longer matches the code.
 
 ## One service
 
@@ -158,10 +158,10 @@ here the connection chooses the live owner, so neither the Lease nor a Postgres 
 ## What queue off removes
 
 It removes the Gateway's database, not CNPG. The shared cluster's logical databases are `app`, `sandbox_service`
-(History), `actions`, `egress`, `notifications` and `session_dispatcher`
-(`cluster/cdk8s/agentplane/database.py:34`), and Indexing has its own. A deployment is database-free only if it
-also omits every other consumer, as the tier in `CNPG_FREE_K3S_INTEGRATION_TIER` does for Notifications, History
-and Electric. The Gateway sheds the `session_dispatcher` database and Secret, the Goose queue migrator init
+(History), `actions`, `egress`, `mcp_edge`, `notifications`, `session_dispatcher` and, where enabled,
+`central_sampler` (`cluster/cdk8s/agentplane/database.py:34`), and Indexing has its own. A deployment is
+database-free only if it also omits every other consumer, as the tier in `CNPG_FREE_K3S_INTEGRATION_TIER` does for
+Notifications, History and Electric. The Gateway sheds the `session_dispatcher` database and Secret, the Goose queue migrator init
 container and its Flux health-check gate, the `LISTEN` connection, the delivery worker and the wake budget. That
 node's edge from `DISPATCHER_PERSISTENCE_MODEL_DESIGN` stays; its other blockers are unchanged.
 

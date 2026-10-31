@@ -48,7 +48,7 @@ probably not split its storage" (2026-10-20 00:12).
 - History tags are stored once per Sandbox, never copied into Session rows, and grants match them at
   read time, so retagging a deleted Sandbox later needs no backfill.
 - Each Session links to its record by the Sandbox UID History records at bind
-  ([README](../history_service/README.md#which-sandbox-wrote-a-session)).
+  ([README](../history_service/README.md#session-writer-and-execution-sandbox)).
 
 ## Deleting a Sandbox
 

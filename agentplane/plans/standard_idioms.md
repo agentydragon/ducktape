@@ -10,14 +10,6 @@ validation, the Policy Controller and gRPC health.
 
 File references are to `devel` at the time of the audit; re-check before starting.
 
-## HTTP
-
-### `APP_PROXY_REVERSE_PROXY`
-
-The app's upstream and Electric proxies (`app/go/proxy/upstream.go`, `electric.go`) copy headers,
-flush and override `Cache-Control` by hand. Express the response-header allowlist in
-`ModifyResponse` on `httputil.ReverseProxy`. Exit: tests prove no header beyond the allowlist leaks.
-
 ## gRPC
 
 ### `GRPC_NATIVE_LISTENER`
@@ -37,8 +29,6 @@ and CA bundle from disk on every handshake and retries loads to ride out rotatio
 `certprovider/pemfile` or an `x509svid.Source` over the mounted files). Issuance by cert-manager and
 trust-manager stays. Exit: stale credential and epoch rejection tests from the transport contract
 pass unchanged.
-
-## Kubernetes
 
 ## Work queues
 
@@ -72,7 +62,9 @@ Four hand-rolled acquire/renew/expiry/fence/release implementations on `clock_ti
 `session_projection_lease`, the Notification inbox `claim`/`claim_until`, the GitHub refresh claim
 columns, and the sampler's `owner`/`lease_until`/`generation`. Extract one `postgres/go` helper with
 fencing tokens and move each user to it; evaluate River where the user is really a job queue. The
-Dispatcher's ownership is excluded: it moves to the Gateway with the merge.
+Dispatcher's ownership is excluded: it moves to the Gateway with the merge. The helper
+(`postgres/go/lease`) exists and the History projection lease uses it; the inbox, GitHub refresh and
+sampler users remain.
 
 ### `DISPATCHER_WATCH_VERSIONS`
 
@@ -104,15 +96,6 @@ store kind plus a conversation reference and journal raw events once; batch per-
 only item-done and terminal events; or keep everything and add retention.
 
 ## App
-
-### `APP_LIVE_FRAME_BROADCAST`
-
-Each open `/live/*` stream recomputes its whole snapshot on every Kubernetes event in the namespace,
-rerunning a thread page query, a History `BatchGetSummaries` call and an archived count per tab even
-when only a Pod changed (`app/go/streamapi.go`). The same Sandbox inventory also arrives on two or
-three streams, and the thread page reads the top-bar status and the composer state from different ones.
-Compute each frame once per change and broadcast its bytes (a hub or `singleflight`), re-query threads
-only on thread changes, and give each entity one client-side source.
 
 ### `FRONTEND_SSE_CLIENT`
 

@@ -1924,14 +1924,12 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
-    APP_PROXY_REVERSE_PROXY[Candidate: app proxies on httputil.ReverseProxy]
-    APP_LIVE_FRAME_BROADCAST[Candidate: build live frames once and broadcast]
-    GATEWAY_OBSERVER_RECONCILER[Candidate: Gateway observers as a cached reconciler]
-    POSTGRES_LEASE_HELPER[Candidate: one PostgreSQL lease helper]
-    SAMPLER_TYPED_STATE[Candidate: typed sampler states]
-    GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
-    RUNNER_JSONRPC[Candidate: one JSON-RPC client in the runner]
-    FRONTEND_SSE_CLIENT[Candidate: one fetch-based SSE client]
+    GATEWAY_OBSERVER_RECONCILER[In review: Gateway observers as a cached reconciler]
+    POSTGRES_LEASE_HELPER[In review: remaining users of the PostgreSQL lease helper]
+    SAMPLER_TYPED_STATE[In review: typed sampler states]
+    GRPC_NATIVE_LISTENER[In review: gRPC on its own listener]
+    RUNNER_JSONRPC[In review: one JSON-RPC client in the runner]
+    FRONTEND_SSE_CLIENT[In review: one fetch-based SSE client]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS, section 12] --> RUNNER_MTLS_GO_SPIFFE[Blocked: go-spiffe verification]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
@@ -1948,12 +1946,20 @@ staging's RBAC and API server behaviour. Check once Flux applies it: those Pods 
 Ready and stay Ready without readiness flapping, egress admin `GetHealth` reports `available` with an
 empty `failing` map, and the app shows no watch warning. Delete this node once observed.
 
-### Candidates
+### In review
 
-Each candidate is one independently finishable PR; see the plan section of the same name:
-`APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `GATEWAY_OBSERVER_RECONCILER`,
-`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`, `RUNNER_JSONRPC`,
-`FRONTEND_SSE_CLIENT`. `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
+Each node is one independently finishable change; see the plan section of the same name. Open PRs
+per `gh`, 2026-10-30 23:50 UTC, several stacked on one another: `SAMPLER_TYPED_STATE`
+[#13073](https://github.com/agentydragon/ducktape/pull/13073), `RUNNER_JSONRPC`
+[#13122](https://github.com/agentydragon/ducktape/pull/13122), `FRONTEND_SSE_CLIENT`
+[#13135](https://github.com/agentydragon/ducktape/pull/13135), `POSTGRES_LEASE_HELPER`'s inbox and
+GitHub refresh users [#13133](https://github.com/agentydragon/ducktape/pull/13133) and
+[#13136](https://github.com/agentydragon/ducktape/pull/13136), `GRPC_NATIVE_LISTENER`
+[#13138](https://github.com/agentydragon/ducktape/pull/13138), `GATEWAY_OBSERVER_RECONCILER`
+[#13134](https://github.com/agentydragon/ducktape/pull/13134). The sampler's lease user
+([#13127](https://github.com/agentydragon/ducktape/pull/13127)) and `RUNNER_MTLS_GO_SPIFFE`
+([#13125](https://github.com/agentydragon/ducktape/pull/13125)) merged into stacked branches, not
+`devel`. `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 
