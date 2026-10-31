@@ -146,8 +146,12 @@ flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
         CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
+        CENTRAL_SAMPLER_NATIVE_BASELINE[In flight: adopt native schema at version 8]
+        CENTRAL_SAMPLER_HOST_LOSS_NOTICE[In flight: warn after host loss; schema version 9]
         CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
         CONTROL_PLANE_ROLLING_SERVICES[Rolling control-plane deployment review]
+        CENTRAL_SAMPLER_NATIVE_BASELINE --> CENTRAL_SAMPLER_HOST_LOSS_NOTICE
+        CENTRAL_SAMPLER_HOST_LOSS_NOTICE --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -740,6 +744,10 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
     CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
+    CENTRAL_SAMPLER_NATIVE_BASELINE[In-flight P0: adopt native schema at version 8]
+    CENTRAL_SAMPLER_HOST_LOSS_NOTICE[In-flight P0: warn after host loss; schema version 9]
+    CENTRAL_SAMPLER_NATIVE_BASELINE --> CENTRAL_SAMPLER_HOST_LOSS_NOTICE
+    CENTRAL_SAMPLER_HOST_LOSS_NOTICE --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
     CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
     CONTROL_PLANE_ROLLING_SERVICES[In-flight review: rolling control-plane services]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
@@ -884,6 +892,29 @@ usability outcome complete.
 
 Exit: focused PR with the shutdown contract in `SPEC.md`, deterministic current-effect/next-effect
 ordering, expiry and stale-owner coverage, plus the selected assembled-system roll scenario.
+
+### `CENTRAL_SAMPLER_NATIVE_BASELINE` — adopt completed native sampler storage
+
+**In flight; `/root/usable_rollout`, operator-selected prerequisite, 2026-10-30 PDT.** The deployed
+sampler has complete Goose version-7 history and native API constraints. Migration 8 must create
+native storage on a fresh database or adopt that completed version-7 database without rewriting
+retained rows. Older or partial conversions fail closed. Retire the completed Go archive converter
+and historical SQL scripts. The accepted baseline precedes the additive host-instance migration 9.
+
+Exit: focused PR with fresh/adopt/rejection/concurrent-init coverage and exact-head checks. It is
+not a substitute for the assembled rolling Session acceptance.
+
+### `CENTRAL_SAMPLER_HOST_LOSS_NOTICE` — expose lost volatile JavaScript state
+
+**In flight; `/root/usable_rollout`, contract selected by `/root`, 2026-10-30 PDT.** A fresh sampler
+owner must distinguish a new Code Mode host process from the one that last served a Session,
+advance the fenced epoch, and make the loss visible before another model turn. Proven undispatched
+pending calls can be paired with failure; unresolved admitted cells or executor effects stay
+uncertain. Its nullable host marker is migration 9 after the native baseline. The rolling chart
+remains operationally held until an image with drain, baseline, and host-loss behavior is selected.
+
+Exit: focused PR with host-process restart, paired-call, uncertain-effect and concurrent-owner
+coverage, followed by assembled rolling acceptance. No live Session recovery is implied.
 
 ### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	centralsampler "github.com/agentydragon/ducktape/agentplane/x/central_sampler"
@@ -30,15 +31,15 @@ import (
 
 func run(ctx context.Context, settings centralsampler.Settings, initialize bool) error {
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
+	if initialize {
+		return migrate.Run(ctx, databaseURL, centralsampler.Migrate)
+	}
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
 	db, err := postgres.Open(ctx, databaseURL, 2*settings.MaxLiveSessions+8+16, 16)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	if initialize {
-		return centralsampler.Migrate(ctx, db)
-	}
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return err
 	}
