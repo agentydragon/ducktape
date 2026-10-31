@@ -16,14 +16,14 @@ concrete autonomous workflow is a daily agent inspecting the previous 24 hours o
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
-| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_SAMPLING_RECOVERY`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                          |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                         |
-| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
-| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
-| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
-| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements |
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                            |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Address concrete instability reported during normal use; dedicated disruption/continuation exercises are [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                 |
+| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements        |
 
 Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
@@ -103,45 +103,37 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ### Dispatched sprint: keep existing agents usable
 
-**Two-week timebox; operator dispatch, 2026-10-30 PDT (2026-10-31 04:22 UTC).** Central-sampler
-Sessions should remain usable through planned sampler rolls and the reported JS/exec faults,
-with preserved history, partial output and external-effect evidence, supported recovery and
-generation fencing. Same-privilege Session spawning remains under stakeholder discussion and is
-not dispatched.
+**Two-week timebox; operator dispatch, 2026-10-30 PDT; scope updated 2026-10-31 UTC.**
+The sampling-recovery and lazy-executor changes merged. Their contracts live in the
+[runtime specification](../x/central_sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md); source merge is not
+deployment evidence. The [acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
+retains the deployed exporter evidence and its limits.
 
-Remaining work, checked against GitHub on 2026-10-31 UTC. These are review and rollout states,
-not reports of active workers; confirm ownership before dispatching follow-up implementation.
+**Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
+coverage audit and additional acceptance tests. The operator will evaluate reliability through
+normal use. Revisit [a focused follow-up](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
+only if that use exposes continued instability. This exercise no longer gates the sprint or the
+daily CI milestone; no dedicated acceptance worker is dispatched.
 
-| Scope                               | Current state                                                                                                                                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CENTRAL_SAMPLER_REPLICA_ROLLOUT`   | Remaining: bounded same-Session continuation evidence; deployed exporter reconciliation is recorded in the [acceptance record](../x/central_sampler/docs/rollout_acceptance.md) |
-| `CENTRAL_SAMPLER_SAMPLING_RECOVERY` | In review: [#13217](https://github.com/agentydragon/ducktape/pull/13217), explicit abandonment of uncertain provider sampling                                                   |
-| `CENTRAL_SAMPLER_TOOL_RECOVERY`     | In review: [#13182](https://github.com/agentydragon/ducktape/pull/13182), lazy executor attachment and catchable operation failures; remaining agent-workflow acceptance below  |
+The [delegation proposal](https://github.com/agentydragon/ducktape/pull/13229) still awaits
+stakeholder review; its implementation remains outside the current dispatch. File conflicts do
+not block independent PRs. Required system checks and a documented rollback precede staging changes.
 
-File conflicts do not block independent PRs. Required system checks and a documented rollback
-precede staging changes; source merge is not deployment evidence. The
-[delegation proposal](https://github.com/agentydragon/ducktape/pull/13229) awaits stakeholder review;
-its implementation remains outside the current dispatch.
-
-Completion includes a continued useful Session through the supported failure/recovery cases,
-meaningful agent-visible failures and lost-state notices, no replay of uncertain mutations, and
-late-owner fencing. Deadline expiry is part of the rollout contract. The operator subsequently
-selected rolling updates with at least two replicas as the Agentplane control-plane deployment
-target, with the accepted [Electric exception](electric_ha.md). Include multi-replica
-ownership/routing in sampler acceptance. K3s fixtures remain explicitly single-replica; neither a
-two-replica nested K3s roll nor the associated RBE kernel change is required. Arbitrary JS-state
-restoration and the broader runtime redesign remain outside this sprint.
+The control-plane deployment target remains rolling updates with at least two replicas, with the
+accepted [Electric exception](electric_ha.md). K3s fixtures remain single-replica; a two-replica
+nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
+the broader runtime redesign remain outside this sprint.
 
 ### Dispatch order and prerequisites
 
-Give P0 reliability work first attention. Sampler-roll/ownership and JS/exec recovery can proceed
-independently where their reviewed contracts allow it; neither is held for the full runtime model,
-Dispatcher/Gateway merge, renames or different-privilege delegation.
+Give concrete reliability regressions first attention when reported. Dedicated sampler-roll and
+JS/exec continuation exercises are deferred pending operator use; they do not hold independent work.
 
 P1 scheduling and caller-privilege creation contract work can proceed in parallel. Session-creation
 implementation waits for its bounded authority/admission contract; the daily CI product milestone
-needs both scheduled wake and Session creation/cooperation. Its completion also includes the selected
-reliable-roll/recovery acceptance, without making all P1 development wait for P0 to finish.
+needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
+is not a prerequisite.
 
 Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
 next and are independent of each other; image/layering work becomes a prerequisite only when the
@@ -151,11 +143,6 @@ its old ordering does not give it precedence over the selected tracks.
 
 ```mermaid
 flowchart LR
-    subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
-        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Remaining: same-Session rollout continuation]
-        CENTRAL_SAMPLER_SAMPLING_RECOVERY[In review: uncertain provider sampling recovery]
-        CENTRAL_SAMPLER_TOOL_RECOVERY[In review: lazy executor attachment and tool failures]
-    end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
         THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT[Daily CI product milestone]
@@ -553,7 +540,7 @@ piece of work. Use existing CI analysis capabilities, source access and permissi
 this is not a new CI analytics system or a generic agent-role framework.
 
 Completion means an end-to-end useful run from the scheduled wake, with retained run/outcome
-evidence and clear operator visibility, plus the selected reliable-roll/recovery behavior. Confirm
+evidence and clear operator visibility. Dedicated sampler disruption acceptance is deferred. Confirm
 that an ordinary task description suffices for tool discovery and delegation; hand-scripting every
 tool call does not prove agent usability. Reuse existing work/PR evidence when deciding whether to
 open another fix. Set the concrete schedule, model, credentials and notification destination before
@@ -750,9 +737,6 @@ flowchart LR
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_REPLICA_ROLLOUT[P0 acceptance: same-Session rollout continuation]
-    CENTRAL_SAMPLER_SAMPLING_RECOVERY[In-review P0: uncertain provider sampling recovery]
-    CENTRAL_SAMPLER_TOOL_RECOVERY[In-review P0: loose executor attachment and agent acceptance]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -929,71 +913,6 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 `openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
-
-### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
-
-**P0 acceptance.** The [deployed acceptance record](../x/central_sampler/docs/rollout_acceptance.md)
-owns migration, replica and History-delivery evidence, including reconciliation after the
-mixed-version exporter interval. The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects)
-owns bounded drain, lease fencing and lost-host behavior.
-
-Remaining: bounded evidence of useful continuation in the same Session through a sampler roll,
-with retained history and environment identity. Reuse deterministic shared-PostgreSQL/History
-coverage for concurrent exporters, competing owners, drain expiry, stale-owner writes and no replay
-of external effects. The nested K3s fixture stays at one replica; its optional two-replica scenario
-and RBE kernel limitation are not prerequisites.
-
-Exit: same-Session continuation evidence with no duplicate external execution. Preserve the
-database, environments and History on rollback to singleton `Recreate`. Uncertain provider
-recovery is the independent review item below; it is required for the sprint's deadline-recovery
-outcome, not a new prerequisite for starting unrelated P1 work.
-
-### `CENTRAL_SAMPLER_SAMPLING_RECOVERY` — explicitly recover uncertain provider sampling
-
-**In review, P0; [#13217](https://github.com/agentydragon/ducktape/pull/13217).** Finish the explicit
-recovery path for a provider request interrupted before its durable result, including drain expiry.
-Retain partial response and effect evidence, require authorized review at the current cursor, and
-continue the same Session without replaying the uncertain request. Fence the previous owner and
-tell the model what was abandoned and which volatile state was lost. Atomically emit
-`ConversationReconciled` with `ABSENT` for the abandoned request's observed items; retain earlier
-committed responses and executed tools, including earlier steps in the same turn.
-
-Exit: reviewed recovery contract and merged implementation with stale-review/owner rejection,
-retained partial evidence, correct History context-retention annotations and continued useful input
-after explicit recovery. Provider-specific partial-response retention is deferred in
-[`CENTRAL_SAMPLER_PREFIX_RECOVERY`](task_freezer.md#central_sampler_prefix_recovery--retain-valid-provider-response-prefixes).
-Update the
-[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md); do not clear blocked flags
-or silently retry a provider operation.
-
-### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
-
-**In review, P0; [#13182](https://github.com/agentydragon/ducktape/pull/13182).** Acquire the
-executor lazily at actual tool use so an unreachable environment does not prevent JavaScript or
-model continuation. Connection failures and uncertain executor operations reject the affected tool
-promise; retain initialization and operation evidence, observed output and process cursors without
-claiming exit or automatically replaying a mutation. Abandon only affected handles. Journal and
-ownership failures remain operational errors; existing blocked Sessions and required one-shot
-setup are separate recovery boundaries.
-
-The [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md) own nested tool errors,
-observed output, lost exec handles and host-generation recovery. Finish the agent-facing JS/exec
-workflow check against those contracts: useful continuation after initial connection and reconnect
-failures, meaningful partial-output failures and lost-state notices, without lost authored history
-or duplicated external work. Reuse existing regression coverage; add work only for a concrete
-uncovered failure. Keep native-session identity and Sandbox incarnation fencing on reconnection;
-an ambiguous resume must not silently substitute a fresh session.
-
-Review the overlapping blocked-Session UI [#12933](https://github.com/agentydragon/ducktape/pull/12933)
-before adding recovery affordances; it remains unmerged and is not a backend prerequisite.
-
-Exit: merged lazy acquisition and operation-scoped failure handling, with evidence that executor
-faults permit useful continuation while persistence failures and identity mismatches retain their
-proper boundaries, plus proportional agent-workflow evidence. Native Error properties and a
-replacement JS host remain future
-[runtime design](session_runtime_model.md#tool-access-disconnects-and-recovery), not prerequisites
-for the current recovery outcome.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
