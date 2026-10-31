@@ -353,12 +353,15 @@
           Follow-up · 31 October: shipped changes and investigation results
         </h2>
         <p class="callout">
-          Go race configuration, independent Sandbox cleanup and visual
-          publisher source changes have merged. Python bytecode works at target
-          level but remains disabled; Pod's delayed submission points to Bazel
-          scheduling under its 50-action cap. The original measurement window
-          and feedback distributions below are unchanged. These follow-ups do
-          not establish fleet-wide or matched end-to-end savings.
+          Go race configuration, independent Sandbox cleanup, visual publishing
+          and cancellation guards, BuildBuddy replay protection, invocation-log
+          recovery, Pod storage phase tracing, native startup overlap, and
+          guest-root compression have shipped. The jobs=100 counterfactual
+          failed, so the 50-job default remains. Python bytecode stays disabled;
+          the Pod suspend/cleanup tail still needs a root-cause trace. The
+          original measurement window and feedback distributions below are
+          unchanged, and these follow-ups do not establish fleet-wide or matched
+          end-to-end savings.
         </p>
         <div class="scroll">
           <table>
@@ -432,10 +435,13 @@
               </tr>
               <tr>
                 <td data-label="Lane / source change">
-                  <strong>Visual publisher · source merged, pin pending</strong
-                  ><br />
+                  <strong>Visual publisher · merged and pinned</strong><br />
                   <a href="https://github.com/agentydragon/ducktape/pull/13253"
                     >#13253</a
+                  >
+                  ·
+                  <a href="https://github.com/agentydragon/ducktape/pull/13264"
+                    >#13264</a
                   >
                   ·
                   <a
@@ -448,18 +454,33 @@
                   shared S3 checks/uploads use at most eight workers. Preserve
                   legacy and pixel-equivalent encoding fallbacks, missing-object
                   healing, conditional writes and the image-before-index
-                  barrier.
+                  barrier. Cancellation now checks both upstream run and attempt
+                  state. Current devel pin:
+                  <code>pr-visuals-d54564781320</code>.
                   <a
                     href="https://app.buildbuddy.io/invocation/0e4b69eb-2de2-4c81-8aa3-989d11a1cfc1"
                     >Publisher tests passed on RBE</a
                   >.
                 </td>
                 <td data-label="Remaining work">
-                  Release and repin the wheel, then measure a real publication.
-                  The inspected pin still points to
-                  <code>pr-visuals-bebbef7024f2</code>. PR #13216 had 1,207
-                  exact digest matches among 1,216 assets; those baseline
-                  fetches/comparisons are avoidable. Its
+                  The merged co-location probe
+                  <a href="https://github.com/agentydragon/ducktape/pull/13287"
+                    >#13287</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/e112501136a8042ff7de13307a2b5349ed0afb86/devinfra/ci/debug/visual_publisher_colocation.md"
+                    >probe note</a
+                  >
+                  passed
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41187144077"
+                    >run 41187144077</a
+                  >: the remote test took 26 s while publisher work took 45 s in
+                  parallel, leaving a 19 s tail. This is one manual probe;
+                  normal CI remains separate. PR #13216 had 1,207 exact digest
+                  matches among 1,216 assets; those baseline fetches/comparisons
+                  are avoidable. Its
                   <a
                     href="https://github.com/agentydragon/ducktape/actions/runs/41172846988/job/124454292680"
                     >4m46s publication</a
@@ -522,27 +543,203 @@
                   <code>--jobs=50</code>. RBE queue wait was 0.063 s.
                 </td>
                 <td data-label="Remaining work">
-                  The evidence points to Bazel scheduling and action-slot
-                  contention. Compare matched full-CI runs at 50 versus 100
-                  jobs; evaluate whole-gate time, remote compute and contention
-                  before changing the global limit. No dependency removal was
-                  justified.
+                  The full-repository counterfactual
+                  <a href="https://github.com/agentydragon/ducktape/pull/13275"
+                    >#13275</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/fab7a1161004ebdbf3cbfbc0579183a005dce879/devinfra/buildbuddy/debug/bazel_jobs_full_sweep.md"
+                    >experiment note</a
+                  >
+                  kept the <code>--jobs=50</code> default: the 50-job run passed
+                  1,694 tests in 607.141 s; the 100-job run ended
+                  <code>REMOTE_ERROR</code> at 637.793 s. This one fixed-order
+                  pair on different workers does not establish a causal speed
+                  difference. No global concurrency change is justified.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Accepted-run and log recovery · merged</strong><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13268"
+                    >#13268</a
+                  >
+                  ·
+                  <a href="https://github.com/agentydragon/ducktape/pull/13288"
+                    >#13288</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Whole-run automatic replay is disabled and the current
+                  <code>bbr</code> pin is <code>bbr-fdf439e02d99</code>. The
+                  watcher falls back from an unreadable tail cursor to chunk
+                  <code>0000</code>, follows server-provided cursors, and keeps
+                  reporting invocation status through recoverable log-only
+                  failures. Tests cover complete history/live logs, no gaps or
+                  duplicates, terminal result files and immediate auth errors.
+                </td>
+                <td data-label="Remaining work">
+                  The open
+                  <a
+                    href="https://github.com/agentydragon/ducktape/issues/13270"
+                    >#13270</a
+                  >
+                  follow-up is reattaching to the same accepted invocation after
+                  a log disconnect. Do not replay remote work or treat an
+                  observation failure as proof that execution failed.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Sandbox readiness and Pod phases · merged</strong
+                  ><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13289"
+                    >#13289</a
+                  >
+                  ·
+                  <a href="https://github.com/agentydragon/ducktape/pull/13298"
+                    >#13298</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/f132465fabbea4d19b795bdaa310157b08ed6b0f/agentplane/system_tests/debug/pod_storage_lifecycle.md"
+                    >phase evidence</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Readiness now watches Sandbox inventory with the expected UID.
+                  Pod storage spans measured a 60.6 s cleanup once; a second run
+                  split cleanup into 8.1 s suspension, 0.21 s Sandbox deletion
+                  and 0.22 s PVC deletion, with storage assertions intact.
+                </td>
+                <td data-label="Remaining work">
+                  The suspend/cleanup tail is intermittent and its root cause
+                  remains unresolved. The bounded probe in
+                  <a href="https://github.com/agentydragon/ducktape/pull/13309"
+                    >#13309</a
+                  >
+                  saw Quiesce <code>UNAVAILABLE</code> 14 times before an
+                  approximately 60 s retry; Gateway observed and published
+                  transitions within milliseconds. Later Runner spans are
+                  missing, so the source of those 14 unavailable observations
+                  remains unresolved. No latency saving is attributed to these
+                  tracing changes.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Codex app-server startup overlap · merged</strong
+                  ><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13300"
+                    >#13300</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/d5160201f4c5968da58d0b08c8f2ab6aee275f52/agentplane/system_tests/debug/vm_native_startup_tracing.md"
+                    >VM startup trace</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  App-server initialization now overlaps executor startup while
+                  Session/tool admission keeps its readiness gates. The full
+                  35-test runner package and a fresh six-case VM suite passed;
+                  three guests overlapped startup work. Hosted and visual checks
+                  passed on the merged head.
+                </td>
+                <td data-label="Remaining work">
+                  The test runs used different workers; they establish the
+                  overlap mechanism, not a full-CI or end-to-end speedup.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Shared K3s stage tracing · open</strong><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13303"
+                    >#13303</a
+                  >
+                  · head <code>bd4cab8ee030</code>
+                </td>
+                <td data-label="Verified result">
+                  The change replaces the custom K3s timeline with shared OTel
+                  stages and writes driver spans to
+                  <code>test-spans.jsonl</code>, including setup, image imports,
+                  readiness, scenarios and cleanup. The focused tracing, Agent
+                  and Sandbox tests passed in
+                  <a
+                    href="https://app.buildbuddy.io/invocation/231dfcc6-94c3-4e5c-9e15-37fb59660305"
+                    >BuildBuddy</a
+                  >; 18 named changed libraries passed lint-aspect builds in
+                  <a
+                    href="https://app.buildbuddy.io/invocation/702b5b5b-d5b1-467f-ab83-66c63e9181cf"
+                    >BuildBuddy</a
+                  >. Repository hooks passed. The exact-head hosted Bazel and
+                  visual checks are still running.
+                </td>
+                <td data-label="Remaining work">
+                  Review the hosted result before adoption. This reports test
+                  stages; the separate Runner quiesce-stage trace is now tracked
+                  by
+                  <a href="https://github.com/agentydragon/ducktape/pull/13309"
+                    >open PR #13309</a
+                  >
+                  at head <code>765255f6ae</code>, with Bazel and visual checks
+                  in progress. Neither trace establishes a latency saving yet.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Compressed K3s guest root · merged</strong><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13304"
+                    >#13304</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/1d3a7da9d2f06a60e40a187f32d9791865d39403/agentplane/system_tests/k3s/debug/erofs_root_compression.md"
+                    >experiment note</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  The guest-only LZ4 image was 39% smaller and imported in 29.5
+                  s versus 72.1 s in the one-run comparison; the six candidate
+                  VM scenarios and 96 MiB same-session OOM follow-up passed. The
+                  full candidate target passed; the full baseline target failed
+                  at pytest's 600 s deadline. Bazel CI, Build artifacts and
+                  pre-commit checks passed on the merged head at
+                  <a
+                    href="https://github.com/agentydragon/ducktape/commit/e6d5477d765689d2c17a6ef99b6b137c58c89514"
+                    ><code>e6d5477d76</code></a
+                  >
+                  at 09:48 UTC; PR visual diffs and review also passed.
+                </td>
+                <td data-label="Remaining work">
+                  Source revisions, workers and cache state differed. No
+                  guest-side CPU/decompression profile was collected, and the
+                  full-suite delta does not establish CI-wide speedup or CPU
+                  non-regression.
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
         <p>
-          Next implementation lane:
-          <a href="#retry">log-stream reconnection</a>. The repository now pins
-          CLI 5.0.498; its
-          <a
-            href="https://github.com/buildbuddy-io/buildbuddy/blob/5b4fc7a4ccb0d814ec93f8ed0daae7f0325c7f4f/cli/remotebazel/remotebazel.go#L667"
-            >observer still lets INTERNAL escape</a
-          >. The historical fault-injection control below used 5.0.466, so
-          repeat that control on the current version. In parallel, profile
-          <a href="#native-work">cold native startup</a>; its unassigned gaps
-          remain exposed time rather than proven savings.
+          The <code>bbapi</code> invocation watcher recovery is covered by
+          <a href="https://github.com/agentydragon/ducktape/pull/13288"
+            >#13288</a
+          >. Upstream <code>bb</code> CLI reattachment to that same accepted
+          invocation remains tracked in
+          <a href="https://github.com/agentydragon/ducktape/issues/13270"
+            >#13270</a
+          >. Whole-run replay was independently disabled by
+          <a href="https://github.com/agentydragon/ducktape/pull/13268"
+            >#13268</a
+          >, which pins <code>bbr-fdf439e02d99</code>. The native startup
+          overlap from
+          <a href="https://github.com/agentydragon/ducktape/pull/13300"
+            >#13300</a
+          >
+          is merged; treat it as a demonstrated mechanism, not measured
+          end-to-end feedback savings.
         </p>
       </section>
       <section id="decisions">
