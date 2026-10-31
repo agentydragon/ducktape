@@ -238,6 +238,16 @@ async def _capture_cleanup_diagnostics(
             "pod": ("get", "pod", name, "-o", "json"),
             "runner_log": ("logs", f"pod/{name}", "-c", "runner", "--since=10m", "--timestamps"),
             "previous_runner_log": ("logs", f"pod/{name}", "-c", "runner", "--previous", "--since=10m", "--timestamps"),
+            "executor_log": ("logs", f"pod/{name}", "-c", "codex-executor", "--since=10m", "--timestamps"),
+            "previous_executor_log": (
+                "logs",
+                f"pod/{name}",
+                "-c",
+                "codex-executor",
+                "--previous",
+                "--since=10m",
+                "--timestamps",
+            ),
             "sandbox_controller_log": (
                 "logs",
                 "deployment/sandbox-controller",
