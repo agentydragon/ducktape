@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from datetime import datetime
+from types import TracebackType
 from typing import Any
 from uuid import UUID
 
@@ -32,6 +33,53 @@ Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]
 async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Own every Sandbox created in this scope, including one that never becomes ready."""
     async with AsyncExitStack() as cleanup:
+        owned: list[tuple[str, UUID]] = []
+
+        async def release_owned(
+            _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None
+        ) -> bool:
+            if not owned:
+                return False
+
+            async def release_all() -> None:
+                results = await asyncio.gather(
+                    *(suspend_and_delete(cluster, client, name, uid) for name, uid in reversed(owned)),
+                    return_exceptions=True,
+                )
+                failures = [result for result in results if isinstance(result, BaseException)]
+                if failures:
+                    raise BaseExceptionGroup("Sandbox cleanup failed", failures)
+
+            closing = asyncio.create_task(release_all())
+            cancellation: asyncio.CancelledError | None = None
+            while not closing.done():
+                try:
+                    await asyncio.shield(closing)
+                except asyncio.CancelledError as error:
+                    task = asyncio.current_task()
+                    if task is not None and task.cancelling():
+                        cancellation = cancellation or error
+                except BaseException:
+                    # Read the task result below so all cleanup failures share one path.
+                    break
+
+            cleanup_error: BaseException | None = None
+            try:
+                closing.result()
+            except BaseException as error:
+                cleanup_error = error
+
+            if cancellation is not None:
+                if cleanup_error is not None and cleanup_error is not cancellation:
+                    raise cancellation from cleanup_error
+                raise cancellation
+            if cleanup_error is not None:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise exc from cleanup_error
+                raise cleanup_error
+            return False
+
+        cleanup.push_async_exit(release_owned)
 
         async def create(
             name: str,
@@ -57,9 +105,8 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                         bootstrap=bootstrap,
                     )
                 )
-            # Register before readiness so failed boots are released too. ExitStack also drains
-            # the other owners if one deletion fails.
-            cleanup.push_async_callback(suspend_and_delete, cluster, client, view.name, view.uid)
+            # Register before readiness so failed boots are released too.
+            owned.append((view.name, view.uid))
             with phase_tracer.start_as_current_span(
                 "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
             ) as ready_span:
