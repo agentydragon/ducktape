@@ -598,7 +598,13 @@ loader-value references, dynamic direct calls, global loader uses, and
 CommonJS export uses remain as typed sites in the optional `--interop-census`;
 calls through an alias are not traced. The census also lists dynamic `import()`
 calls (`dynamic_import`) and separates `module.exports` (`unbound_module_exports`)
-from other `module` uses (`unbound_module`). The census counts every chunk and
+from other `module` uses (`unbound_module`). A direct `eval` of the global
+`eval` whose single argument folds to exactly `"require"` (string literals,
+`+`, and `.replace` with a string or empty `/^/` pattern and a `$`-free
+replacement) reads the module-scope `require` and nothing else: it is an
+`unbound_require` site, or, as the callee of a call, an
+`evaluated_require_literal_call` or `evaluated_require_dynamic_call`. Any other
+direct `eval` makes the module's scope dynamic. The census counts every chunk and
 bounds detailed sites with `--max-interop-sites`. An absent path in the union
 graph excludes only paths through resolved ordinary static requests and these
 direct literal candidates; it does not clear any export-reentry blocker.
@@ -716,8 +722,9 @@ all of the following hold:
   `module` builtin that can make a loader keep every target open. Under
   `program_premises.non_literal_loader_calls: native_addons_only` (§ Program
   premises) a direct non-literal call, of `import.meta.require`, of a loader
-  alias or of a created loader (below), is excluded and counted in
-  `premised_sites`; every other form stays open. A dynamic `import()` is not a
+  alias, of a created loader (below) or of an evaluated `require`, is excluded
+  and counted in `premised_sites`; every other form stays open. An evaluated
+  `require` called with one string literal is a literal request. A dynamic `import()` is not a
   synchronous loader site: ECMA-262 evaluates its target in a later job
   (`ContinueDynamicImport`), never on the requester's stack. Whether it names
   a debundled internal module stays the A3 admission check

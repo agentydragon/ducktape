@@ -78,6 +78,9 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
    - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
      paths, and protobufjs `inquire` loads its parameter. They are excluded
      under `program_premises.non_literal_loader_calls: native_addons_only`.
+     A second `inquire` copy reaches `require` through
+     `eval("quire".replace(/^/,"re"))`, which is folded to a loader call
+     rather than dynamic scope.
 4. **`module`** (3 sites: a `builtinModules` read, a `createRequire` result
    used only for `.resolve`, and fflate's `createRequire("/")("worker_threads")`)
    is classified by its uses (SPEC.md § Loader-closed derivation). The audit
