@@ -46,6 +46,13 @@ the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection), so name the target for it, e.g. `debundle_readable`.
 
+`split_dependency_graphs = True` moves every `reports/**/dependency_graph.json`
+out of `<target>.out` into `<target>.dependency_graphs/` at the same relative
+path, served as the `dependency_graphs` output group
+(`--output_groups=+dependency_graphs`). On a large corpus the graphs are most of
+the output (gigabytes against megabytes of modules); paths in reports and the
+`GATE_REJECTED` marker still name their original location.
+
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public

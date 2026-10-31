@@ -23,11 +23,29 @@ def _debundle_pipeline_impl(ctx):
             gate = _GATE_REJECTED_EXIT_CODE,
         )
     else:
-        run = "exec " + plan.command
+        run = plan.command
+    outputs = [out_dir]
+    output_groups = {}
+    if ctx.attr.split_dependency_graphs:
+        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
+        outputs.append(graphs_dir)
+        output_groups["dependency_graphs"] = depset([graphs_dir])
+
+        # Same relative path under `graphs_dir` as it had under `out_dir`.
+        run = (
+            "{{ {run}; }} && mkdir -p {graphs} && " +
+            "find {out}/reports -name dependency_graph.json -print0 | " +
+            "while IFS= read -r -d '' f; do " +
+            "d={graphs}/\"${{f#{out}/}}\"; mkdir -p \"$(dirname \"$d\")\" && mv \"$f\" \"$d\" || exit 1; done"
+        ).format(
+            run = run,
+            out = shell.quote(out_dir.short_path),
+            graphs = shell.quote(graphs_dir.short_path),
+        )
     ctx.actions.run_shell(
         inputs = plan.inputs,
         tools = [ctx.executable.debundler],
-        outputs = [out_dir],
+        outputs = outputs,
         command = "cd \"${{BAZEL_BINDIR}}\" && {run}".format(run = run),
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         use_default_shell_env = True,
@@ -42,7 +60,7 @@ def _debundle_pipeline_impl(ctx):
         progress_message = "Running debundle pipeline for %{label}",
         mnemonic = "DebundlePipeline",
     )
-    return [DefaultInfo(files = depset([out_dir]))]
+    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
 
 def _debundle_pipeline_plan(ctx, out_root):
     bin_dir = ctx.bin_dir.path
@@ -208,6 +226,16 @@ _DEBUNDLE_PIPELINE_ATTRS = {
             "reading-only tree marked by a `GATE_REJECTED` file at its " +
             "`write_js_tree` root, never a runnable bundle. Name such a target " +
             "for that (`debundle_readable`)."
+        ),
+    ),
+    "split_dependency_graphs": attr.bool(
+        default = False,
+        doc = (
+            "Move every `reports/**/dependency_graph.json` out of the default " +
+            "output into the `dependency_graphs` output group " +
+            "(`<name>.dependency_graphs/`, same relative paths). The graphs " +
+            "dominate a large corpus's output; a reading target rarely needs " +
+            "them."
         ),
     ),
     "fail_fast": attr.bool(

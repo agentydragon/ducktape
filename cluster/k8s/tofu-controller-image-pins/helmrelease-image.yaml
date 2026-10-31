@@ -11,7 +11,7 @@ spec:
   values:
     image:
       repository: ghcr.io/agentydragon/tofu-controller # {"$imagepolicy": "flux-system:tofu-controller:name"}
-      tag: devel-20261010073040-f6208e7 # {"$imagepolicy": "flux-system:tofu-controller:tag"}
+      tag: devel-20261031055059-42a7870 # {"$imagepolicy": "flux-system:tofu-controller:tag"}
     runner:
       image:
         repository: ghcr.io/agentydragon/tf-runner # {"$imagepolicy": "flux-system:tf-runner:name"}
