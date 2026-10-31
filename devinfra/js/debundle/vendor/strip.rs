@@ -557,7 +557,9 @@ fn sweep_unreachable_top_level(
             writers.entry(root).or_default().push(j);
         }
     }
-    let shared_roots = |i: usize| -> BTreeSet<Id> {
+    // Each retained binding a dropped statement may mutate, with the item
+    // whose code exposes it (`None`: rebound).
+    let shared_roots = |i: usize| -> BTreeMap<Id, Option<usize>> {
         let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
@@ -643,15 +645,18 @@ fn sweep_unreachable_top_level(
         // Retained state is at risk only when the code that may run could
         // mutate it: a member write, `delete`, method call or hand-off of it
         // there, or a rebind anywhere.
-        let mut exposed = ExposedBindings::default();
+        let mut roots = BTreeMap::new();
         for &k in &region {
+            let mut exposed = ExposedBindings::default();
             module.body[k].visit_with(&mut exposed);
+            for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
+                roots.entry((*id).clone()).or_insert(Some(k));
+            }
         }
-        candidates
-            .into_iter()
-            .filter(|id| exposed.uses.contains(*id) || rebound.contains(*id))
-            .cloned()
-            .collect()
+        for id in candidates.into_iter().filter(|id| rebound.contains(*id)) {
+            roots.entry(id.clone()).or_insert(None);
+        }
+        roots
     };
     let swap_private_effect = |i: usize| -> bool {
         let an = &analyses[i];
@@ -691,9 +696,16 @@ fn sweep_unreachable_top_level(
         };
         let shared = shared_roots(i)
             .iter()
-            .map(|id| {
+            .map(|(id, exposed_by)| {
+                let exposure = match exposed_by {
+                    Some(k) => format!(
+                        "exposed by item {k} `{}`",
+                        module_item_snippet(&module.body[*k])
+                    ),
+                    None => "rebound".to_string(),
+                };
                 format!(
-                    "`{}` (declared by retained item {})",
+                    "`{}` (declared by retained item {}, {exposure})",
                     id_name(id),
                     declarer[id]
                 )
