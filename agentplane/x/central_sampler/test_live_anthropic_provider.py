@@ -473,8 +473,6 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
     request = open_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
-    stable_prefix = "copper " * 3072 + "Stable cache prefix end."
-    request.spec.instructions = stable_prefix
     markers = [f"ANTHROPIC_CACHE_TURN_{index}_{uuid4().hex}" for index in range(1, 4)]
 
     async with service(config) as stub:
@@ -501,9 +499,13 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
     second_request = request_for_user_marker(state.intents, markers[1])
     third_request = request_for_user_marker(state.intents, markers[2])
     first_body, second_body, third_body = map(body_of, (first_request, second_request, third_request))
+    assert first_body["system"], "ordinary sampler instructions were omitted"
     for body in (first_body, second_body, third_body):
-        assert stable_prefix in json.dumps(body.get("system"), sort_keys=True)
+        assert body["system"] == first_body["system"], "system instructions changed across turns"
+        assert body["tools"] == first_body["tools"], "tool definitions changed across turns"
         assert body.get("output_config", {}).get("effort") == "low", "top-level launch effort changed"
+    assert second_body["messages"][: len(first_body["messages"])] == first_body["messages"]
+    assert third_body["messages"][: len(second_body["messages"])] == second_body["messages"]
 
     assert first_body.get("diagnostics", {}).get("previous_message_id") is None
     assert second_body.get("diagnostics", {}).get("previous_message_id") == response_of(first_request).get("id")
