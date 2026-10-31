@@ -5,8 +5,8 @@
       "sha256": "K1jzNwo5ia22XcMvOfGY1K728bdT0/90re8X6E6nFFQ="
     },
     "bb": {
-      "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.466/bazel-5.0.466-linux-x86_64",
-      "sha256": "32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU="
+      "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.498/bazel-5.0.498-linux-x86_64",
+      "sha256": "IF+0B0AShYyFjsNXywzx7Qsfv4cHxfOF79Sr1Suyzq0="
     },
     "bbapi": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-5fbfcc15530e/bbapi",
