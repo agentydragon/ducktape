@@ -73,7 +73,7 @@ func (r executorReadResult) output() []byte {
 func (r executorReadResult) uncertain() bool { return r.Failure != nil || r.Closed && !r.Exited }
 func (r executorReadResult) drained() bool   { return r.Exited && r.Closed && len(r.Chunks) == 0 }
 
-func describeProcessReadFailure(result executorReadResult) string {
+func describeProcessReadFailure(result *executorReadResult) string {
 	if result.Failure != nil {
 		return *result.Failure
 	}
