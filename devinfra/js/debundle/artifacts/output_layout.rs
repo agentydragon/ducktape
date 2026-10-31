@@ -31,6 +31,8 @@ pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
 /// `commuting_statements` entry: one `CommutingStatementsDiagnostic` per entry.
 pub const COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT: &str = "commuting_statements_diagnostics.json";
 pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
+/// Translation validation beside the gate's verdict; report only.
+pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
 pub const INDEX_REPORT: &str = "index.json";
 
 #[derive(Debug, Clone)]

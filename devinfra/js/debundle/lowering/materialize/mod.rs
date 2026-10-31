@@ -55,7 +55,7 @@ use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT,
     DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
-    SELECTOR_DIAGNOSTICS_REPORT,
+    SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
@@ -1508,6 +1508,7 @@ fn validate_and_emit_reports<'a>(
     };
     let rejected = !assignment_report.atomic_group_conflicts.is_empty()
         || !assignment_report.cycles.is_empty();
+    let translation_validation = assignment_analysis.translation_validation(assignment_report);
     // Full mode writes the dependency graph unconditionally; OnRejection
     // writes it only alongside rejection evidence (`gate describe`
     // recomputes per-edge blame from it).
@@ -1531,6 +1532,12 @@ fn validate_and_emit_reports<'a>(
             chunk_id,
             EXPORT_REENTRY_REPORT,
             export_reentry_report,
+        )?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            TRANSLATION_VALIDATION_REPORT,
+            &translation_validation,
         )?;
     }
     // Atomic-group conflicts take precedence over cycles: a split atom

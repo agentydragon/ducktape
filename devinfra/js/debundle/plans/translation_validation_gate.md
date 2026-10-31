@@ -99,6 +99,21 @@ order, so TV over edges rejects exactly what today rejects. The gain comes
 only when the pair check is sharper than the edge set. TV needs that
 sharpness on the swapped pairs alone, which the measurement shows are few.
 
+That equivalence holds for edges whose dependency precedes the dependent in
+the source. A **forward** ordering edge, an at-init read of a later
+declaration (`EagerUse`, often promoted through a call), asks the emit to
+swap the pair: the gate counts it violated when the emit keeps source order,
+and satisfied when the emit swaps it. Under § Semantics the opposite holds:
+kept order commutes, and a swap is a read of `Binding(b)` against its
+initialization. The edge-based TV (`translation_validation.json`, checked
+against the gate in every e2e test with `DEBUNDLE_TV_ORACLE`) therefore
+judges forward edges as the gate does and reports both directions beside the
+sweep. A forward read usually comes with a `binding_timeline` edge back from
+the declaration, so the pair stays atomic and neither direction is accepted;
+a forward edge without one (a premise-cleared callback read, as in
+`call_registration_contract_test`) is accepted only by swapping it, which
+the effect-set check must judge.
+
 ## Checking without materializing pairs
 
 Tana swaps 7.7 million statement pairs under a realizable order, so pairs
@@ -218,31 +233,29 @@ swapped conflicting pairs, not only the first.
 ## Migration
 
 Each step keeps today's gate authoritative until the comparison is clean.
+TV over today's edges runs beside the gate and writes
+`translation_validation.json`; it agrees with the gate on every e2e fixture
+and on both canonical inputs.
 
-1. **Emitted statement order and swapped-pair sweep over today's edges.** TV
-   runs beside the gate, with conflict defined as a violated constraining
-   edge, and must agree with the gate on every e2e fixture and on both
-   canonical inputs. That agreement is a theorem
-   ([§ Semantics](#semantics)), so a disagreement is a bug in the simulator,
-   the sweep or the gate. Report only.
-2. **Effect-set conflicts.** Switch the sweep to effect sets (needs
-   abstract-interpreter step 7) and report the differences against step 1 per
-   category. A pair TV accepts that the gate rejects must have no conflicting
-   cell. A pair TV rejects that the gate accepts is a soundness bug in the
-   edge rules or a missing effect.
-3. **Search.** Seed from hard edges and add the refine loop. Report
+1. **Effect-set conflicts.** Switch the sweep to effect sets (needs
+   abstract-interpreter step 7) and report the differences against the
+   edge-based verdict per category. A pair TV accepts that the gate rejects
+   must have no conflicting cell. A pair TV rejects that the gate accepts is
+   a soundness bug in the edge rules or a missing effect. Forward edges move
+   into the sweep here (§ Relation to today's gate).
+2. **Search.** Seed from hard edges and add the refine loop. Report
    side by side: today's verdict, TV's verdict, and swapped pairs per
    category.
-4. **Flip.** TV decides; today's gate becomes a report section for one
+3. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
-5. **Slim.** The graph build materializes hard edges only, and the full edge
+4. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
 
-The comparison runs in e2e as differential tests, beside
-`peel/gate_differential_test.rs`, and on the canonical inputs as a report
-diff.
+The comparison runs in e2e as differential tests
+(`e2e/translation_validation_differential_test.rs`, plus the oracle in every
+e2e test), and on the canonical inputs as a report diff.
 
 ## Measurements
 
@@ -326,6 +339,30 @@ heuristic order):
   barrier 3.
 - Four of those chunks keep a small constraining SCC even without heap
   barriers: `api` 4 modules, `cli` 7, `featureFlags` 8, `toolCgroup` 2.
+
+**Edge-based TV on the real emitted order** (the engine that landed it,
+2026-10-31). Unlike the prototype, this is the order the emitter writes:
+when the constraining subgraph is cyclic the emitter has no linker order and
+sorts module imports by `ModuleId`, the degraded order the plan replaces.
+
+| Input (gaffer-private #693, `988eeeab`)     | Chunks rejected by both | Swapped pairs | Conflicting edges (statement pairs, module pairs) | Forward edges kept / swapped |
+| ------------------------------------------- | ----------------------: | ------------: | ------------------------------------------------- | ---------------------------: |
+| Tana                                        |                  1 of 1 |    15,109,993 | 267,217 (134,302, 25,523)                         |                       6 / 15 |
+| Claude CLI (75 of 76 chunks reach the gate) |                 5 of 75 |     2,024,711 | 3,968 (3,968, 18)                                 |                    0 / 4,025 |
+
+TV and the gate agree on every chunk.
+
+- Tana's conflicts: `eager_use` 136,262, `binding_timeline` 130,764,
+  `cell_order` 191, on the `ModuleId` order left by the gate's constraining
+  SCCs of 963 and 2 modules.
+- Claude's conflicts, in the five rejected chunks (`api` 706, `cli` 2,102,
+  `featureFlags` 1,078, `toolCgroup` 80, `sessionSDK` 2), are
+  `binding_timeline` edges but for three heap-frontier `cell_order` edges.
+  Each `binding_timeline` conflict sits opposite a swapped forward
+  `eager_use` edge: an at-init read of a later declaration split from it. `mcp` (30)
+  and `remoteWorkerWire` (6) are accepted with swapped forward edges.
+- TV adds no measurable time: the runs took 1:39 (Tana) and 0:52 (Claude)
+  against 1:56 and 1:01 for the same inputs on `cb9eebe9`.
 
 ## Open questions
 

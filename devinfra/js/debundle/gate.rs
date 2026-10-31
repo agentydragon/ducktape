@@ -24,7 +24,7 @@ pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
     LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
-    SccRejection, check_realizability, check_realizability_touching,
+    SccRejection, TranslationValidationReport, check_realizability, check_realizability_touching,
     simulated_evaluation_post_order,
 };
 pub use validation::{
