@@ -10,7 +10,8 @@ import "agentplane/proto/runner.proto";
 import "agentplane/proto/sandboxes.proto";
 
 service RunnerIngress {
-  // One call per Session, opened by the runner. The first response answers `announce`.
+  // Each call carries one Session; concurrent calls may copy the same immutable journal.
+  // The first response answers `announce`.
   rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }
 
@@ -33,7 +34,8 @@ message PushFrame {
 
 // The ingress repeats its latest acknowledgement on an idle call every 10 s.
 message Acknowledgement {
-  // Every entry of the Session through this cursor is committed. Never decreases.
+  // Every entry of the Session through this cursor is committed, including entries supplied by
+  // another call. May exceed this call's sent prefix; never decreases within a call.
   uint64 cursor = 1;
   // The seal at `cursor` is committed; the ingress accepts nothing more from this journal.
   bool sealed = 2;

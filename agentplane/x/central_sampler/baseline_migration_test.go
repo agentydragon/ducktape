@@ -34,7 +34,7 @@ func migrationCount(t *testing.T, db *sql.DB, query string, args ...any) int {
 func seedCompletedNativeSeven(t *testing.T, db *sql.DB) {
 	t.Helper()
 	migrationExec(t, db, `ALTER TABLE sampler_conversation DROP COLUMN code_host_instance`)
-	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id>=8`)
 	migrationExec(t, db, `INSERT INTO central_sampler_goose_version(version_id,is_applied)
 		SELECT version_id,true FROM generate_series(1,7) AS version_id`)
 }
@@ -162,7 +162,7 @@ func TestNativeBaselineRejectsIncompleteSevenWithoutMarkingAdopted(t *testing.T)
 
 func TestNativeBaselineRejectsUnmarkedExistingSchema(t *testing.T) {
 	store := newTestStore(t)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=8`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id>=8`)
 	if err := migrateBaselineEight(t.Context(), store.DB()); err == nil || !strings.Contains(err.Error(), "without completed version 7 history") {
 		t.Fatalf("Migrate error = %v, want unmarked schema rejection", err)
 	}
@@ -210,5 +210,40 @@ func TestBaselineProviderStartsAfterAdoptingHostMarker(t *testing.T) {
 	}
 	if _, err := store.Read(t.Context(), owner); err != nil {
 		t.Fatalf("conversation read changed with host marker: %v", err)
+	}
+}
+
+func TestSnapshotCheckpointMigrationReconcilesLegacyMarkersOnce(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const target = "history:8080"
+	if err := store.CommitCheckpoint(t.Context(), session.ID, target, session.Cursor); err != nil {
+		t.Fatal(err)
+	}
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=9`)
+	if err := Migrate(t.Context(), store.DB()); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := store.Checkpoint(t.Context(), session.ID, target)
+	if err != nil || checkpoint != nil {
+		t.Fatalf("legacy checkpoint=%v err=%v, want pending metadata reconciliation", checkpoint, err)
+	}
+	pending, err := store.PendingSessionIDs(t.Context(), target, "", 16)
+	if err != nil || len(pending) != 1 || pending[0] != session.ID {
+		t.Fatalf("pending=%v err=%v, want original Session", pending, err)
+	}
+	entries, err := store.Events(t.Context(), session.ID, 0, 16)
+	if err != nil || len(entries) != int(session.Cursor) {
+		t.Fatalf("retained entries=%v err=%v", entries, err)
+	}
+	if err := store.CommitCheckpoint(t.Context(), session.ID, target, session.Cursor); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(t.Context(), store.DB()); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err = store.Checkpoint(t.Context(), session.ID, target)
+	if err != nil || checkpoint == nil || *checkpoint != session.Cursor {
+		t.Fatalf("completed snapshot checkpoint=%v err=%v, want retained on restart", checkpoint, err)
 	}
 }

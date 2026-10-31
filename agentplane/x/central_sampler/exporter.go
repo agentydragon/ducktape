@@ -61,16 +61,12 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 			if err != nil {
 				return fmt.Errorf("History initial acknowledgement: %w", err)
 			}
-			current, err := store.GetSession(callCtx, sessionID, "")
-			if err != nil {
+			if err := checkExportAcknowledgement(callCtx, store, sessionID, first, 0, session.Cursor); err != nil {
 				return err
 			}
-			if first.GetSealed() || first.GetCursor() > current.Cursor {
-				return errors.New("History acknowledgement conflicts with sampler journal")
-			}
-			after := first.GetCursor()
-			for after < session.Cursor && pages < exportPagesPerTurn {
-				entries, err := store.Events(callCtx, sessionID, after, min(exportPageSize, int(session.Cursor-after)))
+			acknowledged, sent := first.GetCursor(), first.GetCursor()
+			for acknowledged < session.Cursor && pages < exportPagesPerTurn {
+				entries, err := store.Events(callCtx, sessionID, sent, min(exportPageSize, int(session.Cursor-sent)))
 				if err != nil {
 					return err
 				}
@@ -87,10 +83,10 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 					}
 					return err
 				})
-				next := after
+				next := acknowledged
 				tasks.Go(func() error {
 					var err error
-					next, err = acknowledgeExportPage(pageCtx, store, sessionID, target, call, after, through)
+					next, err = acknowledgeExportPage(pageCtx, store, sessionID, call, acknowledged, through, session.Cursor)
 					if err != nil {
 						cancel()
 					}
@@ -99,7 +95,9 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 				if err := tasks.Wait(); err != nil {
 					return err
 				}
-				after = next
+				// ACKs cover the Session, including another exporter's commits. The
+				// entries carried by this stream must still be consecutive.
+				acknowledged, sent = next, through
 				pages++
 			}
 			if err := call.CloseSend(); err != nil {
@@ -114,11 +112,18 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 				if err != nil {
 					return err
 				}
-				if ack.GetSealed() || ack.GetCursor() < first.GetCursor() || ack.GetCursor() > after {
-					return errors.New("History acknowledgement outside sent prefix")
+				if err := checkExportAcknowledgement(callCtx, store, sessionID, ack, acknowledged, session.Cursor); err != nil {
+					return err
 				}
+				acknowledged = ack.GetCursor()
 			}
-			return store.CommitCheckpoint(callCtx, sessionID, target, after)
+			// A data ACK can precede the announced metadata's commit. Only a
+			// covered snapshot and successful RPC completion advance the durable
+			// completion checkpoint; a partial quantum stays pending locally.
+			if acknowledged >= session.Cursor {
+				return store.CommitCheckpoint(callCtx, sessionID, target, session.Cursor)
+			}
+			return nil
 		}()
 		cancel()
 		if err != nil {
@@ -149,21 +154,36 @@ func sendExportPage(call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb
 	return call.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Heartbeat{Heartbeat: &ingresspb.Heartbeat{}}})
 }
 
-func acknowledgeExportPage(ctx context.Context, store *Store, sessionID, target string, call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb.Acknowledgement], after, through uint64) (uint64, error) {
+func acknowledgeExportPage(ctx context.Context, store *Store, sessionID string, call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb.Acknowledgement], after, through, journalCursor uint64) (uint64, error) {
 	for after < through {
 		ack, err := call.Recv()
 		if err != nil {
 			return 0, fmt.Errorf("History batch acknowledgement: %w", err)
 		}
-		if ack.GetSealed() || ack.GetCursor() < after || ack.GetCursor() > through {
-			return 0, errors.New("History acknowledgement outside sent prefix")
-		}
-		after = ack.GetCursor()
-		if err := store.CommitCheckpoint(ctx, sessionID, target, after); err != nil {
+		if err := checkExportAcknowledgement(ctx, store, sessionID, ack, after, journalCursor); err != nil {
 			return 0, err
 		}
+		after = ack.GetCursor()
 	}
 	return after, nil
+}
+
+func checkExportAcknowledgement(ctx context.Context, store *Store, sessionID string, ack *ingresspb.Acknowledgement, previous, journalCursor uint64) error {
+	if ack.GetSealed() || ack.GetCursor() < previous {
+		return errors.New("History acknowledgement conflicts with sampler journal")
+	}
+	if ack.GetCursor() <= journalCursor {
+		return nil
+	}
+	// Another copier can export commits newer than this call's snapshot.
+	current, err := store.GetSession(ctx, sessionID, "")
+	if err != nil {
+		return err
+	}
+	if ack.GetCursor() > current.Cursor {
+		return errors.New("History acknowledgement exceeds sampler journal")
+	}
+	return nil
 }
 
 // exportQueue schedules Sessions with pending outbox entries. One worker at a

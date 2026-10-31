@@ -415,18 +415,31 @@ drivers at the configured Session limit; it releases completed driver tasks. Idl
 may exceed that active-driver cap. Those Sessions share the one lazy Codex host process.
 
 The exporter uses existing `RunnerIngress.Push` with an explicitly authorized sampler announcement,
-then replays original immutable entries. History's acknowledgement advances its durable local
-checkpoint. Reconnecting reconciles the remote cursor before sending, including the crash window
-after History commit but before local acknowledgement. It does not retry model/tool operations.
+then replays original immutable entries. Any sampler replica can export any Session, independently
+of agent-loop ownership; any History replica can receive it. Concurrent copies of the same journal
+are valid. An acknowledgement covers the Session's durable History prefix, including entries another
+copier supplied, and may exceed this stream's sent page or announced snapshot. Acknowledgements
+never decrease within a call, must not report a seal, and cannot exceed the current committed
+sampler journal. The exporter validates newer cursors against a fresh source read. Its sent cursor
+remains separate from the acknowledged cursor: entries within one stream stay consecutive even
+when a peer advances History ahead of it. Gaps and conflicting retained entries remain errors.
+
+The durable local export checkpoint records a completed snapshot, not an intermediate data ACK.
+It advances monotonically to the announced snapshot's cursor only after History covers that cursor
+and the RPC ends successfully, confirming the snapshot was committed or superseded. A partial
+quantum or failed RPC leaves the Session pending, even when History already has all its entries.
+Reconnecting reconciles the remote cursor before sending, including the crash window after History
+commit but before local acknowledgement; metadata-only catch-up therefore needs no entry replay.
+Exported sampler metadata changes advance the journal in the same transaction, so snapshots are
+ordered by cursor. Newer commits receive a fresh announcement. A sampler Pod replacement does not
+seal its Sessions' logical journals. History export never retries model/tool operations.
+
 Bounded pages and concurrent send/ack handling apply backpressure independently of sampling.
 The exporter reuses its connection and drains pending pages without an unconditional timer delay.
-Bounded scheduling quanta share capacity between Sessions. The exporter is correct with one sampler
-replica only: it claims no Session in the database, so a second replica would export the same
-Session concurrently. Committed outbox notifications from any writer wake the idle exporter, and
-listener reconnection triggers durable catch-up. Only failures incur retry backoff, per Session,
-exponential, and reset by progress. Each stream covers its announced snapshot; newer commits receive a fresh announcement
-so History also retains the final Session metadata. Caught-up archives retain no streams or tasks.
-History unavailability delays display while the sampler retains its outbox.
+Bounded scheduling quanta share capacity between Sessions. Committed outbox notifications from any
+writer wake the idle exporter, and listener reconnection triggers durable catch-up. Only failures
+incur retry backoff, per Session, exponential, and reset by progress. Caught-up archives retain no
+streams or tasks. History unavailability delays display while the sampler retains its outbox.
 
 Public Session ID is the inference correlation key. Executor Sandbox/incarnation are distinct
 metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse;

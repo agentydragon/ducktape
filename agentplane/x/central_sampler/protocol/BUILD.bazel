@@ -18,6 +18,10 @@ go_library(
     ],
     embedsrcs = ["base_instructions.txt"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol",
+    visibility = [
+        "//agentplane/history_service/ingress:__pkg__",  # real ingress exporter integration test
+        "//agentplane/x/central_sampler:__subpackages__",
+    ],
     deps = [
         "//agentplane/proto:event_go_proto",
     ],
