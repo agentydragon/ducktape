@@ -47370,7 +47370,7 @@
       "profile_source_commit": "e744e2cd0bb0faac1db9f005c418171ad17079f8",
       "aquery_invocation": "9a9c66a6-29a0-430b-8fd5-4521a964c9c7",
       "aquery_source_commit": "f1523c6c2d0f7126a1025f8f73d3d022d4888fb7",
-      "aquery_command": "bbr aquery --output=text mnemonic(\"TestRunner\", //agentplane/system_tests/suites:test_pod)",
+      "aquery_command": "bbr aquery --output=text 'mnemonic(\"TestRunner\", //agentplane/system_tests/suites:test_pod)'",
       "test_runner_inputs": [
         "test_pod.runfiles",
         "generate-xml.sh",
