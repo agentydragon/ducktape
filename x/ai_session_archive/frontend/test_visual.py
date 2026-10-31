@@ -195,7 +195,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
             await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()
 
-        events = page.locator(".session-browser-events")
+        events = page.get_by_role("region", name="Conversation records")
         geometry = await events.evaluate(
             "element => { const rect = element.getBoundingClientRect(); return { height: element.clientHeight, top: rect.top, bottom: rect.bottom, viewport: window.innerHeight }; }"
         )
@@ -204,7 +204,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         )
         assert transcript_viewport_is_usable, f"conversation viewport is too small or outside the viewport: {geometry}"
         assert await events.locator('[data-event-ordinal="1"]').evaluate(
-            "element => { const parent = element.closest('.session-browser-events'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
+            "element => { const parent = element.closest('[aria-label=\"Conversation records\"]'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
         )
         await view.check(context="child sessions scroll independently and the conversation stays visible")
         await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
@@ -222,7 +222,7 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
         if width < 600:
             await page.get_by_role("button", name="Session list", exact=True).click()
-        await page.get_by_role("button", name=re.compile("Tools and reasoning fixture")).click()
+        await page.get_by_role("link", name=re.compile("Tools and reasoning fixture")).click()
         history = page.get_by_role("region", name="Conversation records")
         await expect(history).to_have_attribute("data-layout-settled", "true")
         group = history.get_by_role("button", name="Tools and reasoning · 5 records", exact=True)
@@ -234,6 +234,10 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(group).to_have_attribute("aria-expanded", "true")
         await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
+        tool = history.locator('[data-event-ordinal="5"]')
+        await tool.scroll_into_view_if_needed()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(tool).to_be_in_viewport()
         await view.capture(name=f"{capture_name}_expanded")
         await group.click()
         await expect(history).to_have_attribute("data-layout-settled", "true")

@@ -57,7 +57,7 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
     <DisclosureCard open={open}>
       <RetainedDisclosure
         id={id}
-        summary={`${row.kind === "activity" ? "Tools and reasoning" : "Session details"} · ${row.records.length} records`}
+        summary={`${row.kind === "activity" ? "Tools and reasoning" : "Session details"} · ${row.records.length} ${row.records.length === 1 ? "record" : "records"}`}
       >
         <Stack gap="xs">
           {row.records.map((record) => (

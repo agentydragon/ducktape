@@ -785,6 +785,8 @@ it("folds intermediate work, preserves final answers, and exposes the original r
   expect(group.getAttribute("aria-expanded")).toBe("true");
   expect(view.textContent).toContain("I will inspect the build log.");
   const tool = view.querySelector<HTMLElement>('[data-event-ordinal="5"]')!;
-  await act(async () => findControl(tool, "Raw JSONL record").click());
-  expect(tool.querySelector("pre")?.textContent).toContain("read_build_log");
+  const rawControl = findControl(tool, "Raw JSONL record");
+  await act(async () => rawControl.click());
+  const rawPanel = document.getElementById(rawControl.getAttribute("aria-controls")!)!;
+  expect(rawPanel.querySelector("pre")?.textContent).toContain("read_build_log");
 });
