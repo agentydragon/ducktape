@@ -322,14 +322,14 @@ class RunnerGateway(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
-                # Read only through the Gateway's informer cache.
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["list", "watch"]),
+                # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
+                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
                     resources=[
                         custom_resource("kubevirt.io", "virtualmachineinstances"),
                         custom_resource("kubevirt.io", "virtualmachines"),
                     ],
-                    verbs=["list", "watch"],
+                    verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
