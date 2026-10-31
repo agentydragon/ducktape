@@ -101,7 +101,8 @@ class ViewportRig {
   constructor(
     rows: readonly { readonly key: string; readonly height: number }[],
     width: number,
-    viewportHeight: number
+    viewportHeight: number,
+    loadOlder: () => void = () => undefined
   ) {
     this.widthValue = width;
     this.viewportHeight = viewportHeight;
@@ -153,7 +154,7 @@ class ViewportRig {
       `view-${this.threadId}`,
       this.geometry,
       (synchronous) => this.renderRequests.push(synchronous),
-      () => undefined
+      loadOlder
     );
     activeRigs.add(this);
   }
@@ -318,6 +319,197 @@ describe("HistoryViewport DOM boundary", () => {
     expect(rig.writes).toEqual([500, 530]);
   });
 
+  it("keeps the committed reader anchor across growth, another wheel input, and scrollend", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 10 }, (_, index) => ({ key: `wheel-resize:${index}`, height: 100 })),
+      400,
+      200
+    );
+    const growingRow = rig.rows[1].node;
+    const bodyText = document.createTextNode("before expansion");
+    growingRow.append(bodyText);
+
+    rig.mount();
+    rig.flush();
+    rig.controller.pointerDown();
+    rig.userScrollTo(400);
+    rig.controller.scrolled();
+    rig.controller.pointerUp();
+    rig.viewport.dispatchEvent(new Event("scrollend"));
+    rig.flush();
+
+    const anchorRow = rig.rows[4].node;
+    const originalAnchorTop = anchorRow.getBoundingClientRect().top - rig.viewport.getBoundingClientRect().top;
+    expect(originalAnchorTop).toBe(0);
+    expect(rig.viewport.scrollTop).toBe(400);
+
+    bodyText.data = "expanded body above the reader anchor";
+    rig.setHeight("wheel-resize:1", 160);
+    // Model the browser's downstream reflow before React commits the corrected plan.
+    anchorRow.style.top = "460px";
+    rig.resizeObserver.deliverDelayed();
+    expect(rig.renderRequests.length).toBeGreaterThan(0);
+
+    rig.controller.input("wheel", "up", true);
+    rig.viewport.dispatchEvent(new Event("scrollend"));
+    rig.userScrollTo(360);
+    rig.controller.scrolled();
+    const updatedPlan = rig.flush();
+
+    expect(updatedPlan.total).toBe(1060);
+    expect(rig.viewport.scrollTop).toBe(420);
+    expect(anchorRow.getBoundingClientRect().top - rig.viewport.getBoundingClientRect().top).toBe(
+      originalAnchorTop + 40
+    );
+    expect(rig.writes).toEqual([800, 420]);
+  });
+
+  it("preserves following through an intermediate browser clamp after content shrinks", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 7 }, (_, index) => ({ key: `clamp:${index}`, height: 100 })),
+      400,
+      200
+    );
+    rig.mount();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(500);
+    expect(rig.writes).toEqual([500]);
+
+    for (const { key } of rig.rows) rig.setHeight(key, 80);
+    const finalMaximum = 7 * 80 - 200;
+    rig.userScrollTo(finalMaximum - 40);
+    rig.resizeObserver.deliverDelayed();
+    expect(rig.viewport.scrollTop).toBe(finalMaximum - 40);
+    expect(rig.writes).toEqual([500]);
+
+    const updatedPlan = rig.flush();
+    expect(updatedPlan.total).toBe(7 * 80);
+    expect(rig.viewport.dataset.scrollMode).toBe("following");
+    expect(rig.viewport.scrollTop).toBe(finalMaximum);
+    expect(rig.writes).toEqual([500, finalMaximum]);
+  });
+
+  it("loads older rows from a verified near-top layout during an active gesture", () => {
+    let loadOlderCalls = 0;
+    const rig = new ViewportRig(
+      Array.from({ length: 7 }, (_, index) => ({ key: `older:${index}`, height: 100 })),
+      400,
+      200,
+      () => loadOlderCalls++
+    );
+    rig.mount();
+    rig.flush();
+    expect(loadOlderCalls).toBe(0);
+
+    rig.controller.pointerDown();
+    rig.userScrollTo(150);
+    rig.controller.scrolled();
+    rig.flush();
+
+    expect(rig.controller.snapshot()?.capturing).toBe(true);
+    expect(rig.viewport.scrollTop).toBe(150);
+    expect(loadOlderCalls).toBe(1);
+  });
+
+  it("keeps a deep disclosure control in range, then follows the row after native scrolling", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 14 }, (_, index) => ({ key: `nested:${index}`, height: index === 0 ? 700 : 100 })),
+      400,
+      200
+    );
+    rig.mount();
+    const plan = rig.flush();
+
+    rig.controller.pointerDown();
+    rig.userScrollTo(550);
+    rig.controller.scrolled();
+    rig.controller.pointerUp();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(550);
+
+    const row = rig.rows[0].node;
+    const control = document.createElement("button");
+    row.append(control);
+    let controlInset = 600;
+    Object.defineProperty(control, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        const rowBox = row.getBoundingClientRect();
+        return rect(rowBox.top + controlInset, rig.controller.width, 20);
+      },
+    });
+    Object.defineProperty(control, "getClientRects", {
+      configurable: true,
+      value: () => [control.getBoundingClientRect()],
+    });
+
+    rig.controller.disclose(control);
+    const entities = new Map(rig.rows.map(({ key }) => [key, key]));
+    const mountedKeys = rig.controller.range(plan, entities).map(({ key }) => key);
+    expect(mountedKeys).toContain("nested:1");
+    expect(mountedKeys).toContain("nested:3");
+
+    const writesBeforeNativeScroll = rig.writes.length;
+    rig.userScrollTo(580);
+    rig.controller.scrolled();
+    controlInset = 640;
+    rig.flush();
+
+    expect(rig.viewport.scrollTop).toBe(580);
+    expect(rig.writes).toHaveLength(writesBeforeNativeScroll);
+  });
+
+  it("preserves the row position when its deeply clicked disclosure target disappears", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 14 }, (_, index) => ({ key: `removed:${index}`, height: index === 0 ? 700 : 100 })),
+      400,
+      200
+    );
+    rig.mount();
+    rig.flush();
+
+    rig.controller.pointerDown();
+    rig.userScrollTo(550);
+    rig.controller.scrolled();
+    rig.controller.pointerUp();
+    rig.flush();
+
+    const row = rig.rows[0].node;
+    const control = document.createElement("button");
+    row.append(control);
+    Object.defineProperty(control, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        const rowBox = row.getBoundingClientRect();
+        return rect(rowBox.top + 600, rig.controller.width, 20);
+      },
+    });
+    Object.defineProperty(control, "getClientRects", {
+      configurable: true,
+      value: () => [control.getBoundingClientRect()],
+    });
+    rig.controller.disclose(control);
+    const originalRowOffset = row.getBoundingClientRect().top - rig.viewport.getBoundingClientRect().top;
+    const writesBeforeExpansion = rig.writes.length;
+
+    control.remove();
+    rig.setHeight("removed:0", 730);
+    const removal = {
+      type: "childList",
+      target: row,
+      removedNodes: [control],
+      addedNodes: [],
+    } as unknown as MutationRecord;
+    expect(() => rig.contentObserver.deliverDelayed([removal])).not.toThrow();
+    expect(rig.writes).toHaveLength(writesBeforeExpansion);
+
+    const expandedPlan = rig.flush();
+    expect(expandedPlan.rows[0].height).toEqual({ kind: "observed", pixels: 730 });
+    expect(rig.viewport.scrollTop).toBe(550);
+    expect(row.getBoundingClientRect().top - rig.viewport.getBoundingClientRect().top).toBe(originalRowOffset);
+    expect(rig.writes).toHaveLength(writesBeforeExpansion);
+  });
+
   it("waits for the current width and body revision to be observed before correcting follow", () => {
     const rig = new ViewportRig(
       Array.from({ length: 7 }, (_, index) => ({ key: `resize:${index}`, height: 100 })),
@@ -354,6 +546,35 @@ describe("HistoryViewport DOM boundary", () => {
     expect(changedBodyPlan.rows[0].height).toEqual({ kind: "observed", pixels: 200 });
     expect(rig.viewport.scrollTop).toBe(720);
     expect(rig.writes).toEqual([500, 640, 720]);
+  });
+
+  it("requests a fresh plan for descendant content mutations before observing changed row geometry", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 7 }, (_, index) => ({ key: `mutation:${index}`, height: 100 })),
+      400,
+      200
+    );
+    const row = rig.rows[6].node;
+    const bodyText = document.createTextNode("initial body");
+    row.append(bodyText);
+
+    rig.mount();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(500);
+    const writesBeforeMutation = [...rig.writes];
+
+    bodyText.data = "body expanded after the current layout was committed";
+    rig.setHeight("mutation:6", 130);
+    const record = { type: "characterData", target: bodyText } as unknown as MutationRecord;
+    expect(() => rig.contentObserver.deliverDelayed([record])).not.toThrow();
+
+    expect(rig.renderRequests).toHaveLength(1);
+    expect(rig.writes).toEqual(writesBeforeMutation);
+    const updatedPlan = rig.flush();
+    expect(updatedPlan.rows[6].height).toEqual({ kind: "observed", pixels: 130 });
+    expect(updatedPlan.total).toBe(730);
+    expect(rig.viewport.scrollTop).toBe(530);
+    expect(rig.writes).toEqual([500, 530]);
   });
 
   it("ignores delayed observer callbacks after disposal", () => {

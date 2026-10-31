@@ -1531,10 +1531,11 @@ it("moves a local control into chronological history once projected and retains 
   projected.entityId = "inline-model";
   projected.cursor = "2";
   await rerender(container, threadState({ rows: [viewState(), projected] }));
-  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(0);
-  const [historyEntry] = await renderHistory([projected], false);
-  const settled = historyEntry.querySelector<HTMLElement>('[data-command-id="inline-model"]')!;
+  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(1);
+  const settled = pendingRow(container, "inline-model");
   expect(settled).not.toBeNull();
+  expect(settled.closest("[data-history-row-key]")).not.toBeNull();
+  expect(settled.querySelector('[data-stage="local"]')).toBeNull();
   expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
   expect(settled.textContent).toContain("Change model to next-model");
   expect(new LocalCommands(THREAD.id).getSnapshot().commands).toHaveLength(0);

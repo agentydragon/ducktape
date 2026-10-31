@@ -184,7 +184,6 @@ function HistoryViewportView({
         })}
       </div>
       <div ref={tailContent}>{tail}</div>
-      <div />
       {running && !controller.endVisible && (
         <div
           style={{

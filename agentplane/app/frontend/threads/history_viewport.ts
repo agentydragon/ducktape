@@ -6,7 +6,12 @@ import {
   type ThreadViewLayout,
 } from "./thread_view_recorder";
 
-type Anchor = { readonly entity: string; readonly offset: number; readonly target: HTMLElement | null };
+type Anchor = {
+  readonly entity: string;
+  readonly offset: number;
+  readonly inset: number;
+  readonly target: HTMLElement | null;
+};
 type Intent =
   | { readonly kind: "following" }
   | { readonly kind: "reading"; readonly anchor: Anchor }
@@ -44,6 +49,7 @@ export class HistoryViewport {
   private pending: PendingWrite | null = null;
   private lastTop = 0;
   private lastMaximum = 0;
+  private lastAnchor: Anchor | null = null;
   private pointer = false;
   private touchY: number | null = null;
   private inCommit = false;
@@ -74,8 +80,8 @@ export class HistoryViewport {
     this.resize.observe(content);
     this.resize.observe(tail);
     this.mutations = new MutationObserver((records) => {
-      this.invalidateMutations(records);
-      this.refresh();
+      if (this.invalidateMutations(records)) this.request();
+      else this.refresh();
     });
     this.mutations.observe(content, {
       subtree: true,
@@ -143,11 +149,11 @@ export class HistoryViewport {
     const retained = new Set<string>();
     if (this.intent.kind === "following") top = Math.max(0, plan.total - height);
     else {
-      const key = entities.get(this.intent.anchor.entity);
+      const key = entities.get(this.intent.anchor.entity) ?? this.intent.anchor.entity;
       const row = plan.rows.find((candidate) => candidate.key === key);
       if (row) {
         retained.add(row.key);
-        top = Math.max(0, row.start - this.intent.anchor.offset);
+        top = Math.max(0, row.start + this.intent.anchor.inset - this.intent.anchor.offset);
       }
     }
     return mountedRange(plan, top, height, height, retained);
@@ -231,6 +237,7 @@ export class HistoryViewport {
           following: this.intent.kind === "following",
         });
         this.lastTotal = plan.total;
+        threadViewRecorder.snapshotView("virtual-change", this.viewId, "committed-size");
       }
       threadViewRecorder.snapshotView("commit", this.viewId, "layout-verified");
       const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
@@ -238,7 +245,9 @@ export class HistoryViewport {
       this.reconcile({ committed: this.committed, intentRevision: this.intentRevision, maximum });
       this.lastMaximum = Math.max(0, element.scrollHeight - element.clientHeight);
       this.updateEndVisible();
-      if (this.intent.kind === "gesture") this.rebaseAnchor();
+      if (this.intent.kind === "gesture" || (this.intent.kind === "reading" && !this.intent.anchor.target))
+        this.rebaseAnchor();
+      this.lastAnchor = this.currentAnchor();
       const busy = content.querySelector('[aria-busy="true"]') !== null;
       this.setSettled(!busy && !this.requested);
       this.maybeLoadOlder();
@@ -265,6 +274,7 @@ export class HistoryViewport {
     return {
       entity: row.dataset.historyRowKey!,
       offset: (visibleTarget ?? row).getBoundingClientRect().top - top,
+      inset: visibleTarget ? visibleTarget.getBoundingClientRect().top - row.getBoundingClientRect().top : 0,
       target: visibleTarget,
     };
   }
@@ -297,6 +307,16 @@ export class HistoryViewport {
     if (owned || clamped || close(top, previous)) return false;
     const movedUp = top < previous;
     const gestureUp = this.intent.kind === "gesture" && this.intent.direction === "up";
+    // Several browser clamps may precede this read while width, height and row measurements
+    // change. Their intermediate maximum is not a user gesture or an anchor adjustment.
+    if (
+      movedUp &&
+      maximum !== this.lastMaximum &&
+      this.intent.kind !== "gesture" &&
+      !this.pointer &&
+      this.touchY === null
+    )
+      return false;
     // An unowned downward return uses this view's last committed extent. Unlike an arbitrary
     // historical bottom, it requires actual movement and cannot override an upward gesture.
     if (!movedUp && !gestureUp && (maximum - top <= 24 || close(top, this.lastMaximum))) {
@@ -304,7 +324,9 @@ export class HistoryViewport {
       return true;
     }
     if (this.intent.kind === "following") {
-      const anchor = this.currentAnchor();
+      const anchor = this.lastAnchor
+        ? { ...this.lastAnchor, offset: this.lastAnchor.offset - (top - previous) }
+        : this.currentAnchor();
       if (anchor)
         this.setIntent(
           this.pointer || this.touchY !== null
@@ -318,7 +340,8 @@ export class HistoryViewport {
         anchor: {
           ...this.intent.anchor,
           target: null,
-          offset: this.intent.anchor.offset - (top - previous),
+          inset: 0,
+          offset: this.intent.anchor.offset - this.intent.anchor.inset - (top - previous),
         },
       };
     }
@@ -332,14 +355,14 @@ export class HistoryViewport {
     let target = layout.maximum;
     let reason = "follow-committed-layout";
     if (this.intent.kind !== "following") {
-      const anchor = this.intent.anchor;
+      let anchor = this.intent.anchor;
       const row = this.nodes.get(this.entities.get(anchor.entity) ?? anchor.entity);
-      const nested = anchor.target;
-      if (nested?.isConnected && nested.getClientRects().length === 0) {
-        this.rebaseAnchor();
-        return;
+      const nested = anchor.target?.isConnected && anchor.target.getClientRects().length > 0 ? anchor.target : null;
+      if (anchor.target && !nested) {
+        anchor = { ...anchor, target: null, offset: anchor.offset - anchor.inset, inset: 0 };
+        this.intent = { ...this.intent, anchor };
       }
-      const node = nested?.isConnected ? nested : row;
+      const node = nested ?? row;
       if (!node) {
         this.rebaseAnchor();
         return;
@@ -356,7 +379,20 @@ export class HistoryViewport {
       this.lastTop = element.scrollTop;
       threadViewRecorder.snapshotView("scroll-after", this.viewId, reason);
     }
-    if (this.intent.kind !== "following" && !close(target, reachable)) this.rebaseAnchor();
+    if (this.intent.kind !== "following") {
+      if (!close(target, reachable)) this.rebaseAnchor();
+      else if (this.intent.anchor.target?.isConnected) {
+        const row = this.nodes.get(this.entities.get(this.intent.anchor.entity) ?? this.intent.anchor.entity);
+        if (row)
+          this.intent = {
+            ...this.intent,
+            anchor: {
+              ...this.intent.anchor,
+              inset: this.intent.anchor.target.getBoundingClientRect().top - row.getBoundingClientRect().top,
+            },
+          };
+      }
+    }
   }
 
   input(source: "wheel" | "key" | "touch", direction: "up" | "down", canScroll: boolean): void {
@@ -365,7 +401,9 @@ export class HistoryViewport {
     markThreadViewEvent({ kind: "input", source, direction, scrollTop: element.scrollTop });
     if (!canScroll) return;
     this.acceptMovement(Math.max(0, element.scrollHeight - element.clientHeight));
-    const anchor = this.currentAnchor();
+    // A new input can arrive after a DOM resize and before its new plan commits. Continue
+    // the verified reading anchor; sampling that intermediate DOM would absorb the resize.
+    const anchor = this.intent.kind === "following" ? (this.lastAnchor ?? this.currentAnchor()) : this.intent.anchor;
     if (!anchor) return;
     const reason: FollowReason = source === "wheel" ? "wheel-up" : source === "touch" ? "touch-up" : "key-up";
     this.setIntent({ kind: "gesture", anchor, direction }, reason);
@@ -451,7 +489,6 @@ export class HistoryViewport {
   private scrollEnded = (): void => {
     markThreadViewEvent({ kind: "scrollend", restoring: false, capturing: this.intent.kind === "gesture" });
     if (this.intent.kind === "gesture") {
-      this.rebaseAnchor();
       this.intent = { kind: "reading", anchor: this.intent.anchor };
       this.publish();
     }
@@ -468,7 +505,6 @@ export class HistoryViewport {
       this.element &&
       this.settled &&
       this.committed?.plan.rows.length &&
-      this.intent.kind !== "gesture" &&
       this.element.scrollTop < this.element.clientHeight
     )
       this.loadOlder();

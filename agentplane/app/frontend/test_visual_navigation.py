@@ -144,6 +144,7 @@ async def test_thread_view_recorder_in_sidebar_footer(view: VisualPage, app: Age
 
 
 async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     history = page.get_by_role("region", name="Thread history", exact=True)
@@ -153,6 +154,12 @@ async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, a
     await page.locator(".agentplane-thread-list-row-name", has_text="Running thread").click()
     await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Running thread")
     await expect(history).to_have_attribute("data-layout-settled", "true")
+    # Make a real scroll correction necessary; compact histories need no scroll write.
+    await _open_standalone_reasoning(page)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.hover()
+    await page.mouse.wheel(0, -300)
+    await page.get_by_role("button", name="Jump to latest", exact=True).click()
     await page.get_by_role("button", name="Thread view recorder (recording)", exact=True).click()
     async with page.expect_download() as downloaded:
         await page.get_by_role("menuitem", name="Stop and download recording", exact=True).click()
@@ -167,7 +174,7 @@ async def test_thread_view_recording_contains_thread_layouts(view: VisualPage, a
     assert len({entry["layout"]["viewId"] for entry in layouts}) == 2
     assert any(entry["phase"] == "frame" for entry in layouts)
     assert any(entry["phase"] == "virtual-change" for entry in layouts)
-    assert any(entry["phase"] == "scroll-after" and entry["reason"] == "rows-appended" for entry in layouts)
+    assert any(entry["phase"] == "scroll-after" and entry["reason"] == "follow-committed-layout" for entry in layouts)
     populated = [entry["layout"] for entry in layouts if entry["layout"]["mountedRows"]]
     assert populated
     assert all(layout["viewport"]["height"] > 0 for layout in populated)

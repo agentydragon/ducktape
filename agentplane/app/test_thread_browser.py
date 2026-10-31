@@ -904,6 +904,42 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await page.screenshot(path=undeclared_outputs_dir() / "sidebar-replica-updates.png")
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "phone"])
+async def test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible(
+    thread_browser: ThreadBrowser, request: pytest.FixtureRequest
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(item_id="test-browser-item", text="Test retained prefix")
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="growing-tail", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    for number in range(3):
+        paragraphs = "\n\n".join("A paragraph in the growing streaming message. " * 16 for _ in range(8))
+        marker = f"Visible streaming end {number}."
+        latest = source.append(
+            event_pb2.Event(
+                text_delta=event_pb2.TextDelta(item_id="growing-tail", text=f"\n\n{paragraphs}\n\n{marker}")
+            )
+        )
+        await expect_projected_cursor(page, latest.cursor)
+        await expect(history.get_by_text(marker, exact=True)).to_be_visible()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        assert await history.locator(".agentplane-markdown").last.evaluate(
+            "message => message.getBoundingClientRect().height > message.closest('[aria-label=\"Thread history\"]').clientHeight"
+        )
+        await expect_history_bottom(page)
+    await _review_screenshot(page, f"{request.node.name}.png", "Following the end of one tall streaming message")
+
+
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
 @pytest.mark.parametrize(
     ("viewport", "resized_viewport"),
@@ -1063,8 +1099,9 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                 area, growing, anchor, top: anchor.getBoundingClientRect().top,
                 scrollTop: area.scrollTop, events: [],
                 ended: new Promise(resolve => area.addEventListener('scrollend', () => {
-                    state.events.push('scrollend'); resolve();
-                }, { once: true })),
+                    state.events.push('scrollend');
+                    if (state.events.includes('resized')) resolve();
+                })),
             };
             return state;
         }""",
@@ -1107,6 +1144,7 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                 growing.style.minHeight = `${height + 600}px`;
             }"""
         )
+        assert not gesture.done(), "the resize must land while the native gesture is still running"
     finally:
         await gesture
         await cdp.detach()
@@ -1120,7 +1158,9 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
         })"""
     )
     await state.dispose()
-    assert outcome["events"].index("resized") < outcome["events"].index("scrollend"), outcome
+    # An application scroll correction can emit its own scrollend before the test's resize
+    # observer runs. The CDP gesture above must still finish and emit a later scrollend.
+    assert outcome["events"].index("resized") < len(outcome["events"]) - 1, outcome
     assert outcome["connected"], outcome
     # Only the requested scroll should move the line, irrespective of the 600px resize.
     assert abs(outcome["movement"] - gesture_distance) <= 2, (

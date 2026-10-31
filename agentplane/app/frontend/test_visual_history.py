@@ -1,5 +1,6 @@
 """Agentplane history visual behavior tests."""
 
+import json
 import re
 
 import pytest
@@ -7,7 +8,14 @@ import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import Page, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
+from agentplane.app.frontend.testing.app import (
+    IDLE_THREAD,
+    RUNNING_THREAD,
+    SUSPENDED_THREAD,
+    UNNAMED_THREAD,
+    AgentplaneFixture,
+    Scene,
+)
 from agentplane.app.frontend.testing.visual_assertions import (
     _expand_tool_steps,
     _focus,
@@ -27,6 +35,234 @@ from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+@pytest.mark.parametrize("viewport", [Viewport(width=828, height=866, device_scale_factor=1.25)], ids=["thread-switch"])
+async def test_switching_to_short_thread_keeps_history_compact(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SHORT_THREAD_SWITCH_HISTORY)
+    page = view.page
+
+    # Measure the exact same seven rows on a different Thread before seeding the target Thread.
+    await app.mount_thread(UNNAMED_THREAD)
+    warmup_history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(warmup_history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    wide_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    await warmup_history.evaluate("element => { element.style.overflowY = 'scroll'; }")
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    narrow_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    warmup_rows = await warmup_history.locator("[data-history-row-key]").evaluate_all(
+        """rows => rows.map(row => {
+          const rect = row.getBoundingClientRect();
+          return { key: row.dataset.historyRowKey, height: rect.height };
+        })"""
+    )
+    heights = {row["key"]: row["height"] for row in warmup_rows}
+    assert len(heights) == 7, warmup_rows
+    for key in ("lifecycle:visual-lifecycle-before", "lifecycle:visual-lifecycle-after"):
+        await app.remember_history_row_height(IDLE_THREAD, wide_width, key, heights[key])
+    for key, height in heights.items():
+        await app.remember_history_row_height(IDLE_THREAD, narrow_width, key, height)
+
+    await app.mount_thread(RUNNING_THREAD)
+    thread_name = page.get_by_role("textbox", name="Thread name", exact=True)
+    await expect(thread_name).to_have_value("Running thread")
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.evaluate(
+        """() => {
+          const samples = [];
+          const observed = new WeakSet();
+          let active = true;
+          let frame = 0;
+          const resize = new ResizeObserver(() => sample());
+          const sample = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            const content = history.firstElementChild;
+            const rows = [...history.querySelectorAll('[data-history-row-key]')].map(row => {
+              const rect = row.getBoundingClientRect();
+              return { key: row.dataset.historyRowKey, top: rect.top, bottom: rect.bottom, height: rect.height };
+            });
+            samples.push({
+              route: window.location.hash,
+              rowCount: rows.length,
+              rows,
+              rowSpan: rows.length > 0 ? rows[rows.length - 1].bottom - rows[0].top : 0,
+              contentHeight: content?.getBoundingClientRect().height ?? 0,
+              scrollHeight: history.scrollHeight,
+              clientHeight: history.clientHeight,
+              historyClientWidth: history.clientWidth,
+              historyScrollTop: history.scrollTop,
+              windowScrollY: window.scrollY,
+              documentScrollTop: document.scrollingElement?.scrollTop ?? 0,
+            });
+          };
+          const attachTargets = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            for (const target of [history, history.firstElementChild, ...history.querySelectorAll('[data-history-row-key]')]) {
+              if (target && !observed.has(target)) {
+                observed.add(target);
+                resize.observe(target);
+              }
+            }
+          };
+          const mutations = new MutationObserver(() => {
+            attachTargets();
+            sample();
+          });
+          mutations.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+          const tick = () => {
+            if (!active) return;
+            attachTargets();
+            sample();
+            frame = requestAnimationFrame(tick);
+          };
+          frame = requestAnimationFrame(tick);
+          window.__shortThreadSwitchProbe = {
+            stop() {
+              active = false;
+              cancelAnimationFrame(frame);
+              mutations.disconnect();
+              resize.disconnect();
+              sample();
+              return samples;
+            },
+          };
+        }"""
+    )
+
+    target_thread = page.locator(".agentplane-thread-list-row[role='button']").filter(has_text="Short thread arriving")
+    await expect(target_thread).to_be_visible()
+    await target_thread.click()
+    await expect(thread_name).to_have_value("Short thread arriving")
+    await expect(history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+
+    row_keys = await history.locator("[data-history-row-key]").evaluate_all(
+        "rows => rows.map(row => row.dataset.historyRowKey)"
+    )
+    assert set(row_keys) == set(heights), row_keys
+    await view.check(context="short thread after switch")
+    await view.capture()
+
+    samples = await page.evaluate("() => window.__shortThreadSwitchProbe.stop()")
+    final = samples[-1]
+    assert any(sample["rowCount"] == 0 for sample in samples), "the switched-to Thread never mounted empty"
+    assert final["contentHeight"] < final["clientHeight"], final
+    assert final["contentHeight"] < 450, final
+    transient_geometry = [
+        sample
+        for sample in samples
+        if sample["rowCount"] == 7
+        and (
+            sample["rowSpan"] > 450
+            or sample["scrollHeight"] > sample["clientHeight"] + 1
+            or sample["historyScrollTop"] > 1
+            or sample["windowScrollY"] > 1
+            or sample["documentScrollTop"] > 1
+        )
+    ]
+    assert not transient_geometry, f"short history transiently expanded or scrolled: {transient_geometry[:8]}"
+
+
+@pytest.mark.parametrize("viewport", [Viewport(width=1280, height=900, device_scale_factor=1.0)], ids=["desktop"])
+async def test_history_virtualization_cpu_profiles(view: VisualPage, app: AgentplaneFixture) -> None:
+    page = view.page
+    profile_summaries = []
+    for row_count, thread_id in ((500, IDLE_THREAD), (2000, UNNAMED_THREAD)):
+        await app.build_history_profile(row_count)
+        session = await page.context.new_cdp_session(page)
+        await session.send("Profiler.enable")
+        await session.send("Profiler.setSamplingInterval", {"interval": 1000})
+        await session.send("Profiler.start")
+        try:
+            await app.mount_thread(thread_id)
+            history = page.get_by_role("region", name="Thread history", exact=True)
+            head_row = history.locator('[data-history-row-key="item:profile-row-0"]')
+            tail_row = history.locator(f'[data-history-row-key="item:profile-row-{row_count - 1}"]')
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            await expect(tail_row).to_be_attached()
+            initial_count = await history.locator("[data-history-row-key]").count()
+            assert 0 < initial_count <= 80, f"{row_count} rows mounted {initial_count} DOM rows at the tail"
+            initial_top = await history.evaluate("element => element.scrollTop")
+            assert initial_top > 0, f"{row_count} rows did not create scrollable history"
+
+            await history.hover()
+            for _ in range(row_count // 30 + 5):
+                if await head_row.count():
+                    break
+                before = await history.evaluate(
+                    "element => ({scrollHeight: element.scrollHeight, scrollTop: element.scrollTop})"
+                )
+                await page.mouse.wheel(0, -200_000)
+                await page.wait_for_function(
+                    """before => {
+                      const history = document.querySelector('[aria-label="Thread history"]');
+                      const head = history?.querySelector('[data-history-row-key="item:profile-row-0"]');
+                      return !!head || (history !== null && (
+                        history.scrollTop < before.scrollTop - 1 ||
+                        history.scrollHeight > before.scrollHeight + 1
+                      ));
+                    }""",
+                    arg=before,
+                )
+                await expect(history).to_have_attribute("data-layout-settled", "true")
+            else:
+                mounted_keys = await history.locator("[data-history-row-key]").evaluate_all(
+                    "rows => rows.map(row => row.dataset.historyRowKey)"
+                )
+                raise AssertionError(
+                    f"{row_count}-row profile never loaded its head after repeated upward scrolling; "
+                    f"mounted {mounted_keys}"
+                )
+            await expect(head_row).to_be_attached()
+            await page.wait_for_function(
+                "() => document.querySelector('[aria-label=\"Thread history\"]')?.scrollTop <= 1"
+            )
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            top_count = await history.locator("[data-history-row-key]").count()
+            assert 0 < top_count <= 80, f"{row_count} rows mounted {top_count} DOM rows at the top"
+
+            await page.mouse.wheel(0, 200_000)
+            await expect(tail_row).to_be_attached()
+            await page.wait_for_function(
+                "() => { const el = document.querySelector('[aria-label=\"Thread history\"]'); "
+                "return el && el.scrollTop >= el.scrollHeight - el.clientHeight - 1; }"
+            )
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            bottom_count = await history.locator("[data-history-row-key]").count()
+            assert 0 < bottom_count <= 80, f"{row_count} rows mounted {bottom_count} DOM rows at the bottom"
+        finally:
+            response = await session.send("Profiler.stop")
+            await session.detach()
+
+        profile = response["profile"]
+        profile_path = view.output_dir / f"history-{row_count}-rows.cpuprofile"
+        profile_path.write_text(json.dumps(profile, separators=(",", ":")))
+        nodes = {node["id"]: node for node in profile["nodes"]}
+        non_idle_sampled_time_us = sum(
+            delta
+            for node_id, delta in zip(profile.get("samples", []), profile.get("timeDeltas", []), strict=True)
+            if nodes[node_id]["callFrame"].get("functionName") not in {"(idle)", "(program)"}
+        )
+        profile_summaries.append(
+            {
+                "row_count": row_count,
+                "profile_path": str(profile_path),
+                "sample_count": len(profile.get("samples", [])),
+                "non_idle_sampled_time_us": non_idle_sampled_time_us,
+                "mounted_row_counts": {"tail": initial_count, "top": top_count, "bottom": bottom_count},
+            }
+        )
+        assert profile_summaries[-1]["sample_count"] > 0, f"Chromium returned an empty profile for {row_count} rows"
+
+    (view.output_dir / "history-profile-summary.json").write_text(json.dumps(profile_summaries, indent=2))
+    await view.check(context="history virtualization profiles complete")
 
 
 @DESKTOP_AND_MOBILE
