@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/go:defs.bzl", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -30,6 +31,5 @@ go_test(
     ],
     data = ["//agentplane/runner/cmd:agentplane-runner"],
     embed = [":configuration"],
-    race = "on",
     deps = ["@io_bazel_rules_go//go/runfiles"],
 )

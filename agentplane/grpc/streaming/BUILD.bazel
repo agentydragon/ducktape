@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/go:defs.bzl", "go_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -12,7 +13,6 @@ go_test(
     name = "unit_test",
     srcs = ["send_test.go"],
     embed = [":streaming"],
-    race = "on",
     deps = [
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

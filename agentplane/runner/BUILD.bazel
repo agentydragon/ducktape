@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -9,6 +9,7 @@ load(
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
 load("//devinfra/erofs:defs.bzl", "erofs_image")
+load("//devinfra/go:defs.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -612,7 +613,6 @@ go_test(
     srcs = glob(["*_test.go"]),
     embed = [":runner"],
     exec_properties = {"test.dockerUser": "0:0"},
-    race = "on",
     deps = [
         "//agentplane/executor:executor_go_proto",
         "//agentplane/history_service:runner_ingress_go_proto",

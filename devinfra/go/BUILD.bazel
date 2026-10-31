@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 
 exports_files([
     "controller_gen.bzl",
+    "defs.bzl",
     "gopath_codegen.bzl",
     "kubernetes_clients.bzl",
     "proto_openapi.bzl",

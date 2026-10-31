@@ -1,7 +1,7 @@
 diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handlers/management/BUILD.bazel
 --- a/internal/api/handlers/management/BUILD.bazel
 +++ b/internal/api/handlers/management/BUILD.bazel
-@@ -166,3 +166,18 @@
+@@ -166,3 +166,19 @@
          "@org_golang_x_oauth2//:oauth2",
      ],
  )
@@ -9,6 +9,7 @@ diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handler
 +# OIDC boundary coverage is independently runnable from unrelated upstream tests.
 +go_test(
 +    name = "oidc_test",
++    race = "on",
 +    srcs = ["oidc_test.go"],
 +    embed = [":management"],
 +    deps = [
@@ -23,10 +24,11 @@ diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handler
 diff --git a/internal/managementasset/BUILD.bazel b/internal/managementasset/BUILD.bazel
 --- a/internal/managementasset/BUILD.bazel
 +++ b/internal/managementasset/BUILD.bazel
-@@ -24,6 +24,7 @@
+@@ -24,6 +24,8 @@
  
  go_test(
      name = "managementasset_test",
++    race = "on",
 +    visibility = ["//visibility:public"],
      srcs = ["updater_test.go"],
      embed = [":managementasset"],
@@ -34,7 +36,7 @@ diff --git a/internal/managementasset/BUILD.bazel b/internal/managementasset/BUI
 diff --git a/internal/logging/BUILD.bazel b/internal/logging/BUILD.bazel
 --- a/internal/logging/BUILD.bazel
 +++ b/internal/logging/BUILD.bazel
-@@ -62,3 +62,17 @@
+@@ -62,3 +62,18 @@
          "@com_github_sirupsen_logrus//hooks/test",
      ],
  )
@@ -43,6 +45,7 @@ diff --git a/internal/logging/BUILD.bazel b/internal/logging/BUILD.bazel
 +# recovery test written against gin v1.10.1, and this module resolves gin v1.12.0.
 +go_test(
 +    name = "upstream_timing_test",
++    race = "on",
 +    srcs = ["upstream_timing_test.go"],
 +    embed = [":logging"],
 +    deps = [
@@ -52,3 +55,10 @@ diff --git a/internal/logging/BUILD.bazel b/internal/logging/BUILD.bazel
 +    ],
 +    visibility = ["//visibility:public"],
 +)
+diff --git a/internal/api/middleware/BUILD.bazel b/internal/api/middleware/BUILD.bazel
+--- a/internal/api/middleware/BUILD.bazel
++++ b/internal/api/middleware/BUILD.bazel
+@@ -30,2 +30,3 @@
+ go_test(
+     name = "middleware_test",
++    race = "on",

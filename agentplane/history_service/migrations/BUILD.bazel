@@ -1,6 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/go:defs.bzl", "go_test")
 
 pkg_tar(
     name = "binary_layer",

@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/go:defs.bzl", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -47,7 +48,6 @@ go_test(
     ),
     embed = [":supervision"],
     exec_properties = {"test.dockerUser": "0:0"},
-    race = "on",
     deps = [
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
@@ -68,6 +68,7 @@ go_test(
     srcs = ["pid1_kernel_test.go"],
     embed = [":supervision"],
     pure = "on",
+    race = "off",
     tags = ["manual"],
     deps = ["@org_golang_x_sys//unix"],
 )
@@ -77,6 +78,7 @@ go_test(
     srcs = ["systemd_kernel_test.go"],
     embed = [":supervision"],
     pure = "on",
+    race = "off",
     tags = ["manual"],
     deps = [
         "@com_github_coreos_go_systemd_v22//dbus",

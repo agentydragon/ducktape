@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//devinfra/go:defs.bzl", "go_test")
 
 go_test(
     name = "comparison_test",
@@ -7,6 +7,7 @@ go_test(
         "transport_test.go",
     ],
     pure = "on",
+    race = "off",
     deps = [
         "@ducktape_iron_proxy//:certcache",
         "@ducktape_iron_proxy//:dnsguard",
@@ -24,6 +25,7 @@ go_test(
     ],
     args = ["-iron-streaming-patch"],
     pure = "on",
+    race = "off",
     deps = [
         "@ducktape_iron_proxy//:patched_certcache",
         "@ducktape_iron_proxy//:patched_dnsguard",

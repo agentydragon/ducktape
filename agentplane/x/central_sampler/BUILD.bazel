@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
@@ -7,6 +7,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 # gazelle:exclude test_live_anthropic_provider.py
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//devinfra/go:defs.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -453,7 +454,6 @@ go_test(
         "unified_exec_test.go",
     ],
     embed = [":central_sampler"],
-    race = "on",
     tags = ["requires_docker"],
     deps = [
         ":sampler_go_proto",

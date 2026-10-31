@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/go:defs.bzl", "go_test")
 
 go_library(
     name = "journal",
@@ -36,7 +37,6 @@ go_test(
         "recovery_test.go",
     ],
     embed = [":journal"],
-    race = "on",
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

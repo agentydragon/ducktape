@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
@@ -6,6 +6,7 @@ load(
     "NATIVE_RUNNER_DOCKER_ENV",
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
+load("//devinfra/go:defs.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])

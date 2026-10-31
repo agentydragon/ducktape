@@ -25,7 +25,9 @@ single_version_override(
 # is rules_python issue #1815, but it is not the same proposed behavior. Retire that
 # hunk only after a released plugin supplies the equivalent behavior and the Gazelle
 # drift check passes. The second hunk redirects emitted loads to Ducktape's wrapper
-# macros and is intentional repository integration, with no upstream retirement gate.
+# macros. The third preserves race detection for the plugin's generated manifest Go
+# test after race mode moves to per-target defaults. The latter two are intentional
+# repository integration, with no upstream retirement gate.
 # 2.3.3 already fixed the third problem we hit on 1.9.2: deletion of every srcs-less
 # main_module py_binary.
 single_version_override(
