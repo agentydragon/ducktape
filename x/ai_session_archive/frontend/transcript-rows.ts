@@ -295,7 +295,7 @@ function reasoningText(payload: ObjectValue): string | null {
 }
 
 function agentMessageText(payload: ObjectValue): string | null {
-  return plaintext(payload.message) ?? plaintext(payload.content) ?? plaintext(payload.text);
+  return agentPlaintext(payload.message) ?? agentPlaintext(payload.content) ?? agentPlaintext(payload.text);
 }
 
 const ENCRYPTED_TEXT_TYPES = new Set([
@@ -305,6 +305,9 @@ const ENCRYPTED_TEXT_TYPES = new Set([
   "redacted_text",
   "redacted_thinking",
 ]);
+// Codex archives can store the Agentplane routing header as text before encrypted message content.
+const AGENT_ROUTING_PREAMBLE =
+  /^Message Type: MESSAGE\r?\nTask name: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nSender: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nPayload:\r?\n/;
 
 /** Reads ordinary text fields and deliberately never inspects encrypted-content fields. */
 function plaintext(value: unknown): string | null {
@@ -320,6 +323,24 @@ function plaintext(value: unknown): string | null {
   if (item === null || ENCRYPTED_TEXT_TYPES.has(String(item.type))) return null;
   if (typeof item.text === "string" && item.text.trim().length > 0) return item.text;
   return plaintext(item.content) ?? plaintext(item.message);
+}
+
+function agentPlaintext(value: unknown): string | null {
+  if (typeof value === "string") {
+    const body = value.replace(AGENT_ROUTING_PREAMBLE, "");
+    return body.trim().length === 0 ? null : body;
+  }
+  if (Array.isArray(value)) {
+    const chunks = value.flatMap((item) => {
+      const text = agentPlaintext(item);
+      return text === null ? [] : [text];
+    });
+    return chunks.length === 0 ? null : chunks.join("\n");
+  }
+  const item = object(value);
+  if (item === null || ENCRYPTED_TEXT_TYPES.has(String(item.type))) return null;
+  if (typeof item.text === "string") return agentPlaintext(item.text);
+  return agentPlaintext(item.content) ?? agentPlaintext(item.message);
 }
 
 function lastOrdinal(records: readonly EventRecord[]): number {

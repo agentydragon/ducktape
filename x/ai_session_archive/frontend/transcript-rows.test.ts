@@ -134,7 +134,17 @@ describe("archive transcript grouping", () => {
     });
     const agentMessage = record(4, {
       type: "response_item",
-      payload: { type: "agent_message", author: "reviewer", recipient: "parent", message: "Found a mismatch." },
+      payload: {
+        type: "agent_message",
+        author: "reviewer",
+        recipient: "parent",
+        content: [
+          {
+            type: "input_text",
+            text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/disclosures\nPayload:\nFound a mismatch.",
+          },
+        ],
+      },
     });
     const encryptedMessage = record(5, {
       type: "response_item",
@@ -142,7 +152,13 @@ describe("archive transcript grouping", () => {
         type: "agent_message",
         author: "private-agent",
         recipient: "parent",
-        message: [{ type: "encrypted_content", data: "ciphertext" }],
+        content: [
+          {
+            type: "input_text",
+            text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/disclosures\nPayload:\n",
+          },
+          { type: "encrypted_content", data: "ciphertext" },
+        ],
       },
     });
     const output = record(6, {
@@ -182,6 +198,10 @@ describe("archive transcript grouping", () => {
     expect(encryptedStep?.text).toBe("Message content unavailable");
     expect(encryptedStep?.text).not.toContain("ciphertext");
     expect(encryptedStep?.records).toEqual([encryptedMessage]);
+    expect(activity.steps.find((step) => step.kind === "subagent" && step.records[0] === agentMessage)).toMatchObject({
+      kind: "subagent",
+      text: "Found a mismatch.",
+    });
   });
 
   it("keeps empty or encrypted-only reasoning as uncounted metadata and shows orphan results honestly", () => {
@@ -218,7 +238,7 @@ describe("archive transcript grouping", () => {
       },
       { kind: "record", records: [compaction] },
     ]);
-    expect(summarizeActivity(activityRow(rows[1]).steps)).toBe("1 tool result");
+    expect(summarizeActivity(activityRow(rows[0]).steps)).toBe("1 tool result");
   });
 
   it("keeps calls without outputs unfailed and identifies the row by its last record ordinal", () => {

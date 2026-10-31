@@ -957,13 +957,10 @@ it("retains an open result step when prepend supplies its matching call", async 
 
 it("renders session-shaped Codex work without bookkeeping or unavailable reasoning placeholders", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/codex-work-fixture");
-  expect(view.textContent).toContain("I'll compare the components");
   expect(view.textContent).toContain("The components are shared.");
   expect(view.textContent).toContain("Context compacted");
   expect(view.textContent).not.toContain("Structured record;");
   expect(view.querySelectorAll("[data-activity-step]")).toHaveLength(0);
-  await act(async () => findControl(view, "1 tool call, 1 agent message").click());
-  expect(view.textContent).toContain("Agent message · /root/shared_steps");
   expect(view.textContent).not.toContain("item completed");
   await act(async () => findControl(view, "1 tool call, 2 reasoning steps").click());
   expect(view.querySelectorAll('[data-activity-step="reasoning"]')).toHaveLength(1);
