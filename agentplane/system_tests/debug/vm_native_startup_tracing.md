@@ -59,3 +59,53 @@ Claude, Codex, the guest OS, or image unpacking. For repeat runs, download the t
 `process-spans.jsonl` and `vm-phases.jsonl` undeclared outputs and inspect the process span's
 `trace_id`, `parent_span_id`, resource and attributes. See [phase tracing](../README.md#phase-tracing)
 for collection and propagation details.
+
+## App-server initialization overlap experiment
+
+The [candidate VM suite](https://app.buildbuddy.io/invocation/4e6904ae-544c-457a-8517-e1a73c2b5282)
+passed all six scenarios on a fresh test action (`--noremote_accept_cached`, 346.4 s). Its
+`process-spans.jsonl` contains 14,258 spans, including 162 Runner spans (SHA-256
+`5931da01bd9d13112730c30f9436b369a08f187f1683872377f1729a39bf76fb`). The OOM
+scenario artifact names Session `e2517eff-aa24-4bac-90b3-23c4bc2733be` and native thread
+`01a19148-9cd8-7321-8488-250d4860afc3`. Joining Runner spans by their export source and
+process PID, then using that Session and thread identity, gives these boundaries relative to the
+OOM guest's app-server-start span:
+
+| Boundary                              | Candidate interval |
+| ------------------------------------- | -----------------: |
+| Exec-server launch                    |      0.019–1.801 s |
+| First successful exec readiness probe |      9.064–9.995 s |
+| App-server launch                     |      0.006–2.960 s |
+| App-server initialize                 |     2.961–17.238 s |
+| Thread handshake                      |    17.289–23.183 s |
+| First tool-start event publication    |    35.436–35.489 s |
+
+The other two Codex guests also started app-server initialization before their first successful
+exec readiness probe: app-server start to first ready probe end was 10.262 s and 9.884 s; their
+app-server-start spans ended at 17.501 s and 18.001 s. This proves the intended concurrent
+initialization occurred in the real guests while readiness still gated thread startup. The OOM
+guest's app-server initialization lasted 17.2 s versus 10.2 s in the earlier run, so the two
+samples do not show an end-to-end latency improvement. Tool-start spans mark event publication,
+not tool execution or time to first tool.
+
+The earlier test action ran on BuildBuddy worker `029a3c6b-4967-4cb3-a827-17bcb12bca1a`
+(327.6 s); the candidate ran on `d8f4681f-863b-4341-a222-9fafa0b33bef` (346.4 s). Both
+test actions executed, but their worker and underlying cache states were not controlled. The
+earlier effective source was `3c16fe96e9` atop the collector and OOM fixture changes described
+above. The candidate was the overlap worktree before its later Host stop-error message refinement;
+BuildBuddy recorded sync base `a7685d0f`, which is not the complete mirrored source. Rebase onto
+`origin/devel` changed no Runner files. These differences preclude a causal before/after wall-time
+claim from the two suite runs.
+
+The first candidate `runner_test` attempt [timed out at Bazel's 300 s limit](https://app.buildbuddy.io/invocation/bdee64f2-ce30-4605-9cd7-ffd2d1ccebff)
+without a useful test log. A focused Go 45 s timeout
+[captured the stack](https://app.buildbuddy.io/invocation/786743a4-5353-4196-93f3-866152e16b29):
+the deadline test was blocked in `synctest.Wait` while its newly real app-server subprocess had
+active stdout and stderr pipe reads inside the fake-clock bubble. The test was changed to use a
+short real deadline while preserving the assertion that joined demand keeps the original stored
+deadline. The focused Codex suite then passed in
+[BuildBuddy 71d30ca2](https://app.buildbuddy.io/invocation/71d30ca2-7b2e-478c-9c8b-50c28f393648),
+all 35 runner package targets passed in
+[BuildBuddy 4f7aa34b](https://app.buildbuddy.io/invocation/4f7aa34b-d5b2-40d8-aa6d-341327fad310),
+and the two lifecycle targets passed after the Host error-report refinement in
+[BuildBuddy e033a1b3](https://app.buildbuddy.io/invocation/e033a1b3-2ddf-46db-ae95-d0a3631e4ae8).

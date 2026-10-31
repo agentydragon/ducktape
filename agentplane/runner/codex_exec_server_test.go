@@ -281,7 +281,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 				return fenceFailure
 			},
 		}
-		r := newCodexSynctestRunner(t, stateDir, func(context.Context) (*supervision.Instance, error) {
+		r := newCodexDeadlineRunner(t, stateDir, time.Second, func(context.Context) (*supervision.Instance, error) {
 			if starts.Add(1) == 1 {
 				return instance, nil
 			}
@@ -464,6 +464,10 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supe
 }
 
 func newExecutorLifecycleRunnerWithURL(t *testing.T, url string, start func(context.Context) (*supervision.Instance, error), probe func(context.Context) error) *Runner {
+	return newExecutorLifecycleRunnerWithURLAndCodexBinary(t, url, "/bin/false", start, probe)
+}
+
+func newExecutorLifecycleRunnerWithURLAndCodexBinary(t *testing.T, url, codexBinary string, start func(context.Context) (*supervision.Instance, error), probe func(context.Context) error) *Runner {
 	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "executor-control.sock")
@@ -476,7 +480,9 @@ func newExecutorLifecycleRunnerWithURL(t *testing.T, url string, start func(cont
 		StateDir: t.TempDir(),
 		Control:  insecureControl(),
 		Launch:   configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
-		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
+		Codex: &harness.LaunchConfig{
+			Binary: codexBinary, BaseURL: "https://codex.example.invalid/v1", Token: "test",
+		},
 		CodexExecServer: &codexexecserver.Config{
 			URL: url, ContainerSocket: socket,
 		},

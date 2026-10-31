@@ -152,7 +152,10 @@ budget remains authoritative across all of its native services.
   and Kubernetes resource limits. It starts the shared `agentplane-runner` executable in explicit
   `executor` mode, before Runner, COSI and telemetry startup. Workspace and runtime paths are shared
   under the same Sandbox principal.
-- Runner starts the executor before the app-server and probes RPC progress every five seconds with
+- Runner may launch and initialize the shared app-server while executor startup is still in
+  progress. It admits no Codex Session to that app-server until the executor is ready; a refusal
+  or readiness deadline drains the app-server before the waiting Session receives the failure.
+  Runner probes executor RPC progress every five seconds with
   a three-second deadline. Three consecutive failures fence its work and restart the executor with
   bounded backoff; a successful probe resets the failure count. Server exit fences without waiting
   for further probes. A
