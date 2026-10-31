@@ -9485,8 +9485,8 @@
     }
   },
   "report_validation": {
-    "html_sha256": "9ad74d9e78e5959429256f10f55a5de93181bb9b67457183022efa5bd5ddbb40",
-    "invocation_id": "026fdde1-28b1-4629-a550-ed8061081f19",
+    "html_sha256": "c203dccd3f4a7c6cc345fd2268a6bea57db5eb50d870d409890b01c54d884a86",
+    "invocation_id": "28668f58-3de4-43de-90f2-0adc4293fbbc",
     "target": "//devinfra/ci/reports/x/followup_preview:test_report",
     "result": "PASSED",
     "browser_cases": 2,
@@ -9505,53 +9505,124 @@
     "screenshots": [
       {
         "name": "decisions-1280.png",
-        "sha256": "238e1694398c9c13229578934c02ba7979d2f958951fd6d8b4f8f07e87b2b16a"
+        "sha256": "cdf69c07ef9e2a29bd2e0d4e95350c9a07501f85d352fd041c01968354f3fd03"
       },
       {
         "name": "decisions-390.png",
-        "sha256": "226ec8de2ded16391da3d7966e6de90448dd9a5b2c5b7d20801d56ddee931710"
+        "sha256": "ba2be8a979d16adc0f1e53e7d9bbe6f3e8b256fac7191de8d74f070171560266"
       },
       {
         "name": "execution-1280.png",
-        "sha256": "802f26a68d8868a77d60cabf3c5fe765d78155807ecf4f50d6c785efeabef36c"
+        "sha256": "9c4475e280dfa14b0290bf996fdd3cf70e702f2680ef89ab84929d6a5a01f2c7"
       },
       {
         "name": "execution-390.png",
-        "sha256": "7c050281880d9098baaf10a9e6334a046eafbf6cb872785abcea7d114919c6ea"
+        "sha256": "ee0c4c2af3cc6f957a70f9e08623762a31add68753b86df8b227b2056eabc73c"
       },
       {
         "name": "feedback-1280.png",
-        "sha256": "317629b4756668ccb46375da20879fefc1e25eb5cb24c4c69b2d9c7feb9accc8"
+        "sha256": "3cecff24d950a938026b3460552e7b63b37bb7de6172c76bc6001aa010748cce"
       },
       {
         "name": "feedback-390.png",
-        "sha256": "b9c0af066e45d15ade07d9ade55308cc61d44d6a53d620a0175a6c71180e9656"
+        "sha256": "d6e5e77458be248fed08d2840027e7878990d76da83369260b89f170d1bb7fd4"
       },
       {
         "name": "overview-1280.png",
-        "sha256": "5b1f5c721c21328039c7317bbf195df28c50b500c50583d12026919a8dfd5146"
+        "sha256": "3f973e24fe62cbd09e9dc86366d22138a1a8aa3fc409c20da933cadd47ecf8aa"
       },
       {
         "name": "overview-390.png",
-        "sha256": "88b4649a281f0bba7f7993c39ac53c701f39212735170409281e068ced7a7089"
+        "sha256": "5981de40761d7c3eb8a2b601dd167fab445efdb0852f957f972308f8dec4ef51"
       },
       {
         "name": "retries-1280.png",
-        "sha256": "2c4ad6e2d1b5fd11f13f335ade7a2377a9ae7b486ffe2348290764c6a1448e52"
+        "sha256": "9c09fd2efff4af05dd584ec2b9f172749087bb73f44464bb5ad3e3f2e5abd217"
       },
       {
         "name": "retries-390.png",
-        "sha256": "232a465223f41535270b3cfc27075364faa30da81dff8fab25bc3a9a01050d1f"
+        "sha256": "252e91ddfc57e8b4449a6d6bfb7afb500592c0a24651d1552a6398790bb3f89e"
       },
       {
         "name": "shipped-1280.png",
-        "sha256": "7d95a1e93bdd3904e945381589e032184f446d78d08480e82396e3e00015672a"
+        "sha256": "4bef8a97c03c06018d5ba11da1fba1771ede2fbfc0f0c313b01ef90a0a2e2149"
       },
       {
         "name": "shipped-390.png",
-        "sha256": "66e8283878229f092c9572eab7a0931dc9013b0ca043a8935f96d8ce09cfde2d"
+        "sha256": "0a19d1a36a003d20dbcfc3ee8256abcd325d078c1644e42864ac208078264e3a"
       }
     ],
-    "scope": "Temporary source-worktree preview supplies authored report to normal RBE visual harness. No source implementation or sibling report namespace is changed."
+    "scope": "Temporary source-worktree preview supplies authored report to normal RBE visual harness. No source implementation or sibling report namespace is changed.",
+    "review_notes": "Reviewed all twelve final captures. Ten match the reviewed preceding b3a736ef preview byte-for-byte; the two updated shipped-work captures were reviewed separately."
+  },
+  "post_snapshot_investigations": {
+    "checked_at_utc": "2026-10-31T14:36:13.860000+00:00",
+    "scope": "Subsequent selected investigations; original arrival cohort and computed distributions unchanged.",
+    "pull_requests": [
+      {
+        "lane": 5,
+        "number": 13351,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13351",
+        "head": "57ac8eb055de089f06e2838c0f225d425b15afd2"
+      },
+      {
+        "lane": 3,
+        "number": 13352,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13352",
+        "head": "da0e9e60f2173e934652b6e4d0ff05d464e9e807",
+        "proof_invocation": "fc63eef9-0d6c-42e2-9756-6cb1c7bd1461",
+        "runner_resource_uid_spans": 249,
+        "runner_spans": 249,
+        "ready_guest_identities": 6
+      },
+      {
+        "lane": 2,
+        "number": 13359,
+        "state": "MERGED",
+        "url": "https://github.com/agentydragon/ducktape/pull/13359",
+        "head": "d4f8162f9c9f33ac290803fe146fbdceb5031664",
+        "proof_invocation": "a394fe63-0e05-4287-8748-08edfbc2228a"
+      },
+      {
+        "lane": 1,
+        "number": 13364,
+        "state": "OPEN",
+        "url": "https://github.com/agentydragon/ducktape/pull/13364",
+        "experimental_proofs_precede_integration": true
+      }
+    ],
+    "native_profile": {
+      "invocation": "44d682a7-5b89-4544-ae8e-259557148aa6",
+      "state": "PASSED",
+      "source_base": "61d18e604e37757ebc9838404a292fec6348181f",
+      "source_patch": "98771aff4fd8e6feeac6c9a4318ee4659d6ba7b70da724cc638e250347f00cec",
+      "raw_bytes": 3687840,
+      "raw_sha256": "3c6fde75c61be22a8f5b79fb7be8d0f0834f88c532d570deda9f4c9df024d75a",
+      "samples": 1054,
+      "lost": 0,
+      "guest_tgid": 400,
+      "oom_session": "c93426ee-8f4b-40c8-a7a6-555cec7c5c91",
+      "app_server_start_seconds": 20.072459,
+      "guest_unix_minus_uptime_nominal": 1793456112.8,
+      "clock_uncertainty_seconds": 1,
+      "nominal_cold_guest_samples": 315,
+      "nominal_cold_tgid_samples": 108,
+      "cold_tgid_samples_at_minus_plus_one_second_shift": [96, 120],
+      "sampled_user_cpu_seconds_approx": 2.204081632653061,
+      "separate_initialize_span_retained": false,
+      "limits": "User-only samples within selected guest, not host CPU. Kernel CPU, scheduling, TCG and waits unresolved. Guest clock fields used; CRI host receipt time is not the guest clock."
+    },
+    "native_control": {
+      "invocation": "83f4fdd3-3722-4987-8f57-b68f8ee421c3",
+      "state": "PASSED",
+      "source_commit": "c544fff5391b2b422e8026ec29daf190373fe706",
+      "target_seconds": 284,
+      "app_server_start_seconds": 19.097984,
+      "profile_artifact_present": false,
+      "log_follow_error": "ResourceExhausted: Log index limit exceeded"
+    },
+    "comparison_limits": "Different source snapshots and uncontrolled worker/cache conditions. Same image labels do not establish identical image bytes. No causal savings or overhead estimate."
   }
 }
