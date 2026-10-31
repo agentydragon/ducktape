@@ -373,8 +373,11 @@ pending provider-sampling intent only when it is the sole unresolved effect, exa
 pending pointer, has no live cell/process, and no model tool call remains unanswered. The provider
 may have completed the request or incurred charges, but a partial stream is not committed as model
 output and no sampler tool call from that response is dispatched before `Finish`. Recovery retains
-the stream evidence, explicitly abandons the response, and requires new user input on the same
-Session; the original command stays `UNKNOWN`. Compaction and setup uncertainty remain unsupported.
+the stream evidence and atomically emits `ConversationReconciled`, marking every observed item
+linked to that sampling intent `ABSENT`, including completed reasoning or tool-call items within
+the unfinished response. Earlier committed responses and executed tools remain unchanged, including
+earlier steps in the same turn. Recovery explicitly abandons the response and requires new user
+input on the same Session; the original command stays `UNKNOWN`. Compaction and setup uncertainty remain unsupported.
 Recovery stores an
 `abandoned` result with unknown remote outcome and no automatic replay, completes unanswered model
 calls with matching aborted outputs, retains provider history, and adds a model-visible warning.

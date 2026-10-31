@@ -99,7 +99,13 @@ may have completed or charged for the request. Recovery records that outcome as 
 the response without replay, and adds a model-visible notice. A streamed prefix is evidence, not
 committed model output; no sampler tool call from it was dispatched before the atomic provider
 `Finish`. The original command remains `UNKNOWN`, and a new user input continues the same Session
-from its last committed context. It also repairs older rejected cell calls that retained a pending pointer: the
+from its last committed context. In that same transaction, `ConversationReconciled` marks the
+abandoned sampling intent's observed items `ABSENT`, including completed items within its unfinished
+response. History retains their content and can show that it is not retained in context. Earlier
+committed responses and already executed tools remain unchanged, including earlier steps in the same
+turn. Recovery does not salvage a completed reasoning item from the abandoned response.
+
+Recovery also repairs older rejected cell calls that retained a pending pointer: the
 known rejected result is preserved, and the missing model output reports that no runtime operation
 was dispatched for that call. Other live handles are still abandoned under the same operator review.
 Compaction and required one-shot setup failures remain blocked and require a new Session.

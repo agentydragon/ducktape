@@ -678,9 +678,10 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
 			return protocol.ErrPrecondition
 		}
+		var reconciliation *eventpb.Event
 		if pendingSampling {
-			// A provider response is not a model turn until Finish atomically appends its
-			// output. Do not infer that it completed, or that an unrelated live effect is safe.
+			// Provider output enters model context atomically at Finish. Do not infer that
+			// it completed, or that an unrelated live effect is safe.
 			if len(unresolved) != 1 || unresolved[0].kind != IntentSampling || liveCell || liveProcess {
 				return protocol.ErrPrecondition
 			}
@@ -690,6 +691,10 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			}
 			if len(calls) != 0 {
 				return protocol.ErrPrecondition
+			}
+			reconciliation, err = samplingReconciliation(ctx, tx, session, conversation.Pending.ID)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -715,9 +720,16 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			if updated != 1 {
 				return protocol.ErrPrecondition
 			}
-			if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
-				session, intent.id, string(intent.kind), "abandoned", abandonedIntent); err != nil {
+			sources, err := s.recordEvidenceWithSources(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation,
+				session, intent.id, string(intent.kind), "abandoned", abandonedIntent)
+			if err != nil {
 				return err
+			}
+			if reconciliation != nil {
+				reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
+				if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+					return err
+				}
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
 		}
