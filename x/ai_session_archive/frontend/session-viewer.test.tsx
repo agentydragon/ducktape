@@ -1064,6 +1064,55 @@ it("renders session-shaped Codex work without bookkeeping or unavailable reasoni
   expect(reasoning.textContent).toContain("Keep commentary outside the work group");
 });
 
+it.each(["encrypted", "unknown"])("distinguishes %s agent messages without guessing at body fields", async (kind) => {
+  const parsed = {
+    type: "response_item",
+    payload: {
+      type: "agent_message",
+      author: "/root/reviewer",
+      recipient: "/root",
+      ...(kind === "encrypted"
+        ? {
+            content: [
+              {
+                type: "input_text",
+                text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n",
+              },
+              { type: "encrypted_content", encrypted_content: "ciphertext" },
+            ],
+          }
+        : { message: "Do not guess that this is the body." }),
+    },
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listEvents() {
+      return {
+        data: [
+          { ordinal: 1, parsed, kind: "agent_message", timestamp: null, raw_base64: btoa(JSON.stringify(parsed)) },
+        ],
+        next_cursor: null,
+      };
+    },
+  };
+  const view = await renderViewer(api);
+  const step = view.querySelector<HTMLElement>(
+    `[data-activity-step="${kind === "encrypted" ? "subagent" : "record"}"]`
+  )!;
+  expect(step).not.toBeNull();
+  await act(async () => findControl(step, kind === "encrypted" ? "Agent message" : "agent message").click());
+  expect(view.textContent).not.toContain("Message content unavailable");
+  if (kind === "encrypted") {
+    expect(step.textContent).toContain("Message body is encrypted in the archive.");
+    expect(step.textContent).not.toContain("ciphertext");
+    expect(step.textContent).not.toContain("Payload:");
+  } else {
+    expect(step.textContent).not.toContain("Do not guess that this is the body.");
+    await act(async () => findControl(step, "Raw JSONL record").click());
+    expect(view.textContent).toContain("Do not guess that this is the body.");
+  }
+});
+
 it("keeps records without readable content compact and inspectable", async () => {
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,

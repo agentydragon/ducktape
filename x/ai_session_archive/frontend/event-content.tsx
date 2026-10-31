@@ -41,6 +41,8 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
 
   const parsed = object(record.parsed);
   if (parsed === null) return null;
+  // Agent-message bodies are decoded by the activity adapter; unknown shapes use source inspection.
+  if (parsed.type === "response_item" && object(parsed.payload)?.type === "agent_message") return null;
   const attachment = parsed.type === "attachment" ? object(parsed.attachment) : null;
   if (attachment !== null) return <TextBlock label="Details" text={formatValue(attachment)} language="json" />;
 
