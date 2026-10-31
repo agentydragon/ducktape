@@ -11685,9 +11685,10 @@ impl PreparedCallableCapabilities {
         self.index.refine_native_branches(summaries);
     }
 
-    pub(crate) fn callback_object_arguments(
+    pub(crate) fn callback_object_arguments<'f>(
         &self,
         body: &[TopLevelItemView<'_>],
+        structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
     ) -> BTreeMap<String, (u32, BTreeSet<usize>)> {
         // Only source identity is complete here: callback argument coverage
         // helps resolve native writes, so no native construction is admitted.
@@ -11703,7 +11704,8 @@ impl PreparedCallableCapabilities {
             &self.index,
             body,
             &self.exported_locals,
-            None,
+            self.flow.as_ref(),
+            structural_flow,
             |_| false,
             |call| arguments(call).is_some(),
         )
@@ -11740,12 +11742,13 @@ pub(crate) fn prepare_callable_capabilities(
 }
 
 /// Consume the same prepared facts after resolving all modules' native writes.
-pub(crate) fn infer_callable_capabilities(
+pub(crate) fn infer_callable_capabilities<'f>(
     body: &[TopLevelItemView<'_>],
     prepared: PreparedCallableCapabilities,
     integrity: &NativeIntegrity,
     required_stable_providers: &BTreeSet<String>,
     derive_foreign_calls: bool,
+    structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
 ) -> InferredCallableCapabilities {
     let PreparedCallableCapabilities {
         mut index,
@@ -11808,7 +11811,8 @@ pub(crate) fn infer_callable_capabilities(
             &index,
             body,
             &exported_locals,
-            prepared_flow,
+            prepared_flow.as_ref(),
+            structural_flow,
             |family| {
                 matches!(
                     index
@@ -11846,11 +11850,12 @@ pub(crate) fn infer_callable_capabilities(
 /// by `foreign_call`. Dynamic scope can rebind any of them. `collection_intact`
 /// answers the census for an empty keyed collection's constructor; `wanted`
 /// selects summaries before value flow checks their binding's stability.
-fn infer_foreign_calls(
+fn infer_foreign_calls<'f>(
     index: &ExecutionIndex,
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
-    flow: Option<ChunkValueFlow>,
+    flow: Option<&ChunkValueFlow>,
+    structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
     collection_intact: impl Fn(NativeIntrinsic) -> bool,
     wanted: impl Fn(&InferredForeignCall) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
@@ -11922,7 +11927,13 @@ fn infer_foreign_calls(
     if candidates.is_empty() {
         return BTreeMap::new();
     }
-    let flow = flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
+    // Binding values do not depend on the tracked candidate objects, so the
+    // structural flow the purity oracle solves for this body anyway answers
+    // this check.
+    let flow = match flow {
+        Some(flow) => flow,
+        None => structural_flow(),
+    };
     candidates
         .into_iter()
         .filter(|(binding, call)| {

@@ -624,7 +624,7 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
-    let callable_summaries = resolve_imported_callable_summaries(
+    let mut callable_summaries = resolve_imported_callable_summaries(
         &modules,
         &asserted_callback_factories,
         &chunk_export_purity
@@ -691,7 +691,7 @@ pub(super) fn collect_cross_module_imported_purities(
             .iter()
             .map(|(name, module)| (name.clone(), module.imported_values(&export_values)))
             .collect(),
-        bindings: resolve_imported_purities(&modules, &asserted_pure, &callable_summaries),
+        bindings: resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
