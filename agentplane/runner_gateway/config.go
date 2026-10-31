@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 
@@ -31,6 +32,7 @@ type config struct {
 	PodIP                       string                    `mapstructure:"pod_ip"`
 	RunnerTokenFile             string                    `mapstructure:"runner_token_file"`
 	Kubeconfig                  string                    `mapstructure:"kubeconfig"`
+	KubernetesClientQPS         float32                   `mapstructure:"kubernetes_client_qps"`
 	ListenAddress               string                    `mapstructure:"listen_address"`
 	HTTPListenAddress           string                    `mapstructure:"http_listen_address"`
 	ProxyPort                   int                       `mapstructure:"proxy_port"`
@@ -108,6 +110,12 @@ func (c *config) validate() error {
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return errors.New("proxy_port must be between 1 and 65535")
+	}
+	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
+		return errors.New("kubernetes_client_qps must be finite")
+	}
+	if c.KubernetesClientQPS < 0 && c.KubernetesClientQPS != -1 {
+		return errors.New("kubernetes_client_qps must be -1 or nonnegative")
 	}
 	for _, positive := range []struct {
 		name  string

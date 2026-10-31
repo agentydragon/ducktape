@@ -34,8 +34,11 @@ for Sandbox observation. The Kubernetes HTTP spans inside the slow
 acquisitions are milliseconds; the seconds are spent before those HTTP
 requests. The default client-side limiter is therefore the inferred
 source of the ownership queue. Other Agentplane control services already
-set `QPS = -1` on their Kubernetes clients. The Gateway now does the
-same, preserving the Lease identity, generation, transition, and DB
+set `QPS = -1` on their Kubernetes clients. The Gateway reads
+`kubernetes_client_qps` from its strict service settings, and the Gateway
+workload explicitly sets it to `-1` in its deployment. Zero retains
+client-go's 5-QPS/10-burst default, `-1` disables its limiter, and a
+positive value sets the client's QPS with client-go's default burst of 10. This preserves the Lease identity, generation, transition, and DB
 claim checks.
 
 The uncached post-change real Pod case passed at

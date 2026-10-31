@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -96,6 +97,58 @@ func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T
 	for _, port := range []string{"0", "65536"} {
 		if _, err := loadTestConfig(t, required(t, settingPrefix+"PROXY_PORT="+port)); err == nil {
 			t.Fatalf("invalid advertised proxy port %s was accepted", port)
+		}
+	}
+}
+
+func TestKubernetesClientQPSFlowsFromSettingsToRESTConfig(t *testing.T) {
+	kubeconfig := writeSettings(t, `apiVersion: v1
+kind: Config
+clusters:
+- name: test
+  cluster: {server: "https://127.0.0.1:6443", insecure-skip-tls-verify: true}
+contexts:
+- name: test
+  context: {cluster: test, user: test}
+current-context: test
+users:
+- name: test
+  user: {}
+`)
+	for _, test := range []struct {
+		name, setting string
+		want          float32
+	}{
+		{name: "client-go default", want: 0},
+		{name: "limiter disabled", setting: "-1", want: -1},
+		{name: "positive limit", setting: "25.5", want: 25.5},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			environ := required(t, settingPrefix+"KUBECONFIG="+kubeconfig)
+			if test.setting != "" {
+				environ = append(environ, settingPrefix+"KUBERNETES_CLIENT_QPS="+test.setting)
+			}
+			c, err := loadTestConfig(t, environ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restConfig, err := kubernetesConfig(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if restConfig.QPS != test.want {
+				t.Fatalf("REST QPS = %v, want %v", restConfig.QPS, test.want)
+			}
+		})
+	}
+	c, err := loadTestConfig(t, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []float32{-2, -0.5, float32(math.NaN()), float32(math.Inf(1))} {
+		c.KubernetesClientQPS = invalid
+		if err := c.validate(); err == nil {
+			t.Fatalf("invalid QPS %v accepted", invalid)
 		}
 	}
 }

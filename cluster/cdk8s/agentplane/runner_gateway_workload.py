@@ -163,6 +163,7 @@ class RunnerGateway(Construct):
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
                 "runner_control_target_template": runner_gateway.control_target(namespace),
+                "kubernetes_client_qps": -1,
                 "sandbox_controller_account": _account(sandbox_controller[0]),
             }.items()
         }

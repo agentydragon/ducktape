@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from agentplane.runner_gateway.settings import Settings
 
 
-def _settings(runner_security: object) -> Settings:
+def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> Settings:
     return cast(
         Settings,
         Settings.model_validate(
@@ -23,6 +23,7 @@ def _settings(runner_security: object) -> Settings:
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
                 "runner_security": runner_security,
+                "kubernetes_client_qps": kubernetes_client_qps,
             }
         ),
     )
@@ -46,6 +47,17 @@ def test_gateway_rejects_ambiguous_runner_security(security: object) -> None:
 def test_gateway_requires_explicit_runner_security_mode() -> None:
     with pytest.raises(ValidationError):
         _settings(None)
+
+
+@pytest.mark.parametrize("qps", [-1, 0, 25.5])
+def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
+    assert _settings({"mode": "insecure"}, kubernetes_client_qps=qps).kubernetes_client_qps == qps
+
+
+@pytest.mark.parametrize("qps", [-2, -0.5, float("nan"), float("inf")])
+def test_gateway_rejects_invalid_kubernetes_client_qps(qps: float) -> None:
+    with pytest.raises(ValidationError):
+        _settings({"mode": "insecure"}, kubernetes_client_qps=qps)
 
 
 if __name__ == "__main__":
