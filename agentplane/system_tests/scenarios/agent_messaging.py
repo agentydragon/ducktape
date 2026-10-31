@@ -33,6 +33,7 @@ from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 BODY = "Test message: the change is ready for review."
@@ -110,16 +111,25 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         f"agentplane --json notifications send {cluster.namespace}/{recipient.name} {recipient_agent.thread_id}"
         f" --uid {recipient.uid} --key test-message-1 --body {shlex.quote(BODY)}"
     )
-    sending = await sender_agent.run_shell(sender_model, send)
-    sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
+    with tracer.start_as_current_span(
+        "system_test.agent_messaging.send", record_exception=False, set_status_on_exception=False
+    ):
+        sending = await sender_agent.run_shell(sender_model, send)
+        sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
     assert sent.destination_ref.uid == str(recipient.uid), sending.transcript
 
     async with asyncio.TaskGroup() as turns:
         turns.create_task(recipient_agent.next_turn())
-        notice_request = await recipient_model.request()
-        notice = _notice(notice_request)
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.notice_wait", record_exception=False, set_status_on_exception=False
+        ):
+            notice_request = await recipient_model.request()
+            notice = _notice(notice_request)
 
-        held = await _follow(sender_agent, sender_model, sent.id)
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.sender_state", record_exception=False, set_status_on_exception=False
+        ):
+            held = await _follow(sender_agent, sender_model, sent.id)
         assert held.covered, f"the recipient holds a notice, but the sender's message is not covered: {held}"
         assert not held.acknowledged, f"acknowledged before the recipient acknowledged anything: {held}"
 
@@ -127,9 +137,12 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
             f"curl -sSf {AUTHORIZATION} {NOTIFICATIONS}'/v1/inboxes/{notice.inbox_id}/entries"
             f"?afterCursor={notice.acknowledged_at_preparation}&limit=128'"
         )
-        await recipient_model.reply(notice_request, read)
-        read_request = await recipient_model.request()
-        inbox = _parsed(_output(read_request, read), notifications_pb2.ReadInboxResponse())
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.read_inbox", record_exception=False, set_status_on_exception=False
+        ):
+            await recipient_model.reply(notice_request, read)
+            read_request = await recipient_model.request()
+            inbox = _parsed(_output(read_request, read), notifications_pb2.ReadInboxResponse())
         assert inbox.inbox.session_id == str(recipient_agent.thread_id), inbox.inbox
         entry = one(entry for entry in inbox.entries if entry.event.message.message_id == sent.id)
         assert entry.event.message.sender == notifications_pb2.ServiceAccount(
@@ -142,10 +155,16 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
             f"curl -sSf -X PUT {AUTHORIZATION} -H 'Content-Type: application/json'"
             f" -d '{{\"throughCursor\": {entry.cursor}}}' {NOTIFICATIONS}'/v1/inboxes/{notice.inbox_id}/acknowledgement'"
         )
-        await recipient_model.reply(read_request, acknowledge)
-        await recipient_model.reply(await recipient_model.request(), Text("Read and acknowledged."))
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.acknowledge", record_exception=False, set_status_on_exception=False
+        ):
+            await recipient_model.reply(read_request, acknowledge)
+            await recipient_model.reply(await recipient_model.request(), Text("Read and acknowledged."))
 
-    followed = await _follow(sender_agent, sender_model, sent.id)
+    with tracer.start_as_current_span(
+        "system_test.agent_messaging.verify_sender_state", record_exception=False, set_status_on_exception=False
+    ):
+        followed = await _follow(sender_agent, sender_model, sent.id)
     assert followed.covered, followed
     assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
 

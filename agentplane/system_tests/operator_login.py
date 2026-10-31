@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.tracing import tracer
 
 # The k3s fixture's own apiserver (`agentplane/system_tests/k3s`), which holds only its test operator.
 K3S_FIXTURE_API = "https://127.0.0.1:6443"
@@ -52,10 +53,13 @@ async def verify_action_federation(http: httpx.AsyncClient) -> None:
     __tracebackhide__ = True
     request_id = uuid4()
     try:
-        response = await http.get(f"/upstream/actions/v1/action-requests/{request_id}")
-        failure = response.json()
-        if response.status_code == HTTPStatus.NOT_FOUND and _is_action_not_found(failure):
-            return
+        with tracer.start_as_current_span(
+            "system_test.operator_login.action_federation", record_exception=False, set_status_on_exception=False
+        ):
+            response = await http.get(f"/upstream/actions/v1/action-requests/{request_id}")
+            failure = response.json()
+            if response.status_code == HTTPStatus.NOT_FOUND and _is_action_not_found(failure):
+                return
     except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
         # Malformed responses and transport exceptions may contain private auth material.
         pass
@@ -92,6 +96,14 @@ def _kubectl(cluster: Cluster, *args: str) -> bytes:
 
 
 def read_operator_credentials(cluster: Cluster, *, secret_name: str) -> OperatorCredentials:
+    __tracebackhide__ = True
+    with tracer.start_as_current_span(
+        "system_test.operator_login.credentials_read", record_exception=False, set_status_on_exception=False
+    ):
+        return _read_operator_credentials(cluster, secret_name=secret_name)
+
+
+def _read_operator_credentials(cluster: Cluster, *, secret_name: str) -> OperatorCredentials:
     __tracebackhide__ = True
     # Project only the active server, never raw kubeconfig credentials. Reject any other cluster.
     server = _kubectl(cluster, "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
@@ -221,6 +233,23 @@ async def follow_dex_authorization(
     """
 
     __tracebackhide__ = True
+    with tracer.start_as_current_span(
+        "system_test.operator_login.dex_authorization", record_exception=False, set_status_on_exception=False
+    ):
+        return await _follow_dex_authorization(
+            authorization_url, browser, credentials, callback_app=callback_app, callback_path=callback_path
+        )
+
+
+async def _follow_dex_authorization(
+    authorization_url: str,
+    browser: httpx.AsyncClient,
+    credentials: OperatorCredentials,
+    *,
+    callback_app: httpx.URL,
+    callback_path: str,
+) -> tuple[str, str]:
+    __tracebackhide__ = True
     try:
         authorization = httpx.URL(authorization_url)
         issuer = httpx.URL(credentials.issuer.get_secret_value())
@@ -282,6 +311,14 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
     Caller must suppress HTTP logging and local-variable dumps for this sensitive exchange.
     No bearer headers or prepopulated cookies belong on this fresh client.
     """
+    __tracebackhide__ = True
+    with tracer.start_as_current_span(
+        "system_test.operator_login.oidc", record_exception=False, set_status_on_exception=False
+    ):
+        await _login_operator(http, credentials)
+
+
+async def _login_operator(http: httpx.AsyncClient, credentials: OperatorCredentials) -> None:
     __tracebackhide__ = True
     app = app_origin(str(http.base_url))
     issuer = httpx.URL(credentials.issuer.get_secret_value())

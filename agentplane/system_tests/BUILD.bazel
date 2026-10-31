@@ -131,6 +131,7 @@ py_library(
     srcs = ["operator_login.py"],
     deps = [
         ":cluster",
+        ":tracing",
         "//agentplane/app:oidc",
         "@pypi//beautifulsoup4",
         "@pypi//httpx",
@@ -324,6 +325,7 @@ py_library(
     data = ["//agentplane/system_tests/k3s:central_sampler_layout"],
     deps = [
         ":cluster",
+        ":tracing",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
