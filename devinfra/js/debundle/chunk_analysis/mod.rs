@@ -1,46 +1,22 @@
-//! Chunk-analysis composer for the per-chunk pipeline.
+//! Per-chunk analysis and dependency-graph construction, as two steps.
 //!
-//! Chunk analysis is independent of module placement. Given a parsed chunk AST,
-//! explicit [`AnalysisInputs`] (including author-certified assumptions), and
-//! per-chunk dependency-graph options, it produces:
+//! [`compute_chunk_facts`] analyzes one parsed chunk under explicit
+//! [`AnalysisInputs`] (author assumptions already resolved by the caller) and
+//! produces per-statement facts: declared bindings, eager/lazy reads,
+//! side-effect summaries, purity, top-level-await detection. It also owns the
+//! side effects that derive from those facts alone: stderr warnings for
+//! redundant purity hints, the top-level `await` bail (the realizability
+//! theorem does not cover it), and the input-chunk admission scan
+//! (docs/design.md A1/A3/A5; see `chunk_admission`).
 //!
-//! - per-statement static facts (declared bindings, eager/lazy reads,
-//!   side-effect summaries, purity classification, top-level-await
-//!   detection);
-//! - the dependency graph derived from those facts;
-//! - the structural atomic groups (source-unit-level SCCs of `G_atomic`),
-//!   which any valid factorization must keep co-located.
+//! [`build_chunk_graph`] derives the dependency graph and its structural atomic
+//! groups (source-unit SCCs of `G_atomic`, which every valid factorization keeps
+//! co-located) from those facts, [`GraphOptions`] and the chunk's resolved
+//! `commuting_statements`. The graph inputs are deliberately not part of
+//! analysis: an edit to them must not change the facts.
 //!
-//! The composer also owns the side-effects that derive purely from
-//! chunk-analysis output:
-//!
-//! - stderr warnings for redundant-purity / redundant-pure-member
-//!   spec hints the analyzer can already infer;
-//! - the fatal bail when a chunk contains a top-level `await` (which
-//!   the realizability theorem does not cover);
-//! - the input-chunk admission scan for the other statically
-//!   checkable input assumptions (docs/design.md A1/A3/A5; see
-//!   `chunk_admission`), including its override notices.
-//!
-//! Analysis results depend on `(chunk_id, module, analysis_inputs,
-//! dependency_graph_options)` plus the `source_path` annotation,
-//! the line-index callback for source-location resolution, and the
-//! caller-supplied dynamic-import resolver (the A3 admission check
-//! needs "which chunk does this specifier land in", but chunk
-//! analysis itself stays artifact-free). It does not read the spec directly,
-//! the assignment, chunk renames, or the unassigned-mode policy. Its caller
-//! resolves author annotations into assumptions before invoking analysis; the
-//! resulting facts are conditional on those contracts. Admission diagnostics
-//! and redundant-assumption warnings are emitted by this composer.
-//!
-//! Chunk analysis is materialized only in memory, by callers
-//! (today: `materialize_logical_chunk`) that call
-//! [`compute_chunk_analysis`] and pass its components to the
-//! materializer. A previous design also serialized chunk-analysis
-//! output to disk so a separate-process materialization action could
-//! consume the cache; that design was abandoned (see
-//! `docs/lessons_learned/cross_process_stage_b.md`).
-//! The composer survives as a structural readability boundary.
+//! Neither step reads the spec, the assignment, chunk renames or the
+//! unassigned-mode policy.
 //!
 mod chunk_admission;
 
@@ -52,60 +28,41 @@ use swc_common::Span;
 use swc_ecma_ast::Module;
 
 use analysis::AnalysisInputs;
+use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::atomic_groups::{
     DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
 };
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
-use analysis::graph::DependencyGraphOptions;
+use analysis::graph::GraphOptions;
 use analysis::purity::{
     RedundantPureMemberReason, RedundantPurityProofBasis, RedundantPurityReason,
 };
+use spec::AdmissionOverrides;
 
-/// Output of chunk analysis: per-chunk facts, dependency graph, and atomic
-/// groups that do not depend on the module assignment.
-#[derive(Debug, Clone)]
-pub struct ChunkAnalysisOutput {
-    /// Per-statement static facts plus chunk-wide flags (top-level
-    /// await detection, redundant purity / pure-member hints).
-    pub fact_analysis: ChunkFactAnalysis,
-    /// Dependency graph + structural atomic groups derived from
-    /// `fact_analysis.facts`. Carries no assignment-dependent state; the
-    /// atomic groups here are the *structural* class (per docs/design.md
-    /// §"Two classes of atom") that any valid factorization must
-    /// preserve.
-    pub dependency_graph_and_atomic_groups: DependencyGraphAndAtomicGroups,
-}
-
-/// Run chunk analysis from a precomputed structural layer: analyze the
-/// chunk's facts, emit any redundant-purity-hint diagnostics, fail fast
-/// if the chunk has top-level `await` or fails the input-chunk
-/// admission scan, then derive the dependency graph + structural atomic
-/// groups. Selector resolution uses that same structural layer before
-/// semantic member annotations can be projected to concrete bindings,
-/// so materialization reuses the structural analysis when building the final
-/// dependency graph.
+/// Analyze a chunk from its precomputed structural layer: compute its facts,
+/// emit any redundant-purity-hint diagnostics, and fail if the chunk has
+/// top-level `await` or fails the input-chunk admission scan. Selector
+/// resolution uses the same structural layer before semantic member
+/// annotations are projected to concrete bindings.
 ///
-/// Returns `Err` if the chunk has top-level `await` (the realizability
-/// theorem does not cover async modules — see docs/design.md A2) or
-/// violates a non-overridden admission check (docs/design.md
-/// A1/A3/A5; see `chunk_admission`). `resolve_dynamic_import`
-/// supplies the artifact-aware "where does this dynamic-import
-/// specifier land" answer for the A3 check — chunk analysis itself
-/// stays artifact-free.
+/// Returns `Err` for top-level `await` (docs/design.md A2) or a
+/// non-overridden admission violation (A1/A3/A5). `resolve_dynamic_import`
+/// supplies where a dynamic-import specifier lands, for the A3 check; the
+/// analysis itself stays artifact-free.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_chunk_analysis<F>(
+pub fn compute_chunk_facts<F>(
     chunk_id: &str,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
     source_path: Option<&str>,
     line_range_for_span: F,
-    dependency_graph_options: DependencyGraphOptions,
+    admission_overrides: AdmissionOverrides,
     export_reentry_policy: &ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<ChunkAnalysisOutput>
+) -> Result<ChunkFactAnalysis>
 where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
@@ -129,19 +86,23 @@ where
     enforce_chunk_admission(
         chunk_id,
         module,
-        dependency_graph_options.admission_overrides,
+        admission_overrides,
         resolve_dynamic_import,
     )?;
-    let dependency_graph_and_atomic_groups = compute_dependency_graph_and_atomic_groups_with(
-        &fact_analysis.facts,
-        dependency_graph_options,
-        &hints.assumptions.commuting_statements,
-    )
-    .with_context(|| format!("building dependency graph for chunk {chunk_id}"))?;
-    Ok(ChunkAnalysisOutput {
-        fact_analysis,
-        dependency_graph_and_atomic_groups,
-    })
+    Ok(fact_analysis)
+}
+
+/// Build the chunk's dependency graph and structural atomic groups from its
+/// facts. A `DependencyGraphBuildError` stays downcastable through the added
+/// context, so callers can report rejected `commuting_statements` entries.
+pub fn build_chunk_graph(
+    chunk_id: &str,
+    facts: &ChunkFactAnalysis,
+    options: GraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
+) -> Result<DependencyGraphAndAtomicGroups> {
+    compute_dependency_graph_and_atomic_groups_with(&facts.facts, options, commuting_statements)
+        .with_context(|| format!("building dependency graph for chunk {chunk_id}"))
 }
 
 /// Emit one stderr warning per spec hint the analyzer inferred

@@ -18,7 +18,7 @@
 //! residual plan index. It stays beside lowering because its input is
 //! the post-seed lowering assignment; mutation of the `ModulePlan`
 //! list happens at the caller (today: `ChunkPlanBuilder::apply_rebind_folds`).
-//! It runs after chunk analysis (`compute_chunk_analysis`) and after
+//! It runs after chunk analysis and graph build (`build_chunk_graph`) and after
 //! the assignment's seed phases, but before module emission.
 
 use std::collections::HashMap;

@@ -50,11 +50,11 @@ pub use facts::{
 pub use graph::{
     BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet,
     CommutingStatementsDiagnostic, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
-    DependencyGraphBuildError, DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason,
-    EdgeRole, EffectCellReport, HeapBarrierCause, KnownConflict, ModuleQuotient, PremiseVerdict,
-    SequencedCause, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
-    build_dependency_graph_with, build_module_quotient, chunk_constraining_module_edges,
-    position_lookup,
+    DependencyGraphBuildError, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole,
+    EffectCellReport, GraphOptions, HeapBarrierCause, KnownConflict, ModuleQuotient,
+    PremiseVerdict, SequencedCause, SourceUnit, SourceUnitClass, SourceUnitId,
+    UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with, build_module_quotient,
+    chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,

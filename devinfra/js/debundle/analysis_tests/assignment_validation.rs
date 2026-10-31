@@ -96,12 +96,8 @@ fn assignment_analysis_from_facts(
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
         ChunkId(0),
-        compute_dependency_graph_and_atomic_groups_with(
-            facts,
-            DependencyGraphOptions::default(),
-            &[],
-        )
-        .expect("chunk facts declare a binding twice"),
+        compute_dependency_graph_and_atomic_groups_with(facts, GraphOptions::default(), &[])
+            .expect("chunk facts declare a binding twice"),
         BindingCatalogue::new(ChunkId(0), bindings),
         planned_modules,
         HashMap::new(),
@@ -115,12 +111,8 @@ fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
     let result = AssignmentAnalysis::build_with(
         "diagnostic_chunk_name".to_string(),
         ChunkId(1),
-        compute_dependency_graph_and_atomic_groups_with(
-            &[],
-            DependencyGraphOptions::default(),
-            &[],
-        )
-        .expect("empty facts are valid"),
+        compute_dependency_graph_and_atomic_groups_with(&[], GraphOptions::default(), &[])
+            .expect("empty facts are valid"),
         BindingCatalogue::new(ChunkId(0), HashMap::new()),
         Vec::new(),
         HashMap::new(),

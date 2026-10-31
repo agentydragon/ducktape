@@ -622,17 +622,15 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
     }
 }
 
-/// Per-chunk dependency-graph build options. Each field defaults to the
+/// Per-chunk analysis and dependency-graph options. Each field defaults to the
 /// strictly-conservative behavior; opt-ins enable conditionally-correct
 /// inferences that hold only when the input satisfies a checkable
 /// precondition (see `devinfra/js/debundle/AGENTS.md` →
 /// "Conditionally-correct optimizations").
 ///
-/// Serves two roles with one type: it's the YAML surface for
-/// `TransformSpec::chunk_analysis_options` (each per-chunk entry
-/// deserializes into this), and it's the input to
-/// `analysis::build_dependency_graph_with`. The materializer threads it
-/// straight through — no per-chunk copy.
+/// The YAML surface of `TransformSpec::chunk_analysis_options`. Analysis
+/// consumes most fields; dependency-graph construction reads only its
+/// projection `analysis::GraphOptions`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DependencyGraphOptions {

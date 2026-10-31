@@ -12,11 +12,22 @@ use crate::facts::{EffectCell, SourceUnitReadClosure};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
-// `DependencyGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
-// and the graph-build API consume the same type. Re-exported from
-// crate root via `lib.rs` so `analysis::DependencyGraphOptions` continues
-// to be the canonical path for external callers.
-pub use spec::DependencyGraphOptions;
+/// The per-chunk options dependency-graph construction reads. Every other
+/// `chunk_analysis_options` field is consumed by analysis before the graph is
+/// built (`spec::DependencyGraphOptions`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GraphOptions {
+    /// `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`.
+    pub dataflow_aware_s_chain: bool,
+}
+
+impl From<&spec::DependencyGraphOptions> for GraphOptions {
+    fn from(options: &spec::DependencyGraphOptions) -> Self {
+        Self {
+            dataflow_aware_s_chain: options.dataflow_aware_s_chain,
+        }
+    }
+}
 
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitId};
 use super::edge::{
@@ -198,9 +209,6 @@ impl fmt::Display for CommutingStatementsDiagnostic {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencyGraphBuildError {
     DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
-    UnresolvedValueInputs { count: usize },
-    UnresolvedNativeInputs { count: usize },
-    UnresolvedArgumentInputs { count: usize },
     CommutingStatementsContradicted(CommutingStatementsContradiction),
     CommutingStatementsUnused(CommutingStatementsUnused),
 }
@@ -216,10 +224,7 @@ impl DependencyGraphBuildError {
             Self::CommutingStatementsUnused(error) => {
                 Some(CommutingStatementsDiagnostic::Unused(error.clone()))
             }
-            Self::DuplicateTopLevelDeclaration(_)
-            | Self::UnresolvedValueInputs { .. }
-            | Self::UnresolvedNativeInputs { .. }
-            | Self::UnresolvedArgumentInputs { .. } => None,
+            Self::DuplicateTopLevelDeclaration(_) => None,
         }
     }
 }
@@ -230,18 +235,6 @@ impl fmt::Display for DependencyGraphBuildError {
             Self::DuplicateTopLevelDeclaration(error) => error.fmt(f),
             Self::CommutingStatementsContradicted(error) => error.fmt(f),
             Self::CommutingStatementsUnused(error) => error.fmt(f),
-            Self::UnresolvedValueInputs { count } => write!(
-                f,
-                "cannot build a dependency graph with {count} unresolved captured value input(s); resolve them against the exact provider source first"
-            ),
-            Self::UnresolvedNativeInputs { count } => write!(
-                f,
-                "cannot build a dependency graph with {count} unresolved native author input(s); resolve them against the exact provider source first"
-            ),
-            Self::UnresolvedArgumentInputs { count } => write!(
-                f,
-                "cannot build a dependency graph with {count} unresolved argument input(s); resolve them against the exact provider source first"
-            ),
         }
     }
 }
@@ -255,7 +248,7 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 }
 
 /// Build the fine dependency graph from per-statement facts under the
-/// per-chunk [`DependencyGraphOptions`]. Pure IR construction: no module
+/// per-chunk [`GraphOptions`]. Pure IR construction: no module
 /// assignment, no quotient. Module-level dependencies are derived later
 /// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping source units to
 /// destination modules.
@@ -269,26 +262,9 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
-    options: DependencyGraphOptions,
+    options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraph, DependencyGraphBuildError> {
-    if !options.value_inputs.is_empty() {
-        return Err(DependencyGraphBuildError::UnresolvedValueInputs {
-            count: options.value_inputs.len(),
-        });
-    }
-    let native_input_count =
-        options.native_operation_inputs.len() + options.native_call_identity_inputs.len();
-    if native_input_count != 0 {
-        return Err(DependencyGraphBuildError::UnresolvedNativeInputs {
-            count: native_input_count,
-        });
-    }
-    if !options.argument_inputs.is_empty() {
-        return Err(DependencyGraphBuildError::UnresolvedArgumentInputs {
-            count: options.argument_inputs.len(),
-        });
-    }
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
     let mut nodes = Vec::<SourceUnit>::with_capacity(facts.len());
     for stmt in facts {
@@ -1189,7 +1165,7 @@ impl CellOrderBarrier {
 /// At source unit level, links impure top-level statements so any realizable
 /// schedule preserves their observable order.
 ///
-/// Two emission modes selected by [`DependencyGraphOptions`]:
+/// Two emission modes selected by [`GraphOptions`]:
 ///
 /// - **Strict chain** (default): every later impure statement gets one
 ///   incoming `Sequenced` edge from the immediately previous impure
@@ -1212,7 +1188,7 @@ impl CellOrderBarrier {
 /// const sequences.
 fn emit_s_chain(
     facts: &[StatementFacts],
-    options: DependencyGraphOptions,
+    options: GraphOptions,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
     if !options.dataflow_aware_s_chain {
@@ -2288,18 +2264,6 @@ impl UnresolvedCallFallback {
 #[cfg(test)]
 mod array_heap_frontier_tests {
     use super::*;
-
-    #[test]
-    fn raw_graph_builder_rejects_unresolved_native_call_identity_input() {
-        let options: DependencyGraphOptions = serde_json::from_str(
-            r#"{"native_call_identity_inputs":[{"source_match":{"match":"function f(x) { return Object.freeze(x); }","bindings":["f"]},"callee":"object_freeze","audited_source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            build_dependency_graph_with(&[], options, &[]).unwrap_err(),
-            DependencyGraphBuildError::UnresolvedNativeInputs { count: 1 }
-        );
-    }
 
     fn heap_frontier() -> CellOrderBarrier {
         CellOrderBarrier::HeapFrontier {

@@ -6,8 +6,8 @@ use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::GLOBALS;
 
+use analysis::RedundantPurityHint;
 use analysis::facts::ExportReentryPolicy;
-use analysis::{DependencyGraphOptions, RedundantPurityHint};
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModuleRequestMode};
@@ -16,7 +16,9 @@ use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
 use output_layout::MODULES_REPORT;
 use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
 
-use spec::{ChunkExportPurity, ChunkRenames, LogicalModule, UnassignedMode};
+use spec::{
+    ChunkExportPurity, ChunkRenames, DependencyGraphOptions, LogicalModule, UnassignedMode,
+};
 
 mod anonymous;
 mod body_facts;

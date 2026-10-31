@@ -40,7 +40,7 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
 fn build_dependency_graph(
     facts: &[StatementFacts],
 ) -> Result<DependencyGraph, DependencyGraphBuildError> {
-    build_dependency_graph_with(facts, DependencyGraphOptions::default(), &[])
+    build_dependency_graph_with(facts, GraphOptions::default(), &[])
 }
 
 /// A direct call `f()` at the chunk top level records `f` in the
