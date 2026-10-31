@@ -45,6 +45,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements
   (SA attribution, Sandbox scopes and tags, live bundles) and what is open after messaging shipped:
   the transcript-read rule and archive split, discovery, Session creation and Sandbox launch
+- [Caller-privilege Session delegation](session_delegation_workflows.md) — proposal for review:
+  concrete environment-reuse and external MCP workflows, backend gaps, structured results and
+  first-slice decisions; implementation awaits selection
 - [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
   question, browser error codes, attribution, and direct browser access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
