@@ -749,7 +749,11 @@ a reachable function calls it directly. Lexical nesting proves nothing either
 way: a site in a nested function counts when that function is reachable.
 Direct `eval` or `with` makes every function of the module reachable. The
 analysis is per module: an imported function is an export, hence an escape, of
-its defining module.
+its defining module. A statement after an unconditional `throw`, `return`,
+`break` or `continue` in the same statement list never runs, and neither does
+anything nested in it: its references publish nothing and its calls enter
+nothing. A function declaration there is still instantiated with the list's
+scope and keeps the ordinary rule.
 
 A top-level binding initialized with exactly `import.meta.require` is a loader
 alias. Its definition is classified through its uses instead of as an opaque

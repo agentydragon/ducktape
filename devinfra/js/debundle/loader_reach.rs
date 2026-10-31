@@ -11,6 +11,11 @@
 //! reachable can never run. The analysis is per module: an imported function
 //! is an export of its defining module and escapes there.
 //!
+//! A statement after an unconditional `throw`, `return`, `break` or `continue`
+//! in the same statement list never runs, nor does anything nested in it. A
+//! function declaration there is still instantiated with its list's scope, so
+//! it keeps the list's owner.
+//!
 //! The same walk records every use of an import binding and of a top-level
 //! `X = import.meta.require` declaration, so a loader exported under a name
 //! can be followed to each module that calls it.
@@ -28,6 +33,8 @@ use js_ast::str_value;
 enum Owner {
     TopLevel,
     Function(usize),
+    /// Code after an unconditional abrupt completion.
+    Dead,
 }
 
 struct FunctionNode {
@@ -95,9 +102,18 @@ pub(crate) fn loader_reach(
         namespace_sources: Vec::new(),
     };
     walk.register_tracked_bindings(module);
+    let mut dead = false;
     for (index, item) in module.body.iter().enumerate() {
         walk.item_index = index;
-        item.visit_with(&mut walk);
+        match item {
+            ModuleItem::Stmt(stmt) => walk.visit_list_stmt(stmt, dead),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(_),
+                ..
+            })) if dead => walk.in_dead(|walk| item.visit_with(walk)),
+            ModuleItem::ModuleDecl(_) => item.visit_with(&mut walk),
+        }
+        dead |= matches!(item, ModuleItem::Stmt(stmt) if ends_abruptly(stmt));
     }
     let reachable = if dynamic_scope {
         vec![true; walk.functions.len()]
@@ -107,6 +123,7 @@ pub(crate) fn loader_reach(
     let is_reachable = |owner: Owner| match owner {
         Owner::TopLevel => true,
         Owner::Function(index) => reachable[index],
+        Owner::Dead => false,
     };
     let unreachable = walk
         .site_owner
@@ -152,6 +169,15 @@ struct ReachWalk<'a> {
     tracked_index: HashMap<Id, usize>,
     tracked: Vec<TrackedBindingUses>,
     namespace_sources: Vec<(usize, String)>,
+}
+
+/// An unconditional abrupt completion: the rest of its statement list never
+/// runs.
+fn ends_abruptly(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Throw(_) | Stmt::Return(_) | Stmt::Break(_) | Stmt::Continue(_)
+    )
 }
 
 fn is_import_meta_require(expr: &Expr) -> bool {
@@ -265,6 +291,23 @@ impl ReachWalk<'_> {
         index
     }
 
+    fn in_dead(&mut self, walk: impl FnOnce(&mut Self)) {
+        self.owners.push(Owner::Dead);
+        walk(self);
+        self.owners.pop();
+    }
+
+    /// Visit one statement of a list; `dead` when an earlier statement of the
+    /// list completes abruptly. A function declaration is instantiated with
+    /// the list's scope even then.
+    fn visit_list_stmt(&mut self, stmt: &Stmt, dead: bool) {
+        if dead && !matches!(stmt, Stmt::Decl(Decl::Fn(_))) {
+            self.in_dead(|walk| stmt.visit_with(walk));
+        } else {
+            stmt.visit_with(self);
+        }
+    }
+
     fn in_function(&mut self, binding: Option<Id>, walk: impl FnOnce(&mut Self)) {
         let index = self.new_function(binding);
         self.owners.push(Owner::Function(index));
@@ -287,6 +330,7 @@ impl ReachWalk<'_> {
                 let owner_reachable = |owner: Owner| match owner {
                     Owner::TopLevel => true,
                     Owner::Function(other) => reachable[other],
+                    Owner::Dead => false,
                 };
                 if !owner_reachable(function.parent) {
                     continue;
@@ -315,6 +359,14 @@ impl ReachWalk<'_> {
 
 impl Visit for ReachWalk<'_> {
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_stmts(&mut self, stmts: &[Stmt]) {
+        let mut dead = false;
+        for stmt in stmts {
+            self.visit_list_stmt(stmt, dead);
+            dead |= ends_abruptly(stmt);
+        }
+    }
 
     fn visit_export_all(&mut self, node: &ExportAll) {
         self.namespace_sources
@@ -489,7 +541,8 @@ impl Visit for ReachWalk<'_> {
             self.site_owner.insert(key, self.owner());
         }
         let id = node.to_id();
-        if !self.record_use(&id, key, None, false) {
+        // A dead reference neither runs nor publishes anything.
+        if !self.record_use(&id, key, None, false) && self.owner() != Owner::Dead {
             self.escaped.insert(id);
         }
     }
@@ -599,6 +652,52 @@ mod tests {
             (
                 "function f() { f(); import.meta.require('a'); }",
                 vec![false],
+            ),
+        ] {
+            assert_eq!(reachable(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn code_after_an_unconditional_abrupt_completion_never_runs() {
+        for (source, expected) in [
+            (
+                "function f() { throw 1; import.meta.require('a'); } f();",
+                vec![false],
+            ),
+            (
+                "function f() { throw 1; const h = () => import.meta.require('a'); h(); } f();",
+                vec![false],
+            ),
+            (
+                "function f() { if (x) { throw 1; } import.meta.require('a'); } f();",
+                vec![true],
+            ),
+            (
+                "function f() { if (x) throw 1; import.meta.require('a'); } f();",
+                vec![true],
+            ),
+            // A declaration after the abrupt statement is still instantiated.
+            (
+                "function f() { return g; function g() { import.meta.require('a'); } } f();",
+                vec![true],
+            ),
+            // A dead reference does not publish it.
+            (
+                "function f() { throw 1; globalThis.g = g; function g() { import.meta.require('a'); } } f();",
+                vec![false],
+            ),
+            (
+                "switch (x) { case 1: break; import.meta.require('a'); case 2: import.meta.require('b'); }",
+                vec![false, true],
+            ),
+            (
+                "for (;;) { continue; import.meta.require('a'); } import.meta.require('b');",
+                vec![false, true],
+            ),
+            (
+                "throw 1; import.meta.require('a'); export function f() { import.meta.require('b'); }",
+                vec![false, true],
             ),
         ] {
             assert_eq!(reachable(source), expected, "{source}");
