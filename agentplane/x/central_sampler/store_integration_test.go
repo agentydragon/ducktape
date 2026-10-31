@@ -53,7 +53,7 @@ func TestKnownNotDispatchedInitializationSettlesPendingToolOnlyWithoutOtherUncer
 			if err != nil {
 				t.Fatal(err)
 			}
-			sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+			sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 			if err != nil {
 				t.Fatal(err)
 			}
