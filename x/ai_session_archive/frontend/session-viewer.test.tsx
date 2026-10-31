@@ -55,6 +55,26 @@ function findControl(view: HTMLElement, text: string): HTMLButtonElement | HTMLA
   return control;
 }
 
+async function toggleConversationOptions(view: HTMLElement): Promise<void> {
+  await act(async () => {
+    findControl(view, "Conversation options").click();
+    await flush();
+  });
+}
+
+function findVersionMenuItem(view: HTMLElement, versionId: string): HTMLButtonElement {
+  const trigger = findControl(view, "Conversation options");
+  const menuId = trigger.getAttribute("aria-controls");
+  if (trigger.getAttribute("aria-expanded") !== "true" || menuId === null) {
+    throw new Error("Conversation options menu is not open");
+  }
+  const item = document
+    .getElementById(menuId)
+    ?.querySelector<HTMLButtonElement>(`[role="menuitemradio"][data-version-id="${versionId}"]`);
+  if (item == null) throw new Error(`Could not find captured-version menu item ${JSON.stringify(versionId)}`);
+  return item;
+}
+
 function findProgressBar(view: HTMLElement, machineName: string): HTMLElement {
   const progressBar = [...view.querySelectorAll<HTMLElement>('[role="progressbar"]')].find(
     (item) => item.getAttribute("aria-label") === `${machineName} file-entry progress`
@@ -146,7 +166,8 @@ it("opens a direct session link outside the first page and restores the requeste
 
   expect(view.querySelector('select[aria-label="Filter by harness"]')).toHaveProperty("value", "codex");
   expect(view.querySelector('input[aria-label="Filter by machine"]')).toHaveProperty("value", "ThinkPad");
-  expect(view.querySelector('select[aria-label="Captured version"]')).toHaveProperty("value", "codex-version-1");
+  await toggleConversationOptions(view);
+  expect(findVersionMenuItem(view, "codex-version-1").getAttribute("aria-checked")).toBe("true");
   expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
     "This is the earlier captured version."
   );
@@ -244,9 +265,11 @@ it("renders session and related-session navigation as shareable links without ca
 it("does not show a different transcript for an unavailable version URL", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/codex-thread-1?version=missing-version");
   const transcript = view.querySelector('[aria-label="Session transcript"]');
-  expect(view.querySelector('select[aria-label="Captured version"]')).toHaveProperty("value", "missing-version");
   expect(transcript?.textContent).toContain("Requested capture unavailable");
   expect(transcript?.textContent).not.toContain("I found two snapshots for this session.");
+  await toggleConversationOptions(view);
+  expect(document.body.textContent).toContain("Requested capture unavailable");
+  await toggleConversationOptions(view);
 
   await act(async () => {
     findControl(view, "View current capture").click();
@@ -281,7 +304,11 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   );
   expect(view.textContent).toContain("Compare two captured versions");
   expect(view.textContent).toContain("I found two snapshots for this session.");
-  expect(view.textContent).toContain("Latest captured");
+  await toggleConversationOptions(view);
+  const latestCapture = findVersionMenuItem(view, "codex-version-2");
+  expect(latestCapture.getAttribute("aria-checked")).toBe("true");
+  expect(latestCapture.textContent).toContain("Latest captured");
+  await toggleConversationOptions(view);
 
   const malformed = view.querySelector<HTMLElement>('[data-event-ordinal="3"]');
   expect(malformed?.textContent).toContain("Malformed JSONL");
@@ -298,11 +325,10 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(structured?.textContent).toContain("Codex · context compacted");
   expect(structured?.textContent).toContain("Structured record; expand raw data to inspect it.");
 
-  const version = view.querySelector<HTMLSelectElement>('select[aria-label="Captured version"]');
-  expect(version).not.toBeNull();
+  await toggleConversationOptions(view);
+  const earlierCapture = findVersionMenuItem(view, "codex-version-1");
   await act(async () => {
-    version!.value = "codex-version-1";
-    version!.dispatchEvent(new Event("change", { bubbles: true }));
+    earlierCapture.click();
     await flush();
   });
   expect(view.textContent).toContain("This is the earlier captured version.");

@@ -131,12 +131,16 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
             )
 
-            version_picker = page.get_by_label("Captured version")
+            version_menu = page.get_by_role("button", name="Conversation options")
             await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Earlier transcript capture.")
-            await expect(version_picker).to_have_value(str(older_id))
-            await version_picker.select_option(str(latest_id))
+            await version_menu.click()
+            older_capture = page.locator(f'[role="menuitemradio"][data-version-id="{older_id}"]')
+            await expect(older_capture).to_have_attribute("aria-checked", "true")
+            latest_capture = page.locator(f'[role="menuitemradio"][data-version-id="{latest_id}"]')
+            await latest_capture.click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            assert page.url == f"{origin}/sessions/{session_id}"
             await page.go_back()
             await expect(transcript).to_contain_text("Earlier transcript capture.")
             await page.go_forward()

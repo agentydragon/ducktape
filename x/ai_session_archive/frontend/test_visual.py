@@ -47,11 +47,18 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(page.locator('[aria-label="Session transcript"]')).to_contain_text(
             "I found two snapshots for this session."
         )
-        await expect(
-            page.locator('[aria-label="Session transcript"] select[aria-label="Captured version"]')
-        ).to_contain_text("Latest captured")
-        await view.check(context="machine list and captured version are visible")
+        options = page.get_by_role("button", name="Conversation options", exact=True)
+        await expect(options).to_be_visible()
+        await expect(page.locator('select[aria-label="Captured version"]')).to_have_count(0)
+        await view.check(context="machine list and latest capture are visible with compact conversation controls")
         await view.capture(target=page.locator("#root"))
+        await options.click()
+        await expect(page.locator('[role="menuitemradio"][data-version-id="codex-version-2"]')).to_have_attribute(
+            "aria-checked", "true"
+        )
+        await expect(page.get_by_role("menuitemradio", name=re.compile("Latest captured"))).to_be_visible()
+        await view.capture(name=f"{capture_name}_conversation_options")
+        await page.keyboard.press("Escape")
 
 
 async def test_import_progress_details(visual: VisualHarness, capture_name: str) -> None:
@@ -103,6 +110,16 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         await view.check(context="compact import progress and the session-list button fit the mobile viewport")
         await view.capture(target=page.locator("#root"))
 
+        await page.get_by_role("button", name="Conversation options", exact=True).click()
+        menu = page.get_by_role("menu")
+        await expect(menu).to_be_visible()
+        menu_bounds = await menu.bounding_box()
+        assert menu_bounds is not None
+        assert menu_bounds["x"] >= 0
+        assert menu_bounds["x"] + menu_bounds["width"] <= 390
+        await view.capture(name=f"{capture_name}_conversation_options")
+        await page.keyboard.press("Escape")
+
         await session_list_toggle.click()
         sidebar = page.get_by_role("dialog", name="Session list")
         session_list_refresh = sidebar.get_by_role("button", name="Refresh session list")
@@ -129,9 +146,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
-        await expect(
-            page.locator('[aria-label="Session transcript"] select[aria-label="Captured version"]')
-        ).to_be_visible()
+        await expect(page.get_by_role("button", name="Conversation options", exact=True)).to_be_visible()
         await view.check(context="child transcript and inferred parent link are visible")
         await view.capture(target=page.locator("#root"))
 
