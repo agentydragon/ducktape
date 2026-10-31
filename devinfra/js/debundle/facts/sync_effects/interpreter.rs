@@ -51,6 +51,7 @@ use crate::reports::schema::{
     NativePrefixObservation, NativePrototypePropertyCheck, RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
+use rustc_hash::FxHashSet;
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -462,7 +463,9 @@ pub(super) struct ExecutionInputs<'source> {
     imported_values: &'source BTreeMap<String, Value>,
     /// Stable own primitive fields, admitted using canonical rebind facts.
     enum_data_members: BTreeMap<Id, BTreeSet<String>>,
-    top_bindings: BTreeSet<Id>,
+    /// Hashed: effect promotion tests every lazy read of every promoted
+    /// callable against it. `binding_owner` holds the same bindings in order.
+    top_bindings: FxHashSet<Id>,
     binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
@@ -2413,14 +2416,35 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        let top = &self.inputs.top_bindings;
-        let promoted_reads: Vec<&Id> = reads.intersection(top).collect();
+        self.promote_top_effects(
+            self.top_restricted(reads),
+            self.top_restricted(rebinds),
+            effect_owner,
+            outcome,
+        );
+    }
+
+    /// The top-level bindings among sorted `ids`, in order.
+    fn top_restricted<'a>(&self, ids: &'a BTreeSet<Id>) -> Vec<&'a Id> {
+        ids.iter()
+            .filter(|id| self.inputs.top_bindings.contains(*id))
+            .collect()
+    }
+
+    /// `promote_lazy_effects` for sorted, distinct top-level `promoted_reads`
+    /// and `promoted_rebinds`.
+    fn promote_top_effects(
+        &self,
+        promoted_reads: Vec<&Id>,
+        promoted_rebinds: Vec<&Id>,
+        effect_owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
         let uninitialized: Vec<&Id> = promoted_reads
             .iter()
             .copied()
             .filter(|id| !self.state.initialized_bindings.contains(*id))
             .collect();
-        let promoted_rebinds: Vec<&Id> = rebinds.intersection(top).collect();
         let effects = &mut outcome.effects;
         let assumed = &mut effects.fallback_only;
         match self.state.assumption.as_ref() {
@@ -5993,9 +6017,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // without calling an exported callback. Preserve all such obligations.
         // This deliberately buys precision only at construction, not member use.
         self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
-            this.promote_lazy_effects(
-                &this.inputs.top_bindings,
-                &BTreeSet::new(),
+            this.promote_top_effects(
+                this.inputs.binding_owner.keys().collect(),
+                Vec::new(),
                 this.state
                     .current_top_owner
                     .expect("foreign record use has a top owner"),
@@ -8402,7 +8426,7 @@ pub(crate) fn annotate_synchronous_calls(
         .intersection(&index.hoisted_function_owners)
         .copied()
         .collect();
-    let top_bindings: BTreeSet<_> = facts
+    let top_bindings: FxHashSet<_> = facts
         .iter()
         .flat_map(|fact| fact.declared.iter().cloned())
         .collect();

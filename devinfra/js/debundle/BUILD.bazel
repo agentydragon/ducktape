@@ -575,6 +575,7 @@ rust_library(
         "@crates//:imbl",
         "@crates//:petgraph",
         "@crates//:roaring",
+        "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:strum",
