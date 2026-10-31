@@ -152,14 +152,10 @@ def _mcp_edge_oauth(origin: str, app_origin: str, upstream_client_id: str) -> OA
     """The standalone edge's OAuth server at `origin`, using its own registered client at Dex."""
     files = Path(actions.MCP_OAUTH_DIR)
     return OAuthSettings(
-        config_url=f"{fixture_chart.DEX_ISSUER}/.well-known/openid-configuration",
         upstream_client_id=upstream_client_id,
         upstream_client_secret_file=files / "client-secret",
         base_url=origin,
         integration_app_url=app_origin,
-        # These legacy keys are still accepted by the shared OAuth settings model; the edge does not read them.
-        jwt_signing_key_file=files / "unused-jwt-signing-key",
-        encryption_key_file=files / "unused-encryption-key",
         upstream_issuer=fixture_chart.DEX_ISSUER,
         upstream_subject=_OPERATOR.subject,
         approving_operator=OperatorPrincipal(issuer=fixture_chart.DEX_ISSUER, subject=_OPERATOR.subject),
