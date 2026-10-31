@@ -656,7 +656,7 @@ pub fn validate_assignment(
                 // The diagnosis's source-unit edges ARE the cut: the
                 // simulator surfaced exactly the constraining
                 // `(from, to)` pairs whose post-order check failed.
-                SccRejection::EsmEvaluationTdz | SccRejection::TdzWithoutLinkerOrder => (
+                SccRejection::EsmEvaluationTdz => (
                     cycle_edges_for(
                         dependency_graph,
                         assignment,
@@ -671,6 +671,18 @@ pub fn validate_assignment(
                         module_path,
                         &from_binding_by_ordinal,
                     ),
+                ),
+                // The SCC's constraining subgraph is cyclic, so no lazy
+                // back-edges are needed to explain the I-cycle.
+                SccRejection::TdzWithoutLinkerOrder => (
+                    cycle_edges_for(
+                        dependency_graph,
+                        assignment,
+                        diagnosis.core.constraining_dependency_edges.iter().copied(),
+                        module_path,
+                        &from_binding_by_ordinal,
+                    ),
+                    Vec::new(),
                 ),
             };
             CycleReport {
