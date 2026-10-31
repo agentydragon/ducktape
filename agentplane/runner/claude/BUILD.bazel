@@ -23,7 +23,14 @@ go_library(
 
 go_test(
     name = "claude_test",
-    srcs = ["protocol_test.go"],
+    srcs = [
+        "adapter_test.go",
+        "protocol_test.go",
+    ],
     embed = [":claude"],
-    deps = ["@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go"],
+    deps = [
+        "//agentplane/runner/harness",
+        "//agentplane/runner/testing/adaptertest",
+        "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
+    ],
 )

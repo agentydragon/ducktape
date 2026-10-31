@@ -22,6 +22,10 @@ go_library(
 
 go_test(
     name = "harness_test",
-    srcs = ["stdout_framer_test.go"],
+    srcs = [
+        "recovery_test.go",
+        "stdout_framer_test.go",
+    ],
     embed = [":harness"],
+    deps = ["//agentplane/proto:event_go_proto"],
 )

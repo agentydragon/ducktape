@@ -35,8 +35,11 @@ go_test(
     embed = [":codex"],
     race = "on",
     deps = [
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
         "//agentplane/runner/codex/protocol",
         "//agentplane/runner/harness",
+        "//agentplane/runner/testing/adaptertest",
     ],
 )

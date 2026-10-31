@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+go_library(
+    name = "adaptertest",
+    srcs = ["adapter_host.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/testing/adaptertest",
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/runner/harness",
+    ],
+)
