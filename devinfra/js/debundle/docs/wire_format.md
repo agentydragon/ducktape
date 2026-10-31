@@ -27,9 +27,19 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `Serialize` impl. That impl writes the **string content** — interned
 in memory, but the wire form is the string itself, which is portable.
 
+## Program graph
+
+Sections that are the same for every chunk are written once per run, as
+`program_graph.json` at the report root (`reports/tree/` beside the chunk
+directories): `provenance`, `native_integrity_witnesses` and
+`native_prototype_mutations`. Each `dependency_graph.json` names it in
+`program_graph`, a path relative to the graph's own directory
+(`../program_graph.json` for chunk `main`). A tool that copies a graph copies
+the program graph at the same relative location.
+
 ## Saved-graph input provenance
 
-`dependency_graph.json.provenance` records the graph's file inputs by named
+`program_graph.json.provenance` records the run's file inputs by named
 root and SHA-256. Its `present_directories` entries record package subpaths
 whose directory presence affected analysis; they assert only that the path is a
 directory, not that its contents were read. `debundle snapshot create` recreates

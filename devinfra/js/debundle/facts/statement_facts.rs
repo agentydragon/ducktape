@@ -229,13 +229,9 @@ pub(crate) struct SynchronousCalls {
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
-    pub native_prototype_mutations:
-        std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
     pub inference_uses: Vec<crate::reports::schema::InferenceUse>,
-    pub native_integrity_witnesses:
-        std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,

@@ -110,6 +110,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:output_layout",
         "//devinfra/js/debundle:spec",
         "@crates//:serde",

@@ -71,6 +71,6 @@ pub use reports::schema::{
     CallbackFactoryContractReport, CallbackFactoryRejectionReport,
     CallbackFactoryWriteWitnessReport, ConflictingClaimReport, DependencyEdgeReport,
     DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry,
-    ModuleKey, ModuleQuotientReport, PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
-    SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
+    ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport, QuotientEdgeReport,
+    QuotientSccReport, SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
 };

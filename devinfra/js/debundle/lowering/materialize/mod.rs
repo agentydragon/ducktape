@@ -12,7 +12,7 @@ use std::io::Write;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
-use super::io::{chunk_report_path, write_chunk_report_json};
+use super::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
@@ -93,7 +93,6 @@ pub(super) struct ChunkContext<'a> {
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
     pub(super) gate_rejection: GateRejectionPolicy,
-    pub(super) graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -418,6 +417,7 @@ impl ClaimedLogicalChunk<'_> {
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
+    program_graph: &ProgramGraphOutput<'_>,
 ) -> Result<MaterializedLogicalChunk> {
     let ClaimedLogicalChunk {
         prepared,
@@ -445,7 +445,6 @@ pub(super) fn finish_logical_chunk(
         target_dir,
         report_emission,
         gate_rejection: gate_rejection_policy,
-        graph_provenance,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
@@ -789,7 +788,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         report_emission,
         gate_rejection_policy,
-        graph_provenance,
+        program_graph,
         &assignment_analysis,
         &export_reentry_reports[&chunk_id_interned],
     )?;
@@ -1334,7 +1333,7 @@ fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
     policy: GateRejectionPolicy,
-    graph_provenance: Option<&graph_provenance::GraphProvenance>,
+    program_graph: &ProgramGraphOutput<'_>,
     assignment_analysis: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
@@ -1354,13 +1353,12 @@ fn validate_and_emit_reports<'a>(
         report_emission.full_dir()
     };
     if let Some(report_out_dir) = report_out_dir {
-        let mut dependency_graph_report = assignment_analysis.dependency_graph_report();
-        dependency_graph_report.provenance = graph_provenance.cloned();
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             DEPENDENCY_GRAPH_REPORT,
-            &dependency_graph_report,
+            &assignment_analysis
+                .dependency_graph_report(program_graph.reference_for(report_out_dir, chunk_id)?),
         )?;
         write_chunk_report_json(
             report_out_dir,

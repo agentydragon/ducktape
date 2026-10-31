@@ -528,7 +528,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
     };
     let control = run_rejection_fixture(opts());
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    unknown_receiver_witness(&control_graph);
+    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
     let conflicts = control.atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
@@ -550,6 +550,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
     );
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
         !has_unknown_call_target(node_for_binding(&graph, "made")),
         "the selected constructor should consume its native input: {graph}"
@@ -561,7 +562,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         "exactly the selected Set site uses the premise: {graph}"
     );
     assert_eq!(uses[0]["evidence"]["operation"], "set_from_primitive_array");
-    unknown_receiver_witness(&graph);
+    unknown_receiver_witness(&program_graph);
 }
 
 #[test]
@@ -608,8 +609,9 @@ fn dependent_array_iterator_key_remains_an_opaque_witness() {
     );
     assert_preserved_entry_output(&fixture, "2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| witnesses.iter().any(|witness| {
                 witness["target_slots"].as_array().is_some_and(|slots| {
@@ -635,8 +637,9 @@ fn array_iterator_next_alias_retains_a_typed_opaque_witness() {
     );
     assert_preserved_entry_output(&fixture, "2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| witnesses.iter().any(|witness| {
                 witness["target_slots"].as_array().is_some_and(|slots| {
@@ -660,8 +663,9 @@ fn set_iterator_next_alias_retains_a_typed_opaque_witness() {
     );
     assert_preserved_entry_output(&fixture, "done\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| witnesses.iter().any(|witness| {
                 witness["target_slots"].as_array().is_some_and(|slots| {
@@ -815,8 +819,8 @@ fn has_unknown_call_target(node: &Value) -> bool {
         })
 }
 
-fn unknown_receiver_witness(graph: &Value) -> &Value {
-    graph["native_integrity_witnesses"]
+fn unknown_receiver_witness(program_graph: &Value) -> &Value {
+    program_graph["native_integrity_witnesses"]
         .as_array()
         .expect("native mutation witnesses")
         .iter()
@@ -827,14 +831,16 @@ fn unknown_receiver_witness(graph: &Value) -> &Value {
                     .is_some_and(|roots| roots.iter().any(|root| root == "unknown_global_value"))
                 && witness["source_location"]["source_path"] == "static/reflect.js"
         })
-        .unwrap_or_else(|| panic!("reflective helper's unknown receiver is absent: {graph}"))
+        .unwrap_or_else(|| {
+            panic!("reflective helper's unknown receiver is absent: {program_graph}")
+        })
 }
 
 #[test]
 fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
     let control = run_rejection_fixture(split_opts(None));
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    unknown_receiver_witness(&control_graph);
+    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
     let conflicts = control.atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
@@ -861,6 +867,7 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
     );
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let uses = native_input_uses(&graph);
     assert_eq!(
         uses.len(),
@@ -872,7 +879,7 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
     assert_eq!(uses[0]["source_location"]["source_path"], "static/app.js");
     assert_eq!(uses[0]["source_location"]["start_line"], 3);
 
-    let unknown_receiver_witness = unknown_receiver_witness(&graph);
+    let unknown_receiver_witness = unknown_receiver_witness(&program_graph);
     assert!(
         unknown_receiver_witness["affected_roots"]
             .as_array()
@@ -916,11 +923,12 @@ fn selected_symbol_for_call_removes_only_its_synthetic_reentry_barrier() {
     let fixture = run_fixture(opts);
     assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let uses = native_input_uses(&graph);
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0]["evidence"]["operation"], "symbol_for");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
-    unknown_receiver_witness(&graph);
+    unknown_receiver_witness(&program_graph);
 }
 
 #[test]
@@ -1261,9 +1269,10 @@ fn unrelated_global_write_preserves_exact_symbol_input() {
     );
     assert_preserved_entry_output(&fixture, "marker\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert_eq!(native_input_uses(&graph).len(), 1);
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .expect("native mutation witnesses")
             .iter()
@@ -1285,8 +1294,8 @@ fn native_slot_census_preserves_paths_keys_and_opaque_writes_across_chunks() {
         FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/mutation", mutation)]),
     );
     assert_preserved_entry_output(&fixture, "ok\n");
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let slots: Vec<_> = graph["native_integrity_witnesses"]
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let slots: Vec<_> = program_graph["native_integrity_witnesses"]
         .as_array()
         .expect("native mutation witnesses")
         .iter()
