@@ -80,11 +80,9 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
    premise (wording in the debug note). The same premise would admit
    `worker_threads`, whose only audited hazard is `set` on `process` inside a
    worker.
-3. **Non-literal loader calls** (5 sites, 4 distinct).
-   - `computer-use-swift` loads an addon path from an environment variable,
-     after an unconditional `throw`. The engine can exclude it: statements
-     after an unconditional abrupt completion in the same statement list never
-     run (hoisted function declarations still follow callable reachability).
+3. **Non-literal loader calls** (5 sites, 4 distinct). `computer-use-swift`'s
+   environment-path addon load follows an unconditional `throw`, so callable
+   reachability excludes it.
    - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
      paths, and protobufjs `inquire` loads its parameter. Neither is
      engine-derivable. A `.node` load runs the addon's native initializer,
