@@ -1,6 +1,6 @@
 # Defaults for bb remote, shared by bbr and GitHub Actions.
 # CI passes explicit resource and candidate-image overrides when needed.
-remote --container_image=docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:67c5259c155f11ee854a0217c5738d892389cc9da2a43971cad4463aa876ed9e
+remote --container_image=docker://ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:1e49b1d42882af77e580ee14cf2b6e5a4c90ca7cb327cfba4abe644484d26eeb
 remote --runner_exec_properties=EstimatedFreeDiskBytes=100000000000
 remote --runner_exec_properties=EstimatedComputeUnits=8
 remote --runner_exec_properties=workload-isolation-type=firecracker
