@@ -135,9 +135,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		r.idle.forget(req.NamespacedName)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	if err := r.migrateLegacyRunnerCredential(ctx, &sandbox); err != nil {
-		return ctrl.Result{}, err
-	}
 	w, err := r.workload(ctx, &sandbox)
 	if err != nil {
 		return ctrl.Result{}, err

@@ -466,18 +466,15 @@ func acceptedVMRunnerCredential(lastVMIUID string) *sandboxapi.RunnerCredential 
 	}
 }
 
-// migrateAndBindPod runs the legacy migration and the Pod credential check as a reconcile does,
-// and reports whether the Pod survived as the bound incarnation.
-func migrateAndBindPod(t *testing.T, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (sandboxapi.Sandbox, bool) {
+// bindPod runs the Pod credential check as a reconcile does, and reports whether the Pod survived as
+// the bound incarnation.
+func bindPod(t *testing.T, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (sandboxapi.Sandbox, bool) {
 	t.Helper()
 	ctx := context.Background()
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, pod).Build()
 	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
 	var current sandboxapi.Sandbox
 	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &current); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.migrateLegacyRunnerCredential(ctx, &current); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := r.ensureRunnerCredential(ctx, &current, workload{pod: pod}, true); err != nil {
@@ -496,51 +493,26 @@ func runnerCredentialTestPod(uid types.UID) *corev1.Pod {
 	}}
 }
 
-func TestLegacyAnnotationBindingKeepsRunningPodAcrossUpgrade(t *testing.T) {
-	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
-		Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
-		Annotations: map[string]string{
-			RunnerCredentialIDAnnotation:               runnerCredentialTestID,
-			legacyRunnerCredentialKindAnnotation:       "pod",
-			legacyRunnerCredentialPodUIDAnnotation:     "pod-current",
-			legacyRunnerCredentialAcceptedIDAnnotation: runnerCredentialTestID,
-			"unrelated": "keep",
-		},
-	}}
-	got, kept := migrateAndBindPod(t, sandbox, runnerCredentialTestPod("pod-current"))
-	if !kept {
-		t.Fatal("the Pod bound by the legacy annotations was replaced")
-	}
-	want := sandboxapi.RunnerCredential{ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "pod-current", AcceptedID: runnerCredentialTestID}
-	if got.Status.RunnerCredential == nil || *got.Status.RunnerCredential != want {
-		t.Fatalf("status binding = %#v, want %#v", got.Status.RunnerCredential, want)
-	}
-	if len(got.Annotations) != 1 || got.Annotations["unrelated"] != "keep" {
-		t.Fatalf("migration left legacy annotations or dropped others: %v", got.Annotations)
-	}
-}
-
 func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
-	// A Sandbox writer holding patch but not sandboxes/status points the annotations at another
-	// generation and Pod.
+	// A Sandbox writer holding patch but not sandboxes/status sets the VM credential annotations on
+	// the Sandbox, pointing at another generation.
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "sandboxes", Name: "test", UID: "sandbox-uid",
 			Annotations: map[string]string{
-				RunnerCredentialIDAnnotation:           "fedcba9876543210fedcba9876543210",
-				legacyRunnerCredentialKindAnnotation:   "pod",
-				legacyRunnerCredentialPodUIDAnnotation: "pod-other",
+				RunnerCredentialIDAnnotation:         "fedcba9876543210fedcba9876543210",
+				RunnerCredentialLastVMIUIDAnnotation: "vmi-other",
 			},
 		},
 		Status: sandboxapi.SandboxStatus{RunnerCredential: &sandboxapi.RunnerCredential{
 			ID: runnerCredentialTestID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "pod-current", AcceptedID: runnerCredentialTestID,
 		}},
 	}
-	got, kept := migrateAndBindPod(t, sandbox, runnerCredentialTestPod("pod-current"))
+	got, kept := bindPod(t, sandbox, runnerCredentialTestPod("pod-current"))
 	if !kept {
 		t.Fatal("annotations rebound the runner credential")
 	}
-	if got.Status.RunnerCredential == nil || *got.Status.RunnerCredential != *sandbox.Status.RunnerCredential || len(got.Annotations) != 0 {
-		t.Fatalf("status binding %#v or annotations %v changed", got.Status.RunnerCredential, got.Annotations)
+	if got.Status.RunnerCredential == nil || *got.Status.RunnerCredential != *sandbox.Status.RunnerCredential {
+		t.Fatalf("status binding changed to %#v", got.Status.RunnerCredential)
 	}
 }
