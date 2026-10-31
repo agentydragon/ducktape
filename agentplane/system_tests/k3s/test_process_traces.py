@@ -35,7 +35,41 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
                                 attributes=[
                                     KeyValue(key="session.id", value=AnyValue(string_value="s1")),
                                     KeyValue(key="agentplane.codex.generation", value=AnyValue(int_value=3)),
+                                    KeyValue(key="rpc.grpc.status_code", value=AnyValue(int_value=14)),
                                     KeyValue(key="authorization", value=AnyValue(string_value="secret")),
+                                ],
+                                events=[
+                                    Span.Event(
+                                        name="agentplane.runner.quiesce_stage",
+                                        time_unix_nano=150,
+                                        attributes=[
+                                            KeyValue(
+                                                key="agentplane.runner.quiesce.stage",
+                                                value=AnyValue(string_value="flushing"),
+                                            ),
+                                            KeyValue(key="authorization", value=AnyValue(string_value="secret")),
+                                        ],
+                                    ),
+                                    Span.Event(
+                                        name="private.event",
+                                        time_unix_nano=175,
+                                        attributes=[
+                                            KeyValue(
+                                                key="agentplane.runner.quiesce.stage",
+                                                value=AnyValue(string_value="quiesced"),
+                                            )
+                                        ],
+                                    ),
+                                    Span.Event(
+                                        name="agentplane.runner.quiesce_stage",
+                                        time_unix_nano=180,
+                                        attributes=[
+                                            KeyValue(
+                                                key="agentplane.runner.quiesce.stage",
+                                                value=AnyValue(string_value="private-state"),
+                                            )
+                                        ],
+                                    ),
                                 ],
                             )
                         ],
@@ -64,7 +98,19 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
     assert {span["service"] for span in spans} == {"agentplane-runner"}
     assert {span["attributes"]["session.id"] for span in spans} == {"s1"}
     assert {span["attributes"]["agentplane.codex.generation"] for span in spans} == {3}
+    assert {span["attributes"]["rpc.grpc.status_code"] for span in spans} == {14}
     assert all("authorization" not in span["attributes"] for span in spans)
+    assert all(
+        span["events"]
+        == [
+            {
+                "name": "agentplane.runner.quiesce_stage",
+                "time_unix_nano": 150,
+                "attributes": {"agentplane.runner.quiesce.stage": "flushing"},
+            }
+        ]
+        for span in spans
+    )
 
 
 if __name__ == "__main__":

@@ -11,9 +11,12 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -97,6 +100,7 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 	}
 	server := grpc.NewServer(
 		grpc.Creds(credentials),
+		observability.GRPCServerOption(),
 		grpc.UnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 			if strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {
 				return handler(ctx, request)
@@ -262,6 +266,7 @@ func (s *Server) WatchState(
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(server.Context()).SetAttributes(attribute.String("sandbox.uid", current.sandboxUID))
 	defer s.finishWatch(current)
 	if err := s.config.AdoptIncarnation(current.ctx, current.incarnationUID); err != nil {
 		return err
@@ -296,6 +301,8 @@ func (s *Server) forwardWatchState(
 	ticker := time.NewTicker(forwardHeartbeatInterval)
 	defer ticker.Stop()
 	var lastResponse *runnerservicepb.WatchStateResponse
+	var lastStage runnerstatepb.RunnerFacts_QuiesceStage
+	stageSeen := false
 	forceHeartbeat := true
 	for {
 		if err := s.authorizeGatewayPeer(ctx); err != nil {
@@ -305,6 +312,18 @@ func (s *Server) forwardWatchState(
 		current, err := response()
 		if err != nil {
 			return err
+		}
+		stage := current.GetFacts().GetQuiesceStage()
+		if !stageSeen || stage != lastStage {
+			stageSeen = true
+			lastStage = stage
+			if stageName, ok := quiesceStageName(stage); ok {
+				recordQuiesceStage(ctx, current.GetSandboxUid(), stageName)
+				trace.SpanFromContext(ctx).AddEvent(
+					"agentplane.runner.quiesce_stage",
+					trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+				)
+			}
 		}
 		if forceHeartbeat || lastResponse == nil || !proto.Equal(lastResponse, current) {
 			if err := streaming.SendWithin(ctx, forwardWriteTimeout, send, current); err != nil {
@@ -324,6 +343,30 @@ func (s *Server) forwardWatchState(
 			forceHeartbeat = true
 		}
 	}
+}
+
+func quiesceStageName(stage runnerstatepb.RunnerFacts_QuiesceStage) (string, bool) {
+	switch stage {
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED:
+		return "none", true
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_DRAINING:
+		return "draining", true
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING:
+		return "flushing", true
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED:
+		return "quiesced", true
+	default:
+		return "", false
+	}
+}
+
+func recordQuiesceStage(ctx context.Context, sandboxUID, stage string) {
+	_, span := observability.Start(ctx, "agentplane.runner.quiesce_stage")
+	span.SetAttributes(
+		attribute.String("sandbox.uid", sandboxUID),
+		attribute.String("agentplane.runner.quiesce.stage", stage),
+	)
+	span.End()
 }
 
 func (s *Server) markWatchReady(current *watch) error {

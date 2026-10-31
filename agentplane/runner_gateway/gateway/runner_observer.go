@@ -13,7 +13,10 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -216,6 +219,11 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	if err != nil {
 		return err
 	}
+	span := trace.SpanFromContext(watch.Context())
+	span.SetAttributes(
+		attribute.String("sandbox.name", destination.identity.Name),
+		attribute.String("sandbox.uid", destination.identity.UID),
+	)
 	responses := make(chan observedState, 1)
 	go func() {
 		for {
@@ -233,6 +241,10 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	liveness := time.NewTimer(timing.LivenessTimeout)
 	defer liveness.Stop()
 	var connection *runnerConnection
+	var lastObservedStage sandboxlease.QuiesceStage
+	observedStageSeen := false
+	var lastPublishedStage sandboxlease.QuiesceStage
+	publishedStageSeen := false
 	defer func() {
 		if connection != nil {
 			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
@@ -262,6 +274,17 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			if err != nil {
 				return status.Error(codes.InvalidArgument, "runner sent invalid facts")
 			}
+			if !observedStageSeen || facts.Stage != lastObservedStage {
+				observedStageSeen = true
+				lastObservedStage = facts.Stage
+				if stageName, ok := quiesceStageName(facts.Stage); ok {
+					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_observed", destination.identity, stageName)
+					span.AddEvent(
+						"agentplane.gateway.runner.quiesce_stage_observed",
+						trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+					)
+				}
+			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
 			if err == nil && connection == nil {
@@ -273,6 +296,17 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			release()
 			if err != nil {
 				return err
+			}
+			if !publishedStageSeen || facts.Stage != lastPublishedStage {
+				publishedStageSeen = true
+				lastPublishedStage = facts.Stage
+				if stageName, ok := quiesceStageName(facts.Stage); ok {
+					recordRunnerQuiesceStage(watch.Context(), "agentplane.gateway.runner.quiesce_stage_published", destination.identity, stageName)
+					span.AddEvent(
+						"agentplane.gateway.runner.quiesce_stage_published",
+						trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
+					)
+				}
 			}
 			if connection == nil {
 				connection = &runnerConnection{
@@ -297,4 +331,29 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			liveness.Reset(timing.LivenessTimeout)
 		}
 	}
+}
+
+func quiesceStageName(stage sandboxlease.QuiesceStage) (string, bool) {
+	switch stage {
+	case sandboxlease.QuiesceNone:
+		return "none", true
+	case sandboxlease.QuiesceDraining:
+		return "draining", true
+	case sandboxlease.QuiesceFlushing:
+		return "flushing", true
+	case sandboxlease.QuiesceQuiesced:
+		return "quiesced", true
+	default:
+		return "", false
+	}
+}
+
+func recordRunnerQuiesceStage(ctx context.Context, spanName string, identity sandboxreader.Identity, stage string) {
+	_, span := observability.Start(ctx, spanName)
+	span.SetAttributes(
+		attribute.String("sandbox.name", identity.Name),
+		attribute.String("sandbox.uid", identity.UID),
+		attribute.String("agentplane.runner.quiesce.stage", stage),
+	)
+	span.End()
 }

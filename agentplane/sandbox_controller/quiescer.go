@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runnerclient"
+	"go.opentelemetry.io/otel/attribute"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"google.golang.org/grpc/status"
 )
 
 // quiesceTimeout bounds one Quiesce call; stopping harnesses can take a while, and Quiesce is idempotent, so
@@ -55,9 +58,16 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
 	}, func(ctx context.Context, client runnerservicepb.RunnerClient) error {
 		called = true
-		var err error
-		response, err = client.Quiesce(ctx, request)
-		return err
+		callCtx, span := observability.Start(ctx, "agentplane.sandbox_controller.runner_quiesce")
+		span.SetAttributes(
+			attribute.String("sandbox.name", sandbox.Name),
+			attribute.String("sandbox.uid", string(sandbox.UID)),
+		)
+		var callErr error
+		response, callErr = client.Quiesce(callCtx, request)
+		span.SetAttributes(attribute.Int("rpc.grpc.status_code", int(status.Code(callErr))))
+		observability.End(span, callErr)
+		return callErr
 	})
 	if err != nil {
 		if called {
