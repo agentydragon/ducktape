@@ -82,6 +82,8 @@ spec:
               value: agentplane-runner-gateway
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
               value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_RUNNER_GATEWAY_KUBERNETES_CLIENT_QPS
+              value: "-1"
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
               value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
