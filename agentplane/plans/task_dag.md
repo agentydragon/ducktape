@@ -910,6 +910,17 @@ prerequisite. Review shared-DB admission, ownership, command routing and migrati
 deployment. Sampling-abandonment decisions also remain here; current recovery still does not resolve
 an uncertain sampling intent.
 
+**Assembled-system acceptance hold, 2026-10-31 UTC.** The two-replica rolling
+fixture reaches Ready sampler Pods, but the RBE guest kernel lacks the iptables
+`statistic` match required by kube-proxy for a multi-endpoint ClusterIP Service.
+Kube-proxy fails to synchronize all Service rules; the focused roll case and
+hosted MCP/VM suites fail before roll behavior can be judged
+([exact invocations and kernel evidence](../system_tests/k3s/debug/2026_10_31_multi_endpoint_service_kernel.md)).
+Keep the rolling scenario draft until an RBE guest with
+`CONFIG_NETFILTER_XT_MATCH_STATISTIC` proves provider completion, successor
+continuation, ownership fencing and retained History. This is an acceptance
+infrastructure prerequisite, not evidence that the source contract passed or failed.
+
 ### `CENTRAL_SAMPLER_PLANNED_DRAIN` — drain planned rolls to a durable continuation boundary
 
 **In flight; `/root/usable_rollout`, contract selected by `/root`, 2026-10-30 PDT.** On shutdown,
