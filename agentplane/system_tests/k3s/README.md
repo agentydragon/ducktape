@@ -56,6 +56,11 @@ use cluster DNS and the `kubernetes` Service.
 image change supplies. The executor lacked it until 2026-10-21 and [#10808](https://github.com/agentydragon/ducktape/pull/10808)
 was reverted for that; only a k3s target's run, never a green `test_render`, shows an executor
 can run it.
+Multi-endpoint Services also need the kernel's `statistic` match
+(`CONFIG_NETFILTER_XT_MATCH_STATISTIC`). The current RBE guest lacks it, so the
+two-replica sampler fixture cannot yet prove a rolling update; kube-proxy fails
+the whole Service ruleset, including unrelated ClusterIP routing
+([run evidence and acceptance boundary](debug/2026_10_31_multi_endpoint_service_kernel.md)).
 
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,

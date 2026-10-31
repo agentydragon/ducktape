@@ -39,7 +39,7 @@ class CentralStack:
     sandbox_uid: str
     incarnation_uid: str
     control_target: str
-    sampler_pod_name: str
+    sampler_pod_names: tuple[str, ...]
 
 
 async def _bound_token(cluster: Cluster, core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
@@ -62,6 +62,17 @@ async def _bound_token(cluster: Cluster, core: k8s.CoreV1Api, account: str, pod:
 async def _pod(cluster: Cluster, core: k8s.CoreV1Api, component: str) -> k8s.V1Pod:
     pods = await core.list_namespaced_pod(cluster.namespace, label_selector=f"app.kubernetes.io/name={component}")
     return next(pod for pod in pods.items if pod.metadata.deletion_timestamp is None)
+
+
+async def _ready_sampler_pods(cluster: Cluster, core: k8s.CoreV1Api) -> tuple[k8s.V1Pod, ...]:
+    pods = await core.list_namespaced_pod(cluster.namespace, label_selector=f"app.kubernetes.io/name={SERVICE}")
+    ready = tuple(
+        pod
+        for pod in pods.items
+        if pod.metadata.deletion_timestamp is None
+        and any(condition.type == "Ready" and condition.status == "True" for condition in pod.status.conditions or [])
+    )
+    return tuple(sorted(ready, key=lambda pod: pod.metadata.name))
 
 
 async def _address(cluster: Cluster, core: k8s.CoreV1Api, service: str, port: int) -> str:
@@ -184,7 +195,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
         ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         incarnation = ready["status"]["incarnation"]["uid"]
         target = await _address(cluster, core, SERVICE, 8080)
-        sampler_pod = await _pod(cluster, core, SERVICE)
+        sampler_pods = await _ready_sampler_pods(cluster, core)
+        if not sampler_pods:
+            raise RuntimeError("the central-sampler Deployment has no Ready Pod")
         stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
         gateway_pod = await _pod(cluster, core, "runner-gateway")
         await cluster.kubectl(
@@ -216,7 +229,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             sandbox_uid=uid,
             incarnation_uid=incarnation,
             control_target=control_target,
-            sampler_pod_name=sampler_pod.metadata.name,
+            sampler_pod_names=tuple(pod.metadata.name for pod in sampler_pods),
         )
 
 
