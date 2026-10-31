@@ -4,7 +4,7 @@
 //! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
