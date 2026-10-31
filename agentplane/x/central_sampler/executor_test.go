@@ -467,7 +467,7 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 
 func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	intent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "executor", "method": "initialize"})
+	intent, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "initialize"})
 	if err != nil {
 		t.Fatal(err)
 	}

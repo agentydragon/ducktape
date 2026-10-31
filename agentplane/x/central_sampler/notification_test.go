@@ -134,7 +134,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				t.Fatal(err)
 			}
 			startTurnForStore(t, store, session, owner, "turn")
-			sampling, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+			sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,7 +165,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 			if err != nil || len(beforeResult) == 0 {
 				t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
 			}
-			cell, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell"})
+			cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
 			if err != nil {
 				t.Fatal(err)
 			}
