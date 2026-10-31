@@ -421,13 +421,25 @@ impl Classifier<'_> {
 
 /// Classify every analyzed chunk's loader sites and the facts that matter
 /// when a loader request evaluates it.
+/// The author assertions and input facts the loader-closed derivation reads.
+#[derive(Clone, Copy)]
+pub(super) struct LoaderAssumptions<'a> {
+    pub host_behavior: &'a spec::HostBehavior,
+    pub program_premises: &'a spec::ProgramPremises,
+    /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
+    pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
+}
+
 pub(super) fn loader_surfaces(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    host_behavior: &spec::HostBehavior,
-    program_premises: &spec::ProgramPremises,
-    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
+    assumptions: LoaderAssumptions<'_>,
 ) -> Result<LoaderSurfaces> {
+    let LoaderAssumptions {
+        host_behavior,
+        program_premises,
+        embedded_loaders,
+    } = assumptions;
     // Exported loader aliases by defining chunk and export name.
     let mut aliases = BTreeSet::<(ChunkId, String)>::new();
     let mut alias_definitions = BTreeSet::<(ChunkId, Span)>::new();

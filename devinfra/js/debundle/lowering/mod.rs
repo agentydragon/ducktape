@@ -341,9 +341,11 @@ pub fn materialize_logical_modules(
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
-        host_behavior,
-        program_premises,
-        embedded_loaders,
+        loader_surface::LoaderAssumptions {
+            host_behavior,
+            program_premises,
+            embedded_loaders,
+        },
         vendor_plan,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
@@ -518,13 +520,16 @@ pub fn materialize_logical_modules(
 fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    host_behavior: &spec::HostBehavior,
-    program_premises: &spec::ProgramPremises,
-    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
+    assumptions: loader_surface::LoaderAssumptions<'_>,
     vendor_plan: &vendor::VendorResolutionPlan,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
+    let loader_surface::LoaderAssumptions {
+        host_behavior,
+        program_premises,
+        ..
+    } = assumptions;
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
     let mut global_blockers = Vec::new();
@@ -559,14 +564,7 @@ fn export_reentry_reports(
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
-    let mut loader_derivations = loader_derivations(
-        artifact,
-        indexes,
-        host_behavior,
-        program_premises,
-        embedded_loaders,
-        &targets,
-    )?;
+    let mut loader_derivations = loader_derivations(artifact, indexes, assumptions, &targets)?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -610,11 +608,10 @@ fn export_reentry_reports(
 fn loader_derivations(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    host_behavior: &spec::HostBehavior,
-    program_premises: &spec::ProgramPremises,
-    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
+    assumptions: loader_surface::LoaderAssumptions<'_>,
     targets: &BTreeSet<ChunkId>,
 ) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
+    let host_behavior = assumptions.host_behavior;
     let uniform = |derivation: ExportReentryLoaderDerivation| {
         targets
             .iter()
@@ -624,13 +621,7 @@ fn loader_derivations(
     if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
         return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
     }
-    let surfaces = loader_surface::loader_surfaces(
-        artifact,
-        indexes,
-        host_behavior,
-        program_premises,
-        embedded_loaders,
-    )?;
+    let surfaces = loader_surface::loader_surfaces(artifact, indexes, assumptions)?;
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }
