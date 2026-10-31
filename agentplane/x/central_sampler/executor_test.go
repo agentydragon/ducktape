@@ -391,6 +391,16 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 		!strings.Contains(view.Text, "8192 retained bytes not shown; 16384 earlier bytes omitted") {
 		t.Fatalf("truncation metadata=%+v", view)
 	}
+	transport := &executorTransportError{
+		method: "process/read", phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
+	}
+	evidence := transport.evidence("")
+	full, err := base64.StdEncoding.DecodeString(evidence["buffered_output_base64"].(string))
+	if err != nil || !bytes.Equal(full, output.retained()) || evidence["omitted_bytes"] != 16*1024 {
+		t.Fatalf("truncated output cannot be retrieved exactly from evidence: bytes=%d omitted=%v err=%v",
+			len(full), evidence["omitted_bytes"], err)
+	}
 }
 
 func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {

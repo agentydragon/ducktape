@@ -77,7 +77,8 @@ and a text view of at most 8 KiB of retained bytes plus an omission marker. Byte
 bytes omitted by the retained head/tail buffer from bytes hidden only in the error view. The complete
 retained bytes are base64 in the `tool` result `BoundaryRecord` found through `FollowEvents` by its
 payload `intent_id`. The process remains abandoned and no exit is inferred. Other nested failures
-retain their ordinary string messages.
+retain their ordinary string messages. Large result records use the normal `record_id` and
+`fragment_index` reassembly contract.
 Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC

@@ -30,7 +30,8 @@ try {
 inspect all retained bytes, call `FollowEvents` for the public Session and find the `tool` result
 `BoundaryRecord` whose JSON payload
 has `intent_id` equal to `failure.intent_id`; its `buffered_output_base64` contains the bytes. This
-does not authorize repeating the failed operation.
+does not authorize repeating the failed operation. If the record has multiple fragments, concatenate
+their payloads in `fragment_index` order for the same `record_id` before parsing the JSON.
 
 If idle process reconciliation loses the transport while reading a process, it marks the process
 abandoned with its last observed cursor and buffered output, then returns control to the scheduler.
