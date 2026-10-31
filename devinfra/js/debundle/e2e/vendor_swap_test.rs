@@ -897,6 +897,31 @@ fn partial_swap_drops_island_iife_whose_uncalled_methods_read_retained_state() {
     assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
 }
 
+/// The island fills the registry through an alias it declares; the alias is
+/// dropped with the island, the registry it points at is not.
+#[test]
+fn partial_swap_rejects_island_registration_through_an_alias() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const view = registry;\n\
+         const all = new Set();\n\
+         function register(name) { view[name] = true; all.add(name); }\n\
+         register(\"onMouseEnter\");\n\
+         export const e6 = () => all.has(\"onMouseEnter\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "a registration through an alias must not be dropped\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("`registry`"),
+        "expected the retained registry named in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
 /// The same IIFE calling a function it declares, which fills the registry a
 /// residual reader prints: that body runs at init, so the strip must refuse.
 #[test]

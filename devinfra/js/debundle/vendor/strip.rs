@@ -548,13 +548,19 @@ fn sweep_unreachable_top_level(
     // call. What an unresolved call receives, and a chunk callee that is not
     // a direct function, are followed through lexical reads instead.
     let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
-    let mut exposed = ExposedBindings::default();
-    module.visit_with(&mut exposed);
+    // Items whose code mutates the object a binding holds in place.
+    let mut writers: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
+    for (j, item) in module.body.iter().enumerate() {
+        let mut exposed = ExposedBindings::default();
+        item.visit_with(&mut exposed);
+        for root in exposed.mutated {
+            writers.entry(root).or_default().push(j);
+        }
+    }
     let shared_roots = |i: usize| -> BTreeSet<Id> {
         let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
-                && (exposed.0.contains(id) || rebound.contains(id))
                 && declarer
                     .get(id)
                     .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
@@ -599,23 +605,51 @@ fn sweep_unreachable_top_level(
                 );
             }
         }
-        let mut roots: BTreeSet<Id> = reached
+        // Follow every reached binding to the retained state behind it: a
+        // binding the statement does not retain may alias state through its
+        // initializer or what is written into it, and a lexical one's code
+        // may run.
+        let mut region: BTreeSet<usize> = entered;
+        region.insert(i);
+        let mut candidates = BTreeSet::new();
+        let mut worklist: Vec<(&Id, bool)> = reached
             .into_iter()
-            .filter(|id| retained_state(id))
-            .cloned()
+            .map(|id| (id, false))
+            .chain(lexical.into_iter().map(|id| (id, true)))
             .collect();
         let mut seen = BTreeSet::new();
-        while let Some(id) = lexical.pop() {
-            if !seen.insert(id) {
+        while let Some((id, code_may_run)) = worklist.pop() {
+            if !seen.insert((id, code_may_run)) {
                 continue;
             }
             if retained_state(id) {
-                roots.insert(id.clone());
-            } else if let Some(&j) = declarer.get(id) {
-                lexical.extend(&analyses[j].reads);
+                candidates.insert(id);
+                continue;
+            }
+            let Some(&j) = declarer.get(id) else {
+                continue;
+            };
+            if !code_may_run && item_declares_code_or_primitive(&module.body[j]) {
+                continue;
+            }
+            for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
+                if region.insert(k) {
+                    worklist.extend(analyses[k].reads.iter().map(|read| (read, true)));
+                }
             }
         }
-        roots
+        // Retained state is at risk only when the code that may run could
+        // mutate it: a member write, `delete`, method call or hand-off of it
+        // there, or a rebind anywhere.
+        let mut exposed = ExposedBindings::default();
+        for &k in &region {
+            module.body[k].visit_with(&mut exposed);
+        }
+        candidates
+            .into_iter()
+            .filter(|id| exposed.uses.contains(*id) || rebound.contains(*id))
+            .cloned()
+            .collect()
     };
     let swap_private_effect = |i: usize| -> bool {
         let an = &analyses[i];
@@ -1328,14 +1362,25 @@ fn run_first_order_body<'a>(
     }
 }
 
-/// Bindings whose value some code in the chunk could mutate or rebind: every
-/// occurrence except a plain property read (`x.a`, `x.a.b`, `typeof x.a`)
-/// exposes it — a member write or `delete` rooted at it, a method call on it
-/// (the callee gets it as `this`), or any other use that hands the value on.
-/// Names are compared without scope resolution, so a shadowing local only
-/// adds exposures.
+/// How code uses bindings' values: every occurrence except a plain property
+/// read (`x.a`, `x.a.b`, `typeof x.a`) exposes the binding — a member write
+/// or `delete` rooted at it, a method call on it (the callee gets it as
+/// `this`), or any use that hands the value on. Names are compared without
+/// scope resolution, so a shadowing local only adds exposures.
 #[derive(Default)]
-struct ExposedBindings(BTreeSet<Id>);
+struct ExposedBindings {
+    /// Every exposing use.
+    uses: BTreeSet<Id>,
+    /// Roots of in-place mutations: member writes, `delete`, method calls.
+    mutated: BTreeSet<Id>,
+}
+
+impl ExposedBindings {
+    fn mutate(&mut self, root: &Ident) {
+        self.uses.insert(root.to_id());
+        self.mutated.insert(root.to_id());
+    }
+}
 
 fn member_root(expr: &Expr) -> Option<&Ident> {
     match expr {
@@ -1348,7 +1393,7 @@ fn member_root(expr: &Expr) -> Option<&Ident> {
 
 impl Visit for ExposedBindings {
     fn visit_ident(&mut self, ident: &Ident) {
-        self.0.insert(ident.to_id());
+        self.uses.insert(ident.to_id());
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
@@ -1371,7 +1416,7 @@ impl Visit for ExposedBindings {
             && let Expr::Member(member) = callee.unwrap_parens()
             && let Some(root) = member_root(&member.obj)
         {
-            self.0.insert(root.to_id());
+            self.mutate(root);
         }
         call.visit_children_with(self);
     }
@@ -1380,23 +1425,26 @@ impl Visit for ExposedBindings {
         if let SimpleAssignTarget::Member(member) = target
             && let Some(root) = member_root(&member.obj)
         {
-            self.0.insert(root.to_id());
+            self.mutate(root);
         }
         target.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
-        if let Some(root) = member_root(&update.arg) {
-            self.0.insert(root.to_id());
+        if let Expr::Member(member) = &*update.arg
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.mutate(root);
         }
         update.visit_children_with(self);
     }
 
     fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
         if unary.op == UnaryOp::Delete
-            && let Some(root) = member_root(&unary.arg)
+            && let Expr::Member(member) = &*unary.arg
+            && let Some(root) = member_root(&member.obj)
         {
-            self.0.insert(root.to_id());
+            self.mutate(root);
         }
         unary.visit_children_with(self);
     }
