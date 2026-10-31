@@ -4148,6 +4148,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 root = receiver;
             }
             let root_values = self.evaluate(root, env, captures);
+            // A bare binding receiver is `apply_member_value_writes`' lane.
+            if !matches!(write.receiver, ValueExpr::Binding(_)) {
+                self.store_through_member_chain(
+                    write,
+                    root,
+                    &receivers,
+                    &root_values,
+                    env,
+                    captures,
+                );
+            }
             let callable_surface = root_values.iter().any(|value| {
                 matches!(
                     value,
@@ -4182,6 +4193,57 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let values = self.evaluate(&write.value, env, captures);
             self.promote_deferred_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[callbacks, values], false, outcome);
+        }
+    }
+
+    /// A value stored through a member chain (`a.b.c = f`) lands where a
+    /// later read of the same chain finds it: in a tracked receiver's
+    /// properties, or, under a global root or intrinsic, in the escaped
+    /// pool every opaque call may invoke.
+    fn store_through_member_chain(
+        &mut self,
+        write: &CallbackResultWrite,
+        root: &ValueExpr,
+        receivers: &Values,
+        root_values: &Values,
+        env: &Context,
+        captures: &Context,
+    ) {
+        let values = self.evaluate(&write.value, env, captures);
+        let global_root = matches!(root, ValueExpr::Binding(id)
+            if !self.inputs.flow.is_declared(id)
+                && !env.contains_key(id)
+                && !captures.contains_key(id))
+            || root_values.iter().chain(receivers.iter()).any(|value| {
+                matches!(
+                    value,
+                    AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic
+                )
+            });
+        let mut changed = false;
+        if global_root {
+            self.taint_objects(&values);
+            let callbacks = self.callback_values(&values);
+            let before = self.state.global_escaped_callbacks.len();
+            self.state.global_escaped_callbacks.extend(callbacks);
+            changed |= self.state.global_escaped_callbacks.len() != before;
+        }
+        for receiver in receivers {
+            if let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver {
+                let stored = self
+                    .state
+                    .prefix_object_properties
+                    .entry(*object)
+                    .or_default()
+                    .entry(write.property.clone())
+                    .or_default();
+                let before = stored.len();
+                stored.extend(values.iter().cloned());
+                changed |= stored.len() != before;
+            }
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
