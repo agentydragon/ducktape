@@ -43,67 +43,26 @@ host_behavior:
   note: "Audited against Bun 1.3.10 standalone, revision …, sha256 …"
 ```
 
-Landed through step 4: the keys, their validation, the loader-closed
-derivation, mandatory suspension, callable reachability and loader-alias
-classification (SPEC.md § Loader-closed derivation). Gaffer-private #667
-declares the audited block on the canonical Claude CLI 2.1.292 spec; all 76
-graphs stay conservative and the ten conflicts are unchanged. Evidence and
-per-graph numbers: <../debug/2026_10_30_claude_export_reentry_blockers.md>.
-
-## Remaining loader blockers
-
-Site failures hold every target open, so a graph leaves conservative only once
-classes 1–4 all clear and its own static closure clears. Even then class 5 keeps
-44 graphs open, including 9 of the 10 conflicting ones (all but `sessionSDK`).
-Those 44 graphs carry 91% of the 7.16M edges. Clearing classes 1–4, `process`
-and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
-`callback_pool_limit` losses, with no conflict guaranteed to move.
-
-1. **Literal requests outside the closed list** (119 sites).
-   - **Node builtins** `assert`, `constants`, `querystring` and **Bun
-     modules** `bun:ffi`, `undici`, `ws` (`reentry_free_bun_modules`) are in
-     the closed lists. Admitting them is the project's audit.
-   - **Embedded assets** (about 100: `.md`, `.txt` and two `.mjs` as `text`,
-     two `.node` as `napi`) resolve through the extractor's per-file loader
-     manifest (SPEC.md § Reentry-free embedded files). The probe must show the
-     host honours the recorded loader.
-2. **`process`** (6 loader requests, 13 loaded-closure requests, and the static
-   blocker in 70 graphs) and `worker_threads` are admitted under
-   `program_premises.process_prototype_chain_accessors: none` (SPEC.md
-   § Program premises). The engine can't derive it: the bundle's own export
-   helpers install getters on arbitrary receivers.
-3. **Non-literal loader calls** (5 sites, 4 distinct). `computer-use-swift`'s
-   environment-path addon load follows an unconditional `throw`, so callable
-   reachability excludes it.
-   - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
-     paths, and protobufjs `inquire` loads its parameter. They are excluded
-     under `program_premises.non_literal_loader_calls: native_addons_only`.
-     A second `inquire` copy reaches `require` through
-     `eval("quire".replace(/^/,"re"))`, which is folded to a loader call
-     rather than dynamic scope.
-4. **`module`** (3 sites: a `builtinModules` read, a `createRequire` result
-   used only for `.resolve`, and fflate's `createRequire("/")("worker_threads")`)
-   is classified by its uses (SPEC.md § Loader-closed derivation). The audit
-   must show a `createRequire` loader shares `import.meta.require`'s behavior
-   and that loading `module` runs no application code.
-5. **Reach-back** (44 targets). This is genuine reentry, not a gap in the
-   proof. A request for a chunk L that has not run yet, made while the target
-   evaluates, runs L's body there. If L imports the target, L sees the live
-   partial namespace: it can call hoisted exports and read initialized
-   bindings. `returns_partial_namespace` covers only a request for the
-   evaluating module itself. Sites outside the target's evaluation window are
-   excluded (SPEC.md § Loader-closed derivation); a request that can run in it
-   and reaches the target keeps the target open.
-   - Narrowing further means bounding which callbacks an incomplete at-init
-     call can run (<abstract_interpreter.md>), not changing the loader rule.
+Landed: the keys, their validation, the loader-closed derivation with its
+evaluation window, mandatory suspension, callable reachability, loader-alias
+and `module` use classification, program premises and embedded-file loaders
+(SPEC.md § Loader-closed derivation, § Program premises, § Reentry-free
+embedded files). On Claude CLI 2.1.292 with the audited spec and both
+premises, 40 of 76 graphs leave conservative and 8 of the 10 conflicts remain.
+The other 36 graphs are held only by `loader_request_reaches_target`, which is
+genuine reentry: a lazy request runs a not-yet-evaluated importer's body
+against the target's live namespace (gaffer-private #669's probe). Narrowing
+that further means bounding which callbacks an incomplete at-init call can run
+(<abstract_interpreter.md>), not changing the loader rule. Evidence:
+<../debug/2026_10_30_claude_export_reentry_blockers.md>.
 
 ## Steps
 
 ### 5. Adopt
 
-Canonical Claude CLI replay on an engine with steps 1–4; adopt `host_behavior`
-in both private specs with the audit recorded in the pinning doc; report the
-gate result as observed. Class B pivots (`YC`, `Gj`, `Ujr`, `xe`) belong to
+Repin gaffer-private to an engine with the loader-closed stack and land its
+spec adoption (gaffer-private #670: premises, new list entries, embedded-loader
+manifest); report the gate result as observed. Class B pivots (`YC`, `Gj`, `Ujr`, `xe`) belong to
 <synchronous_execution_fallback.md> and `native_operation_inputs`, not here.
 
 ## Audit obligation
