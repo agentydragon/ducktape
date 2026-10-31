@@ -142,6 +142,20 @@ type Status struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// The roles this binding's Kubernetes rules name that do not exist. The Policy Controller writes
+	// it with KubernetesReady and binds each role once it appears.
+	// +listType=atomic
+	MissingRoles []MissingRole `json:"missingRoles,omitempty"`
+}
+
+// MissingRole is a role a Kubernetes rule names that does not exist.
+type MissingRole struct {
+	// The Role's namespace; empty for a ClusterRole.
+	Namespace string `json:"namespace,omitempty"`
+	// +kubebuilder:validation:Enum=Role;ClusterRole
+	Kind string `json:"kind"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
 }
 
 // +genclient
