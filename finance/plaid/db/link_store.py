@@ -80,6 +80,10 @@ class SyncAlreadyRunningError(RuntimeError):
         super().__init__(f"sync already running for Plaid item {item_id}")
 
 
+class SyncLeaseLostError(RuntimeError):
+    """The run lost ownership while waiting for Plaid or the database."""
+
+
 class AccountNotFoundError(LookupError):
     """The selected account is not part of the selected Plaid Item."""
 
@@ -184,6 +188,7 @@ class PlaidLinkStorage:
         products_authorized: list[str] | None = None,
         products_billed: list[str] | None = None,
         status: str = "active",
+        run_id: UUID | None,
     ) -> StoredLink:
         now = utcnow()
         values: dict[str, object] = {
@@ -209,6 +214,8 @@ class PlaidLinkStorage:
             .returning(LinkRow)
         )
         async with self._session_factory() as session:
+            if run_id is not None:
+                await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             row = (await session.execute(stmt)).scalar_one()
             await session.commit()
         return _stored_link(row)
@@ -653,7 +660,7 @@ class PlaidLinkStorage:
 
     async def retry_item_sync(self, claim: ItemSyncClaim) -> None:
         async with self._session_factory() as session:
-            row = await session.get(ItemSyncQueueRow, claim.item_id)
+            row = await session.get(ItemSyncQueueRow, claim.item_id, with_for_update=True)
             if row is None or row.claimed_at != claim.claimed_at:
                 return
             row.claimed_at = None
@@ -667,9 +674,14 @@ class PlaidLinkStorage:
 
     async def finish_sync_run(self, run_id: UUID, *, status: str, error_summary: str | None = None) -> None:
         async with self._session_factory() as session:
-            row = await session.get(SyncRunRow, run_id)
+            item_id = await session.scalar(select(SyncRunRow.item_id).where(SyncRunRow.run_id == run_id))
+            if item_id is not None:
+                await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
+            row = await session.get(SyncRunRow, run_id, with_for_update=True)
             if row is None:
                 raise ValueError(f"sync run not found: {run_id}")
+            if row.status != "running":
+                raise SyncLeaseLostError(f"sync run is no longer active: {run_id}")
             finished_at = utcnow()
             row.status = status
             row.finished_at = finished_at
@@ -685,13 +697,24 @@ class PlaidLinkStorage:
 
     async def record_api_event(self, event: ApiEvent) -> int:
         async with self._session_factory() as session:
+            superseded = False
+            if event.sync_run_id is not None:
+                item_id = await session.scalar(select(SyncRunRow.item_id).where(SyncRunRow.run_id == event.sync_run_id))
+                if item_id != event.item_id:
+                    raise ValueError(f"API event Item does not match sync run: {event.sync_run_id}")
+                link = await session.get(LinkRow, item_id, with_for_update=True) if item_id is not None else None
+                run = await session.get(SyncRunRow, event.sync_run_id, with_for_update=True)
+                if run is None:
+                    raise ValueError(f"sync run not found: {event.sync_run_id}")
+                superseded = link is None or run.status != "running"
+            # Keep Plaid's outcome while making a late receipt ineligible for mirror projections.
             row = PlaidApiEventRow(
                 sync_run_id=event.sync_run_id,
                 endpoint=event.endpoint,
                 item_id=event.item_id,
                 account_id=event.account_id,
                 request_id=event.request_id,
-                status=event.status,
+                status=f"{event.status}_superseded" if superseded else event.status,
                 duration_ms=event.duration_ms,
                 error_type=event.error_type,
                 error_code=event.error_code,
@@ -706,11 +729,12 @@ class PlaidLinkStorage:
             return event_id
 
     async def apply_accounts(
-        self, *, item_id: str, accounts: Sequence[PlaidAccount | dict[str, Any]], captured_at: datetime
+        self, *, item_id: str, accounts: Sequence[PlaidAccount | dict[str, Any]], captured_at: datetime, run_id: UUID
     ) -> None:
         validated_accounts = [_validated_payload(PlaidAccount, account) for account in accounts]
         seen_account_ids = [account.account_id for account in validated_accounts]
         async with self._session_factory() as session:
+            await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             link = await session.get(LinkRow, item_id)
             if link is None:
                 raise ValueError(f"cannot observe accounts for missing Plaid Item: {item_id}")
@@ -763,8 +787,10 @@ class PlaidLinkStorage:
         removed: Sequence[PlaidRemovedTransaction | dict[str, Any]],
         next_cursor: str | None,
         captured_at: datetime,
+        run_id: UUID,
     ) -> None:
         async with self._session_factory() as session:
+            await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             for transaction_value in [*added, *modified]:
                 txn = _validated_payload(PlaidTransaction, transaction_value)
                 pfc = txn.personal_finance_category
@@ -818,6 +844,7 @@ class PlaidLinkStorage:
         accounts: Sequence[PlaidAccount | dict[str, Any]],
         api_event_id: int,
         captured_at: datetime,
+        run_id: UUID,
     ) -> None:
         validated_securities = [_validated_payload(PlaidSecurity, security) for security in securities]
         validated_holdings = [_validated_payload(PlaidHolding, holding) for holding in holdings]
@@ -834,6 +861,7 @@ class PlaidLinkStorage:
             raise ValueError(f"holdings reference accounts absent from the response: {sorted(uncovered_account_ids)}")
 
         async with self._session_factory() as session:
+            await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             link = await session.get(LinkRow, item_id)
             if link is None:
                 raise ValueError(f"cannot capture holdings for missing Plaid Item: {item_id}")
@@ -911,8 +939,10 @@ class PlaidLinkStorage:
         item_id: str,
         transactions: Sequence[PlaidInvestmentTransaction | dict[str, Any]],
         captured_at: datetime,
+        run_id: UUID,
     ) -> None:
         async with self._session_factory() as session:
+            await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             for txn_value in transactions:
                 txn = _validated_payload(PlaidInvestmentTransaction, txn_value)
                 values = {
@@ -942,7 +972,7 @@ class PlaidLinkStorage:
             await session.commit()
 
     async def append_liability_snapshots(
-        self, *, item_id: str, liabilities: PlaidLiabilities | dict[str, Any], captured_at: datetime
+        self, *, item_id: str, liabilities: PlaidLiabilities | dict[str, Any], captured_at: datetime, run_id: UUID
     ) -> None:
         row_by_type = {
             "credit": LiabilityCreditSnapshotRow,
@@ -951,6 +981,7 @@ class PlaidLinkStorage:
         }
         payload = _validated_payload(PlaidLiabilities, liabilities)
         async with self._session_factory() as session:
+            await _require_active_sync_run(session, item_id=item_id, run_id=run_id)
             for key, row_type in row_by_type.items():
                 for entry_value in getattr(payload, key) or []:
                     entry = _validated_payload(PlaidLiabilityEntry, entry_value)
@@ -963,6 +994,17 @@ class PlaidLinkStorage:
                         )
                     )
             await session.commit()
+
+
+async def _require_active_sync_run(session: AsyncSession, *, item_id: str, run_id: UUID) -> None:
+    # Recovery takes this link lock too. A write commits before takeover or observes
+    # the recovered run's failed status; no lock spans a Plaid request.
+    link = await session.get(LinkRow, item_id, with_for_update=True)
+    if link is None:
+        raise SyncLeaseLostError(f"Plaid link is missing for sync run: {item_id}")
+    row = await session.get(SyncRunRow, run_id, with_for_update=True)
+    if row is None or row.item_id != item_id or row.status != "running":
+        raise SyncLeaseLostError(f"sync run is no longer active: {run_id}")
 
 
 def _stored_link(

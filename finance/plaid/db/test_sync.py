@@ -1,3 +1,4 @@
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -20,7 +21,7 @@ from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from urllib3.response import HTTPResponse
 
 from finance.plaid.db.client import PlaidClient
-from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncLeaseLostError
 from finance.plaid.db.sync import _call, redact_payload, sync_all, sync_link, sync_transactions_only
 from finance.plaid.payloads import AccountsGetResponse
 
@@ -246,7 +247,9 @@ class _FakeStorage:
     async def upsert_link(self, **kwargs: Any) -> None:
         pass
 
-    async def apply_accounts(self, *, item_id: str, accounts: list[dict[str, Any]], captured_at: datetime) -> None:
+    async def apply_accounts(
+        self, *, item_id: str, accounts: list[dict[str, Any]], captured_at: datetime, run_id: UUID
+    ) -> None:
         self.account_refreshes.append(item_id)
 
     async def apply_transaction_delta(self, **kwargs: Any) -> None:
@@ -259,7 +262,7 @@ class _FakeStorage:
         pass
 
     async def append_liability_snapshots(
-        self, *, item_id: str, liabilities: dict[str, Any], captured_at: datetime
+        self, *, item_id: str, liabilities: dict[str, Any], captured_at: datetime, run_id: UUID
     ) -> None:
         self.liability_snapshots.append(item_id)
 
@@ -469,6 +472,27 @@ async def test_webhook_sync_refreshes_accounts_before_transaction_delta() -> Non
 
     assert storage.account_refreshes == ["item-chase"]
     assert api.sync_requests[0].cursor == "cursor-old"
+
+
+async def test_cancellation_survives_lease_loss_during_cleanup() -> None:
+    class LostLeaseStorage(_FakeStorage):
+        async def finish_sync_run(self, run_id: UUID, *, status: str, error_summary: str | None = None) -> None:
+            raise SyncLeaseLostError("recovered")
+
+    class CancelledSecrets(_FakeSecrets):
+        async def read_access_token(self, secret_name: str) -> str:
+            raise asyncio.CancelledError
+
+    link = _stored_link("item-cancelled", ["transactions"])
+    storage = LostLeaseStorage(links=[link])
+    with pytest.raises(asyncio.CancelledError):
+        await sync_transactions_only(
+            api=PlaidClient(api=_FakeApi()),
+            storage=cast(PlaidLinkStorage, storage),
+            secrets=CancelledSecrets(),
+            link=link,
+        )
+    assert storage.begun_items == ["item-cancelled"]
 
 
 async def test_transaction_sync_restarts_mutated_pagination_from_saved_cursor() -> None:
