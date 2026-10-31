@@ -275,9 +275,19 @@ A transport failure during cursor-based `process/read` permits one reconnect and
 call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
 incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
 output; only its durable result advances the sampler's cursor. An expired session, changed session
-ID, failed reconnect or second transport failure settles the affected intent and process as unknown;
-the tool promise rejects, and a future operation may attempt the same-session reconnect again.
-Process starts, stdin writes, signals and other effectful operations are never automatically retried.
+ID, failed reconnect or second transport failure settles the affected intent and process as unknown.
+The exact native rejection `unknown session id <retained-id>` with JSON-RPC code `-32600` is definitive
+session loss only when both its native response frames and semantic rejection result are durably
+recorded. The sampler then abandons live process handles while retaining observed output, clears the
+stale session binding, and durably records a model notice before opening a fresh exec-server session
+under the same Sandbox incarnation. If the model's outer exec call is still pending, the notice is
+queued and appended after that call's tool result, before the next sample; otherwise it is appended
+directly. The operation that discovered the lost session is returned as not dispatched and is never
+replayed; only later model-requested operations may use the fresh session. A generic `Unavailable`,
+other rejected status, unknown outcome, changed session ID, failed resume or incomplete response
+evidence is not proof of session loss and never triggers fresh-session substitution. After those
+failures, a future operation may attempt to resume the retained session again. Process starts, stdin
+writes, signals and other effectful operations are never automatically retried.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. An authenticated caller for the same account can

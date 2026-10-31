@@ -203,7 +203,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, "initialize", opened.NativeFrames)
 	if opened.Status == nil || opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		cancel()
-		return errors.Join(frameErr, e.finishOpenFailure(ctx, intent, opened))
+		return e.finishOpenFailure(ctx, intent, opened, frameErr)
 	}
 	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
 		cancel()
@@ -241,31 +241,38 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	e.sessionGeneration++
 	generation := e.sessionGeneration
 	e.reconnectRequired = false
+	if resume == nil && e.lostSessionConfirmed {
+		e.lostSessionConfirmed = false
+	}
 	e.sessionStateMu.Unlock()
 	go e.watchSession(streamCtx, stream, intent, opened.ExecutionSessionId, generation, cancel, done)
 	return nil
 }
 
-func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse) error {
+func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse, nativeEvidenceErr error) error {
 	if response.Status != nil && response.Status.Outcome == executorpb.ExecutionStatus_OUTCOME_REJECTED {
 		message := response.Status.Message
 		if message == "" {
 			message = "session open rejected"
 		}
+		rejectedError := &executorRejectedError{method: "initialize", code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
 		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "rejected", "request_id": intent, "rejected": rejected}); err != nil {
-			return errors.Join(&executorRejectedError{method: "initialize", message: message}, err)
+			return errors.Join(nativeEvidenceErr, rejectedError, err)
 		}
-		return &executorRejectedError{method: "initialize", message: message}
+		// A typed rejection alone is insufficient if accompanying native frames failed to
+		// persist. Session-loss recovery requires the complete response evidence boundary.
+		rejectedError.recorded = nativeEvidenceErr == nil
+		return errors.Join(nativeEvidenceErr, rejectedError)
 	}
 	message := "execution session open outcome is unknown"
 	if response.Status != nil && response.Status.Message != "" {
 		message = response.Status.Message
 	}
 	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "unknown", "request_id": intent, "message": message}); err != nil {
-		return errors.Join(errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
+		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
 	}
-	return &executorTransportError{method: "initialize", phase: "response", intentID: intent, cause: errors.New(message)}
+	return errors.Join(nativeEvidenceErr, &executorTransportError{method: "initialize", phase: "response", intentID: intent, cause: errors.New(message)})
 }
 
 func (e *Executor) watchSession(streamCtx context.Context, stream executorSessionStream, operationID, sessionID string, generation uint64, cancel context.CancelFunc, done chan struct{}) {
@@ -350,7 +357,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		return nil, fmt.Errorf("execution session evidence journal failed; refusing further dispatch: %w", sessionError)
 	}
 	if reconnectRequired {
-		if err := e.reconnectLocked(ctx); err != nil {
+		if err := e.reconnectLocked(ctx, executorProcessID(params)); err != nil {
 			return nil, &executorNotDispatchedError{method: method, processID: executorProcessID(params), retainedSession: e.retainedSessionID(ctx), cause: err}
 		}
 	}
@@ -373,7 +380,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	if err != nil && errors.As(err, &transport) {
 		e.setReconnectRequired(true)
 		if method == "process/read" && ctx.Err() == nil {
-			if reconnectErr := e.reconnectLocked(ctx); reconnectErr == nil {
+			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
 				response, err = e.call(ctx, method, request)
 			} else {
@@ -407,7 +414,7 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	if statusValue.Outcome == executorpb.ExecutionStatus_OUTCOME_UNKNOWN {
 		if method == "process/read" && !readRetried && ctx.Err() == nil && frameErr == nil {
 			e.setReconnectRequired(true)
-			if reconnectErr := e.reconnectLocked(ctx); reconnectErr == nil {
+			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
 				response, err = e.call(ctx, method, request)
 				if err == nil {
@@ -484,15 +491,13 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	return encoded, nil
 }
 
-func (e *Executor) reconnectLocked(ctx context.Context) error {
+func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID string) error {
 	e.setReconnectRequired(true)
 	conversation, err := e.store.Read(ctx, e.owner)
 	if err != nil {
 		return err
 	}
-	if conversation.ExecutorSession == nil {
-		return errors.New("cannot resume executor without a retained execution session ID")
-	}
+	previousSession := e.sessionID
 	if e.sessionCancel != nil {
 		e.sessionCancel()
 		e.sessionCancel = nil
@@ -505,7 +510,32 @@ func (e *Executor) reconnectLocked(ctx context.Context) error {
 			e.sessionDone = nil
 		}
 	}
-	return e.openSession(ctx, conversation.ExecutorSession)
+	if conversation.ExecutorSession == nil {
+		if !e.lostSessionConfirmed {
+			return errors.New("cannot open a fresh executor session without definitive loss of the retained session")
+		}
+		if err := e.openSession(ctx, nil); err != nil {
+			return err
+		}
+		return &executorSessionReplacedError{previousSession: previousSession}
+	}
+	retainedSession := *conversation.ExecutorSession
+	if err := e.openSession(ctx, &retainedSession); err != nil {
+		var rejected *executorRejectedError
+		if !errors.As(err, &rejected) || !isDefinitiveLostExecutorSession(rejected, retainedSession) {
+			return err
+		}
+		if retireErr := e.store.RetireLostExecutorSession(ctx, e.owner, retainedSession, notDispatchedProcessID); retireErr != nil {
+			return errors.Join(err, fmt.Errorf("retire lost executor session: %w", retireErr))
+		}
+		e.lostSessionConfirmed = true
+		e.shell = nil
+		if freshErr := e.openSession(ctx, nil); freshErr != nil {
+			return errors.Join(err, fmt.Errorf("open fresh executor session after definitive session loss: %w", freshErr))
+		}
+		return &executorSessionReplacedError{previousSession: retainedSession}
+	}
+	return nil
 }
 
 func (e *Executor) close() error {
@@ -597,13 +627,32 @@ func (e *executorNotDispatchedError) evidence() map[string]any {
 }
 
 type executorRejectedError struct {
-	method  string
-	code    int
-	message string
+	method   string
+	code     int
+	message  string
+	recorded bool // The semantic result and all native response frames are durably recorded.
 }
 
 func (e *executorRejectedError) Error() string {
 	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
+}
+
+type executorSessionReplacedError struct {
+	previousSession string
+}
+
+func (e *executorSessionReplacedError) Error() string {
+	return fmt.Sprintf("retained exec-server session %q was definitively lost; its process handles were abandoned and a fresh session was opened. The requested operation was not dispatched and must not be retried automatically", e.previousSession)
+}
+
+func isDefinitiveLostExecutorSession(rejected *executorRejectedError, expectedSession string) bool {
+	if rejected == nil || !rejected.recorded || rejected.method != "initialize" || rejected.code != -32600 || expectedSession == "" {
+		return false
+	}
+	// Codex exec-server's session registry reports an absent retained session as exactly
+	// "unknown session id <id>" with JSON-RPC invalid_request (-32600). Keep this classifier
+	// exact so unrelated rejections and transport outages never retire a live binding.
+	return rejected.message == "unknown session id "+expectedSession
 }
 
 func processDescription(id string) string {
