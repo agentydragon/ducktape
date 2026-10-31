@@ -13,7 +13,10 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -156,6 +159,9 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: e.scope, RequestId: intent, ResumeSessionId: resume})
 	if err != nil {
 		cancel()
+		if rpcerrors.IsOpenSessionNotDispatched(err) {
+			return e.finishOpenNotDispatched(ctx, intent, err)
+		}
 		transport := &executorTransportError{method: "initialize", phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return errors.Join(transport, fmt.Errorf("record OpenSession transport outcome: %w", finishErr))
@@ -188,6 +194,9 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	}
 	if err != nil {
 		cancel()
+		if rpcerrors.IsOpenSessionNotDispatched(err) {
+			return e.finishOpenNotDispatched(ctx, intent, err)
+		}
 		transport := &executorTransportError{method: "initialize", phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
 		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 			return errors.Join(transport, fmt.Errorf("record OpenSession receive outcome: %w", finishErr))
@@ -247,6 +256,34 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	e.sessionStateMu.Unlock()
 	go e.watchSession(streamCtx, stream, intent, opened.ExecutionSessionId, generation, cancel, done)
 	return nil
+}
+
+func (e *Executor) finishOpenNotDispatched(ctx context.Context, intent string, cause error) error {
+	message := "Gateway rejected executor initialization before dispatch to Runner"
+	grpcCode := status.Code(cause).String()
+	failure := &protocol.KnownFailureError{
+		Message: message,
+		Evidence: map[string]any{
+			"reason":         rpcerrors.OpenSessionNotDispatchedReason,
+			"request_id":     intent,
+			"dispatch_state": "not_dispatched",
+			"grpc_code":      grpcCode,
+		},
+	}
+	result := map[string]any{
+		"outcome":        "rejected",
+		"request_id":     intent,
+		"dispatch_state": "not_dispatched",
+		"rejected": map[string]any{
+			"code":      rpcerrors.OpenSessionNotDispatchedReason,
+			"message":   message,
+			"grpc_code": grpcCode,
+		},
+	}
+	if err := e.store.FinishNested(ctx, e.owner, intent, result); err != nil {
+		return errors.Join(failure, fmt.Errorf("record rejected OpenSession admission: %w", err))
+	}
+	return failure
 }
 
 func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse, nativeEvidenceErr error) error {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -2513,6 +2514,31 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	var knownFailure *protocol.KnownFailureError
 	known := errors.As(failure, &knownFailure) && knownFailure != nil
 	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
+	knownNotDispatched := false
+	if known && knownFailure.Evidence != nil {
+		reason, _ := knownFailure.Evidence["reason"].(string)
+		knownNotDispatched = reason == rpcerrors.OpenSessionNotDispatchedReason
+	}
+	if knownNotDispatched && !session.Blocked {
+		outputs, err := settlePendingCalls(conversation, func(protocol.ToolInvocation) string {
+			return "Executor initialization was rejected before dispatch to Runner. This tool call was not run."
+		})
+		if err != nil {
+			return err
+		}
+		for _, output := range outputs {
+			encoded, err := json.Marshal(output["output"])
+			if err != nil {
+				return err
+			}
+			callID, _ := output["call_id"].(string)
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+				ItemId: callID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
+			}}}); err != nil {
+				return err
+			}
+		}
+	}
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
 	// an unresolved intent whose output must precede it, so queued notify() outputs are discarded.

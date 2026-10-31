@@ -5,6 +5,7 @@ import (
 	"io"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -80,12 +81,12 @@ func (s *executorServer) OpenSession(
 ) error {
 	ctx, connection, stop, err := s.executionConnection(stream.Context(), request.GetScope(), true)
 	if err != nil {
-		return err
+		return rpcerrors.WithOpenSessionNotDispatched(err)
 	}
 	defer stop()
 	private, err := executorpb.NewExecutorClient(connection.direct).OpenSession(ctx, request)
 	if err != nil {
-		return err
+		return rpcerrors.WithoutOpenSessionNotDispatched(err)
 	}
 	for {
 		response, err := private.Recv()
@@ -93,7 +94,7 @@ func (s *executorServer) OpenSession(
 			if err == io.EOF {
 				return nil
 			}
-			return err
+			return rpcerrors.WithoutOpenSessionNotDispatched(err)
 		}
 		if err := streaming.SendWithin(ctx, s.gateway.config.ControlTiming.LivenessTimeout, stream.Send, response); err != nil {
 			return err

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/executor/rpcerrors"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -20,6 +21,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -71,6 +73,43 @@ func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
 			testRunnerObserver(t, mode)
 		})
 	}
+}
+
+func TestOpenSessionAdmissionFailureCarriesNotDispatchedEvidence(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
+	stream := &openSessionProbeStream{ctx: t.Context()}
+	request := &executorpb.OpenSessionRequest{
+		Scope: &executorpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			},
+			ExpectedIncarnationUid: string(f.pod.UID),
+			SessionId:              "test-open-session-admission",
+		},
+		RequestId: "test-open-session-admission-request",
+	}
+	err := (&executorServer{gateway: g}).OpenSession(request, stream)
+	if status.Code(err) != codes.Unavailable || !rpcerrors.IsOpenSessionNotDispatched(err) {
+		t.Fatalf("OpenSession admission error=%v, want structured not-dispatched Unavailable", err)
+	}
+	if stream.sent {
+		t.Fatal("Gateway sent an OpenSession response after admission failed")
+	}
+}
+
+type openSessionProbeStream struct {
+	grpc.ServerStream
+	ctx  context.Context
+	sent bool
+}
+
+func (s *openSessionProbeStream) Context() context.Context { return s.ctx }
+
+func (s *openSessionProbeStream) Send(*executorpb.OpenSessionResponse) error {
+	s.sent = true
+	return nil
 }
 
 func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
@@ -142,7 +181,8 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	defer publicConn.Close()
 	execCtx, stopExec := context.WithTimeout(metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken)), 5*time.Second)
 	defer stopExec()
-	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
+	client := executorpb.NewExecutorClient(publicConn)
+	openRequest := &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
 			Destination: &sandboxespb.SandboxDestination{
 				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
@@ -151,7 +191,8 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
 		RequestId: "open-session-request",
-	})
+	}
+	exec, err := client.OpenSession(execCtx, openRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +202,24 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	}
 	if len(opened.GetNativeFrames()) != 1 || string(opened.GetNativeFrames()[0].GetPayload()) != `{"id":"1","result":{}}` {
 		t.Fatalf("Gateway changed execution evidence: %v", opened.GetNativeFrames())
+	}
+	openRequest.RequestId = "runner-unavailable"
+	failedExec, err := client.OpenSession(execCtx, openRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := failedExec.Recv(); status.Code(err) != codes.Unavailable || rpcerrors.IsOpenSessionNotDispatched(err) {
+		t.Fatalf("downstream Runner OpenSession error=%v, want unmarked Unavailable", err)
+	} else {
+		var preservesOtherDetail bool
+		for _, detail := range status.Convert(err).Details() {
+			if _, ok := detail.(*errdetails.BadRequest); ok {
+				preservesOtherDetail = true
+			}
+		}
+		if !preservesOtherDetail {
+			t.Fatalf("stripping downstream marker discarded unrelated status details: %v", err)
+		}
 	}
 	quiescing := f.sandbox.DeepCopy()
 	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
@@ -208,11 +267,20 @@ type echoForwardExecutor struct {
 	executorpb.UnimplementedExecutorServer
 }
 
-func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
+func (*echoForwardExecutor) OpenSession(request *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
 		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
+	}
+	if request.GetRequestId() == "runner-unavailable" {
+		marked := rpcerrors.WithOpenSessionNotDispatched(status.Error(codes.Unavailable, "downstream Runner unavailable"))
+		markedStatus, _ := status.FromError(marked)
+		markedStatus, err := markedStatus.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{{Field: "fixture", Description: "preserve this detail"}}})
+		if err != nil {
+			return err
+		}
+		return markedStatus.Err()
 	}
 	if err := stream.Send(&executorpb.OpenSessionResponse{
 		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},

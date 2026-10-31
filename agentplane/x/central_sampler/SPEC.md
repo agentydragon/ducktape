@@ -43,6 +43,12 @@ The executor `OpenSession` initialization handshake has its own positive
 `executor_initialize_timeout_seconds` setting, defaulting to 30 seconds independently of
 `rpc_timeout_seconds`. A timeout cancels the stream and records the initialization outcome as
 unknown; it does not claim that the executor did not initialize.
+Gateway admission failures carry structured `ErrorInfo` only when `OpenSession` failed in
+`executionConnection` before forwarding to Runner. The sampler records that initialization as
+rejected with `dispatch_state: not_dispatched`, fails the active turn, and returns any pending
+model tool calls with a not-run result. It leaves the session available only when no other
+unresolved effect or live handle exists. Generic gRPC errors, including `Unavailable`, remain
+unknown, and the sampler does not retry the failed initialization.
 
 Non-empty setup scripts (at most 65,536 UTF-8 bytes) execute once through the bound exec-server
 with `/bin/sh -eu -c`, before any provider request or queued command. Setup stdout and stderr
