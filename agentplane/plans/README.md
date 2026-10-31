@@ -7,11 +7,17 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 [Maintenance conventions](../docs/task_dag_maintenance.md) distinguish dispatchable phases,
 operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
 
+Start dispatch from the [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt):
+session resilience first, then the daily CI agent and caller-privilege Session spawning, with small
+launch-UX improvements alongside. Component TODOs and research plans do not set a competing queue.
+
 ## Open plans and gates
 
 - [Central Anthropic follow-ups](../x/central_sampler/plans/anthropic.md) — deferred BuildBuddy
   credentials, background compaction, dynamic tools and optional Langfuse export; direct sampling
   and ordinary compaction are deployed
+- [Central sampler workflow gaps](../x/central_sampler/plans/codex_parity.md) — selected resilience
+  and Session-spawning work, followed by remaining Codex feature candidates
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the

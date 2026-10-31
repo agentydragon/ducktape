@@ -8,8 +8,57 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
-**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation is assigned to other
-agents. Do not dispatch duplicate work on that track.
+### Stakeholder priorities, 2026-10-30 PDT
+
+The product goal is reliable long-running agents in the operator's cluster and environments:
+both agents pursuing ongoing goals and standing roles that wake for messages or events. The first
+concrete autonomous workflow is a daily agent inspecting the previous 24 hours of CI latency and
+opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
+remain useful but do not provide independently addressable Agentplane Sessions.
+
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                                                               |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                         |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
+| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                         |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements |
+
+Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
+Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
+follow-ups, inline TODOs and open PRs are not automatically next work merely because they exist.
+Recheck their current state before dispatch: some old PRs overlap shipped changes. Actual failure
+cases can justify pulling a narrower fix forward. No runtime work is dispatched by this planning edit.
+
+**Quality bar for every selected outcome:** sound domain models, clear ownership/lifetimes and
+maintainability are acceptance criteria. Review the affected domain contract before implementing
+each slice. Keep Session identity, native state, running processes, environment instances and
+authority distinct; a smaller feature scope must not create duplicate ownership or hidden coupling.
+Apply the relevant runtime-model directions now where a selected feature needs them, without
+requiring the entire north-star redesign first. Record concrete tradeoffs rather than treating
+technical debt as an automatic later cleanup.
+
+Apply the [Agentplane principles](../docs/principles.md) throughout: resilient distributed ownership,
+service-owned recovery and independently usable capabilities. A required service or constraint
+needs an intrinsic execution/security reason or an explicit practical tradeoff; incidental current
+colocation and implementation limitations do not make it part of the domain contract.
+
+**Agent usability is part of completion:** an agent must discover and naturally use the workflow
+from an ordinary task description, understand results/failures and recover without an operator's
+step-by-step tool script. Reuse canonical APIs/CLI/tool surfaces and concise actionable results.
+Use Claude/Codex spawning, messaging, waiting, result and cancellation workflows as reference
+designs; do not make native-child projection or exhaustive harness parity prerequisites.
+
+The operator is reusing environments partly because fresh startup is slow. Separate directories
+are acceptable for cooperating agents with shared access; that does not imply isolation between
+different principals. Starting less-privileged workers can wait: the selected first spawning
+scope uses the caller's ServiceAccount and may reuse its environment.
+
+**Ownership report, 2026-10-27 PDT:** runner lifecycle implementation was assigned to other
+agents. Confirm current ownership before assigning overlapping lifecycle work; do not duplicate an
+active owner's task. This report does not hold independent sampler-roll, JS/exec recovery,
+scheduling or Session-creation work.
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections.
@@ -22,27 +71,44 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Current tracks and what they leave behind
+### Dispatch order and prerequisites
 
-Each group holds a track's open nodes; cleanup candidates are in
-[section 15](#15-cleanups-after-the-current-tracks) unless a node names another section.
-`REFACTOR_COHERENCE_AUDIT` sweeps what remains after the current tracks and their cleanups.
+Give P0 reliability work first attention. Sampler-roll/ownership and JS/exec recovery can proceed
+independently where their reviewed contracts allow it; neither is held for the full runtime model,
+Dispatcher/Gateway merge, renames or different-privilege delegation.
+
+P1 scheduling and caller-privilege creation contract work can proceed in parallel. Session-creation
+implementation waits for its bounded authority/admission contract; the daily CI product milestone
+needs both scheduled wake and Session creation/cooperation. Its completion also includes the selected
+reliable-roll/recovery acceptance, without making all P1 development wait for P0 to finish.
+
+Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
+next and are independent of each other; image/layering work becomes a prerequisite only when the
+chosen change actually needs it. Existing technical, authorization, data-preservation and explicit
+operator-review gates remain in the owning nodes. Lower-priority maintenance stays in its sections;
+its old ordering does not give it precedence over the selected tracks.
 
 ```mermaid
 flowchart LR
-    subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
-        DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
-        DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
+    subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
+        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
+        CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
     end
-    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
-    RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
-    DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
+    subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
+        THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
+        THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT[Daily CI product milestone]
+        SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
+    end
+    SESSION_LAUNCH_FRICTION[Alongside: simpler reused-environment launch]
+    VM_STARTUP_LATENCY[Next: measured fresh-VM startup]
+    LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
 
 ## 2. Service-owned command admission and later notification presentation
 
 ```mermaid
 flowchart LR
+    SCHEDULED_AGENT_WAKE[Selected P1: scheduled wake for standing agents]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities]
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
@@ -65,6 +131,21 @@ Future ownership and wake-policy questions are recorded in the
 [freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership):
 consider moving Notification Service responsibilities into Dispatcher, and event/source-specific
 auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
+
+### `SCHEDULED_AGENT_WAKE` — wake a standing agent on a durable schedule
+
+**Selected P1; operator, 2026-10-30 PDT.** Promote the former frozen `CRON_NOTIFICATIONS` idea for
+the daily CI-maintenance workflow. Choose the smallest sound scheduling/delivery contract: compare
+an existing scheduler feeding authorized Session commands with a Notification-owned schedule.
+Review cadence/timezone, missed runs, overlap, stable run identities, delivery receipts and
+restart reconciliation before implementation. A timer firing is distinct from input admission,
+agent consumption and task completion. Reuse service-owned delivery and wake authorization.
+
+The capability must work without the integration app. A new Session CRD, a general webhook
+framework and moving the Notification Service are not prerequisites unless the selected contract
+demonstrates a need. Exit: a reviewed contract followed by restart-safe scheduled delivery with
+duplicate/overlap behavior checked. The `DAILY_CI_AGENT` milestone proves useful agent behavior;
+this node owns the reusable scheduling capability.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
@@ -222,10 +303,11 @@ a general CI/comment/review replay mechanism.
 
 ## 3. Multiagent decisions before implementations
 
-These are operator-reviewable decisions, not permission to implement every possibility. Drafts can
-be developed together, but publish a coherent Session-access rule schema before the nodes that use it,
-and the identity/authority vocabulary before create and launch policy. Do not equate creating a
-resource, reading history, sending a message or receiving/acking it.
+These are operator-reviewable decisions, not permission to implement every possibility. Publish a
+coherent access contract before implementing the operations it protects. The selected first slice
+is caller-privilege-level Session creation; it does not wait for the complete multiagent model or
+different-privilege launch policy. Broader delegation still needs its identity/authority review.
+Do not equate creating a resource, reading history, sending a message or receiving/acking it.
 
 [The cross-agent plan](multiagent_communication.md#tentative-implementation-direction) tentatively
 selects service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s.
@@ -247,15 +329,18 @@ flowchart TD
     HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
-    THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
-    THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
+    THREAD_CREATE_POLICY[Selected P1 decision: caller-privilege Session creation]
+    THREAD_CREATE_AUTHORIZATION[Blocked: implement the selected create contract]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
-    MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
+    SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
+    DAILY_CI_AGENT[Selected P1 capstone: daily CI-maintenance agent]
+    SCHEDULED_AGENT_WAKE --> DAILY_CI_AGENT
+    THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     ORCHESTRATION_V1_BACKEND_GRANTS[Blocked: orchestration_v1 operations on backend grants]
     THREAD_CREATE_AUTHORIZATION --> ORCHESTRATION_V1_BACKEND_GRANTS
@@ -278,7 +363,9 @@ Sandbox trust boundary versus independently provisioned Sandboxes, addressabilit
 and which controls must remain unavailable. Native integration itself stays frozen, and v1 excludes
 native children from the messaging and access model.
 
-This gates `THREAD_CREATE_POLICY` and `AGENT_LAUNCH_POLICY_DESIGN`. Messaging needs only the
+This gates broader different-privilege create/delegation and `AGENT_LAUNCH_POLICY_DESIGN`; the
+selected caller-privilege `THREAD_CREATE_POLICY` slice proceeds with its own reviewed contract.
+Messaging needs only the
 [Session inbox access rule](../notification_service/docs/api.md#messages) and
 history reads only their own rule type, so creator, manager and parent semantics do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
 special handling is optional, separately reviewed follow-up work and does not gate multiagent
@@ -338,20 +425,28 @@ decision.
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 
-**Decision.** Review caller scope to open in an existing Sandbox, accepted defaults, quotas,
-creator visibility and revocation. Use the service-reserved Session identity, not a caller-invented
-public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
-separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
-is a composition of separate grants, never an implicit read/send/launch permission. This contract
-reuses the existing Session Dispatcher durable command queue.
+**Selected P1 decision; scope narrowed by the operator, 2026-10-30 PDT.** Start independently
+addressable Agentplane child Sessions at the caller's privilege level, using its ServiceAccount.
+Reusing an environment with a separate working directory is acceptable. Different-privilege
+workers and generic delegation can wait; native harness subagents remain available independently.
 
-Two choices this decision must make before `THREAD_CREATE_AUTHORIZATION`. First, which service an
-agent calls to open a Session and how the Dispatcher admits it: the Dispatcher's callers are a fixed
-service allowlist, so either a service holding the create grant calls it as a trusted caller, or
-`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` lands first. Second, the Session identity rule: the
-Dispatcher keys `OpenSession` on a caller-minted `session_id` today and
-`HARNESS_IDENTITY_DESIGN` recommends keeping client-chosen globally unique public IDs, so a
-service-reserved identity changes both. Neither depends on any History key or read-policy node.
+Review the bounded API and authority contract: which existing same-account targets may be used,
+defaults/cwd, creation provenance, message/result delivery and caller-visible lifecycle controls.
+Preserve separate Session, environment, process and authority identities. Use Claude/Codex native
+workflows as inspiration, without requiring their child-ingestion research or making a parent
+edge silently confer authority. Existing durable Dispatcher admission remains the command owner.
+Opening another Session in one environment provides no new isolation boundary.
+
+The broader create policy retains its scope/defaults, creator visibility and revocation questions,
+and any launch-and-open composition must define the required operations separately.
+
+Within this slice, settle admission and identity before `THREAD_CREATE_AUTHORIZATION`. Compare an
+agent-facing facade forwarding verified caller scope with direct scoped Dispatcher admission;
+today its callers are a fixed service allowlist. A narrow same-account admission contract need
+not wait for all of `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, but every exposed path must enforce
+the same authority. The Dispatcher currently keys `OpenSession` on a caller-minted `session_id`;
+review any proposed change to that rule against `HARNESS_IDENTITY_DESIGN` rather than assuming a
+service-reserved ID is required. Neither choice depends on History keys or the held read policy.
 
 **Operator inputs, 2026-10-21 UTC (not decisions):**
 
@@ -369,14 +464,33 @@ service-reserved identity changes both. Neither depends on any History key or re
   too; the inbox's cap of 128 unacknowledged messages per sender bounds the queue, not spend. A budget
   would sit at LLM ingress per ServiceAccount, not in these grants.
 
-### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
+### `THREAD_CREATE_AUTHORIZATION` — implement caller-privilege session creation
 
-**Blocked on create policy.** Enforce scope/defaults and idempotent Open
-lookup at the service boundary; test forbidden targets/overrides and a lost creation reply.
+**Blocked on the selected caller-privilege create contract; P1.** Enforce scope/defaults and
+idempotent Open lookup at the service boundary. Check forbidden targets/overrides, a lost creation
+reply and cancellation affecting only the intended Session. Show an agent naturally discovering
+the interface, starting a child, sending follow-up work and receiving its result. Update canonical
+agent-facing instructions with the interface; do not require the full archive-read or different-SA
+delegation design for this slice.
+
+### `DAILY_CI_AGENT` — a daily CI-maintenance agent that can delegate fixes
+
+**Selected P1 product capstone; operator, 2026-10-30 PDT.** Configure a standing agent to wake
+daily, inspect CI latency over the previous 24 hours and open justified, focused fix PRs, or record
+that no fix is warranted. Include creating and coordinating a caller-privilege Agentplane Session for a
+piece of work. Use existing CI analysis capabilities, source access and permission mechanisms;
+this is not a new CI analytics system or a generic agent-role framework.
+
+Completion means an end-to-end useful run from the scheduled wake, with retained run/outcome
+evidence and clear operator visibility, plus the selected reliable-roll/recovery behavior. Confirm
+that an ordinary task description suffices for tool discovery and delegation; hand-scripting every
+tool call does not prove agent usability. Reuse existing work/PR evidence when deciding whether to
+open another fix. Set the concrete schedule, model, credentials and notification destination before
+activation; activation is follow-up work after this planning review.
 
 ### `AGENT_LAUNCH_POLICY_DESIGN` — Sandbox launch and delegation policy
 
-**Decision.** Review which callers can use which templates and resource budgets, mounts, images,
+**Later decision for broader/different-privilege launch.** Review which callers can use which templates and resource budgets, mounts, images,
 secrets, egress and Kubernetes/Action grants; presets are defaults, not authority. A new Sandbox is
 required for an independent isolation boundary; adding a Session within one is not. Define manager,
 lifetime, parent termination, quota/fanout and revocation without automatic privilege inheritance.
@@ -541,6 +655,8 @@ app/Sandbox Service database changes requires its own migration safety review.
 ```mermaid
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
+    SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
+    VM_STARTUP_LATENCY[Next: reduce measured fresh-VM startup latency]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
@@ -556,9 +672,11 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
+    AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_REPLICA_ROLLOUT[Decision, unscheduled: multiple sampler replicas and rolls that preserve agents]
+    CENTRAL_SAMPLER_REPLICA_ROLLOUT[Selected P0 decision: rolls and owner loss that preserve agents]
+    CENTRAL_SAMPLER_TOOL_RECOVERY[Selected P0: JS and exec faults leave Sessions recoverable]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -566,6 +684,27 @@ flowchart LR
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
+
+### `SESSION_LAUNCH_FRICTION` — fewer clicks to start useful work
+
+**Selected alongside P0/P1; operator, 2026-10-30 PDT.** Make opening a Session on an existing
+environment with its own working directory a short path with useful defaults. Preserve explicit
+harness/model/access choices without requiring users to reconstruct ordinary settings each time.
+Separate this flow from provisioning a fresh environment. Review the actual click path and
+candidate UX first; do not require new agent/conversation entities to improve it.
+
+Exit: the agreed common path needs fewer decisions/clicks and opens a useful Session in the chosen
+directory, with intended defaults and override behavior visible. Include the normal visual review.
+
+### `VM_STARTUP_LATENCY` — reduce measured time to a useful fresh VM Session
+
+**Next; operator, 2026-10-30 PDT.** Attribute fresh startup time across scheduling, image
+transfer/unpack, storage attachment, guest boot, executor readiness and Session setup using retained
+timestamps/traces and real profiling where needed. Compare equivalent cold/warm starts. Then select
+a bounded change addressing the measured dominant delay and show its effect on first usable work.
+Image slimming, tools-disk separation and runtime harness delivery are candidates, not assumed
+prerequisites. Keep reusable environments as a supported path and preserve resource/ownership
+contracts. `LOCAL_BAZEL` independently proves the VM-based coding workflow.
 
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
@@ -580,12 +719,41 @@ and execution attachments without choosing their storage or forcing a global cre
 external placement when capabilities are otherwise equal, for isolation and independent lifetimes.
 Characterize complete per-feature placement; OpenClaw's historical partial remote support is a
 counterexample to equating remote shell forwarding with a fully separated harness.
-Support the design cases of Sandbox-first native CLI use, Session-first central use, no Sandbox
-(external MCP tools only), and later attachment/detachment. Central Session data must survive
-execution-Sandbox deletion. Decide cardinality, capabilities, lifecycle, authority and attribution;
-reuse the existing versioned Codex environment API evidence without claiming unsupported modes work.
+Support Sandbox-first native CLI use and Session-first central use with 0..N environments and later
+attachment/detachment. Central Session data must survive execution-Sandbox deletion. The 2026-10-30
+discussion adds durable harness stores versus running hosts, dispatcher/gateway role boundaries,
+caller-SA provisioning, agent-facing environment context and unresolved skills delivery, programmatic
+environment access, partial-output failures and recovery after JS host loss. Resource visibility,
+rightsizing and Claude workload placement are independent follow-ups in the brief. Decide concrete
+capabilities, lifecycle, authority and attribution; reuse the existing versioned Codex environment
+API evidence without claiming unsupported modes work.
 Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
 these cases. This authorizes no implementation, deployment or native-state migration.
+
+### `AGENT_AUTHORED_CONVERSATIONS_DESIGN` — conversations agents act on through tools
+
+**Decision, unscheduled; operator requested for later, 2026-10-30 PDT.** Explore a conversation
+that agents participate in through tools such as `send_message` and `edit_message`. Its messages
+need not mirror model context items or expose each reasoning/tool step as a work log. A Session
+could participate in such a thread alongside humans or other agents; a human participant is optional.
+Expose conversation operations through MCP so third-party harnesses can participate without changes
+to their binaries. Treat publishing a message, notifying a participant and waking an agent as
+separate concerns; incoming-message delivery and harness-specific notification support need design.
+
+Recommendation for review: distinguish the authored conversation, harness continuation state and
+retained evidence of harness activity. Today's History conversation view is already a lossy
+projection and cannot resume a rollout; central-sampler evidence and native app-server observations
+also arrive at different levels of detail. Consider adding authored conversations and participant
+relationships alongside existing projected threads, with reasoning, tool calls and raw harness
+evidence accessible through a debug view. Keep the ability to retain harness evidence. Evaluate
+OTel/Langfuse as a possible destination, including fidelity and retention; do not assume ordinary
+telemetry replaces durable evidence or continuation state.
+
+Exit: reviewed conversation/participant/message semantics, send/edit authorization and attribution,
+edit history and delivery/retry behavior, and an incremental migration/UX proposal. Decide whether
+History owns the new entities and whether its name still fits, in coordination with
+`HISTORY_SERVICE_RENAME`. The service owner, storage and trace destination remain open. This design
+does not block current thread work or authorize implementation.
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
 
@@ -610,7 +778,7 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
 
-**Decision, unscheduled; operator requested tracking, 2026-10-30 PDT.** An ordinary sampler
+**Selected P0 decision; operator priority review, 2026-10-30 PDT.** An ordinary sampler
 rollout interrupted an active Session's provider-response ingestion and left it durably blocked
 on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_aborts_sampling.md)).
 The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
@@ -628,8 +796,28 @@ replaying external effects or discarding conversation/workspace history.
 Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and an
 acceptance plan covering two competing replicas, a roll during provider ingestion and a live cell,
 owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
-Create implementation and rollout nodes after that design is selected. No worker or priority is
-assigned, and this entry authorizes no live recovery or deployment.
+Create implementation and rollout nodes after that design is selected. No worker is assigned;
+priority does not authorize live recovery or deployment during this planning review.
+
+### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
+
+**Selected P0; operator reports JS/exec bugs irrecoverably breaking Sessions, 2026-10-30 PDT.**
+Inventory representative affected Sessions and their durable evidence, and distinguish remaining
+failures from already-merged transport/recovery work. Address the supported-tool path and its
+failure semantics: ordinary tool errors, lost executor observation, live JS host/cell loss and
+provider/context boundaries must not become an unexplained permanently unusable conversation.
+
+Review ownership, effect/admission evidence and continuation invariants before implementation;
+repair the responsible boundary rather than adding blind retries or clearing blocked flags.
+Preserve observed output, files and history as applicable. Tell the agent which runtime state was
+lost and allow safe continuation/recovery; retain uncertain effects without replaying them.
+Where evidence cannot establish an outcome, expose that uncertainty and define an explicit usable
+recovery transition. Do not promise exactly-once arbitrary external effects.
+
+Exit: the named incident classes have focused regression coverage and a continued useful Session
+without lost authored history or duplicate external work. Exercise the affected JS/exec workflow
+with an agent, including partial output and meaningful failures. Related to planned-roll ownership,
+but the tool/runtime failure outcome is independently finishable.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
@@ -1509,6 +1697,11 @@ flowchart TD
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
+**Scheduling update, 2026-10-30 PDT:** later work under the stakeholder priorities. The former
+blanket hold until the optional Dispatcher/Gateway merge is removed: an audit of current devel
+does not technically require that design to land. Check the actual code and active ownership when
+selected; each removal still needs its own evidence and any real prerequisite.
+
 **Candidate.** Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Runner Gateway, History Service, ingress, control; Session for the raw stream,
@@ -1852,10 +2045,11 @@ old paths.
 
 ## 15. Cleanups after the current tracks
 
-Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The overview's graph is in
-[Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
-produce are named at the fake and are not cleanups.
+Dead code, transitional pieces and test leftovers each current track reports it will leave behind
+(census of the lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The
+[dispatch order](#dispatch-order-and-prerequisites) controls priority; the nodes below retain their
+actual prerequisites. Fakes kept to inject faults the real API server cannot produce are named at
+the fake and are not cleanups.
 
 ```mermaid
 flowchart LR
