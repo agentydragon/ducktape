@@ -8,8 +8,9 @@ grants nothing. Consumers use `client.py`; `testing/go_service.py` runs the buil
 database for their tests, which read the fold's tables through `fold/models.py` and validate the rows
 browsers sync with `fold/views.py`.
 
-This service's `migrate` init container runs the history tables' migrations (`migrations/`, Goose). Its
-runner ingress and its fold are their only writers.
+The service binary embeds Goose migrations and applies them during normal startup before serving
+or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
+lifecycle. Its runner ingress and fold are the runtime writers.
 
 ## While the History Service is down or rolling
 

@@ -44,17 +44,14 @@ def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
     return defaults
 
 
-def test_egress_uses_go_proxy_and_goose_migration(staging_manifests: list[dict[str, Any]]) -> None:
+def test_egress_uses_embedded_migrations_and_startup_probe(staging_manifests: list[dict[str, Any]]) -> None:
     pod = _by_name(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
-    migrator = one(container for container in pod["initContainers"] if container["name"] == "migrate")
+    assert not pod.get("initContainers")
+    assert proxy["startupProbe"]["failureThreshold"] == 60
     assert proxy["image"] == "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
-    assert migrator["image"] == "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    migrator_env = {entry["name"]: entry for entry in migrator["env"]}
-    assert migrator_env["DATABASE_URL"]["valueFrom"] == proxy_env["AGENTPLANE_EGRESS_DATABASE_URL"]["valueFrom"]
     assert "PGSSLMODE" not in proxy_env
-    assert "PGSSLMODE" not in migrator_env
     assert any(volume.get("configMap", {}).get("name") == "egress-go-settings" for volume in pod["volumes"])
     assert "args" not in proxy
     assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == staging.ENV.namespace

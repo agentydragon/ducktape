@@ -1,4 +1,4 @@
-"""The Gateway workload and its Goose migration init container.
+"""The Gateway workload with embedded startup migrations.
 
 The public API and stable Service address are defined in `runner_gateway.py`; this module wires
 the Gateway's public listeners and direct mTLS connections to runner Pods."""
@@ -13,7 +13,6 @@ from typing import cast
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ContainerProps,
     ContainerResources,
     Cpu,
     CpuResources,
@@ -48,7 +47,6 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as TRUST_BUNDLE_NAME, BUNDLE_KEY as TRUST_BUNDLE_KEY
@@ -63,7 +61,6 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-_MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
 _RUNNER_TLS_CERT = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt"
 _RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
@@ -129,7 +126,6 @@ class RunnerGateway(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
-        migration: ContainerProps,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
@@ -217,6 +213,7 @@ class RunnerGateway(Construct):
             },
             readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
+            startup=grpc_probe(port=proxy.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
@@ -231,7 +228,6 @@ class RunnerGateway(Construct):
                 ),
             ),
             create_service=False,
-            migrate=migration,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
             placement=placement,
@@ -368,9 +364,6 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         "runner-gateway",
         env,
         database_url=dispatcher_database_url,
-        migration=migrate_init_container(
-            _MIGRATION_IMAGE, name="migrate", env_variables={"DATABASE_URL": dispatcher_database_url}
-        ),
         dispatcher_callers=callers | orchestration,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.

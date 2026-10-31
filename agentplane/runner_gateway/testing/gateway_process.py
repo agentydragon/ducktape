@@ -34,7 +34,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 _GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
-_MIGRATOR_BINARY = "agentplane/runner_gateway/migrations/cmd/runner-gateway-queue-migrate_/runner-gateway-queue-migrate"
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -46,10 +45,11 @@ def _wire_database_url(database_url: str) -> str:
 
 
 def _migrate(database_url: str, log_path: Path) -> None:
-    migrator = get_required_path(own_repo_rlocation(_MIGRATOR_BINARY))
+    migrator = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     try:
         result = subprocess.run(
-            [str(migrator), "--database-url", _wire_database_url(database_url)],
+            [str(migrator), "--migrate-only"],
+            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
             capture_output=True,
             text=True,
             timeout=60,

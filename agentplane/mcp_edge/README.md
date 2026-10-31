@@ -40,8 +40,8 @@ and `livez` for liveness. Readiness requires PostgreSQL, its notification listen
 caller label watch.
 
 The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:service_image`.
-The independent Goose migrator's image is `agentplane-mcp-edge-migrate`; both read
-`AGENTPLANE_MCP_EDGE_DATABASE_URL`.
+The same binary embeds Goose migrations and applies them before serving. `mcp-edge --migrate-only`
+uses the same lifecycle for explicit initialization; both modes read `AGENTPLANE_MCP_EDGE_DATABASE_URL`.
 
 ## Schema and data handoff
 

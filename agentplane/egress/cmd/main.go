@@ -20,12 +20,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	historymigrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/informer"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
 	"golang.org/x/sync/errgroup"
@@ -47,6 +49,15 @@ const (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_EGRESS_DATABASE_URL", historymigrations.Up); handled {
+		if err != nil {
+			slog.Error("Egress migration failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
@@ -58,8 +69,6 @@ func main() {
 		os.Exit(2)
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "egress-proxy")
 	if err != nil {
 		slog.Error("egress-proxy tracing setup failed", "error", err)
@@ -158,6 +167,9 @@ func serving(name string, err error) error {
 }
 
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, historymigrations.Up); err != nil {
+		return err
+	}
 	proxyListener, err := openListener("proxy", c.ListenAddress)
 	if err != nil {
 		return err
