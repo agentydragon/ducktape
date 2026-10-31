@@ -99,6 +99,7 @@ class SessionRow(Base):
     parent_link_kind: Mapped[str | None] = mapped_column(String(40))
     identity_inferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     title: Mapped[str | None] = mapped_column(String)
+    claude_title_projection_version: Mapped[int | None] = mapped_column(Integer)
     codex_title_from_metadata: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cwd: Mapped[str | None] = mapped_column(String)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -9,6 +9,7 @@ from typing import Any
 class ClaudeTitleSource(StrEnum):
     PROMPT = "prompt"
     SUMMARY = "summary"
+    AI_TITLE = "ai_title"
     CUSTOM = "custom"
 
 
@@ -24,6 +25,12 @@ def select_claude_title(current: ClaudeTitle | None, record: Mapping[str, Any]) 
         if isinstance(title, str) and title.strip():
             return ClaudeTitle(text=title.strip()[:500], source=ClaudeTitleSource.CUSTOM)
     if current is not None and current.source == ClaudeTitleSource.CUSTOM:
+        return current
+    if record.get("type") == "ai-title":
+        title = record.get("aiTitle")
+        if isinstance(title, str) and title.strip():
+            return ClaudeTitle(text=title.strip()[:500], source=ClaudeTitleSource.AI_TITLE)
+    if current is not None and current.source == ClaudeTitleSource.AI_TITLE:
         return current
     if record.get("type") == "summary":
         title = record.get("summary")
