@@ -659,6 +659,18 @@ fn solve_callable_import_projections(
         .collect()
 }
 
+/// The author inputs and host claims `resolve_imported_callable_summaries`
+/// checks the providers against.
+pub struct CallableSummaryInputs<'a> {
+    pub selected_value_inputs: &'a BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
+    pub selected_native_operation_inputs:
+        &'a BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
+    pub explicit_binding_destinations: &'a BTreeMap<ModuleKey, HashMap<Id, usize>>,
+    pub argument_inputs:
+        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    pub predefined_globals: spec::PredefinedGlobals,
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
@@ -666,11 +678,15 @@ pub fn resolve_imported_callable_summaries(
         ModuleKey,
         BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
     >,
-    selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
-    selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
-    explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
-    argument_inputs: &BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+    inputs: CallableSummaryInputs<'_>,
 ) -> Result<ResolvedCallableSummaries> {
+    let CallableSummaryInputs {
+        selected_value_inputs,
+        selected_native_operation_inputs,
+        explicit_binding_destinations,
+        argument_inputs,
+        predefined_globals,
+    } = inputs;
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
@@ -737,6 +753,7 @@ pub fn resolve_imported_callable_summaries(
                     .get(module)
                     .cloned()
                     .unwrap_or_default(),
+                predefined_globals,
             );
         if !prepared_module.value_input_errors().is_empty() {
             bail!(
@@ -2052,10 +2069,13 @@ mod tests {
             &modules,
             &asserted,
             &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            CallableSummaryInputs {
+                selected_value_inputs: &BTreeMap::new(),
+                selected_native_operation_inputs: &BTreeMap::new(),
+                explicit_binding_destinations: &BTreeMap::new(),
+                argument_inputs: &BTreeMap::new(),
+                predefined_globals: spec::PredefinedGlobals::Unknown,
+            },
         )
         .unwrap()
         .imported_callables;

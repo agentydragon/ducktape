@@ -522,6 +522,7 @@ pub(super) fn finish_logical_chunk(
             .cloned()
             .unwrap_or_default();
         inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
+        inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
         inputs.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)

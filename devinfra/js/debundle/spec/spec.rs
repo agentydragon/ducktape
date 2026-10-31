@@ -135,9 +135,31 @@ pub struct HostBehavior {
     /// application code synchronously. Grants timing only, never purity.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub reentry_free_operations: BTreeSet<ReentryFreeOperation>,
+    /// Which properties the host defines on the global object, own or
+    /// inherited through its host prototypes, before the program runs.
+    #[serde(default, skip_serializing_if = "PredefinedGlobals::is_unknown")]
+    pub predefined_globals: PredefinedGlobals,
     /// Audit provenance (executable identity, revision, digest). YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// The global object's host-defined properties before the program runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredefinedGlobals {
+    /// Any property, with any value.
+    #[default]
+    Unknown,
+    /// Only names in the standard global lists (SPEC.md § Predefined
+    /// globals), each with its standard definition.
+    Standard,
+}
+
+impl PredefinedGlobals {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
 }
 
 /// Whether any host API can synchronously obtain a module namespace while that

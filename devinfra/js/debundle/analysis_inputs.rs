@@ -410,6 +410,7 @@ pub enum HostBehaviorKey {
     SynchronousLoadRunsAppCallbacks,
     SynchronousLoadDrainsMicrotasks,
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
+    PredefinedGlobals,
 }
 
 impl ProofDependencies {
@@ -642,6 +643,8 @@ pub struct NativeIntegrity {
     /// when a receiver refinement was actually used.
     pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     pub consumed_value_inputs: BTreeSet<ValueInputRef>,
+    /// Host claims a receiver discharge consumed.
+    pub consumed_host_behavior: BTreeSet<HostBehaviorKey>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -665,6 +668,9 @@ pub struct AnalysisAssumptions {
     /// Host operations the author audited as unable to run application code
     /// synchronously (`host_behavior.reentry_free_operations`).
     pub reentry_free_operations: BTreeSet<spec::ReentryFreeOperation>,
+    /// `host_behavior.predefined_globals`: whether the host predefines only
+    /// standard global properties.
+    pub predefined_globals: spec::PredefinedGlobals,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,

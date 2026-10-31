@@ -16,7 +16,7 @@ use analysis::analysis_inputs::{
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
-    ExportValueSource, ModulePurityFacts, ResolvedImport, StableExportValue,
+    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport, StableExportValue,
     resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
     resolve_asserted_inline_callback_factories, resolve_asserted_member_purities,
     resolve_asserted_namespace_independent_members, resolve_asserted_no_reentry_bindings,
@@ -277,6 +277,7 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
     pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
+    pub(super) predefined_globals: spec::PredefinedGlobals,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -293,6 +294,7 @@ pub(super) fn collect_cross_module_imported_purities(
         explicit_binding_destinations,
         resolved_member_sites,
         replacement_packages,
+        predefined_globals,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -636,10 +638,13 @@ pub(super) fn collect_cross_module_imported_purities(
                 )
             })
             .collect(),
-        &value_inputs,
-        &native_operation_inputs,
-        explicit_binding_destinations,
-        &argument_inputs,
+        CallableSummaryInputs {
+            selected_value_inputs: &value_inputs,
+            selected_native_operation_inputs: &native_operation_inputs,
+            explicit_binding_destinations,
+            argument_inputs: &argument_inputs,
+            predefined_globals,
+        },
     )?;
     Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
@@ -1604,6 +1609,7 @@ mod tests {
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
+                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
                 &BTreeMap::new(),
                 None,
@@ -1660,6 +1666,7 @@ mod tests {
                     explicit_binding_destinations: &BTreeMap::new(),
                     resolved_member_sites: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
+                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
                 &BTreeMap::new(),
                 None,

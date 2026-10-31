@@ -101,7 +101,7 @@ pub(super) fn ordinary_callback_arguments(
     if !contents.is_empty() || !index.plain_data_objects.contains(value) {
         return None;
     }
-    if !matches!(inner.returns.as_slice(), [ValueExpr::Member(base, Some(property), true)]
+    if !matches!(inner.returns.as_slice(), [ValueExpr::Member(base, Some(property), MemberKey::Static)]
         if matches!(base.as_ref(), ValueExpr::Binding(id) if id == cache) && property == field)
     {
         return None;
@@ -115,7 +115,7 @@ pub(super) fn ordinary_callback_arguments(
         return None;
     };
     let [
-        ValueExpr::Member(base, Some(property), true),
+        ValueExpr::Member(base, Some(property), MemberKey::Static),
         ValueExpr::Binding(second),
     ] = call.args.as_slice()
     else {

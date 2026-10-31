@@ -2,7 +2,7 @@
 
 use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
-    Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
+    Context, DenseArray, FrozenNamespaceProof, MemberKey, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -1379,7 +1379,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 spec::ReentryFreeOperation::AsyncLocalStorageConstruct
             }
-            (CallKind::Call, ValueExpr::Member(receiver, Some(member), true))
+            (CallKind::Call, ValueExpr::Member(receiver, Some(member), MemberKey::Static))
                 if call.no_reentry_candidate && member == "resolve" =>
             {
                 let ValueExpr::Binding(binding) = receiver.as_ref() else {
@@ -1630,7 +1630,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
     ) -> bool {
-        let ValueExpr::Member(receiver, Some(method), true) = callee else {
+        let ValueExpr::Member(receiver, Some(method), MemberKey::Static) = callee else {
             return false;
         };
         if method != "push"
@@ -2313,7 +2313,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return None;
         }
-        let ValueExpr::Member(freeze_receiver, Some(freeze_method), true) = freeze_callee.as_ref()
+        let ValueExpr::Member(freeze_receiver, Some(freeze_method), MemberKey::Static) =
+            freeze_callee.as_ref()
         else {
             return None;
         };
@@ -2331,7 +2332,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         if !matches!(define_callee.as_ref(),
-            ValueExpr::Member(receiver, Some(method), true)
+            ValueExpr::Member(receiver, Some(method), MemberKey::Static)
                 if method == "defineProperty"
                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
         {
@@ -2339,7 +2340,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let [
             ValueExpr::ObjectLiteral(object, fields),
-            ValueExpr::Member(symbol_receiver, Some(tag), true),
+            ValueExpr::Member(symbol_receiver, Some(tag), MemberKey::Static),
             ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
         ] = define_args.as_slice()
         else {
@@ -2414,12 +2415,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         || CallSite::from(call.span) == *define_site)
                     || call.kind == CallKind::AccessorCalleeLookup
                         && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), true)
+                            ValueExpr::Member(receiver, Some(property), MemberKey::Static)
                                 if matches!(property.as_str(), "freeze" | "defineProperty")
                                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
                     || call.kind == CallKind::LocalMemberRead
                         && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), true)
+                            ValueExpr::Member(receiver, Some(property), MemberKey::Static)
                                 if property == "toStringTag"
                                     && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == symbol)))
         }) {
@@ -5928,7 +5929,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return Values::from([AbstractValue::PRIMITIVE]);
                 }
                 if let ValueExpr::Binding(id) = object.as_ref()
-                    && *is_static_identifier
+                    && is_static_identifier.is_static()
                     && property.as_ref().is_some_and(|property| {
                         self.inputs
                             .index
@@ -7193,7 +7194,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Both use the same member identity and lookup guards. The provider
         // may have private effects; this only suppresses callback reentry.
         if call.kind == CallKind::Call
-            && let ValueExpr::Member(receiver, Some(property), true) = &call.callee
+            && let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = &call.callee
             && let ValueExpr::Binding(namespace) = receiver.as_ref()
             && ((call.no_reentry_candidate
                 && self
