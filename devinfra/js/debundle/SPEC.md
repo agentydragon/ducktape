@@ -1579,11 +1579,33 @@ itself a store into a global or prototype. Every property is dropped if any
 global-chain write has an unknown key or may name `__proto__`, if a keyless
 reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
 receiver, or if a call on one has a method key whose domain may spell
-`__defineGetter__`, `__defineSetter__` or `__lookupGetter__` (an unknown
-computed key included). A sloppy assignment to an undeclared `g` is a store into `g`;
+`__defineGetter__` or `__defineSetter__` (an unknown computed key included).
+`__lookupGetter__` and `__lookupSetter__` install nothing. A sloppy assignment to an undeclared `g` is a store into `g`;
 updates, destructuring and reflective writes naming `g` drop it, as does a
 `delete` that may name `g` on the global object. A `delete` on a prototype
 stores nothing.
+
+`chunk_analysis_options.<chunk>.no_accessor_install_callables` discharges that
+check for computed-key calls inside one audited function:
+
+```yaml
+no_accessor_install_callables:
+  - source_match:
+      match: |
+        var runFunc = ne((t, ...e) => { ... }, "runFunc");
+      bindings: [runFunc]
+    audited_source_sha256: <parser input SHA-256>
+    note: Every caller passes only strings.
+```
+
+`source_match` selects one declaration whose statement contains exactly one
+function (a nested function or accessor is rejected) and at least one
+computed-key method call; `audited_source_sha256` is the chunk's parser input.
+The author asserts that no activation of the function's computed-key method
+calls installs an accessor, for example because every argument that reaches
+`__defineGetter__`'s callable position is a primitive, which throws `TypeError`
+before installing. Every proof using the bundle-owned set records the entries
+that discharged a call.
 
 Soundness, by induction over execution: initially `g` is absent from the
 global object and, by the host claim, from its host prototypes, or is a named

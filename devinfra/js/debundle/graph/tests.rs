@@ -239,6 +239,7 @@ mod from_report_tests {
                 defining_chunk: "static/provider".to_string(),
                 input_index: 2,
             }]),
+            no_accessor_install_refs: BTreeSet::new(),
         };
         let mut report = report_with_edge("unit:0", None);
         report.nodes[1].heap_native_integrity_uses = vec![expected.clone()];

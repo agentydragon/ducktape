@@ -501,6 +501,9 @@ impl Visit for ArrayContentCollector<'_> {
                     crate::reports::schema::NativeIntegrityUse {
                         guard: crate::reports::schema::NativeIntegrityGuard::LocalClassConstruction,
                         value_input_refs: dependencies.value_inputs.clone(),
+                        no_accessor_install_refs: dependencies
+                            .no_accessor_install_callables
+                            .clone(),
                     },
                 );
             }

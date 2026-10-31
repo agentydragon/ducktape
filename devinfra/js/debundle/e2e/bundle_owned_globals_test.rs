@@ -3,6 +3,7 @@
 //! writes through its value reach no native slot.
 
 use debundle_e2e_support::*;
+use sha2::{Digest, Sha256};
 
 /// `mutations` are anonymous statements and `members` the declarations of
 /// the bundle code; `new Map()` follows and a published callback reads
@@ -102,10 +103,7 @@ fn non_fresh_predefined_unknown_key_or_accessor_stores_stay_unknown() {
             vec!["root", "install", "set"],
         ),
         // `method` may be `__defineGetter__`, installing a getter for the slot.
-        (
-            "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }",
-            vec!["root", "install", "call"],
-        ),
+        (ACCESSOR_CALL, vec!["root", "install", "call", "other"]),
     ] {
         let source = source(bundle);
         expect_atomic_conflict_rejection(
@@ -153,4 +151,118 @@ fn a_store_in_another_chunk_keeps_the_slot_unknown() {
     let fixture =
         run_fixture(opts(&source, &["root", "install"], &[], true).with_extra_chunks(&clean));
     assert_preserved_entry_output(&fixture, "0 42\n");
+}
+
+const ACCESSOR_CALL: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }\nfunction other(target, key) { target[key](); }";
+
+fn no_accessor_install(
+    source: &str,
+    declaration: &str,
+    binding: &str,
+) -> NoAccessorInstallCallableContract {
+    NoAccessorInstallCallableContract {
+        source_match: serde_yaml::from_str(&format!(
+            "match: {declaration:?}\nbindings: [{binding}]\n"
+        ))
+        .expect("source selector"),
+        audited_source_sha256: Sha256::digest(source.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        note: Some("Every caller passes a primitive value.".into()),
+    }
+}
+
+fn accessor_opts<'a>(
+    source: &'a str,
+    premise: NoAccessorInstallCallableContract,
+) -> FixtureOpts<'a> {
+    opts(source, &["root", "install", "call", "other"], &[], true)
+        .with_no_accessor_install_callables("static/app", vec![premise])
+}
+
+#[test]
+fn a_premise_on_the_calling_function_keeps_the_slot() {
+    let source = source(ACCESSOR_CALL);
+    let fixture = run_fixture(accessor_opts(
+        &source,
+        no_accessor_install(
+            &source,
+            "function call(method, key, value) { root[method](key, value); }",
+            "call",
+        ),
+    ));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_all_emitted_js_checks(&fixture);
+    // `new Map()` consumes the census the premise kept intact.
+    let graph = fixture.dependency_graph();
+    let node_id = source_unit_for_binding(&graph, "collection");
+    let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+    let report = serde_json::to_value(node).unwrap();
+    assert_eq!(
+        report["synchronous_execution"]["native_integrity_uses"][0]["no_accessor_install_refs"],
+        serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_premise_on_another_function_keeps_the_slot_unknown() {
+    let source = source(ACCESSOR_CALL);
+    expect_atomic_conflict_rejection(
+        accessor_opts(
+            &source,
+            no_accessor_install(
+                &source,
+                "function other(target, key) { target[key](); }",
+                "other",
+            ),
+        ),
+        &["values/native", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn a_premise_needs_one_function_with_a_computed_call() {
+    let source = source(ACCESSOR_CALL);
+    expect_rejection_containing_all(
+        accessor_opts(
+            &source,
+            no_accessor_install(
+                &source,
+                "function install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }",
+                "install",
+            ),
+        ),
+        &[
+            "no_accessor_install_callables[0]",
+            "no computed-key method call",
+        ],
+    );
+    let nested = source.replace(
+        "function other(target, key) { target[key](); }",
+        "function other(target, key) { return () => target[key](); }",
+    );
+    expect_rejection_containing_all(
+        accessor_opts(
+            &nested,
+            no_accessor_install(
+                &nested,
+                "function other(target, key) { return () => target[key](); }",
+                "other",
+            ),
+        ),
+        &["no_accessor_install_callables[0]", "exactly one function"],
+    );
+    let mut stale = no_accessor_install(
+        &source,
+        "function call(method, key, value) { root[method](key, value); }",
+        "call",
+    );
+    stale.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        accessor_opts(&source, stale),
+        &["no_accessor_install_callables[0]", "stale"],
+    );
 }
