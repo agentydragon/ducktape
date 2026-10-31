@@ -326,6 +326,16 @@ evidence is not proof of session loss and never triggers fresh-session substitut
 failures, a future operation may attempt to resume the retained session again. Process starts, stdin
 writes, signals and other effectful operations are never automatically retried.
 
+A confirmed native executor rejection becomes a rejected promise for that nested tool call after
+native-frame evidence and the executor intent result are committed. A rejected `process/start` also
+releases its local process row only after that row is recorded as exited; evidence or process
+settlement failures remain operational errors. A rejected `process/read` abandons the stale handle
+with its last observed cursor and buffered output, records the remote process outcome as unknown, and
+does not replay the command or report it exited. The same settlement applies during idle process
+reconciliation, which continues with unrelated live handles. The delegate binding remains available
+for later tool calls; uncaught JavaScript promise rejections still follow the normal cell failure
+behavior.
+
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. An authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
