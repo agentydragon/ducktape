@@ -36,12 +36,19 @@ func (s *executorServer) executionConnection(
 	if err != nil {
 		return nil, nil, nil, unavailable(err)
 	}
-	if view.incarnation == nil || scope.GetExpectedIncarnationUid() != view.incarnation.UID {
+	if view.incarnation == nil {
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
-	connection, err := g.connections.holder(view.identity.UID)
-	if err != nil {
-		return nil, nil, nil, err
+	connection, connectionErr := g.connections.holder(view.identity.UID)
+	if scope.GetExpectedIncarnationUid() != view.incarnation.UID {
+		if connectionErr == nil && connection.identity == view.identity && connection.podUID == view.incarnation.UID &&
+			view.identity.UID != "" && view.incarnation.UID != "" {
+			return nil, nil, nil, incarnationChanged(view.identity.UID, view.incarnation.UID)
+		}
+		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	}
+	if connectionErr != nil {
+		return nil, nil, nil, connectionErr
 	}
 	if connection.identity != view.identity || connection.podUID != scope.GetExpectedIncarnationUid() {
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
@@ -55,6 +62,16 @@ func (s *executorServer) executionConnection(
 		}
 	}()
 	return callCtx, connection, stop, nil
+}
+
+func incarnationChanged(sandboxUID, incarnationUID string) error {
+	changed, err := status.New(codes.FailedPrecondition, "Sandbox incarnation changed").WithDetails(
+		&executorpb.SandboxIncarnationChanged{SandboxUid: sandboxUID, IncarnationUid: incarnationUID},
+	)
+	if err != nil {
+		return err
+	}
+	return changed.Err()
 }
 
 func forwardExecution[Response any](

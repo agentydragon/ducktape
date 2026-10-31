@@ -15,8 +15,11 @@ reconnect rejects the current nested tool promise, records the initialization at
 and leaves the Session and JavaScript host available. The failed command was not dispatched. If no
 native session ID was retained, a later explicit tool call may open a new empty native session; an
 uncertain first open can leave an empty session until Codex's normal 30-second detached-session
-expiry. If an ID was retained, a later call must resume that exact session under the original Sandbox
-incarnation fence. A failed or ambiguous resume never silently clears the binding or substitutes a
+expiry. Within one incarnation, a retained ID must be resumed exactly. A structured, authenticated
+incarnation-change response for the same Sandbox UID permits automatic rebinding at initialization:
+the sampler records the new fence, abandons old process handles while retaining observed output,
+and queues a model-visible notice before opening a fresh session. Central JavaScript state survives;
+prior mutations are never replayed. A failed or ambiguous resume never silently clears the binding or substitutes a
 fresh session.
 
 An executor operation whose remote outcome is unknown rejects its own tool promise and records
@@ -115,7 +118,8 @@ If the Sandbox's Pod was replaced, the operator may also provide
 its workspace. This changes only the stored incarnation fence, never the Sandbox destination.
 Recovery abandons the old execution handles, clears the retained native session, and records both
 UIDs. Subsequent calls must authenticate the supplied incarnation; a stale or wrong UID is refused.
-Omitting the field preserves the existing fence. This is explicit rebinding, not automatic failover.
+Omitting the field preserves the existing fence during this recovery. Ordinary execution initialization
+can automatically adopt a verified new incarnation of the same Sandbox UID without this operator step.
 
 Recovery preserves every request and boundary record, writes an `abandoned` result with
 `remote_outcome: unknown` and `automatic_replay: false`, and completes unanswered model calls with

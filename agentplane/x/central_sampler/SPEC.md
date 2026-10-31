@@ -37,7 +37,8 @@ lets the sampling request finish, because a cut stream leaves its intent uncerta
 Dispatcher routes `HARNESS_CENTRAL_SAMPLER` directly to a configured sampler. Its native ProxyRunner
 continues to serve wrapped Codex/Claude. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
-V1 fixes the binding and does not expose executor replacement.
+The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at
+execution-session initialization, including after suspend and resume.
 
 The executor `OpenSession` initialization handshake has its own positive
 `executor_initialize_timeout_seconds` setting, defaulting to 30 seconds independently of
@@ -55,13 +56,23 @@ dispatched; an unknown initialization result remains unknown in the journal. It 
 block the Session or poison the Code Mode host binding. A later explicit executor tool call may
 open a new empty native session if no ID was retained, or retry a resume if one was retained. An
 uncertain first open may leave an empty native session until Codex's normal 30-second
-detached-session expiry; no requested command was sent by that failed call. When a native session ID
-is retained by the binding, reconnect must resume that exact ID under the original Sandbox
-incarnation fence. The sampler never substitutes a fresh native session for a failed or ambiguous
-resume. Fresh-session substitution is allowed only after the
+detached-session expiry; no requested command was sent by that failed call. Within the same incarnation, a retained native session ID must be resumed exactly. The sampler never substitutes a fresh native session for a failed or ambiguous
+resume. Within one incarnation, fresh-session substitution is allowed only after the
 documented definitive-loss rejection and complete native evidence are durably recorded; the
 operation that found the lost session is not dispatched, affected process handles are abandoned,
 and the model is notified before later operations can use the fresh session.
+
+A typed `SandboxIncarnationChanged` detail from the authenticated Gateway or Runner permits the
+sampler to adopt a new incarnation only when its Sandbox UID matches the fixed destination. The
+new fence, retirement of old execution handles, and a model-visible notice commit atomically before
+a fresh native session opens. The notice names the old/new incarnation and explains lost process
+state and unknown unfinished outcomes. Buffered process output is retained and central JavaScript
+cells and `store()` / `load()` values remain intact. Workspace preparation may continue into a new
+command immediately; an operation using an old handle is rejected. Previously dispatched mutations
+are never replayed. A plain error string, missing UID, foreign Sandbox UID or unavailable destination
+does not authorize rebinding. Only one fresh open is attempted per call; if it fails, the durable
+new fence allows a later explicit call to initialize there. Pending provider tool calls receive
+the notice after their tool result and before the next model request.
 
 Non-empty setup scripts (at most 65,536 UTF-8 bytes) execute once through the bound exec-server
 with `/bin/sh -eu -c`, before any provider request or queued command. Setup stdout and stderr
@@ -335,7 +346,8 @@ Abandoned handles are excluded from scheduling and global blocking but remain in
 an uncaught rejection produces the normal `Script failed` result for the model to handle.
 
 After an ordinary connection failure, a later explicit executor tool call may reconnect under the
-original Sandbox incarnation fence and resume the same retained exec-server session. The failed
+current Sandbox incarnation fence and resume the same retained exec-server session, or follow the
+authenticated incarnation-change initialization described above. The failed
 call itself is never replayed. Only cursor-based `process/read` may be retried within its original
 call, because it does not consume remote output. If idle process reconciliation encounters a
 transport failure while reading a handle, it marks that process abandoned with its last observed
@@ -418,7 +430,8 @@ The continuation cannot access prior `store()` / `load()` values or live-cell ha
 memory may remain inaccessible until that host exits. Recovery never retries an uncertain provider
 or executor operation. An optional operator-supplied `replacement_incarnation_uid` rebinds only the
 incarnation of the same Sandbox, clears retained native-session identity, and records old/new UIDs
-after old handles are abandoned. Future calls still authenticate that exact incarnation; see [blocked Session recovery](docs/blocked_session_recovery.md).
+after old handles are abandoned. Ordinary same-Sandbox incarnation changes can also rebind automatically at initialization as described
+above; this operator path remains for a blocked Session. See [blocked Session recovery](docs/blocked_session_recovery.md).
 
 The sampler uses one generated typed `Executor` client for direct local-test and Gateway targets.
 The `Executor` service contract terminates at the Sandbox's Runner, which reaches only its configured

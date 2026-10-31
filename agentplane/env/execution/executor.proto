@@ -12,6 +12,13 @@ message ExecutionScope {
   string session_id = 3;
 }
 
+// A stale expected incarnation can be rebound only when the owner verified that the
+// destination still names this Sandbox and observed its current incarnation.
+message SandboxIncarnationChanged {
+  string sandbox_uid = 1;
+  string incarnation_uid = 2;
+}
+
 // Outcomes describe the observed local Codex reply, not process completion.
 // Transport loss can leave an effect unknown; request IDs do not provide deduplication.
 message ExecutionStatus {
