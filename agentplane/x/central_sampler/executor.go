@@ -24,32 +24,33 @@ import (
 )
 
 type Executor struct {
-	store             *Store
-	owner             Owner
-	client            executorClient
-	connection        *grpc.ClientConn
-	scope             *executorpb.ExecutionScope
-	cwd               string
-	codexPath         string
-	environment       map[string]string
-	shell             *execShell
-	rpcMu             sync.Mutex
-	sessionStateMu    sync.Mutex
-	dispatchMu        sync.Mutex
-	stopping          bool
-	reconnectRequired bool
-	processMu         sync.Mutex
-	processLocks      map[string]*sync.Mutex
-	rpcTimeout        time.Duration
-	initializeTimeout time.Duration
-	lifetime          context.Context
-	sessionStream     executorSessionStream
-	sessionCancel     context.CancelFunc
-	sessionDone       chan struct{}
-	sessionID         string
-	sessionGeneration uint64
-	sessionError      error
-	closing           bool
+	store                *Store
+	owner                Owner
+	client               executorClient
+	connection           *grpc.ClientConn
+	scope                *executorpb.ExecutionScope
+	cwd                  string
+	codexPath            string
+	environment          map[string]string
+	shell                *execShell
+	rpcMu                sync.Mutex
+	sessionStateMu       sync.Mutex
+	dispatchMu           sync.Mutex
+	stopping             bool
+	reconnectRequired    bool
+	lostSessionConfirmed bool
+	processMu            sync.Mutex
+	processLocks         map[string]*sync.Mutex
+	rpcTimeout           time.Duration
+	initializeTimeout    time.Duration
+	lifetime             context.Context
+	sessionStream        executorSessionStream
+	sessionCancel        context.CancelFunc
+	sessionDone          chan struct{}
+	sessionID            string
+	sessionGeneration    uint64
+	sessionError         error
+	closing              bool
 }
 
 func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
@@ -123,8 +124,20 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		resume = conversation.ExecutorSession
 	}
 	if err := executor.openSession(ctx, resume); err != nil {
-		_ = executor.close()
-		return nil, nil, err
+		var rejected *executorRejectedError
+		if resume == nil || !errors.As(err, &rejected) || !isDefinitiveLostExecutorSession(rejected, *resume) {
+			_ = executor.close()
+			return nil, nil, err
+		}
+		if retireErr := store.RetireLostExecutorSession(ctx, owner, *resume, ""); retireErr != nil {
+			_ = executor.close()
+			return nil, nil, errors.Join(err, fmt.Errorf("retire lost executor session: %w", retireErr))
+		}
+		executor.shell = nil
+		if freshErr := executor.openSession(ctx, nil); freshErr != nil {
+			_ = executor.close()
+			return nil, nil, errors.Join(err, fmt.Errorf("open fresh executor session after definitive session loss: %w", freshErr))
+		}
 	}
 	if !session.WorkspacePrepared {
 		input, err := json.Marshal(map[string]string{"cmd": "mkdir -p -- " + shellQuote(request.GetSpec().GetCwd()), "workdir": "/"})

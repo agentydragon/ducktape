@@ -1574,6 +1574,88 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 	})
 }
 
+// RetireLostExecutorSession records that a retained exec-server session was definitively absent.
+// It abandons process handles without claiming they exited, clears the stale binding, and adds a
+// durable model-visible notice before any fresh executor session can be used.
+const lostExecutorSessionNotice = "The retained exec-server session was definitively lost. Its live process handles have been abandoned; their remote state is unknown unless explicitly reported, and no mutation was replayed. A fresh executor session is being opened. Recreate any required process state before continuing; old process handles cannot be reused."
+
+func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sessionID, notDispatchedProcessID string) error {
+	if sessionID == "" {
+		return protocol.ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		if conversation.ExecutorSession == nil || *conversation.ExecutorSession != sessionID {
+			return protocol.ErrPrecondition
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT `+processColumns+` FROM sampler_process
+			WHERE conversation_id=$1 AND status NOT IN ('exited','exited_unread','abandoned') FOR UPDATE`, conversation.ID)
+		if err != nil {
+			return err
+		}
+		var processes []*RemoteProcess
+		for rows.Next() {
+			process, err := scanProcess(rows)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			processes = append(processes, process)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, process := range processes {
+			outcome := "unknown"
+			if process.ID == notDispatchedProcessID && process.Status == "starting" {
+				outcome = "not_dispatched"
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
+				return err
+			}
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, "process", "abandoned", map[string]any{
+				"remote_outcome": outcome, "automatic_replay": false, "executor_session_id": sessionID,
+				"previous_status": process.Status, "after_seq": process.AfterSequence, "exit_code": process.ExitCode,
+				"buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,
+			}); err != nil {
+				return err
+			}
+		}
+		conversation.ExecutorSession = nil
+		conversation.ExecutorShell = nil
+		// The session can be retired while the model's outer exec call is still pending.
+		// Queue the notice against that call so it is appended after its tool result. This
+		// preserves Anthropic's tool_result ordering while keeping the notice durable in the
+		// same transaction as session retirement. With no pending call, append it directly.
+		pendingCalls, err := conversation.Archive.PendingCalls()
+		if err != nil {
+			return err
+		}
+		if len(pendingCalls) > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,'',$3)`,
+				conversation.ID, pendingCalls[0].CallID, lostExecutorSessionNotice); err != nil {
+				return err
+			}
+		} else if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: lostExecutorSessionNotice}})
+		}); err != nil {
+			return err
+		}
+		return updateConversation(ctx, tx, conversation)
+	})
+}
+
 func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
 	request := &samplerpb.OpenSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
