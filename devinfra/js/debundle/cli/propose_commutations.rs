@@ -31,7 +31,7 @@ use selector_codemod::{
     SourceUnitSelectorRequest, SourceUnitSelectorSynthesis, synthesize_source_unit_selectors,
 };
 use serde::Serialize;
-use source_inspection::{PreparedSource, StatementRange};
+use source_inspection::PreparedSource;
 use spec::{CommutingStatementsContract, ModulePath, ResolvedMemberSelector, SourceUnitSelector};
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
@@ -155,7 +155,8 @@ pub struct ProposedEndpoint {
     pub module: ModulePath,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-    /// First source line of the statement, truncated.
+    /// First source line of the source unit (its own declarator in a
+    /// comma-list declaration), truncated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<String>,
     pub selector_origin: SelectorOrigin,
@@ -645,16 +646,10 @@ impl<'a> Analysis<'a> {
     ) -> Result<ProposedEndpoint> {
         let node = self.node(node_index);
         let excerpt = match self.body_indices[node_index] {
-            Some(index) => {
-                let rows = self.source.statement_rows_with_pretty(
-                    Some(StatementRange {
-                        start: index,
-                        end: index,
-                    }),
-                    false,
-                )?;
-                rows.first().map(|row| excerpt_of(&row.original_source))
-            }
+            Some(index) => Some(excerpt_of(
+                self.source
+                    .source_unit_original_source(index, node.statement_ordinal)?,
+            )),
             None => None,
         };
         Ok(ProposedEndpoint {

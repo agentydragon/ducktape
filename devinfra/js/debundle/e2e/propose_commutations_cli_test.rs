@@ -190,6 +190,51 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_preserved_entry_output(&fixture, OPAQUE_OUTPUT);
 }
 
+/// The source unit of a comma-list declarator is the declarator, not the
+/// declaration: its excerpt starts at its own binding.
+#[test]
+fn comma_list_declarator_excerpt_is_the_declarator() {
+    const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\"),\n  beta = (globalThis.record(\"beta\"), \"B\"),\n  gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "probes/outer",
+                    &[
+                        Member::new("trace"),
+                        Member::new("alpha"),
+                        Member::new("gamma"),
+                    ],
+                    &[RECORD_INSTALL],
+                ),
+                logical_module("probes/inner", &[Member::new("beta")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let report = propose_rejected(&rejected, &[]);
+    let proposals = array(&report, "proposals");
+    assert!(!proposals.is_empty(), "{report:#}");
+    let mut excerpted = Vec::new();
+    for endpoint in proposals.iter().flat_map(|p| [&p["a"], &p["b"]]) {
+        let binding = endpoint["binding"].as_str().expect("binding");
+        let value = match binding {
+            "alpha" => "A",
+            "beta" => "B",
+            "gamma" => "C",
+            other => panic!("unexpected endpoint {other}: {endpoint:#}"),
+        };
+        let expected = format!("{binding} = (globalThis.record(\"{binding}\"), \"{value}\")");
+        assert_eq!(endpoint["excerpt"], expected.as_str(), "{endpoint:#}");
+        excerpted.push(binding);
+    }
+    assert!(
+        excerpted.iter().any(|binding| *binding != "alpha"),
+        "a declarator after the first is excerpted: {report:#}"
+    );
+}
+
 /// At-init reads are dataflow dependences: a premise never inerts them, so an
 /// eager-only cycle yields no proposal and every cut edge needs co-location.
 #[test]
