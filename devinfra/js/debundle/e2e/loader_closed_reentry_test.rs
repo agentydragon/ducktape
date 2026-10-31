@@ -622,3 +622,135 @@ fn process_request_is_a_leaf_under_the_accessor_premise() {
             .contains(&json!({ "reentry_free_builtin_module": "process" }))
     );
 }
+
+fn module_host() -> HostBehavior {
+    HostBehavior {
+        reentry_free_builtin_modules: [
+            NodeBuiltinModule::Path,
+            NodeBuiltinModule::Module,
+            NodeBuiltinModule::WorkerThreads,
+        ]
+        .into_iter()
+        .collect(),
+        ..audited_host()
+    }
+}
+
+fn process_premise() -> ProgramPremises {
+    ProgramPremises {
+        process_prototype_chain_accessors: ProcessPrototypeChainAccessors::None,
+        ..ProgramPremises::default()
+    }
+}
+
+/// `module` uses that make no loader, or a loader used only with host module
+/// names or for `resolve`, leave the target closed.
+#[test]
+fn module_uses_that_make_no_free_loader_are_classified() {
+    for (extra, builtin) in [
+        (
+            vec![
+                ("static/runtime", RUNTIME),
+                (
+                    "static/user",
+                    "import { load } from \"./runtime.js\";\nexport function names() { return load(\"module\").builtinModules; }\n",
+                ),
+            ],
+            Some("module"),
+        ),
+        (
+            vec![(
+                "static/sidecar",
+                "import { createRequire } from \"module\";\nexport function where(base) { const local = createRequire(base); return local.resolve(\"./x.js\"); }\n",
+            )],
+            None,
+        ),
+        (
+            vec![(
+                "static/sidecar",
+                "import { createRequire, builtinModules } from \"node:module\";\nconst local = createRequire(\"/\");\nexport const count = builtinModules.length;\nexport function worker() { return local(\"worker_threads\").Worker; }\n",
+            )],
+            Some("worker_threads"),
+        ),
+    ] {
+        let report = accepted_provider_report_under(&extra, module_host(), process_premise());
+        let builtins: Vec<_> = report["loader"]["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|request| request["target"]["builtin"].as_str())
+            .collect();
+        assert_eq!(
+            builtins,
+            builtin.into_iter().collect::<Vec<_>>(),
+            "{extra:?}"
+        );
+    }
+}
+
+#[test]
+fn module_uses_that_expose_a_loader_keep_the_target_open() {
+    for (sidecar, reason) in [
+        (
+            "import { createRequire } from \"module\";\nexport const make = createRequire;\n",
+            "loader_factory_request",
+        ),
+        (
+            "import * as m from \"module\";\nexport { m };\n",
+            "loader_factory_request",
+        ),
+        (
+            "import Module from \"module\";\nexport function hook() { return Module._load; }\n",
+            "loader_factory_request",
+        ),
+        (
+            "import { createRequire } from \"module\";\nconst local = createRequire(\"/\");\nexport function f(name) { return local(name); }\n",
+            "opaque_loader_site",
+        ),
+        (
+            "import { createRequire } from \"module\";\nconst local = createRequire(\"/\");\nexport function f() { return local(\"./provider.js\"); }\n",
+            "opaque_loader_site",
+        ),
+        (
+            "import { createRequire } from \"module\";\nexport const local = createRequire(\"/\");\n",
+            "opaque_loader_site",
+        ),
+        (
+            "import { createRequire } from \"module\";\nconst local = createRequire(\"/\");\nexport const keep = [local];\n",
+            "opaque_loader_site",
+        ),
+    ] {
+        let rejected = run_rejection_fixture(
+            FixtureOpts::new(PROVIDER, provider_modules())
+                .with_chunk_id(PROVIDER_CHUNK)
+                .with_extra_chunks(&[("static/helper", HELPER), ("static/sidecar", sidecar)])
+                .with_host_behavior(module_host())
+                .with_program_premises(process_premise()),
+        );
+        let derivation = export_reentry_report(&rejected.report_root)["loader"].clone();
+        assert_eq!(
+            failure(&derivation, reason)["first"]["site"]["source_chunk"],
+            "static/sidecar",
+            "{sidecar}"
+        );
+    }
+    let user = "import { load } from \"./runtime.js\";\nexport function make() { return load(\"module\").createRequire(\"/\"); }\n";
+    let derivation = rejected_loader_derivation(
+        PROVIDER,
+        &[
+            ("static/helper", HELPER),
+            ("static/runtime", RUNTIME),
+            ("static/user", user),
+        ],
+        HostBehavior {
+            reentry_free_builtin_modules: [NodeBuiltinModule::Path, NodeBuiltinModule::Module]
+                .into_iter()
+                .collect(),
+            ..audited_host()
+        },
+    );
+    assert_eq!(
+        failure(&derivation, "loader_factory_request")["first"]["site"]["source_chunk"],
+        "static/user"
+    );
+}

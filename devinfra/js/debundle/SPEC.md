@@ -710,12 +710,12 @@ all of the following hold:
   host-loader queries). A non-literal call, an `import.meta.require` reference
   (an alias, including an exported loader value), `globalThis.require`, an
   unbound `require` or `module` (other than `module.exports`), `import.meta` as
-  a value or with a computed key, a TypeScript `import =`, and any request for
-  the `module` builtin keep every target open. Under
+  a value or with a computed key, a TypeScript `import =`, and a use of the
+  `module` builtin that can make a loader keep every target open. Under
   `program_premises.non_literal_loader_calls: native_addons_only` (§ Program
-  premises) a direct non-literal call, of `import.meta.require` or of a loader
-  alias, is excluded and counted in `premised_sites`; every other form stays
-  open. A dynamic `import()` is not a
+  premises) a direct non-literal call, of `import.meta.require`, of a loader
+  alias or of a created loader (below), is excluded and counted in
+  `premised_sites`; every other form stays open. A dynamic `import()` is not a
   synchronous loader site: ECMA-262 evaluates its target in a later job
   (`ContinueDynamicImport`), never on the requester's stack. Whether it names
   a debundled internal module stays the A3 admission check
@@ -761,6 +761,21 @@ its defining module. A statement after an unconditional `throw`, `return`,
 anything nested in it: its references publish nothing and its calls enter
 nothing. A function declaration there is still instantiated with the list's
 scope and keeps the ordinary rule.
+
+The `module` builtin is classified by its uses. A literal loader request for
+it whose result is only read as `.builtinModules` is a request for the builtin
+`module`. Its named import `builtinModules` is data. Its named import
+`createRequire` may only be called directly as the initializer of a
+`var`/`let`/`const` binding, at any depth, which makes a created loader: a
+direct call of it with one string literal naming a host module (§ Reentry-free
+builtin modules) is a request for that module, a `.resolve(...)` call loads
+nothing, and any other use (another literal, which it resolves against its own
+base, a non-literal call, an export or any other reference) is opaque. Every
+other import of `module` (default, namespace, re-export or another named
+import) and any other use of these keeps every target open as
+`loader_factory_request`. A static or literal request for `module` loads it
+like any builtin, so `module` must be listed in `reentry_free_builtin_modules`
+for the request itself.
 
 A top-level binding initialized with exactly `import.meta.require` is a loader
 alias. Its definition is classified through its uses instead of as an opaque

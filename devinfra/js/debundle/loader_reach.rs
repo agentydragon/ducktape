@@ -16,15 +16,19 @@
 //! function declaration there is still instantiated with its list's scope, so
 //! it keeps the list's owner.
 //!
-//! The same walk records every use of an import binding and of a top-level
-//! `X = import.meta.require` declaration, so a loader exported under a name
-//! can be followed to each module that calls it.
+//! The same walk records every use of an import binding, of a top-level
+//! `X = import.meta.require` declaration and of a binding initialized with a
+//! `createRequire` call, with what immediately consumes it, so a loader
+//! exported under a name can be followed to each module that calls it and a
+//! `module` import can be classified by its uses.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+
+use artifact::reports::LoaderUseConsumer;
 
 use crate::loader_phase::{SiteKey, site_key};
 use js_ast::str_value;
@@ -53,6 +57,7 @@ pub(crate) struct TrackedUse {
     pub literal: Option<String>,
     /// A direct call, literal or not.
     pub call: bool,
+    pub consumer: LoaderUseConsumer,
 }
 
 /// A binding whose uses the walk records.
@@ -61,6 +66,10 @@ pub(crate) enum TrackedBinding {
     Import { source: String, imported: String },
     /// Top-level `var`/`let`/`const local = import.meta.require`.
     LoaderAlias { definition: SiteKey },
+    /// `var`/`let`/`const local = createRequire(...)`, at any depth, where
+    /// `createRequire` is a named import from the `module` builtin.
+    /// `definition` is the initializing call.
+    CreatedLoader { definition: SiteKey },
 }
 
 pub(crate) struct TrackedBindingUses {
@@ -97,6 +106,7 @@ pub(crate) fn loader_reach(
         escaped: HashSet::new(),
         calls: Vec::new(),
         declared_functions: HashMap::new(),
+        consumers: HashMap::new(),
         tracked_index: HashMap::new(),
         tracked: Vec::new(),
         namespace_sources: Vec::new(),
@@ -143,6 +153,7 @@ pub(crate) fn loader_reach(
                 key: (0, 0),
                 literal: None,
                 call: false,
+                consumer: LoaderUseConsumer::Other,
             });
         }
     }
@@ -166,9 +177,32 @@ struct ReachWalk<'a> {
     /// Declaration-like function bindings; `None` when declared more than
     /// once, which this analysis does not separate.
     declared_functions: HashMap<Id, Option<usize>>,
+    /// Consumers of tracked uses, recorded by the enclosing node before its
+    /// children are visited.
+    consumers: HashMap<SiteKey, LoaderUseConsumer>,
     tracked_index: HashMap<Id, usize>,
     tracked: Vec<TrackedBindingUses>,
     namespace_sources: Vec<(usize, String)>,
+}
+
+/// Bindings initialized with a direct call of a `createRequire` import.
+struct CreatedLoaders<'a> {
+    factories: &'a HashSet<Id>,
+    found: Vec<(Id, SiteKey)>,
+}
+
+impl Visit for CreatedLoaders<'_> {
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let Pat::Ident(name) = &node.name
+            && let Some(Expr::Call(call)) = node.init.as_deref().map(Expr::unwrap_parens)
+            && let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(callee) = &**callee
+            && self.factories.contains(&callee.to_id())
+        {
+            self.found.push((name.id.to_id(), site_key(call.span)));
+        }
+        node.visit_children_with(self);
+    }
 }
 
 /// An unconditional abrupt completion: the rest of its statement list never
@@ -251,6 +285,49 @@ impl ReachWalk<'_> {
                 _ => {}
             }
         }
+        let factories: HashSet<Id> = self
+            .tracked_index
+            .iter()
+            .filter(|(_, index)| {
+                matches!(
+                    &self.tracked[**index].binding,
+                    TrackedBinding::Import { source, imported }
+                        if spec::NodeBuiltinModule::from_static_specifier(source)
+                            == Some(spec::NodeBuiltinModule::Module)
+                            && imported == "createRequire"
+                )
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        if factories.is_empty() {
+            return;
+        }
+        let mut created = CreatedLoaders {
+            factories: &factories,
+            found: Vec::new(),
+        };
+        module.visit_with(&mut created);
+        for (id, definition) in created.found {
+            self.track(id, TrackedBinding::CreatedLoader { definition });
+        }
+    }
+
+    /// The consumer of a tracked binding read or tracked call, if `expr` is one.
+    fn note_consumer(&mut self, expr: &Expr, consumer: LoaderUseConsumer) {
+        let key = match expr.unwrap_parens() {
+            Expr::Ident(ident) if self.tracked_index.contains_key(&ident.to_id()) => {
+                site_key(ident.span)
+            }
+            Expr::Call(call)
+                if matches!(&call.callee, Callee::Expr(callee)
+                    if matches!(&**callee, Expr::Ident(ident)
+                        if self.tracked_index.contains_key(&ident.to_id()))) =>
+            {
+                site_key(call.span)
+            }
+            _ => return,
+        };
+        self.consumers.entry(key).or_insert(consumer);
     }
 
     fn track(&mut self, id: Id, binding: TrackedBinding) {
@@ -267,11 +344,16 @@ impl ReachWalk<'_> {
             return false;
         };
         self.use_owner.insert(key, self.owner());
+        let consumer = self
+            .consumers
+            .remove(&key)
+            .unwrap_or(LoaderUseConsumer::Other);
         self.tracked[index].uses.push(TrackedUse {
             item_index: self.item_index,
             key,
             literal,
             call,
+            consumer,
         });
         true
     }
@@ -410,7 +492,15 @@ impl Visit for ReachWalk<'_> {
                         let id = name.id.to_id();
                         self.escaped.insert(id.clone());
                         if let Some(&index) = self.tracked_index.get(&id) {
-                            self.tracked[index].exported_as.push(id.0.to_string());
+                            if matches!(
+                                self.tracked[index].binding,
+                                TrackedBinding::CreatedLoader { .. }
+                            ) {
+                                // Exporting a created loader publishes it.
+                                self.record_use(&id, site_key(name.id.span), None, false);
+                            } else {
+                                self.tracked[index].exported_as.push(id.0.to_string());
+                            }
                         }
                     }
                 }
@@ -449,6 +539,21 @@ impl Visit for ReachWalk<'_> {
                 {
                     // The alias definition itself; its census site is
                     // classified with the binding.
+                    return;
+                }
+                Some(init)
+                    if self.tracked_index.get(&id).is_some_and(|&index| {
+                        matches!(
+                            self.tracked[index].binding,
+                            TrackedBinding::CreatedLoader { definition }
+                                if definition == site_key(init.span())
+                        )
+                    }) =>
+                {
+                    // The defining `createRequire` call is a use of the factory
+                    // import that initializes this binding.
+                    self.note_consumer(init, LoaderUseConsumer::BindingInitializer);
+                    init.visit_with(self);
                     return;
                 }
                 // Any other declarator of a tracked name (a repeated `var`)
@@ -500,6 +605,15 @@ impl Visit for ReachWalk<'_> {
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = &**callee
+            && let MemberProp::Ident(prop) = &member.prop
+        {
+            self.note_consumer(
+                &member.obj,
+                LoaderUseConsumer::MemberCall(prop.sym.to_string()),
+            );
+        }
+        if let Callee::Expr(callee) = &node.callee
             && let Expr::Ident(ident) = &**callee
         {
             let id = ident.to_id();
@@ -523,6 +637,12 @@ impl Visit for ReachWalk<'_> {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if let MemberProp::Ident(prop) = &node.prop {
+            self.note_consumer(
+                &node.obj,
+                LoaderUseConsumer::MemberRead(prop.sym.to_string()),
+            );
+        }
         node.visit_children_with(self);
         if self.sites.contains(&site_key(node.span)) {
             self.site_owner.insert(site_key(node.span), self.owner());

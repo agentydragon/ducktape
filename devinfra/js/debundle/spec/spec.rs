@@ -314,6 +314,7 @@ pub enum NodeBuiltinModule {
     Vm,
     WorkerThreads,
     Zlib,
+    Module,
 }
 
 impl NodeBuiltinModule {
@@ -356,6 +357,7 @@ impl NodeBuiltinModule {
             "util/types" | "node:util/types" => Self::UtilTypes,
             "vm" | "node:vm" => Self::Vm,
             "worker_threads" | "node:worker_threads" => Self::WorkerThreads,
+            "module" | "node:module" => Self::Module,
             "zlib" | "node:zlib" => Self::Zlib,
             _ => return None,
         })
