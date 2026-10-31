@@ -24,7 +24,7 @@ pub(crate) struct StatementPurityContext<'a> {
 }
 
 impl StatementPurityContext<'_> {
-    pub(crate) fn statement_purity(&self, fact: &StatementFacts) -> Purity {
+    pub(crate) fn statement_effects(&self, fact: &StatementFacts) -> Effects {
         let item = self.body[fact.ordinal.0].as_module_item();
         let mut effects = item_purity(
             item,
@@ -57,7 +57,28 @@ impl StatementPurityContext<'_> {
                 None => effects.then(Effects::of(Effect::Invoke(InvokeSite::MemberRead), *span)),
             };
         }
-        effects.project()
+        effects
+    }
+}
+
+/// A statement's purity before and after synchronous execution refines it.
+pub(crate) struct SettledPurity {
+    /// The verdict execution consumed at the statement's program point; it
+    /// also gates the at-init fallback.
+    pub(crate) executed: Purity,
+    /// `executed` with a certificate execution produced applied (a checked
+    /// local record factory call drops its impure-call effect); `None` when
+    /// execution refined nothing.
+    pub(crate) refined: Option<Purity>,
+}
+
+impl SettledPurity {
+    /// The verdict of a statement no execution refines.
+    pub(crate) fn unrefined(effects: Effects) -> Self {
+        Self {
+            executed: effects.project(),
+            refined: None,
+        }
     }
 }
 

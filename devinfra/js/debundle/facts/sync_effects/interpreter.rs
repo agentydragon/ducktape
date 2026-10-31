@@ -41,7 +41,7 @@ use crate::facts::{
     StatementPurityContext, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::{ChunkCodeGraph, Purity};
+use crate::purity::{ChunkCodeGraph, Effects};
 use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
@@ -474,8 +474,8 @@ pub(super) struct OwnPropertyQuery {
 
 impl ExecutionInputs<'_> {
     /// The purity transfer at `owner`'s program point.
-    pub(super) fn statement_purity(&self, owner: SourceUnitOrdinal) -> Purity {
-        self.purity.statement_purity(&self.facts[owner.0])
+    pub(super) fn statement_effects(&self, owner: SourceUnitOrdinal) -> Effects {
+        self.purity.statement_effects(&self.facts[owner.0])
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
@@ -7936,7 +7936,7 @@ pub(crate) fn annotate_synchronous_calls(
     hints: &AnalysisInputs,
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
-) -> Vec<Purity> {
+) -> Vec<crate::facts::SettledPurity> {
     let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
@@ -8275,8 +8275,8 @@ pub(crate) fn annotate_synchronous_calls(
     results
         .into_iter()
         .zip(facts.iter_mut())
-        .map(|((effects, purity), fact)| {
-            fact.synchronous_calls = Some(effects);
+        .map(|((calls, purity), fact)| {
+            fact.synchronous_calls = Some(calls);
             purity
         })
         .collect()
@@ -8674,8 +8674,8 @@ impl Executor<'_, '_> {
             .extend(record_factory_rejection);
         // The certificate is minted from the source proof above only after
         // the ordinary executor has completed this exact initializer without
-        // falling back. It is consumed by analyze.rs to remove only the
-        // generic impure-callee reason at this call site.
+        // falling back. The settled purity projection consumes it to drop
+        // only the impure-callee effect at this call site.
         outcome.effects.callback_factory_uses = std::mem::take(&mut self.state.proof_uses);
         outcome.effects.returned_record_uses =
             std::mem::take(&mut self.state.returned_record_proof_uses);

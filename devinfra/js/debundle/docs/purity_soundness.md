@@ -1292,10 +1292,12 @@ creation, including the absence of inherited interceptors or nonwritable data.
 The ordinary executor still evaluates the selected initializer, wrapper and
 constructors. A typed certificate is minted only when the full return-only
 source proof succeeds and that exact execution completes without unknown calls,
-precision loss or uninitialized reads. The purity pass uses it to remove only
-the matching `impure_function_call` reason at that call span. Argument and
-callee effects, eager reads and every other purity reason remain. Any captured
-native-integrity evidence used by the proof stays in the resulting purity
-dependencies; no function-body or class-wide purity summary changes. A source
+precision loss or uninitialized reads. The settled purity projection uses it
+to discharge only that call's impure-callee effect at that call span; the
+verdict execution itself consumed, and the at-init fallback it gates, keep the
+call. Argument and callee effects, eager reads and every other purity reason
+remain. The certificate's dependencies, including any captured
+native-integrity evidence, join the resulting purity dependencies; no
+function-body or class-wide purity summary changes. A source
 or runtime fallback does not issue the certificate and retains conservative
 reachability.

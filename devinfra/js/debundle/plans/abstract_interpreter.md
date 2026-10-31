@@ -391,17 +391,18 @@ atomic group or loss there.
 - Stack: 4a whitelists → rows (landed); 4b PlainData → heap state (landed:
   `plain_data.rs` deleted, scan moved to `heap.rs` with per-allocation
   state, still before purity); 4c classifier → projection, as a stack of
-  layers: (1) statement purity is a runtime-store fact at its program point; (2) the classifier emits effect events and `purity_type.rs`
-  projects them; (3) `Coerce` resolves against the settled `Prefix(n)`
-  values; (4) the enum IIFE is interpreted; (5) the checked local record
-  factory discharge becomes a contribution reading its certificate; (6) the
+  layers. Landed: statement purity is a runtime-store fact at its program
+  point; the classifier returns effects that `purity_type.rs` projects; the
+  checked local record factory discharge is part of the settled projection,
+  reading its certificate from the runtime store. Remaining: `Coerce` resolves
+  against the settled `Prefix(n)` values; the enum IIFE is interpreted; the
   unit tests are rewritten against effect sets. The heap's "no later write"
   premise stays whole-chunk (design.md § Purity and synchronous execution
   share one context).
 - TODO: revisit one least fixpoint over growing prefix states (the
   alternative that design section rejects) if per-prefix heap state would
   make enough statements pure on the canonical inputs to matter for
-  acceptance; layer 3 reports the count.
+  acceptance; the `Coerce` layer reports the count.
 - Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
   `initializer_purity`, `export_default_purity`, `pure_members`,
   `cross_module_purity_scale`, `dependency_graph_purity_reason`,
