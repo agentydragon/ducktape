@@ -18,6 +18,7 @@ import {
   Title,
 } from "@mantine/core";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
@@ -943,9 +944,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         aria-label="Conversation options"
                         title="Conversation options"
                       >
-                        <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>
-                          ⋮
-                        </span>
+                        <IconDotsVertical size={16} />
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown style={{ maxHeight: "min(70dvh, 480px)", overflowY: "auto" }}>
@@ -962,7 +961,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                               data-version-id={version.id}
                               checked={selectedVersionId === version.id}
                               closeMenuOnClick
-                              checkIcon="✓"
                               style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
                               onClick={() =>
                                 changeVersion(version.id === selectedSession.latest_version_id ? "" : version.id)

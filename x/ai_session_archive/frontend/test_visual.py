@@ -53,6 +53,7 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await view.check(context="machine list and latest capture are visible with compact conversation controls")
         await view.capture(target=page.locator("#root"))
         await options.click()
+        await expect(page.get_by_role("menu")).to_have_css("opacity", "1")
         await expect(page.locator('[role="menuitemradio"][data-version-id="codex-version-2"]')).to_have_attribute(
             "aria-checked", "true"
         )
@@ -113,6 +114,7 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         await page.get_by_role("button", name="Conversation options", exact=True).click()
         menu = page.get_by_role("menu")
         await expect(menu).to_be_visible()
+        await expect(menu).to_have_css("opacity", "1")
         menu_bounds = await menu.bounding_box()
         assert menu_bounds is not None
         assert menu_bounds["x"] >= 0
