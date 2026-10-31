@@ -15,7 +15,6 @@ so each package holding specs calls it; nothing checks that one that does not ha
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load(":ts_library.bzl", "ts_library")
@@ -53,7 +52,14 @@ def vitest_config(name, environment, setup_files = [], data = []):
         setup_paths = []
         for setup_file in setup_files:
             label = native.package_relative_label(setup_file)
-            setup_paths.append("./" + paths.relativize(label.package + "/" + label.name, native.package_name()))
+            origin = [part for part in native.package_name().split("/") if part]
+            destination = [part for part in (label.package + "/" + label.name).split("/") if part]
+            common = 0
+            for left, right in zip(origin, destination):
+                if left != right:
+                    break
+                common += 1
+            setup_paths.append("./" + "/".join([".."] * (len(origin) - common) + destination[common:]))
         test["setupFiles"] = setup_paths
     write_file(
         name = name + "_file",
