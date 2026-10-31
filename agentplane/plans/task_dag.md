@@ -562,7 +562,8 @@ flowchart LR
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check and standard-mode compaction]
+    CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
+    CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
@@ -610,7 +611,7 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
-### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check and standard-mode compaction
+### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
 **Unscheduled; operator requested 2026-10-29 PDT after a concrete provider rejection.** The route
 `ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k` returned HTTP 400 through LiteLLM:
@@ -620,11 +621,27 @@ dialect and exec encoding; standard mode sends top-level function tools and reje
 
 - A bounded check against the reported route establishing its actual accepted wire contract; the
   standard/JSON path is covered only by deterministic fixtures.
-- Compaction for standard-mode routes, or an explicit decision that those routes run without it.
+- Compaction for standard-mode routes: `CENTRAL_SAMPLER_PROMPT_COMPACTION`.
 
 Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
 payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../x/central_sampler/docs/anthropic_acceptance.md);
 no implementation or rollout is scheduled by this entry.
+
+### `CENTRAL_SAMPLER_PROMPT_COMPACTION` — compaction by our own prompt
+
+**Unscheduled; operator requested tracking, 2026-10-31 PDT.** Compaction today is provider-side only:
+Responses compaction requires a Responses Lite route (`responses.BuildCompactionRequest` fails
+otherwise), Anthropic uses server-side compaction, and `Compact` is refused for standard-dialect
+Responses routes and for Anthropic routes without compaction configured, so their Sessions grow until
+the context window fails. Add client-side compaction for such routes, selected per model in the route
+configuration: sample the route with a summarization prompt over the current context, then replace the
+context with the summary plus retained recent user turns, as Codex CLI does for providers without
+remote compaction (port its prompt template and history rebuild with sync comments; Codex pin
+`rust-v0.162.1`). Reuse the existing compaction intent, journaling and context-replacement path so
+auto-compaction thresholds, `Compact` and restart recovery behave as for provider compaction. Exit:
+deterministic tests for the request, the replacement and a failed or oversized summary; a bounded live
+check on a standard-mode route that compacts and continues with a tool call; SPEC states which routes
+compact how.
 
 ### `CENTRAL_SAMPLER_BACKGROUND_COMPACTION` — summarize while sampling continues
 
