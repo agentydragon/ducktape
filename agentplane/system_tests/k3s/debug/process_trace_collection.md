@@ -79,10 +79,11 @@ Profiling overlaps import and has no startup sleep, but its CPU and trace record
 have unmeasured perturbation. This run and the earlier VM test used different workers
 and cache states, so their 98.1 s and 102.0 s stack times are not an overhead comparison.
 
-To inspect the artifacts with the pinned Nix Go source, run
-`GO111MODULE=off go run cmd/pprof -top -cum <downloaded.cpu.pprof>` and
-`GO111MODULE=off go run cmd/trace -pprof=syscall <downloaded.runtime.trace> > syscall.pprof`
-from `$(go env GOROOT)/src`, then inspect that derived pprof with the first command.
+To inspect the artifacts in the repository Nix devshell, run
+`go tool pprof -top -cum <downloaded.cpu.pprof>` and
+`go tool trace -pprof=syscall <downloaded.runtime.trace> > syscall.pprof`,
+then `go tool pprof -top -cum syscall.pprof`. Both standard tool subcommands
+parsed the retained artifacts with the pinned Go 1.26.8 toolchain.
 
 For reproduction, run `bbr test //agentplane/system_tests/suites:test_vm --nocache_test_results`
 or a smaller k3s suite, then download `test.outputs/process-spans.jsonl`,
