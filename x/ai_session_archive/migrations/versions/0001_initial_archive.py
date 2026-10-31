@@ -23,12 +23,35 @@ def upgrade() -> None:
         sa.Column("sha256", sa.String(length=64), nullable=False),
         sa.Column("parser_version", sa.String(length=50), nullable=False),
         sa.Column("raw_bytes", sa.LargeBinary(), nullable=False),
-        sa.Column("parsed", postgresql.JSONB(astext_type=sa.Text())),
-        sa.Column("parse_error", sa.String()),
+        sa.Column("parse_error", sa.Text()),
         sa.Column("timestamp", sa.DateTime(timezone=True)),
-        sa.Column("kind", sa.String()),
+        sa.Column("kind", sa.Text()),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("sha256", "parser_version", name="uq_record_payloads_sha_parser"),
+    )
+    op.create_table(
+        "usage_observations",
+        sa.Column("payload_id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("observation_index", sa.Integer(), nullable=False),
+        sa.Column("source_field", sa.Text(), nullable=False),
+        sa.Column("counter_kind", sa.Text(), nullable=False),
+        sa.Column("model", sa.Text()),
+        sa.Column("response_id", sa.Text()),
+        sa.Column("message_id", sa.Text()),
+        sa.Column("turn_id", sa.Text()),
+        sa.Column("input_tokens", sa.BigInteger()),
+        sa.Column("output_tokens", sa.BigInteger()),
+        sa.Column("cache_read_input_tokens", sa.BigInteger()),
+        sa.Column("cache_write_input_tokens", sa.BigInteger()),
+        sa.Column("reasoning_output_tokens", sa.BigInteger()),
+        sa.Column("total_tokens", sa.BigInteger()),
+        sa.CheckConstraint("observation_index >= 0", name="ck_usage_observations_index"),
+        sa.CheckConstraint(
+            "counter_kind IN ('response', 'last_response', 'turn', 'thread', 'session', 'message', 'result', 'model_result')",
+            name="ck_usage_observations_counter_kind",
+        ),
+        sa.ForeignKeyConstraint(["payload_id"], ["record_payloads.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("payload_id", "observation_index"),
     )
     op.create_table(
         "sessions",
@@ -185,5 +208,6 @@ def downgrade() -> None:
     op.drop_table("session_roots")
     op.drop_table("restic_snapshots")
     op.drop_table("sessions")
+    op.drop_table("usage_observations")
     op.drop_table("record_payloads")
     op.drop_table("machines")

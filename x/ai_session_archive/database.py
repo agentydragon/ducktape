@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     create_engine,
@@ -208,11 +209,29 @@ class RecordPayloadRow(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     parser_version: Mapped[str] = mapped_column(String(50), nullable=False)
     raw_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    parsed: Mapped[Any | None] = mapped_column(JsonType)
-    parse_error: Mapped[str | None] = mapped_column(String)
+    parse_error: Mapped[str | None] = mapped_column(Text)
     timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    kind: Mapped[str | None] = mapped_column(String)
+    kind: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (UniqueConstraint("sha256", "parser_version", name="uq_record_payloads_sha_parser"),)
+
+
+class UsageObservationRow(Base):
+    __tablename__ = "usage_observations"
+
+    payload_id: Mapped[UUID] = mapped_column(ForeignKey("record_payloads.id", ondelete="RESTRICT"), primary_key=True)
+    observation_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_field: Mapped[str] = mapped_column(Text, nullable=False)
+    counter_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)
+    response_id: Mapped[str | None] = mapped_column(Text)
+    message_id: Mapped[str | None] = mapped_column(Text)
+    turn_id: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cache_read_input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cache_write_input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    reasoning_output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    total_tokens: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class FileVersionRecordRow(Base):
