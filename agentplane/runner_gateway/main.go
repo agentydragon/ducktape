@@ -124,10 +124,14 @@ func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Li
 	return server, nil
 }
 
-func listenAndServe(ctx context.Context, c config) error {
+func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
 		return err
 	}
+	return listenAndServe(ctx, c)
+}
+
+func listenAndServe(ctx context.Context, c config) error {
 	listener, err := netlistener.Open(c.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
@@ -352,7 +356,7 @@ func main() {
 		slog.Error("Runner Gateway tracing setup failed", "error", err)
 		os.Exit(1)
 	}
-	err = listenAndServe(ctx, c)
+	err = run(ctx, c)
 	shutdownTracing()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Runner Gateway stopped", "error", err)
