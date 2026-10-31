@@ -43,6 +43,10 @@ pub(super) struct EsmEvaluationSimulator {
     /// so the simulator skips constraining-edge checks involving
     /// them.
     pub(super) post_order: BTreeMap<ModuleId, usize>,
+    /// False when the constraining pairs are cyclic: `EsmImportOrder` then
+    /// has no linker order and every non-entry import list falls back to
+    /// `ModuleId` order.
+    linker_order_available: bool,
 }
 
 impl EsmEvaluationSimulator {
@@ -74,7 +78,11 @@ impl EsmEvaluationSimulator {
         let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
         let post_order =
             simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order);
-        Self { post_order }
+        Self {
+            post_order,
+            linker_order_available: constraining_pairs.is_empty()
+                || !import_order.linker_order().is_empty(),
+        }
     }
 
     /// Yields the `(from, to)` constraining pairs inside `modules`
@@ -85,7 +93,9 @@ impl EsmEvaluationSimulator {
     /// rescues the SCC.
     ///
     /// Endpoints unreachable from entry are skipped — ESM never
-    /// loads them, so they can't fire a TDZ at runtime.
+    /// loads them, so they can't fire a TDZ at runtime. Without a linker
+    /// order (cyclic constraining pairs, which Pass 1 rejects) there is no
+    /// import order to check, so nothing is yielded.
     pub(super) fn tdz_pairs<'a>(
         &'a self,
         modules: &'a BTreeSet<ModuleId>,
@@ -94,6 +104,7 @@ impl EsmEvaluationSimulator {
         constraining_pairs
             .iter()
             .copied()
+            .filter(|_| self.linker_order_available)
             .filter(move |&(from, to)| {
                 if !modules.contains(&from) || !modules.contains(&to) {
                     return false;

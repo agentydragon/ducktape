@@ -87,7 +87,7 @@ pub struct SccDiagnosis {
 /// How the realizability gate decided an SCC is unrealizable. See
 /// docs/design.md "Lemma 2: entry-side import ordering" for the
 /// two-pass gating rule.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum SccRejection {
     /// Pass 1: the SCC is cyclic in the constraining-edge subgraph
     /// alone — a mutual-eager cycle no source import order can
@@ -99,6 +99,10 @@ pub enum SccRejection {
     /// constraining edge's target evaluates at or after its source
     /// under the materializer's actual import-order choices. This also includes
     /// the implicit entry-to-module edge: entry always evaluates last.
+    ///
+    /// Pass 2 runs only when Pass 1 finds no cycle. A cyclic constraining
+    /// subgraph has no linker order, so the materializer has no import
+    /// order for the simulator to check; every path skips Pass 2 then.
     EsmEvaluationTdz,
 }
 
@@ -317,7 +321,9 @@ fn verdict_from_canonical(
         })
         .collect();
 
-    if !candidate_sccs.is_empty() {
+    // Pass 2 needs the linker order, which exists only when Pass 1 found
+    // no constraining cycle.
+    if reported.is_empty() && !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         let simulation = EsmEvaluationSimulator::build(
             &canonical.i_successors,

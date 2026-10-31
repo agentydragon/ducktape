@@ -390,11 +390,51 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
         "{}",
         rejected.stderr
     );
+    // The Pass-1 cut is a feedback arc set and need not pick this edge, so
+    // read it from the graph: `frozen`'s push into `values` stays ordered
+    // after `heap/a`.
+    let graph: serde_json::Value = read_json(
+        &rejected
+            .report_root
+            .join("static")
+            .join("app")
+            .join("dependency_graph.json"),
+    );
+    let module_of: std::collections::HashMap<&str, &str> = graph["module_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| {
+            (
+                node["key"].as_str().unwrap(),
+                node["path"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let nodes = graph["nodes"].as_array().unwrap();
+    let unit_module = |id: &str| {
+        let node = nodes.iter().find(|node| node["id"] == id).unwrap();
+        module_of[node["destination"].as_str().unwrap()]
+    };
+    let frozen = nodes
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|binding| binding["binding"] == "frozen")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
     assert!(
-        rejected
-            .stderr
-            .contains("frozen (records/b)  --side-effect-->  <side-effect> (heap/a)"),
-        "{}",
+        graph["edges"].as_array().unwrap().iter().any(|edge| {
+            edge["edge_kind"] == "sequenced"
+                && edge["source"] == frozen
+                && unit_module(edge["target"].as_str().unwrap()) == "heap/a"
+        }),
+        "no sequenced edge from `frozen` into heap/a:\n{}",
         rejected.stderr
     );
 }

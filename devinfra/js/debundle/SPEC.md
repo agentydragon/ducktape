@@ -2686,6 +2686,18 @@ empty.
 
 ## Realizability cut explanations
 
+Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
+is a Pass-1 cycle of constraining edges. `esm_evaluation_tdz` is a Pass-2 TDZ
+proved under the materializer's linker order. Pass 2 runs only when Pass 1
+finds no cycle: a cyclic constraining subgraph has no linker order, hence no
+import order to check. A rejection with Pass-1 cycles instead adds
+`tdz_after_collapsing_pass_one` entries: Pass 2 on the same assignment with
+each Pass-1 SCC collapsed into one module, listing the original modules. They
+show what would still block once the Pass-1 SCCs are co-located; they are
+conditional and do not change the verdict. The bail summary opens with the
+Pass-1 root cause and labels each cycle's pass; `gate list` and
+`gate describe` show the same label.
+
 Every blocking SCC in `cycles.json` carries a `cut`: the constraining edges
 whose removal (co-locating each binding pair) makes the SCC realizable. Each
 cut edge names both endpoints (`from`, `to`, `from_binding`, `binding`), its

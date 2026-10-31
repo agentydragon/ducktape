@@ -30,7 +30,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use ::gate::{
-    AtInitReadPosition, BlockingSccEntry, CutEdgeExplanation, CycleEdge, render_explanations,
+    AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
+    render_explanations,
 };
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyGraphReport,
@@ -217,6 +218,9 @@ pub struct GateListEntry {
     pub id: usize,
     pub module_count: usize,
     pub cut_count: usize,
+    /// The stored [`BlockingSccEntry::rejection`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<BlockingRejection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -227,6 +231,9 @@ pub struct GateListReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct GateDescribeReport {
     pub id: usize,
+    /// The stored [`BlockingSccEntry::rejection`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<BlockingRejection>,
     pub modules: Vec<ModulePath>,
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
@@ -929,6 +936,7 @@ fn run_list(args: GateListArgs) -> Result<()> {
                 id: e.id,
                 module_count: e.modules.len(),
                 cut_count: e.cut.len(),
+                rejection: e.rejection,
             })
             .collect(),
     };
@@ -943,9 +951,25 @@ fn render_list_text(report: &GateListReport, out: &mut String) {
     out.push_str(&format!("{} blocking SCC(s)\n", report.blocking_sccs.len()));
     for entry in &report.blocking_sccs {
         out.push_str(&format!(
-            "  {}  modules={}  cut={}\n",
-            entry.id, entry.module_count, entry.cut_count,
+            "  {}  modules={}  cut={}{}\n",
+            entry.id,
+            entry.module_count,
+            entry.cut_count,
+            rejection_label(entry.rejection),
         ));
+    }
+}
+
+/// Text label for a stored rejection kind; empty for reports that predate it.
+fn rejection_label(rejection: Option<BlockingRejection>) -> &'static str {
+    match rejection {
+        Some(BlockingRejection::MutualConstrainingCycle) => "  [pass 1: mutual constraining cycle]",
+        Some(BlockingRejection::EsmEvaluationTdz) => "  [pass 2: ESM evaluation TDZ]",
+        Some(BlockingRejection::TdzAfterCollapsingPassOne) => {
+            "  [pass 2, conditional: after collapsing the pass-1 SCCs]"
+        }
+        Some(BlockingRejection::Unrecognized) => "  [unrecognized rejection kind]",
+        None => "",
     }
 }
 
@@ -998,6 +1022,7 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Re
     }
     let report = GateDescribeReport {
         id: entry.id,
+        rejection: entry.rejection,
         modules: entry.modules.clone(),
         cut: entry.cut.clone(),
         evidence,
@@ -1011,11 +1036,12 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Re
 
 fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     out.push_str(&format!(
-        "blocking SCC #{}: {} module(s), cut of {}, {} evidence edge(s).\n",
+        "blocking SCC #{}: {} module(s), cut of {}, {} evidence edge(s){}.\n",
         report.id,
         report.modules.len(),
         report.cut.len(),
         report.evidence.len(),
+        rejection_label(report.rejection),
     ));
 
     if !report.modules.is_empty() {
