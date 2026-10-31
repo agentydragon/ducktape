@@ -187,7 +187,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			w.mu.Unlock()
 		}
 	}()
-	sandboxes, err := w.Catalog.ListSandboxes(ctx)
+	listCtx, listSpan := observability.Start(ctx, "Dispatcher Reconcile Sandbox Inventory")
+	sandboxes, err := w.Catalog.ListSandboxes(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
@@ -197,7 +199,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		byName[sandbox.Name] = sandbox
 		liveUID[sandbox.UID] = struct{}{}
 	}
-	storedUID, err := w.Store.ListSandboxUIDs(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Stored Sandboxes")
+	storedUID, err := w.Store.ListSandboxUIDs(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
@@ -208,11 +212,12 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			}
 		}
 	}
-	pending, err := w.Store.SandboxesWithPendingWork(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Pending Work")
+	pending, err := w.Store.SandboxesWithPendingWork(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
-	span.AddEvent("pending work loaded", trace.WithAttributes(attribute.Int("sandbox.count", len(sandboxes)), attribute.Int("pending.count", len(pending))))
 	for _, sandbox := range sandboxes {
 		if _, needed := pending[sandbox.UID]; !needed {
 			continue
@@ -222,7 +227,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 				continue
 			}
 		}
-		owner, err := w.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
+		leaseCtx, leaseSpan := observability.Start(ctx, "Dispatcher Reconcile Acquire Lease", trace.WithAttributes(attribute.String("sandbox.name", sandbox.Name)))
+		owner, err := w.Leases.Acquire(leaseCtx, sandbox.Name, sandbox.UID)
+		observability.End(leaseSpan, err)
 		if err != nil {
 			return err
 		}
@@ -235,7 +242,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 		w.mu.Unlock()
 		if owner != nil && (!had || old != *owner) {
-			current, err := w.Store.RecoverSandbox(ctx, *owner)
+			recoveryCtx, recoverySpan := observability.Start(ctx, "Dispatcher Reconcile Recover Sandbox", trace.WithAttributes(attribute.String("sandbox.name", sandbox.Name)))
+			current, err := w.Store.RecoverSandbox(recoveryCtx, *owner)
+			observability.End(recoverySpan, err)
 			if err != nil {
 				return err
 			}
@@ -246,7 +255,6 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			}
 		}
 	}
-	span.AddEvent("ownership reconciled")
 	// A Sandbox without pending work is dropped here and no longer renewed, so its
 	// Lease lapses; the next work for it reacquires.
 	w.mu.Lock()
@@ -258,15 +266,18 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 	}
 	w.mu.Unlock()
-	openings, err := w.Store.OpeningHeads(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Opening Heads")
+	openings, err := w.Store.OpeningHeads(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
-	heads, err := w.Store.Heads(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Command Heads")
+	heads, err := w.Store.Heads(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
-	span.AddEvent("heads loaded", trace.WithAttributes(attribute.Int("opening.count", len(openings)), attribute.Int("command.count", len(heads))))
 	for _, opening := range openings {
 		sandbox, live := byName[opening.SandboxName]
 		if live && sandbox.UID == opening.SandboxUID {
@@ -346,7 +357,6 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.clearRetry(sessionID)
 		return nil
 	}
-	span.AddEvent("head loaded", trace.WithAttributes(attribute.Bool("opening", opening != nil)))
 	name, uid, workID := "", "", ""
 	if opening != nil {
 		name, uid, workID = opening.SandboxName, opening.SandboxUID, "opening:"+opening.SessionID
@@ -363,13 +373,11 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	if err != nil {
 		return err
 	}
-	span.AddEvent("sandbox loaded", trace.WithAttributes(attribute.Bool("live", live)))
 	if !live || sandbox.UID != uid {
 		return nil
 	}
 	owner, okay := w.ownerFor(uid)
 	if !okay {
-		span.AddEvent("owner unavailable")
 		return nil
 	}
 	current, err := w.Leases.StillOwns(ctx, owner)
@@ -377,10 +385,8 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.forgetOwner(uid, owner)
 		return err
 	}
-	span.AddEvent("lease verified")
 	if opening != nil {
 		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)
-		span.AddEvent("opening prepared", trace.WithAttributes(attribute.Bool("ready", ready)))
 		if err != nil || !ready {
 			return err
 		}
@@ -389,7 +395,6 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		}
 	} else {
 		ready, err := w.prepareDispatch(ctx, head, sandbox, owner)
-		span.AddEvent("command prepared", trace.WithAttributes(attribute.Bool("ready", ready)))
 		if err != nil || !ready {
 			return err
 		}
