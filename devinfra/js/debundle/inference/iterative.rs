@@ -171,6 +171,10 @@ impl<R: IterativeRules> IterativeInference<R> {
             .map(|(round, rule)| (rule.clone(), *round))
             .collect();
         let mut watchers: BTreeMap<R::Key, BTreeSet<R::Rule>> = BTreeMap::new();
+        // Each rule's keys in `watchers`. A re-evaluated rule mostly repeats
+        // its reads; checking its own small set first spares a search of the
+        // whole watcher map for every repeated read.
+        let mut watched: BTreeMap<R::Rule, BTreeSet<R::Key>> = BTreeMap::new();
         #[cfg(test)]
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
@@ -181,8 +185,15 @@ impl<R: IterativeRules> IterativeInference<R> {
             {
                 evaluations += 1;
             }
+            let known = watched.entry(rule.clone()).or_default();
             for key in context.reads {
-                watchers.entry(key).or_default().insert(rule.clone());
+                if !known.contains(&key) {
+                    watchers
+                        .entry(key.clone())
+                        .or_default()
+                        .insert(rule.clone());
+                    known.insert(key);
+                }
             }
             for key in context.changed {
                 let fact = facts.get(&key).expect("changed fact exists");
