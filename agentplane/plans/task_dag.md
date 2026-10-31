@@ -379,6 +379,7 @@ flowchart TD
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     THREAD_CREATE_POLICY[Selected P1 decision: caller-privilege Session creation]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement the selected create contract]
+    ENVIRONMENT_ACTIONS_DESIGN[Later decision: dedicated environment-management Actions]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
@@ -486,6 +487,13 @@ principal attribution, account-token admission, target discovery, UID fencing an
 result reads. Review its explicit authority/interface/read-scope decisions and fresh-environment
 scope before dispatching implementation; replan the remaining sprint for the selected backend work.
 
+The proposal's approval defaults keep authorized same-principal Session operations automatic and
+new-environment creation human-approved initially. Dedicated environment management is scoped in
+`ENVIRONMENT_ACTIONS_DESIGN`; `orchestration_v1` is not a prerequisite for the new workflows.
+The proposal includes a combined tool/schema reference and a concrete creation-to-Session sequence.
+Existing-target `environments_list`/`environments_get` discovery belongs to the selected delegation
+slice and does not wait for fresh provisioning.
+
 Review the bounded API and authority contract: which existing same-account targets may be used,
 defaults/cwd, creation provenance, message/result delivery and caller-visible lifecycle controls.
 Preserve separate Session, environment, process and authority identities. Use Claude/Codex native
@@ -546,6 +554,25 @@ that an ordinary task description suffices for tool discovery and delegation; ha
 tool call does not prove agent usability. Reuse existing work/PR evidence when deciding whether to
 open another fix. Set the concrete schedule, model, credentials and notification destination before
 activation; activation is follow-up work after this planning review.
+
+### `ENVIRONMENT_ACTIONS_DESIGN` — dedicated environment-management Actions
+
+**Later decision; operator direction, 2026-10-31 UTC.** Extract environment management from
+`orchestration_v1` into dedicated Actions backed by typed provisioning/lifecycle APIs. Start with
+the [proposed tool contracts](session_delegation_workflows.md#tool-contract-derived-from-the-workflows):
+`environments_list_templates`, `environments_list`, `environments_get`,
+`environments_get_creation`, and Action `environments/create`. Creation is initially human-approved.
+Review complete Pod/VM configuration and resource/account authority, approved template revision
+snapshots, separate Action/creation recovery IDs, and retained outcomes. Selecting a shared caller
+SA needs controller-owned identity and lifecycle support; today's broker creates a new SA and is
+not same-privilege provisioning.
+
+Deliver a reviewed API/approval contract and migration scope, with a realistic external-MCP
+sequence from creation request through returned Sandbox UID to the ordinary Session tools. Keep
+creation and Session opening separate; give other lifecycle operations their own policy. Do not
+require the integration app or make the legacy broker a dependency. Existing-target delegation
+does not wait for this work; broader/different-privilege launch remains in
+`AGENT_LAUNCH_POLICY_DESIGN`. No provisioning implementation is dispatched by this node.
 
 ### `AGENT_LAUNCH_POLICY_DESIGN` — Sandbox launch and delegation policy
 
