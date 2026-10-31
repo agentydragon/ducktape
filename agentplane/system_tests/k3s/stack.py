@@ -573,6 +573,10 @@ def running_stack(
                     models,
                     mcp,
                 )
+                if fixture.vm_sandboxes:
+                    vm_sandboxes.select_boot_probe(
+                        fixture.objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_PROBE") == "1"
+                    )
             deployment_images = _deployment_images(fixture.objects)
             if used := deployment_images & guest_images.keys():
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")

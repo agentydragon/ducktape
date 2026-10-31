@@ -161,6 +161,7 @@ py_test(
         ":fixture_database",
         ":namespaces",
         ":rendered_fixture",
+        ":vm_sandboxes",
         "//:conftest",
         "//agentplane/app:model_catalog",
         "//agentplane/app:settings",
@@ -483,6 +484,7 @@ py_library(
     srcs = ["vm_sandboxes.py"],
     deps = [
         "//agentplane/system_tests:tracing",
+        "//agentplane/system_tests:vm_configuration",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
