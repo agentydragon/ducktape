@@ -140,9 +140,9 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 lambda response: f"/versions/{latest_id}/events?" in response.url and "cursor=" in response.url
             ) as earlier_page:
                 await page.mouse.wheel(0, -10000)
-            response = await earlier_page.value
-            assert response.ok
-            assert (await response.json())["data"][0]["ordinal"] == 0
+            earlier_response = await earlier_page.value
+            assert earlier_response.ok
+            assert (await earlier_response.json())["data"][0]["ordinal"] == 0
             await expect(history).to_have_attribute("data-layout-settled", "true")
 
             version_menu = page.get_by_role("button", name="Conversation options")
