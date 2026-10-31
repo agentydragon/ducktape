@@ -1,0 +1,341 @@
+diff --git a/devinfra/js/debundle/cross_module_purity.rs b/devinfra/js/debundle/cross_module_purity.rs
+index 43f6348422..be7f348822 100644
+--- a/devinfra/js/debundle/cross_module_purity.rs
++++ b/devinfra/js/debundle/cross_module_purity.rs
+@@ -348,6 +348,44 @@ pub fn resolve_imported_purities(
+     // absent from export mode, as before.
+     let progress = std::env::var_os("DUCKTAPE_DEBUNDLE_PROGRESS").is_some();
+     let mut prepared = BTreeMap::new();
++    if let Some(dir) = std::env::var_os("DEBUNDLE_HAVOC_PROBE_DIR") {
++        for (key, facts) in modules {
++            let units = facts.imports.is_empty() && !facts.exports.is_empty();
++            let units: Vec<_> = if units {
++                crate::facts::collect_chunk_source_facts_from_items(facts.body, None, |_| None)
++                    .per_statement
++                    .iter()
++                    .map(|unit| {
++                        let names = |ids: &mut dyn Iterator<Item = &swc_ecma_ast::Id>| {
++                            ids.map(|id| id.0.to_string()).collect::<Vec<_>>()
++                        };
++                        serde_json::json!({
++                            "ordinal": unit.ordinal.0,
++                            "kind": format!("{:?}", unit.kind),
++                            "declared": names(&mut unit.declared.iter()),
++                            "reads": names(&mut unit.reads.eager.iter().chain(&unit.reads.lazy)),
++                            "rebinds": names(&mut unit.rebinds.eager.iter().chain(&unit.rebinds.lazy)),
++                            "member_write_roots": names(&mut unit.member_write_roots.iter()),
++                        })
++                    })
++                    .collect()
++            } else {
++                Vec::new()
++            };
++            let line = serde_json::json!({
++                "module": key.to_string(),
++                "source": facts.source.as_ref().map(|(path, _)| path.clone()),
++                "imports": facts.imports.iter().map(|(local, target)| (local.clone(), (target.module.to_string(), target.export.clone()))).collect::<BTreeMap<_, _>>(),
++                "exports": facts.exports,
++                "units": units,
++            });
++            let path = std::path::Path::new(&dir).join(format!(
++                "module.{}.json",
++                key.to_string().replace('/', "_")
++            ));
++            std::fs::write(path, line.to_string()).expect("probe module write");
++        }
++    }
+     for (key, facts) in modules {
+         if !inferred_export_keys.keys().any(|(module, _)| module == key) {
+             continue;
+diff --git a/devinfra/js/debundle/facts/sync_effects/interpreter.rs b/devinfra/js/debundle/facts/sync_effects/interpreter.rs
+index 0082f8cbe0..bb607cf6f5 100644
+--- a/devinfra/js/debundle/facts/sync_effects/interpreter.rs
++++ b/devinfra/js/debundle/facts/sync_effects/interpreter.rs
+@@ -562,6 +562,9 @@ pub(super) struct ExecutionState {
+     active: BTreeSet<ActiveInvocation>,
+     /// Context lookup only; completed outcomes live in the shared fact store.
+     invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
++    probe_calls: Vec<serde_json::Value>,
++    probe_sinks: BTreeMap<AbstractValue, Vec<serde_json::Value>>,
++    probe_seen: BTreeSet<AbstractValue>,
+ }
+ 
+ pub(super) struct Executor<'source, 'rule> {
+@@ -4042,6 +4045,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                         self.taint_objects(&values);
+                         let callbacks = self.callback_values(&values);
+                         let before = self.state.global_escaped_callbacks.len();
++                        self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "write_global_object"}));
+                         self.state.global_escaped_callbacks.extend(callbacks);
+                         if self.state.global_escaped_callbacks.len() != before {
+                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -4069,6 +4073,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                         self.taint_objects(&values);
+                         let callbacks = self.callback_values(&values);
+                         if !callbacks.is_subset(&self.state.global_escaped_callbacks) {
++                            self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "write_instance"}));
+                             self.state.global_escaped_callbacks.extend(callbacks);
+                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                         }
+@@ -4078,6 +4083,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                         self.taint_objects(&values);
+                         let callbacks = self.callback_values(&values);
+                         let before = self.state.global_escaped_callbacks.len();
++                        self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "write_descriptor_map"}));
+                         self.state.global_escaped_callbacks.extend(callbacks);
+                         if self.state.global_escaped_callbacks.len() != before {
+                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -4092,6 +4098,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                         // opaque code. Retain it as an escaped callback root.
+                         let callbacks = self.callback_values(&values);
+                         let before = self.state.global_escaped_callbacks.len();
++                        self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "write_untracked_receiver"}));
+                         self.state.global_escaped_callbacks.extend(callbacks);
+                         if self.state.global_escaped_callbacks.len() != before {
+                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -5135,6 +5142,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+         // changes. Each extra pass spends the shared invocation budget, whose
+         // exhaustion takes the order-insensitive fallback summary.
+         let mut foreign_promoted = false;
++        // The pool's own fallback escapes these arguments before the call's
++        // escape below; attribute them to the call.
++        let supplied: Values = args.iter().flatten().cloned().collect();
++        let supplied = self.callback_values(&supplied);
++        let label = self
++            .state
++            .probe_calls
++            .last()
++            .cloned()
++            .unwrap_or(serde_json::json!({"shape": "op"}));
++        self.probe_note(&supplied, label);
+         loop {
+             let callbacks = self.possible_callback_pool(
+                 args,
+@@ -5159,6 +5177,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+         let values = args.iter().flatten().cloned().collect();
+         self.taint_objects(&values);
+         let callbacks = self.callback_values(&values);
++        let label = self
++            .state
++            .probe_calls
++            .last()
++            .cloned()
++            .unwrap_or(serde_json::json!({"shape": "op"}));
++        self.probe_note(&callbacks, label);
+         self.state.global_escaped_callbacks.extend(callbacks);
+         if self.state.global_escaped_callbacks.len() != before {
+             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -5229,6 +5254,162 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+ 
+     /// Runs every pool member once against the evolving state. Returns whether
+     /// the bounded fallback summarized the pool instead.
++    fn probe_attribute(&mut self, label: serde_json::Value) {
++        if std::env::var_os("DEBUNDLE_HAVOC_PROBE_DIR").is_none() {
++            return;
++        }
++        let fresh: Vec<_> = self
++            .state
++            .global_escaped_callbacks
++            .iter()
++            .filter(|value| !self.state.probe_seen.contains(*value))
++            .cloned()
++            .collect();
++        for value in fresh {
++            self.state.probe_seen.insert(value.clone());
++            self.state
++                .probe_sinks
++                .entry(value)
++                .or_default()
++                .push(label.clone());
++        }
++    }
++
++    fn probe_note(&mut self, callbacks: &Values, label: serde_json::Value) {
++        if std::env::var_os("DEBUNDLE_HAVOC_PROBE_DIR").is_none() {
++            return;
++        }
++        let mut label = label;
++        if let Some(object) = label.as_object_mut() {
++            object.remove("property");
++        }
++        // First-escape attribution: a value already in the escape set keeps
++        // the route that put it there.
++        for value in callbacks.iter() {
++            if self.state.global_escaped_callbacks.contains(value)
++                || self.state.probe_sinks.contains_key(value)
++            {
++                continue;
++            }
++            self.state.probe_seen.insert(value.clone());
++            let sinks = self.state.probe_sinks.entry(value.clone()).or_default();
++            // A site escape already includes the callback in every reach.
++            if sinks.contains(&label) || sinks.iter().any(|sink| sink.get("site").is_some()) {
++                continue;
++            }
++            if label.get("site").is_some() || sinks.len() >= 16 {
++                sinks.clear();
++                let site = label.get("site").cloned().unwrap_or(serde_json::json!("overflow"));
++                sinks.push(serde_json::json!({"shape": "general", "site": site}));
++            } else {
++                sinks.push(label.clone());
++            }
++        }
++    }
++
++    fn probe_label(&self, callee: &ValueExpr) -> serde_json::Value {
++        fn root(expression: &ValueExpr) -> Option<&Id> {
++            match expression {
++                ValueExpr::Binding(id) => Some(id),
++                ValueExpr::Member(receiver, _, _) => root(receiver),
++                ValueExpr::Call(callee, _, _) | ValueExpr::New(callee, _, _) => root(callee),
++                _ => None,
++            }
++        }
++        let shape = match callee {
++            ValueExpr::Binding(_) => "direct",
++            ValueExpr::Member(receiver, _, _) if matches!(receiver.as_ref(), ValueExpr::Binding(_)) => "member",
++            _ if root(callee).is_some() => "chain",
++            _ => "other",
++        };
++        let raw = root(callee).cloned();
++        let mut resolved = raw.clone();
++        for _ in 0..8 {
++            let Some(current) = resolved.clone() else { break };
++            let next = self
++                .inputs
++                .index
++                .top_assignments
++                .iter()
++                .flatten()
++                .find(|(id, _)| *id == current)
++                .and_then(|(_, expression)| root(expression).cloned());
++            match next {
++                Some(next) if next != current => resolved = Some(next),
++                _ => break,
++            }
++        }
++        let property = match callee {
++            ValueExpr::Member(_, property, _) => property.clone(),
++            _ => None,
++        };
++        serde_json::json!({
++            "shape": shape,
++            "root": raw.map(|id| id.0.to_string()),
++            "resolved": resolved.map(|id| id.0.to_string()),
++            "property": property,
++        })
++    }
++
++    fn probe_pool_event(&mut self, callbacks: &Values, pool_size: usize) {
++        let Some(dir) = std::env::var_os("DEBUNDLE_HAVOC_PROBE_DIR") else {
++            return;
++        };
++        self.probe_attribute(serde_json::json!({"shape": "general"}));
++        let exports = self.available_export_callbacks();
++        let members: Vec<_> = callbacks
++            .iter()
++            .map(|value| {
++                let (kind, key) = match value {
++                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
++                    | AbstractValue::Closure(key, _) => ("function", Some(*key)),
++                    AbstractValue::ClassMembers(key) | AbstractValue::Instance(key, _) => {
++                        ("class", Some(*key))
++                    }
++                    AbstractValue::DeferredCallbacks(_) => ("deferred", None),
++                    _ => ("other", None),
++                };
++                let owner = match kind {
++                    "function" => key
++                        .and_then(|key| self.inputs.index.callables.get(&key))
++                        .map(|callable| callable.owner.0),
++                    "class" => key
++                        .and_then(|key| {
++                            self.inputs
++                                .flow
++                                .callable_source_unit
++                                .get(&Value::Alloc(Kind::Class, key))
++                        })
++                        .map(|owner| owner.0),
++                    _ => None,
++                };
++                serde_json::json!({
++                    "kind": kind,
++                    "key": key,
++                    "owner": owner,
++                    "escaped": self.state.global_escaped_callbacks.contains(value),
++                    "export": exports.contains(value),
++                    "sinks": self.state.probe_sinks.get(value),
++                })
++            })
++            .collect();
++        let line = serde_json::json!({
++            "chunk": self.inputs.facts.first().and_then(|fact| fact.source_location.as_ref()).map(|location| location.source_path.clone()),
++            "statement": self.state.current_top_owner.map(|owner| owner.0),
++            "pool_size": pool_size,
++            "call": self.state.probe_calls.last(),
++            "members": members,
++        });
++        use std::io::Write;
++        let path = std::path::Path::new(&dir).join(format!("pool.{}.{:?}.jsonl", std::process::id(), std::thread::current().id()).replace(['(', ')'], ""));
++        let mut file = std::fs::OpenOptions::new()
++            .create(true)
++            .append(true)
++            .open(path)
++            .expect("probe file");
++        writeln!(file, "{line}").expect("probe write");
++    }
++
+     fn invoke_callback_pool_once(&mut self, callbacks: &Values, outcome: &mut Outcome) -> bool {
+         // Unknown host code may invoke any callback it received with another
+         // currently available callback, so each formal gets the conservative
+@@ -5266,6 +5447,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                 let reason = if reentrant_pool {
+                     ExecutionPrecisionLossReason::RecursiveInvocation
+                 } else if callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL {
++                    self.probe_pool_event(callbacks, callbacks.len());
+                     ExecutionPrecisionLossReason::CallbackPoolLimit {
+                         limit: MAX_SYNCHRONOUS_CALLBACK_POOL,
+                         pool_size: callbacks.len(),
+@@ -5550,6 +5732,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+         // The truncated body may have passed one of these callback values to
+         // opaque code. Retain only this proven escape set for later calls.
+         let before = self.state.global_escaped_callbacks.len();
++        self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "bounded_fallback"}));
+         self.state.global_escaped_callbacks.extend(callbacks);
+         if self.state.global_escaped_callbacks.len() != before {
+             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -7132,6 +7315,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+             // private cross-call registry. Every subsequent opaque operation
+             // must therefore see them. Do not give the result a known shape.
+             let before = self.state.global_escaped_callbacks.len();
++            self.probe_note(&callbacks, serde_json::json!({"shape": "general", "site": "no_reentry_provider"}));
+             self.state.global_escaped_callbacks.extend(callbacks);
+             if self.state.global_escaped_callbacks.len() != before {
+                 self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+@@ -7227,6 +7411,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                 self.promote_raw_callbacks(&targets, outcome);
+             }
+         }
++        let probe_label = self.probe_label(&call.callee);
++        self.state.probe_calls.push(probe_label);
+         let mut opaque_args = args.clone();
+         if let ValueExpr::Member(receiver, _, _) = &call.callee {
+             let receiver_values = self.evaluate(receiver, env, captures);
+@@ -7464,6 +7650,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
+                 }
+             }
+         }
++        self.state.probe_calls.pop();
+     }
+ }
+ 
+@@ -8255,6 +8442,9 @@ pub(crate) fn annotate_synchronous_calls(
+         callback_sets: OrdMap::new(),
+         active: BTreeSet::new(),
+         invocation_memos: OrdMap::new(),
++        probe_calls: Vec::new(),
++        probe_sinks: BTreeMap::new(),
++        probe_seen: BTreeSet::new(),
+     };
+     let effects =
+         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());

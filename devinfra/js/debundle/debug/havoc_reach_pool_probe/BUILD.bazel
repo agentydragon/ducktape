@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_library(
+    name = "pool_regions",
+    srcs = ["pool_regions.py"],
+)
+
+py_binary(
+    name = "pool_regions_bin",
+    main_module = "devinfra.js.debundle.debug.havoc_reach_pool_probe.pool_regions",
+    deps = [":pool_regions"],
+)
