@@ -221,7 +221,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "loader_closed_reentry_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
 )
 
 debundle_e2e_test(

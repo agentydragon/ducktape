@@ -35,13 +35,13 @@ use serde_json::Value;
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
     ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    CommutingStatementsContract, HostBehavior, InitializerPurity, LoaderResultForEvaluatingModule,
-    MemberEffect, MemberPurity, NativeCallIdentityInputContract, NativeCallIdentityKind,
-    NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule, NonLiteralLoaderCalls,
-    PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises, ReentryFreeOperation,
-    ResolvedMemberSelector, SourceUnitSelector, SynchronousLoadDrainsMicrotasks,
-    SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader, ValueInputContract, VendorLevel,
-    VendorMark,
+    CommutingStatementsContract, EmbeddedLoader, HostBehavior, InitializerPurity,
+    LoaderResultForEvaluatingModule, MemberEffect, MemberPurity, NativeCallIdentityInputContract,
+    NativeCallIdentityKind, NativeOperationInputContract, NativeOperationKind, NodeBuiltinModule,
+    NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
+    ReentryFreeOperation, ResolvedMemberSelector, SourceUnitSelector,
+    SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;

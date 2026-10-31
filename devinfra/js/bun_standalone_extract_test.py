@@ -1,5 +1,6 @@
 """Synthetic coverage for the Bun standalone graph reader and CLI."""
 
+import json
 import struct
 from pathlib import Path
 
@@ -16,9 +17,11 @@ from devinfra.js.bun_standalone_extract import (
 )
 
 
-def synthetic_graph(entries: list[tuple[str, bytes]]) -> bytes:
+def synthetic_graph(entries: list[tuple[str, bytes]], loaders: tuple[int, ...] = ()) -> bytes:
     """Encode only the Bun graph fields this reader needs, with neutral modules."""
     payload = bytearray(MODULE_ENTRY_SIZE * len(entries))
+    for index, loader in enumerate(loaders):
+        payload[index * MODULE_ENTRY_SIZE + 49] = loader
     for index, (name, contents) in enumerate(entries):
         name_bytes = name.encode()
         name_offset = len(payload)
@@ -217,6 +220,31 @@ def test_debundle_list_excludes_non_utf8_and_non_js_files(tmp_path: Path) -> Non
         == 0
     )
     assert (output / "js-files.txt").read_text().splitlines() == ["$bunfs/root/b.js", "factory.js\t$bunfs/root/a.js"]
+
+
+def test_embedded_loaders_name_each_module_loader(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(
+        synthetic_graph(
+            [("/$bunfs/root/a.js", b"export {};"), ("/$bunfs/root/b.md", b"# b"), ("/$bunfs/root/c.node", b"")],
+            loaders=(1, 13, 10),
+        )
+    )
+    output = tmp_path / "extracted"
+    manifest = output / "embedded-loaders.json"
+    assert main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)]) == 0
+    assert json.loads(manifest.read_text()) == {
+        "$bunfs/root/a.js": "js",
+        "$bunfs/root/b.md": "text",
+        "$bunfs/root/c.node": "napi",
+    }
+
+
+def test_embedded_loaders_reject_an_unknown_loader(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.x", b"x")], loaders=(200,)))
+    with pytest.raises(SystemExit, match="unknown Bun loader 200"):
+        main([str(binary), str(tmp_path / "out"), "--embedded-loaders", str(tmp_path / "loaders.json")])
 
 
 if __name__ == "__main__":

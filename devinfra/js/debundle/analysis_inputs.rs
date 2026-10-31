@@ -422,6 +422,7 @@ pub enum HostBehaviorKey {
     SynchronousLoadDrainsMicrotasks,
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
     ReentryFreeBunModule(spec::BunModule),
+    ReentryFreeEmbeddedLoader(spec::EmbeddedLoader),
     PredefinedGlobals,
 }
 

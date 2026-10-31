@@ -288,6 +288,8 @@ pub struct MaterializeLogicalModulesOptions {
 pub struct MaterializeSpecInputs<'a> {
     pub host_behavior: &'a spec::HostBehavior,
     pub program_premises: &'a spec::ProgramPremises,
+    /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
+    pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
@@ -304,6 +306,7 @@ pub fn materialize_logical_modules(
     let MaterializeSpecInputs {
         host_behavior,
         program_premises,
+        embedded_loaders,
         logical_modules,
         chunk_renames,
         unassigned_mode,
@@ -340,6 +343,7 @@ pub fn materialize_logical_modules(
         &artifact_indexes,
         host_behavior,
         program_premises,
+        embedded_loaders,
         vendor_plan,
         &selected_chunk_ids,
         options.report_emission.rejection_dir().is_some(),
@@ -516,6 +520,7 @@ fn export_reentry_reports(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     program_premises: &spec::ProgramPremises,
+    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
     vendor_plan: &vendor::VendorResolutionPlan,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
@@ -554,8 +559,14 @@ fn export_reentry_reports(
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
-    let mut loader_derivations =
-        loader_derivations(artifact, indexes, host_behavior, program_premises, &targets)?;
+    let mut loader_derivations = loader_derivations(
+        artifact,
+        indexes,
+        host_behavior,
+        program_premises,
+        embedded_loaders,
+        &targets,
+    )?;
     let mut reports = BTreeMap::new();
     for name in selected_chunk_names {
         let Some(target) = artifact.chunk_table.get(name) else {
@@ -601,6 +612,7 @@ fn loader_derivations(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     program_premises: &spec::ProgramPremises,
+    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
     targets: &BTreeSet<ChunkId>,
 ) -> Result<BTreeMap<ChunkId, ExportReentryLoaderDerivation>> {
     let uniform = |derivation: ExportReentryLoaderDerivation| {
@@ -612,8 +624,13 @@ fn loader_derivations(
     if host_behavior.synchronous_module_loader == spec::SynchronousModuleLoader::None {
         return Ok(uniform(ExportReentryLoaderDerivation::NoSynchronousLoader));
     }
-    let surfaces =
-        loader_surface::loader_surfaces(artifact, indexes, host_behavior, program_premises)?;
+    let surfaces = loader_surface::loader_surfaces(
+        artifact,
+        indexes,
+        host_behavior,
+        program_premises,
+        embedded_loaders,
+    )?;
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }

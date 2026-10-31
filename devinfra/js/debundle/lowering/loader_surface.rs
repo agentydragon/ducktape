@@ -111,6 +111,7 @@ pub struct ExportReentryLoaderRequest {
 #[serde(rename_all = "snake_case")]
 pub enum LoaderRequestReportTarget {
     Builtin(spec::HostModule),
+    EmbeddedFile(spec::EmbeddedLoader),
     Chunk(ExportReentryTarget),
 }
 
@@ -243,6 +244,7 @@ struct Classifier<'a> {
     indexes: &'a ArtifactIndexes,
     host_behavior: &'a spec::HostBehavior,
     program_premises: &'a spec::ProgramPremises,
+    embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
     /// Chunks exporting a loader alias: any request exposing their namespace
     /// exposes the loader.
     alias_chunks: BTreeSet<ChunkId>,
@@ -370,12 +372,39 @@ impl Classifier<'_> {
                     ));
                     return Ok(());
                 }
-                None => {
-                    surface
-                        .site_failures
-                        .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
-                    return Ok(());
-                }
+                // An absolute request names an embedded file by its virtual
+                // path; the manifest records the loader the host applies.
+                None => match specifier
+                    .strip_prefix('/')
+                    .and_then(|path| self.embedded_loaders.get(path))
+                {
+                    Some(loader) => match loader.reentry_free() {
+                        Some(embedded)
+                            if self
+                                .host_behavior
+                                .reentry_free_embedded_loaders
+                                .contains(&embedded) =>
+                        {
+                            (
+                                LoaderRequestTarget::EmbeddedFile(embedded),
+                                LoaderRequestReportTarget::EmbeddedFile(embedded),
+                            )
+                        }
+                        _ => {
+                            surface.site_failures.push((
+                                LoaderClosureFailureKind::NonReentryFreeEmbeddedFile,
+                                witness,
+                            ));
+                            return Ok(());
+                        }
+                    },
+                    None => {
+                        surface
+                            .site_failures
+                            .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
+                        return Ok(());
+                    }
+                },
             },
         };
         *self
@@ -397,6 +426,7 @@ pub(super) fn loader_surfaces(
     indexes: &ArtifactIndexes,
     host_behavior: &spec::HostBehavior,
     program_premises: &spec::ProgramPremises,
+    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
 ) -> Result<LoaderSurfaces> {
     // Exported loader aliases by defining chunk and export name.
     let mut aliases = BTreeSet::<(ChunkId, String)>::new();
@@ -420,6 +450,7 @@ pub(super) fn loader_surfaces(
         indexes,
         host_behavior,
         program_premises,
+        embedded_loaders,
         alias_chunks: aliases.iter().map(|(chunk, _)| *chunk).collect(),
         request_counts: BTreeMap::new(),
         unreachable_sites: 0,

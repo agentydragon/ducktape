@@ -140,6 +140,10 @@ pub struct HostBehavior {
     /// rather than an installed package.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub reentry_free_bun_modules: BTreeSet<BunModule>,
+    /// Loaders the author audited as running no application code when the host
+    /// requires an embedded file it assigned that loader to.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_embedded_loaders: BTreeSet<EmbeddedLoader>,
     /// Exact zero-argument host operations the author audited as unable to run
     /// application code synchronously. Grants timing only, never purity.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -1064,6 +1068,57 @@ impl From<AdmissionOverrides> for Vec<AdmissionCheck> {
 pub struct LoadJsChunksArgs {
     pub input_root: PathBuf,
     pub js_list_path: PathBuf,
+    /// JSON object mapping each embedded file's input path to the loader the
+    /// host applies when it is required (the extractor's `--embedded-loaders`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedded_loaders_path: Option<PathBuf>,
+}
+
+/// A Bun `options.Loader`, as an embedded-loader manifest names it.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BunLoader {
+    Jsx,
+    Js,
+    Ts,
+    Tsx,
+    Css,
+    File,
+    Json,
+    Jsonc,
+    Toml,
+    Wasm,
+    Napi,
+    Base64,
+    Dataurl,
+    Text,
+}
+
+impl BunLoader {
+    /// The closed-list entry for a loader that evaluates no JavaScript.
+    pub fn reentry_free(self) -> Option<EmbeddedLoader> {
+        Some(match self {
+            Self::Text => EmbeddedLoader::Text,
+            Self::File => EmbeddedLoader::File,
+            Self::Json => EmbeddedLoader::Json,
+            Self::Napi => EmbeddedLoader::Napi,
+            _ => return None,
+        })
+    }
+}
+
+/// Embedded-file loaders admissible in `reentry_free_embedded_loaders`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbeddedLoader {
+    /// The file's text, as a string.
+    Text,
+    /// The file's path, as a string.
+    File,
+    /// The parsed JSON value.
+    Json,
+    /// A native addon: the host runs only its initializer.
+    Napi,
 }
 
 /// Omitted fields take their value from the `Default` impl, so `{}` and an

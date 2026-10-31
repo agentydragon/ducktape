@@ -155,6 +155,8 @@ impl ModuleTreeScope {
 struct AuthoringInputs {
     root: PathBuf,
     js_list_path: PathBuf,
+    #[serde(default)]
+    embedded_loaders_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -236,6 +238,10 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
+    let embedded_loaders_path = config
+        .inputs
+        .embedded_loaders_path
+        .map(|path| source_path(source_root, path));
     let layout = DebundleOutputLayout::new(&options.out_root);
     let module_sources = load_module_sources(
         &options.modules_root,
@@ -253,6 +259,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         inputs: LoadJsChunksArgs {
             input_root: input_root.clone(),
             js_list_path,
+            embedded_loaders_path,
         },
         vendor: vendor_map(
             read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks,
@@ -307,6 +314,7 @@ pub fn require_relative_source_paths(options: &CompileSpecTreeOptions) -> Result
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
     let vendor: VendorMarksFile = read_yaml(&options.vendor_marks_path)?;
     let mut paths = vec![config.inputs.root, config.inputs.js_list_path];
+    paths.extend(config.inputs.embedded_loaders_path);
     if let Some(browser) = config.browser_harness {
         paths.push(browser.asset_summary_path);
     }

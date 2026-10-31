@@ -754,3 +754,83 @@ fn module_uses_that_expose_a_loader_keep_the_target_open() {
         "static/user"
     );
 }
+
+/// An absolute request for an embedded file is a leaf when the manifest's
+/// host loader is declared reentry-free; a native addon also needs the
+/// native-addon premise.
+#[test]
+fn embedded_files_are_leaves_under_their_declared_loaders() {
+    let manifest_dir = tempfile::tempdir().unwrap();
+    let manifest = manifest_dir.path().join("embedded-loaders.json");
+    std::fs::write(
+        &manifest,
+        r#"{"$bunfs/root/guide.md": "text", "$bunfs/root/addon.node": "napi", "$bunfs/root/script.mjs": "js"}"#,
+    )
+    .unwrap();
+    let sidecar = r#"export function guide() { return import.meta.require("/$bunfs/root/guide.md"); }
+export function addon() { return import.meta.require("/$bunfs/root/addon.node"); }
+"#;
+    let host = HostBehavior {
+        reentry_free_embedded_loaders: [EmbeddedLoader::Text, EmbeddedLoader::Napi]
+            .into_iter()
+            .collect(),
+        ..audited_host()
+    };
+    let mut extra_chunks = vec![
+        ("static/helper", HELPER),
+        ("static/provider", PROVIDER),
+        ("static/sidecar", sidecar),
+    ];
+    let provider_logical = [(PROVIDER_CHUNK, provider_modules())];
+    let fixture = run_fixture(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&provider_logical)
+            .with_host_behavior(host.clone())
+            .with_program_premises(native_addon_premise())
+            .with_embedded_loaders_path(manifest.clone()),
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
+    let embedded: Vec<_> = report["loader"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|request| request["target"]["embedded_file"].as_str())
+        .collect();
+    assert_eq!(embedded, ["napi", "text"]);
+    assert_eq!(
+        report["loader"]["premise_keys"],
+        json!(["non_literal_loader_calls"])
+    );
+
+    // A `js` asset or an undeclared loader keeps the target open.
+    extra_chunks[2] = (
+        "static/sidecar",
+        "export function script() { return import.meta.require(\"/$bunfs/root/script.mjs\"); }\nexport function guide() { return import.meta.require(\"/$bunfs/root/guide.md\"); }\n",
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(PROVIDER, provider_modules())
+            .with_chunk_id(PROVIDER_CHUNK)
+            .with_extra_chunks(&[("static/helper", HELPER), extra_chunks[2]])
+            .with_host_behavior(audited_host())
+            .with_embedded_loaders_path(manifest),
+    );
+    let derivation = export_reentry_report(&rejected.report_root)["loader"].clone();
+    assert_eq!(
+        failure(&derivation, "non_reentry_free_embedded_file")["occurrences"],
+        2
+    );
+}
+
+#[test]
+fn native_addon_loader_requires_the_native_addon_premise() {
+    expect_rejection_containing_all(
+        FixtureOpts::new("export const value = 1;\n", vec![]).with_host_behavior(HostBehavior {
+            reentry_free_embedded_loaders: [EmbeddedLoader::Napi].into_iter().collect(),
+            ..HostBehavior::default()
+        }),
+        &["program_premises.non_literal_loader_calls: native_addons_only"],
+    );
+}

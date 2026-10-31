@@ -63,14 +63,10 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
    - **Node builtins** `assert`, `constants`, `querystring` and **Bun
      modules** `bun:ffi`, `undici`, `ws` (`reentry_free_bun_modules`) are in
      the closed lists. Admitting them is the project's audit.
-   - **Embedded assets** (about 100: `.md`, `.txt`, two `.mjs`, two `.node`).
-     The rule depends on the loader Bun assigns each embedded file, which is
-     recorded in the standalone graph's per-file loader byte; the extractor
-     drops it today. A `text`, `file` or `json` asset evaluates no code and is
-     a reentry-free leaf. A `js` asset outside the analyzed chunks keeps
-     targets open. A `napi` asset is class 3. This needs the extractor to emit
-     the loader per file (an input fact) and the probe to show the host honours
-     it.
+   - **Embedded assets** (about 100: `.md`, `.txt` and two `.mjs` as `text`,
+     two `.node` as `napi`) resolve through the extractor's per-file loader
+     manifest (SPEC.md § Reentry-free embedded files). The probe must show the
+     host honours the recorded loader.
 2. **`process`** (6 loader requests, 13 loaded-closure requests, and the static
    blocker in 70 graphs) and `worker_threads` are admitted under
    `program_premises.process_prototype_chain_accessors: none` (SPEC.md

@@ -18,7 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use spec::{
-    HostBehavior, HostModule, LoaderResultForEvaluatingModule, SynchronousLoadRunsAppCallbacks,
+    EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
+    SynchronousLoadRunsAppCallbacks,
 };
 
 use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
@@ -44,6 +45,9 @@ pub enum LoaderClosureFailureKind {
     /// A literal loader request for a host module absent from
     /// `reentry_free_builtin_modules` and `reentry_free_bun_modules`.
     NonReentryFreeBuiltinRequest,
+    /// A literal loader request for an embedded file whose host loader is
+    /// absent from `reentry_free_embedded_loaders`.
+    NonReentryFreeEmbeddedFile,
     /// A literal loader request whose loaded closure contains the target.
     LoaderRequestReachesTarget,
     /// A static request in a loaded closure that is not a resolved ordinary
@@ -55,6 +59,7 @@ pub enum LoaderClosureFailureKind {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum LoaderRequestTarget {
     ReentryFreeBuiltin(HostModule),
+    EmbeddedFile(EmbeddedLoader),
     Chunk(ChunkId),
 }
 
@@ -266,7 +271,8 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     .iter()
                     .filter_map(|request| match request.target {
                         LoaderRequestTarget::Chunk(target) => Some(target),
-                        LoaderRequestTarget::ReentryFreeBuiltin(_) => None,
+                        LoaderRequestTarget::ReentryFreeBuiltin(_)
+                        | LoaderRequestTarget::EmbeddedFile(_) => None,
                     }),
             )
             .collect();
@@ -335,6 +341,17 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                             dependencies
                                 .program_premises
                                 .insert(ProgramPremiseKey::ProcessPrototypeChainAccessors);
+                        }
+                        continue;
+                    }
+                    LoaderRequestTarget::EmbeddedFile(loader) => {
+                        dependencies
+                            .host_behavior
+                            .insert(HostBehaviorKey::ReentryFreeEmbeddedLoader(loader));
+                        if loader == EmbeddedLoader::Napi {
+                            dependencies
+                                .program_premises
+                                .insert(ProgramPremiseKey::NonLiteralLoaderCalls);
                         }
                         continue;
                     }
