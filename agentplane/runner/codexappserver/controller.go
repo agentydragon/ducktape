@@ -82,7 +82,14 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if op.Err() != nil {
 			current.Phase = Stopped
 			current.ProcessID = ""
-			current.Error = op.Err().Error()
+			if current.Error != "" {
+				if op.Err() != context.Canceled {
+					current.Error = fmt.Errorf("%s: %w", current.Error, op.Err()).Error()
+				}
+			} else {
+				current.Error = op.Err().Error()
+			}
+			current.Attempt = input.Demand
 			current.ExecServerReadyDeadline = time.Time{}
 		} else {
 			server.mu.Lock()
@@ -93,12 +100,30 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			live := p != nil && p.Running()
 			server.mu.Unlock()
 			if live && desiredState.Mode == lifecycle.Running && generation == desiredState.Generation {
-				current.Phase = Ready
-				current.ProcessID = p.ID()
-				current.Attempt = input.Demand
-				current.Error = ""
-				current.StopError = ""
-				current.ExecServerReadyDeadline = time.Time{}
+				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+				if err != nil {
+					return err
+				}
+				if current.Error != "" {
+					current.Phase = Initializing
+					current.ProcessID = p.ID()
+					current.Attempt = input.Demand
+				} else if dependencyErr != nil {
+					current.Phase = Initializing
+					current.ProcessID = p.ID()
+					current.Attempt = input.Demand
+					current.Error = dependencyErr.Error()
+				} else if ready {
+					current.Phase = Ready
+					current.ProcessID = p.ID()
+					current.Attempt = input.Demand
+					current.Error = ""
+					current.StopError = ""
+					current.ExecServerReadyDeadline = time.Time{}
+				} else {
+					current.Phase = Initializing
+					current.ProcessID = p.ID()
+				}
 			} else if live {
 				// Initialization admitted under an older RunnerDesiredState may finish physically, but cannot
 				// publish readiness. Shutdown will drain it after every Session has halted.
@@ -216,7 +241,32 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	draining = server.draining
 	p = server.current
 	server.mu.Unlock()
-	if initializing != nil || draining != nil {
+	if initializing != nil {
+		if !current.ExecServerReadyDeadline.IsZero() {
+			ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+			if err != nil {
+				return err
+			}
+			if dependencyErr != nil {
+				current.Attempt = input.Demand
+				current.Error = dependencyErr.Error()
+				initializing.Cancel()
+			} else if ready {
+				current.ExecServerReadyDeadline = time.Time{}
+			}
+		}
+		if p != nil && p.Running() {
+			current.ProcessID = p.ID()
+		}
+		if err := write(); err != nil {
+			return err
+		}
+		if current.Error != "" || current.ExecServerReadyDeadline.IsZero() {
+			return nil
+		}
+		return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+	}
+	if draining != nil {
 		return write()
 	}
 	if p != nil {
@@ -226,6 +276,43 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 					current.Attempt = input.Demand
 				}
 				return write()
+			}
+			if current.Phase == Initializing && current.Generation == desiredState.Generation {
+				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+				if err != nil {
+					return err
+				}
+				if current.Error != "" {
+					dependencyErr = fmt.Errorf("%s", current.Error)
+				} else if dependencyErr == nil && ready {
+					current.Phase = Ready
+					current.ProcessID = p.ID()
+					current.Attempt = input.Demand
+					current.Error = ""
+					current.StopError = ""
+					current.ExecServerReadyDeadline = time.Time{}
+					return write()
+				}
+				if dependencyErr != nil {
+					current.Phase = Draining
+					current.ProcessID = p.ID()
+					current.Attempt = input.Demand
+					current.Error = dependencyErr.Error()
+					current.ExecServerReadyDeadline = time.Time{}
+					if err := server.startOperation(&server.draining, server.drainProcess); err != nil {
+						current.Phase = Stopped
+						current.StopError = err.Error()
+					}
+					return write()
+				}
+				current.ProcessID = p.ID()
+				if err := write(); err != nil {
+					return err
+				}
+				if !current.ExecServerReadyDeadline.IsZero() {
+					return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+				}
+				return nil
 			}
 			// A physically live process remains owned by the in-flight initialization/drain sequence.
 			return write()
@@ -244,56 +331,25 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return write()
 	}
 
-	if server.deps.ExecServer != nil {
-		executor, found, err := codexexecserver.ReadRuntime(ctx, r)
-		if err != nil {
-			return err
-		}
-		if found && executor.Refusal != "" {
-			current.Phase = Stopped
-			current.Attempt = input.Demand
-			current.Error = fmt.Sprintf("Codex exec-server startup refused: %s", executor.Refusal)
-			current.ProcessID = ""
-			current.ExecServerReadyDeadline = time.Time{}
-			return write()
-		}
-		if found && executor.StopError != "" {
-			current.Phase = Stopped
-			current.Attempt = input.Demand
-			current.Error = fmt.Sprintf("Codex exec-server stopped with error: %s", executor.StopError)
-			current.ProcessID = ""
-			current.ExecServerReadyDeadline = time.Time{}
-			return write()
-		}
-		now := time.Now()
-		if !current.ExecServerReadyDeadline.IsZero() && !now.Before(current.ExecServerReadyDeadline) {
-			current.Phase = Stopped
-			current.Attempt = input.Demand
-			current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s", server.deps.Readiness.ExecServerDependencyTimeout)
-			current.ExecServerReadyDeadline = time.Time{}
-			return write()
-		}
-		if !found || executor.Phase != codexexecserver.Ready {
-			current.Generation = desiredState.Generation
-			current.Phase = Initializing
-			current.ProcessID = ""
-			if current.ExecServerReadyDeadline.IsZero() {
-				current.Error = ""
-				current.ExecServerReadyDeadline = now.Add(server.deps.Readiness.ExecServerDependencyTimeout)
-				if err := write(); err != nil {
-					return err
-				}
-				return controller.NewRequeueError(nil, server.deps.Readiness.ExecServerDependencyTimeout)
-			}
-			return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(now))
-		}
+	ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+	if err != nil {
+		return err
+	}
+	if dependencyErr != nil {
+		current.Phase = Stopped
+		current.Attempt = input.Demand
+		current.Error = dependencyErr.Error()
+		current.ProcessID = ""
+		current.ExecServerReadyDeadline = time.Time{}
+		return write()
+	}
+	if ready {
 		current.ExecServerReadyDeadline = time.Time{}
 	}
 
 	current.Phase = Initializing
 	current.Generation = desiredState.Generation
 	current.Attempt = input.Demand
-	current.ExecServerReadyDeadline = time.Time{}
 	current.ProcessID = ""
 	current.Error = ""
 	if err := write(); err != nil {
@@ -301,7 +357,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 
 	// The Runner's synchronous admission barrier fences initialization against Close and Quiesce.
-	return server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
+	if err := server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
 		server.mu.Lock()
 		if server.initializing != nil || server.current != nil {
 			server.mu.Unlock()
@@ -332,5 +388,42 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		server.initializingOwnerGeneration = 0
 		server.mu.Unlock()
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if !current.ExecServerReadyDeadline.IsZero() {
+		return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(time.Now()))
+	}
+	return nil
+}
+
+func (server *Host) executorDependency(
+	ctx context.Context,
+	r controller.QRuntime,
+	current *Runtime,
+	now time.Time,
+) (bool, error, error) {
+	if server.deps.ExecServer == nil {
+		return true, nil, nil
+	}
+	executor, found, err := codexexecserver.ReadRuntime(ctx, r)
+	if err != nil {
+		return false, nil, err
+	}
+	if found && executor.Refusal != "" {
+		return false, fmt.Errorf("Codex exec-server startup refused: %s", executor.Refusal), nil
+	}
+	if found && executor.StopError != "" {
+		return false, fmt.Errorf("Codex exec-server stopped with error: %s", executor.StopError), nil
+	}
+	if found && executor.Phase == codexexecserver.Ready {
+		return true, nil, nil
+	}
+	if current.ExecServerReadyDeadline.IsZero() {
+		current.ExecServerReadyDeadline = now.Add(server.deps.Readiness.ExecServerDependencyTimeout)
+	}
+	if !now.Before(current.ExecServerReadyDeadline) {
+		return false, fmt.Errorf("Codex exec-server did not become ready within %s", server.deps.Readiness.ExecServerDependencyTimeout), nil
+	}
+	return false, nil, nil
 }

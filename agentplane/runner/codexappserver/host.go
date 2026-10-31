@@ -251,7 +251,10 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 				return false, errors.New("Codex app-server exited before the Session could attach")
 			}
 		}
-		if runtime.Attempt >= demand && runtime.Error != "" {
+		// Initialization errors may be published before cancellation has finished draining a
+		// process that was started concurrently with executor readiness. Do not release waiters
+		// until the controller has settled that process.
+		if runtime.Phase == Stopped && runtime.Attempt >= demand && runtime.Error != "" {
 			return false, errors.New(runtime.Error)
 		}
 		if runtime.Phase == Stopped && runtime.Attempt >= demand {
