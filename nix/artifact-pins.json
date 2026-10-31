@@ -61,8 +61,8 @@
       "sha256": "J2E2fqhq1Z0WMxgz9sCKm8wYhLv17Ud9J4VNiteKJiU="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-69ff6c5cca04/debundle",
-      "sha256": "af9sXMoE+SZnw9lzs6AgkGSdQbWKddReDzdM8yjOZdA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-7f99f5e3db21/debundle",
+      "sha256": "f5n149shJihu9/mDmbdjzXQum/qyGJRLsGPmzENtfWo="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
@@ -117,8 +117,8 @@
       "sha256": "u0jMcF2gu7lDx+1lnxtDvHGomqpwDCBVOaWCWjhP1v4="
     },
     "skill-debundle_mint_names": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-9881fa7baa8d/debundle_mint_names.skill",
-      "sha256": "mIH6e6qN+b1JGwFa1fidwEi1uExnLWjyafFFO4rw8kE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_mint_names-a8fda7f90130/debundle_mint_names.skill",
+      "sha256": "qP2n+QEwehyONt54NuhPtITKQEl2+VTNOmKOxrFofQg="
     },
     "skill-debundle_orchestrator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_orchestrator-1c8c68c0e4ea/debundle_orchestrator.skill",
