@@ -283,6 +283,84 @@ func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
 	}
 }
 
+func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: "fake", Logs: t.TempDir(), RPCTimeoutSeconds: 2}, store)
+	atStamp := make(chan struct{})
+	allowStamp := make(chan struct{})
+	peerReady := make(chan *fakeCodeModePeer, 1)
+	manager.startProcess = func(context.Context, string, string) (*Host, error) {
+		peer := newFakeCodeModePeer(nil)
+		peerReady <- peer
+		return peer.host, nil
+	}
+	manager.closeProcess = func(*Host) error { return nil }
+	manager.stampHostInstance = func(ctx context.Context, owner Owner, instanceID string) error {
+		close(atStamp)
+		<-allowStamp
+		return store.StampCodeHostInstance(ctx, owner, instanceID)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-allowStamp:
+		default:
+			close(allowStamp)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = manager.Close(ctx)
+	})
+	openedID := manager.InstanceID()
+	opened := make(chan error, 1)
+	go func() {
+		_, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+		opened <- err
+	}()
+	var peer *fakeCodeModePeer
+	select {
+	case peer = <-peerReady:
+	case <-time.After(3 * time.Second):
+		t.Fatal("fake host did not start")
+	}
+	select {
+	case <-atStamp:
+	case <-time.After(3 * time.Second):
+		t.Fatal("host did not reach the post-ready stamp")
+	}
+	// Hold the stamp after session/ready while the actual host exits.
+	if err := peer.close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for manager.InstanceID() == openedID && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if manager.InstanceID() == openedID {
+		t.Fatal("host failure did not rotate its instance")
+	}
+	close(allowStamp)
+	select {
+	case err := <-opened:
+		if !errors.Is(err, errCodeHostInstanceChanged) {
+			t.Fatalf("dead host returned a usable binding: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("host open did not finish")
+	}
+	var stamped string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT code_host_instance::text FROM sampler_conversation WHERE id=$1`, session.ConversationID).Scan(&stamped); err != nil {
+		t.Fatal(err)
+	}
+	if stamped != openedID || stamped == manager.InstanceID() {
+		t.Fatalf("stamped host %q, opened %q, successor %q", stamped, openedID, manager.InstanceID())
+	}
+}
+
 func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *CodeMode {
 	t.Helper()
 	code, err := manager.OpenSession(context.Background(), conversation, Owner{ConversationID: conversation}, &Executor{})
