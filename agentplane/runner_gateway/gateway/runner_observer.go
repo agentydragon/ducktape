@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -39,130 +39,139 @@ func (c *fencedRunnerConn) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return c.conn.NewStream(metadata.NewOutgoingContext(ctx, c.identity.Copy()), desc, method, opts...)
 }
 
-// RunRunnerObservers supervises one observer per active Runner. The existing Lease elects
-// one Gateway replica; connection availability never chooses command queue ownership.
+// runnerObserver is one Sandbox's observer worker; done closes when the worker stops on its own.
+type runnerObserver struct {
+	destination runnerDestination
+	cancel      context.CancelFunc
+	done        chan struct{}
+}
+
+// RunRunnerObservers keeps one observer per reachable Runner, reconciling each Sandbox that
+// RunnerDiscoveryHandler enqueues against the Gateway's reader (the informer cache in production), so
+// no Kubernetes read repeats on a timer. The existing Lease elects one Gateway replica; connection
+// availability never chooses command queue ownership.
 func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
-	type activeRunner struct {
-		destination runnerDestination
-		cancel      context.CancelFunc
-		done        chan struct{}
-	}
-	active := make(map[string]activeRunner)
+	active := make(map[string]runnerObserver)
 	var workers sync.WaitGroup
 	defer func() {
-		for _, runner := range active {
-			runner.cancel()
+		for _, observer := range active {
+			observer.cancel()
 		}
 		workers.Wait()
 	}()
-	ticker := time.NewTicker(g.config.ControlTiming.HeartbeatInterval)
-	defer ticker.Stop()
+	go func() {
+		<-ctx.Done()
+		g.observerQueue.ShutDown()
+	}()
 	for {
-		var resources sandboxapi.SandboxList
-		if err := g.objects.List(ctx, &resources, client.InNamespace(g.config.Namespace)); err != nil {
-			return fmt.Errorf("list Sandboxes for Runner observation: %w", err)
-		}
-		wanted := make(map[string]runnerDestination)
-		for i := range resources.Items {
-			destination, err := g.runnerDestination(ctx, &resources.Items[i])
-			if err == nil {
-				wanted[destination.identity.UID] = destination
-			}
-		}
-		for uid, runner := range active {
-			current, exists := wanted[uid]
-			select {
-			case <-runner.done:
-				delete(active, uid)
-			default:
-				if !exists || current != runner.destination {
-					runner.cancel()
-					delete(active, uid)
-				}
-			}
-		}
-		for uid, destination := range wanted {
-			if _, exists := active[uid]; exists {
-				continue
-			}
-			workerCtx, cancel := context.WithCancel(ctx)
-			done := make(chan struct{})
-			active[uid] = activeRunner{destination, cancel, done}
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				defer close(done)
-				defer cancel()
-				_ = retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
-					err := g.observeRunner(ctx, destination)
-					if err == nil || ctx.Err() != nil || errors.Is(err, errRunnerOwned) {
-						return err
-					}
-					// Transport recovery does not depend on the slower discovery scan.
-					// Each attempt claims a fresh epoch before accepting the new boot.
-					slog.Warn("runner observer reconnecting", "sandbox", destination.identity.Name, "error", err)
-					return retry.RetryableError(err)
-				})
-			}()
-		}
-		select {
-		case <-ctx.Done():
+		name, shutdown := g.observerQueue.Get()
+		if shutdown {
 			return ctx.Err()
-		case <-ticker.C:
-		case <-g.runnerWake:
 		}
+		if err := g.reconcileObserver(ctx, name, active, &workers); err != nil {
+			slog.Warn("runner observer reconcile failed", "sandbox", name, "error", err)
+			g.observerQueue.AddRateLimited(name)
+		} else {
+			g.observerQueue.Forget(name)
+		}
+		g.observerQueue.Done(name)
 	}
 }
 
-// RunnerDiscoveryHandler wakes RunRunnerObservers when a Sandbox gains an incarnation or a Sandbox
-// Pod becomes Ready or addressable, so a new runner is dialed as soon as it can be reached rather
-// than at the next HeartbeatInterval tick: with the ticker alone every runner start waited up to a
-// full interval before its first connection attempt. Other Pod churn does not wake the scan.
-func (g *Gateway) RunnerDiscoveryHandler() toolscache.ResourceEventHandler {
-	wake := func() {
+// reconcileObserver starts, replaces or stops the named Sandbox's observer to match its current runner.
+// A verdict that the Sandbox has no reachable runner stops the observer until the Sandbox's next event;
+// a failed read is retried with backoff.
+func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map[string]runnerObserver, workers *sync.WaitGroup) error {
+	// A KubeVirt informer starts on its first read and blocks it until synced, so reads are bounded.
+	readCtx, release := context.WithTimeout(ctx, g.config.ControlTiming.LivenessTimeout)
+	defer release()
+	var wanted *runnerDestination
+	var sandbox sandboxapi.Sandbox
+	err := g.objects.Get(readCtx, client.ObjectKey{Namespace: g.config.Namespace, Name: name}, &sandbox)
+	switch {
+	case apierrors.IsNotFound(err):
+	case err != nil:
+		return fmt.Errorf("read Sandbox: %w", err)
+	default:
+		destination, err := g.runnerDestination(readCtx, &sandbox)
+		if _, verdict := status.FromError(err); !verdict {
+			return err
+		}
+		if err == nil {
+			wanted = &destination
+		}
+	}
+	if current, exists := active[name]; exists {
 		select {
-		case g.runnerWake <- struct{}{}:
+		case <-current.done:
 		default:
+			if wanted != nil && current.destination == *wanted {
+				return nil
+			}
+			current.cancel()
+		}
+		delete(active, name)
+	}
+	if wanted == nil {
+		return nil
+	}
+	destination := *wanted
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	active[name] = runnerObserver{destination, cancel, done}
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		defer close(done)
+		defer cancel()
+		err := retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
+			err := g.observeRunner(ctx, destination)
+			if err == nil || ctx.Err() != nil || errors.Is(err, errRunnerOwned) {
+				return err
+			}
+			// Transport recovery does not wait for a Sandbox or Pod event.
+			// Each attempt claims a fresh epoch before accepting the new boot.
+			slog.Warn("runner observer reconnecting", "sandbox", destination.identity.Name, "error", err)
+			return retry.RetryableError(err)
+		})
+		if errors.Is(err, errRunnerOwned) {
+			// Another replica holds the runner's Lease. Its lapse changes nothing in the cache, so the
+			// claim is retried on the heartbeat cadence.
+			g.observerQueue.AddAfter(name, g.config.ControlTiming.HeartbeatInterval)
+		}
+	}()
+	return nil
+}
+
+// RunnerDiscoveryHandler enqueues the Sandbox an event concerns for RunRunnerObservers: the Sandbox
+// itself, or the Sandbox a runner Pod is labelled with.
+func (g *Gateway) RunnerDiscoveryHandler() toolscache.ResourceEventHandler {
+	enqueue := func(obj any) {
+		if name, ok := observedSandbox(obj); ok {
+			g.observerQueue.Add(name)
 		}
 	}
 	return toolscache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) {
-			if runnerDiscoveryChanged(nil, obj) {
-				wake()
-			}
-		},
-		UpdateFunc: func(previous, obj any) {
-			if runnerDiscoveryChanged(previous, obj) {
-				wake()
-			}
-		},
+		AddFunc:    enqueue,
+		UpdateFunc: func(_, obj any) { enqueue(obj) },
+		DeleteFunc: enqueue,
 	}
 }
 
-// runnerDiscoveryChanged is whether obj, replacing previous (nil on add), can make a runner newly
-// reachable: a Sandbox whose incarnation changed, or a Sandbox Pod whose readiness or IP changed.
-func runnerDiscoveryChanged(previous, obj any) bool {
-	switch current := obj.(type) {
+// observedSandbox names the Sandbox whose runner obj can change; a Pod without the Sandbox label
+// concerns none.
+func observedSandbox(obj any) (string, bool) {
+	if tombstone, ok := obj.(toolscache.DeletedFinalStateUnknown); ok {
+		obj = tombstone.Obj
+	}
+	switch object := obj.(type) {
 	case *sandboxapi.Sandbox:
-		before, ok := previous.(*sandboxapi.Sandbox)
-		return !ok || !equality.Semantic.DeepEqual(before.Status.Incarnation, current.Status.Incarnation)
+		return object.Name, true
 	case *corev1.Pod:
-		if _, labelled := current.Labels[sandboxapi.SandboxLabel]; !labelled {
-			return false
-		}
-		before, ok := previous.(*corev1.Pod)
-		return !ok || before.Status.PodIP != current.Status.PodIP || podReady(before) != podReady(current)
+		name := object.Labels[sandboxapi.SandboxLabel]
+		return name, name != ""
 	}
-	return false
-}
-
-func podReady(pod *corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady {
-			return condition.Status == corev1.ConditionTrue
-		}
-	}
-	return false
+	return "", false
 }
 
 type observedState struct {

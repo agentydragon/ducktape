@@ -1871,7 +1871,6 @@ flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
     APP_PROXY_REVERSE_PROXY[Candidate: app proxies on httputil.ReverseProxy]
     APP_LIVE_FRAME_BROADCAST[Candidate: build live frames once and broadcast]
-    GATEWAY_OBSERVER_RECONCILER[Candidate: Gateway observers as a cached reconciler]
     POSTGRES_LEASE_HELPER[Candidate: one PostgreSQL lease helper]
     SAMPLER_TYPED_STATE[Candidate: typed sampler states]
     GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
@@ -1894,9 +1893,8 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 ### Candidates
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
-`APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `GATEWAY_OBSERVER_RECONCILER`,
-`POSTGRES_LEASE_HELPER`, `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`,
-`FRONTEND_SSE_CLIENT`. `GATEWAY_OBSERVER_RECONCILER` keeps the Lease fencing tests unchanged.
+`APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`, `POSTGRES_LEASE_HELPER`,
+`SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`, `FRONTEND_SSE_CLIENT`.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
 

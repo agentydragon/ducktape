@@ -11,6 +11,7 @@ import (
 	tlstest "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
@@ -140,8 +141,19 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 }
 
 // newGateway is a Gateway replica serving the fixture's namespace that names itself holderName at
-// holderIP in the control routes it writes.
+// holderIP in the control routes it writes. It reads the API server directly, so a test sees its own
+// writes at once.
 func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, executorCallers ...auth.Account) *Gateway {
+	t.Helper()
+	health := watchhealth.New()
+	health.MarkSynced()
+	return f.newGatewayReading(t, f.objects, health, holderName, holderIP, executorCallers...)
+}
+
+// newGatewayReading is newGateway reading Kubernetes objects through objects, whose health is health.
+func (f *sandboxFixture) newGatewayReading(
+	t *testing.T, objects client.Reader, health *watchhealth.Health, holderName, holderIP string, executorCallers ...auth.Account,
+) *Gateway {
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:                f.namespace,
@@ -155,7 +167,7 @@ func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, e
 			LivenessTimeout:    10 * time.Second,
 			LeaseTouchInterval: 5 * time.Second,
 		},
-	}, f.callerAuth, f.objects, api.Clientset.CoreV1(), api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
+	}, f.callerAuth, objects, health, api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
 	if err != nil {
 		t.Fatal(err)
 	}
