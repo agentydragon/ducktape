@@ -88,7 +88,7 @@ function ContentPart({ part, id }: { part: Part; id: string }): JSX.Element {
         </Text>
       </Group>
       {part.value !== undefined && (
-        <CodeBlock text={formatValue(part.value)} language={typeof part.value === "string" ? "text" : "json"} />
+        <CodeBlock text={formatValue(part.value)} language={typeof part.value === "string" ? undefined : "json"} />
       )}
     </Stack>
   );
