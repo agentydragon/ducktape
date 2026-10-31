@@ -26,16 +26,18 @@
 //!   is referenced nowhere in the importing file's body (honoring shadowing)
 //!   AND `local` is not the `orig` of any local `export { … }` (re-export
 //!   shim — keep it so the import isn't orphaned).
-//! - Module evaluation/side effects are preserved: if trimming empties an
-//!   import that ORIGINALLY had named specifiers, the statement is dropped only
-//!   when the same target module `M` (resolved by path, not specifier string)
-//!   is still loaded by some other surviving import anywhere in the bundle;
-//!   otherwise it is converted to a bare side-effect import `import "M";`, with
-//!   exactly one bare import kept per such sole-loaded target. Imports that were
-//!   ORIGINALLY bare (`import "x";`) are never touched — the lowerer emits those
-//!   intentionally.
+//! - Every file's module requests keep their order, so the emitted evaluation
+//!   order is the one the realizability gate and translation validation
+//!   judged: if trimming empties an import that ORIGINALLY had named
+//!   specifiers, the statement is dropped only when an earlier import in the
+//!   same file still loads the same target module `M` (resolved by path, not
+//!   specifier string), which makes it a no-op request; otherwise it becomes a
+//!   bare `import "M";` in place. A load of `M` elsewhere in the bundle is not
+//!   enough: dropping this file's request would move `M`'s evaluation later.
+//!   Imports that were ORIGINALLY bare (`import "x";`) are never touched — the
+//!   lowerer emits those intentionally.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use artifact::paths::{join_module_path, module_path_dirname};
 use artifact::{ChunkBundle, JsFile};
@@ -103,45 +105,28 @@ fn prune_imports(modules: &mut [(String, &mut Module)]) {
         return;
     }
 
-    // PASS 2: resolved targets that, after PASS 1, are still loaded by some
-    // surviving import statement — one that kept ≥1 specifier or was originally
-    // bare. An emptied import whose target is in this set is redundant and can
-    // be dropped outright; otherwise the target is loaded only by emptied
-    // imports and exactly one must survive as a bare side-effect import.
-    let targets_with_surviving_load = collect_targets_with_surviving_load(modules);
-
-    // PASS 3 decisions, computed before mutating bodies (item indices from PASS
-    // 1 stay valid only until the body is rebuilt). For each emptied import:
-    // drop it if the target is independently loaded, else keep the first
-    // occurrence per target as a bare import and drop the rest.
-    let mut kept_bare: HashSet<String> = HashSet::new();
-    let mut drop_items: HashSet<(usize, usize)> = HashSet::new();
-    let mut bare_items: HashSet<(usize, usize)> = HashSet::new();
-    for entry in &emptied {
-        let key = (entry.file_index, entry.item_index);
-        if targets_with_surviving_load.contains(&entry.target_abs) {
-            drop_items.insert(key);
-        } else if kept_bare.insert(entry.target_abs.clone()) {
-            bare_items.insert(key);
-        } else {
-            drop_items.insert(key);
-        }
-    }
-
-    // PASS 3: rebuild each touched body, dropping the marked import ModuleItems
-    // and clearing specifiers on the kept-bare ones.
-    for (file_index, (_, module)) in modules.iter_mut().enumerate() {
+    // PASS 2: in each touched file, walk imports in order. An emptied import
+    // whose target an earlier import of the same file still loads is a no-op
+    // request and is dropped; any other emptied import stays as a bare import
+    // and loads its target from here on.
+    let emptied: HashMap<(usize, usize), String> = emptied
+        .into_iter()
+        .map(|entry| ((entry.file_index, entry.item_index), entry.target_abs))
+        .collect();
+    for (file_index, (importer_abs, module)) in modules.iter_mut().enumerate() {
+        let mut loaded: HashSet<String> = HashSet::new();
         let mut item_index = 0;
-        module.body.retain_mut(|item| {
+        module.body.retain(|item| {
             let key = (file_index, item_index);
             item_index += 1;
-            if drop_items.contains(&key) {
-                return false;
+            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                return true;
+            };
+            if let Some(target_abs) = emptied.get(&key) {
+                return loaded.insert(target_abs.clone());
             }
-            if bare_items.contains(&key)
-                && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item
-            {
-                import.specifiers.clear();
+            if let Some(src) = import.src.value.as_str() {
+                loaded.insert(resolve_specifier(src, importer_abs));
             }
             true
         });
@@ -154,30 +139,6 @@ struct EmptiedImport {
     file_index: usize,
     item_index: usize,
     target_abs: String,
-}
-
-/// Resolved target paths still loaded by an import that survives PASS 1 with at
-/// least one specifier, or that was originally bare. Such a target's module
-/// evaluation is already guaranteed, so an emptied import of it carries no
-/// side effect worth preserving.
-fn collect_targets_with_surviving_load(modules: &[(String, &mut Module)]) -> HashSet<String> {
-    let mut targets = HashSet::new();
-    for (importer_abs, module) in modules {
-        for item in &module.body {
-            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                continue;
-            };
-            // After PASS 1 a non-empty specifier list is a real load; an
-            // empty one is either an originally-bare import (a real load
-            // too) or an import PASS 1 just emptied (not yet a guaranteed
-            // load — its fate is decided against this very set).
-            let loads = !import.specifiers.is_empty();
-            if loads && let Some(src) = import.src.value.as_str() {
-                targets.insert(resolve_specifier(src, importer_abs));
-            }
-        }
-    }
-    targets
 }
 
 /// Local names re-exported by this body via `export { local … }` (no `from`).
@@ -424,15 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn drops_emptied_import_when_target_loaded_elsewhere() {
+    fn keeps_emptied_import_bare_when_target_loaded_elsewhere() {
         js_ast::with_swc_globals(|| {
             // The entry's only specifier (`dead`) is unused, so the import
-            // empties. `mod.js` is still loaded (used) by a sibling, so the
-            // emptied entry import is dropped outright — not left bare.
+            // empties. A sibling still loads `mod.js`, but the entry requests
+            // it first: dropping the request would evaluate `mod.js` later.
             let modules = pruned_modules(&[
                 (
                     "entry.js",
-                    "import { dead } from \"./mod.js\";\nconsole.log(1);\n",
+                    "import { dead } from \"./mod.js\";\nimport { useLive } from \"./sib.js\";\nconsole.log(useLive());\n",
                 ),
                 (
                     "sib.js",
@@ -440,9 +401,36 @@ mod tests {
                 ),
                 ("mod.js", "export const dead = 1;\nexport const live = 2;\n"),
             ]);
-            assert!(
-                import_statements(&modules, "entry.js").is_empty(),
-                "emptied entry import of an elsewhere-loaded target should be dropped"
+            assert_eq!(
+                import_statements(&modules, "entry.js"),
+                vec![("./mod.js".to_string(), 0), ("./sib.js".to_string(), 1)]
+            );
+        });
+    }
+
+    #[test]
+    fn drops_emptied_import_only_after_an_earlier_request_of_its_target() {
+        js_ast::with_swc_globals(|| {
+            // Each file requests `mod.js` twice; only the second request is a
+            // no-op, so only an emptied second request may go.
+            let modules = pruned_modules(&[
+                (
+                    "late.js",
+                    "import { used } from \"./mod.js\";\nimport { dead } from \"./mod.js\";\nexport const x = used;\n",
+                ),
+                (
+                    "early.js",
+                    "import { dead } from \"./mod.js\";\nimport { used } from \"./mod.js\";\nexport const y = used;\n",
+                ),
+                ("mod.js", "export const used = 1;\nexport const dead = 2;\n"),
+            ]);
+            assert_eq!(
+                import_statements(&modules, "late.js"),
+                vec![("./mod.js".to_string(), 1)]
+            );
+            assert_eq!(
+                import_statements(&modules, "early.js"),
+                vec![("./mod.js".to_string(), 0), ("./mod.js".to_string(), 1)]
             );
         });
     }
