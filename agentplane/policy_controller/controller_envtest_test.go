@@ -205,12 +205,12 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 	if err := api.Get(ctx, client.ObjectKeyFromObject(collisionBinding), &loadedBinding); err != nil {
 		t.Fatal(err)
 	}
-	desired, _, _, err := r.expand(ctx, &loadedBinding)
-	if err != nil || len(desired) != 1 {
-		t.Fatalf("expand collision binding: desired=%d err=%v", len(desired), err)
+	expanded, err := r.expand(ctx, &loadedBinding)
+	if err != nil || len(expanded.desired) != 1 {
+		t.Fatalf("expand collision binding: desired=%d err=%v", len(expanded.desired), err)
 	}
 	var collided client.Object
-	for _, native := range desired {
+	for _, native := range expanded.desired {
 		collided = native.DeepCopyObject().(client.Object)
 		collided.SetLabels(map[string]string{"owner": "foreign"})
 		collided.SetAnnotations(map[string]string{"owner": "foreign"})
