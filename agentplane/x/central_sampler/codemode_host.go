@@ -37,6 +37,7 @@ type CodeModeHost struct {
 	starting     chan struct{}
 	retiring     chan struct{}
 	host         *Host
+	instanceID   string
 	failed       error
 	startProcess func(context.Context, string, string) (*Host, error)
 	closeProcess func(*Host) error
@@ -66,7 +67,16 @@ func NewCodeModeHost(parent context.Context, settings Settings, store *Store) *C
 		sessionIDs: map[string]string{}, openedSessions: map[string]struct{}{},
 		writeGate:    make(chan struct{}, 1),
 		startProcess: StartHost, closeProcess: func(host *Host) error { return host.Close() },
+		instanceID: uuid.NewString(),
 	}
+}
+
+// InstanceID identifies this host process generation, including a restart within one sampler Pod.
+// It is recorded for a conversation only after that conversation opens a host session.
+func (m *CodeModeHost) InstanceID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.instanceID
 }
 
 func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner Owner, executor *Executor) (*CodeMode, error) {
@@ -133,6 +143,12 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 			m.openedSessions[sessionID] = struct{}{}
 		}
 		m.mu.Unlock()
+	}
+	if m.store != nil {
+		if err := m.store.StampCodeHostInstance(ctx, owner, m.InstanceID()); err != nil {
+			_ = runtime.Detach(context.Background())
+			return nil, err
+		}
 	}
 	return runtime, nil
 }
@@ -581,6 +597,7 @@ func (m *CodeModeHost) fail(host *Host, err error) {
 	}
 	m.failed = err
 	m.host = nil
+	m.instanceID = uuid.NewString()
 	retiring := make(chan struct{})
 	m.retiring = retiring
 	m.sessionIDs = map[string]string{}

@@ -264,6 +264,25 @@ func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost,
 	}
 }
 
+func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
+	manager, peers := newFakeCodeModeManager(t)
+	before := manager.InstanceID()
+	code := openFakeSession(t, manager, "host-instance-test")
+	if err := code.Detach(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := peers()[0].close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for manager.InstanceID() == before && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if manager.InstanceID() == before {
+		t.Fatal("host process exit did not rotate its durable instance identity")
+	}
+}
+
 func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *CodeMode {
 	t.Helper()
 	code, err := manager.OpenSession(context.Background(), conversation, Owner{ConversationID: conversation}, &Executor{})

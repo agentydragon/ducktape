@@ -38,7 +38,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func verifySchema(ctx context.Context, db *sql.DB) error {
 	expected := map[string]map[string]string{
-		"sampler_conversation":      {"api": "text", "code_session_epoch": "integer", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
+		"sampler_conversation":      {"api": "text", "code_session_epoch": "integer", "code_host_instance": "uuid", "id": "uuid", "generation": "integer", "owner": "uuid", "lease_until": "timestamp with time zone", "pending": "jsonb", "stopped": "boolean", "executor_session": "character varying", "context": "jsonb", "instructions": "text", "context_tokens": "integer", "executor_shell": "character varying", "environment_context": "jsonb"},
 		"sampler_conversation_item": {"conversation_id": "uuid", "ordinal": "bigint", "record": "jsonb"},
 		"sampler_intent":            {"id": "uuid", "conversation_id": "uuid", "generation": "integer", "request": "jsonb", "result": "jsonb"},
 		"sampler_process":           {"id": "character varying", "conversation_id": "uuid", "generation": "integer", "after_seq": "integer", "status": "character varying", "tty": "boolean", "exit_code": "integer", "buffered_output": "bytea", "model_session_id": "integer", "omitted_bytes": "bigint"},
