@@ -27,11 +27,12 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | --- | --- | --- |
 | Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
+| Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
 | Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
-The `agentplane` command calls these APIs for you. `agentplane actions`, `agentplane notifications`
-and `agentplane egress` read the base URLs and placeholders above from your `AGENTPLANE_*`
-environment variables, so a command needs no URL, header or proxy flag. Start with
+The `agentplane` command calls these APIs for you. Its service commands read the base URLs and
+placeholders above from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
+or proxy flag. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
 Each service serves `/llms.txt` for its overview and links to workflow guides. For a harness
@@ -46,8 +47,12 @@ to fetch every index at startup.
 | Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
+| Find configured runtime offers and active environments | `agentplane environments list --limit 20`, then `agentplane environments get NAMESPACE NAME UID` to refresh that exact target handle |
+| Open or manage a Session | `agentplane sessions --help` |
 | Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
+
+Environment handles use the Sandbox object's stable UID, not a Pod or VM incarnation UID.
 
 Agentplane source and component documentation live in
 [agentydragon/ducktape](https://github.com/agentydragon/ducktape/tree/devel/agentplane).

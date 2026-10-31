@@ -5,6 +5,7 @@ from cluster.cdk8s.service_ref import Port, ServiceRef
 
 NAME = "session-dispatcher"
 TOKEN_AUDIENCE = NAME
+WORKLOAD_CREDENTIAL = "agentplane-session-dispatcher-workload"
 
 
 def service(namespace: str) -> ServiceRef:

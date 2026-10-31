@@ -53,7 +53,7 @@ from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, session_dispatcher
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -112,6 +112,18 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
+_SESSION_DISPATCHER_GRPC_PATHS = (
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+)
+_ENVIRONMENT_DISCOVERY_GRPC_PATHS = (
+    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/ListEnvironments",
+    "/agentplane.sandboxes.discovery.EnvironmentDiscovery/GetEnvironment",
+)
 
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
@@ -233,6 +245,21 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "Agentplane Notifications API audience."
         ),
         source=Source.projected_workload_token(audience=notifications.TOKEN_AUDIENCE),
+        targets=[
+            EgressCredentialSpecTargets(
+                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+            )
+        ],
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-session-dispatcher-workload",
+        metadata=ApiObjectMetadata(name=session_dispatcher.WORKLOAD_CREDENTIAL, namespace=namespace),
+        description=(
+            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher "
+            "and EnvironmentDiscovery gRPC calls."
+        ),
+        source=Source.projected_workload_token(audience=session_dispatcher.TOKEN_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -406,6 +433,21 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 hosts=[notifications.service(namespace).fqdn],
                 cluster_internal=True,
                 credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
+            ),
+            # Keep each service's RPC paths explicit even though both share this listener and identity.
+            Rule.egress(
+                hosts=[session_dispatcher.service(namespace).fqdn],
+                cluster_internal=True,
+                methods=[PolicySetSpecRulesMethods.POST],
+                paths=list(_SESSION_DISPATCHER_GRPC_PATHS),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
+            ),
+            Rule.egress(
+                hosts=[session_dispatcher.service(namespace).fqdn],
+                cluster_internal=True,
+                methods=[PolicySetSpecRulesMethods.POST],
+                paths=list(_ENVIRONMENT_DISCOVERY_GRPC_PATHS),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
             ),
             # Narrowed, unlike the services above: this host is also the proxy's own listener, and a
             # rule matches hosts, not ports.
@@ -628,7 +670,12 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [KUBERNETES_AUDIENCE, notifications.TOKEN_AUDIENCE, RUNNER_INGRESS_AUDIENCE],
+            "projected_token_audiences": [
+                KUBERNETES_AUDIENCE,
+                notifications.TOKEN_AUDIENCE,
+                RUNNER_INGRESS_AUDIENCE,
+                session_dispatcher.TOKEN_AUDIENCE,
+            ],
         }
         settings = SettingsFile(
             self,
@@ -863,6 +910,7 @@ class Egress(Construct):
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
+                session_dispatcher.service(namespace).egress(),
                 # Sandboxes reach Notifications' HTTP facade and documentation, not its gRPC listener.
                 notifications.http_service(namespace).egress(),
                 forgejo.HTTP.egress(),
