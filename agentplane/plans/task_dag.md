@@ -487,6 +487,12 @@ principal attribution, account-token admission, target discovery, UID fencing an
 result reads. Review its explicit authority/interface/read-scope decisions and fresh-environment
 scope before dispatching implementation; replan the remaining sprint for the selected backend work.
 
+**Accepted by the operator, 2026-10-31:** expose the full deployment-published template catalogue
+without per-SA template filtering; use additive `additional_instructions` for the child briefing,
+preserving default platform guidance. Opening with those instructions must not start a model turn;
+the API descriptions must state that the caller still submits input separately to start work.
+Other authority, scope and interface choices remain under review.
+
 The proposal's approval defaults keep authorized same-principal Session operations automatic and
 new-environment creation human-approved initially. Dedicated environment management is scoped in
 `ENVIRONMENT_ACTIONS_DESIGN`; `orchestration_v1` is not a prerequisite for the new workflows.
