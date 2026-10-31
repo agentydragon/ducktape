@@ -613,6 +613,7 @@ pub struct ReentryFreeOperationUse {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPrecisionLoss {
     pub reason: ExecutionPrecisionLossReason,
+    pub reach: HavocReach,
     /// Lexical source unit containing the operation or truncated callable.
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -657,6 +658,46 @@ pub enum ExecutionPrecisionLossReason {
         limit: usize,
         pool_size: usize,
     },
+}
+
+/// What the code a precision loss may run can reach, classified per
+/// SPEC.md § Synchronous execution diagnostics. A report only: the conservative
+/// path promotes the same effects for both.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HavocReach {
+    /// The unmodelled part is known source code: its callables and the
+    /// values it receives reach no code the interpreter cannot name.
+    Bounded,
+    Global {
+        cause: GlobalReachCause,
+    },
+}
+
+/// The first collapse rule that made a reach `global`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlobalReachCause {
+    /// The code calls, directly or through the synchronous read closure, a
+    /// callee the source does not name: an import, a global, a parameter, an
+    /// unknown member, or an opaque body.
+    UnknownCallee,
+    /// An input reaches a value opaque code may hold or have changed: an
+    /// unknown value, a tainted object, an escaped callable, or a global
+    /// object alias.
+    TaintedInput,
+    /// A class the code runs is published, escaped or tainted, so its methods
+    /// may run on a borrowed receiver.
+    BorrowedReceiver,
+    /// Dynamic scope (`eval`, `with`) makes the read closure incomplete.
+    DynamicScope,
+    /// An input is a foreign deferred record.
+    ForeignRecord,
+    /// The operation itself is unmodelled; values the interpreter does not
+    /// know choose the code it may run.
+    UnmodelledOperation,
+    /// The callbacks unknown code may invoke: the prefix-wide escape pool.
+    EscapedCallbackPool,
 }
 
 /// Why a local class construction kept the conservative path.

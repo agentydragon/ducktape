@@ -1,6 +1,6 @@
 use super::super::value_model::{Context, Values};
 use super::interpreter::{Executor, Outcome};
-use crate::reports::schema::ExecutionPrecisionLossReason;
+use crate::reports::schema::{ExecutionPrecisionLossReason, HavocReach};
 use source_identity::SourceUnitOrdinal;
 
 pub(super) enum CallbackOperation {
@@ -25,6 +25,7 @@ pub(super) enum CallbackOperation {
         arguments: Vec<Values>,
         captured: Context,
         reason: ExecutionPrecisionLossReason,
+        reach: HavocReach,
     },
 }
 
@@ -74,8 +75,10 @@ pub(super) fn dispatch(
             arguments,
             captured,
             reason,
+            reach,
         } => CallbackResult::Outcome(Box::new(
-            executor.bounded_invocation_fallback_transfer(owner, &arguments, &captured, reason),
+            executor
+                .bounded_invocation_fallback_transfer(owner, &arguments, &captured, reason, reach),
         )),
     }
 }

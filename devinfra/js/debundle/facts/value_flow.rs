@@ -199,7 +199,7 @@ impl Values {
         values
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         // Insertions and unions only grow the vector through a set bit, so
         // trailing zero words are never introduced.
         self.bitmap.bits.is_empty() && !self.unknown

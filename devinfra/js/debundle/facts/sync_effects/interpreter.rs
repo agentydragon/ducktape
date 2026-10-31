@@ -9,7 +9,8 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
-    NativeIntrinsic, NativePointEffects, RetainedCallbackCall, object_own_data_read_property,
+    NativeIntrinsic, NativePointEffects, RetainedCallbackCall, native_call_identity_key,
+    object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -43,8 +44,8 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Purity};
 use crate::reports::schema::{
     AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
-    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, InferenceRule,
-    LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
+    InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrefixObservation, NativePrototypePropertyCheck, RecordFactoryRejectionReason,
 };
 use imbl::OrdMap;
@@ -85,12 +86,14 @@ impl Outcome {
     fn lose_precision(
         &mut self,
         reason: ExecutionPrecisionLossReason,
+        reach: HavocReach,
         owner: SourceUnitOrdinal,
         span: Span,
     ) {
         self.complete = false;
         let loss = ExecutionPrecisionLoss {
             reason,
+            reach,
             statement_ordinal: owner,
             source_location: None,
             span,
@@ -103,6 +106,20 @@ impl Outcome {
     fn unsupported(&mut self, operation: ExecutionOperation, owner: SourceUnitOrdinal, span: Span) {
         self.lose_precision(
             ExecutionPrecisionLossReason::UnsupportedOperation { operation },
+            HavocReach::Global {
+                cause: GlobalReachCause::UnmodelledOperation,
+            },
+            owner,
+            span,
+        );
+    }
+
+    fn lose_call_target(&mut self, owner: SourceUnitOrdinal, span: Span) {
+        self.lose_precision(
+            ExecutionPrecisionLossReason::UnknownCallTarget,
+            HavocReach::Global {
+                cause: GlobalReachCause::UnknownCallee,
+            },
             owner,
             span,
         );
@@ -440,6 +457,11 @@ pub(super) struct ExecutionInputs<'source> {
     export_reentry_enabled: bool,
     fresh_mutation_callables: BTreeSet<u32>,
     needed_bindings: BTreeSet<Id>,
+    /// Source units whose own code may call a callee the source does not name.
+    unknown_callee_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Per source unit: its synchronous read closure contains one of
+    /// `unknown_callee_owners`. Built on the first reach classification.
+    reaches_unknown_callee: std::sync::OnceLock<Vec<bool>>,
 }
 
 pub(super) struct OwnPropertyQuery {
@@ -4427,6 +4449,197 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// The reach of a rejected local construction (SPEC.md § Synchronous
+    /// execution diagnostics): the class and the callables its arguments hold.
+    fn construction_reach(&self, key: u32, args: &[Values]) -> HavocReach {
+        let class = AbstractValue::Value(Value::Alloc(Kind::Class, key));
+        self.known_code_reach(None, std::iter::once(&class).chain(args.iter().flatten()))
+    }
+
+    /// The reach of an invocation truncated at a recursion, depth or
+    /// expansion bound: the callee and the callables its inputs hold.
+    fn invocation_reach(
+        &self,
+        key: u32,
+        owner: SourceUnitOrdinal,
+        args: &[Values],
+        captured: &Context,
+    ) -> HavocReach {
+        if self.state.tainted_functions.contains(&key) {
+            return self.dynamic_scope_reach().unwrap_or(HavocReach::Global {
+                cause: GlobalReachCause::BorrowedReceiver,
+            });
+        }
+        self.known_code_reach(
+            Some(owner),
+            args.iter().flatten().chain(captured.values().flatten()),
+        )
+    }
+
+    fn dynamic_scope_reach(&self) -> Option<HavocReach> {
+        (self.state.reachability.incomplete || !self.inputs.index.dynamic_scope_owners.is_empty())
+            .then_some(HavocReach::Global {
+                cause: GlobalReachCause::DynamicScope,
+            })
+    }
+
+    /// Opaque code may hold the class or its prototype and install or borrow
+    /// methods its constructor and fields run.
+    fn class_may_run_on_borrowed_receiver(&self, key: u32) -> bool {
+        self.state.tainted_classes.contains(&key)
+            || self.state.escaped_class_capabilities.contains(&key)
+            || self
+                .state
+                .global_escaped_callbacks
+                .contains(&AbstractValue::ClassMembers(key))
+            || self
+                .inputs
+                .index
+                .class_bindings
+                .get(&key)
+                .is_none_or(|binding| {
+                    self.inputs.index.other_class_uses.contains(binding)
+                        || (self.inputs.export_reentry_enabled
+                            && self.inputs.index.exported_bindings.contains(binding))
+                })
+    }
+
+    /// Applies the collapse rules in order: dynamic scope, then the inputs
+    /// (through stored properties, captures and accessors), then whether the
+    /// synchronous read closure of `owner` and the inputs' callables and
+    /// classes reaches a callee the source does not name.
+    fn known_code_reach<'a>(
+        &self,
+        owner: Option<SourceUnitOrdinal>,
+        inputs: impl IntoIterator<Item = &'a AbstractValue>,
+    ) -> HavocReach {
+        if let Some(reach) = self.dynamic_scope_reach() {
+            return reach;
+        }
+        let global = |cause| HavocReach::Global { cause };
+        let mut roots: Vec<_> = owner.into_iter().collect();
+        let mut pending: Vec<AbstractValue> = inputs.into_iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+        while let Some(value) = pending.pop() {
+            if !visited.insert(value.clone()) {
+                continue;
+            }
+            if self.state.global_escaped_callbacks.contains(&value) {
+                return global(GlobalReachCause::TaintedInput);
+            }
+            match &value {
+                AbstractValue::Value(Value::Prim(_) | Value::Unavailable)
+                | AbstractValue::ObjectAssign
+                | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::OwnDescriptorMap(_) => {}
+                AbstractValue::Value(Value::Top)
+                | AbstractValue::GlobalObject
+                | AbstractValue::ArrayIntrinsic => {
+                    return global(GlobalReachCause::TaintedInput);
+                }
+                AbstractValue::CallbackFactory | AbstractValue::InlineCallbackFactory => {
+                    return global(GlobalReachCause::UnknownCallee);
+                }
+                AbstractValue::ForeignDeferredRecord => {
+                    return global(GlobalReachCause::ForeignRecord);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                    if self.state.tainted_objects.contains(object) =>
+                {
+                    return global(GlobalReachCause::TaintedInput);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Set, site))
+                    if self.state.tainted_native_sets.contains(site) =>
+                {
+                    return global(GlobalReachCause::TaintedInput);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Object | Kind::Set, _)) => {}
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(key, _) => {
+                    if self.state.tainted_functions.contains(key) {
+                        return global(GlobalReachCause::TaintedInput);
+                    }
+                    let Some(callable) = self.inputs.index.callables.get(key) else {
+                        return global(GlobalReachCause::UnknownCallee);
+                    };
+                    roots.push(callable.owner);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Class, key))
+                | AbstractValue::ClassMembers(key)
+                | AbstractValue::Instance(key, _) => {
+                    if self.class_may_run_on_borrowed_receiver(*key) {
+                        return global(GlobalReachCause::BorrowedReceiver);
+                    }
+                    let Some(&class_owner) = self
+                        .inputs
+                        .flow
+                        .callable_source_unit
+                        .get(&Value::Alloc(Kind::Class, *key))
+                    else {
+                        return global(GlobalReachCause::UnknownCallee);
+                    };
+                    roots.push(class_owner);
+                }
+                AbstractValue::Value(Value::Alloc(
+                    Kind::Array
+                    | Kind::Map
+                    | Kind::WeakMap
+                    | Kind::WeakSet
+                    | Kind::RegExp
+                    | Kind::Registry
+                    | Kind::Proxy,
+                    _,
+                )) => unreachable!("the interpreter identifies allocations as Object or Set"),
+            }
+            self.visit_stored_references(&value, true, |reference| {
+                pending.push(reference.clone());
+            });
+        }
+        let reaches = self.inputs.reaches_unknown_callee.get_or_init(|| {
+            owners_reaching(
+                &self.inputs.synchronous_owner_adjacency,
+                &self.inputs.unknown_callee_owners,
+            )
+        });
+        if roots.iter().any(|root| reaches[root.0]) {
+            return global(GlobalReachCause::UnknownCallee);
+        }
+        // Opaque code holding a class reached here may have replaced the
+        // prototype methods its instances call.
+        let closure: BTreeSet<_> = SourceUnitReadClosure::extend_synchronous_source_units(
+            &self.inputs.synchronous_owner_adjacency,
+            roots,
+            &mut BTreeSet::new(),
+        )
+        .into_iter()
+        .collect();
+        let state = &*self.state;
+        if state
+            .tainted_classes
+            .iter()
+            .chain(&state.escaped_class_capabilities)
+            .chain(
+                state
+                    .global_escaped_callbacks
+                    .iter()
+                    .filter_map(|value| match value {
+                        AbstractValue::ClassMembers(key) => Some(key),
+                        _ => None,
+                    }),
+            )
+            .filter_map(|key| {
+                self.inputs
+                    .flow
+                    .callable_source_unit
+                    .get(&Value::Alloc(Kind::Class, *key))
+            })
+            .any(|owner| closure.contains(owner))
+        {
+            return global(GlobalReachCause::BorrowedReceiver);
+        }
+        HavocReach::Bounded
+    }
+
     fn default_class_has_instance(&self, values: &Values) -> bool {
         let [AbstractValue::Value(Value::Alloc(Kind::Class, key))] =
             values.iter().collect::<Vec<_>>().as_slice()
@@ -5084,6 +5297,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     std::slice::from_ref(callbacks),
                     &Context::new(),
                     reason,
+                    HavocReach::Global {
+                        cause: GlobalReachCause::EscapedCallbackPool,
+                    },
                 );
                 self.apply_rebind_effects(&nested.effects.rebinds);
                 outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
@@ -5147,6 +5363,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args: &[Values],
         captured: &Context,
         reason: ExecutionPrecisionLossReason,
+        reach: HavocReach,
     ) -> Outcome {
         let result =
             self.request_callback_operation(CallbackOperation::BoundedInvocationFallback {
@@ -5154,6 +5371,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 arguments: args.to_vec(),
                 captured: captured.clone(),
                 reason,
+                reach,
             });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("bounded callback fallback returns an outcome");
@@ -5167,6 +5385,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args: &[Values],
         captured: &Context,
         reason: ExecutionPrecisionLossReason,
+        reach: HavocReach,
     ) -> Outcome {
         let effect_owner = self.state.current_top_owner.unwrap_or(owner);
         if self.state.array_iteration_depth > 0 {
@@ -5178,7 +5397,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // repeatedly. Reusing earlier fallback roots only adds constraints.
         let mut outcome = std::mem::take(&mut self.state.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
-        outcome.lose_precision(reason.clone(), owner, DUMMY_SP);
+        outcome.lose_precision(reason.clone(), reach.clone(), owner, DUMMY_SP);
         outcome.unknown_call = true;
         self.widen_native_effects();
         outcome.executed_owners.insert(owner);
@@ -5359,7 +5578,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             executed_owners: BTreeSet::from([owner]),
             ..Outcome::default()
         };
-        result.lose_precision(reason, owner, DUMMY_SP);
+        result.lose_precision(reason, reach, owner, DUMMY_SP);
         result
     }
 
@@ -5512,6 +5731,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.widen_native_effects();
         outcome.lose_precision(
             ExecutionPrecisionLossReason::UnknownCallTarget,
+            HavocReach::Global {
+                cause: GlobalReachCause::ForeignRecord,
+            },
             self.state
                 .current_top_owner
                 .expect("foreign record use has a top owner"),
@@ -6252,11 +6474,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     limit: MAX_SYNCHRONOUS_INVOCATIONS,
                 }
             };
+            let reach = self.invocation_reach(key, callable_owner, &args, captured_context);
             return self.bounded_invocation_fallback(
                 callable_owner,
                 &args,
                 captured_context,
                 reason,
+                reach,
             );
         }
         self.state.active.insert(active_invocation);
@@ -7059,11 +7283,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
             && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
         if targets.is_empty() {
-            outcome.lose_precision(
-                ExecutionPrecisionLossReason::UnknownCallTarget,
-                call.owner,
-                call.span,
-            );
+            outcome.lose_call_target(call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.invoke_possible_callbacks(&opaque_args, call.no_sync_arguments, outcome);
@@ -7102,11 +7322,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
                 AbstractValue::DeferredCallbacks(captured) => {
-                    outcome.lose_precision(
-                        ExecutionPrecisionLossReason::UnknownCallTarget,
-                        call.owner,
-                        call.span,
-                    );
+                    outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     let mut possible_args = opaque_args.clone();
@@ -7115,11 +7331,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
                 }
                 AbstractValue::ClassMembers(key) => {
-                    outcome.lose_precision(
-                        ExecutionPrecisionLossReason::UnknownCallTarget,
-                        call.owner,
-                        call.span,
-                    );
+                    outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
@@ -7128,11 +7340,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
                 AbstractValue::Instance(key, captured) => {
-                    outcome.lose_precision(
-                        ExecutionPrecisionLossReason::UnknownCallTarget,
-                        call.owner,
-                        call.span,
-                    );
+                    outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
@@ -7207,8 +7415,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             );
                         }
                         Err(rejection) => {
+                            let reach = self.construction_reach(key, &args);
                             outcome.lose_precision(
                                 ExecutionPrecisionLossReason::UnsupportedConstruction { rejection },
+                                reach,
                                 call.owner,
                                 call.span,
                             );
@@ -7251,11 +7461,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
                 _ => {
-                    outcome.lose_precision(
-                        ExecutionPrecisionLossReason::UnknownCallTarget,
-                        call.owner,
-                        call.span,
-                    );
+                    outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
@@ -7270,6 +7476,109 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
     }
+}
+
+/// Source units with a call that may run code the source does not name
+/// (SPEC.md § Synchronous execution diagnostics): a call or `new` whose callee
+/// is neither a builtin row nor local callables by value flow, a protocol
+/// operation on a value rooted in an import, a global or another unknown
+/// binding, or an opaque body.
+fn unknown_callee_owners(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+) -> BTreeSet<SourceUnitOrdinal> {
+    let local_callables = |values: FlowValues| {
+        !values.is_empty()
+            && values
+                .iter()
+                .all(|value| matches!(value, Value::Alloc(Kind::Function | Kind::Class, _)))
+    };
+    let names_local_callables = |callee: &ValueExpr| match callee {
+        ValueExpr::Alloc(Kind::Function | Kind::Class, _) => true,
+        ValueExpr::Binding(binding) => local_callables(flow.values_of_binding(binding)),
+        ValueExpr::Member(receiver, Some(property), _) => {
+            let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                return false;
+            };
+            let receivers = flow.values_of_binding(receiver);
+            !receivers.is_empty()
+                && receivers.iter().all(|receiver| {
+                    matches!(receiver, Value::Alloc(Kind::Object, object)
+                        if flow.values_of_property(object, property)
+                            .is_some_and(|values| local_callables(values.clone())))
+                })
+        }
+        _ => false,
+    };
+    fn unknown_root(expression: &ValueExpr, flow: &ChunkValueFlow) -> bool {
+        match expression {
+            ValueExpr::Binding(binding) => {
+                let values = flow.values_of_binding(binding);
+                values.is_empty() || values.iter().any(|value| value == Value::Top)
+            }
+            ValueExpr::Member(receiver, _, _) => unknown_root(receiver, flow),
+            _ => false,
+        }
+    }
+    let unknown = |call: &Call| match call.kind {
+        CallKind::Call | CallKind::New => {
+            !native_call_identity_key(call.kind, &call.callee)
+                .is_some_and(|(_, callee)| !flow.is_declared(&callee.binding))
+                && !names_local_callables(&call.callee)
+        }
+        _ => unknown_root(&call.callee, flow),
+    };
+    index
+        .top_calls
+        .iter()
+        .flatten()
+        .chain(
+            index
+                .callables
+                .values()
+                .flat_map(|callable| &callable.calls),
+        )
+        .filter(|call| unknown(call))
+        .map(|call| call.owner)
+        .chain(
+            index
+                .callables
+                .values()
+                .filter(|callable| callable.opaque)
+                .map(|callable| callable.owner),
+        )
+        .collect()
+}
+
+/// Marks each source unit whose `adjacency` closure contains a `target`.
+fn owners_reaching(
+    adjacency: &[Vec<SourceUnitOrdinal>],
+    targets: &BTreeSet<SourceUnitOrdinal>,
+) -> Vec<bool> {
+    let mut predecessors = vec![Vec::new(); adjacency.len()];
+    for (source, targets) in adjacency.iter().enumerate() {
+        for target in targets {
+            predecessors[target.0].push(source);
+        }
+    }
+    let mut reaches = vec![false; adjacency.len()];
+    let mut pending: Vec<usize> = targets
+        .iter()
+        .map(|target| target.0)
+        .filter(|&target| target < adjacency.len())
+        .collect();
+    for &target in &pending {
+        reaches[target] = true;
+    }
+    while let Some(target) = pending.pop() {
+        for &source in &predecessors[target] {
+            if !reaches[source] {
+                reaches[source] = true;
+                pending.push(source);
+            }
+        }
+    }
+    reaches
 }
 
 fn callback_source_units_for_signature(
@@ -7890,6 +8199,8 @@ pub(crate) fn annotate_synchronous_calls(
             !index.dynamic_scope_owners.is_empty(),
         ),
         needed_bindings: needed,
+        unknown_callee_owners: unknown_callee_owners(&index, flow),
+        reaches_unknown_callee: std::sync::OnceLock::new(),
     };
     let state = ExecutionState {
         native_integrity_checks: RefCell::default(),

@@ -69,9 +69,10 @@ existing author input, or nothing.
 ### 3. Bound what an incomplete statement promotes
 
 Design, soundness argument and prototype measurement: § Havoc reach below.
-Verdict: land R1 (record the reach on each loss) only. R2 (promote only the
-reach) removes 16% of edges on Tana but leaves the 1,833-module SCC and the
-210-member conflict, which come from losses whose reach is `Global`.
+R1 landed: each precision loss reports its `reach` (SPEC.md § Synchronous
+execution diagnostics). R2 (promote only the reach) removes 16% of edges on
+Tana but leaves the 1,833-module SCC and the 210-member conflict, which come
+from losses whose reach is `Global`.
 
 ### 4. Measure
 
@@ -253,19 +254,10 @@ Findings:
 
 ### Steps (PR-sized)
 
-- **R1. Record the reach.** Each `ExecutionPrecisionLoss` carries
-  `reach: Bounded | Global { cause }` in the report; there is no analysis
-  change. Tests (e2e, `synchronous_precision_report_test.rs`):
-  - a rejected local construction with an inline callback argument →
-    `Bounded`;
-  - the same constructor calling a global function → `Global { unknown_callee }`;
-  - one calling a chunk helper that calls an import → `Global` (transitive);
-  - an argument previously passed to an opaque call → `Global { tainted_input }`;
-  - a published class whose method is borrowed → `Global { borrowed_receiver }`;
-  - `with` in the prefix → `Global { dynamic_scope }`.
 - **R2. Promote only the reach for `Bounded` events.** This is the mode `3`
-  logic, with collapse rules 1–5 transitive, and only after R1's fixtures pin
-  the classification. Tests:
+  logic, promoting only for losses whose reported `reach` is `bounded`
+  (`e2e/synchronous_precision_report_test.rs` pins the classification).
+  Tests:
   - a constructor whose argument callback writes a binding read at init by a
     later module keeps that edge, and Node output matches;
   - an unrelated escaped callback (escaped earlier through an opaque call)
@@ -284,7 +276,7 @@ Findings:
   explained or covered. Tests: the #5 promotion set (`at_init_promotion_*`).
 - **R4. Measure** per step 4.
 
-R1 is cheap and gives step 2 its classification. R2 is sound under the
+R2 is sound under the
 assumptions above but yields 16% of edges and no gate change on Tana. Gate
 it on step 1 and on cross-chunk callable reach: summaries for the vendor
 imports would turn rule 1's largest group into `Bounded`.
