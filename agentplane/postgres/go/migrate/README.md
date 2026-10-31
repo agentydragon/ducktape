@@ -28,9 +28,10 @@ that can remain live, or explicitly stop those writers for a cutover.
   own source and destination fences; it is not a Goose migration or an
   automatic startup step.
 
-The app holds its advisory lock across a read-only Alembic/schema preflight
-**before** Goose can create metadata. History registers its bounded event-kind
-backfill as Goose migration 4. Preserve the app preflight and registered History
-backfill when changing their migration flows. The Runner's per-path SQLite
-journal is different: `journal.Open` applies its SQLite Goose migrations before
-recovering journal entries; it has no PostgreSQL init container or advisory key.
+The app currently holds its advisory lock across a read-only Alembic/schema
+preflight **before** Goose can create metadata. Any required pre-metadata
+validation must stay serialized with migration. History's bounded event-kind
+backfill is registered as Goose migration 4; non-SQL transformations belong in
+versioned Go migrations. The Runner's per-path SQLite journal is different:
+`journal.Open` applies its SQLite Goose migrations before recovering journal
+entries; it has no PostgreSQL init container or advisory key.
