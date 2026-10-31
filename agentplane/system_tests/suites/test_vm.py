@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,14 @@ async def test_vm_scenarios(
 
     async def oom() -> None:
         async with scenario_resources() as (owned_client, sandbox):
-            await vm_sandbox.codex_tool_oom(owned_client, sandbox, models[runner_pb2.HARNESS_CODEX], scripted)
+            await vm_sandbox.codex_tool_oom(
+                cluster,
+                owned_client,
+                sandbox,
+                models[runner_pb2.HARNESS_CODEX],
+                scripted,
+                native_profile=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
+            )
 
     # pytest-asyncio serializes separate tests. Launch every independent boot here so a
     # finished scenario never leaves its worker capacity idle behind another test's teardown.

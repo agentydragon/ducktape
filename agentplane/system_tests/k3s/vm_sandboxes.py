@@ -14,6 +14,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.vm_configuration import OOM_TEMPLATE
 from util.bazel.runfiles import get_required_path
 
 # The stack's `K3s.kubectl`: the stack calls this module while it starts.
@@ -27,6 +28,27 @@ READY_SECONDS = 600
 # virt-launcher.
 _KUBEVIRT_COMPONENTS = ("virt-api", "virt-controller", "virt-handler", "virt-launcher")
 _LAYOUTS = "_main/agentplane/system_tests/k3s/vm_sandboxes"
+_PROFILE_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"
+
+
+def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profile_root: bool) -> None:
+    """Select the manual profile root and opt-in sampler inside the VM test action."""
+    if enabled and not profile_root:
+        raise ValueError("native profiling requires //agentplane/system_tests/suites:test_vm_profile")
+    if not enabled and not profile_root:
+        return
+    oom_template = one(
+        obj for obj in objects if obj["kind"] == "SandboxTemplate" and obj["metadata"]["name"] == OOM_TEMPLATE
+    )
+    if enabled:
+        boot = oom_template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
+        boot["kernelArgs"] += " agentplane.native-profile=1"
+    if profile_root:
+        for template in (obj for obj in objects if obj["kind"] == "SandboxTemplate" and "vm" in obj["spec"]):
+            spec = template["spec"]["vm"]["template"]["spec"]
+            root = one(disk for disk in spec["domain"]["devices"]["disks"] if "bootOrder" in disk)
+            volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
+            volume["containerDisk"]["image"] = _PROFILE_ROOT_IMAGE
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:

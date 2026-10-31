@@ -129,6 +129,7 @@ pkg_files(
         "guest_prepare",
         "runner_start",
         "shutdown_complete",
+        "startup_profile",
         "supervision_check",
         "workspace_prepare",
     ],
@@ -137,6 +138,7 @@ pkg_files(
         "cgroup_observer": "agentplane-cgroup-observer",
         "guest_prepare": "agentplane-guest-prepare",
         "runner_start": "agentplane-runner-start",
+        "startup_profile": "agentplane-startup-profile",
         "shutdown_complete": "agentplane-shutdown-complete",
         "supervision_check": "agentplane-supervision-check",
         "workspace_prepare": "agentplane-workspace-prepare",
@@ -156,6 +158,7 @@ pkg_files(
         "agentplane-cgroup-observer.service",
         "agentplane-guest-prepare.service",
         "agentplane-shutdown-proof.service",
+        "agentplane-startup-profile.service",
         "agentplane-workspace.service",
         "runner-guest.conf",
     ],
@@ -173,6 +176,7 @@ pkg_tar(
         "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
         "multi-user.target.wants/agentplane-runner.service": "/usr/lib/systemd/system/agentplane-runner.service",
         "multi-user.target.wants/agentplane-shutdown-proof.service": "../agentplane-shutdown-proof.service",
+        "multi-user.target.wants/agentplane-startup-profile.service": "../agentplane-startup-profile.service",
         "systemd-firstboot.service": "/dev/null",
         "systemd-logind.service": "/dev/null",
     },
@@ -258,6 +262,22 @@ erofs_image(
     volume_label = "guest",
 )
 
+pkg_tar(
+    name = "root_profile_tar",
+    deps = [
+        ":root_tar",
+        "@trixie_vm_perf//:flat",
+    ],
+)
+
+erofs_image(
+    name = "root_profile_erofs",
+    out = "root-profile.img",
+    compress_lz4 = True,
+    tar = ":root_profile_tar",
+    volume_label = "guest",
+)
+
 # KubeVirt's qemu reads the containerDisk as uid 107.
 pkg_tar(
     name = "root_disk",
@@ -275,6 +295,22 @@ oci_image(
     user = "107:107",
 )
 
+pkg_tar(
+    name = "root_profile_disk",
+    srcs = [":root_profile_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+)
+
+oci_image(
+    name = "root_profile_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":root_profile_disk"],
+    user = "107:107",
+)
+
 # The stack names each image after its layout: `agentplane-vm-guest-{boot,root}`.
 oci_layout_rloc(
     name = "vm_guest_boot_layout",
@@ -287,6 +323,13 @@ oci_layout_rloc(
     name = "vm_guest_root_layout",
     testonly = True,
     image = ":root_image",
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+oci_layout_rloc(
+    name = "vm_guest_root_profile_layout",
+    testonly = True,
+    image = ":root_profile_image",
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 

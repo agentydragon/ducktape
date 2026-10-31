@@ -1,0 +1,13 @@
+[Unit]
+Description=Profile the VM fixture's native cold startup
+DefaultDependencies=no
+ConditionKernelCommandLine=agentplane.native-profile=1
+After=local-fs.target
+Before=agentplane-runner.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/agentplane-startup-profile
+StandardOutput=journal+console
+StandardError=journal+console

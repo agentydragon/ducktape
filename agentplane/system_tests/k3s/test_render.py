@@ -20,7 +20,7 @@ from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.settings import Settings
-from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -387,6 +387,32 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     assert {name for rule in token_rules for name in rule["resourceNames"]} == {
         account.split("/")[1] for account in mintable_accounts
     }
+
+
+def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
+    selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
+    other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
+    selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert selected_args == other_args + " agentplane.native-profile=1"
+    selected_volumes = selected["spec"]["vm"]["template"]["spec"]["volumes"]
+    other_volumes = other["spec"]["vm"]["template"]["spec"]["volumes"]
+    assert next(volume for volume in selected_volumes if volume["name"] == "rootdisk")["containerDisk"][
+        "image"
+    ].endswith("/agentplane-vm-guest-root-profile:unset")
+    assert next(volume for volume in other_volumes if volume["name"] == "rootdisk")["containerDisk"]["image"].endswith(
+        "/agentplane-vm-guest-root-profile:unset"
+    )
+    control = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    vm_sandboxes.select_native_profile(control.objects, enabled=False, profile_root=True)
+    control_oom = _resource(control.objects, "SandboxTemplate", OOM_TEMPLATE)
+    control_spec = control_oom["spec"]["vm"]["template"]["spec"]
+    assert "agentplane.native-profile=1" not in control_spec["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert next(volume for volume in control_spec["volumes"] if volume["name"] == "rootdisk")["containerDisk"][
+        "image"
+    ].endswith("/agentplane-vm-guest-root-profile:unset")
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:

@@ -573,6 +573,12 @@ def running_stack(
                     models,
                     mcp,
                 )
+                if fixture.vm_sandboxes:
+                    vm_sandboxes.select_native_profile(
+                        fixture.objects,
+                        enabled=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
+                        profile_root=os.environ.get("K3S_PROFILE_GUEST_ROOT") == "1",
+                    )
             deployment_images = _deployment_images(fixture.objects)
             if used := deployment_images & guest_images.keys():
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")

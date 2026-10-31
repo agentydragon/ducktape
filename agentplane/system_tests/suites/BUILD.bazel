@@ -133,6 +133,36 @@ k3s_suite(
     ],
 )
 
+# Manual profile variant imports a perf-capable root only for the selected OOM guest.
+k3s_suite(
+    name = "test_vm_profile",
+    srcs = ["test_vm.py"],
+    profile_guest = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:offered_models",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scenario",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests:tracing",
+        "//agentplane/system_tests:vm_configuration",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 k3s_suite(
     name = "test_real_model",
     srcs = ["test_real_model.py"],
