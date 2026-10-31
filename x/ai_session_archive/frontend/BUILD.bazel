@@ -1,6 +1,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 
 # gazelle:exclude test_visual.py
+# gazelle:exclude test_visual_claude_tools.py
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -66,6 +67,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":schema",
+        ":transcript_rows",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -169,6 +171,7 @@ ts_library(
     name = "session_fixture",
     testonly = True,
     srcs = [
+        "fixtures/claude-work.ts",
         "fixtures/codex-work.ts",
         "fixtures/session-data.ts",
     ],
@@ -274,6 +277,27 @@ py_visual_test(
     test_module = "x.ai_session_archive.frontend.test_visual",
     test_srcs = ["test_visual.py"],
     title = "Local workstation sessions",
+)
+
+py_visual_test(
+    name = "visual_claude_tools",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_claude_tools",
+    test_srcs = ["test_visual_claude_tools.py"],
+    title = "Claude paired tool steps",
 )
 
 ts_library(

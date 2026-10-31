@@ -98,8 +98,13 @@ placeholder step; its original record remains under Session details. Subagent
 messages show their sender and readable content, or an unavailable-content label.
 Compaction is a compact marker with source inspection.
 
-Claude `user` records containing only tool results are activity; mixed text/content
-stays visible. Claude attachments have individual disclosures labeled by subtype
+Claude tool-use blocks pair with tool-result blocks by ID, including multiple tools
+in one physical record. Each tool has its own arguments/output disclosure; errors
+mark the step and its group as failed. Pairing stays separate from Codex IDs and
+keeps the result step expanded when older pages supply its call. Thinking blocks
+join intermediate activity; redacted-only thinking stays in Session details.
+Messages that mix prose with tool blocks retain their prose once, while the tool
+blocks become steps. Claude attachments have individual disclosures labeled by subtype
 and filename or hook name, with bounded structured details. Consecutive attachments
 can share an activity group. Unknown record types and parse failures remain standalone;
 records without readable content show only their label and source inspection. Explicit

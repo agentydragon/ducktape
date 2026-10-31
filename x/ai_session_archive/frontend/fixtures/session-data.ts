@@ -1,6 +1,7 @@
 import type { SessionBrowserApi } from "../api";
 import type { EventRecord, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../schema";
 import { codexWorkRecords } from "./codex-work";
+import { claudeWorkRecords } from "./claude-work";
 
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
@@ -198,9 +199,38 @@ const sessions: SessionSummary[] = [
     parent_native_session_id: null,
     identity_inferred: false,
   },
+  {
+    id: "claude-work-fixture",
+    machine_id: "atlas",
+    harness: "claude",
+    session_kind: "main",
+    title: "Claude paired tools and mixed messages",
+    cwd: "/fixture/project",
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: "claude-work-version",
+    version_count: 1,
+    latest_version_record_count: claudeWorkRecords.length,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
 ];
 
 const versions: Record<string, SessionVersion[]> = {
+  "claude-work-fixture": [
+    {
+      id: "claude-work-version",
+      captured_at: "2026-10-31T06:30:00Z",
+      sha256: "b".repeat(64),
+      byte_size: 2000,
+      source_path: "/fixture/claude-work.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
   "claude-attachments-fixture": [
     {
       id: "claude-attachments-version",
@@ -484,21 +514,30 @@ export const sessionFixtureApi: SessionBrowserApi = {
   async listEvents(sessionId, versionId, cursor) {
     if (sessionId === "inferred-claude-parent") return { data: [], next_cursor: null };
     const selected =
-      sessionId === "claude-attachments-fixture"
-        ? claudeAttachmentEvents
-        : sessionId === "codex-work-fixture"
-          ? codexWorkRecords
-          : sessionId === "mixed-transcript-fixture"
-            ? mixedEvents
-            : sessionId === "codex-thread-1"
-              ? versionId === "codex-version-1"
-                ? codexOlderEvents
-                : codexLatestEvents
-              : claudeEvents;
+      sessionId === "claude-work-fixture"
+        ? claudeWorkRecords
+        : sessionId === "claude-attachments-fixture"
+          ? claudeAttachmentEvents
+          : sessionId === "codex-work-fixture"
+            ? codexWorkRecords
+            : sessionId === "mixed-transcript-fixture"
+              ? mixedEvents
+              : sessionId === "codex-thread-1"
+                ? versionId === "codex-version-1"
+                  ? codexOlderEvents
+                  : codexLatestEvents
+                : claudeEvents;
     const data = selected
       .filter((record) => cursor === undefined || record.ordinal < cursor)
       .slice(
-        -(["mixed-transcript-fixture", "codex-work-fixture", "claude-attachments-fixture"].includes(sessionId) ? 50 : 3)
+        -([
+          "mixed-transcript-fixture",
+          "codex-work-fixture",
+          "claude-attachments-fixture",
+          "claude-work-fixture",
+        ].includes(sessionId)
+          ? 50
+          : 3)
       );
     const first = data.at(0)?.ordinal ?? null;
     return {

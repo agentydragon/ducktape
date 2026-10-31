@@ -7,6 +7,7 @@ import { DisclosureBody } from "../../../util/frontend/disclosure";
 import { RetainedDisclosure } from "../../../util/frontend/transcript/retained_disclosures";
 import { TextBlock } from "../../../util/frontend/transcript/text_block";
 import type { EventRecord } from "./schema";
+import { isClaudeIntermediateBlock } from "./transcript-rows";
 
 export function recordLabel(record: EventRecord): string {
   const parsed = object(record.parsed);
@@ -89,19 +90,14 @@ function ContentPart({ part, id }: { part: Part; id: string }): JSX.Element {
 function claudeContent(parsed: Record<string, unknown>): Part[] | null {
   const message = object(parsed.message);
   if (message === null) return null;
-  return parts(message.content, (part) => {
-    if (part.type === "text" && typeof part.text === "string") return { kind: "text", text: part.text };
-    if (part.type === "thinking" && typeof part.thinking === "string") {
-      return { kind: "thinking", text: part.thinking };
+  const content = message.content;
+  return parts(
+    Array.isArray(content) ? content.filter((part) => !isClaudeIntermediateBlock(part)) : content,
+    (part) => {
+      if (part.type === "text" && typeof part.text === "string") return { kind: "text", text: part.text };
+      return { kind: text(part.type) ?? "Content block", value: part };
     }
-    if (part.type === "tool_use") {
-      return { kind: `Tool call · ${text(part.name) ?? "unknown"}`, value: part.input ?? part };
-    }
-    if (part.type === "tool_result") {
-      return { kind: "Tool result", value: part.content ?? part };
-    }
-    return { kind: text(part.type) ?? "Content block", value: part };
-  });
+  );
 }
 
 function codexContent(parsed: Record<string, unknown>): Part[] | null {
