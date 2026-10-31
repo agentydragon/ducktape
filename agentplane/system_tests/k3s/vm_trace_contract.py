@@ -70,7 +70,8 @@ def _codex_session_uids(test_spans: list[dict[str, object]], scenario_ready: dic
             continue
         attributes = _attributes(span)
         name = attributes.get("sandbox.name")
-        assert isinstance(name, str) and name, "driver session.open has no sandbox.name"
+        assert isinstance(name, str), "driver session.open has no sandbox.name"
+        assert name, "driver session.open has no sandbox.name"
         assert name in scenario_ready, f"driver session.open Sandbox {name} has no ready identity"
         if attributes.get("harness") == "HARNESS_CODEX":
             uids.add(scenario_ready[name])
@@ -158,7 +159,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         if span.get("name") != "system_test.session.open":
             continue
         name = _attributes(span).get("sandbox.name")
-        assert isinstance(name, str) and name in scenario_ready
+        assert isinstance(name, str), "driver session.open has no sandbox.name"
+        assert name in scenario_ready, f"driver session.open Sandbox {name} has no ready identity"
         assert any(
             _resource_uid(operation) == scenario_ready[name]
             and _attributes(operation).get("sandbox.name") == name

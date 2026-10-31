@@ -647,6 +647,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//grpcio",
         "@pypi//opentelemetry_proto",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
