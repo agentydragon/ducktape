@@ -82,6 +82,8 @@ pub(crate) struct TrackedBindingUses {
 pub(crate) struct LoaderReach {
     /// Requested site keys that can never run.
     pub unreachable: BTreeSet<SiteKey>,
+    /// Requested site and use keys in top-level code, outside every function.
+    pub top_level: BTreeSet<SiteKey>,
     pub tracked: Vec<TrackedBindingUses>,
     /// `import * as`, `export * from` and `export { … } from` sources: each
     /// exposes the source's whole export surface.
@@ -141,6 +143,13 @@ pub(crate) fn loader_reach(
         .filter(|(_, owner)| !is_reachable(**owner))
         .map(|(key, _)| *key)
         .collect();
+    let top_level = walk
+        .site_owner
+        .iter()
+        .chain(&walk.use_owner)
+        .filter(|(_, owner)| **owner == Owner::TopLevel)
+        .map(|(key, _)| *key)
+        .collect();
     let mut tracked = walk.tracked;
     for binding in &mut tracked {
         binding
@@ -159,6 +168,7 @@ pub(crate) fn loader_reach(
     }
     LoaderReach {
         unreachable,
+        top_level,
         tracked,
         namespace_sources: walk.namespace_sources,
     }

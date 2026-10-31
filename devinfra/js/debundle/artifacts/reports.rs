@@ -221,6 +221,9 @@ pub struct InteropUse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SitePhase {
     Synchronous,
+    /// Synchronous, in top-level code outside every function: it runs only
+    /// while its own module's body evaluates.
+    ModuleBody,
     /// The site follows an `await` on every path of its innermost async
     /// function, so it never runs on the stack that invoked that function.
     MandatorilySuspended,

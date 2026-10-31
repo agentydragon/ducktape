@@ -893,3 +893,18 @@ export function run(code) { return eval(code + ""); }
         "static/user"
     );
 }
+
+/// A site counts only when it can run while the provider evaluates: a
+/// function in a chunk that statically imports the provider runs only after
+/// it, and a top-level load in an unrelated chunk runs only with that chunk's
+/// body.
+#[test]
+fn sites_outside_the_target_window_do_not_hold_it_open() {
+    for sidecar in [
+        "import { readLater } from \"./provider.js\";\nexport function loadNamed(name) { return import.meta.require(name); }\nexport const seen = readLater;\n",
+        "const named = globalThis.process ? \"a\" : \"b\";\nexport const loaded = import.meta.require(named);\n",
+    ] {
+        let report = accepted_provider_report(&[("static/sidecar", sidecar)]);
+        assert_eq!(report["loader"]["outside_window_sites"], 1, "{sidecar}");
+    }
+}

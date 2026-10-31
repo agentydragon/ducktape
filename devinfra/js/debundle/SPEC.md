@@ -800,9 +800,18 @@ keeps every target open. A namespace import, `export *` or
 request or reachable dynamic `import()` of one, expose the alias and keep every
 target open.
 
-Every remaining site counts as reachable during the target's initialization:
-a callback any chunk published earlier can run then, so the chunk holding a
-site does not bound when it executes. A site the census does not see, such as a
+A remaining site counts when it can run in the target's window, from the
+target's entry into evaluation until it finishes. A direct load in top-level
+code, outside every function, runs only while its own module's body evaluates:
+it counts in the target, in the target's static closure, and in a chunk a
+counted request loads. Any other site, including a loader value that escapes
+from top-level code, runs whenever a callback can, since a callback any chunk
+published earlier can run in the window. It counts unless its chunk
+statically imports the target outside a cycle with it: that chunk's body, and
+with it every reference to its functions, starts only after the target
+finishes. A counted request that loads a chunk brings that chunk's whole
+static and loader closure into the window. Sites outside the window are
+counted in `outside_window_sites`. A site the census does not see, such as a
 computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
 code, is outside this proof, as it is outside the census.
 

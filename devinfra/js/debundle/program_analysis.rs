@@ -517,6 +517,8 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             SitePhase::Unreachable
         } else if suspended.contains(&key) {
             SitePhase::MandatorilySuspended
+        } else if reach.top_level.contains(&key) {
+            SitePhase::ModuleBody
         } else {
             SitePhase::Synchronous
         }
