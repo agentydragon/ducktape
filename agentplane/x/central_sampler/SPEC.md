@@ -52,7 +52,7 @@ completion acknowledgement. Successful setup is not repeated when later commands
 
 ## Runtime and effects
 
-One shared service runs the provider loop and owns one lazy upstream Codex JavaScript host process.
+Each sampler replica runs the provider loop and owns one lazy upstream Codex JavaScript host process.
 The host starts when the first code-mode Session needs it and stays up until runtime shutdown or
 host failure. It multiplexes logical Session IDs over one reader/writer, with globally allocated operation and
 delegate IDs; each Session retains its own executor/delegate and process-handle namespace. Each
@@ -451,3 +451,6 @@ startup and requires the previous image or explicit repair. Startup no longer cl
 legacy provider records. Later
 schema changes use new additive Goose migrations. Schema rollback requires restoring the
 pre-migration database backup together with the old service image.
+
+The staging sampler Deployment uses two rolling replicas. New migrations must remain compatible
+with serving old replicas during a rollout. Baseline 8's host-instance marker is nullable.

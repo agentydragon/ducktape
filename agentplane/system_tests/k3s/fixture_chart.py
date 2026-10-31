@@ -24,7 +24,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
-from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
+from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size, Testing
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerProps,
@@ -36,6 +36,7 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
+    PercentOrAbsolute,
     k8s,
 )
 from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
@@ -153,6 +154,14 @@ _LOCAL_MODEL_MODELS = HarnessRoutes(claude=(OLLAMA_QWEN_IQ4XS_128K.native,), cod
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
 _PUBLIC_LITELLM_MODELS = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
+_SAMPLER_REPLICAS = ReplicaProfile(
+    count=2,
+    strategy=DeploymentStrategy.rolling_update(
+        max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+    ),
+    min_ready=Duration.seconds(5),
+    pdb_min_available=1,
+)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 
@@ -197,6 +206,7 @@ def environment(
     central_sampler_props = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
+            replicas=_SAMPLER_REPLICAS,
             models={
                 GPT6_LUNA_RESPONSES.id: ModelConfig(
                     connection="llm-ingress",
