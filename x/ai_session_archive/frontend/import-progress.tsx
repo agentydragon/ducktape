@@ -155,14 +155,19 @@ export function MachineImportProgressSummary({
               <Text size="xs" fw={500} className="session-import-machine-name" title={machine.display_name}>
                 {machine.display_name}
               </Text>
-              <Badge
-                size="xs"
-                variant="light"
-                color={machineImportIsActive(machine) ? "yellow" : "red"}
-                className="session-import-machine-state"
-              >
-                {machineImportIsActive(machine) ? "Syncing" : "Needs attention"}
-              </Badge>
+              {machineImportIsActive(machine) ? (
+                <Loader
+                  size={12}
+                  role="status"
+                  aria-label={`Syncing ${machine.display_name}`}
+                  title={`Syncing ${machine.display_name}`}
+                  className="session-import-machine-state"
+                />
+              ) : (
+                <Badge size="xs" variant="light" color="red" className="session-import-machine-state">
+                  Needs attention
+                </Badge>
+              )}
               {totalFileCount > 0 ? (
                 <>
                   <Progress.Root
