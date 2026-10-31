@@ -6,8 +6,8 @@ mod prototype_properties;
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
-    FromEntriesMappedProof, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape,
-    ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
+    FromEntriesMappedProof, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
+    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
     static_property_name,
 };
 use crate::analysis_inputs::{
@@ -564,7 +564,7 @@ fn fresh_value_writes(
             Some(FreshValueStep::Factory { binding, callee }) => {
                 let is_factory = match callee {
                     ValueExpr::Binding(callee) => factory_imports.contains(callee),
-                    ValueExpr::Member(object, Some(property), true) => {
+                    ValueExpr::Member(object, Some(property), MemberKey::Static) => {
                         matches!(object.as_ref(), ValueExpr::Binding(namespace)
                             if factory_members.get(namespace)
                                 .is_some_and(|members| members.contains(property)))
@@ -801,17 +801,23 @@ fn collect_pattern_assignments(
             for property in &object.props {
                 match property {
                     ObjectPatProp::KeyValue(property) => {
-                        let projected = static_property_name(&property.key)
-                            .map_or(ValueExpr::Unknown, |name| {
-                                ValueExpr::Member(Box::new(value.clone()), Some(name), false)
-                            });
+                        let projected = static_property_name(&property.key).map_or(
+                            ValueExpr::Unknown,
+                            |name| {
+                                ValueExpr::Member(
+                                    Box::new(value.clone()),
+                                    Some(name),
+                                    MemberKey::Computed(None),
+                                )
+                            },
+                        );
                         collect_pattern_assignments(&property.value, &projected, assignments);
                     }
                     ObjectPatProp::Assign(property) => {
                         let projected = ValueExpr::Member(
                             Box::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
-                            false,
+                            MemberKey::Computed(None),
                         );
                         let projected =
                             property
@@ -853,17 +859,23 @@ fn collect_assign_target_assignments(
             for property in &object.props {
                 match property {
                     ObjectPatProp::KeyValue(property) => {
-                        let projected = static_property_name(&property.key)
-                            .map_or(ValueExpr::Unknown, |name| {
-                                ValueExpr::Member(Box::new(value.clone()), Some(name), false)
-                            });
+                        let projected = static_property_name(&property.key).map_or(
+                            ValueExpr::Unknown,
+                            |name| {
+                                ValueExpr::Member(
+                                    Box::new(value.clone()),
+                                    Some(name),
+                                    MemberKey::Computed(None),
+                                )
+                            },
+                        );
                         collect_pattern_assignments(&property.value, &projected, assignments);
                     }
                     ObjectPatProp::Assign(property) => {
                         let projected = ValueExpr::Member(
                             Box::new(value.clone()),
                             Some(property.key.id.sym.to_string()),
-                            false,
+                            MemberKey::Computed(None),
                         );
                         let projected =
                             property
@@ -1088,14 +1100,14 @@ fn native_call_identity_key(
     };
     let (binding, receiver, member, global_this_qualified) = match callee {
         ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
-        ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
+        ValueExpr::Member(receiver, Some(member), MemberKey::Static) => match receiver.as_ref() {
             ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
                 (binding, member.as_str(), None, true)
             }
             ValueExpr::Binding(binding) => {
                 (binding, binding.0.as_ref(), Some(member.as_str()), false)
             }
-            ValueExpr::Member(global, Some(receiver), true) => {
+            ValueExpr::Member(global, Some(receiver), MemberKey::Static) => {
                 let ValueExpr::Binding(binding) = global.as_ref() else {
                     return None;
                 };
@@ -1131,7 +1143,7 @@ fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Op
         ) => Some(binding),
         (
             NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor),
-            ValueExpr::Member(receiver, Some(property), true),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static),
         ) if property == "for" => {
             let ValueExpr::Binding(binding) = receiver.as_ref() else {
                 return None;
@@ -1983,7 +1995,7 @@ pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<&'static str> {
-    let ValueExpr::Member(receiver, Some(property), true) = value else {
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static) = value else {
         return None;
     };
     let ValueExpr::Binding(object) = receiver.as_ref() else {
@@ -2290,7 +2302,7 @@ fn intrinsic_roots(
                 input_roots.extend(value_roots);
             }
             let object_get_prototype_of = match callee.as_ref() {
-                ValueExpr::Member(receiver, Some(property), true)
+                ValueExpr::Member(receiver, Some(property), MemberKey::Static)
                     if property == "getPrototypeOf" =>
                 {
                     intrinsic_roots(
@@ -2457,8 +2469,9 @@ fn close_raw_intrinsic_aliases(
 #[cfg(test)]
 mod iterative_alias_closure_tests {
     use super::{
-        NamespaceValueFacts, NativeReceiverRoot, ValueExpr, close_prepublication_derived_bindings,
-        close_raw_intrinsic_aliases, infer_mutation_receiver_aliases,
+        MemberKey, NamespaceValueFacts, NativeReceiverRoot, ValueExpr,
+        close_prepublication_derived_bindings, close_raw_intrinsic_aliases,
+        infer_mutation_receiver_aliases,
     };
     use crate::analysis_inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2502,7 +2515,7 @@ mod iterative_alias_closure_tests {
                 ValueExpr::Member(
                     Box::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
-                    true,
+                    MemberKey::Static,
                 ),
             ),
             (
@@ -2592,7 +2605,7 @@ mod iterative_alias_closure_tests {
                 ValueExpr::Member(
                     Box::new(ValueExpr::Binding(holder.clone())),
                     Some("member".to_owned()),
-                    true,
+                    MemberKey::Static,
                 ),
             ),
             (
@@ -6894,7 +6907,7 @@ impl ExecutionIndex {
                     .then_some("selected an unsupported native Symbol call row")
             }
             NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
-                let ValueExpr::Member(receiver, Some(member), true) = callee else {
+                let ValueExpr::Member(receiver, Some(member), MemberKey::Static) = callee else {
                     return Some("must select a direct uncomputed Promise.resolve() call");
                 };
                 let ValueExpr::Binding(promise) = receiver.as_ref() else {
@@ -7076,7 +7089,7 @@ impl ExecutionIndex {
         {
             return None;
         }
-        let ValueExpr::Member(receiver, Some(member), true) = &call.callee else {
+        let ValueExpr::Member(receiver, Some(member), MemberKey::Static) = &call.callee else {
             return None;
         };
         let ValueExpr::Binding(object) = receiver.as_ref() else {
@@ -9103,7 +9116,7 @@ impl ExecutionIndex {
             callee: ValueExpr::Member(
                 Box::new(ValueExpr::from_expr(&member.obj)),
                 static_prop(&member.prop),
-                matches!(member.prop, MemberProp::Ident(_)),
+                MemberKey::of(&member.prop),
             ),
             args: Vec::new(),
             span: member.span,
@@ -10292,7 +10305,7 @@ impl Visit for ExecutionIndex {
                 callee: ValueExpr::Member(
                     Box::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
-                    matches!(member.prop, MemberProp::Ident(_)),
+                    MemberKey::of(&member.prop),
                 ),
                 args: Vec::new(),
                 span: member.span,
@@ -10694,7 +10707,7 @@ impl Visit for ExecutionIndex {
                 AssignTarget::Simple(SimpleAssignTarget::Member(member)) => ValueExpr::Member(
                     Box::new(ValueExpr::from_expr(&member.obj)),
                     static_prop(&member.prop),
-                    matches!(member.prop, MemberProp::Ident(_)),
+                    MemberKey::of(&member.prop),
                 ),
                 _ => ValueExpr::Unknown,
             };
@@ -11434,7 +11447,10 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
             .iter()
             .all(|call| match (&call.kind, &call.callee) {
                 (CallKind::Call, ValueExpr::Binding(id)) => id == callback && !call.has_spread,
-                (CallKind::LocalMemberRead, ValueExpr::Member(receiver, Some(property), true)) => {
+                (
+                    CallKind::LocalMemberRead,
+                    ValueExpr::Member(receiver, Some(property), MemberKey::Static),
+                ) => {
                     match receiver.as_ref() {
                         ValueExpr::Binding(id) if local_receivers.contains(id) => {
                             inner.local_assignments.iter().any(|(assigned, value)| {
