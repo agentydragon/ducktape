@@ -300,7 +300,7 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
 
   expect(view.textContent).toContain("ThinkPad");
   expect(view.querySelector('header [aria-label="Import progress by machine"]')).not.toBeNull();
-  expect(view.textContent).toContain("ThinkPadSyncing");
+  expect(view.querySelector('[role="status"][aria-label="Syncing ThinkPad"]')).not.toBeNull();
   expect(view.textContent).toContain("27/31");
   expect(view.textContent).toContain("11/12 · 1 failed");
   expect(view.textContent).not.toContain("Complete fixture machine");
@@ -405,7 +405,7 @@ it("keeps an un-inventoried snapshot pending without a zero-denominator progress
   };
   const view = await renderViewer(api);
 
-  expect(view.textContent).toContain("New machineSyncing");
+  expect(view.querySelector('[role="status"][aria-label="Syncing New machine"]')).not.toBeNull();
   expect(view.textContent).toContain("Inventory pending");
   expect(view.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
 
