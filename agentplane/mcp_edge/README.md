@@ -70,16 +70,10 @@ tokens are stored only as hashes.
 
 ## Configuration rollout sequencing
 
-The generated Action Service settings still include `integrated_connection_service: false` and
-`max_wait_seconds: 180` for compatibility with older pinned images. The new Action Service rejects
-`integrated_connection_service: true` and registers no legacy endpoints even when the setting is
-absent. Its `max_wait_seconds` value is now an accepted cleanup tombstone capped at the generated
-180-second maximum; the MCP edge owns caller
-wait limits. `direct_wait_seconds` remains an Action Service setting for `orchestration_v1`; the MCP
-edge has its own independent wait settings.
-
-Remove the two compatibility keys from generated manifests only after the Action Service image
-containing their false-only/no-op parser is observed running. Deploy that config removal before
-removing the parser fields in a later image. `direct_wait_seconds` remains a live Action Service
-setting for `orchestration_v1` and is separate from the edge's own wait settings. Endpoint ownership
-changes do not transfer or drop database rows or edit landed migrations.
+The generated Action Service settings no longer send the retired `integrated_connection_service`
+and `max_wait_seconds` keys. The Action Service still accepts them (rejecting
+`integrated_connection_service: true` and a `max_wait_seconds` above 180) until that config is
+deployed; then the parser fields go. The MCP edge owns caller wait limits; `direct_wait_seconds`
+remains a live Action Service setting for `orchestration_v1`, separate from the edge's own wait
+settings. Endpoint ownership changes do not transfer or drop database rows or edit landed
+migrations.
