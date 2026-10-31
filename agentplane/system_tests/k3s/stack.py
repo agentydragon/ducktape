@@ -57,6 +57,7 @@ STOP_TIMEOUT_SECONDS = 60
 # k3s's default Pod CIDR.
 POD_CIDR = "10.42.0.0/16"
 CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
+CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 # Marks the `/etc/hosts` lines a stack wrote, which the next stack on a recycled runner replaces.
 HOSTS_MARKER = "# k3s-env"
 
@@ -201,6 +202,11 @@ class K3s:
         log = self.log_path.open("wb")
         # The image store survives runner recycling; a previous stack's daemon log need not.
         (self.data_dir / "agent/containerd/containerd.log").unlink(missing_ok=True)
+        # K3s's v3 template imports this directory. The root-owned Unix socket stays inside
+        # this isolated test action and exposes Go's standard CPU/runtime profilers.
+        diagnostics = self.data_dir / "agent/etc/containerd/config-v3.toml.d/diagnostics.toml"
+        diagnostics.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics.write_text(f'[debug]\n  address = "{CONTAINERD_DEBUG_SOCKET}"\n')
         process = subprocess.Popen(
             [
                 str(self.binary),
@@ -259,6 +265,45 @@ class K3s:
         source = self.data_dir / "agent/containerd/containerd.log"
         if source.exists():
             shutil.copyfile(source, self.log_path.with_name("containerd.log"))
+
+    @contextlib.contextmanager
+    def profile_containerd(self, kind: str, seconds: int, destination: Path) -> Iterator[None]:
+        """Capture a bounded, real Go profiler sample without delaying stack readiness."""
+        if not Path(CONTAINERD_DEBUG_SOCKET).is_socket():
+            raise RuntimeError("containerd debug socket is unavailable")
+        with destination.open("wb") as output, destination.with_suffix(destination.suffix + ".log").open("wb") as log:
+            process = subprocess.Popen(
+                [
+                    str(self.binary),
+                    "ctr",
+                    "pprof",
+                    "--debug-socket",
+                    CONTAINERD_DEBUG_SOCKET,
+                    kind,
+                    f"--seconds={seconds}s",
+                ],
+                stdout=output,
+                stderr=log,
+            )
+            try:
+                yield
+            except BaseException:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise
+            else:
+                try:
+                    code = process.wait(timeout=seconds + 10)
+                except subprocess.TimeoutExpired as exc:
+                    process.kill()
+                    process.wait()
+                    raise RuntimeError(f"containerd {kind} profiler timed out; see {log.name}") from exc
+                if code or destination.stat().st_size == 0:
+                    raise RuntimeError(f"containerd {kind} profiler failed ({code}); see {log.name}")
 
     def stop(self, process: subprocess.Popen[bytes]) -> None:
         """End k3s, then remove every Pod, so the next stack on a recycled runner finds only images.
@@ -583,6 +628,12 @@ def running_stack(
             timeline.mark("cert-manager and trust-manager ready")
             fixture_import.result()
             timeline.mark("fixture images imported" if guest_images else "images imported")
+            if guest_images:
+                # The VM root image is this stack's largest cold import. Sampling proceeds while
+                # the importer and the rest of setup work; joining happens at fixture teardown.
+                outputs = undeclared_outputs_dir()
+                cleanup.enter_context(k3s.profile_containerd("profile", 15, outputs / "containerd-import.cpu.pprof"))
+                cleanup.enter_context(k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace"))
             guest_import = importing.submit(k3s.import_images, guest_images, timeline)
             for crd in crds:
                 k3s.kubectl("apply", "-f", str(crd))

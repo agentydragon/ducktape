@@ -23,7 +23,11 @@ test-only `monitoring/alloy` Service and Endpoints once the node is Ready. It pa
 endpoint to the deployed services and Runner processes. Their spans are written to
 `process-spans.jsonl`; the receiver stops after the stack. The bundled containerd does not register
 its upstream tracing plugin, so image imports have only driver-side timings in `k3s-timeline.jsonl`.
-The fixture also retains `containerd.log` for process startup and failure diagnosis. See
+For VM stacks it also samples containerd during guest image import through its root-only
+debug socket, retaining `containerd-import.cpu.pprof` and
+`containerd-import.runtime.trace` in test outputs. Sampling overlaps the import; the
+fixture joins the bounded profilers at teardown. The fixture also retains `containerd.log`
+for process startup and failure diagnosis. See
 [phase tracing](../README.md#phase-tracing) for the fields and propagation limits.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
