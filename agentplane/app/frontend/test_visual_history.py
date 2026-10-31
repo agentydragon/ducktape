@@ -177,7 +177,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     following = page.locator('[data-thread-anchor="10"]')
     await expect(row.locator(".ui-disclosure-summary")).to_have_count(1)
     control = row.locator(
-        ".agentplane-step-details > .ui-disclosure-item > .ui-disclosure-heading > .ui-disclosure-summary"
+        ".transcript-step-details > .ui-disclosure-item > .ui-disclosure-heading > .ui-disclosure-summary"
     ).first
     await expect(control).to_contain_text("git branch -d stale")
     await control.scroll_into_view_if_needed()
@@ -303,8 +303,8 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     await _rollout_start(completed_rollout)
     await _open_run(page)
     call = (
-        page.locator(".agentplane-run-steps .agentplane-step-details")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        page.locator(".agentplane-run-steps .transcript-step-details")
+        .filter(has=page.locator(".transcript-step-title:text-is('Shell')"))
         .nth(1)
     )
     await call.locator(".ui-disclosure-summary").first.click()
@@ -472,7 +472,7 @@ async def test_recovery_quiet_open(view: VisualPage, app: AgentplaneFixture) -> 
     tools = _tool_steps(page)
     await expect(tools).to_have_count(2)
     await expect(tools.locator(".ui-disclosure-summary[aria-expanded='false']")).to_have_count(0)
-    await expect(page.locator(".agentplane-step-details .ui-code-block").first).to_be_visible()
+    await expect(page.locator(".transcript-step-details .ui-code-block").first).to_be_visible()
     await view.capture()
 
 
@@ -742,10 +742,10 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
     await view.check(context="fixture ready")
     page = view.page
     await _open_run(page)
-    reasoning = page.locator(".agentplane-step-details").filter(
-        has=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    reasoning = page.locator(".transcript-step-details").filter(
+        has=page.locator(".transcript-step-title:text-is('Reasoning')")
     )
-    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    title_size = await reasoning.locator(".transcript-step-title").evaluate("el => getComputedStyle(el).fontSize")
     preview_size = await reasoning.locator(".ui-markdown--single-line").evaluate("el => getComputedStyle(el).fontSize")
     assert title_size == preview_size
     await reasoning.locator(".ui-disclosure-summary").first.click()
@@ -765,13 +765,13 @@ async def test_consecutive_reasoning_group_inside_tool_run(view: VisualPage, app
     reasoning_group = steps.locator(":scope > .ui-collapsible-card").nth(1)
     summary = reasoning_group.locator(".ui-disclosure-summary").first
     await expect(summary).to_have_attribute("aria-expanded", "false")
-    await expect(reasoning_group.locator(".agentplane-step-title")).to_have_text("Reasoning")
-    await expect(reasoning_group.locator(".agentplane-step-preview .ui-markdown--single-line")).to_be_attached()
+    await expect(reasoning_group.locator(".transcript-step-title")).to_have_text("Reasoning")
+    await expect(reasoning_group.locator(".transcript-step-preview .ui-markdown--single-line")).to_be_attached()
     await view.capture(target=page.locator("#app"))
 
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning_group.locator(".ui-disclosure-panel .agentplane-step-title")).to_have_text(
+    await expect(reasoning_group.locator(".ui-disclosure-panel .transcript-step-title")).to_have_text(
         ["Reasoning", "Reasoning", "Reasoning"]
     )
     await view.capture(name=f"{view.capture_name}_reasoning_items", target=page.locator("#app"))
@@ -791,7 +791,7 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await wait_for_stable(page)
     control = reasoning.locator(".ui-disclosure-summary").first
     await expect(control).to_have_attribute("aria-expanded", "true")
-    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    title_size = await reasoning.locator(".transcript-step-title").evaluate("el => getComputedStyle(el).fontSize")
     preview_size = await reasoning.locator(".ui-markdown--single-line").evaluate("el => getComputedStyle(el).fontSize")
     assert title_size == preview_size
     await page.mouse.move(0, 0)
@@ -821,9 +821,9 @@ async def test_standalone_reasoning_compact_markdown_and_code_fence(view: Visual
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+    reasoning = page.locator('[data-thread-anchor="20"] .transcript-step-details')
     summary = reasoning.locator(".ui-disclosure-summary").first
-    preview = reasoning.locator(".agentplane-step-preview .ui-markdown--single-line")
+    preview = reasoning.locator(".transcript-step-preview .ui-markdown--single-line")
     await expect(summary).to_have_attribute("aria-expanded", "false")
     await expect(preview).to_contain_text("> Check")
     await expect(preview).to_contain_text("State | Count ; Ready | 2")
@@ -844,7 +844,7 @@ async def test_shell_call_run_previews(shell_calls: VisualPage) -> None:
     view = shell_calls
     page = view.page
     await _open_run(page)
-    await expect(page.locator(".agentplane-step-details .agentplane-step-preview").first).to_be_visible()
+    await expect(page.locator(".transcript-step-details .transcript-step-preview").first).to_be_visible()
     await view.capture()
 
 
@@ -893,13 +893,13 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     await _open_run(page)
     owner = (
         page.locator(".ui-collapsible-card.transcript-inspection-owner")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .filter(has=page.locator(".transcript-step-title:text-is('Bash')"))
         .first
     )
-    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
-    await owner.locator(".agentplane-step-details .ui-disclosure-summary").click()
-    await expect(owner.locator(".agentplane-step-details .ui-code-block .cm-content").first).to_be_attached()
-    button = owner.locator(".agentplane-step-inspect > .transcript-inspection-toggle")
+    await expect(owner.locator(".transcript-step-title")).to_have_text("Bash")
+    await owner.locator(".transcript-step-details .ui-disclosure-summary").click()
+    await expect(owner.locator(".transcript-step-details .ui-code-block .cm-content").first).to_be_attached()
+    button = owner.locator(".transcript-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_be_attached()
 
     # Keyboard and pointer activation both reach the separate action beside the chevron.
@@ -911,7 +911,7 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     await page.mouse.move(0, 0)
     await owner.hover()
     await expect(button).to_have_css("opacity", "1")
-    heading = owner.locator(".agentplane-step-details .ui-disclosure-heading").first
+    heading = owner.locator(".transcript-step-details .ui-disclosure-heading").first
     button_box = await button.bounding_box()
     heading_box = await heading.bounding_box()
     assert button_box is not None
@@ -938,13 +938,13 @@ async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> N
     await _open_run(page)
     owner = (
         page.locator(".ui-collapsible-card.transcript-inspection-owner")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .filter(has=page.locator(".transcript-step-title:text-is('Bash')"))
         .first
     )
-    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
-    await owner.locator(".agentplane-step-details .ui-disclosure-summary").tap()
+    await expect(owner.locator(".transcript-step-title")).to_have_text("Bash")
+    await owner.locator(".transcript-step-details .ui-disclosure-summary").tap()
     await expect(owner).to_have_attribute("data-inspection-revealed", "")
-    button = owner.locator(".agentplane-step-inspect > .transcript-inspection-toggle")
+    button = owner.locator(".transcript-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_have_css("opacity", "1")
     await button.tap()
     await expect(button).to_have_attribute("aria-expanded", "true")
@@ -997,7 +997,7 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: 
     page = view.page
     await _open_tool_run(page)
     history = page.get_by_role("region", name="Thread history")
-    call = page.locator(".agentplane-step-details").filter(has_text="step 16")
+    call = page.locator(".transcript-step-details").filter(has_text="step 16")
     output_control = call.locator(".agentplane-output-disclosure .ui-disclosure-summary[aria-expanded='true']")
     output = call.locator(".agentplane-output-disclosure .ui-code-block")
     await _in_viewport(output_control)
@@ -1038,8 +1038,8 @@ async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text:
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
-    call = page.locator(".agentplane-step-details").filter(has_text=call_text)
-    await expect(call.locator(".agentplane-step-title")).to_have_text(tool)
+    call = page.locator(".transcript-step-details").filter(has_text=call_text)
+    await expect(call.locator(".transcript-step-title")).to_have_text(tool)
     await _focus(page, call.locator(".ui-clamped-block[data-label='Command']"))
     await _in_viewport(call.locator(".agentplane-output-label"))
     await view.capture(target=view.page.locator("#app"))
@@ -1051,12 +1051,12 @@ async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage)
     page = view.page
     await _open_run(page)
     call = (
-        page.locator(".agentplane-step-details")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        page.locator(".transcript-step-details")
+        .filter(has=page.locator(".transcript-step-title:text-is('Shell')"))
         .first
     )
     await call.locator(".ui-disclosure-summary").first.click()
-    await _focus(page, call.locator(".agentplane-step-controls"))
+    await _focus(page, call.locator(".transcript-step-controls"))
     await call.locator("label").filter(has_text=re.compile(r"^Raw$")).click()
     await expect(call.get_by_role("switch", name="Show raw arguments and output")).to_be_checked()
     arguments = call.locator(".ui-clamped-block[data-label='Arguments']")
@@ -1064,7 +1064,7 @@ async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage)
     await expect(call.locator(".ui-clamped-block[data-label='Command']")).to_have_count(0)
     await expect(call.locator(".agentplane-output-disclosure .ui-code-block")).to_contain_text('"institution_name"')
     await _focus(page, arguments)
-    await expect(call.locator(".agentplane-step-controls")).to_be_in_viewport(ratio=1)
+    await expect(call.locator(".transcript-step-controls")).to_be_in_viewport(ratio=1)
     await expect(call.locator(".agentplane-output-label")).to_be_in_viewport(ratio=1)
     await page.mouse.move(0, 0)
     await view.capture(target=page.locator("#app"))
@@ -1075,8 +1075,8 @@ async def test_collapsed_steps_in_open_run_are_compact(shell_calls: VisualPage) 
     view = shell_calls
     page = view.page
     await _open_run(page)
-    await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
-    steps = page.locator(".agentplane-run-steps .agentplane-step-details .ui-disclosure-summary[aria-expanded='false']")
+    await expect(page.locator(".transcript-step-details [aria-busy='true']")).to_have_count(0)
+    steps = page.locator(".agentplane-run-steps .transcript-step-details .ui-disclosure-summary[aria-expanded='false']")
     await expect(steps.first).to_be_attached()
     # Both kinds share the step disclosure control. Its normal mobile min-height
     # and label padding must not turn every collapsed step into a full-size card.
@@ -1125,7 +1125,7 @@ async def test_expanded_shell_output_sticks_while_scrolling(shell_calls: VisualP
     await expect(page.locator(".ui-clamped-block[data-label='Command']").first).to_be_attached()
     await expect(page.locator(".ui-clamped-block[data-label='Arguments']").first).to_be_attached()
     await expect(page.locator(".ui-clamped-block[data-label='Output']").first).to_be_attached()
-    await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
+    await expect(page.locator(".transcript-step-details [aria-busy='true']")).to_have_count(0)
     await expect(page.locator("[aria-label='Thread history'][data-layout-settled='true']")).to_be_attached()
     controls = page.locator(".ui-clamped-block button[aria-expanded='false']")
     count = await controls.count()

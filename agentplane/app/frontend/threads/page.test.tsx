@@ -1804,7 +1804,7 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
   expect(run.textContent).toContain("test-read");
   expect(run.textContent).toContain("test-shell");
   expect(run.textContent).toContain("The plan is to inspect the evidence.");
-  expect(run.querySelector(".agentplane-step-preview strong")?.textContent).toBe("inspect");
+  expect(run.querySelector(".transcript-step-preview strong")?.textContent).toBe("inspect");
   // Each step keeps its own evidence; the run is not an entity and has none.
   expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
 });
@@ -1847,7 +1847,7 @@ it("shows a lone tool call directly and opens its details with one click", async
     false,
     { "single-tool:arguments": '{"path":"test-file.txt"}' }
   );
-  expect(row.querySelector(".agentplane-step-title")?.textContent).toBe("test-read");
+  expect(row.querySelector(".transcript-step-title")?.textContent).toBe("test-read");
   expect(row.querySelectorAll(".ui-disclosure-summary")).toHaveLength(1);
   const summary = row.querySelector(".ui-disclosure-summary")!;
   await toggle(summary);
@@ -1867,8 +1867,8 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
       "test-entity-2:text": "Test body of test-entity-2",
     }
   );
-  expect(reasoning.querySelector(".agentplane-step-details")).toBeNull();
-  expect(reasoning.querySelector(".agentplane-step-title")?.textContent).toBe("Reasoning");
+  expect(reasoning.querySelector(".transcript-step-details")).toBeNull();
+  expect(reasoning.querySelector(".transcript-step-title")?.textContent).toBe("Reasoning");
   expect(reasoning.textContent).toContain("Reasoning preview body");
   expect(reasoning.querySelector(".mantine-Badge-root")).toBeNull();
   expect(answer.textContent?.trim()).toBe("Test body of test-entity-2");

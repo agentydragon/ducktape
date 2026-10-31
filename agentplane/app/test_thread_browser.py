@@ -633,7 +633,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
         # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
         await closed_disclosures_read.wait()
-        await expect(page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-step-details')).to_have_count(
+        await expect(page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .transcript-step-details')).to_have_count(
             0
         )
         await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
@@ -670,7 +670,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
         await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
         # A tool call is one line of its arguments; opened, it shows them as they stream in.
-        tool_line = run.locator(".agentplane-step-details", has_text="test-tool")
+        tool_line = run.locator(".transcript-step-details", has_text="test-tool")
         await tool_line.locator(".ui-disclosure-summary").click()
         arguments = tool_line.locator(".ui-code-block")
         await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
@@ -690,7 +690,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             )
         )
         await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-        reasoning_details = run.locator(".agentplane-step-details", has_text="Reasoning")
+        reasoning_details = run.locator(".transcript-step-details", has_text="Reasoning")
         await expect(reasoning_details).to_be_visible()
         await reasoning_details.locator(".ui-disclosure-summary").click()
         expanded_reasoning = reasoning_details.locator(".ui-disclosure-panel .ui-markdown")
@@ -1461,7 +1461,7 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
 
 def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     """A call in `run` and the card around it, whose top edge holds still as the call opens."""
-    selector = ".agentplane-step-details"
+    selector = ".transcript-step-details"
     call = run.locator(selector, has_text=f"Run tool {name}")
     card = call.locator(
         "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' transcript-inspection-owner ')][1]"
@@ -1668,13 +1668,13 @@ async def test_expanded_command_stays_collapsible(
             text_center = text_box["y"] + text_box["height"] / 2
             assert abs(text_center - heading_center) <= 1, (text_box, heading_box)
 
-        preview_box = await call_heading.locator(".agentplane-step-preview").bounding_box()
+        preview_box = await call_heading.locator(".transcript-step-preview").bounding_box()
         assert preview_box is not None
         call_center = boxes[1]["y"] + boxes[1]["height"] / 2
         preview_center = preview_box["y"] + preview_box["height"] / 2
         assert abs(preview_center - call_center) <= 1, (preview_box, boxes[1])
 
-        raw_root = call.locator(".agentplane-step-controls .mantine-Switch-root")
+        raw_root = call.locator(".transcript-step-controls .mantine-Switch-root")
         raw_box = await raw_root.bounding_box()
         assert raw_box is not None
         call_right = boxes[1]["x"] + boxes[1]["width"]
@@ -1743,7 +1743,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     summary = run.locator(".ui-disclosure-summary").first
     async with holding_still(page, run):
         await summary.click()
-        await expect(run.locator(".agentplane-step-details")).to_have_count(3)
+        await expect(run.locator(".transcript-step-details")).to_have_count(3)
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")

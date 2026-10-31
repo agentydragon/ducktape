@@ -74,7 +74,7 @@ async def _open_run(page: Page) -> None:
         .first
     )
     await run.click()
-    await expect(page.locator(".agentplane-step-details").first).to_be_visible()
+    await expect(page.locator(".transcript-step-details").first).to_be_visible()
 
 
 async def _rollout_start(view: VisualPage) -> None:
@@ -92,8 +92,8 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
     await _open_run(page)
     steps = page.locator(".agentplane-run-steps").first
     if position == "start":
-        static_title = await steps.locator(".agentplane-step-static .agentplane-step-title").first.bounding_box()
-        disclosure_title = await steps.locator(".agentplane-step-details .agentplane-step-title").first.bounding_box()
+        static_title = await steps.locator(".transcript-step-static .transcript-step-title").first.bounding_box()
+        disclosure_title = await steps.locator(".transcript-step-details .transcript-step-title").first.bounding_box()
         assert static_title is not None
         assert disclosure_title is not None
         assert abs(static_title["x"] - disclosure_title["x"]) <= 1, "plain and expandable steps must align"
@@ -210,7 +210,7 @@ async def _open_tool_run(page: Page) -> None:
 
 
 async def _expand_tool_steps(page: Page) -> None:
-    steps = page.locator(".agentplane-step-details")
+    steps = page.locator(".transcript-step-details")
     await expect(steps.first).to_be_visible()
     # Wait for the opened run's payloads to render before counting its tool lines. A count sampled
     # while an OptionalPayload is loading can miss a later call and photograph a folded output.
@@ -224,7 +224,7 @@ async def _expand_tool_steps(page: Page) -> None:
         control = tool_steps.nth(index).locator(".ui-disclosure-summary").first
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
-    await expect(page.locator(".agentplane-step-details .ui-code-block .cm-content").first).to_be_attached()
+    await expect(page.locator(".transcript-step-details .ui-code-block .cm-content").first).to_be_attached()
     await wait_for_stable(page)
 
 
@@ -250,14 +250,14 @@ async def _open_select(
 
 def _tool_steps(page: Page) -> Locator:
     """The step lines of tool calls, not reasoning."""
-    return page.locator(".agentplane-step-details").filter(
-        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    return page.locator(".transcript-step-details").filter(
+        has_not=page.locator(".transcript-step-title:text-is('Reasoning')")
     )
 
 
 async def _open_standalone_reasoning(page: Page) -> Locator:
     """Open the reasoning step at thread anchor 20 and wait for its body to render."""
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+    reasoning = page.locator('[data-thread-anchor="20"] .transcript-step-details')
     summary = reasoning.locator(".ui-disclosure-summary").first
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")

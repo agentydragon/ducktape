@@ -1,7 +1,7 @@
 import { Badge, Box, Button, Group, Stack, Text } from "@mantine/core";
 import { useId, type JSX, type MouseEvent, type ReactNode } from "react";
 import { VirtualizedHistory } from "../../../util/frontend/transcript/virtualized_history";
-import { DisclosureCard } from "../../../util/frontend/disclosure";
+import { DisclosureBody, DisclosureCard } from "../../../util/frontend/disclosure";
 import {
   RetainedDisclosure,
   RetainedDisclosureProvider,
@@ -9,8 +9,17 @@ import {
 } from "../../../util/frontend/transcript/retained_disclosures";
 import { InspectionToggle } from "../../../util/frontend/transcript/inspection";
 import { UserMessage } from "../../../util/frontend/transcript/message";
+import { StepLine } from "../../../util/frontend/transcript/step_line";
+import { TextBlock } from "../../../util/frontend/transcript/text_block";
+import { Markdown } from "../../../util/frontend/markdown";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
-import { recordPresentation, transcriptRows, type TranscriptRow } from "./transcript-rows";
+import {
+  recordPresentation,
+  summarizeActivity,
+  transcriptRows,
+  type ActivityStep,
+  type TranscriptRow,
+} from "./transcript-rows";
 import type { EventRecord } from "./schema";
 
 function formatDateTime(value: string | null): string {
@@ -65,15 +74,174 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
     <DisclosureCard open={open}>
       <RetainedDisclosure
         id={id}
-        summary={`${row.kind === "activity" ? "Tools and reasoning" : "Session details"} · ${row.records.length} ${row.records.length === 1 ? "record" : "records"}`}
+        summary={
+          row.kind === "activity" ? (
+            <>
+              {summarizeActivity(row.steps)}
+              {row.steps.some((step) => step.kind === "tool" && step.failed) && (
+                <Text span size="xs" c="red">
+                  {" "}
+                  · Failed
+                </Text>
+              )}
+            </>
+          ) : (
+            "Session details"
+          )
+        }
       >
-        <Stack gap="xs">
-          {row.records.map((record) => (
-            <EventRow key={record.ordinal} record={record} />
-          ))}
+        <Stack gap={0}>
+          {row.kind === "activity" ? (
+            <ActivitySteps steps={row.steps} />
+          ) : (
+            row.records.map((record) => <EventRow key={record.ordinal} record={record} />)
+          )}
+          {row.kind === "activity" && (
+            <SessionDetails records={row.records.filter((record) => recordPresentation(record) === "metadata")} />
+          )}
         </Stack>
       </RetainedDisclosure>
     </DisclosureCard>
+  );
+}
+
+function SessionDetails({ records }: { records: EventRecord[] }): JSX.Element | null {
+  if (records.length === 0) return null;
+  return (
+    <RetainedDisclosure id={`details:${records.at(-1)!.ordinal}`} summary="Session details">
+      {records.map((record) => (
+        <EventRow key={record.ordinal} record={record} />
+      ))}
+    </RetainedDisclosure>
+  );
+}
+
+function ActivitySteps({ steps }: { steps: ActivityStep[] }): JSX.Element {
+  const contents: ActivityStep[][] = [];
+  for (const step of steps) {
+    const last = contents.at(-1);
+    if (step.kind === "reasoning" && last?.[0].kind === "reasoning") last.push(step);
+    else contents.push([step]);
+  }
+  return (
+    <>
+      {contents.map((group) => (
+        <ActivityStepView key={group.at(-1)!.records.at(-1)!.ordinal} steps={group} />
+      ))}
+    </>
+  );
+}
+
+function ActivityStepView({ steps }: { steps: ActivityStep[] }): JSX.Element {
+  const step = steps[0];
+  const records = steps.flatMap((step) => step.records);
+  const id = `step:${records.at(-1)!.ordinal}`;
+  const [open, setOpen] = useRetainedDisclosure(id);
+  const [raw, setRaw] = useRetainedDisclosure(`${id}:raw`);
+  const inputExpansion = useRetainedDisclosure(`${id}:input`);
+  const outputExpansion = useRetainedDisclosure(`${id}:output`);
+  const panelId = useId();
+  const reasoning = steps.flatMap((item) => (item.kind === "reasoning" ? [item.text] : [])).join("\n\n");
+  const title =
+    step.kind === "tool"
+      ? step.missingCall
+        ? "Tool result"
+        : step.name
+      : step.kind === "reasoning"
+        ? "Reasoning"
+        : step.kind === "subagent"
+          ? `Agent message · ${step.author}`
+          : recordLabel(records[0]);
+  const preview =
+    step.kind === "tool"
+      ? (step.input ?? step.output ?? "No recorded input or output")
+      : step.kind === "reasoning"
+        ? reasoning
+        : step.kind === "subagent"
+          ? step.text
+          : "Recorded activity";
+  return (
+    <Box className="transcript-inspection-owner" data-activity-step={step.kind}>
+      {records.map((record) => (
+        <span key={record.ordinal} data-event-ordinal={record.ordinal} />
+      ))}
+      <DisclosureCard open={open}>
+        <StepLine
+          title={title}
+          preview={
+            step.kind === "reasoning" ? (
+              <Markdown source={reasoning} singleLine size="sm" />
+            ) : (
+              <Text span size="sm">
+                {preview.replace(/\s+/g, " ").slice(0, 240)}
+              </Text>
+            )
+          }
+          mark={step.kind === "tool" && step.failed ? "failed" : undefined}
+          expandable
+          open={open}
+          onOpenChange={setOpen}
+          summaryAside={
+            <InspectionToggle
+              open={raw}
+              onChange={setRaw}
+              label="Raw JSONL record"
+              controls={panelId}
+              placement="inline"
+            />
+          }
+        >
+          {step.kind === "tool" ? (
+            <>
+              {step.missingCall && (
+                <DisclosureBody>
+                  <Text size="xs" c="dimmed">
+                    The call is outside the loaded records or was not captured.
+                  </Text>
+                </DisclosureBody>
+              )}
+              {step.input !== null && <TextBlock label="Arguments" text={step.input} expansion={inputExpansion} />}
+              {step.output !== null ? (
+                <TextBlock label="Output" text={step.output} expansion={outputExpansion} />
+              ) : (
+                <DisclosureBody>
+                  <Text size="xs" c="dimmed">
+                    No result in the loaded records.
+                  </Text>
+                </DisclosureBody>
+              )}
+            </>
+          ) : step.kind === "reasoning" ? (
+            <DisclosureBody>
+              <Markdown source={reasoning} />
+            </DisclosureBody>
+          ) : step.kind === "subagent" ? (
+            <DisclosureBody>
+              {step.recipient !== null && (
+                <Text size="xs" c="dimmed">
+                  To {step.recipient}
+                </Text>
+              )}
+              <Markdown source={step.text} />
+            </DisclosureBody>
+          ) : (
+            <RecordContent record={records[0]} />
+          )}
+        </StepLine>
+      </DisclosureCard>
+      {raw && (
+        <Box id={panelId}>
+          {records.map((record) => (
+            <Box key={record.ordinal}>
+              <Text size="xs" c="dimmed">
+                Line {record.ordinal} · {recordLabel(record)}
+              </Text>
+              <RawRecordPanel record={record} panelId={`${panelId}:${record.ordinal}`} />
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
   );
 }
 
@@ -112,7 +280,7 @@ function EventRow({ record }: { record: EventRecord }): JSX.Element {
         <Box className="archive-transcript-record transcript-inspection-owner" title={metadata}>
           {inspection}
           <Stack gap={4} className="archive-transcript-record-body">
-            {presentation !== "assistant" && presentation !== "activity" && (
+            {presentation !== "assistant" && presentation !== "activity" && presentation !== "compaction" && (
               <Group gap="xs">
                 <Text size="xs" c="dimmed">
                   {recordLabel(record)} · {record.ordinal}
@@ -124,7 +292,13 @@ function EventRow({ record }: { record: EventRecord }): JSX.Element {
                 )}
               </Group>
             )}
-            {presentation !== "metadata" && <RecordContent record={record} />}
+            {presentation === "compaction" ? (
+              <Text size="xs" c="dimmed">
+                Context compacted
+              </Text>
+            ) : (
+              presentation !== "metadata" && <RecordContent record={record} />
+            )}
           </Stack>
         </Box>
       )}

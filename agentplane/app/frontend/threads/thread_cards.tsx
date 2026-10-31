@@ -2,7 +2,6 @@ import { Alert, Badge, Box, Button, Group, Stack, Text, type MantineColor } from
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { ClampedBlock, lineCount } from "../../../../util/frontend/clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
 import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
@@ -10,12 +9,13 @@ import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
+import { TextBlock } from "../../../../util/frontend/transcript/text_block";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
-import { StepLine, type StepMark } from "./step_line";
+import { StepLine, type StepMark } from "../../../../util/frontend/transcript/step_line";
 import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
 
 type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
@@ -328,7 +328,7 @@ function ReasoningPreview({
       summaryAside={summaryAside}
       aside={
         error && (
-          <button className="agentplane-step-retry" onClick={retry} type="button">
+          <button className="agentplane-tool-retry" onClick={retry} type="button">
             Retry
           </button>
         )
@@ -518,21 +518,12 @@ function ToolCard({
               (call && !raw ? (
                 <ShellCommandView command={call.command} notes={call.notes} expansion={input} />
               ) : (
-                <div>
-                  <ClampedBlock
-                    maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
-                    lines={lineCount(argumentsBody)}
-                    label="Arguments"
-                    header={
-                      <Text size="sm" c="dimmed">
-                        Arguments
-                      </Text>
-                    }
-                    expansion={input}
-                  >
-                    <HighlightedText text={argumentsBody} />
-                  </ClampedBlock>
-                </div>
+                <TextBlock
+                  label="Arguments"
+                  text={argumentsBody}
+                  expansion={input}
+                  maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
+                />
               ))}
             {entity.outputRef && (
               <PayloadView reference={entity.outputRef}>
@@ -602,7 +593,7 @@ function ToolCard({
               trailing={itemStatus([entity], live, !opened, opened)}
               aside={
                 args?.error && (
-                  <button className="agentplane-step-retry" onClick={args.retry} type="button">
+                  <button className="agentplane-tool-retry" onClick={args.retry} type="button">
                     Retry
                   </button>
                 )

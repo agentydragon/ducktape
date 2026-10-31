@@ -187,7 +187,7 @@ describe("recovery presentation", () => {
 describe("an item the recovery left as it was", () => {
   // The containers a card puts status badges in, which take their margin or gap even when empty.
   const blankStatusWrappers = (container: HTMLElement): Element[] =>
-    [...container.querySelectorAll(".mantine-Group-root, .agentplane-step-trailing")].filter(
+    [...container.querySelectorAll(".mantine-Group-root, .transcript-step-trailing")].filter(
       (wrapper) => wrapper.childElementCount === 0
     );
   const bodies = {
@@ -267,7 +267,7 @@ function renderTool(toolName: string, args: unknown, output = "test-output"): Pr
 }
 
 const lineOf = (container: HTMLElement): string | undefined =>
-  container.querySelector(".agentplane-step-preview")?.textContent ?? undefined;
+  container.querySelector(".transcript-step-preview")?.textContent ?? undefined;
 
 describe("reasoning step marks", () => {
   const reasoningStep = (state: Partial<Extract<ThreadEntity["state"], { kind: number }>>): ThreadEntity =>
@@ -293,24 +293,24 @@ describe("reasoning step marks", () => {
     "marks an unfinished step (live: %s) by its title, with no badge row above the line",
     async (live, label, breathes) => {
       const container = await renderCard(reasoningStep({}), bodies, live);
-      const title = container.querySelector(".agentplane-step-title")!;
+      const title = container.querySelector(".transcript-step-title")!;
       expect(title.textContent).toBe("Reasoning");
       expect(title.getAttribute("style")).toContain("blue");
       expect(title.getAttribute("title")).toBe(label);
-      expect(title.classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(title.classList.contains("transcript-step-title--streaming")).toBe(breathes);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
     }
   );
 
   it("leaves a finished step in the dimmed title", async () => {
     const container = await renderCard(reasoningStep({ completion: "text" }), bodies);
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("blue");
   });
 
   it("leaves an interrupted step to its own badges, which the title has no mark for", async () => {
     const container = await renderCard(reasoningStep({ recovery: RecoveryDisposition.RETAINED }), bodies);
     expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("blue");
   });
 });
 
@@ -319,7 +319,7 @@ describe("tool call rows", () => {
 
   it("folds a Claude Bash call to the line the model wrote for it, and draws nothing else", async () => {
     const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Bash");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Bash");
     expect(lineOf(container)).toBe("List every container");
     expect(container.querySelector(".ui-code-block")).toBeNull();
     expect(container.textContent).not.toContain("test-output");
@@ -328,7 +328,7 @@ describe("tool call rows", () => {
   it("folds a Bash call with no description to its command on one line, as highlighted shell", async () => {
     const container = await renderTool("Bash", { command: `set -e\n${COMMAND}` });
     expect(lineOf(container)).toBe("set -e docker ps --all --format '{{.Names}}'");
-    expect(container.querySelector(".agentplane-step-preview .ui-code-inline .ui-tok-keyword")?.textContent).toBe(
+    expect(container.querySelector(".transcript-step-preview .ui-code-inline .ui-tok-keyword")?.textContent).toBe(
       "set"
     );
   });
@@ -343,7 +343,7 @@ describe("tool call rows", () => {
       command: String.raw`/bin/bash -lc "echo \"test-script\""`,
       cwd: "/test-workspace",
     });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Shell");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Shell");
     expect(lineOf(container)).toBe('echo "test-script"');
   });
 
@@ -354,7 +354,7 @@ describe("tool call rows", () => {
     });
     await toggle(container.querySelector(".ui-disclosure-summary")!);
 
-    const controls = container.querySelector(".agentplane-step-controls")!;
+    const controls = container.querySelector(".transcript-step-controls")!;
     expect(controls.textContent).toContain("Run with");
     expect(controls.textContent).toContain("cwd");
     expect([...controls.querySelectorAll(".ui-code-inline")].map((code) => code.textContent)).toEqual([
@@ -392,7 +392,7 @@ describe("tool call rows", () => {
     await toggle(container.querySelector(".ui-disclosure-summary")!);
     // In the disclosed content, outside the sticky summary and above the details.
     const raw = container.querySelector<HTMLInputElement>(
-      '.agentplane-step-details .agentplane-step-controls input[aria-label="Show raw arguments and output"]'
+      '.transcript-step-details .transcript-step-controls input[aria-label="Show raw arguments and output"]'
     )!;
     expect(raw.type).toBe("checkbox");
     const codeBlocks = () => [...container.querySelectorAll(".ui-code-block")];
@@ -412,7 +412,7 @@ describe("tool call rows", () => {
 
   it("folds any other tool to its arguments' JSON, which is all it can open to", async () => {
     const container = await renderTool("Read", { file_path: "test-file" });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Read");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Read");
     expect(lineOf(container)).toBe('{"file_path":"test-file"}');
     await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
@@ -441,13 +441,13 @@ describe("tool call rows", () => {
       ),
       { "test-tool:output": "test-failure" }
     );
-    const title = container.querySelector(".agentplane-step-title")!;
+    const title = container.querySelector(".transcript-step-title")!;
     expect(title.getAttribute("style")).toContain("red");
     expect(title.getAttribute("title")).toBe("Failed");
     expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
 
     await toggle(container.querySelector(".ui-disclosure-summary")!);
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("red");
     expect(container.querySelector('[aria-label="Failed"]')).not.toBeNull();
   });
 
@@ -473,24 +473,24 @@ describe("tool call rows", () => {
         { "test-tool:output": "test-partial" },
         live
       );
-      const title = () => container.querySelector(".agentplane-step-title")!;
+      const title = () => container.querySelector(".transcript-step-title")!;
       expect(title().getAttribute("style")).toContain("blue");
       expect(title().getAttribute("title")).toBe(label);
       // Only a call something is working on breathes.
-      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(title().classList.contains("transcript-step-title--streaming")).toBe(breathes);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
 
       await toggle(container.querySelector(".ui-disclosure-summary")!);
       expect(title().getAttribute("style")).not.toContain("blue");
-      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(false);
+      expect(title().classList.contains("transcript-step-title--streaming")).toBe(false);
       expect(container.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
     }
   );
 
   it("leaves a call that went well in the dimmed title every line has", async () => {
     const container = await renderTool("Bash", { command: "ls" });
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("title")).toBeNull();
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("red");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("title")).toBeNull();
   });
 
   it("keeps a call's open state and Raw where the reader left them when its row leaves the DOM", async () => {

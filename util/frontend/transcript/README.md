@@ -5,6 +5,12 @@ shared frontend primitives in the parent package.
 `UserMessage` supplies the user bubble, gutter and overlay slots; `VerbatimText`
 preserves typed text. Applications supply message content and metadata.
 
+`StepLine` renders one compact step title and preview with optional disclosed content.
+Applications choose which records form steps and own their retained open state.
+`TextBlock` renders labeled, syntax-highlighted text in a bounded block; its
+`expansion` prop accepts caller-owned state, and JSON objects or arrays are highlighted
+as JSON when no language is supplied.
+
 `InspectionToggle` supplies the compact source/debug action used by both applications.
 A `transcript-inspection-owner` contains the action; bubble/overlay placements add
 no row height. Hover, keyboard focus or the application-owned

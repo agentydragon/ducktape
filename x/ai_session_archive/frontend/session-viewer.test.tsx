@@ -339,8 +339,8 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   });
   expect(view.querySelector('[data-event-ordinal="1"]')).not.toBeNull();
   const structured = view.querySelector('[data-event-ordinal="4"]');
-  expect(structured?.textContent).toContain("Codex · context compacted");
-  expect(structured?.textContent).toContain("Structured record; expand raw data to inspect it.");
+  expect(structured?.textContent).toContain("Context compacted");
+  expect(structured?.textContent).not.toContain("Structured record;");
 
   await toggleConversationOptions(view);
   const earlierCapture = findVersionMenuItem(view, "codex-version-1");
@@ -907,39 +907,68 @@ it("does not append a session page after changing the harness filter", async () 
   expect(view.textContent).toContain("Inspect a local transcript");
 });
 
-it("folds intermediate work, preserves final answers, and exposes the original record", async () => {
+it("keeps commentary visible and pairs a tool's arguments, output and source records", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/mixed-transcript-fixture");
-  const group = findControl(view, "Tools and reasoning · 5 records");
+  const group = findControl(view, "1 tool call");
   expect(group.getAttribute("aria-expanded")).toBe("false");
   expect(view.textContent).toContain("missing test configuration");
-  expect(view.textContent).not.toContain("I will inspect the build log.");
-  await act(async () => group.click());
-  expect(group.getAttribute("aria-expanded")).toBe("true");
   expect(view.textContent).toContain("I will inspect the build log.");
-  const tool = view.querySelector<HTMLElement>('[data-event-ordinal="5"]')!;
+  expect(view.textContent).not.toContain("Fixture build output");
+  await act(async () => group.click());
+  const tool = view.querySelector<HTMLElement>('[data-activity-step="tool"]')!;
+  expect(tool.textContent).toContain("read_build_log");
+  expect(tool.textContent).not.toContain("Fixture build output");
+  await act(async () => findControl(tool, "read_build_log").click());
+  expect(tool.textContent).toContain("Arguments");
+  expect(tool.textContent).toContain("Fixture build output");
   const rawControl = findControl(tool, "Raw JSONL record");
   await act(async () => rawControl.click());
   const rawPanel = document.getElementById(rawControl.getAttribute("aria-controls")!)!;
-  expect(rawPanel.querySelector("pre")?.textContent).toContain("read_build_log");
+  expect(rawPanel.querySelectorAll("pre")).toHaveLength(2);
+  expect(rawPanel.textContent).toContain('"call_id":"build-log"');
+  expect(rawPanel.textContent).toContain("function_call_output");
 });
 
-it("keeps an activity group open when older records extend it", async () => {
+it("retains an open result step when prepend supplies its matching call", async () => {
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     async listEvents(sessionId, versionId, cursor, signal) {
       const page = await sessionFixtureApi.listEvents(sessionId, versionId, undefined, signal);
       return cursor === undefined
-        ? { data: page.data.filter((record) => record.ordinal >= 4), next_cursor: 4 }
+        ? { data: page.data.filter((record) => record.ordinal >= 6), next_cursor: 6 }
         : { data: page.data.filter((record) => record.ordinal < cursor), next_cursor: null };
     },
   };
   const view = await renderViewer(api, "/sessions/mixed-transcript-fixture");
-  await act(async () => findControl(view, "Tools and reasoning · 4 records").click());
-  expect(view.textContent).toContain("I will inspect the build log.");
+  await act(async () => findControl(view, "1 tool result").click());
+  await act(async () =>
+    findControl(view.querySelector<HTMLElement>('[data-activity-step="tool"]')!, "Tool result").click()
+  );
+  expect(view.textContent).toContain("The call is outside the loaded records");
   await act(async () => {
     findControl(view, "Load earlier records").click();
     await flush();
   });
-  expect(findControl(view, "Tools and reasoning · 5 records").getAttribute("aria-expanded")).toBe("true");
-  expect(view.textContent).toContain("I will inspect the build log.");
+  expect(findControl(view, "1 tool call").getAttribute("aria-expanded")).toBe("true");
+  expect(view.textContent).toContain("Arguments");
+  expect(view.textContent).toContain("Fixture build output");
+  expect(view.textContent).not.toContain("The call is outside the loaded records");
+});
+
+it("renders session-shaped Codex work without bookkeeping or unavailable reasoning placeholders", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/codex-work-fixture");
+  expect(view.textContent).toContain("I'll compare the components");
+  expect(view.textContent).toContain("The components are shared.");
+  expect(view.textContent).toContain("Context compacted");
+  expect(view.textContent).not.toContain("Structured record;");
+  expect(view.querySelectorAll("[data-activity-step]")).toHaveLength(0);
+  await act(async () => findControl(view, "1 tool call, 1 agent message").click());
+  expect(view.textContent).toContain("Agent message · /root/shared_steps");
+  expect(view.textContent).not.toContain("item completed");
+  await act(async () => findControl(view, "1 tool call, 2 reasoning steps").click());
+  expect(view.querySelectorAll('[data-activity-step="reasoning"]')).toHaveLength(1);
+  const reasoning = view.querySelector<HTMLElement>('[data-activity-step="reasoning"]')!;
+  await act(async () => findControl(reasoning, "Reasoning").click());
+  expect(reasoning.textContent).toContain("Pair tool calls by their recorded call ID.");
+  expect(reasoning.textContent).toContain("Keep commentary outside the work group");
 });

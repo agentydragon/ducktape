@@ -227,7 +227,7 @@ export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
   if (!(target instanceof Element)) return;
   // A StepLine is itself a disclosure button on touch screens. Let that tap both open the
   // tool/reasoning row and reveal its separate Evidence action; all other controls stay excluded.
-  const stepSummary = target.closest(".agentplane-step-details .ui-disclosure-summary");
+  const stepSummary = target.closest(".transcript-step-details .ui-disclosure-summary");
   if (target.closest("a, button, summary, input, textarea, select") && !stepSummary) return;
   if (window.getSelection()?.isCollapsed === false) return;
   event.currentTarget.querySelector(`[${INSPECTION_REVEALED}]`)?.removeAttribute(INSPECTION_REVEALED);

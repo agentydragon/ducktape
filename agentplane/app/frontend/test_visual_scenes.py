@@ -554,7 +554,7 @@ async def test_session_standalone_reasoning(view: VisualPage, app: AgentplaneFix
     await app.standalone_reasoning()
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-preview .ui-markdown--single-line', state="attached"
+        '[data-thread-anchor="20"] .transcript-step-preview .ui-markdown--single-line', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -565,7 +565,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
     await app.standalone_reasoning(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-details .ui-disclosure-summary:not(:has(a))', state="attached"
+        '[data-thread-anchor="20"] .transcript-step-details .ui-disclosure-summary:not(:has(a))', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -575,7 +575,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
 async def test_session_unfinished_reasoning(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.UNFINISHED_REASONING)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-step-title--streaming", state="attached")
+    await view.page.wait_for_selector(".transcript-step-title--streaming", state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -585,7 +585,7 @@ async def test_session_reasoning_code_fence(view: VisualPage, app: AgentplaneFix
     await app.standalone_reasoning(code_fence=True)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-preview .ui-code-inline', state="attached"
+        '[data-thread-anchor="20"] .transcript-step-preview .ui-code-inline', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))

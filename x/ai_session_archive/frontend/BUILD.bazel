@@ -167,7 +167,10 @@ spa_bundle(
 ts_library(
     name = "session_fixture",
     testonly = True,
-    srcs = ["fixtures/session-data.ts"],
+    srcs = [
+        "fixtures/codex-work.ts",
+        "fixtures/session-data.ts",
+    ],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -275,6 +278,7 @@ py_visual_test(
 ts_library(
     name = "transcript_rows",
     srcs = ["transcript-rows.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     visibility = [
         "//agentplane:__subpackages__",
@@ -286,6 +290,7 @@ ts_library(
 ts_library(
     name = "transcript",
     srcs = ["transcript.tsx"],
+    isolated_typecheck = True,
     tsconfig = ":tsconfig",
     visibility = [
         "//agentplane:__subpackages__",
@@ -299,9 +304,12 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//util/frontend:disclosure",
+        "//util/frontend:markdown",
         "//util/frontend/transcript:inspection",
         "//util/frontend/transcript:message",
         "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
         "//util/frontend/transcript:virtualized_history",
     ],
 )
