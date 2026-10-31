@@ -1,8 +1,10 @@
 # Sessions, harness placement and execution attachments
 
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
-This is a long-term north star. The directions below constrain a future design; concrete object
-types, storage, protocols and implementation scheduling remain open.
+The broader object model is a long-term north star; concrete object types, storage and protocols
+remain open. Component names, source layout and the independently assignable Runner extractions
+below were agreed on 2026-10-31 UTC. Session/Environment dispatch regrouping remains for later;
+its service roles may share a binary or have separate binaries.
 Prefer the harness outside the execution environment when capabilities are otherwise equal: agent
 commands then have less opportunity to interfere with harness code/state, tool authority can be
 explicitly mediated, and colocation does not become an unavoidable lifetime constraint. The boundary
@@ -41,6 +43,10 @@ Distinguish a running harness host from its durable state. A Codex state store m
 native sessions; a running app-server can hydrate that state and run some of those sessions. The
 process, stored data and Sessions have different lifetimes. Define ownership/fencing according to
 the backend's actual storage/concurrency constraints rather than assuming one process per Session.
+Use Harness state store for durable continuation data and Harness host incarnation for a running
+host lifetime. Environment instance describes workload topology; component incarnation describes
+a particular service/container restart. Execution session names a process/file handle namespace,
+separate from an Agentplane Session. These names do not require new persisted entities.
 
 Keep three concerns distinct: state needed to continue the harness, retained evidence of what the
 harness reported or did, and the conversation presented to participants. History's conversation
@@ -57,10 +63,60 @@ evidence destination remain open; preserve the ability to record harness traces.
 
 ## Role boundaries and routing
 
-The working role names are environment agent, execution service, harness host, environment gateway
-and Session dispatcher. These do not decide binary or Deployment boundaries. Separate processes
-may help place harnesses and execution in different containers/cgroups; several roles can still
-share a binary.
+Operator direction, 2026-10-31 UTC: use the following responsibilities and names. Each standalone
+binary has its own directory and entrypoint; shared libraries live outside directories owned by
+another binary. These boundaries allow separate containers/cgroups without requiring every role in
+every deployment.
+
+| Component                      | Runnable target                | Responsibility                                                                                                                      |
+| ------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Environment agent              | `agentplane-environment-agent` | Environment identity, bootstrap, component discovery, health and coordinated drain; local supervision where designated.             |
+| Execution service              | `agentplane-execution-service` | Typed process/filesystem API, execution sessions, handles, output and cancellation; initially backed by Codex exec-server.          |
+| Harness host                   | `agentplane-harness-host`      | Native Claude/Codex Session admission, protocol adaptation, continuation state, journals and History export; placement independent. |
+| Central sampler                | `agentplane-central-sampler`   | Our agent-loop implementation, independently runnable and another implementation of the harness-host role.                          |
+| Environment dispatch / gateway | Binary grouping deferred       | Authenticated access to environment endpoints, connection ownership and incarnation fencing.                                        |
+| Session dispatcher             | Binary grouping deferred       | Durable Session command admission/delivery and routing to its owning harness, which need not live under an environment.             |
+
+The provisioning role is Environment controller. Keep the current Sandbox Controller name until
+its responsibility broadens to shared environment provisioning. The native `codex app-server`,
+`codex exec-server` and Claude binaries remain distinctly named subprocesses.
+
+The environment-level successor to Runner is Environment agent. Its Session/harness code moves to
+Harness host; its execution adapter and executor lifecycle move to Execution service. Support an
+execution-only environment, a local native harness, and a central agent with zero execution
+environments. A shared app-server serving N Sessions and a separately placed execution service
+remain supported. Direct-executing Claude belongs in an explicit workload resource domain; sharing
+one with Codex execution is a deployment choice.
+
+Proposed source ownership:
+
+```text
+agentplane/
+  env/
+    agent/                 # environment-agent entrypoint and implementation
+    execution/             # execution-service entrypoint and implementation
+    images/                # Pod/VM runtime packaging
+  harness/
+    host/                  # harness-host entrypoint and implementation
+    codex/                 # native backend/protocol adapter
+    claude/                # native backend/protocol adapter
+    central_sampler/       # independently runnable sampler
+  execution/               # shared execution protocol and clients
+  supervision/             # shared process supervision
+```
+
+`env/` groups software specific to operating execution environments. Generic harness hosting stays
+under `harness/` so the same implementation can run inside an environment or centrally. Use
+“execution environment” in APIs/docs to distinguish it from a deployment such as staging. Shared
+one-shot operation support also moves to a neutral package as consumers are extracted; it creates
+no service. Existing experimental implementations retain their status when relocated.
+
+Session dispatch and Environment dispatch are distinct responsibilities. Their process, binary and
+Deployment grouping remain open for later, as the operator clarified after discussing possible
+separate binaries. Names such as `agentplane-session-dispatcher` and
+`agentplane-environment-gateway` are available if standalone entrypoints are selected. The earlier
+[combined-service proposal](dispatcher_gateway_merge.md) is an option awaiting review, not the
+selected topology. That decision does not gate the Runner extractions.
 
 The intended routing distinction is:
 
@@ -70,13 +126,41 @@ flowchart LR
     dispatcher -->|central owner| central[Central harness host]
     dispatcher -->|owner inside an environment| gateway[Environment gateway]
     gateway --> local[Listening harness host in that environment]
+    tool[Execution call] --> gateway
+    gateway --> execution[Execution service]
 ```
 
-Keep harness-specific protocol adaptation distinct from environment routing. Whether the glue lives
-in a harness-host process, in the gateway or alongside another service remains open. Dispatcher
-resolves Session ownership and admits/delivers commands. Environment Gateway provides environment
-access without assuming every Session lives there. Their current colocation is not an inherent
-dependency.
+Dispatcher resolves Session ownership and admits/delivers commands. Environment Gateway provides
+environment access. The environment agent supplies lifecycle/endpoint information and need not
+relay every call. Harness-specific launch, native framing, Session mapping and recovery belong
+with the harness backend; Codex exec-server adaptation belongs with the execution backend. Gateway
+owns authenticated routing/fencing. This records ownership, not a new transport or authority policy.
+
+### Independently assignable extractions
+
+The [task DAG](task_dag.md#runner_shared_runtime_packages--move-reusable-runtime-support-to-neutral-packages)
+owns status and dependencies. Ready slices are shared runtime libraries, Execution service,
+Harness host plus Environment agent, and runtime packaging. Each begins with the bounded ownership
+review needed by its own boundary: admission, drain, durable-state locks, process generations,
+fencing and failure settlement. Review that contract before moving an effect between processes.
+There is no global Runner redesign prerequisite; an unresolved question blocks only the slice
+that needs its answer. The preferred execution-then-harness sequence is not a hard dependency when
+the existing execution API suffices. Shared-file conflicts require rebasing, not ordering gates.
+
+The execution extraction includes both today's `runner/executor` companion (PID-1 supervision of
+Codex exec-server) and `runner/execution` typed gRPC adapter. Renaming only the companion leaves the
+execution endpoint embedded in the wrong owner. Preserve Pod PID-1 and VM/systemd execution modes;
+a standalone execution target must not require a native harness. Future laptop support is a
+capability to preserve room for, not an implementation prerequisite.
+
+The host extraction assigns native Session state/journals/ingress to the harness host and leaves
+environment lifecycle with the environment agent. Keep native state, authored data, Session and
+environment identities across cutover. Each change updates all imports, BUILD targets, entrypoints,
+images, settings, protocols and current docs it affects; no compatibility shims or duplicate owners.
+A source move alone changes no process lifetime. Runtime changes require their own proportional
+acceptance and rollback plan, including overlapping replicas where relevant. Update the actual
+system diagrams as traffic changes. Packaging work preserves resource, identity and access policy;
+rightsizing and a JS-host replacement remain separate work.
 
 Prefer central ownership of the loop when it supplies the needed capabilities: Agentplane can
 control its code and environment relationships. Sandbox-hosted Codex remains a supported adapter
@@ -157,7 +241,10 @@ state, cancellation, long waits, notifications and multimodal results before tre
 interchangeable. Preserve existing Action authorization and outcomes rather than adding a parallel
 execution owner.
 
-An Agentplane-owned Code Mode executor and execution server are possible future implementations.
+Code runtime names the JS/programmatic orchestration runtime, separately from process execution.
+An owned standalone implementation could be `agentplane-code-runtime`; it is not a prerequisite for
+the selected extractions. An Agentplane-owned Code Mode executor and execution server are possible
+future implementations.
 Owning the JS host would also let Agentplane design its agent-facing APIs as ordinary libraries:
 structured errors and results, environment references across cells, direct Action calls, and
 explicit cancellation, waiting and state lifetimes. Translate transport quirks at the adapter
@@ -195,8 +282,8 @@ CLI operation when that is the supported way to retain its useful behavior.
 ## Questions for review
 
 Refine Session identity/continuation authority, durable harness stores, running harness hosts and
-execution-environment relationships into concrete contracts. These roles do not by themselves
-choose object types, services, databases or Kubernetes resources.
+execution-environment relationships into concrete contracts. The component boundaries above are
+selected; broader object types, databases and Kubernetes resources remain design work.
 
 Decide which lifetimes are coupled for each backend and how creation, attach/detach, suspend,
 deletion and recovery appear in the API and UI, preserving the 0..N central case. Separate
@@ -213,5 +300,6 @@ already describes experimental `environment/add`, per-thread environments and tu
 Use it as input; it does not establish arbitrary detach/rebind or environment-free operation.
 
 Exit: reviewed terms, ownership/lifetime rules, API examples for the cases above, and a
-transition proposal preserving existing identities, history and native state. Implementation work
-follows a reviewed choice. This design authorizes no deployment or migration.
+transition proposal preserving existing identities, history and native state. The Runner extractions
+above can be assigned independently of that broader decision. This planning change authorizes no
+live deployment or migration.

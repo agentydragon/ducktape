@@ -6,6 +6,17 @@ Status: **proposed; ownership chosen, the rest not reviewed.** The operator aske
 goes with the last one, after its durable content moves to the Gateway and Dispatcher READMEs and the
 [session-control ADR](../docs/adr_sandbox_session_control.md).
 
+## Later topology decision
+
+Operator clarification, 2026-10-31 UTC: Session dispatch and Environment dispatch are distinct
+responsibilities because a Session need not live under an environment. They may share a binary or
+have separate binaries; leave this particular merge/reshuffle for later. The single-service shape
+and audience unification below remain proposals. The earlier holder-owned delivery preference was
+scoped to that combined shape; revisit it when choosing a topology. The independently assignable Runner extractions in the
+[runtime plan](session_runtime_model.md#independently-assignable-extractions) do not wait for this
+decision or for optional queue mode. Retain existing dispatch ownership/fencing until a reviewed
+change replaces it.
+
 ## Proposal
 
 Operator, 2026-10-20 07:13 UTC:
