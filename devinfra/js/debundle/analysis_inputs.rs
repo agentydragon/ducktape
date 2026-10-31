@@ -407,6 +407,9 @@ pub struct BundleGlobalNames {
     pub names: BTreeSet<String>,
     /// Every property keyed by a `Symbol.for` symbol.
     pub registered_symbols: bool,
+    /// No analyzed write may replace `Map`, `Set`, `WeakMap` or `WeakSet`,
+    /// so constructing one allocates a fresh object.
+    pub fresh_collections: bool,
 }
 
 /// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).

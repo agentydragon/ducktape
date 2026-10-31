@@ -1356,48 +1356,6 @@ of its own, and A11 excludes host code changing intrinsics. So:
 A prototype slot covers every property on the object, including inherited
 lookups, so it is unknown after any write to its family or the global object.
 
-### Bundle-owned globals
-
-Under `host_behavior.predefined_globals: standard` a write through the value of
-a bundle-owned global property reaches no intrinsic slot, whatever its key.
-Without that key every global-slot read-back stays an unknown value.
-
-A property `g` of the global object is bundle-owned when it is not in the
-standard list (§ Predefined globals), is not a census binding name, and every
-census write that may store into `g` stores a fresh object, a primitive or
-`g`'s own current value: `root.g = {}`, `root.g = root.g || {}`,
-`root.g ??= {}`, `root[key] = root[key] ?? { ... }`. A store that may name `g`
-is any write whose key domain may be `g` and whose receiver may be the global
-object, an unknown value, a native descendant or a prototype; `g`'s own value
-is a read of `g` from a receiver that is only the global object. Properties
-keyed by `Symbol.for` symbols form one bundle-owned slot, read through a stable
-binding with a `Symbol.for` key domain, while `%Symbol%` and `%Symbol.for%`
-have no census write. The set is a greatest fixed point: a write through a
-bundle-owned value is not itself a store into a global or prototype.
-
-The set is computed over every analyzed chunk's writes, since all chunks share
-one global object. Every bundle-owned property is unknown if any global-chain
-write has an unknown key or may name `__proto__`, if a keyless reflective write
-(`Object.assign`, `Object.setPrototypeOf`) reaches such a receiver, or if a
-legacy accessor method (`__defineGetter__`) is called on one. A sloppy
-assignment to an undeclared `g` is a store into `g`; `delete`, updates,
-destructuring and reflective writes naming `g` drop it.
-
-Soundness, by induction over execution: initially `g` is absent from the
-global object and, by the host claim, from its host prototypes, or is a named
-property; the `%Object.prototype%` names are in the list. Every later store
-into `g`, on the global object or a prototype it inherits from, writes a fresh
-object, a primitive or `g`'s current value, so `g` never holds an intrinsic. Writes
-through `g`'s value land on fresh objects, so they cannot store into `g` on
-the global chain either. Setters and Proxy traps a write runs are analyzed
-source with census writes of their own; A11 excludes host code changing
-intrinsics or adding globals, and covers hidden native-alias paths as for
-every census fact: an aliased `Object.defineProperty`, or a write through a
-parameter or container field that holds the global object. Analyzed chunks are ES
-modules, so top-level declarations create no global property, and dynamic
-scope leaves the census open. A descendant of `g`'s value stays unknown.
-Proofs that use the discharge record `predefined_globals` among their host
-behavior dependencies.
 Each consumer names every slot its operation reads: the callee's binding and
 member, and any constructor static or prototype method the algorithm looks up.
 
@@ -1463,6 +1421,52 @@ input applies only together with `host_behavior.reentry_free_operations:
 arguments with their effects and throws; the input grants no family-wide
 integrity, purity, return shape or guarantee at another site, and A11 remains
 the external obligation for code outside the analyzed program.
+
+### Bundle-owned globals
+
+Under `host_behavior.predefined_globals: standard` a write through the value of
+a bundle-owned global property reaches no intrinsic slot, whatever its key.
+Without that key every global-slot read-back stays an unknown value.
+
+A property `g` of the global object is bundle-owned when it is not in the
+standard list (§ Predefined globals), is not a census binding name, and every
+census write that may store into `g` stores a fresh object, a primitive, a
+fresh `Map`, `Set`, `WeakMap` or `WeakSet` (when no write may replace those
+bindings), or the value of a bundle-owned property, `g`'s own included:
+`root.g = {}`, `root.g = root.g || {}`, `root.g ??= new Map()`,
+`root[key] = root[key] ?? { ... }`. A store that may name `g` is any write
+whose key domain may be `g` and whose receiver may be the global object, an
+unknown value, a native descendant or a prototype. Properties keyed by
+`Symbol.for` symbols form one bundle-owned slot, read through a stable binding
+with a `Symbol.for` key domain, while no write may replace `%Symbol%` or
+`%Symbol.for%`.
+
+The set is a greatest fixed point over every analyzed chunk's writes, since
+all chunks share one global object: a write through a bundle-owned value is not
+itself a store into a global or prototype. Every property is dropped if any
+global-chain write has an unknown key or may name `__proto__`, if a keyless
+reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
+receiver, or if a legacy accessor method (`__defineGetter__`) named by its key
+is called on one. A sloppy assignment to an undeclared `g` is a store into `g`;
+updates, destructuring and reflective writes naming `g` drop it, as does a
+`delete` that may name `g` on the global object. A `delete` on a prototype
+stores nothing.
+
+Soundness, by induction over execution: initially `g` is absent from the
+global object and, by the host claim, from its host prototypes, or is a named
+property; the `%Object.prototype%` names are in the list. Every later store
+into `g`, on the global object or a prototype it inherits from, writes a
+non-intrinsic value, so `g` never holds an intrinsic; a `delete` only removes.
+Writes through `g`'s value land on non-intrinsic objects, so they cannot store
+into `g` on the global chain either. Setters and Proxy traps a write runs are
+analyzed source with census writes of their own; A11 excludes host code
+changing intrinsics or adding globals, and covers hidden native-alias paths as
+for every census fact: an aliased or computed descriptor method, or a write
+through a parameter or container field that holds the global object. Analyzed
+chunks are ES modules, so top-level declarations create no global property,
+and dynamic scope leaves the census open. A descendant of `g`'s value stays
+unknown. Proofs that use the discharge record `predefined_globals` among their
+host behavior dependencies.
 
 ## Commuting statements
 
