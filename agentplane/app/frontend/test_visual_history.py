@@ -41,7 +41,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     ).first
     await expect(control).to_contain_text("git branch -d stale")
     await control.scroll_into_view_if_needed()
-    await view.capture(name="single-tool-collapsed")
+    await view.capture(name=f"{view.capture_name}_single-tool-collapsed")
     before = await row.bounding_box()
     assert before is not None
     await control.click()
@@ -54,7 +54,7 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     assert next_box is not None
     assert after["height"] > before["height"]
     assert next_box["y"] >= after["y"] + after["height"] - 1
-    await view.capture(name="single-tool-expanded")
+    await view.capture(name=f"{view.capture_name}_single-tool-expanded")
 
 
 @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
     await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()
     await expect(details).to_contain_text("Sandbox bootstrap running")
-    await view.capture(name="blockers")
+    await view.capture(name=f"{view.capture_name}_blockers")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
