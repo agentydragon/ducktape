@@ -30,8 +30,8 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
 The `agentplane` command calls these APIs for you. `agentplane actions`, `agentplane notifications`
-and `agentplane egress` read their service addresses and the placeholders above from your
-`AGENTPLANE_*` environment variables, so a command needs no URL, header or proxy flag. Start with
+and `agentplane egress` read the base URLs and placeholders above from your `AGENTPLANE_*`
+environment variables, so a command needs no URL, header or proxy flag. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
 Each service serves `/llms.txt` for its overview and links to workflow guides. For a harness

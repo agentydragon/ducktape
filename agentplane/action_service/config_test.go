@@ -52,7 +52,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || c.HTTPPort != 8081 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
+	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
 		c.IntegratedConnectionService ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
@@ -236,7 +236,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
 		"port of a word":          requiredFile + "port: never-print-this\n",
 		"port out of range":       requiredFile + "port: 70000\n",
-		"one port for both":       requiredFile + "http_port: 8080\n",
 		"empty host":              requiredFile + "host: \"\"\n",
 		"no audience":             strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
 		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),

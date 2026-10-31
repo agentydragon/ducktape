@@ -97,7 +97,6 @@ type NewSandboxDefaults struct {
 type ActionFederationConfig struct {
 	Mode              string             `mapstructure:"mode" json:"mode"`
 	ServiceURL        string             `mapstructure:"service_url" json:"service_url"`
-	HTTPURL           string             `mapstructure:"http_url" json:"http_url"`
 	LoginJWKsURI      string             `mapstructure:"login_jwks_uri" json:"login_jwks_uri"`
 	LoginTokenProfile string             `mapstructure:"login_token_profile" json:"login_token_profile"`
 	Target            OperatorOIDCConfig `mapstructure:"target" json:"target"`
@@ -549,7 +548,6 @@ func (c Config) validate() error {
 		"egress_admin_url":                  c.EgressAdminURL,
 		"connection_service_url":            c.ConnectionServiceURL,
 		"action_federation.service_url":     c.ActionFederation.ServiceURL,
-		"action_federation.http_url":        c.ActionFederation.HTTPURL,
 		"action_federation.login_jwks_uri":  c.ActionFederation.LoginJWKsURI,
 		"action_federation.target.issuer":   c.ActionFederation.Target.Issuer,
 		"action_federation.target.audience": c.ActionFederation.Target.Audience,
@@ -582,7 +580,6 @@ func (c Config) validate() error {
 		"notifications_url":                 c.NotificationsURL,
 		"connection_service_url":            c.ConnectionServiceURL,
 		"action_federation.service_url":     c.ActionFederation.ServiceURL,
-		"action_federation.http_url":        c.ActionFederation.HTTPURL,
 		"action_federation.target.issuer":   c.ActionFederation.Target.Issuer,
 		"action_federation.target.jwks_uri": c.ActionFederation.Target.JWKsURI,
 		"egress_admin_url":                  c.EgressAdminURL,

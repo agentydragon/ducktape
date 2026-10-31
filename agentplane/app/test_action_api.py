@@ -84,7 +84,6 @@ async def federation_review(
                 "action_federation": {
                     "mode": "exchange",
                     "service_url": f"http://{target}",
-                    "http_url": f"http://{target}",
                     "login_jwks_uri": jwks_uri,
                     "login_token_profile": "authentik",
                     "target": {

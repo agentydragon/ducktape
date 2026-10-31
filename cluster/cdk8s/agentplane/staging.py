@@ -225,7 +225,6 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
     service_url=AnyHttpUrl(actions.service(STAGING_NAMESPACE).url),
-    http_url=AnyHttpUrl(actions.http_service(STAGING_NAMESPACE).url),
     token_endpoint=AnyHttpUrl(f"{_AUTHENTIK}/application/o/token/"),
     login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,

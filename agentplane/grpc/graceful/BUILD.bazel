@@ -2,15 +2,24 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "graceful",
-    srcs = ["stop.go"],
+    srcs = [
+        "shared.go",
+        "stop.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/graceful",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["@org_golang_google_grpc//:grpc"],
+    deps = [
+        "@com_github_soheilhy_cmux//:cmux",
+        "@org_golang_google_grpc//:grpc",
+    ],
 )
 
 go_test(
     name = "graceful_test",
-    srcs = ["stop_test.go"],
+    srcs = [
+        "shared_test.go",
+        "stop_test.go",
+    ],
     race = "on",
     deps = [
         ":graceful",

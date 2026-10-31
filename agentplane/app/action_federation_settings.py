@@ -13,8 +13,7 @@ from util.urls import HttpEndpointUrl, HttpsOrLoopbackHttpEndpointUrl
 class _ActionFederationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    service_url: HttpEndpointUrl = Field(description="The Action Service's gRPC listener.")
-    http_url: HttpEndpointUrl = Field(description="The Action Service's HTTP listener: the MCP linkage callback.")
+    service_url: HttpEndpointUrl
     login_jwks_uri: str
     login_token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
     target: OperatorOidcSettings

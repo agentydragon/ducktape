@@ -24,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
-	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
@@ -79,7 +78,6 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
-	push      web_push_servicepb.WebPushServiceClient
 	// connections targets the retired service to assert that it is no longer registered.
 	connections connection_servicepb.ConnectionServiceClient
 	// url is the base URL of the service's HTTP routes.
@@ -125,17 +123,13 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubscribe)
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, cluster, grpcListener, httpListener) }()
+	go func() { served <- serve(ctx, c, cluster, listener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -150,7 +144,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,9 +152,8 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
-		push:        web_push_servicepb.NewWebPushServiceClient(connection),
 		connections: connection_servicepb.NewConnectionServiceClient(connection),
-		url:         "http://" + httpListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		url:         "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -183,7 +176,7 @@ func waitReady(t *testing.T, service running) {
 	}
 }
 
-func TestTheServiceAnswersHealthAndMetricsAndStopsWhenTold(t *testing.T) {
+func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	waitReady(t, service)
 	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {

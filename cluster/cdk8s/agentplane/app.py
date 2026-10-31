@@ -337,9 +337,8 @@ class App(Construct):
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;
-                # network reachability grants no review authority. The MCP linkage callback is HTTP.
+                # network reachability grants no review authority.
                 actions.service(namespace).egress(),
-                actions.http_service(namespace).egress(),
                 *([self.electric.egress()] if self.electric is not None else []),
                 # The browser's same-origin OTLP relay is served by this App Pod and sends HTTP OTLP.
                 telemetry.ALLOY_OTLP_HTTP.egress(),

@@ -140,7 +140,9 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - A Go server serves gRPC on its own listener with `grpc.Server.Serve`, never through `ServeHTTP` on an HTTP server,
   and stops with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
   routes beside it (a facade, agent documentation, metrics, callbacks) take a separate HTTP listener and Service port,
-  which stops first, since a facade's calls are gRPC calls.
+  which stops first, since a facade's calls are gRPC calls. **Deviation:** the Action Service keeps both on one port, so
+  a sandbox reaches it at one address; [`graceful.Shared`](../grpc/graceful/shared.go) sends HTTP/2 connections to
+  the gRPC server and the rest to the HTTP server, each still served and drained natively.
 - Health is the standard `grpc.health.v1.Health` service on the service's own gRPC port, which
   `agentplane.grpc.serving.add_health` registers, probed by Kubernetes' native `grpc` liveness and
   readiness probes. No separate HTTP health server.

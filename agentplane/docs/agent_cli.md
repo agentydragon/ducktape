@@ -113,12 +113,12 @@ The CLI reads the environment of the harness and of every command it runs. There
 no discovery calls, so no command depends on a service it does not talk to. Actions use generated gRPC
 over HTTP/2; Notifications and Egress rules use HTTP.
 
-| Variable                                                                                               | Value                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`                                                                               | the Action Service's gRPC origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                         |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                                       |
-| `AGENTPLANE_DESTINATION`                                                                               | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                                   |
+| Variable                                                                                               | Value                                                                                                              |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `AGENTPLANE_ACTIONS_URL`                                                                               | the Action Service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                  |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                                |
+| `AGENTPLANE_DESTINATION`                                                                               | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                            |
 
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
 Action gRPC client uses `HTTPS_PROXY` for proxy resolution even when its configured service URL is

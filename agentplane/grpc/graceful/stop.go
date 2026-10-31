@@ -1,4 +1,4 @@
-// Package graceful stops a gRPC server served on its own listener.
+// Package graceful stops gRPC servers, letting the calls in flight finish first.
 package graceful
 
 import (
