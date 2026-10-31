@@ -5789,6 +5789,34 @@ fn key_domain_may_name(domain: &PropertyKeyDomain, name: &str) -> bool {
     }
 }
 
+/// The own keys `Object.assign` copies from `sources` when each is an object
+/// literal of plain data properties and methods with static keys: no spread,
+/// accessor, or `__proto__` in any spelling.
+fn object_literal_assign_keys(sources: &[ExprOrSpread]) -> Option<Vec<String>> {
+    let mut keys = Vec::new();
+    for source in sources {
+        let (None, Expr::Object(object)) = (&source.spread, source.expr.unwrap_parens()) else {
+            return None;
+        };
+        for property in &object.props {
+            let PropOrSpread::Prop(property) = property else {
+                return None;
+            };
+            let key = match property.as_ref() {
+                Prop::KeyValue(pair) => static_property_name(&pair.key),
+                Prop::Shorthand(ident) => Some(ident.sym.to_string()),
+                Prop::Method(method) => static_property_name(&method.key),
+                Prop::Assign(_) | Prop::Getter(_) | Prop::Setter(_) => None,
+            };
+            let key = key.filter(|key| key != "__proto__")?;
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+    }
+    Some(keys)
+}
+
 const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
 
 const LEGACY_ACCESSOR_METHODS: [&str; 2] = ["__defineGetter__", "__defineSetter__"];
@@ -11786,7 +11814,15 @@ impl Visit for ExecutionIndex {
                     value: None,
                 }
             };
-            if matches!(method.as_deref(), Some("assign" | "defineProperties")) {
+            let literal_keys = (method.as_deref() == Some("assign"))
+                .then(|| object_literal_assign_keys(call.args.get(1..).unwrap_or_default()))
+                .flatten();
+            if let Some((first, rest)) = literal_keys.as_ref().and_then(|keys| keys.split_first()) {
+                target.key = Some(PropertyKeyExpr::String(first.clone()));
+                target
+                    .additional_keys
+                    .extend(rest.iter().cloned().map(PropertyKeyExpr::String));
+            } else if matches!(method.as_deref(), Some("assign" | "defineProperties")) {
                 let sources = if method.as_deref() == Some("assign") {
                     call.args.get(1..).unwrap_or_default()
                 } else {
