@@ -106,7 +106,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return invalid()
 	}
-	session, err := s.Store.OpenSession(ctx, request, principal.ServiceAccountUID, modelConfig.API)
+	session, err := s.Store.OpenSession(ctx, request, principal.ServiceAccountUID, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}

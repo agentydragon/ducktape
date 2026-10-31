@@ -23,6 +23,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
+
+func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
+	t.Helper()
+	if request.GetExecutor() == nil {
+		request.Executor = &sandboxespb.SandboxDestination{
+			Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+		}
+	}
+	return store.OpenSession(t.Context(), request, ownerUID, api, fixturePlatformInstructions)
+}
+
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	t.Helper()
 	request := &samplerpb.OpenSessionRequest{
@@ -32,7 +45,7 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		},
 		SetupScript: &setup,
 	}
-	session, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses)
+	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +139,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	const previousIncarnationUID = "fixture-previous-incarnation"
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
-	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
@@ -648,7 +661,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
 		t.Run(string(api), func(t *testing.T) {
 			store := newTestStore(t)
-			session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+			session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
 					Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 				},
@@ -1517,7 +1530,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
 		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
 	}
-	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
 	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
@@ -1826,14 +1839,14 @@ func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
-	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
+	if _, err := openStoreSession(t, store, legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); err != nil {
+	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatalf("reopening with retired metadata: %v", err)
 	}
 	request.Spec.Model = "different"
-	if _, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
+	if _, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed session spec accepted: %v", err)
 	}
 }

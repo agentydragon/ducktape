@@ -161,6 +161,7 @@ type Settings struct {
 	Listen                           string                      `json:"listen"`
 	Audience                         string                      `json:"audience"`
 	AllowedAccounts                  []string                    `json:"allowed_accounts"`
+	PlatformInstructions             string                      `json:"platform_instructions"`
 	CodeModeHost                     string                      `json:"code_mode_host"`
 	ExecutorCodex                    string                      `json:"executor_codex"`
 	Logs                             string                      `json:"logs"`
@@ -221,7 +222,17 @@ func decodeSettings(reader io.Reader) (Settings, error) {
 }
 
 func (s Settings) Validate() error {
-	for name, value := range map[string]string{"database_url": s.DatabaseURL, "listen": s.Listen, "audience": s.Audience, "code_mode_host": s.CodeModeHost, "executor_codex": s.ExecutorCodex, "logs": s.Logs} {
+	if strings.TrimSpace(s.PlatformInstructions) == "" {
+		return errors.New("platform_instructions is required")
+	}
+	for name, value := range map[string]string{
+		"database_url":   s.DatabaseURL,
+		"listen":         s.Listen,
+		"audience":       s.Audience,
+		"code_mode_host": s.CodeModeHost,
+		"executor_codex": s.ExecutorCodex,
+		"logs":           s.Logs,
+	} {
 		if value == "" {
 			return fmt.Errorf("%s is required", name)
 		}

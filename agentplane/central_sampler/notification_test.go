@@ -130,7 +130,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					ExpectedIncarnationUid: "original",
 					Spec:                   &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"},
 				}
-				session, err := store.OpenSession(t.Context(), request, "fixture-account", api)
+				session, err := openStoreSession(t, store, request, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)
 				}

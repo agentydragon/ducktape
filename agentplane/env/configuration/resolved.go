@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/codexappserver"
@@ -15,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harnesshost/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	sessioninstructions "github.com/agentydragon/ducktape/agentplane/session_instructions"
 )
 
 type SandboxIdentity struct {
@@ -31,21 +31,22 @@ type SandboxLaunch struct {
 
 // Destination is the JSON notification destination of one Session: the Sandbox and the Session ID.
 func (l SandboxLaunch) Destination(sessionID string) string {
-	destination, _ := json.Marshal(struct {
-		Destination SandboxIdentity `json:"destination_ref"`
-		SessionID   string          `json:"session_id"`
-	}{l.Sandbox, sessionID})
-	return string(destination)
+	return sessioninstructions.DestinationJSON(l.sessionDestination(sessionID))
 }
 
-func (l SandboxLaunch) Instructions(sessionID, task string) string {
-	parts := []string{}
-	for _, part := range []string{l.PlatformInstructions, "Your explicit notification destination is:\n" + l.Destination(sessionID) + "\nUse these identifiers when addressing this session; they are not credentials.", task} {
-		if part = strings.TrimSpace(part); part != "" {
-			parts = append(parts, part)
-		}
+func (l SandboxLaunch) Instructions(sessionID, additionalInstructions string) string {
+	return sessioninstructions.Compose(l.PlatformInstructions, l.sessionDestination(sessionID), additionalInstructions)
+}
+
+func (l SandboxLaunch) sessionDestination(sessionID string) sessioninstructions.Destination {
+	return sessioninstructions.Destination{
+		Sandbox: sessioninstructions.SandboxIdentity{
+			Namespace: l.Sandbox.Namespace,
+			Name:      l.Sandbox.Name,
+			UID:       l.Sandbox.UID,
+		},
+		SessionID: sessionID,
 	}
-	return strings.Join(parts, "\n\n")
 }
 
 type Endpoint struct {
