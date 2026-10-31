@@ -31,27 +31,41 @@ const sandboxUID = "00000000-0000-4000-8000-000000000001"
 // caller is the account the store tests' calls were admitted as.
 var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
+func configuredDispatcherCallers() map[auth.Account]struct{} {
+	return map[auth.Account]struct{}{caller: {}}
+}
+
 // admitted is a call context admitted as caller.
 func admitted() context.Context {
-	return auth.WithCaller(context.Background(), auth.Principal{Account: caller})
+	account := auth.ServiceAccountPrincipal{Account: caller, ServiceAccountUID: "test-account-uid"}
+	pod := auth.Principal{Account: caller, ServiceAccountUID: account.ServiceAccountUID, PodName: "test-pod", PodUID: "test-pod-uid"}
+	return auth.WithReviewedCaller(context.Background(), auth.ReviewedCaller{ServiceAccount: account, Pod: &pod})
 }
 
 type oneSandbox struct{}
+
+func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+	return ServiceAccountIdentity{}, false, nil
+}
 
 func (oneSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
 	if name != "sandbox-api" {
 		return SandboxSnapshot{}, false, nil
 	}
-	return SandboxSnapshot{Name: name, UID: sandboxUID}, true, nil
+	return SandboxSnapshot{Name: name, Namespace: caller.Namespace, UID: sandboxUID}, true, nil
 }
 
 type blockedSandbox struct{}
+
+func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+	return ServiceAccountIdentity{}, false, nil
+}
 
 func (blockedSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, bool, error) {
 	if name != "sandbox-api" {
 		return SandboxSnapshot{}, false, nil
 	}
-	return SandboxSnapshot{Name: name, UID: sandboxUID, Blocker: "sandbox_suspended"}, true, nil
+	return SandboxSnapshot{Name: name, Namespace: caller.Namespace, UID: sandboxUID, Blocker: "sandbox_suspended"}, true, nil
 }
 
 type rejectingRunner struct {
@@ -380,7 +394,7 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	store := testStore(t, 3)
 	service := &Service{
-		Store: store, WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
+		Store: store, DispatcherCallers: configuredDispatcherCallers(), WakeCallers: map[auth.Account]struct{}{caller: {}}, Sandboxes: oneSandbox{},
 	}
 	ctx := admitted()
 	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
@@ -449,7 +463,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 		}
 	}
 	service := &Service{
-		Store: store, Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -493,7 +507,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 				ctx: ctx, started: make(chan struct{}), finished: make(chan struct{}), release: release,
 			}
 			service := &Service{
-				Store: testStore(t, 5), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+				Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
 				WatchLease: tc.lease,
 			}
 			request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
@@ -537,7 +551,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	ctx := admitted()
 
 	blocked := &Service{
-		Store: testStore(t, 3), WakeCallers: callers, Sandboxes: blockedSandbox{},
+		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), WakeCallers: callers, Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
@@ -549,7 +563,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
 	runner := &rejectingRunner{err: rejection}
 	service := &Service{
-		Store: testStore(t, 3), WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
+		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
@@ -1235,7 +1249,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
 	runner := &acceptingRunner{calls: make(chan string, 1)}
-	service := &Service{Store: store, Sandboxes: blockedSandbox{}, Runner: runner}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, Runner: runner}
 	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "active-turn"})
 	if err != nil || result.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
 		t.Fatalf("central interrupt: %v %v", result, err)
@@ -1248,7 +1262,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted()
 	store := testStore(t, 3)
-	service := &Service{Store: store, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)

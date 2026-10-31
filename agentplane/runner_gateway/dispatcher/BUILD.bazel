@@ -37,6 +37,7 @@ go_library(
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runnerclient",
+        "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
         "//agentplane/x/central_sampler:sampler_go_proto",
         "@com_github_google_uuid//:uuid",

@@ -9,4 +9,7 @@ message TerminalNotificationPart {
   uint32 part = 2;
   uint32 part_count = 3;
   bytes data = 4;
+  string execution_account_namespace = 5;
+  string execution_account_name = 6;
+  string execution_account_uid = 7;
 }

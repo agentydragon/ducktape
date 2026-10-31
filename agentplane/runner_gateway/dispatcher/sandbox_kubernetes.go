@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +25,7 @@ type KubernetesSandboxes struct {
 	informer  cache.Informer
 	namespace string
 	changed   chan struct{}
+	reader    *sandboxreader.Reader
 }
 
 func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namespace string) (*KubernetesSandboxes, error) {
@@ -34,9 +36,13 @@ func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namesp
 	if err != nil {
 		return nil, err
 	}
+	reader, err := sandboxreader.New(namespace, objects)
+	if err != nil {
+		return nil, err
+	}
 	result := &KubernetesSandboxes{
 		objects: objects, inventory: inventory, informer: informer,
-		namespace: namespace, changed: make(chan struct{}, 1),
+		namespace: namespace, changed: make(chan struct{}, 1), reader: reader,
 	}
 	_, err = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
 		AddFunc:    func(any) { result.signal() },
@@ -75,6 +81,19 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (Sand
 	}
 	view, err := sandboxSnapshot(&object)
 	return view, err == nil, err
+}
+
+// GetExecutionAccount returns only the ServiceAccount controlled by the exact live Sandbox UID.
+// The uncached object client is deliberate: writes and queued delivery must not authorize from an
+// old informer snapshot after the managed account has been replaced.
+func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox SandboxSnapshot) (ServiceAccountIdentity, bool, error) {
+	account, found, err := k.reader.ExecutionAccount(ctx, sandboxreader.Identity{
+		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: sandbox.UID,
+	})
+	if err != nil || !found {
+		return ServiceAccountIdentity{}, found, err
+	}
+	return ServiceAccountIdentity{Account: Account{Namespace: account.Namespace, Name: account.Name}, UID: account.UID}, true, nil
 }
 
 func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnapshot, error) {

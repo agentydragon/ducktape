@@ -24,9 +24,12 @@ type watchSubscription struct {
 }
 
 type terminalAssembly struct {
-	started time.Time
-	count   int
-	parts   map[int][]byte
+	started   time.Time
+	count     int
+	parts     map[int][]byte
+	ownerNS   string
+	ownerName string
+	ownerUID  string
 }
 
 // WatchHub transports committed PostgreSQL invalidations and terminal
@@ -201,6 +204,10 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if len(data) > terminalChunkBytes {
 		return errors.New("terminal part is too large")
 	}
+	ownerNS, ownerName, ownerUID := item.GetExecutionAccountNamespace(), item.GetExecutionAccountName(), item.GetExecutionAccountUid()
+	if (ownerNS == "") != (ownerName == "") || ownerUID != "" && ownerNS == "" {
+		return errors.New("terminal notification has an incomplete Session principal association")
+	}
 	h.mu.Lock()
 	assembly := h.pending[item.GetEventId()]
 	if assembly == nil {
@@ -208,10 +215,13 @@ func (h *WatchHub) terminalPart(payload string) error {
 			h.mu.Unlock()
 			return errors.New("too many pending terminal events")
 		}
-		assembly = &terminalAssembly{started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{}}
+		assembly = &terminalAssembly{
+			started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{},
+			ownerNS: ownerNS, ownerName: ownerName, ownerUID: ownerUID,
+		}
 		h.pending[item.GetEventId()] = assembly
 	}
-	if assembly.count != int(item.GetPartCount()) {
+	if assembly.count != int(item.GetPartCount()) || assembly.ownerNS != ownerNS || assembly.ownerName != ownerName || assembly.ownerUID != ownerUID {
 		h.mu.Unlock()
 		return errors.New("terminal part count changed")
 	}
@@ -243,6 +253,13 @@ func (h *WatchHub) terminalPart(payload string) error {
 		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
 		return errors.New("terminal snapshot did not describe Sandbox deletion")
 	}
-	h.notifyTerminal(TerminalEvent{item.GetEventId(), dispatch})
+	var owner *ServiceAccountIdentity
+	if assembly.ownerNS != "" && assembly.ownerName != "" {
+		owner = &ServiceAccountIdentity{
+			Account: Account{Namespace: assembly.ownerNS, Name: assembly.ownerName},
+			UID:     assembly.ownerUID,
+		}
+	}
+	h.notifyTerminal(TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner})
 	return nil
 }

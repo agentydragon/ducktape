@@ -19,6 +19,7 @@ const (
 	rulePublic
 	ruleAnyAccount
 	ruleAccounts
+	ruleReviewedServiceAccount
 )
 
 // Rule is who may call one gRPC method.
@@ -44,6 +45,13 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 		allowed[account] = struct{}{}
 	}
 	return Rule{kind: ruleAccounts, resolver: resolver, accounts: allowed}
+}
+
+// ReviewedServiceAccount admits any reviewed ServiceAccount in the Resolver's namespace policy.
+// It stores a typed ReviewedCaller proof so account-scoped handlers can use the SA UID while
+// existing Principal callers continue to require Pod-bound TokenReview claims.
+func ReviewedServiceAccount(resolver *Resolver) Rule {
+	return Rule{kind: ruleReviewedServiceAccount, resolver: resolver}
 }
 
 // Methods maps the full name (`/package.Service/Method`) of each method a gRPC server serves to the Rule
@@ -84,6 +92,22 @@ func Caller(ctx context.Context) (Principal, error) {
 	return principal, nil
 }
 
+type reviewedCallerKey struct{}
+
+// WithReviewedCaller stores the account proof and its separate optional Pod proof.
+func WithReviewedCaller(ctx context.Context, caller ReviewedCaller) context.Context {
+	return context.WithValue(ctx, reviewedCallerKey{}, caller)
+}
+
+// AdmittedReviewedCaller is available only to a method admitted by ReviewedServiceAccount.
+func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
+	caller, ok := ctx.Value(reviewedCallerKey{}).(ReviewedCaller)
+	if !ok {
+		return ReviewedCaller{}, errNotAdmitted
+	}
+	return caller, nil
+}
+
 // ServerOptions admits each call by its method's Rule before any handler runs. admissionTimeout bounds the bearer
 // review; zero leaves it bounded by the call's own deadline.
 func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOption {
@@ -115,7 +139,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts:
+	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -138,6 +162,13 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	var err error
 	if rule.kind == ruleAccounts {
 		principal, err = rule.resolver.RequireAccount(reviewContext, rule.accounts)
+	} else if rule.kind == ruleReviewedServiceAccount {
+		var caller ReviewedCaller
+		caller, err = rule.resolver.ResolveReviewedCaller(reviewContext)
+		if err != nil {
+			return nil, err
+		}
+		return WithReviewedCaller(ctx, caller), nil
 	} else {
 		principal, err = rule.resolver.Resolve(reviewContext)
 	}

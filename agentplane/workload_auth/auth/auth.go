@@ -58,10 +58,22 @@ type Principal struct {
 	PodUID            string
 }
 
+// IsPodBound reports whether TokenReview proved the singular Pod binding required by
+// destinations that preserve an explicit Pod-bound backend caller path.
+func (p Principal) IsPodBound() bool { return p.PodName != "" && p.PodUID != "" }
+
 // ServiceAccountPrincipal proves an account without claiming a Pod binding.
 type ServiceAccountPrincipal struct {
 	Account           Account
 	ServiceAccountUID string
+}
+
+// ReviewedCaller carries a reviewed ServiceAccount identity and, when TokenReview proves it, a
+// separate Pod-bound Principal. The account identity is useful to account-scoped APIs; the Pod
+// proof remains explicit so those APIs cannot accidentally weaken Principal's existing contract.
+type ReviewedCaller struct {
+	ServiceAccount ServiceAccountPrincipal
+	Pod            *Principal
 }
 
 // TokenReviews is the Kubernetes TokenReview Create operation. The production implementation
@@ -158,6 +170,26 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 	}
 }
 
+// ResolveReviewedCaller admits a reviewed ServiceAccount identity with or without a Pod binding.
+// Destinations must still choose which kind of caller is authoritative for each operation.
+func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	}
+	caller, err := r.ResolveReviewedCallerAuthorization(ctx, md.Get("authorization"))
+	switch {
+	case errors.Is(err, ErrInvalidBearer):
+		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	case err != nil && ctx.Err() != nil:
+		return ReviewedCaller{}, status.FromContextError(ctx.Err()).Err()
+	case errors.Is(err, ErrUnavailable):
+		return ReviewedCaller{}, status.Error(codes.Unavailable, ErrUnavailable.Error())
+	default:
+		return caller, err
+	}
+}
+
 // ResolveAuthorization accepts exactly one Bearer value and requires the reviewed audience,
 // ServiceAccount UID and singular Pod binding claims.
 func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (Principal, error) {
@@ -166,6 +198,16 @@ func (r *Resolver) ResolveAuthorization(ctx context.Context, values []string) (P
 		return Principal{}, err
 	}
 	return r.ResolveToken(ctx, token)
+}
+
+// ResolveReviewedCallerAuthorization accepts exactly one bearer that proves a served
+// ServiceAccount. A complete optional Pod binding is preserved separately; partial claims fail.
+func (r *Resolver) ResolveReviewedCallerAuthorization(ctx context.Context, values []string) (ReviewedCaller, error) {
+	token, err := BearerToken(values)
+	if err != nil {
+		return ReviewedCaller{}, err
+	}
+	return r.ResolveReviewedCallerToken(ctx, token)
 }
 
 // BearerToken is the token of the one `authorization` value, which must be `Bearer <token>`; anything else is
@@ -199,6 +241,30 @@ func (r *Resolver) ResolveToken(ctx context.Context, token string) (Principal, e
 		Account: account.Account, ServiceAccountUID: account.ServiceAccountUID,
 		PodName: podName, PodUID: podUID,
 	}, nil
+}
+
+// ResolveReviewedCallerToken reviews one bearer for a ServiceAccount in this Resolver's namespace
+// policy. It preserves a complete Pod binding when present and allows an account-only bearer.
+func (r *Resolver) ResolveReviewedCallerToken(ctx context.Context, token string) (ReviewedCaller, error) {
+	account, extra, err := r.resolveServiceAccountToken(ctx, token)
+	if err != nil {
+		return ReviewedCaller{}, err
+	}
+	_, hasName := extra[podNameClaim]
+	_, hasUID := extra[podUIDClaim]
+	if !hasName && !hasUID {
+		return ReviewedCaller{ServiceAccount: account}, nil
+	}
+	podName, okName := oneClaim(extra[podNameClaim])
+	podUID, okUID := oneClaim(extra[podUIDClaim])
+	if !okName || !okUID {
+		return ReviewedCaller{}, ErrInvalidBearer
+	}
+	pod := Principal{
+		Account: account.Account, ServiceAccountUID: account.ServiceAccountUID,
+		PodName: podName, PodUID: podUID,
+	}
+	return ReviewedCaller{ServiceAccount: account, Pod: &pod}, nil
 }
 
 // ResolveServiceAccountToken requires the reviewed audience, namespace and ServiceAccount UID, without requiring
