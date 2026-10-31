@@ -58,6 +58,7 @@ class CentralSamplerProps:
     turn_timeout_seconds: int
     rpc_timeout_seconds: int
     lease_seconds: int
+    replicas: ReplicaProfile | None = None
     # The settings carry each credential file path; this map names only the Secret key
     # projected there, keyed by connection name.
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)

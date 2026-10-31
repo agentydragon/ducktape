@@ -3209,15 +3209,18 @@ metadata:
   name: central-sampler
   namespace: agentplane-staging
 spec:
-  minReadySeconds: 0
+  minReadySeconds: 5
   progressDeadlineSeconds: 600
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 10
   selector:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -3377,6 +3380,17 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
   type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: central-sampler
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
