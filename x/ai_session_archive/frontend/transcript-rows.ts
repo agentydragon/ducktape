@@ -4,6 +4,7 @@ export type RecordPresentation = "user" | "assistant" | "activity" | "metadata" 
 
 export type ActivityStep =
   | {
+      key: string;
       kind: "tool";
       records: EventRecord[];
       name: string;
@@ -12,22 +13,36 @@ export type ActivityStep =
       failed: boolean;
       missingCall: boolean;
     }
-  | { kind: "reasoning"; records: EventRecord[]; text: string }
-  | { kind: "subagent"; records: EventRecord[]; author: string; recipient: string | null; text: string }
-  | { kind: "attachment"; records: EventRecord[]; title: string; preview: string }
-  | { kind: "record"; records: EventRecord[] };
+  | { key: string; kind: "reasoning"; records: EventRecord[]; text: string }
+  | { key: string; kind: "subagent"; records: EventRecord[]; author: string; recipient: string | null; text: string }
+  | { key: string; kind: "attachment"; records: EventRecord[]; title: string; preview: string }
+  | { key: string; kind: "record"; records: EventRecord[] };
 
 export type TranscriptRow =
-  | { kind: "record"; records: EventRecord[] }
-  | { kind: "metadata"; records: EventRecord[] }
-  | { kind: "activity"; records: EventRecord[]; steps: ActivityStep[] };
+  | { key: string; kind: "record"; records: EventRecord[] }
+  | { key: string; kind: "metadata"; records: EventRecord[] }
+  | { key: string; kind: "activity"; records: EventRecord[]; steps: ActivityStep[] };
 
 type ObjectValue = Record<string, unknown>;
-type ToolEvent = { kind: "call" | "output"; payload: ObjectValue; callId: string | null };
-type ToolPairs = {
-  callByOutputOrdinal: Map<number, EventRecord>;
-  outputByCallOrdinal: Map<number, EventRecord>;
+type ToolNamespace = "claude" | "codex";
+type ToolEvent = {
+  key: string;
+  namespace: ToolNamespace;
+  kind: "call" | "output";
+  payload: ObjectValue;
+  callId: string | null;
+  record: EventRecord;
+  blockIndex: number;
 };
+type ToolPairs = {
+  callByOutputKey: Map<string, ToolEvent>;
+  outputByCallKey: Map<string, ToolEvent>;
+};
+type StepCandidate = { step: ActivityStep; ordinal: number; blockIndex: number };
+type MutableTranscriptRow =
+  | { kind: "record"; records: EventRecord[] }
+  | { kind: "metadata"; records: EventRecord[] }
+  | { kind: "activity"; records: EventRecord[]; stepRecords: EventRecord[] };
 
 function object(value: unknown): ObjectValue | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as ObjectValue) : null;
@@ -47,22 +62,100 @@ function responsePayload(record: EventRecord): ObjectValue | null {
   return parsed?.type === "response_item" ? object(parsed.payload) : null;
 }
 
+function claudeContent(record: EventRecord): unknown[] | null {
+  if (record.parse_error != null) return null;
+  const parsed = object(record.parsed);
+  if (parsed?.type !== "user" && parsed?.type !== "assistant") return null;
+  const content = object(parsed.message)?.content;
+  return Array.isArray(content) ? content : null;
+}
+
+const CLAUDE_INTERMEDIATE_TYPES = new Set(["tool_use", "tool_result", "thinking", "redacted_thinking"]);
+
+/** Identifies Claude blocks that the transcript renderer presents as activity instead of message prose. */
+export function isClaudeIntermediateBlock(value: unknown): boolean {
+  const block = object(value);
+  return block !== null && CLAUDE_INTERMEDIATE_TYPES.has(String(block.type));
+}
+
+function claudeThinkingText(block: ObjectValue): string | null {
+  const text = string(block.thinking);
+  return text !== null && text.trim().length > 0 ? text : null;
+}
+
 const TOOL_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
 const TOOL_OUTPUT_TYPES = new Set(["function_call_output", "custom_tool_call_output"]);
 
-function toolEvent(record: EventRecord): ToolEvent | null {
-  if (record.parse_error != null) return null;
+function toolEvents(record: EventRecord): ToolEvent[] {
+  if (record.parse_error != null) return [];
+  const parsed = object(record.parsed);
+  if (parsed?.type === "user" || parsed?.type === "assistant") {
+    const content = claudeContent(record);
+    if (content === null) return [];
+    return content.flatMap<ToolEvent>((value, blockIndex) => {
+      const payload = object(value);
+      const type = string(payload?.type);
+      if (payload === null || type === null) return [];
+      if (type === "tool_use") {
+        return [
+          {
+            key: record.ordinal + ":" + blockIndex,
+            namespace: "claude" as const,
+            kind: "call" as const,
+            payload,
+            callId: nonemptyString(payload.id),
+            record,
+            blockIndex,
+          },
+        ];
+      }
+      if (type === "tool_result") {
+        return [
+          {
+            key: record.ordinal + ":" + blockIndex,
+            namespace: "claude" as const,
+            kind: "output" as const,
+            payload,
+            callId: nonemptyString(payload.tool_use_id),
+            record,
+            blockIndex,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+
   const payload = responsePayload(record);
-  if (payload === null) return null;
-  const type = string(payload.type);
-  if (type === null) return null;
+  const type = string(payload?.type);
+  if (payload === null || type === null) return [];
   if (TOOL_CALL_TYPES.has(type)) {
-    return { kind: "call", payload, callId: nonemptyString(payload.call_id) };
+    return [
+      {
+        key: String(record.ordinal),
+        namespace: "codex",
+        kind: "call",
+        payload,
+        callId: nonemptyString(payload.call_id),
+        record,
+        blockIndex: 0,
+      },
+    ];
   }
   if (TOOL_OUTPUT_TYPES.has(type)) {
-    return { kind: "output", payload, callId: nonemptyString(payload.call_id) };
+    return [
+      {
+        key: String(record.ordinal),
+        namespace: "codex",
+        kind: "output",
+        payload,
+        callId: nonemptyString(payload.call_id),
+        record,
+        blockIndex: 0,
+      },
+    ];
   }
-  return null;
+  return [];
 }
 
 const CLAUDE_METADATA = new Set([
@@ -101,15 +194,16 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   if (parsed.type === "attachment" && object(parsed.attachment) !== null) return "activity";
   if (parsed.type === "user" || parsed.type === "assistant") {
     const content = message?.content;
-    if (Array.isArray(content) && content.length > 0) {
-      const blocks = content.map(object);
-      if (blocks.some((block) => block?.is_error === true)) return "record";
-      if (
-        blocks.every((block) =>
-          ["tool_use", "tool_result", "thinking", "redacted_thinking"].includes(String(block?.type))
-        )
-      )
-        return "activity";
+    if (Array.isArray(content) && content.length > 0 && content.every(isClaudeIntermediateBlock)) {
+      const hasToolBlock = content.some((block) => {
+        const type = string(object(block)?.type);
+        return type === "tool_use" || type === "tool_result";
+      });
+      const hasReadableThinking = content.some((block) => {
+        const item = object(block);
+        return item?.type === "thinking" && claudeThinkingText(item) !== null;
+      });
+      return hasToolBlock || hasReadableThinking ? "activity" : "metadata";
     }
     return parsed.type;
   }
@@ -138,103 +232,177 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
 export function transcriptRows(records: readonly EventRecord[]): TranscriptRow[] {
   const ordered = [...records].sort((left, right) => left.ordinal - right.ordinal);
   const pairs = pairToolEvents(ordered);
-  const rows: TranscriptRow[] = [];
+  const rows: MutableTranscriptRow[] = [];
 
   for (const record of ordered) {
-    if (pairs.outputByCallOrdinal.has(record.ordinal)) continue;
-
     const presentation = recordPresentation(record);
-    if (presentation === "metadata") {
+    const activityRecords = activityContribution(record, pairs);
+
+    if (presentation === "metadata" && activityRecords === null) {
       const previous = rows.at(-1);
-      if (previous && previous.kind !== "record") previous.records.push(record);
+      if (previous && previous.kind !== "record") previous.records = uniqueRecords([...previous.records, record]);
       else rows.push({ kind: "metadata", records: [record] });
       continue;
     }
 
-    if (presentation === "activity") {
-      const pairedCall = pairs.callByOutputOrdinal.get(record.ordinal);
-      const activityRecords = pairedCall === undefined ? [record] : [pairedCall, record];
-      const previous = rows.at(-1);
-      if (previous?.kind === "activity") previous.records.push(...activityRecords);
-      else if (previous?.kind === "metadata") {
-        rows[rows.length - 1] = { kind: "activity", records: [...previous.records, ...activityRecords], steps: [] };
-      } else rows.push({ kind: "activity", records: activityRecords, steps: [] });
-      continue;
+    if (presentation !== "activity" && presentation !== "metadata") {
+      rows.push({ kind: "record", records: [record] });
     }
 
-    rows.push({ kind: "record", records: [record] });
+    if (activityRecords !== null) appendActivity(rows, activityRecords, record);
   }
 
-  return rows.map((row) =>
-    row.kind === "activity"
-      ? { ...row, records: sortRecords(row.records), steps: activitySteps(row.records, pairs) }
-      : { ...row, records: sortRecords(row.records) }
-  );
+  return rows.map((row): TranscriptRow => {
+    const sorted = sortRecords(row.records);
+    const key = row.kind + ":" + sorted.at(-1)!.ordinal;
+    return row.kind === "activity"
+      ? { key, kind: "activity", records: sorted, steps: activitySteps(row.stepRecords, sorted, pairs) }
+      : { key, kind: row.kind, records: sorted };
+  });
+}
+
+function appendActivity(rows: MutableTranscriptRow[], records: readonly EventRecord[], stepRecord: EventRecord): void {
+  const previous = rows.at(-1);
+  if (previous?.kind === "activity") {
+    previous.records = uniqueRecords([...previous.records, ...records]);
+    previous.stepRecords = uniqueRecords([...previous.stepRecords, stepRecord]);
+  } else if (previous?.kind === "metadata") {
+    rows[rows.length - 1] = {
+      kind: "activity",
+      records: uniqueRecords([...previous.records, ...records]),
+      stepRecords: [stepRecord],
+    };
+  } else {
+    rows.push({ kind: "activity", records: uniqueRecords(records), stepRecords: [stepRecord] });
+  }
+}
+
+function activityContribution(record: EventRecord, pairs: ToolPairs): EventRecord[] | null {
+  const events = toolEvents(record);
+  const emittedEvents = events.filter((event) => event.kind === "output" || !pairs.outputByCallKey.has(event.key));
+  const thinking = claudeThinkingEntries(record);
+  const parsed = object(record.parsed);
+  const attachment = parsed?.type === "attachment" && record.parse_error == null ? object(parsed.attachment) : null;
+  const payload = responsePayload(record);
+  const hasOtherActivity =
+    attachment !== null ||
+    (payload?.type === "reasoning" && reasoningText(payload) !== null) ||
+    payload?.type === "agent_message";
+  if (emittedEvents.length === 0 && thinking.length === 0 && !hasOtherActivity) return null;
+
+  const sourceRecords = [record];
+  for (const event of emittedEvents) {
+    if (event.kind !== "output") continue;
+    const call = pairs.callByOutputKey.get(event.key);
+    if (call !== undefined) sourceRecords.push(call.record);
+  }
+  return uniqueRecords(sourceRecords);
 }
 
 function pairToolEvents(records: readonly EventRecord[]): ToolPairs {
-  const waitingCalls = new Map<string, EventRecord[]>();
-  const callByOutputOrdinal = new Map<number, EventRecord>();
-  const outputByCallOrdinal = new Map<number, EventRecord>();
+  const waitingCalls = new Map<string, ToolEvent[]>();
+  const callByOutputKey = new Map<string, ToolEvent>();
+  const outputByCallKey = new Map<string, ToolEvent>();
 
   for (const record of records) {
-    const event = toolEvent(record);
-    if (event === null) continue;
-    if (event.kind === "call") {
+    for (const event of toolEvents(record)) {
       if (event.callId === null) continue;
-      const waiting = waitingCalls.get(event.callId) ?? [];
-      waiting.push(record);
-      waitingCalls.set(event.callId, waiting);
-      continue;
-    }
+      const queueKey = event.namespace + "\u0000" + event.callId;
+      if (event.kind === "call") {
+        const waiting = waitingCalls.get(queueKey) ?? [];
+        waiting.push(event);
+        waitingCalls.set(queueKey, waiting);
+        continue;
+      }
 
-    if (event.callId === null) continue;
-    const waiting = waitingCalls.get(event.callId);
-    const call = waiting?.shift();
-    if (call !== undefined) {
-      callByOutputOrdinal.set(record.ordinal, call);
-      outputByCallOrdinal.set(call.ordinal, record);
+      const call = waitingCalls.get(queueKey)?.shift();
+      if (call !== undefined) {
+        callByOutputKey.set(event.key, call);
+        outputByCallKey.set(call.key, event);
+      }
     }
   }
 
-  return { callByOutputOrdinal, outputByCallOrdinal };
+  return { callByOutputKey, outputByCallKey };
 }
 
-function activitySteps(records: readonly EventRecord[], pairs: ToolPairs): ActivityStep[] {
-  const steps: ActivityStep[] = [];
-  const rowOrdinals = new Set(records.map((record) => record.ordinal));
+function activitySteps(
+  stepRecords: readonly EventRecord[],
+  sourceRecords: readonly EventRecord[],
+  pairs: ToolPairs
+): ActivityStep[] {
+  const candidates: StepCandidate[] = [];
+  const sourceOrdinals = new Set(sourceRecords.map((record) => record.ordinal));
 
-  for (const record of records) {
+  for (const record of stepRecords) {
     const parsed = object(record.parsed);
     const attachment = parsed?.type === "attachment" ? object(parsed.attachment) : null;
     if (attachment !== null && record.parse_error == null) {
-      steps.push({
-        kind: "attachment",
-        records: [record],
-        title: `Attachment · ${(string(attachment.type) ?? "unknown").replaceAll("_", " ")}`,
-        preview:
-          string(attachment.displayPath) ??
-          string(attachment.filename) ??
-          string(attachment.hookName) ??
-          string(attachment.description) ??
-          "",
+      candidates.push({
+        ordinal: record.ordinal,
+        blockIndex: 0,
+        step: {
+          key: String(record.ordinal),
+          kind: "attachment",
+          records: [record],
+          title: "Attachment · " + (string(attachment.type) ?? "unknown").replaceAll("_", " "),
+          preview:
+            string(attachment.displayPath) ??
+            string(attachment.filename) ??
+            string(attachment.hookName) ??
+            string(attachment.description) ??
+            "",
+        },
       });
       continue;
     }
-    const event = toolEvent(record);
-    if (event?.kind === "call") {
-      const output = pairs.outputByCallOrdinal.get(record.ordinal);
-      if (output !== undefined) continue;
-      steps.push(toolStep([record], event.payload, null, false));
+
+    const content = claudeContent(record);
+    if (content !== null) {
+      const eventsByIndex = new Map(toolEvents(record).map((event) => [event.blockIndex, event]));
+      content.forEach((value, blockIndex) => {
+        const block = object(value);
+        if (block === null) return;
+        const event = eventsByIndex.get(blockIndex);
+        if (event !== undefined) {
+          if (event.kind === "call") {
+            if (!pairs.outputByCallKey.has(event.key)) candidates.push(toolCandidate(event, null));
+            return;
+          }
+          const call = pairs.callByOutputKey.get(event.key);
+          if (call === undefined || !sourceOrdinals.has(call.record.ordinal)) {
+            candidates.push(toolCandidate(event, null));
+          } else {
+            candidates.push(toolCandidate(event, call));
+          }
+          return;
+        }
+
+        if (block.type === "thinking") {
+          const text = claudeThinkingText(block);
+          if (text !== null) {
+            candidates.push({
+              ordinal: record.ordinal,
+              blockIndex,
+              step: { key: record.ordinal + ":" + blockIndex, kind: "reasoning", records: [record], text },
+            });
+          }
+        }
+      });
       continue;
     }
-    if (event?.kind === "output") {
-      const call = pairs.callByOutputOrdinal.get(record.ordinal);
-      if (call !== undefined && rowOrdinals.has(call.ordinal)) {
-        const callPayload = toolEvent(call)!.payload;
-        steps.push(toolStep([call, record], callPayload, event.payload, false));
+
+    const event = toolEvents(record)[0];
+    if (event !== undefined) {
+      if (event.kind === "call") {
+        if (!pairs.outputByCallKey.has(event.key)) candidates.push(toolCandidate(event, null));
       } else {
-        steps.push(toolStep([record], event.payload, event.payload, true));
+        const call = pairs.callByOutputKey.get(event.key);
+        if (call === undefined || !sourceOrdinals.has(call.record.ordinal)) {
+          candidates.push(toolCandidate(event, null));
+        } else {
+          candidates.push(toolCandidate(event, call));
+        }
       }
       continue;
     }
@@ -242,32 +410,72 @@ function activitySteps(records: readonly EventRecord[], pairs: ToolPairs): Activ
     const payload = responsePayload(record);
     if (payload?.type === "reasoning") {
       const text = reasoningText(payload);
-      if (text !== null) steps.push({ kind: "reasoning", records: [record], text });
+      if (text !== null) {
+        candidates.push({
+          ordinal: record.ordinal,
+          blockIndex: 0,
+          step: { key: String(record.ordinal), kind: "reasoning", records: [record], text },
+        });
+      }
       continue;
     }
     if (payload?.type === "agent_message") {
-      steps.push({
-        kind: "subagent",
-        records: [record],
-        author: nonemptyString(payload.author) ?? "Agent",
-        recipient: nonemptyString(payload.recipient),
-        text: agentMessageText(payload) ?? "Message content unavailable",
+      candidates.push({
+        ordinal: record.ordinal,
+        blockIndex: 0,
+        step: {
+          key: String(record.ordinal),
+          kind: "subagent",
+          records: [record],
+          author: nonemptyString(payload.author) ?? "Agent",
+          recipient: nonemptyString(payload.recipient),
+          text: agentMessageText(payload) ?? "Message content unavailable",
+        },
       });
       continue;
     }
 
-    if (recordPresentation(record) === "activity") steps.push({ kind: "record", records: [record] });
+    if (recordPresentation(record) === "activity") {
+      candidates.push({
+        ordinal: record.ordinal,
+        blockIndex: 0,
+        step: { key: String(record.ordinal), kind: "record", records: [record] },
+      });
+    }
   }
 
-  return steps.sort((left, right) => lastOrdinal(left.records) - lastOrdinal(right.records));
+  return candidates
+    .sort((left, right) => left.ordinal - right.ordinal || left.blockIndex - right.blockIndex)
+    .map((candidate) => candidate.step);
 }
 
-function toolStep(
-  records: EventRecord[],
-  callPayload: ObjectValue,
-  outputPayload: ObjectValue | null,
-  missingCall: boolean
-): ActivityStep {
+function toolCandidate(event: ToolEvent, call: ToolEvent | null): StepCandidate {
+  const records = uniqueRecords(call === null ? [event.record] : [call.record, event.record]);
+  const step =
+    event.namespace === "claude" ? claudeToolStep(event, call, records) : codexToolStep(event, call, records);
+  return { step, ordinal: event.record.ordinal, blockIndex: event.blockIndex };
+}
+
+function claudeToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
+  const missingCall = event.kind === "output" && call === null;
+  const callPayload = call?.payload ?? (event.kind === "call" ? event.payload : undefined);
+  const outputPayload = event.kind === "output" ? event.payload : null;
+  return {
+    key: event.key,
+    kind: "tool",
+    records,
+    name: callPayload === undefined ? "Tool result" : (nonemptyString(callPayload.name) ?? "Tool call"),
+    input: callPayload === undefined ? null : displayValue(callPayload.input),
+    output: outputPayload === null ? null : displayValue(outputPayload.content),
+    failed: outputPayload?.is_error === true,
+    missingCall,
+  };
+}
+
+function codexToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
+  const missingCall = event.kind === "output" && call === null;
+  const callPayload = call?.payload ?? event.payload;
+  const outputPayload = event.kind === "output" ? event.payload : null;
   const callType = string(callPayload.type);
   const failed =
     callPayload.is_error === true ||
@@ -275,6 +483,7 @@ function toolStep(
     outputPayload?.is_error === true ||
     outputPayload?.error != null;
   return {
+    key: event.key,
     kind: "tool",
     records,
     name: missingCall
@@ -305,6 +514,17 @@ function displayValue(value: unknown): string | null {
   } catch {
     return String(value);
   }
+}
+
+function claudeThinkingEntries(record: EventRecord): Array<{ blockIndex: number; text: string }> {
+  const content = claudeContent(record);
+  if (content === null) return [];
+  return content.flatMap((value, blockIndex) => {
+    const block = object(value);
+    if (block?.type !== "thinking") return [];
+    const text = claudeThinkingText(block);
+    return text === null ? [] : [{ blockIndex, text }];
+  });
 }
 
 function reasoningText(payload: ObjectValue): string | null {
@@ -360,12 +580,14 @@ function agentPlaintext(value: unknown): string | null {
   return agentPlaintext(item.content) ?? agentPlaintext(item.message);
 }
 
-function lastOrdinal(records: readonly EventRecord[]): number {
-  return records.reduce((last, record) => Math.max(last, record.ordinal), Number.NEGATIVE_INFINITY);
+function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {
+  const byOrdinal = new Map<number, EventRecord>();
+  for (const record of records) byOrdinal.set(record.ordinal, record);
+  return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
 }
 
 function sortRecords(records: readonly EventRecord[]): EventRecord[] {
-  return [...records].sort((left, right) => left.ordinal - right.ordinal);
+  return uniqueRecords(records);
 }
 
 /** Counts semantic steps without presenting an unmatched result as a known tool call. */
@@ -388,5 +610,5 @@ export function summarizeActivity(steps: readonly ActivityStep[]): string {
 }
 
 function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+  return count + " " + singular + (count === 1 ? "" : "s");
 }

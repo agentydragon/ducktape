@@ -52,13 +52,19 @@ export function ArchiveTranscript({
         label="Conversation records"
         showJumpToLatest={true}
         rows={transcriptRows(records).map((row) => ({
-          key: String(row.records.at(-1)!.ordinal),
-          revision: `${row.kind}:${row.records.length}:${row.records[0].ordinal}`,
+          key: row.key,
+          revision: `${row.kind}:${row.records.length}:${row.records[0].ordinal}:${row.kind === "activity" ? row.steps.map((step) => step.key).join(",") : ""}`,
           value: row,
           anchorKeys: [
-            ...row.records.map((record) => String(record.ordinal)),
             ...row.records.map((record) => `record:${record.ordinal}`),
-            ...(row.kind === "activity" ? row.steps.map((step) => `step:${step.records.at(-1)!.ordinal}`) : []),
+            ...(row.kind === "activity"
+              ? row.steps.flatMap((step) => [
+                  `step:${step.key}`,
+                  `reasoning:${step.key}`,
+                  `step:${step.key}:input`,
+                  `step:${step.key}:output`,
+                ])
+              : []),
           ],
           presentation: { kind: row.kind, entityCount: row.records.length },
         }))}
@@ -71,7 +77,7 @@ export function ArchiveTranscript({
 }
 
 function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
-  const id = `group:${row.records.at(-1)!.ordinal}`;
+  const id = `group:${row.key}`;
   const [open] = useRetainedDisclosure(id);
   if (row.kind === "record") return <EventRow record={row.records[0]} />;
   if (row.kind === "activity" && row.steps.length === 1)
@@ -143,7 +149,7 @@ function ActivitySteps({ steps }: { steps: ActivityStep[] }): JSX.Element {
   return (
     <>
       {contents.map((group) => (
-        <ActivityStepView key={group.at(-1)!.records.at(-1)!.ordinal} steps={group} />
+        <ActivityStepView key={group.at(-1)!.key} steps={group} />
       ))}
     </>
   );
@@ -157,8 +163,12 @@ function ActivityStepView({
   sourceRecords?: EventRecord[];
 }): JSX.Element {
   const step = steps[0];
-  const records = sourceRecords ?? steps.flatMap((step) => step.records);
-  const id = `step:${steps.at(-1)!.records.at(-1)!.ordinal}`;
+  const records =
+    sourceRecords ??
+    [...new Map(steps.flatMap((step) => step.records).map((record) => [record.ordinal, record])).values()].sort(
+      (left, right) => left.ordinal - right.ordinal
+    );
+  const id = `step:${steps.at(-1)!.key}`;
   const [open, setOpen] = useRetainedDisclosure(id);
   const [raw, setRaw] = useRetainedDisclosure(`${id}:raw`);
   const inputExpansion = useRetainedDisclosure(`${id}:input`);
@@ -191,8 +201,8 @@ function ActivityStepView({
     <Box
       className="transcript-inspection-owner"
       data-activity-step={step.kind}
-      data-history-anchor-key={id}
       data-open={open}
+      data-history-anchor-key={id}
     >
       {records.map((record) => (
         <span key={record.ordinal} data-event-ordinal={record.ordinal} />
@@ -232,9 +242,15 @@ function ActivityStepView({
                   </Text>
                 </DisclosureBody>
               )}
-              {step.input !== null && <TextBlock label="Arguments" text={step.input} expansion={inputExpansion} />}
+              {step.input !== null && (
+                <Box data-history-anchor-key={`${id}:input`}>
+                  <TextBlock label="Arguments" text={step.input} expansion={inputExpansion} />
+                </Box>
+              )}
               {step.output !== null ? (
-                <TextBlock label="Output" text={step.output} expansion={outputExpansion} />
+                <Box data-history-anchor-key={`${id}:output`}>
+                  <TextBlock label="Output" text={step.output} expansion={outputExpansion} />
+                </Box>
               ) : (
                 <DisclosureBody>
                   <Text size="xs" c="dimmed">
@@ -245,7 +261,14 @@ function ActivityStepView({
             </>
           ) : step.kind === "reasoning" ? (
             <DisclosureBody>
-              <Markdown source={reasoning} />
+              {steps.map(
+                (item) =>
+                  item.kind === "reasoning" && (
+                    <Box key={item.key} data-history-anchor-key={`reasoning:${item.key}`}>
+                      <Markdown source={item.text} />
+                    </Box>
+                  )
+              )}
             </DisclosureBody>
           ) : step.kind === "subagent" ? (
             <DisclosureBody>

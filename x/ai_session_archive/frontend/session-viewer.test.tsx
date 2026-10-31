@@ -1100,3 +1100,54 @@ it("renders Claude attachments as individually expandable widgets", async () => 
   await act(async () => findControl(attachments[1], "Raw JSONL record").click());
   expect(attachments[1].querySelector("pre")?.textContent).toContain('"type":"attachment"');
 });
+
+it("pairs multiple Claude tool blocks and leaves mixed-message prose visible", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/claude-work-fixture");
+  expect(view.textContent).toContain("The captured check failed. I'll inspect its configuration.");
+  expect(view.textContent).toContain("Use the captured data only.");
+  expect(view.textContent).not.toContain("The captured test could not find");
+  await act(async () => findControl(view, "2 tool calls, 1 reasoning step, 1 attachment").click());
+  const tools = view.querySelectorAll<HTMLElement>('[data-activity-step="tool"]');
+  expect(tools).toHaveLength(3);
+  const read = [...tools].find((tool) => tool.textContent?.includes("README.md"))!;
+  const failed = [...tools].find((tool) => tool.textContent?.includes("check-fixture"))!;
+  await act(async () => findControl(read, "Read").click());
+  expect(read.textContent).toContain("The fixture README documents the required setting.");
+  expect(failed.textContent).not.toContain("The captured test could not find");
+  await act(async () => findControl(failed, "Bash").click());
+  expect(failed.textContent).toContain("The captured test could not find the required setting.");
+  await act(async () => findControl(read, "Raw JSONL record").click());
+  const raw = document.getElementById(findControl(read, "Raw JSONL record").getAttribute("aria-controls")!)!;
+  expect(raw.querySelectorAll("pre")).toHaveLength(2);
+  expect(raw.textContent).toContain('"id":"read-doc"');
+  expect(raw.textContent).toContain('"tool_use_id":"read-doc"');
+});
+
+it("retains the selected Claude result block when prepend supplies multiple calls", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listEvents(sessionId, versionId, cursor, signal) {
+      const page = await sessionFixtureApi.listEvents(sessionId, versionId, undefined, signal);
+      return cursor === undefined
+        ? { data: page.data.filter((record) => record.ordinal >= 5), next_cursor: 5 }
+        : { data: page.data.filter((record) => record.ordinal < cursor), next_cursor: null };
+    },
+  };
+  const view = await renderViewer(api, "/sessions/claude-work-fixture");
+  await act(async () => findControl(view, "2 tool results").click());
+  const result = [...view.querySelectorAll<HTMLElement>('[data-activity-step="tool"]')].find((tool) =>
+    tool.textContent?.includes("README")
+  )!;
+  await act(async () => findControl(result, "Tool result").click());
+  expect(result.textContent).toContain("The call is outside the loaded records");
+  await act(async () => {
+    findControl(view, "Load earlier records").click();
+    await flush();
+  });
+  const paired = [...view.querySelectorAll<HTMLElement>('[data-activity-step="tool"]')].find((tool) =>
+    tool.textContent?.includes("README.md")
+  )!;
+  expect(findControl(paired, "Read").getAttribute("aria-expanded")).toBe("true");
+  expect(paired.textContent).toContain("The fixture README documents the required setting.");
+  expect(paired.textContent).not.toContain("The call is outside the loaded records");
+});
