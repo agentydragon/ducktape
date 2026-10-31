@@ -308,6 +308,25 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
+    /// Top-level bindings this statement's synchronous callees read or rebind:
+    /// the roots of any state a callee may mutate in place. `None` when
+    /// synchronous execution was not analyzed or could not summarize every
+    /// callee.
+    pub fn synchronous_callee_bindings(&self) -> Option<BTreeSet<Id>> {
+        let calls = self
+            .synchronous_calls
+            .as_ref()
+            .filter(|calls| calls.complete)?;
+        Some(
+            calls
+                .reads
+                .iter()
+                .chain(&calls.rebinds)
+                .map(|(id, _)| id.clone())
+                .collect(),
+        )
+    }
+
     /// Per-statement (writes, reads) cell summary used by the
     /// dataflow-aware S-chain emission in `graph/` and the vendor
     /// strip's swap-privacy gate. Derived on demand: the
