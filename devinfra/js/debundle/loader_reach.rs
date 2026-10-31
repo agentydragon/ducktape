@@ -28,7 +28,7 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::reports::LoaderUseConsumer;
+use artifact::reports::{CallableGraph, CallableNode, LoaderUseConsumer};
 
 use crate::loader_phase::{SiteKey, site_key};
 use js_ast::str_value;
@@ -82,6 +82,9 @@ pub(crate) struct TrackedBindingUses {
 pub(crate) struct LoaderReach {
     /// Requested site keys that can never run.
     pub unreachable: BTreeSet<SiteKey>,
+    /// The callable node owning each requested site and tracked use key.
+    pub site_nodes: HashMap<SiteKey, u32>,
+    pub callables: CallableGraph,
     /// Requested site and use keys in top-level code, outside every function.
     pub top_level: BTreeSet<SiteKey>,
     pub tracked: Vec<TrackedBindingUses>,
@@ -106,6 +109,11 @@ pub(crate) fn loader_reach(
         site_owner: HashMap::new(),
         use_owner: HashMap::new(),
         escaped: HashSet::new(),
+        value_escaped: HashSet::new(),
+        in_export_specifier: false,
+        export_names: Vec::new(),
+        reexports: Vec::new(),
+        star_sources: Vec::new(),
         calls: Vec::new(),
         declared_functions: HashMap::new(),
         consumers: HashMap::new(),
@@ -150,6 +158,73 @@ pub(crate) fn loader_reach(
         .filter(|(_, owner)| **owner == Owner::TopLevel)
         .map(|(key, _)| *key)
         .collect();
+    let node_of = |owner: Owner| match owner {
+        Owner::Function(index) => index as u32 + 1,
+        Owner::TopLevel | Owner::Dead => 0,
+    };
+    let site_nodes = walk
+        .site_owner
+        .iter()
+        .chain(&walk.use_owner)
+        .map(|(key, owner)| (*key, node_of(*owner)))
+        .collect();
+    let mut callables = CallableGraph {
+        nodes: std::iter::once(CallableNode::default())
+            .chain(
+                walk.functions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, function)| CallableNode {
+                        pooled: reachable[index]
+                            && (dynamic_scope
+                                || function.binding.as_ref().is_none_or(|id| {
+                                    walk.declared_functions.get(id) != Some(&Some(index))
+                                        || walk.value_escaped.contains(id)
+                                })),
+                        ..CallableNode::default()
+                    }),
+            )
+            .collect(),
+        exports: walk
+            .export_names
+            .iter()
+            .filter_map(|(name, id)| {
+                let index = (*walk.declared_functions.get(id)?)?;
+                Some((name.clone(), index as u32 + 1))
+            })
+            .collect(),
+        reexports: walk.reexports,
+        star_sources: walk.star_sources,
+        escaped_imports: Vec::new(),
+    };
+    for (owner, callee) in &walk.calls {
+        if let Some(Some(index)) = walk.declared_functions.get(callee)
+            && is_reachable(*owner)
+        {
+            callables.nodes[node_of(*owner) as usize]
+                .local_callees
+                .push(*index as u32 + 1);
+        }
+    }
+    for binding in &walk.tracked {
+        let TrackedBinding::Import { source, imported } = &binding.binding else {
+            continue;
+        };
+        for tracked_use in &binding.uses {
+            let owner = walk.use_owner[&tracked_use.key];
+            if !is_reachable(owner) {
+                continue;
+            }
+            let target = (source.clone(), imported.clone());
+            if tracked_use.call {
+                callables.nodes[node_of(owner) as usize]
+                    .import_calls
+                    .push(target);
+            } else {
+                callables.escaped_imports.push(target);
+            }
+        }
+    }
     let mut tracked = walk.tracked;
     for binding in &mut tracked {
         binding
@@ -168,6 +243,8 @@ pub(crate) fn loader_reach(
     }
     LoaderReach {
         unreachable,
+        site_nodes,
+        callables,
         top_level,
         tracked,
         namespace_sources: walk.namespace_sources,
@@ -183,6 +260,13 @@ struct ReachWalk<'a> {
     use_owner: HashMap<SiteKey, Owner>,
     /// Bindings referenced other than as a direct callee.
     escaped: HashSet<Id>,
+    /// Bindings referenced other than as a direct callee or an export.
+    value_escaped: HashSet<Id>,
+    in_export_specifier: bool,
+    /// Local `export` names and the binding each publishes.
+    export_names: Vec<(String, Id)>,
+    reexports: Vec<(String, String, String)>,
+    star_sources: Vec<String>,
     calls: Vec<(Owner, Id)>,
     /// Declaration-like function bindings; `None` when declared more than
     /// once, which this analysis does not separate.
@@ -463,15 +547,37 @@ impl Visit for ReachWalk<'_> {
     fn visit_export_all(&mut self, node: &ExportAll) {
         self.namespace_sources
             .push((self.item_index, str_value(&node.src)));
+        self.star_sources.push(str_value(&node.src));
     }
 
     fn visit_named_export(&mut self, node: &NamedExport) {
+        let export_name = |name: &ModuleExportName| match name {
+            ModuleExportName::Ident(ident) => ident.sym.to_string(),
+            ModuleExportName::Str(value) => str_value(value),
+        };
         if let Some(src) = &node.src {
             self.namespace_sources
                 .push((self.item_index, str_value(src)));
+            for specifier in &node.specifiers {
+                if let ExportSpecifier::Named(named) = specifier {
+                    self.reexports.push((
+                        export_name(named.exported.as_ref().unwrap_or(&named.orig)),
+                        str_value(src),
+                        export_name(&named.orig),
+                    ));
+                }
+            }
             return;
         }
         for specifier in &node.specifiers {
+            if let ExportSpecifier::Named(named) = specifier
+                && let ModuleExportName::Ident(orig) = &named.orig
+            {
+                self.export_names.push((
+                    export_name(named.exported.as_ref().unwrap_or(&named.orig)),
+                    orig.to_id(),
+                ));
+            }
             if let ExportSpecifier::Named(named) = specifier
                 && let ModuleExportName::Ident(orig) = &named.orig
                 && let Some(&index) = self.tracked_index.get(&orig.to_id())
@@ -487,7 +593,9 @@ impl Visit for ReachWalk<'_> {
                 self.tracked[index].exported_as.push(exported);
                 continue;
             }
+            self.in_export_specifier = true;
             specifier.visit_with(self);
+            self.in_export_specifier = false;
         }
     }
 
@@ -495,12 +603,16 @@ impl Visit for ReachWalk<'_> {
         match &node.decl {
             Decl::Fn(function) => {
                 self.escaped.insert(function.ident.to_id());
+                self.export_names
+                    .push((function.ident.sym.to_string(), function.ident.to_id()));
             }
             Decl::Var(var) => {
                 for declarator in &var.decls {
                     if let Pat::Ident(name) = &declarator.name {
                         let id = name.id.to_id();
                         self.escaped.insert(id.clone());
+                        self.export_names
+                            .push((name.id.sym.to_string(), id.clone()));
                         if let Some(&index) = self.tracked_index.get(&id) {
                             if matches!(
                                 self.tracked[index].binding,
@@ -673,6 +785,9 @@ impl Visit for ReachWalk<'_> {
         let id = node.to_id();
         // A dead reference neither runs nor publishes anything.
         if !self.record_use(&id, key, None, false) && self.owner() != Owner::Dead {
+            if !self.in_export_specifier {
+                self.value_escaped.insert(id.clone());
+            }
             self.escaped.insert(id);
         }
     }

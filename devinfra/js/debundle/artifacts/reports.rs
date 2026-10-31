@@ -203,6 +203,7 @@ pub struct ChunkRuntimeFacts {
     pub interop_uses: Vec<InteropUse>,
     pub loader_bindings: Vec<LoaderBindingUses>,
     pub namespace_requests: Vec<NamespaceRequest>,
+    pub callables: CallableGraph,
 }
 
 #[derive(Debug, Clone)]
@@ -214,6 +215,8 @@ pub struct InteropUse {
     pub kind: InteropUseKind,
     pub specifier: Option<String>,
     pub phase: SitePhase,
+    /// The [`CallableGraph`] node whose code holds the site.
+    pub node: u32,
 }
 
 /// When a source site can run relative to the stack that enters its function
@@ -282,6 +285,38 @@ pub struct LoaderBindingUse {
     /// binding's value.
     pub consumer: LoaderUseConsumer,
     pub phase: SitePhase,
+    /// The [`CallableGraph`] node whose code holds the use.
+    pub node: u32,
+}
+
+/// How the module's code can be entered, for the whole-program bound on which
+/// loader sites can run while a target evaluates (SPEC.md § Loader-closed
+/// derivation). Node 0 is the module's top-level code; node `i + 1` is
+/// function `i`.
+#[derive(Debug, Clone, Default)]
+pub struct CallableGraph {
+    pub nodes: Vec<CallableNode>,
+    /// Local export names of function declarations and function-valued
+    /// bindings, with their node.
+    pub exports: Vec<(String, u32)>,
+    /// `export { imported as exported } from source`.
+    pub reexports: Vec<(String, String, String)>,
+    /// `export * from source`.
+    pub star_sources: Vec<String>,
+    /// Imports used as values rather than called directly: the callee they
+    /// name may be called by any code that later holds the value.
+    pub escaped_imports: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CallableNode {
+    /// The function's value can reach code the module does not name (it is
+    /// anonymous, referenced as a value, declared more than once, or the
+    /// module has dynamic scope), so any code may call it once it exists.
+    pub pooled: bool,
+    pub local_callees: Vec<u32>,
+    /// Direct calls of an imported binding: `(source, imported)`.
+    pub import_calls: Vec<(String, String)>,
 }
 
 /// A request exposing its target's whole export surface: `import * as`,

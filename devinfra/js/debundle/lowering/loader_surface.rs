@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::loader_closure::{
-    ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind, LoaderClosureWitness,
-    LoaderRequest, LoaderRequestTarget, SitePlacement,
+    CallableFacts, ChunkCallables, ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind,
+    LoaderClosureWitness, LoaderRequest, LoaderRequestTarget, SitePlacement,
 };
 use anyhow::Result;
 use artifact::reports::{
@@ -383,6 +383,7 @@ impl Classifier<'_> {
         surface: &mut ChunkLoaderSurface<LoaderSiteWitness>,
         source_chunk: &str,
         phase: SitePhase,
+        node: u32,
         loader_use: LoaderUse<'_>,
         witness: impl FnOnce(Option<ExportReentryTarget>) -> LoaderSiteWitness,
     ) -> Result<()> {
@@ -406,6 +407,7 @@ impl Classifier<'_> {
         // does; a loader value that escapes can be called from anywhere.
         let placement = match phase {
             SitePhase::ModuleBody => SitePlacement::ModuleBody,
+            _ if node > 0 => SitePlacement::InFunction(node),
             _ => SitePlacement::Callable,
         };
         let (specifier, resolve_from, data_read_only) = match loader_use {
@@ -598,8 +600,65 @@ pub(super) fn loader_surfaces(
             source_chunk: source_chunk.clone(),
             site,
         };
+        let resolve_chunk = |specifier: &str| -> Result<Option<ChunkId>> {
+            Ok(classifier
+                .resolve(specifier, source)?
+                .map(|reference| reference.target_chunk_id)
+                .filter(|chunk| artifact.has_chunk(*chunk)))
+        };
+        let graph = &runtime.callables;
+        let mut callables = ChunkCallables {
+            nodes: Vec::with_capacity(graph.nodes.len()),
+            exports: graph.exports.iter().cloned().collect(),
+            ..ChunkCallables::default()
+        };
+        for node in &graph.nodes {
+            let mut import_calls = Vec::new();
+            for (specifier, imported) in &node.import_calls {
+                if let Some(chunk) = resolve_chunk(specifier)? {
+                    import_calls.push((chunk, imported.clone()));
+                }
+            }
+            callables.nodes.push(CallableFacts {
+                pooled: node.pooled,
+                local_callees: node.local_callees.clone(),
+                import_calls,
+            });
+        }
+        for (exported, specifier, imported) in &graph.reexports {
+            if let Some(chunk) = resolve_chunk(specifier)? {
+                callables
+                    .reexports
+                    .insert(exported.clone(), (chunk, imported.clone()));
+            }
+        }
+        for specifier in &graph.star_sources {
+            callables.star_sources.extend(resolve_chunk(specifier)?);
+        }
+        for (specifier, imported) in &graph.escaped_imports {
+            if let Some(chunk) = resolve_chunk(specifier)? {
+                callables.escaped_imports.push((chunk, imported.clone()));
+            }
+        }
+        // A static namespace import, re-export or dynamic import exposes every
+        // export of its source to code that may run later.
+        for specifier in runtime
+            .namespace_requests
+            .iter()
+            .map(|request| request.specifier.as_str())
+            .chain(runtime.interop_uses.iter().filter_map(|site| {
+                (site.kind == InteropUseKind::DynamicImport)
+                    .then_some(site.specifier.as_deref())
+                    .flatten()
+            }))
+        {
+            callables
+                .namespace_sources
+                .extend(resolve_chunk(specifier)?);
+        }
         let mut surface = ChunkLoaderSurface {
             static_targets: BTreeSet::new(),
+            callables,
             requests: Vec::new(),
             site_failures: Vec::new(),
             load_failures: Vec::new(),
@@ -716,6 +775,7 @@ pub(super) fn loader_surfaces(
                                 &mut surface,
                                 &source_chunk,
                                 phase,
+                                0,
                                 LoaderUse::Opaque,
                                 |_| interop_witness(resolved_target),
                             )?;
@@ -743,6 +803,7 @@ pub(super) fn loader_surfaces(
                 &mut surface,
                 &source_chunk,
                 site.phase,
+                site.node,
                 loader_use,
                 interop_witness,
             )?;
@@ -811,6 +872,7 @@ pub(super) fn loader_surfaces(
                             &mut surface,
                             &source_chunk,
                             loader_use.phase,
+                            loader_use.node,
                             classified,
                             |resolved_target| use_witness(loader_use, resolved_target),
                         )?;
@@ -861,6 +923,7 @@ pub(super) fn loader_surfaces(
                     &mut surface,
                     &source_chunk,
                     loader_use.phase,
+                    loader_use.node,
                     classified,
                     |resolved_target| use_witness(loader_use, resolved_target),
                 )?;

@@ -72,8 +72,37 @@ pub enum SitePlacement {
     /// A direct load in top-level code: it runs only while its module's body
     /// evaluates.
     ModuleBody,
+    /// A direct load in the code of this [`ChunkCallables`] node: it runs only
+    /// when that node is entered.
+    InFunction(u32),
     /// Anything a callback can reach.
     Callable,
+}
+
+/// How one chunk's code can be entered, with imports resolved to chunks.
+/// Node 0 is top-level code.
+#[derive(Debug, Clone, Default)]
+pub struct ChunkCallables {
+    pub nodes: Vec<CallableFacts>,
+    /// Local export name to the function node it publishes.
+    pub exports: BTreeMap<String, u32>,
+    /// `export { imported as exported } from` with the source resolved.
+    pub reexports: BTreeMap<String, (ChunkId, String)>,
+    pub star_sources: Vec<ChunkId>,
+    /// Imported functions used as values: anyone may call them later.
+    pub escaped_imports: Vec<(ChunkId, String)>,
+    /// Chunks whose whole namespace this chunk obtains statically.
+    pub namespace_sources: Vec<ChunkId>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CallableFacts {
+    /// Its value can reach code the chunk does not name, so any code may call
+    /// it once it exists.
+    pub pooled: bool,
+    pub local_callees: Vec<u32>,
+    /// Direct calls of an imported binding, resolved to the defining chunk.
+    pub import_calls: Vec<(ChunkId, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +118,7 @@ pub struct LoaderRequest<W> {
 pub struct ChunkLoaderSurface<W> {
     /// Chunks this chunk's static requests resolve to.
     pub static_targets: BTreeSet<ChunkId>,
+    pub callables: ChunkCallables,
     /// Literal loader requests resolved to a declared reentry-free builtin or
     /// an analyzed chunk entry.
     pub requests: Vec<LoaderRequest<W>>,
@@ -321,6 +351,127 @@ fn closure_over(
 }
 
 impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
+    /// The function nodes an export name of `chunk` can denote, following
+    /// re-exports.
+    fn export_nodes(
+        &self,
+        chunk: ChunkId,
+        name: &str,
+        seen: &mut BTreeSet<(ChunkId, String)>,
+        out: &mut Vec<(ChunkId, u32)>,
+    ) {
+        if !seen.insert((chunk, name.to_string())) {
+            return;
+        }
+        let Some(surface) = self.chunks.get(&chunk) else {
+            return;
+        };
+        let callables = &surface.callables;
+        if let Some(&node) = callables.exports.get(name) {
+            out.push((chunk, node));
+        } else if let Some((source, imported)) = callables.reexports.get(name) {
+            self.export_nodes(*source, imported, seen, out);
+        } else if name != "default" {
+            for source in &callables.star_sources {
+                self.export_nodes(*source, name, seen, out);
+            }
+        }
+    }
+
+    /// Function nodes that can run while the target evaluates. The roots are
+    /// the top-level code of the chunks whose bodies run in the window, and
+    /// every pooled function of every chunk that can have run before the
+    /// target finishes: an opaque call anywhere in the window may invoke it.
+    /// Direct local and imported calls, imported values that escape, and
+    /// namespaces obtained statically extend the set.
+    fn window_callables(
+        &self,
+        body: &BTreeSet<ChunkId>,
+        loaded: &BTreeSet<ChunkId>,
+        after: &BTreeSet<ChunkId>,
+    ) -> std::collections::HashSet<(ChunkId, u32)> {
+        let mut reached = std::collections::HashSet::new();
+        let mut pending = Vec::new();
+        // A chunk whose body cannot start before the target finishes has no
+        // function values yet, unless a counted request loads it.
+        let running = |chunk: ChunkId| !after.contains(&chunk) || loaded.contains(&chunk);
+        let push = |node: (ChunkId, u32),
+                    reached: &mut std::collections::HashSet<(ChunkId, u32)>,
+                    pending: &mut Vec<(ChunkId, u32)>| {
+            if running(node.0) && reached.insert(node) {
+                pending.push(node);
+            }
+        };
+        let mut seen = BTreeSet::new();
+        let mut exported = Vec::new();
+        for (&chunk, surface) in self.chunks {
+            if !running(chunk) {
+                continue;
+            }
+            if body.contains(&chunk) || loaded.contains(&chunk) {
+                push((chunk, 0), &mut reached, &mut pending);
+            }
+            let callables = &surface.callables;
+            for (index, node) in callables.nodes.iter().enumerate() {
+                if node.pooled {
+                    push((chunk, index as u32), &mut reached, &mut pending);
+                }
+            }
+            for (source, name) in &callables.escaped_imports {
+                self.export_nodes(*source, name, &mut seen, &mut exported);
+                seen.clear();
+            }
+            // A loader request hands its caller the loaded chunk's namespace,
+            // whose functions anyone holding it may call.
+            let requested = surface
+                .requests
+                .iter()
+                .filter_map(|request| match request.target {
+                    LoaderRequestTarget::Chunk(loaded) => Some(loaded),
+                    LoaderRequestTarget::ReentryFreeBuiltin(_)
+                    | LoaderRequestTarget::EmbeddedFile(_) => None,
+                });
+            for source in callables.namespace_sources.iter().copied().chain(requested) {
+                if let Some(namespace) = self.chunks.get(&source) {
+                    let names: Vec<_> = namespace
+                        .callables
+                        .exports
+                        .keys()
+                        .chain(namespace.callables.reexports.keys())
+                        .cloned()
+                        .collect();
+                    for name in names {
+                        self.export_nodes(source, &name, &mut seen, &mut exported);
+                        seen.clear();
+                    }
+                }
+            }
+        }
+        for node in exported.drain(..) {
+            push(node, &mut reached, &mut pending);
+        }
+        while let Some((chunk, index)) = pending.pop() {
+            let Some(node) = self
+                .chunks
+                .get(&chunk)
+                .and_then(|surface| surface.callables.nodes.get(index as usize))
+            else {
+                continue;
+            };
+            for &callee in &node.local_callees {
+                push((chunk, callee), &mut reached, &mut pending);
+            }
+            for (source, name) in &node.import_calls {
+                self.export_nodes(*source, name, &mut seen, &mut exported);
+                seen.clear();
+                for target in exported.drain(..) {
+                    push(target, &mut reached, &mut pending);
+                }
+            }
+        }
+        reached
+    }
+
     fn evaluate_reach(&self, chunk: ChunkId, context: &mut impl FactContext<Key, Fact<W>>) {
         let Some(surface) = self.chunks.get(&chunk) else {
             return;
@@ -413,20 +564,24 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
         let after: BTreeSet<ChunkId> = importers.difference(&body).copied().collect();
         // Chunks a counted request evaluates in the window run there whole.
         let mut window_loaded = BTreeSet::new();
+        let mut reached = self.window_callables(&body, &window_loaded, &after);
         loop {
             let counted =
-                |chunk: &ChunkId, placement: SitePlacement, loaded: &BTreeSet<ChunkId>| {
-                    loaded.contains(chunk)
-                        || match placement {
-                            SitePlacement::ModuleBody => body.contains(chunk),
-                            SitePlacement::Callable => !after.contains(chunk),
-                        }
+                |chunk: &ChunkId,
+                 placement: SitePlacement,
+                 loaded: &BTreeSet<ChunkId>,
+                 reached: &std::collections::HashSet<(ChunkId, u32)>| {
+                    match placement {
+                        SitePlacement::ModuleBody => body.contains(chunk) || loaded.contains(chunk),
+                        SitePlacement::InFunction(node) => reached.contains(&(*chunk, node)),
+                        SitePlacement::Callable => loaded.contains(chunk) || !after.contains(chunk),
+                    }
                 };
             let mut grown = window_loaded.clone();
             for (chunk, surface) in self.chunks {
                 for request in &surface.requests {
                     if let LoaderRequestTarget::Chunk(loaded) = request.target
-                        && counted(chunk, request.placement, &window_loaded)
+                        && counted(chunk, request.placement, &window_loaded, &reached)
                     {
                         grown.extend(Self::loaded_closure(loaded, context));
                     }
@@ -436,13 +591,12 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                 break;
             }
             window_loaded = grown;
+            reached = self.window_callables(&body, &window_loaded, &after);
         }
-        let counted = |chunk: &ChunkId, placement: SitePlacement| {
-            window_loaded.contains(chunk)
-                || match placement {
-                    SitePlacement::ModuleBody => body.contains(chunk),
-                    SitePlacement::Callable => !after.contains(chunk),
-                }
+        let counted = |chunk: &ChunkId, placement: SitePlacement| match placement {
+            SitePlacement::ModuleBody => body.contains(chunk) || window_loaded.contains(chunk),
+            SitePlacement::InFunction(node) => reached.contains(&(*chunk, node)),
+            SitePlacement::Callable => window_loaded.contains(chunk) || !after.contains(chunk),
         };
         for (chunk, surface) in self.chunks {
             verdict.suspended_sites += surface.suspended_sites.len();
@@ -583,6 +737,7 @@ mod tests {
     ) -> ChunkLoaderSurface<&'static str> {
         ChunkLoaderSurface {
             static_targets: static_targets.iter().map(|id| ChunkId(*id)).collect(),
+            callables: ChunkCallables::default(),
             requests: requests
                 .iter()
                 .map(|(target, witness)| LoaderRequest {
@@ -738,6 +893,71 @@ mod tests {
         assert_eq!(
             failure_witnesses(&solve_one(&chunks, &audited_host(), 0)),
             Some(1)
+        );
+    }
+
+    /// Chunk 2 runs before the target 0 and holds a failing site in its
+    /// function node 1, exported as `f`.
+    fn callable_program(
+        pooled: bool,
+        target_calls_f: bool,
+        requested_by: Option<usize>,
+    ) -> BTreeMap<ChunkId, ChunkLoaderSurface<&'static str>> {
+        let mut target = surface(&[], &[]);
+        target.callables.nodes = vec![CallableFacts {
+            import_calls: if target_calls_f {
+                vec![(ChunkId(2), "f".to_string())]
+            } else {
+                Vec::new()
+            },
+            ..CallableFacts::default()
+        }];
+        let mut owner = failing(surface(&[], &[]), "in f", SitePlacement::InFunction(1));
+        owner.callables.nodes = vec![
+            CallableFacts::default(),
+            CallableFacts {
+                pooled,
+                ..CallableFacts::default()
+            },
+        ];
+        owner.callables.exports = BTreeMap::from([("f".to_string(), 1)]);
+        let mut chunks = BTreeMap::from([(ChunkId(0), target), (ChunkId(2), owner)]);
+        if let Some(requester) = requested_by {
+            chunks.insert(
+                ChunkId(requester),
+                surface(&[], &[(LoaderRequestTarget::Chunk(ChunkId(2)), "load 2")]),
+            );
+        }
+        chunks
+    }
+
+    #[test]
+    fn a_site_in_a_function_counts_only_when_the_window_can_enter_it() {
+        let count = |chunks: &BTreeMap<ChunkId, ChunkLoaderSurface<&'static str>>| {
+            failure_witnesses(&solve_one(chunks, &audited_host(), 0))
+        };
+        // Named, unexported to anything that runs, never called: excluded.
+        assert_eq!(count(&callable_program(false, false, None)), None);
+        // The target's top level calls it through its import.
+        assert_eq!(count(&callable_program(false, true, None)), Some(1));
+        // Its value escaped: any opaque call may invoke it.
+        assert_eq!(count(&callable_program(true, false, None)), Some(1));
+        // A loader request hands out chunk 2's namespace.
+        assert_eq!(count(&callable_program(false, false, Some(3))), Some(1));
+    }
+
+    #[test]
+    fn a_function_only_an_importer_of_the_target_calls_is_excluded() {
+        let mut chunks = callable_program(false, false, None);
+        let mut importer = surface(&[0], &[]);
+        importer.callables.nodes = vec![CallableFacts {
+            import_calls: vec![(ChunkId(2), "f".to_string())],
+            ..CallableFacts::default()
+        }];
+        chunks.insert(ChunkId(4), importer);
+        assert_eq!(
+            failure_witnesses(&solve_one(&chunks, &audited_host(), 0)),
+            None
         );
     }
 

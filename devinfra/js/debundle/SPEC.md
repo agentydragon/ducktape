@@ -807,19 +807,55 @@ request or reachable dynamic `import()` of one, expose the alias and keep every
 target open.
 
 A remaining site counts when it can run in the target's window, from the
-target's entry into evaluation until it finishes. A direct load in top-level
-code, outside every function, runs only while its own module's body evaluates:
-it counts in the target, in the target's static closure, and in a chunk a
-counted request loads. Any other site, including a loader value that escapes
-from top-level code, runs whenever a callback can, since a callback any chunk
-published earlier can run in the window. It counts unless its chunk
-statically imports the target outside a cycle with it: that chunk's body, and
-with it every reference to its functions, starts only after the target
-finishes. A counted request that loads a chunk brings that chunk's whole
-static and loader closure into the window. Sites outside the window are
-counted in `outside_window_sites`. A site the census does not see, such as a
-computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
-code, is outside this proof, as it is outside the census.
+target's entry into evaluation until it finishes.
+
+- **Running chunks.** A chunk that statically imports the target outside a
+  cycle with it cannot start its body before the target finishes, so none of
+  its function values exist in the window, unless a counted request loads it.
+  Every other chunk, and every chunk a counted request loads, is running.
+- **Top-level loads.** A direct load in top-level code, outside every
+  function, runs only while its own module's body evaluates. It counts in the
+  target, in the target's static closure, and in a chunk a counted request
+  loads.
+- **Loader values that escape** (any use of a loader that is not a direct
+  call) count in every running chunk.
+- **Direct loads in a function** count only when the window can enter that
+  function. The roots of that entry are:
+  - the top-level code of the target, of its static closure and of every
+    loaded chunk;
+  - every pooled function of every running chunk.
+
+  A function is pooled when its value can reach code its module does not
+  name: it is anonymous (a function expression, arrow, method, accessor,
+  constructor or class initializer), it is referenced other than as a
+  direct callee or an `export`, it is declared more than once, or its
+  module has dynamic scope. Any statement in the window whose execution the
+  analysis does not complete may call a pooled function: an incomplete
+  statement is an opaque call, and an opaque call may invoke any function
+  value published so far. So the pool needs no proof that an opaque call
+  happens.
+
+  From the roots, entry follows:
+  - direct calls of local functions;
+  - direct calls of imported bindings, to the function each names in its
+    defining chunk, following `export … from` and `export *`;
+  - imported functions used as values, which join the pool;
+  - every exported function of a chunk whose namespace a running chunk
+    obtains: a namespace import, a re-export of the whole module, a dynamic
+    `import()`, or any loader request, which returns the namespace.
+
+  A function reached only through calls is entered only when a caller in the
+  window runs. A named function a chunk calls only from its own top level,
+  outside the window, never runs in it.
+
+- **Loaded chunks.** A counted request that loads a chunk brings that chunk's
+  whole static and loader closure into the window as running and as roots.
+  This is iterated to a fixpoint.
+
+Sites outside the window are counted in `outside_window_sites`. A site the
+census does not see, such as a computed `globalThis` read,
+`process.mainModule` or `Function`/indirect `eval` code, is outside this
+proof, as it is outside the census.
 
 ### Reentry through imported names
 

@@ -526,6 +526,9 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let key_line = |(lo, hi): loader_phase::SiteKey| {
         line_index.line_for_span(Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)))
     };
+    let site_nodes = reach.site_nodes;
+    let site_node = |key: loader_phase::SiteKey| site_nodes.get(&key).copied().unwrap_or(0);
+    let callables = reach.callables;
     let loader_bindings = reach
         .tracked
         .into_iter()
@@ -552,6 +555,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                     call: tracked_use.call,
                     consumer: tracked_use.consumer,
                     phase: phase(tracked_use.key),
+                    node: site_node(tracked_use.key),
                 })
                 .collect(),
         })
@@ -586,10 +590,12 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 kind,
                 specifier,
                 phase: phase(loader_phase::site_key(span)),
+                node: site_node(loader_phase::site_key(span)),
             })
             .collect(),
         loader_bindings,
         namespace_requests,
+        callables,
         ..ChunkRuntimeFacts::default()
     };
 

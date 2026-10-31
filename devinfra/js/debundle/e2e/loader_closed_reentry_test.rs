@@ -17,11 +17,33 @@ const later = dynamic;
 class Registry { static current = later; }
 export function readLater() { return Registry.current; }
 export function loadHelper() { return import.meta.require("./helper.js"); }
+// Published as a value: any opaque call may run it while the module evaluates.
+export const loaders = [loadHelper];
 "#;
 const HELPER: &str = "exports.suffix = \"!\";\n";
 const CONSUMER: &str = r#"import { readLater } from "./provider.js";
 export { readLater };
 "#;
+
+/// Publish every exported function of `source` as a value, so any opaque call
+/// may run it: the shape of a callback a chunk registers before the provider
+/// evaluates.
+fn publish(source: &str) -> &'static str {
+    let names: Vec<&str> = source
+        .split("function ")
+        .skip(1)
+        .zip(
+            source
+                .split("function ")
+                .map(|before| before.ends_with("export ") || before.ends_with("export async ")),
+        )
+        .filter(|(_, exported)| *exported)
+        .filter_map(|(rest, _)| rest.split('(').next())
+        .collect();
+    Box::leak(
+        format!("{source}export const published = [{}];\n", names.join(", ")).into_boxed_str(),
+    )
+}
 
 fn audited_host() -> HostBehavior {
     HostBehavior {
@@ -155,7 +177,10 @@ fn non_literal_request_anywhere_keeps_the_target_open() {
     let sidecar = "export function loadNamed(name) { return import.meta.require(name); }\n";
     let derivation = rejected_loader_derivation(
         PROVIDER,
-        &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+        &[
+            ("static/helper", HELPER),
+            ("static/sidecar", publish(sidecar)),
+        ],
         audited_host(),
     );
     let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
@@ -168,7 +193,10 @@ fn aliased_loader_keeps_the_target_open() {
     let sidecar = "export function loader() { return import.meta.require; }\n";
     let derivation = rejected_loader_derivation(
         PROVIDER,
-        &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+        &[
+            ("static/helper", HELPER),
+            ("static/sidecar", publish(sidecar)),
+        ],
         audited_host(),
     );
     let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
@@ -323,7 +351,7 @@ fn mandatorily_suspended_site_does_not_hold_the_target_open() {
     let extra_chunks = [
         ("static/helper", HELPER),
         ("static/provider", PROVIDER),
-        ("static/sidecar", sidecar),
+        ("static/sidecar", publish(sidecar)),
     ];
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
     let fixture = run_fixture(
@@ -367,7 +395,10 @@ fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
     ] {
         let derivation = rejected_loader_derivation(
             PROVIDER,
-            &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+            &[
+                ("static/helper", HELPER),
+                ("static/sidecar", publish(sidecar)),
+            ],
             host,
         );
         let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
@@ -413,7 +444,7 @@ fn site_in_a_function_no_reachable_code_enters_does_not_hold_the_target_open() {
 function unused() { return loadNamed("./provider.js"); }
 export const ready = 1;
 "#;
-    let report = accepted_provider_report(&[("static/sidecar", sidecar)]);
+    let report = accepted_provider_report(&[("static/sidecar", publish(sidecar))]);
     assert_eq!(report["loader"]["unreachable_sites"], 1);
 }
 
@@ -421,12 +452,15 @@ export const ready = 1;
 fn entered_or_escaping_functions_keep_their_sites() {
     for sidecar in [
         "function loadNamed(name) { return import.meta.require(name); }\nexport const ready = loadNamed;\n",
-        "function loadNamed(name) { return import.meta.require(name); }\nfunction start() { return loadNamed('x'); }\nstart();\n",
+        "function loadNamed(name) { return import.meta.require(name); }\nfunction start() { return loadNamed('x'); }\nexport const handlers = [start];\n",
         "const loadNamed = (name) => import.meta.require(name);\nsetTimeout(() => loadNamed('x'));\n",
     ] {
         let derivation = rejected_loader_derivation(
             PROVIDER,
-            &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+            &[
+                ("static/helper", HELPER),
+                ("static/sidecar", publish(sidecar)),
+            ],
             audited_host(),
         );
         let first = &failure(&derivation, "opaque_loader_site")["first"]["site"];
@@ -443,7 +477,8 @@ fn exported_loader_alias_with_literal_calls_is_classified() {
     let user = r#"import { load } from "./runtime.js";
 export function readPath() { return load("node:path"); }
 "#;
-    let report = accepted_provider_report(&[("static/runtime", RUNTIME), ("static/user", user)]);
+    let report =
+        accepted_provider_report(&[("static/runtime", RUNTIME), ("static/user", publish(user))]);
     let requests = report["loader"]["requests"].as_array().unwrap();
     assert!(
         requests
@@ -489,7 +524,7 @@ fn unclassifiable_uses_of_an_exported_loader_keep_the_target_open() {
             &[
                 ("static/helper", HELPER),
                 ("static/runtime", RUNTIME),
-                ("static/user", user),
+                ("static/user", publish(user)),
             ],
             audited_host(),
         );
@@ -508,7 +543,7 @@ export function proxy() { return import.meta.require("undici"); }
 export function legacy() { return import.meta.require("constants"); }
 "#;
     let report = accepted_provider_report_under(
-        &[("static/sidecar", sidecar)],
+        &[("static/sidecar", publish(sidecar))],
         HostBehavior {
             reentry_free_builtin_modules: [NodeBuiltinModule::Constants].into_iter().collect(),
             reentry_free_bun_modules: [BunModule::BunFfi, BunModule::Undici].into_iter().collect(),
@@ -530,7 +565,10 @@ export function legacy() { return import.meta.require("constants"); }
 
     let derivation = rejected_loader_derivation(
         PROVIDER,
-        &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+        &[
+            ("static/helper", HELPER),
+            ("static/sidecar", publish(sidecar)),
+        ],
         audited_host(),
     );
     assert_eq!(
@@ -584,7 +622,10 @@ fn escaping_loader_values_stay_opaque_under_the_native_addon_premise() {
     let rejected = run_rejection_fixture(
         FixtureOpts::new(PROVIDER, provider_modules())
             .with_chunk_id(PROVIDER_CHUNK)
-            .with_extra_chunks(&[("static/helper", HELPER), ("static/sidecar", sidecar)])
+            .with_extra_chunks(&[
+                ("static/helper", HELPER),
+                ("static/sidecar", publish(sidecar)),
+            ])
             .with_host_behavior(audited_host())
             .with_program_premises(native_addon_premise()),
     );
@@ -599,7 +640,7 @@ fn escaping_loader_values_stay_opaque_under_the_native_addon_premise() {
 fn process_request_is_a_leaf_under_the_accessor_premise() {
     let sidecar = "export function proc() { return import.meta.require(\"node:process\"); }\n";
     let report = accepted_provider_report_under(
-        &[("static/sidecar", sidecar)],
+        &[("static/sidecar", publish(sidecar))],
         HostBehavior {
             reentry_free_builtin_modules: [NodeBuiltinModule::Path, NodeBuiltinModule::Process]
                 .into_iter()
@@ -723,7 +764,10 @@ fn module_uses_that_expose_a_loader_keep_the_target_open() {
         let rejected = run_rejection_fixture(
             FixtureOpts::new(PROVIDER, provider_modules())
                 .with_chunk_id(PROVIDER_CHUNK)
-                .with_extra_chunks(&[("static/helper", HELPER), ("static/sidecar", sidecar)])
+                .with_extra_chunks(&[
+                    ("static/helper", HELPER),
+                    ("static/sidecar", publish(sidecar)),
+                ])
                 .with_host_behavior(module_host())
                 .with_program_premises(process_premise()),
         );
@@ -740,7 +784,7 @@ fn module_uses_that_expose_a_loader_keep_the_target_open() {
         &[
             ("static/helper", HELPER),
             ("static/runtime", RUNTIME),
-            ("static/user", user),
+            ("static/user", publish(user)),
         ],
         HostBehavior {
             reentry_free_builtin_modules: [NodeBuiltinModule::Path, NodeBuiltinModule::Module]
@@ -779,7 +823,7 @@ export function addon() { return import.meta.require("/$bunfs/root/addon.node");
     let mut extra_chunks = vec![
         ("static/helper", HELPER),
         ("static/provider", PROVIDER),
-        ("static/sidecar", sidecar),
+        ("static/sidecar", publish(sidecar)),
     ];
     let provider_logical = [(PROVIDER_CHUNK, provider_modules())];
     let fixture = run_fixture(
@@ -809,7 +853,9 @@ export function addon() { return import.meta.require("/$bunfs/root/addon.node");
     // undeclared loader keeps the target open.
     extra_chunks[2] = (
         "static/sidecar",
-        "export function script() { return import.meta.require(\"/$bunfs/root/script.mjs\"); }\nexport function guide() { return import.meta.require(\"/$bunfs/root/guide.md\"); }\n",
+        publish(
+            "export function script() { return import.meta.require(\"/$bunfs/root/script.mjs\"); }\nexport function guide() { return import.meta.require(\"/$bunfs/root/guide.md\"); }\n",
+        ),
     );
     let rejected = run_rejection_fixture(
         FixtureOpts::new(PROVIDER, provider_modules())
@@ -845,7 +891,7 @@ export function inquire(name) {
   try { return name === "fs" ? load("fs") : eval("quire".replace(/^/, "re"))(name); } catch (e) { return null; }
 }
 "#;
-    let extra = [("static/runtime", RUNTIME), ("static/user", user)];
+    let extra = [("static/runtime", RUNTIME), ("static/user", publish(user))];
     let report = accepted_provider_report_under(
         &extra,
         HostBehavior {
@@ -863,7 +909,7 @@ export function inquire(name) {
         &[
             ("static/helper", HELPER),
             ("static/runtime", RUNTIME),
-            ("static/user", user),
+            ("static/user", publish(user)),
         ],
         audited_host(),
     );
@@ -884,7 +930,7 @@ export function run(code) { return eval(code + ""); }
         &[
             ("static/helper", HELPER),
             ("static/runtime", RUNTIME),
-            ("static/user", user),
+            ("static/user", publish(user)),
         ],
         audited_host(),
     );
@@ -904,7 +950,7 @@ fn sites_outside_the_target_window_do_not_hold_it_open() {
         "import { readLater } from \"./provider.js\";\nexport function loadNamed(name) { return import.meta.require(name); }\nexport const seen = readLater;\n",
         "const named = globalThis.process ? \"a\" : \"b\";\nexport const loaded = import.meta.require(named);\n",
     ] {
-        let report = accepted_provider_report(&[("static/sidecar", sidecar)]);
+        let report = accepted_provider_report(&[("static/sidecar", publish(sidecar))]);
         assert_eq!(report["loader"]["outside_window_sites"], 1, "{sidecar}");
     }
 }
@@ -914,7 +960,7 @@ fn sites_outside_the_target_window_do_not_hold_it_open() {
 fn reentry_provider() -> &'static str {
     Box::leak(
         format!(
-            "{PROVIDER}export function loadWindow() {{ return import.meta.require(\"./window.js\"); }}\n"
+            "{PROVIDER}export function loadWindow() {{ return import.meta.require(\"./window.js\"); }}\nexport const windows = [loadWindow];\n"
         )
         .into_boxed_str(),
     )
@@ -926,7 +972,7 @@ fn reach_back_reenters_only_through_the_names_the_window_imports() {
     let extra_chunks = [
         ("static/helper", HELPER),
         ("static/provider", reentry_provider()),
-        ("static/window", window),
+        ("static/window", publish(window)),
     ];
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
     let fixture = run_fixture(
@@ -964,7 +1010,10 @@ fn a_window_importing_the_bound_export_or_the_namespace_keeps_it_bound() {
         let rejected = run_rejection_fixture(
             FixtureOpts::new(reentry_provider(), provider_modules())
                 .with_chunk_id(PROVIDER_CHUNK)
-                .with_extra_chunks(&[("static/helper", HELPER), ("static/window", window)])
+                .with_extra_chunks(&[
+                    ("static/helper", HELPER),
+                    ("static/window", publish(window)),
+                ])
                 .with_host_behavior(audited_host()),
         );
         assert_eq!(
@@ -973,4 +1022,14 @@ fn a_window_importing_the_bound_export_or_the_namespace_keeps_it_bound() {
             "{window}"
         );
     }
+}
+
+/// A chunk that evaluates before the provider and calls its loader only from
+/// its own top level, never publishing it, cannot run it while the provider
+/// evaluates.
+#[test]
+fn a_function_only_an_earlier_top_level_calls_does_not_hold_the_target_open() {
+    let sidecar = "function loadNamed(name) { return import.meta.require(name); }\nfunction start() { return loadNamed('x'); }\nstart();\nexport const started = 1;\n";
+    let report = accepted_provider_report(&[("static/sidecar", sidecar)]);
+    assert_eq!(report["policy"], "no_static_importer_reentry");
 }
