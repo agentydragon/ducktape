@@ -1,8 +1,8 @@
 # Standard idioms over hand-rolled mechanisms
 
 A 2026-10-30 read-only audit of Agentplane against standard Kubernetes, gRPC, HTTP, PostgreSQL and
-frontend idioms, after the custom watch-cycle freshness turned out to freeze the app's inventory
-(`KUBERNETES_NATIVE_WATCH_HEALTH`). This plan holds each accepted item's problem, target and exit;
+frontend idioms, after the custom watch-cycle freshness turned out to freeze the app's inventory.
+This plan holds each accepted item's problem, target and exit;
 [the task DAG](task_dag.md#16-standard-idioms-over-hand-rolled-mechanisms) holds state and
 dependencies. Items the audit judged justified are not listed: the central egress proxy, the
 sampler's Responses stream parser, runner supervision, Electric sync, the local command outbox, CRD
