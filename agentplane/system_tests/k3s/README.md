@@ -18,6 +18,17 @@ tmpfs layers keep separate image stores.
 Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
 step finished and how long each image took to import, written as it happens, so a hung run shows how far
 it got. A k3s target's test log ends with the same timeline.
+The fixture starts an OTLP/gRPC and OTLP/HTTP receiver before k3s, then publishes it through a
+test-only `monitoring/alloy` Service and Endpoints once the node is Ready. It passes the receiver's
+endpoint to the deployed services and Runner processes. Their spans are written to
+`process-spans.jsonl`; the receiver stops after the stack. The bundled containerd does not register
+its upstream tracing plugin, so image imports have only driver-side timings in `k3s-timeline.jsonl`.
+For VM stacks it also samples containerd during guest image import through its root-only
+debug socket, retaining `containerd-import.cpu.pprof` and
+`containerd-import.runtime.trace` in test outputs. Sampling overlaps the import; the
+fixture joins the bounded profilers at teardown. The fixture also retains `containerd.log`
+for process startup and failure diagnosis. See
+[phase tracing](../README.md#phase-tracing) for the fields and propagation limits.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture

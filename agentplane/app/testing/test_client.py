@@ -12,6 +12,8 @@ import httpx
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
+from opentelemetry import trace
+from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
@@ -40,11 +42,15 @@ async def _respond(
 
 
 @asynccontextmanager
-async def _app(*connections: Connection, port: int = 0) -> AsyncIterator[tuple[Client, asyncio.Server]]:
+async def _app(
+    *connections: Connection, port: int = 0, requests: list[str] | None = None
+) -> AsyncIterator[tuple[Client, asyncio.Server]]:
     remaining = list(connections)
 
     async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request = (await reader.readuntil(b"\r\n\r\n")).decode()
+        if requests is not None:
+            requests.append(request)
         after = int(request.split("after=")[1].split(" ")[0].split("&")[0]) if "after=" in request else 0
         try:
             await remaining.pop(0)(after, writer)
@@ -96,6 +102,25 @@ async def test_command_accepts_the_dispatchers_durable_receipt() -> None:
     async with _app(accepted) as (client, _):
         result = await client.submit_input(uuid4(), command_id, "Continue")
     assert result == receipt
+
+
+async def test_client_propagates_active_trace_context() -> None:
+    observed: list[str] = []
+
+    async def accepted(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b"[]", "application/json")
+
+    span_context = SpanContext(
+        trace_id=0x1234567890ABCDEF1234567890ABCDEF,
+        span_id=0x1234567890ABCDEF,
+        is_remote=False,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_state=TraceState(),
+    )
+    with trace.use_span(NonRecordingSpan(span_context)):
+        async with _app(accepted, requests=observed) as (client, _):
+            await client.presets()
+    assert "traceparent: 00-1234567890abcdef1234567890abcdef-1234567890abcdef-01\r\n" in observed[0].lower()
 
 
 async def test_command_accepts_an_archived_admission_without_a_dispatch() -> None:
