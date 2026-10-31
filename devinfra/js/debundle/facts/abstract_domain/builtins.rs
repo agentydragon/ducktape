@@ -945,14 +945,28 @@ pub struct IterationRow {
     pub requires: &'static [IntrinsicSlot],
 }
 
-/// The Array machinery an iteration row reads: the method and `constructor`
-/// on `%Array.prototype%`, and the inherited lookups an own-element read
-/// would fall through to. Prototype slots are family-level, so these are
-/// also what every other dense-array model in the interpreter requires.
+/// The whole Array machinery: what the interpreter's dense-array models
+/// other than iteration rows (spread, `push`, callback cache writes) require.
 pub const ARRAY_PROTOTYPE_SLOTS: &[IntrinsicSlot] = &[
     IntrinsicSlot::Prototype(NativeIntrinsic::Array),
     IntrinsicSlot::ArrayIteratorPrototype,
     IntrinsicSlot::Prototype(NativeIntrinsic::Object),
+];
+
+/// A row's method lookup: the receiver is an ordinary Array whose
+/// `[[Prototype]]` is the realm's `%Array.prototype%`, and the method is that
+/// object's own data property. Element reads of a dense array find own
+/// properties and never reach `%Object.prototype%`, and no row reads the Array
+/// iterator, so neither is required.
+const fn method(member: &'static str) -> IntrinsicSlot {
+    IntrinsicSlot::PrototypeProperty(NativeIntrinsic::Array, member)
+}
+
+/// `ArraySpeciesCreate`: `constructor` is read from `%Array.prototype%`
+/// (the receiver has no own one), then `%Array%[@@species]`.
+const SPECIES: [IntrinsicSlot; 2] = [
+    IntrinsicSlot::PrototypeProperty(NativeIntrinsic::Array, "constructor"),
+    IntrinsicSlot::Species(NativeIntrinsic::Array),
 ];
 
 const FOR_EACH: IterationRow = IterationRow {
@@ -961,7 +975,7 @@ const FOR_EACH: IterationRow = IterationRow {
     arity: 1..=1,
     invokes: ArgSel::Arg(0),
     result: IterationResult::Undefined,
-    requires: ARRAY_PROTOTYPE_SLOTS,
+    requires: &[method("forEach")],
 };
 
 pub const ITERATION_ROWS: &[IterationRow] = &[
@@ -970,42 +984,49 @@ pub const ITERATION_ROWS: &[IterationRow] = &[
         member: "map",
         cite: "sec-array.prototype.map",
         result: IterationResult::Mapped,
+        requires: &[method("map"), SPECIES[0], SPECIES[1]],
         ..FOR_EACH
     },
     IterationRow {
         member: "filter",
         cite: "sec-array.prototype.filter",
         result: IterationResult::Filtered,
+        requires: &[method("filter"), SPECIES[0], SPECIES[1]],
         ..FOR_EACH
     },
     IterationRow {
         member: "flatMap",
         cite: "sec-array.prototype.flatmap",
         result: IterationResult::FlatMapped,
+        requires: &[method("flatMap"), SPECIES[0], SPECIES[1]],
         ..FOR_EACH
     },
     IterationRow {
         member: "some",
         cite: "sec-array.prototype.some",
         result: IterationResult::Boolean,
+        requires: &[method("some")],
         ..FOR_EACH
     },
     IterationRow {
         member: "every",
         cite: "sec-array.prototype.every",
         result: IterationResult::Boolean,
+        requires: &[method("every")],
         ..FOR_EACH
     },
     IterationRow {
         member: "find",
         cite: "sec-array.prototype.find",
         result: IterationResult::Element,
+        requires: &[method("find")],
         ..FOR_EACH
     },
     IterationRow {
         member: "findIndex",
         cite: "sec-array.prototype.findindex",
         result: IterationResult::Index,
+        requires: &[method("findIndex")],
         ..FOR_EACH
     },
     IterationRow {
@@ -1013,6 +1034,7 @@ pub const ITERATION_ROWS: &[IterationRow] = &[
         cite: "sec-array.prototype.reduce",
         arity: 1..=2,
         result: IterationResult::Accumulated,
+        requires: &[method("reduce")],
         ..FOR_EACH
     },
 ];

@@ -1489,6 +1489,31 @@ of its own, and A11 excludes host code changing intrinsics. So:
 A prototype slot covers every property on the object, including inherited
 lookups, so it is unknown after any write to its family or the global object.
 
+Two narrower slots name one own property each, under the same reach rules:
+
+- `%Array.prototype.map%` is the string-keyed own property `map` of the
+  prototype object. Writes to it come from an exact `%Array.prototype%`
+  receiver (exact while `%Array%` is intact) or from a receiver that may be any
+  object, under a key that may name it. The global object and the constructor
+  are different objects, so their writes never reach it. A family root mutated
+  without a witness reaches every property.
+- `%Array[@@species]%` is the constructor's `@@species` accessor. The census
+  does not tell Symbol keys apart, so any Symbol- or unknown-keyed write that
+  may land on `%Array%` reaches it.
+
+The Array iteration rows require only their method's slot. A row whose result
+array comes from `ArraySpeciesCreate` also requires `%Array.prototype.constructor%`
+and `%Array[@@species]%`. They need neither `%Object.prototype%` nor the Array
+iterator:
+
+- the receiver is a dense array whose indices below `length` are own data
+  properties, so `HasProperty` and `Get` never reach its prototype chain;
+- `length` is own;
+- no row's algorithm reads the iterator.
+
+Reads the callback performs, such as an element's property, are member reads
+the interpreter checks separately.
+
 Each consumer names every slot its operation reads: the callee's binding and
 member, and any constructor static or prototype method the algorithm looks up.
 
@@ -2715,10 +2740,11 @@ writes, coercions and publication are observed effects of the statement.
 - **Holes, `thisArg`, own method slots.** A sparse or non-literal source is not
   dense, a `thisArg` is not admitted, and an own `forEach`-style property on
   the array taints it. Each is the conservative path.
-- **Integrity.** Each row's `requires` slots (`%Array.prototype%`, the Array
-  iterator, `%Object.prototype%`) must be intact. An intrinsic change, an
-  unsupported operation in the callback, or exhausted invocation limits also
-  keep conservative effects.
+- **Integrity.** Each row's `requires` slots must be intact: the method's own
+  property of `%Array.prototype%` and, for a fresh array result, its
+  `constructor` and `%Array[@@species]%` (§ Native integrity inputs). An
+  intrinsic change, an unsupported operation in the callback, or exhausted
+  invocation limits also keep conservative effects.
 
 See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).
 

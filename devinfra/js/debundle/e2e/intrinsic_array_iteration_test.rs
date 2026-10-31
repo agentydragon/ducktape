@@ -61,10 +61,22 @@ fn assert_early_iteration_rejected_with_executor(
 /// the callback ran on every element without invoking their stored
 /// `executor` callbacks, which read `later`.
 fn assert_iteration_split_accepted(collection: &str, trailing: &str, expected: &str) {
+    assert_iteration_split_accepted_after("", collection, trailing, expected);
+}
+
+fn assert_iteration_split_accepted_after(
+    setup: &str,
+    collection: &str,
+    trailing: &str,
+    expected: &str,
+) {
     let source = format!(
-        "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst result = {collection};\n{trailing}\nlater = 42;\nconsole.log(JSON.stringify(result), entries[0].executor());\n"
+        "let later = 0;\n{setup}\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst result = {collection};\n{trailing}\nlater = 42;\nconsole.log(JSON.stringify(result), entries[0].executor());\n"
     );
     let mut steps = Vec::new();
+    if !setup.is_empty() {
+        steps.push(setup);
+    }
     if !trailing.is_empty() {
         steps.push(trailing);
     }
@@ -101,6 +113,64 @@ fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
         ("entries.flatMap(entry => entry.id)", "[\"a\",\"b\"] 42\n"),
     ] {
         assert_iteration_split_accepted(collection, "", expected);
+    }
+}
+
+/// Rows require only the Array prototype properties they read: writes to the
+/// global object, to `Array` statics, or to `Object.prototype` under other keys
+/// leave them intact.
+#[test]
+fn unrelated_intrinsic_writes_leave_iteration_rows_intact() {
+    for setup in [
+        "globalThis.appState = { ready: true };",
+        "Array.from = Array.from;",
+        "Array.prototype.unrelated = function () { return later; };",
+        "Object.defineProperty(Object.prototype, 'unrelated', { value: 1, configurable: true });",
+    ] {
+        assert_iteration_split_accepted_after(
+            setup,
+            "entries.map(entry => entry.size)",
+            "",
+            "[1,2] 42\n",
+        );
+    }
+}
+
+#[test]
+fn writes_reaching_a_row_slot_keep_real_effects() {
+    for (declarations, setup, collection, names) in [
+        (
+            "",
+            "Array.prototype.some = function () { observed = later; return false; };",
+            "entries.some(() => false)",
+            &[][..],
+        ),
+        (
+            "",
+            "Object.defineProperty(Array.prototype, 'every', { value() { observed = later; return true; }, configurable: true });",
+            "entries.every(() => true)",
+            &[],
+        ),
+        (
+            "const key = ['fi', 'nd'].join('');",
+            "Array.prototype[key] = function () { observed = later; };",
+            "entries.find(() => false)",
+            &["key"],
+        ),
+        (
+            "",
+            "Object.defineProperty(Array, Symbol.species, { get() { observed = later; return Array; }, configurable: true });",
+            "entries.map(entry => entry.id)",
+            &[],
+        ),
+        (
+            "",
+            "Array.prototype.constructor = { get [Symbol.species]() { observed = later; return Array; } };",
+            "entries.filter(() => true)",
+            &[],
+        ),
+    ] {
+        assert_early_iteration_rejected(declarations, &[setup], collection, "", names);
     }
 }
 

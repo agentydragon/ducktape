@@ -1417,7 +1417,7 @@ debundle explain-integrity --graph output/reports/tree/static/index/dependency_g
 # The same for a source unit or a binding it declares
 debundle explain-integrity --id unit:120
 # Every census witness reaching one slot
-debundle explain-integrity --slot '%Array.prototype%'   # or Object.prototype, Object.defineProperty, Set
+debundle explain-integrity --slot '%Array.prototype%'   # or Array.prototype.map, Array[@@species], Object.defineProperty, Set
 ```
 
 A source-unit row lists the guards its execution evaluated and, for each
@@ -1430,7 +1430,9 @@ excerpt, operation and `reach`:
 - `family_coupling`: a prototype slot is family-level, so any write to its
   family (`Object.entries = f` for `%Object.prototype%`) makes it unknown.
 - `global_object_coupling`: a global-object write (`window.flag = 1`) makes
-  every prototype slot unknown, even for a bundle-owned property.
+  every whole-prototype slot unknown, even for a bundle-owned property. It
+  never reaches a single prototype property (`%Array.prototype.map%`) or
+  `@@species` slot, which take the own-slot reach kinds.
 - `unknown_key`: an exact receiver whose key may name the slot.
 - `unknown_receiver`: a receiver that may be any native object.
 
