@@ -51,6 +51,29 @@ step-by-step tool script. Reuse canonical APIs/CLI/tool surfaces and concise act
 Use Claude/Codex spawning, messaging, waiting, result and cancellation workflows as reference
 designs; do not make native-child projection or exhaustive harness parity prerequisites.
 
+**Realistic working examples are required; operator, 2026-10-30 PDT.** Subagent/delegation,
+Session spawning, environment provisioning/attachment, communication and history-reading work must
+include concrete end-to-end agent workflows mapped to Agentplane's actual service contracts.
+Show how an agent discovers operations and schemas, obtains valid environment/Session handles,
+learns usable harness/model/cwd choices, and uses its authenticated authority. Include the separate
+creation and initial-input steps, follow-up, result/history reads, waiting and relevant
+failure/retry/cancellation behavior. Return structured status with its source and meaning; distinguish
+service admission, harness observations and any explicitly supported agent-declared task status.
+
+Cover an agent reusing an existing environment and an external MCP-only caller. Describe new-environment
+and environment-free cases according to their actual supported capabilities. State required
+configuration, permissions and approvals. During design, map each step to an implemented operation
+or name the concrete addition and its owning backend. Before implementation completion, exercise
+the supported examples through the real service boundaries and retain proportional evidence in
+the owning component's documentation or acceptance suite. Update canonical agent-facing discovery
+and guidance so an agent can follow the workflow from an ordinary assignment.
+
+Workflow validation may expose missing backend capabilities or service boundaries that need
+refactoring. Adding those features or refactors is an acceptable outcome: record the concrete gap,
+owning backend and real prerequisites, then revisit scope, ordering and priorities with the
+stakeholder. An example with unresolved steps remains a proposal until that work is implemented
+and exercised.
+
 The operator is reusing environments partly because fresh startup is slow. Separate directories
 are acceptable for cooperating agents with shared access; that does not imply isolation between
 different principals. Starting less-privileged workers can wait: the selected first spawning
@@ -471,6 +494,9 @@ Opening another Session in one environment provides no new isolation boundary.
 
 The broader create policy retains its scope/defaults, creator visibility and revocation questions,
 and any launch-and-open composition must define the required operations separately.
+
+Select the interface using the realistic-example requirement above: include existing-environment
+and external MCP caller sequences, with concrete discovery, handle acquisition and backend mapping.
 
 Within this slice, settle admission and identity before `THREAD_CREATE_AUTHORIZATION`. Compare an
 agent-facing facade forwarding verified caller scope with direct scoped Dispatcher admission;
