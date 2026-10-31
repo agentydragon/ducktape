@@ -906,6 +906,11 @@ without lost authored history or duplicate external work. Exercise the affected 
 with an agent, including partial output and meaningful failures. Related to planned-roll ownership,
 but the tool/runtime failure outcome is independently finishable.
 
+The desired JS error surface has native structured properties such as `error.observed_output.text`
+and `cause`. Current pinned-host string rejections are an explicit compatibility limitation;
+review central normalization when changing its host/delegate adapter, without making a host
+replacement prerequisite for the current fixes. See the [runtime direction](session_runtime_model.md#tool-access-disconnects-and-recovery).
+
 ### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
 
 **In-flight review; `/root`, operator direction, 2026-10-30 PDT.** Use rolling updates with at least
