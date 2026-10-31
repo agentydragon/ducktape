@@ -480,6 +480,9 @@ impl ProofDependencies {
     }
 
     pub fn extend(&mut self, other: &Self) {
+        if other.is_empty() {
+            return;
+        }
         self.value_inputs.extend(other.value_inputs.iter().cloned());
         self.native_operation_inputs
             .extend(other.native_operation_inputs.iter().cloned());
