@@ -76,12 +76,17 @@ themselves change the old plan-quota measurements.
   5.5 cache-read pricing, which it says lowers cost on most agentic work by about
   20%.
 - **OpenAI:** Pro 500 is now available for $500/month with the highest included Pro
-  usage and Ultrafast for Astra and Sol. New Pro 200 subscriptions have a lower
-  included allowance than the earlier Pro 200; the grandfathered higher allowance
-  ended Oct 29. Eligible Pro 100/200/500 subscriptions can separately claim $100/
+  usage and Ultrafast for Astra and Sol. Pro 100 and Pro 500 now include twice
+  their previous Work/Codex allowance. OpenAI canceled the planned Pro 200
+  reduction: all Pro 200 subscribers now have the higher allowance, with the lower
+  allowance doubled to match as of Oct 29. Ultrafast remains Pro 500 only. Eligible
+  Pro 100/200/500 subscriptions can separately claim $100/
   $200/$500 in monthly API credits. Those credits fund API calls and do not add
   ChatGPT or signed-in Codex usage. GPT-6.1 Terra, the latest general model release
   in this snapshot, is available in Work and Codex and by API, but not in Chat.
+  OpenAI also released GPT-6 Rosalind Research on Oct 30 for approved life-sciences
+  organizations; it is limited to Work/Codex and approved API access, and has no
+  AA v5 score, so it is outside the general-purpose table above.
 - **Kimi:** New membership plans renamed the tiers and now include Kimi Code from
   Plus upward. For new plans, the weekly quota is removed, but a rolling five-hour
   rate window and monthly total quota remain. Legacy subscribers keep the weekly
@@ -100,6 +105,7 @@ Primary plan details: [Anthropic Ultra](https://support.claude.com/en/articles/1
 [OpenAI Pro tiers](https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers),
 [OpenAI API credits](https://help.openai.com/en/articles/20001626-api-credits-benefit-for-eligible-chatgpt-subscriptions),
 [GPT-6.1 Terra release](https://openai.com/index/introducing-gpt-6-1-terra/),
+[GPT-6 Rosalind availability](https://help.openai.com/en/articles/20001193-gpt-rosalind-for-life-sciences-research),
 [Kimi Code membership terms](https://www.kimi.ai/help/kimi-code/benefits),
 [Meta Muse Code plans](https://dev.meta.ai/help/subscriptions/what-is-a-muse-code-subscription),
 the [Claude Haiku 5.5 launch](https://www.anthropic.com/claude-haiku-5-5), and
