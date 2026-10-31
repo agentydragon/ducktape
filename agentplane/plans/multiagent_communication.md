@@ -7,7 +7,11 @@ requirements and the open design: the read rule and the
 [archive split](#option-authorize-the-archive-apart-from-live-objects), discovery, Session creation
 and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations);
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
-The operator may revisit the service-enforced rule direction if implementation does not work well.
+**Operator clarification, 2026-10-30 PDT:** inbox/history tags are the current cross-SA send/read
+direction and remain revisable. Implementation or prior selection does not make tag-based grouping
+an intrinsic domain requirement. Evaluate it against concrete end-to-end workflows; a change may
+require backend features, refactoring and replanning. Existing enforcement remains authoritative
+until a replacement contract is selected and implemented; this clarification selects no alternative.
 
 ## Selected first workflow, 2026-10-30 PDT
 
