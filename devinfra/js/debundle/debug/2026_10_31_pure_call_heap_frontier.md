@@ -78,7 +78,38 @@ The escape set must cover every handoff to foreign code:
 
 Optional calls and tagged templates do not currently route their arguments
 through the escape recorder. Under the detect-and-refuse rule, rarer handoffs
-that neither Tana nor Claude contains can be refused instead of modelled.
+that neither Tana nor Claude contains can be refused instead of modelled; that
+roughly halves the surface to model.
+
+## Why every `new Fx(...)` escapes its callbacks
+
+`Fx` (Tana's `UICommand`) is the largest route into Tana's callback pool:
+86 of 325 distinct escapes on devel `5dfe2142`, probed as in
+[the pool-composition note](2026_10_30_havoc_reach_pool_composition.md).
+The chain starts at the helper factories `hO`/`fO` (statements 2698–2705).
+Each calls `Se({...})` with a literal record inside its own body.
+
+1. The `retained_record_factory` premise is consulted only for a top-level
+   `X = Se({...})` statement. Inside `hO` the construction checks the
+   prototype itself, and `field_may_exist_on_object_prototype(checker)`
+   rejects it: the census leaves `Object.prototype.checker` 63,089 possible
+   writers.
+2. With that check forced to pass (a diagnostic switch), the construction
+   still fails, at `unchecked_property_source` (parameter 0). The `Fx`
+   constructor reads `e.defaultWeight`, `e.setsFocus` and `e.subcommands`.
+   The record was allocated inside the invoked helper, so it is not in
+   `prefix_object_properties`, which tracks only top-level allocations. The
+   read takes the `unsupported_local` path and taints the record. Every
+   later call through the same allocation site then fails the plain-data
+   check.
+3. After the first failure, `Fx`'s class members are escaped. Every later
+   `new Fx` is rejected as `class_members_escaped`, including top-level
+   statements the premise would otherwise admit.
+
+Step 2 needs property tracking for literals allocated inside a call. That
+covers reads of own static keys before any write or escape. Even with every
+`Fx` escape removed, the median pool event still has 240 members, against a
+limit of 64.
 
 The patch is kept outside the repository at
 `/var/cache/agentydragon/tana-premises/pure-heap-frontier-wip.patch`.
