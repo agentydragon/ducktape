@@ -485,9 +485,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:schema",
+        "//util/frontend/transcript:inspection",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )

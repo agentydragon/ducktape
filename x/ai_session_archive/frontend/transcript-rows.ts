@@ -79,7 +79,7 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   return "record";
 }
 
-/** First-record keys survive append pagination, including a group that spans two fetched pages. */
+/** Groups can span fetched pages; the view keys each group by its last record so prepends retain it. */
 export function transcriptRows(records: readonly EventRecord[]): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   for (const record of records) {

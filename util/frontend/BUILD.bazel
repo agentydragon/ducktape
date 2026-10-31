@@ -84,6 +84,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//props/frontend:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
     ],
     deps = [
         ":code_block_css",

@@ -1,6 +1,5 @@
-import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
+import { Button, Group, Stack, Text } from "@mantine/core";
 import type { EvidencePage, NativeFramePage } from "../schema";
-import { IconZoomCode } from "../icons";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { displayableError } from "../client";
@@ -8,6 +7,7 @@ import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
+import { InspectionToggle } from "../../../../util/frontend/transcript/inspection";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import type { ThreadEntity } from "./thread_sync";
 import "./thread_evidence.css";
@@ -213,25 +213,10 @@ export function EvidenceToggle({
   style?: CSSProperties;
 }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
-  return (
-    <ActionIcon
-      size="xs"
-      variant={open ? "light" : "subtle"}
-      color="gray"
-      className="agentplane-evidence-toggle"
-      data-placement={placement}
-      aria-label="Evidence"
-      title="Evidence"
-      aria-expanded={open}
-      onClick={() => setOpen(!open)}
-      style={style}
-    >
-      <IconZoomCode size={14} />
-    </ActionIcon>
-  );
+  return <InspectionToggle open={open} onChange={setOpen} label="Evidence" placement={placement} style={style} />;
 }
 
-const EVIDENCE_REVEALED = "data-evidence-revealed";
+const INSPECTION_REVEALED = "data-inspection-revealed";
 
 /** A touch screen has no hover to show an item's evidence toggle, so a tap on the item marks it
  * instead, and a tap on another item, or on nothing, moves the mark. It is one delegated handler on
@@ -245,13 +230,13 @@ export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
   const stepSummary = target.closest(".agentplane-step-details .ui-disclosure-summary");
   if (target.closest("a, button, summary, input, textarea, select") && !stepSummary) return;
   if (window.getSelection()?.isCollapsed === false) return;
-  event.currentTarget.querySelector(`[${EVIDENCE_REVEALED}]`)?.removeAttribute(EVIDENCE_REVEALED);
+  event.currentTarget.querySelector(`[${INSPECTION_REVEALED}]`)?.removeAttribute(INSPECTION_REVEALED);
   // An input's status lives beside its bubble, not inside the evidence owner. Tapping
   // anywhere in that row still selects the bubble (and reveals its completed check).
   const owner =
-    target.closest(".agentplane-evidence-owner") ??
-    target.closest(".transcript-user-message-row")?.querySelector(".agentplane-evidence-owner");
-  owner?.setAttribute(EVIDENCE_REVEALED, "");
+    target.closest(".transcript-inspection-owner") ??
+    target.closest(".transcript-user-message-row")?.querySelector(".transcript-inspection-owner");
+  owner?.setAttribute(INSPECTION_REVEALED, "");
 }
 
 export function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {

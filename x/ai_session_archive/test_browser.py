@@ -145,6 +145,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             await expect(transcript).to_contain_text("This JSONL line could not be parsed")
             malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
@@ -169,6 +170,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 

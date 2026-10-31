@@ -1,6 +1,7 @@
-import { Code, Group, Stack, Text } from "@mantine/core";
+import { Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 
+import { CodeBlock } from "../../../util/frontend/code_block";
 import { Markdown } from "../../../util/frontend/markdown";
 import { DisclosureBody } from "../../../util/frontend/disclosure";
 import { RetainedDisclosure } from "../../../util/frontend/transcript/retained_disclosures";
@@ -27,7 +28,7 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
     return (
       <Stack gap="xs">
         <Text size="sm" c="orange">
-          This JSONL line could not be parsed. Its original text is available below.
+          This JSONL line could not be parsed. Use the inspection button to view its original text.
         </Text>
         <Text size="xs" c="dimmed">
           {record.parse_error}
@@ -87,9 +88,7 @@ function ContentPart({ part, id }: { part: Part; id: string }): JSX.Element {
         </Text>
       </Group>
       {part.value !== undefined && (
-        <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {formatValue(part.value)}
-        </Code>
+        <CodeBlock text={formatValue(part.value)} language={typeof part.value === "string" ? "text" : "json"} />
       )}
     </Stack>
   );

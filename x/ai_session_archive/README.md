@@ -57,7 +57,7 @@ remain separate candidates until identity/ambiguity checks resolve them.
 
 The browser frontend lives in `//x/ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
 
-The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. The session page shows compact progress only for machines with pending or failed import work; `/?view=import-progress` opens full snapshot, file-entry, and Codex metadata details for every registered machine. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
+The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. The top bar shows compact progress beside the title only for machines with pending or failed import work; `/?view=import-progress` opens full snapshot, file-entry, and Codex metadata details for every registered machine. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
 
 `//x/ai_session_archive:web_image` packages the owner-authenticated read API with the frontend bundle in its Bazel runfiles; `//x/ai_session_archive:web_bin` does the same for local runs. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
 
@@ -72,10 +72,12 @@ bookkeeping), and fold known standalone metadata into Session details. Claude
 `user` records containing only tool results are activity; mixed text/content stays
 visible. Codex commentary is activity; final answers remain visible. Unknown record
 types, parse failures and explicit tool errors stay visible. Every original record
-remains accessible through its raw JSONL and exact-byte disclosures.
+remains accessible through a compact inspection button and its exact-byte view.
+Assistant replies use plain Markdown; user inputs use the shared right-aligned
+bubble. Inspection actions appear on hover, keyboard focus or touch selection
+without reserving a separate disclosure row.
 
-Captured versions open at the beginning. Loading another page preserves the reader's
-position. Expansion choices survive virtualized row remounts and reset when the
+Expansion choices survive virtualized row remounts and reset when the
 selected session or captured version changes. Parsing and grouping belong to this
 application; the shared viewport has no Claude, Codex or Agentplane protocol dependency.
 

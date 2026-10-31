@@ -558,7 +558,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
 
   return (
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
-      <Group justify="space-between" align="end" wrap="wrap">
+      <Box component="header" className="session-browser-header">
         <Box>
           <Title order={1} size="h3">
             Local agent sessions
@@ -567,21 +567,18 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             Captured Claude Code and Codex CLI conversations
           </Text>
         </Box>
-        <Text size="xs" c="dimmed">
-          Sorted by last activity
-        </Text>
-      </Group>
+        <MachineImportProgressSummary
+          progress={importProgress}
+          loading={loadingImportProgress}
+          error={importProgressError}
+          returnTo={`${location.pathname}${location.search}`}
+        />
+      </Box>
       {error !== null && (
         <Alert color="red" title="Session data unavailable">
           {error}
         </Alert>
       )}
-      <MachineImportProgressSummary
-        progress={importProgress}
-        loading={loadingImportProgress}
-        error={importProgressError}
-        returnTo={`${location.pathname}${location.search}`}
-      />
       <Box
         ref={layoutRef}
         className="session-browser-layout"

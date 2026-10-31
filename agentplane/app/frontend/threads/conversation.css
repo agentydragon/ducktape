@@ -274,10 +274,10 @@
 }
 
 @media (hover: none) {
-  .transcript-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed])
+  .transcript-user-message-row:has(.transcript-inspection-owner[data-inspection-revealed])
     .agentplane-command-progress[data-stage="effected"]
     .agentplane-command-progress-hit,
-  .agentplane-evidence-owner[data-evidence-revealed]
+  .transcript-inspection-owner[data-inspection-revealed]
     .agentplane-command-progress[data-stage="effected"]
     .agentplane-command-progress-hit {
     opacity: 1;

@@ -190,7 +190,7 @@ export function UserInputBubble({
       <UserMessage
         rowAttributes={{ "data-command-id": commandId ?? entity?.entityId }}
         bubbleAttributes={{
-          className: "agentplane-evidence-owner",
+          className: "transcript-inspection-owner",
           "data-message-phase": phase,
           "data-has-action": action ? "true" : undefined,
           "data-has-aside": progress || action ? "true" : undefined,
@@ -393,7 +393,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -581,7 +581,7 @@ function ToolCard({
           );
         }
         return (
-          <DisclosureCard open={opened} className="agentplane-evidence-owner">
+          <DisclosureCard open={opened} className="transcript-inspection-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -680,12 +680,12 @@ export function EntityCard({
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
       return (
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           <Text c="dimmed">{label}</Text>
           <EvidenceToggle
             entity={entity}
             placement="overlay"
-            style={{ "--agentplane-evidence-overlay-inset": "0px" } as CSSProperties}
+            style={{ "--transcript-inspection-overlay-inset": "0px" } as CSSProperties}
           />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
@@ -697,11 +697,11 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" role="alert" className="agentplane-evidence-owner">
+      <Alert color="red" role="alert" className="transcript-inspection-owner">
         <EvidenceToggle
           entity={entity}
           placement="overlay"
-          style={{ "--agentplane-evidence-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
+          style={{ "--transcript-inspection-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
         />
         <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
@@ -798,11 +798,11 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
+      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="transcript-inspection-owner">
         {body}
       </DisclosureCard>
     );
-  return <Box className="agentplane-evidence-owner">{body}</Box>;
+  return <Box className="transcript-inspection-owner">{body}</Box>;
 }
 
 interface StatusBadge {

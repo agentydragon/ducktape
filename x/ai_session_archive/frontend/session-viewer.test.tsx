@@ -48,8 +48,8 @@ async function flush(): Promise<void> {
 }
 
 function findControl(view: HTMLElement, text: string): HTMLButtonElement | HTMLAnchorElement {
-  const control = [...view.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")].find((item) =>
-    item.textContent?.includes(text)
+  const control = [...view.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")].find(
+    (item) => item.textContent?.includes(text) || item.getAttribute("aria-label") === text
   );
   if (control === undefined) throw new Error(`Could not find control containing ${JSON.stringify(text)}`);
   return control;
@@ -259,10 +259,10 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   const view = await renderViewer(sessionFixtureApi);
 
   expect(view.textContent).toContain("ThinkPad");
-  expect(view.textContent).toContain("Archive import");
-  expect(view.textContent).toContain("Syncing ThinkPad");
-  expect(view.textContent).toContain("27/31 inventoried file entries processed");
-  expect(view.textContent).toContain("11/12 inventoried file entries processed · 1 failed");
+  expect(view.querySelector('header [aria-label="Import progress by machine"]')).not.toBeNull();
+  expect(view.textContent).toContain("ThinkPadSyncing");
+  expect(view.textContent).toContain("27/31");
+  expect(view.textContent).toContain("11/12 · 1 failed");
   expect(view.textContent).not.toContain("Complete fixture machine");
   expect(view.textContent).not.toContain("Snapshots: 3 of 5 registered complete");
   expect(findControl(view, "Import details").getAttribute("href")).toBe("/?view=import-progress");
@@ -362,7 +362,7 @@ it("keeps an un-inventoried snapshot pending without a zero-denominator progress
   };
   const view = await renderViewer(api);
 
-  expect(view.textContent).toContain("Syncing New machine");
+  expect(view.textContent).toContain("New machineSyncing");
   expect(view.textContent).toContain("Inventory pending");
   expect(view.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
 

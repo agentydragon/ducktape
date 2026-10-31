@@ -796,7 +796,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     await page.keyboard.press("Escape")
     await expect(dialog).to_have_count(0)
     await expect(draft).to_have_value("Draft survives debug inspection")
-    await expect(card.locator(".agentplane-evidence-toggle")).to_have_attribute("aria-expanded", "true")
+    await expect(card.locator(".transcript-inspection-toggle")).to_have_attribute("aria-expanded", "true")
 
     # Closing the drawer cancels an in-flight real archive response. A response released
     # afterwards must not repopulate the closed view or disturb the thread draft.
@@ -1464,7 +1464,7 @@ def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     selector = ".agentplane-step-details"
     call = run.locator(selector, has_text=f"Run tool {name}")
     card = call.locator(
-        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' agentplane-evidence-owner ')][1]"
+        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' transcript-inspection-owner ')][1]"
     )
     return call, card
 
@@ -2328,8 +2328,8 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
 
 async def click_evidence(scope: Locator) -> None:
     """Click the Evidence toggle under `scope` the way a reader reaches it: it shows while its item is hovered."""
-    toggle = scope.locator(".agentplane-evidence-toggle")
-    await toggle.locator("xpath=ancestor::*[contains(@class, 'agentplane-evidence-owner')][1]").hover()
+    toggle = scope.locator(".transcript-inspection-toggle")
+    await toggle.locator("xpath=ancestor::*[contains(@class, 'transcript-inspection-owner')][1]").hover()
     await toggle.click()
 
 

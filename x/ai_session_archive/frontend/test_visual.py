@@ -26,8 +26,8 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("Syncing ThinkPad")
-        await expect(progress).to_contain_text("42/53 inventoried file entries processed · 2 failed")
+        await expect(progress).to_contain_text("ThinkPad")
+        await expect(progress).to_contain_text("42/53 · 2 failed")
         await expect(progress).not_to_contain_text("Complete fixture machine")
         await expect(progress).not_to_contain_text("Snapshots: 3 of 5 registered complete")
         rugged_progress = page.get_by_role("progressbar", name="Rugged file-entry progress")
@@ -36,6 +36,12 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness, c
         await expect(rugged_progress).to_have_attribute(
             "aria-valuetext", "42 processed, 9 pending, 2 failed of 53 inventoried file entries"
         )
+        heading = await page.get_by_role("heading", name="Local agent sessions").bounding_box()
+        import_bounds = await progress.bounding_box()
+        assert heading is not None
+        assert import_bounds is not None
+        assert import_bounds["x"] > heading["x"] + heading["width"]
+        assert abs(import_bounds["y"] - heading["y"]) < 30
         await expect(page.get_by_text("ThinkPad", exact=True).first).to_be_visible()
         await expect(page.get_by_role("heading", name="Compare two captured versions")).to_be_visible()
         await expect(page.locator('[aria-label="Session transcript"]')).to_contain_text(
@@ -81,7 +87,7 @@ async def test_compact_import_progress_on_mobile(visual: VisualHarness, capture_
         progress = page.get_by_role("region", name="Import progress by machine")
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
         session_list_toggle = page.get_by_role("button", name="Session list")
-        await expect(progress).to_contain_text("27/31 inventoried file entries processed")
+        await expect(progress).to_contain_text("27/31")
         await expect(progress).not_to_contain_text("Complete fixture machine")
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
         await expect(session_list_toggle).to_be_visible()
@@ -244,6 +250,21 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await expect(history).to_contain_text("missing test configuration")
         await expect(history.get_by_text("I will inspect the build log.", exact=True)).not_to_be_visible()
         await view.capture(name=f"{capture_name}_folded")
+        user = history.locator('[data-event-ordinal="2"]')
+        raw = user.get_by_role("button", name="Raw JSONL record", exact=True)
+        assert await raw.evaluate("element => getComputedStyle(element).position === 'absolute'")
+        await expect(user.get_by_role("region", name="Raw JSONL record")).to_have_count(0)
+        await user.hover()
+        await expect(raw).to_be_visible()
+        await raw.click()
+        raw_panel = user.get_by_role("region", name="Raw JSONL record", exact=True)
+        await expect(raw_panel).to_contain_text("Inspect the archived build failure")
+        await raw_panel.get_by_role("button", name="Exact line bytes (base64)").click()
+        await expect(raw_panel.locator("pre")).to_have_count(2)
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await view.capture(name=f"{capture_name}_raw_inspection")
+        await raw.click()
+        await expect(raw_panel).to_have_count(0)
         await group.click()
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(group).to_have_attribute("aria-expanded", "true")

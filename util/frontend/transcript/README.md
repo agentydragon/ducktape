@@ -5,6 +5,12 @@ shared frontend primitives in the parent package.
 `UserMessage` supplies the user bubble, gutter and overlay slots; `VerbatimText`
 preserves typed text. Applications supply message content and metadata.
 
+`InspectionToggle` supplies the compact source/debug action used by both applications.
+A `transcript-inspection-owner` contains the action; bubble/overlay placements add
+no row height. Hover, keyboard focus or the application-owned
+`data-inspection-revealed` touch marker reveals it. Applications own inspection
+content and can retain its open state with `useRetainedDisclosure`.
+
 `RetainedDisclosureProvider` keeps bounded expansion state when virtualized rows unmount. Applications choose the groups,
 summaries, stable disclosure IDs and default expansion. Key the provider by the
 selected conversation/captured version when choices should reset on navigation.

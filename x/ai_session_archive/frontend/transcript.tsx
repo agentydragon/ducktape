@@ -1,12 +1,13 @@
-import { Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import type { JSX, ReactNode } from "react";
+import { Badge, Box, Button, Group, Stack, Text } from "@mantine/core";
+import { useId, type JSX, type MouseEvent, type ReactNode } from "react";
 import { VirtualizedHistory } from "../../../util/frontend/transcript/virtualized_history";
-import { DisclosureBody, DisclosureCard } from "../../../util/frontend/disclosure";
+import { DisclosureCard } from "../../../util/frontend/disclosure";
 import {
   RetainedDisclosure,
   RetainedDisclosureProvider,
   useRetainedDisclosure,
 } from "../../../util/frontend/transcript/retained_disclosures";
+import { InspectionToggle } from "../../../util/frontend/transcript/inspection";
 import { UserMessage } from "../../../util/frontend/transcript/message";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
 import { recordPresentation, transcriptRows, type TranscriptRow } from "./transcript-rows";
@@ -50,6 +51,7 @@ export function ArchiveTranscript({
         }))}
         renderRow={(row) => <TranscriptRowView row={row} />}
         tail={tail}
+        onClick={revealRawRecord}
       />
     </RetainedDisclosureProvider>
   );
@@ -75,72 +77,83 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
   );
 }
 
+/** Touch users reveal the same inspection action that hover or keyboard focus reveals. */
+function revealRawRecord(event: MouseEvent<HTMLDivElement>): void {
+  if (!(event.target instanceof Element) || event.target.closest("a, button, input, textarea, select")) return;
+  if (window.getSelection()?.isCollapsed === false) return;
+  event.currentTarget.querySelector("[data-inspection-revealed]")?.removeAttribute("data-inspection-revealed");
+  event.target.closest(".transcript-inspection-owner")?.setAttribute("data-inspection-revealed", "");
+}
+
 function EventRow({ record }: { record: EventRecord }): JSX.Element {
+  const [raw, setRaw] = useRetainedDisclosure(`raw:${record.ordinal}`);
+  const panelId = useId();
+  const presentation = recordPresentation(record);
+  const metadata = `Line ${record.ordinal} · ${formatDateTime(record.timestamp)}`;
+  const inspection = (
+    <InspectionToggle
+      open={raw}
+      onChange={setRaw}
+      label="Raw JSONL record"
+      controls={panelId}
+      placement={presentation === "user" ? "bubble" : "overlay"}
+    />
+  );
   return (
     <Box data-event-ordinal={record.ordinal}>
-      {recordPresentation(record) === "user" ? (
-        <UserMessage>
-          <Text size="xs" c="dimmed">
-            Line {record.ordinal} · {formatDateTime(record.timestamp)}
-          </Text>
+      {presentation === "user" ? (
+        <UserMessage
+          bubbleAttributes={{ className: "transcript-inspection-owner", title: metadata }}
+          overlay={inspection}
+        >
           <RecordContent record={record} />
-          <RawRecord record={record} />
         </UserMessage>
       ) : (
-        <Paper withBorder radius="sm" p="sm">
-          <Stack gap="xs">
-            <Group justify="space-between" align="start" gap="xs">
+        <Box className="archive-transcript-record transcript-inspection-owner" title={metadata}>
+          {inspection}
+          <Stack gap={4} className="archive-transcript-record-body">
+            {presentation !== "assistant" && presentation !== "activity" && (
               <Group gap="xs">
-                <Badge variant="light">{recordLabel(record)}</Badge>
                 <Text size="xs" c="dimmed">
-                  Line {record.ordinal}
+                  {recordLabel(record)} · {record.ordinal}
                 </Text>
                 {record.parse_error != null && (
-                  <Badge color="orange" variant="light">
+                  <Badge color="orange" variant="light" size="xs">
                     Malformed JSONL
                   </Badge>
                 )}
               </Group>
-              <Text size="xs" c="dimmed">
-                {formatDateTime(record.timestamp)}
-              </Text>
-            </Group>
-            <RecordContent record={record} />
-            <RawRecord record={record} />
+            )}
+            {presentation !== "metadata" && <RecordContent record={record} />}
           </Stack>
-        </Paper>
+        </Box>
       )}
+      {raw && <RawRecordPanel record={record} panelId={panelId} />}
     </Box>
   );
 }
 
-function RawRecord({ record }: { record: EventRecord }): JSX.Element {
+function RawRecordPanel({ record, panelId }: { record: EventRecord; panelId: string }): JSX.Element {
+  const [bytes, setBytes] = useRetainedDisclosure(`bytes:${record.ordinal}`);
+  const bytesId = useId();
   return (
-    <RetainedDisclosure id={`raw:${record.ordinal}`} summary="Raw JSONL record">
-      <DisclosureBody>
-        <Box
-          component="pre"
-          style={{
-            maxHeight: 360,
-            overflow: "auto",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-            fontSize: "var(--mantine-font-size-xs)",
-          }}
-        >
-          {rawRecordText(record.raw_base64)}
+    <Box id={panelId} role="region" aria-label="Raw JSONL record" className="archive-raw-record">
+      <Box component="pre">{rawRecordText(record.raw_base64)}</Box>
+      <Button
+        variant="subtle"
+        color="gray"
+        size="compact-xs"
+        aria-expanded={bytes}
+        aria-controls={bytesId}
+        onClick={() => setBytes(!bytes)}
+      >
+        Exact line bytes (base64)
+      </Button>
+      {bytes && (
+        <Box id={bytesId} component="pre">
+          {record.raw_base64}
         </Box>
-        <RetainedDisclosure id={`bytes:${record.ordinal}`} summary="Exact line bytes (base64)">
-          <DisclosureBody>
-            <Box
-              component="pre"
-              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--mantine-font-size-xs)" }}
-            >
-              {record.raw_base64}
-            </Box>
-          </DisclosureBody>
-        </RetainedDisclosure>
-      </DisclosureBody>
-    </RetainedDisclosure>
+      )}
+    </Box>
   );
 }

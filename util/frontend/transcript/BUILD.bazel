@@ -139,6 +139,31 @@ vitest_test(
 )
 
 js_library(
+    name = "inspection_css",
+    srcs = ["inspection.css"],
+)
+
+ts_library(
+    name = "inspection",
+    srcs = [
+        "inspection.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = "//util/frontend:tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":inspection_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "message_css",
     srcs = ["message.css"],
 )

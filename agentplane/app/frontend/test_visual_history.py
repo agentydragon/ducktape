@@ -856,7 +856,7 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await view.check(context="fixture ready")
     page = view.page
     owner = page.locator(f'[data-thread-anchor="{anchor}"]')
-    button = owner.locator("button.agentplane-evidence-toggle").first
+    button = owner.locator("button.transcript-inspection-toggle").first
     # The overlay button is reachable by keyboard even when another row covers its corner.
     await button.focus()
     await button.press("Enter")
@@ -892,14 +892,14 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     page = view.page
     await _open_run(page)
     owner = (
-        page.locator(".ui-collapsible-card.agentplane-evidence-owner")
+        page.locator(".ui-collapsible-card.transcript-inspection-owner")
         .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
         .first
     )
     await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
     await owner.locator(".agentplane-step-details .ui-disclosure-summary").click()
     await expect(owner.locator(".agentplane-step-details .ui-code-block .cm-content").first).to_be_attached()
-    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    button = owner.locator(".agentplane-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_be_attached()
 
     # Keyboard and pointer activation both reach the separate action beside the chevron.
@@ -937,14 +937,14 @@ async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> N
     page = view.page
     await _open_run(page)
     owner = (
-        page.locator(".ui-collapsible-card.agentplane-evidence-owner")
+        page.locator(".ui-collapsible-card.transcript-inspection-owner")
         .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
         .first
     )
     await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
     await owner.locator(".agentplane-step-details .ui-disclosure-summary").tap()
-    await expect(owner).to_have_attribute("data-evidence-revealed", "")
-    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(owner).to_have_attribute("data-inspection-revealed", "")
+    button = owner.locator(".agentplane-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_have_css("opacity", "1")
     await button.tap()
     await expect(button).to_have_attribute("aria-expanded", "true")
@@ -954,8 +954,8 @@ async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> N
 
 @pytest.mark.parametrize(
     "target",
-    ['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .agentplane-evidence-owner'],
-    ids=['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .agentplane-evidence-owner'],
+    ['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .transcript-inspection-owner'],
+    ids=['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .transcript-inspection-owner'],
 )
 async def test_evidence_button_reveals_on_hover(view: VisualPage, app: AgentplaneFixture, target: str) -> None:
     await app.mount_thread(IDLE_THREAD)
@@ -972,9 +972,9 @@ async def test_evidence_button_reveals_on_tap(view: VisualPage, app: AgentplaneF
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    owner = page.locator('[data-thread-anchor="34"] .agentplane-evidence-owner')
+    owner = page.locator('[data-thread-anchor="34"] .transcript-inspection-owner')
     await owner.tap()
-    await expect(owner).to_have_attribute("data-evidence-revealed", "")
+    await expect(owner).to_have_attribute("data-inspection-revealed", "")
     await view.capture()
 
 
