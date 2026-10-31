@@ -88,8 +88,8 @@ def reserve_free_port(host: str = "127.0.0.1") -> int:
     """An OS-assigned port briefly held for a server in another process.
 
     The port is left in TIME_WAIT (about a minute): until then the kernel gives it to no other bind to
-    port 0 or outgoing connection, as it would after ``pick_free_port``, while a server binding it with
-    SO_REUSEADDR (Go's ``net.Listen``, asyncio, uvicorn) can.
+    port 0 or outgoing connection. A server binding it with SO_REUSEADDR (Go's ``net.Listen``, asyncio,
+    uvicorn) can still use it.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
