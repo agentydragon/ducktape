@@ -35,9 +35,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
-- [Session runtime model](session_runtime_model.md) — agreed component names/layout and independently
-  assignable Runner extractions; future vocabulary for Sandbox-local and independently persistent
-  harnesses, optional execution attachments and backend-specific constraints
+- [Session runtime model](session_runtime_model.md) — agreed environment component names/layout and
+  independently assignable Runner extractions; future Session vocabulary for environment-bound
+  native harnesses, central sampling, execution attachments and backend-specific constraints
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open

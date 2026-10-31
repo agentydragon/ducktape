@@ -743,9 +743,9 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
-    RUNNER_SHARED_RUNTIME_PACKAGES[Candidate: neutral shared runtime libraries]
+    RUNNER_SHARED_RUNTIME_PACKAGES[Candidate: shared environment runtime libraries]
     ENVIRONMENT_EXECUTION_SERVICE[Candidate: standalone execution service]
-    ENVIRONMENT_HARNESS_HOST[Candidate: harness host and environment agent]
+    ENVIRONMENT_HARNESS_HOST[Candidate: environment harness host and runtime]
     ENVIRONMENT_RUNTIME_PACKAGING[Candidate: environment image packaging]
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
@@ -793,25 +793,29 @@ Preserve existing durable authorities; the broader runner-state/central-authorit
 frozen. These tasks do not select the deferred Session/Environment dispatch binary regrouping,
 optional queue policy, a replacement JS host, or the complete 0..N-environment API.
 
-### `RUNNER_SHARED_RUNTIME_PACKAGES` — move reusable runtime support to neutral packages
+### `RUNNER_SHARED_RUNTIME_PACKAGES` — place shared runtime support under env
 
-**Candidate.** Move reusable process supervision (`runner/supervision`) to `agentplane/supervision`
-and shared one-shot operation support (`runner/operation`) out of a binary-owned tree. Keep
-component-specific controllers/resources with their owners. Update all consumers, BUILD targets,
-helper-entrypoint references and docs atomically; retain one process-lifetime owner and the existing
-Pod/VM fencing behavior. This is a package-boundary refactor with no new service or runtime policy.
+**Candidate.** Move reusable process supervision (`runner/supervision`) to
+`agentplane/env/supervision` and shared one-shot operation support (`runner/operation`) to
+`agentplane/env/operation`. The Environment Runtime, Execution service and Environment Harness Host
+are the runtime consumers. Keep component-specific controllers/resources with their owners. Update
+all consumers, BUILD targets, helper-entrypoint references and docs atomically; retain one
+process-lifetime owner and the existing Pod/VM fencing behavior. This is a package-boundary refactor
+with no new service or runtime policy.
 
-Exit: the shared libraries have no dependency on the Runner composition root or another binary's
-implementation, callers use the new locations, and existing lifecycle coverage still applies.
-Extraction work can proceed against explicit existing interfaces while this move is reviewed.
+Exit: the shared libraries have no dependency on the Environment Runtime composition root or a
+sibling binary's implementation, callers use the new locations, and existing lifecycle coverage
+still applies. Extraction work can proceed against explicit existing interfaces while this move is
+reviewed.
 
 ### `ENVIRONMENT_EXECUTION_SERVICE` — independently runnable process and filesystem service
 
-**Candidate.** Create `agentplane-execution-service` under `agentplane/env/execution`, using the
-neutral execution contract under `agentplane/execution`. Extract both the current
-`runner/execution` typed gRPC adapter and the `runner/executor` companion plus required executor
-lifecycle/backend support. First assign admission, connection/session ownership, process generation,
-drain and fencing for this boundary; preserve Pod PID-1 and VM/systemd semantics.
+**Candidate.** Create `agentplane-execution-service` under `agentplane/env/execution`. Keep the
+Executor protocol, generated client and typed execution contract with this component as its public
+API; the central sampler and Gateway remain clients. Extract both the current `runner/execution`
+typed gRPC adapter and the `runner/executor` companion plus required executor lifecycle/backend
+support. First assign admission, connection/session ownership, process generation, drain and fencing
+for this boundary; preserve Pod PID-1 and VM/systemd semantics.
 
 Exit: a client can use the standalone execution target without a native harness or app-server;
 existing native Codex and central-sampler callers still work. Preserve process identity, retained
@@ -819,22 +823,24 @@ output/cursors, uncertain outcomes and no automatic mutation replay. Update affe
 packaging and system diagrams, with proportional real-boundary acceptance and a data-preserving
 rollback. No new laptop backend or full environment-attachment API is required.
 
-### `ENVIRONMENT_HARNESS_HOST` — separate native harness hosting from the environment agent
+### `ENVIRONMENT_HARNESS_HOST` — run native harness hosting inside the environment
 
-**Candidate.** Create `agentplane-harness-host` under `agentplane/harness/host`; native adapters
-belong under sibling `harness/codex` and `harness/claude` packages. Move native Session management,
-continuation state, journals and History ingress to the host. Name the remaining environment
-lifecycle daemon `agentplane-environment-agent`, under `agentplane/env/agent`.
+**Candidate.** Create `agentplane-harness-host` under `agentplane/env/harnesshost`, with native
+adapters in its Codex and Claude subpackages. Move native Session management, continuation state,
+journals and History ingress to the host. Name the remaining environment lifecycle daemon
+`agentplane-environment-runtime`, under `agentplane/env/runtime`.
 
 First review this split's admission, state locks, native process ownership, shutdown and fencing.
-Preserve shared Codex app-server/N-Session operation, native Claude support and separately placed
-execution. Use the existing execution API where sufficient; a concrete missing contract creates a
-scoped prerequisite, not a blanket dependency on every execution-service change. The central
-sampler remains an independent host implementation.
+Preserve shared Codex app-server/N-Session operation and native Claude support. The native Harness
+Host runs inside an environment; the Execution service may be a separate process/resource domain
+within it. Use the existing execution API where sufficient; a concrete missing contract creates a
+scoped prerequisite, not a blanket dependency on every execution-service change. The central sampler
+remains a separate control-plane implementation outside the environment.
 
-Exit: the two entrypoints have distinct ownership and can be placed in separate resource domains;
-Session IDs, native state, journals and authored work survive cutover. Exercise continued useful
-native operation and relevant restart/drain behavior, update actual traffic diagrams and record
+Exit: the two entrypoints have distinct ownership and can run in separate resource domains inside
+the environment. Preserve Session IDs, native state, journals and authored work across cutover.
+Exercise continued native operation and relevant restart/drain behavior, update actual traffic
+diagrams and record
 rollback. A source rename does not claim independent lifetimes until the runtime boundary works.
 
 ### `ENVIRONMENT_RUNTIME_PACKAGING` — put environment runtime artifacts under their own root
@@ -856,8 +862,8 @@ remain independently selected work.
 Component names/layout and the Runner extractions above are agreed as of 2026-10-31 UTC; this
 broader object/API decision does not gate those candidates. Session/Environment dispatch roles are
 distinct, but their physical merge/split is deferred. [Design brief](session_runtime_model.md).
-Represent both Sandbox-local harnesses/state and independently persistent harnesses whose Sandboxes
-supply execution. Preserve harness-specific constraints: Claude
+Represent Sandbox-local native harnesses/state and central Sessions whose optional Sandboxes supply
+execution. Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
 
