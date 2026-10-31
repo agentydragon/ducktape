@@ -648,8 +648,8 @@ pub struct DependencyGraphOptions {
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
     /// Author-certified pairs of this chunk's source units whose synchronous
     /// initialization effects are order-independent. Each endpoint selects
-    /// exactly one source unit; the pair is resolved and validated before
-    /// analysis. See SPEC.md § Commuting statements.
+    /// exactly one source unit; the pair is resolved and validated when the
+    /// chunk's dependency graph is built. See SPEC.md § Commuting statements.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commuting_statements: Vec<CommutingStatementsContract>,
     /// Author-certified original native callee at one selected direct call in

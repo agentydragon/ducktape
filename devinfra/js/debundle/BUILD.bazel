@@ -895,6 +895,7 @@ rust_library(
         "lowering/body_facts.rs",
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
+        "lowering/commuting_statements.rs",
         "lowering/cross_module.rs",
         "lowering/export_policies.rs",
         "lowering/exports.rs",

@@ -12,6 +12,7 @@ use std::io::Write;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
+use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
@@ -45,6 +46,7 @@ use gate::{
     AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
 };
+use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT,
@@ -417,10 +419,19 @@ impl ClaimedLogicalChunk<'_> {
 }
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
+/// What resolving a chunk's `commuting_statements` reads besides the chunk:
+/// the spec path its evidence names and the resolved logical-module members a
+/// `resolved_member` endpoint may name.
+pub(super) struct CommutingStatementsContext<'a> {
+    pub(super) graph_provenance: Option<&'a GraphProvenance>,
+    pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+}
+
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
     program_graph: &ProgramGraphOutput<'_>,
+    commuting_context: CommutingStatementsContext<'_>,
 ) -> Result<MaterializedLogicalChunk> {
     let ClaimedLogicalChunk {
         prepared,
@@ -656,6 +667,13 @@ pub(super) fn finish_logical_chunk(
         inputs
     };
     let graph_options = GraphOptions::from(&dependency_graph_options);
+    let commuting_statements = resolve_chunk_commuting_statements(
+        chunk_id,
+        &runtime_ast.module.body,
+        &dependency_graph_options.commuting_statements,
+        commuting_context.graph_provenance,
+        commuting_context.resolved_member_sites,
+    )?;
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
@@ -685,38 +703,30 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or(&ExportReentryPolicy::Conservative),
         &resolve_dynamic_import,
     )?;
-    let precomputed = match build_chunk_graph(
-        chunk_id,
-        &analysis,
-        graph_options,
-        cross_module_purities
-            .commuting_statements
-            .get(chunk_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default(),
-    ) {
-        Ok(precomputed) => precomputed,
-        Err(error) => {
-            // A rejected `commuting_statements` entry is an author-premise
-            // diagnostic, not a pipeline fault: record it, with the selector
-            // outcomes gathered so far, where `spec validate` collects the
-            // chunk's reports; the chunk still fails.
-            if let Some(diagnostic) = error
-                .downcast_ref::<analysis::DependencyGraphBuildError>()
-                .and_then(analysis::DependencyGraphBuildError::commuting_statements_diagnostic)
-                && let Some(report_out_dir) = report_emission.rejection_dir()
-            {
-                write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
-                write_chunk_report_json(
-                    report_out_dir,
-                    chunk_id,
-                    COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-                    &[diagnostic],
-                )?;
+    let precomputed =
+        match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
+            Ok(precomputed) => precomputed,
+            Err(error) => {
+                // A rejected `commuting_statements` entry is an author-premise
+                // diagnostic, not a pipeline fault: record it, with the selector
+                // outcomes gathered so far, where `spec validate` collects the
+                // chunk's reports; the chunk still fails.
+                if let Some(diagnostic) = error
+                    .downcast_ref::<analysis::DependencyGraphBuildError>()
+                    .and_then(analysis::DependencyGraphBuildError::commuting_statements_diagnostic)
+                    && let Some(report_out_dir) = report_emission.rejection_dir()
+                {
+                    write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
+                    write_chunk_report_json(
+                        report_out_dir,
+                        chunk_id,
+                        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+                        &[diagnostic],
+                    )?;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
-    };
+        };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {

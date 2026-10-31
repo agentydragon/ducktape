@@ -9,10 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, CommutingEndpoint,
-    CommutingStatementsRef, NativeInputKind, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, NativeOperationSelectorProvenance, NoAccessorInstallRef,
-    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedCommutingStatements,
+    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, NativeInputKind, NativeIntegrity,
+    NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
+    NoAccessorInstallRef, ResolvedArgumentInput, ResolvedBindingValueInput,
     ResolvedNativeOperationInput, ResolvedNoAccessorInstall, SelectedBindingValueInput,
     SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
@@ -32,13 +31,11 @@ use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
-use binding_targets::binding_name_strings;
 use graph_provenance::{CurrentRoots, GraphProvenance};
-use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement, split_var_declarators};
+use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
-use source_identity::{SourceUnitOrdinal, StatementId};
 use source_match::source_match_claim_member_selectors;
 use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
 use swc_common::{Span, Spanned};
@@ -59,7 +56,7 @@ use super::materialize::ResolvedMemberSite;
 /// and that statement's declarator is the selected unit. The matched site is
 /// read back from the matcher's candidates for the resolved binding; a
 /// template matching several of the binding's sites is rejected.
-fn select_one_declared_binding(
+pub(super) fn select_one_declared_binding(
     selector_chunk: &SelectorChunk<'_>,
     request_id: &str,
     claim: &spec::SourceMatchClaim,
@@ -191,7 +188,6 @@ pub(super) struct CrossModulePurities {
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
     pub(super) argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     /// Source-resolved commuting source-unit pairs, keyed by their chunk.
-    pub(super) commuting_statements: BTreeMap<String, Vec<ResolvedCommutingStatements>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -536,14 +532,6 @@ pub(super) fn collect_cross_module_imported_purities(
         chunk_analysis_options,
         chunk_filter,
     )?;
-    let commuting_statements = resolve_commuting_statements(
-        artifact,
-        &modules,
-        chunk_analysis_options,
-        graph_provenance,
-        chunk_filter,
-        resolved_member_sites,
-    )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
@@ -721,7 +709,6 @@ pub(super) fn collect_cross_module_imported_purities(
         native_operation_inputs: callable_summaries.native_operation_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
         argument_inputs: callable_summaries.argument_inputs,
-        commuting_statements,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
@@ -1103,198 +1090,6 @@ fn resolve_native_operation_inputs(
     Ok(resolved)
 }
 
-/// Resolve every `commuting_statements` pair to two distinct post-split source
-/// units of its chunk. Resolution failures, ambiguity, a foreign provider, a
-/// self-pair and a repeated unordered pair are spec errors naming the entry and
-/// endpoint. Nothing consumes the resolved pairs yet.
-fn resolve_commuting_statements(
-    artifact: &ChunkBundle,
-    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
-    options: &BTreeMap<String, DependencyGraphOptions>,
-    graph_provenance: Option<&GraphProvenance>,
-    chunk_filter: Option<&BTreeSet<ChunkId>>,
-    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
-) -> Result<BTreeMap<String, Vec<ResolvedCommutingStatements>>> {
-    let mut resolved = BTreeMap::new();
-    for (chunk_name, options) in options {
-        if options.commuting_statements.is_empty() {
-            continue;
-        }
-        let prefix = format!("chunk_analysis_options.{chunk_name}.commuting_statements");
-        let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
-            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
-        ensure!(
-            chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an outside-closure provider"
-        );
-        let facts = modules
-            .get(chunk_name)
-            .with_context(|| format!("{prefix} has no analyzed provider"))?;
-        let spec_path = author_input_spec_path(
-            graph_provenance.context("commuting statements require graph provenance")?,
-        )?;
-        let module = Module {
-            span: Default::default(),
-            body: facts.body.to_vec(),
-            shebang: None,
-        };
-        let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
-        let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
-        let mut seen_pairs = BTreeMap::<(SourceUnitOrdinal, SourceUnitOrdinal), usize>::new();
-        let mut chunk_pairs = Vec::with_capacity(options.commuting_statements.len());
-        for (input_index, contract) in options.commuting_statements.iter().enumerate() {
-            let request_id = format!("{prefix}[{input_index}]");
-            let a = resolve_source_unit_endpoint(
-                &selector_chunk,
-                facts.body,
-                chunk_name,
-                &format!("{request_id}.a"),
-                &contract.a,
-                resolved_member_sites,
-            )?;
-            let b = resolve_source_unit_endpoint(
-                &selector_chunk,
-                facts.body,
-                chunk_name,
-                &format!("{request_id}.b"),
-                &contract.b,
-                resolved_member_sites,
-            )?;
-            ensure!(
-                a.source_unit != b.source_unit,
-                "{request_id} selects the same source unit {} at both endpoints",
-                a.source_unit
-            );
-            let key = (
-                a.source_unit.min(b.source_unit),
-                a.source_unit.max(b.source_unit),
-            );
-            if let Some(earlier) = seen_pairs.insert(key, input_index) {
-                bail!(
-                    "{request_id} duplicates {prefix}[{earlier}]: both select source units {} and {}",
-                    key.0,
-                    key.1
-                );
-            }
-            chunk_pairs.push(ResolvedCommutingStatements {
-                reference: CommutingStatementsRef {
-                    defining_chunk: chunk_name.clone(),
-                    input_index,
-                },
-                spec_location: format!("{}:{request_id}", spec_path.display()),
-                a,
-                b,
-                note: contract.note.clone(),
-            });
-        }
-        resolved.insert(chunk_name.clone(), chunk_pairs);
-    }
-    Ok(resolved)
-}
-
-/// Resolve one endpoint selector to exactly one post-split source unit of
-/// `chunk_name`, through the shared selector engine or an already resolved
-/// member site.
-fn resolve_source_unit_endpoint(
-    selector_chunk: &SelectorChunk<'_>,
-    body: &[ModuleItem],
-    chunk_name: &str,
-    endpoint_id: &str,
-    selector: &SourceUnitSelector,
-    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
-) -> Result<CommutingEndpoint> {
-    let (body_index, selected_binding) = match selector {
-        SourceUnitSelector::SourceMatch(claim) if claim.bindings.is_empty() => {
-            let parsed = spec_resolution::parse_anonymous_selector(
-                endpoint_id,
-                format!("<anonymous source_match in {endpoint_id}>"),
-                &spec::AnonymousStatementSelector {
-                    match_source: claim.match_source.clone(),
-                    identifiers: claim.identifiers,
-                    target_binding: None,
-                },
-            )?;
-            let selector_module = spec_resolution::spec_module(
-                endpoint_id.to_owned(),
-                Vec::new(),
-                vec![spec_resolution::anonymous_statement(0, parsed)],
-            );
-            let resolution = selector_chunk
-                .resolve(&[selector_module])
-                .with_context(|| format!("{endpoint_id}.source_match"))?;
-            let outcome = resolution
-                .outcome(0, EntityIndex::AnonymousStatement(0))
-                .with_context(|| {
-                    format!("{endpoint_id}.source_match produced no selector outcome")
-                })?;
-            match &outcome.outcome {
-                SelectorOutcome::Resolved { body_index, .. } => (*body_index, None),
-                other => bail!(
-                    "{endpoint_id}.source_match must select exactly one anonymous statement; selector outcome: {} {other:?}",
-                    other.kind().as_str()
-                ),
-            }
-        }
-        SourceUnitSelector::SourceMatch(claim) => {
-            ensure!(
-                claim.bindings.len() == 1,
-                "{endpoint_id}.source_match must name at most one declared binding"
-            );
-            let (body_index, binding) =
-                select_one_declared_binding(selector_chunk, endpoint_id, claim)?;
-            (body_index, Some(binding))
-        }
-        SourceUnitSelector::ResolvedMember(member) => {
-            let sites = resolved_member_sites
-                .get(&(member.module.clone(), member.name.clone()))
-                .with_context(|| {
-                    format!("{endpoint_id}.resolved_member names no logical module member")
-                })?;
-            let mut provider_sites = sites
-                .iter()
-                .filter(|site| site.provider_chunk == chunk_name);
-            let site = provider_sites.next().with_context(|| {
-                format!(
-                    "{endpoint_id}.resolved_member belongs to another provider, not {chunk_name}"
-                )
-            })?;
-            ensure!(
-                provider_sites.next().is_none(),
-                "{endpoint_id}.resolved_member is ambiguous in provider {chunk_name}"
-            );
-            let declaration = site.declaration.as_ref().with_context(|| {
-                format!("{endpoint_id}.resolved_member has no unique original local declaration")
-            })?;
-            (declaration.body_index, Some(declaration.binding.clone()))
-        }
-    };
-    let item = body
-        .get(body_index)
-        .with_context(|| format!("{endpoint_id} selected a missing module item"))?;
-    let first_ordinal = source_unit_ordinal_for_statement(body, StatementId(body_index));
-    let declarator_offset = match (&selected_binding, split_var_declarators(item)) {
-        (Some(binding), Some(declarators)) => declarators
-            .iter()
-            .position(|declarator| {
-                binding_name_strings(&declarator.name)
-                    .iter()
-                    .any(|name| name == binding)
-            })
-            .with_context(|| {
-                format!("{endpoint_id} selected binding `{binding}` outside its declaration")
-            })?,
-        _ => 0,
-    };
-    Ok(CommutingEndpoint {
-        selector: selector.clone(),
-        source_unit: SourceUnitOrdinal(first_ordinal.0 + declarator_offset),
-        selected_binding,
-    })
-}
-
 fn resolve_argument_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
@@ -1561,7 +1356,7 @@ impl Visit for SelectedCallables {
 /// the graph was captured. Flat specs do not populate `config_path`; their
 /// canonical `--spec` argument is retained in the provenance generation
 /// command and is already the source of truth for replay.
-fn author_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
+pub(super) fn author_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
     if let Some(config_path) = &provenance.config_path {
         return Ok(provenance.roots.spec.join(config_path));
     }

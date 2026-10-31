@@ -213,6 +213,32 @@ fn endpoint_in_another_chunk_is_rejected() {
     );
 }
 
+/// Entries resolve only when their chunk's dependency graph is built, so an
+/// entry for a chunk the run does not materialize is refused rather than never
+/// checked.
+#[test]
+fn entry_for_an_unmaterialized_chunk_is_rejected() {
+    const CONSUMER: &str = "import { alias } from './peer.js';\nconsole.log(alias);\n";
+    const PROVIDER: &str = "var alias = 1;\nconsole.log(2);\nexport { alias };\n";
+    expect_rejected(
+        || {
+            FixtureOpts::new(CONSUMER, vec![])
+                .with_extra_chunks(&[("static/peer", PROVIDER)])
+                .with_commuting_statements(
+                    "static/peer",
+                    vec![commuting_pair(
+                        anonymous_source_unit("console.log(2);"),
+                        declared_source_unit("var alias = 1;", "alias"),
+                    )],
+                )
+        },
+        &[
+            "chunk_analysis_options.static/peer.commuting_statements",
+            "does not materialize",
+        ],
+    );
+}
+
 #[test]
 fn endpoint_requires_exactly_one_selector_variant() {
     let common = "b:\n  resolved_member: { module: all, name: beta }\n";

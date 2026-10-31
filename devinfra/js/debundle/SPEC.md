@@ -1689,8 +1689,11 @@ identify exactly one post-split source unit of the option's chunk. An endpoint
 that does not resolve, resolves to several source units, or names a member of
 another chunk is a spec error that fails `spec validate` and `run` with a
 diagnostic naming the entry and endpoint (`commuting_statements[<i>].a`). A
-pair whose endpoints are one source unit, and a pair repeating another entry's
-unordered source-unit set, are errors. An entry carries no parser-input
+pair whose endpoints are one source unit, a pair repeating another entry's
+unordered source-unit set, and an entry for a chunk the run does not
+materialize are errors. Entries are resolved when their chunk's dependency
+graph is built and never reach analysis, so editing them leaves every
+analysis fact unchanged. An entry carries no parser-input
 digest: the two structural selectors pin the statements. When a selector no
 longer resolves on a new snapshot, validation fails like any member's; the
 premise is never silently kept.
