@@ -30,17 +30,18 @@ type CodeModeHost struct {
 	cancelHost   context.CancelFunc
 	rpcTimeout   time.Duration
 
-	connectMu    sync.Mutex
-	mu           sync.Mutex
-	closed       bool
-	stopping     bool
-	starting     chan struct{}
-	retiring     chan struct{}
-	host         *Host
-	instanceID   string
-	failed       error
-	startProcess func(context.Context, string, string) (*Host, error)
-	closeProcess func(*Host) error
+	connectMu         sync.Mutex
+	mu                sync.Mutex
+	closed            bool
+	stopping          bool
+	starting          chan struct{}
+	retiring          chan struct{}
+	host              *Host
+	instanceID        string
+	failed            error
+	startProcess      func(context.Context, string, string) (*Host, error)
+	closeProcess      func(*Host) error
+	stampHostInstance func(context.Context, Owner, string) error
 
 	nextID         int64
 	pending        map[int64]*codePending
@@ -117,6 +118,7 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 	}
 	_, opened := m.openedSessions[sessionID]
 	host := m.host
+	instanceID := m.instanceID
 	runtime := newCodeModeBinding(ctx, m, host, m.store, owner, executor, sessionID)
 	m.active[sessionID] = runtime
 	m.mu.Unlock()
@@ -145,10 +147,18 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 		m.mu.Unlock()
 	}
 	if m.store != nil {
-		if err := m.store.StampCodeHostInstance(ctx, owner, m.InstanceID()); err != nil {
+		stamp := m.store.StampCodeHostInstance
+		if m.stampHostInstance != nil {
+			stamp = m.stampHostInstance
+		}
+		if err := stamp(ctx, owner, instanceID); err != nil {
 			_ = runtime.Detach(context.Background())
 			return nil, err
 		}
+	}
+	if runtime.Err() != nil {
+		_ = runtime.Detach(context.Background())
+		return nil, errCodeHostInstanceChanged
 	}
 	return runtime, nil
 }
