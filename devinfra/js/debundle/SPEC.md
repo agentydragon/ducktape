@@ -1298,8 +1298,10 @@ values synchronous execution has settled for a top-level binding no other
 statement writes, when the operand types make the specific operation
 non-throwing: a Symbol is a safe property key but throws as a string or numeric
 operand (templates and string concatenation included); BigInt mixed with
-another numeric kind in arithmetic, unary `+` on a BigInt, and `>>>` on a
-BigInt throw. An operand known only to be some primitive does not resolve. A
+another numeric kind in arithmetic, and unary `+` and `>>>` on a BigInt throw;
+BigInt arithmetic that can divide by `0n`, take a negative exponent, or grow
+past the engine's size limit may throw, so only comparisons, equality, bitwise
+`&`/`|`/`^` and string concatenation resolve on BigInt operands. An operand known only to be some primitive does not resolve. A
 hoisted `var` read before its initializer counts as `undefined`. No value is
 folded, and every binding read, import-order and TDZ constraint remains.
 
