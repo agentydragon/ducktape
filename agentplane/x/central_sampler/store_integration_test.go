@@ -486,6 +486,199 @@ func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
 	}
 }
 
+func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
+	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
+		t.Run(string(api), func(t *testing.T) {
+			store := newTestStore(t)
+			session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+				SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{
+					Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+				},
+			}, "fixture-account", api)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous, successor := uuid.NewString(), uuid.NewString()
+			encoding := protocol.ExecEncodingFreeform
+			if api == protocol.APIStyleAnthropicMessages {
+				encoding = protocol.ExecEncodingJSON
+			}
+			if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, successor, encoding); err != nil || changed {
+				t.Fatalf("first-ever host use emitted loss: changed=%v err=%v", changed, err)
+			}
+			if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, previous, encoding); err != nil || changed {
+				t.Fatalf("same-host use emitted loss: changed=%v err=%v", changed, err)
+			}
+			intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var records []json.RawMessage
+			if api == protocol.APIStyleResponses {
+				call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "lost-host-call", Name: "exec", Input: "text(load('x'))", ID: "lost-host-item"}
+				records = nativeResponsesRecords(t, call)
+			} else {
+				records = []json.RawMessage{json.RawMessage(`{"id":"msg_lost_host","role":"assistant","content":[{"type":"tool_use","id":"lost-host-call","name":"exec","input":{"code":"text(load('x'))"}}],"stop_reason":"tool_use"}`)}
+			}
+			if err := store.Finish(t.Context(), owner, intentID, map[string]any{"id": "response"}, records, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Release(t.Context(), owner); err != nil {
+				t.Fatal(err)
+			}
+			newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.StampCodeHostInstance(t.Context(), newOwner, successor); !errors.Is(err, errCodeHostInstanceChanged) {
+				t.Fatalf("new host overwrote unacknowledged state loss: %v", err)
+			}
+			changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, encoding)
+			if err != nil || !changed {
+				t.Fatalf("host loss not reconciled: changed=%v err=%v", changed, err)
+			}
+			conversation, err := store.Read(t.Context(), newOwner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls, err := conversation.Archive.PendingCalls(); err != nil || len(calls) != 0 {
+				t.Fatalf("unpaired pending tool call after loss: calls=%v err=%v", calls, err)
+			}
+			contextWire, err := json.Marshal(conversation.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(contextWire, []byte("before this call was dispatched")) || !bytes.Contains(contextWire, []byte("store()/load() values has been lost")) {
+				t.Fatalf("missing paired call failure or loss notice: %s", contextWire)
+			}
+			epoch, err := store.CodeSessionEpoch(t.Context(), newOwner)
+			if err != nil || epoch != 1 {
+				t.Fatalf("host loss epoch=%d err=%v", epoch, err)
+			}
+			if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, encoding); err != nil || changed {
+				t.Fatalf("host loss notice duplicated: changed=%v err=%v", changed, err)
+			}
+			if err := store.StampCodeHostInstance(t.Context(), newOwner, successor); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, uuid.NewString(), protocol.ExecEncodingFreeform); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
+		t.Fatalf("unresolved executor effect was auto-settled: changed=%v err=%v", changed, err)
+	}
+}
+
+func TestStoreCodeHostLossAfterSettledCellWithoutLiveHandles(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(t.Context(), owner, "settled-cell", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingFreeform)
+	if err != nil || !changed {
+		t.Fatalf("settled-cell host loss lacked notice: changed=%v err=%v", changed, err)
+	}
+	conversation, err := store.Read(t.Context(), successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(wire, []byte("store()/load() values has been lost")) {
+		t.Fatalf("settled-cell host loss was silent: %s", wire)
+	}
+}
+
+func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "unrelated-call", Name: "pure", Input: "{}", ID: "unrelated-item"}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance := uuid.NewString()
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform); err != nil || changed {
+		t.Fatalf("unrelated pending call was auto-settled: changed=%v err=%v", changed, err)
+	}
+	conversation, err := store.Read(t.Context(), successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, err := conversation.Archive.PendingCalls()
+	if err != nil || len(calls) != 1 || calls[0].CallID != call.CallID {
+		t.Fatalf("unrelated call changed: calls=%v err=%v", calls, err)
+	}
+	// The normal dispatcher can settle this call independently. The notice follows
+	// after pairing, before any subsequent sampling step.
+	notDispatched := false
+	toolIntent, err := store.Begin(t.Context(), successor, IntentRequest{Kind: PendingIntentCell, Call: &calls[0], Dispatched: &notDispatched})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishTool(t.Context(), successor, toolIntent, map[string]any{"success": false}, calls[0], []protocol.ContentPart{{Type: "input_text", Text: "unsupported"}}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("loss notice did not follow unrelated call: changed=%v err=%v", changed, err)
+	}
+}
+
 func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
@@ -1006,7 +1199,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(t.Context(), store.DB(), map[string]protocol.APIStyle{"fixture-model": protocol.APIStyleResponses}); err != nil {
+	if err := Migrate(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
 	}
 	afterSession, err := store.GetSession(t.Context(), session.ID, "")
