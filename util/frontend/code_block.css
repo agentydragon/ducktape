@@ -1,39 +1,39 @@
 /* CodeMirror is the single code-shaped viewer across arguments, results, thread payloads, and
    Markdown fences. Preserve the app's compact monospace blocks while allowing long lines to wrap. */
-.agentplane-code-block,
-.agentplane-code-inline {
-  --agentplane-code-key: var(--mantine-color-blue-8);
-  --agentplane-code-string: var(--mantine-color-green-9);
-  --agentplane-code-number: var(--mantine-color-orange-9);
-  --agentplane-code-literal: var(--mantine-color-grape-8);
-  --agentplane-code-keyword: var(--mantine-color-red-8);
-  --agentplane-code-variable: var(--mantine-color-indigo-7);
-  --agentplane-code-comment: var(--mantine-color-gray-6);
-  --agentplane-code-meta: var(--mantine-color-gray-7);
-  --agentplane-code-title: var(--mantine-color-pink-8);
+.ui-code-block,
+.ui-code-inline {
+  --ui-code-key: var(--mantine-color-blue-8);
+  --ui-code-string: var(--mantine-color-green-9);
+  --ui-code-number: var(--mantine-color-orange-9);
+  --ui-code-literal: var(--mantine-color-grape-8);
+  --ui-code-keyword: var(--mantine-color-red-8);
+  --ui-code-variable: var(--mantine-color-indigo-7);
+  --ui-code-comment: var(--mantine-color-gray-6);
+  --ui-code-meta: var(--mantine-color-gray-7);
+  --ui-code-title: var(--mantine-color-pink-8);
 }
 
-.agentplane-code-block {
+.ui-code-block {
   display: block;
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.agentplane-code-block .cm-scroller {
+.ui-code-block .cm-scroller {
   overflow-wrap: anywhere;
 }
 
 /* Normalize the editor's line gutter once; each surface owns padding at the content boundary. */
-.agentplane-code-block .cm-line {
+.ui-code-block .cm-line {
   padding: 0;
 }
 
-.agentplane-code-block .cm-content {
+.ui-code-block .cm-content {
   white-space: pre-wrap;
 }
 
-.cm-agentplane-special-char {
+.cm-ui-special-char {
   border: 1px solid currentColor;
   border-radius: 0.2em;
   cursor: help;
@@ -47,103 +47,103 @@
   white-space: nowrap;
 }
 
-.cm-agentplane-special-char-bidi,
-.cm-agentplane-special-char-control {
+.cm-ui-special-char-bidi,
+.cm-ui-special-char-control {
   background-color: var(--mantine-color-red-light);
   color: var(--mantine-color-red-8);
 }
 
-.cm-agentplane-special-char-ignorable {
+.cm-ui-special-char-ignorable {
   background-color: var(--mantine-color-orange-light);
   color: var(--mantine-color-orange-8);
 }
 
-[data-mantine-color-scheme="dark"] .agentplane-code-block,
-[data-mantine-color-scheme="dark"] .agentplane-code-inline {
-  --agentplane-code-key: var(--mantine-color-blue-3);
-  --agentplane-code-string: var(--mantine-color-green-3);
-  --agentplane-code-number: var(--mantine-color-orange-3);
-  --agentplane-code-literal: var(--mantine-color-grape-3);
-  --agentplane-code-keyword: var(--mantine-color-red-4);
-  --agentplane-code-variable: var(--mantine-color-indigo-3);
-  --agentplane-code-comment: var(--mantine-color-dark-2);
-  --agentplane-code-meta: var(--mantine-color-gray-5);
-  --agentplane-code-title: var(--mantine-color-pink-3);
+[data-mantine-color-scheme="dark"] .ui-code-block,
+[data-mantine-color-scheme="dark"] .ui-code-inline {
+  --ui-code-key: var(--mantine-color-blue-3);
+  --ui-code-string: var(--mantine-color-green-3);
+  --ui-code-number: var(--mantine-color-orange-3);
+  --ui-code-literal: var(--mantine-color-grape-3);
+  --ui-code-keyword: var(--mantine-color-red-4);
+  --ui-code-variable: var(--mantine-color-indigo-3);
+  --ui-code-comment: var(--mantine-color-dark-2);
+  --ui-code-meta: var(--mantine-color-gray-5);
+  --ui-code-title: var(--mantine-color-pink-3);
 }
 
-[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-bidi,
-[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-control {
+[data-mantine-color-scheme="dark"] .cm-ui-special-char-bidi,
+[data-mantine-color-scheme="dark"] .cm-ui-special-char-control {
   color: var(--mantine-color-red-3);
 }
 
-[data-mantine-color-scheme="dark"] .cm-agentplane-special-char-ignorable {
+[data-mantine-color-scheme="dark"] .cm-ui-special-char-ignorable {
   color: var(--mantine-color-orange-3);
 }
 
 /* Mutually exclusive surface policies serve both the lazy placeholder and mounted editor. */
-.agentplane-code-surface-framed {
-  --agentplane-code-surface-background: var(--mantine-color-body);
-  --agentplane-code-surface-border: 1px solid var(--mantine-color-default-border);
-  --agentplane-code-surface-radius: var(--mantine-radius-sm);
-  --agentplane-code-surface-padding: var(--mantine-spacing-xs);
+.ui-code-surface-framed {
+  --ui-code-surface-background: var(--mantine-color-body);
+  --ui-code-surface-border: 1px solid var(--mantine-color-default-border);
+  --ui-code-surface-radius: var(--mantine-radius-sm);
+  --ui-code-surface-padding: var(--mantine-spacing-xs);
 }
 
-.agentplane-code-surface-plain {
-  --agentplane-code-surface-background: transparent;
-  --agentplane-code-surface-border: 0;
-  --agentplane-code-surface-radius: 0;
-  --agentplane-code-surface-padding: 0;
+.ui-code-surface-plain {
+  --ui-code-surface-background: transparent;
+  --ui-code-surface-border: 0;
+  --ui-code-surface-radius: 0;
+  --ui-code-surface-padding: 0;
 }
 
-.agentplane-code-font-prose {
-  --agentplane-code-font-family: var(--mantine-font-family);
+.ui-code-font-prose {
+  --ui-code-font-family: var(--mantine-font-family);
 }
 
-.agentplane-code-block-placeholder {
+.ui-code-block-placeholder {
   box-sizing: border-box;
-  background-color: var(--agentplane-code-surface-background, transparent);
-  border: var(--agentplane-code-surface-border, 0);
-  border-radius: var(--agentplane-code-surface-radius, 0);
+  background-color: var(--ui-code-surface-background, transparent);
+  border: var(--ui-code-surface-border, 0);
+  border-radius: var(--ui-code-surface-radius, 0);
 }
 
 /* Inline code is the same highlight without an editor view: tokens are classed rather than styled. */
-.agentplane-code-inline {
+.ui-code-inline {
   font-family: var(--mantine-font-family-monospace);
 }
 
-.agentplane-tok-key {
-  color: var(--agentplane-code-key);
+.ui-tok-key {
+  color: var(--ui-code-key);
 }
 
-.agentplane-tok-string {
-  color: var(--agentplane-code-string);
+.ui-tok-string {
+  color: var(--ui-code-string);
 }
 
-.agentplane-tok-number {
-  color: var(--agentplane-code-number);
+.ui-tok-number {
+  color: var(--ui-code-number);
 }
 
-.agentplane-tok-literal {
-  color: var(--agentplane-code-literal);
+.ui-tok-literal {
+  color: var(--ui-code-literal);
 }
 
-.agentplane-tok-keyword {
-  color: var(--agentplane-code-keyword);
+.ui-tok-keyword {
+  color: var(--ui-code-keyword);
 }
 
-.agentplane-tok-comment {
-  color: var(--agentplane-code-comment);
+.ui-tok-comment {
+  color: var(--ui-code-comment);
   font-style: italic;
 }
 
-.agentplane-tok-meta {
-  color: var(--agentplane-code-meta);
+.ui-tok-meta {
+  color: var(--ui-code-meta);
 }
 
-.agentplane-tok-variable {
-  color: var(--agentplane-code-variable);
+.ui-tok-variable {
+  color: var(--ui-code-variable);
 }
 
-.agentplane-tok-title {
-  color: var(--agentplane-code-title);
+.ui-tok-title {
+  color: var(--ui-code-title);
 }

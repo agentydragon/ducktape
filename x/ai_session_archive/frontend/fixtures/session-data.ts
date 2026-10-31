@@ -372,14 +372,13 @@ export const sessionFixtureApi: SessionBrowserApi = {
             ? codexOlderEvents
             : codexLatestEvents
           : claudeEvents;
-    const after = cursor ?? 0;
     const data = selected
-      .filter((record) => record.ordinal > after)
-      .slice(0, sessionId === "mixed-transcript-fixture" ? 50 : 3);
-    const last = data.at(-1)?.ordinal ?? null;
+      .filter((record) => cursor === undefined || record.ordinal < cursor)
+      .slice(-(sessionId === "mixed-transcript-fixture" ? 50 : 3));
+    const first = data.at(0)?.ordinal ?? null;
     return {
       data,
-      next_cursor: last !== null && selected.some((record) => record.ordinal > last) ? last : null,
+      next_cursor: first !== null && selected.some((record) => record.ordinal < first) ? first : null,
     };
   },
 };

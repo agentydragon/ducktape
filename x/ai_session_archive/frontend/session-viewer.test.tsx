@@ -288,10 +288,12 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   await act(async () => findControl(malformed!, "Raw JSONL record").click());
   expect(malformed!.querySelector("pre")?.textContent).toBe('{"type":"response_item","payload":');
 
+  expect(view.querySelector('[data-event-ordinal="1"]')).toBeNull();
   await act(async () => {
-    findControl(view, "Load more records").click();
+    findControl(view, "Load earlier records").click();
     await flush();
   });
+  expect(view.querySelector('[data-event-ordinal="1"]')).not.toBeNull();
   const structured = view.querySelector('[data-event-ordinal="4"]');
   expect(structured?.textContent).toContain("Codex · context compacted");
   expect(structured?.textContent).toContain("Structured record; expand raw data to inspect it.");
@@ -678,21 +680,21 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
   expect(view.querySelector('[aria-label="Related sessions"]')).toBeNull();
 });
 
-it("does not append an event page after switching sessions", async () => {
+it("does not prepend an older event page after switching sessions", async () => {
   const pending = deferred<EventPage<EventRecord>>();
   const eventRequests: Array<[string, string]> = [];
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listEvents(sessionId, versionId, cursor, signal) {
       eventRequests.push([sessionId, versionId]);
-      if (sessionId === "codex-thread-1" && cursor === 3) return pending.promise;
+      if (sessionId === "codex-thread-1" && cursor === 2) return pending.promise;
       return sessionFixtureApi.listEvents(sessionId, versionId, cursor, signal);
     },
   };
   const view = await renderViewer(api);
 
   await act(async () => {
-    findControl(view, "Load more records").click();
+    findControl(view, "Load earlier records").click();
     await Promise.resolve();
   });
   await act(async () => {

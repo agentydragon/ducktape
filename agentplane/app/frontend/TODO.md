@@ -17,7 +17,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
   (`threads/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
-- **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.agentplane-user-bubble`
+- **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.transcript-user-bubble`
   (`threads/conversation.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the

@@ -149,7 +149,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+  const [loadingEarlierEvents, setLoadingEarlierEvents] = useState(false);
   const [loadingRelatedSessions, setLoadingRelatedSessions] = useState(false);
   const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -340,7 +340,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null) {
       setVersions([]);
       setVersionsSessionId(null);
@@ -374,7 +374,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null || selectedVersionId === null || versionsSessionId !== selectedSession.id) {
       setEvents([]);
       setEventCursor(null);
@@ -479,13 +479,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   };
 
-  const loadMoreEvents = async (): Promise<void> => {
-    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingMoreEvents) return;
+  const loadEarlierEvents = async (): Promise<void> => {
+    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingEarlierEvents) return;
     const requestedScope = eventScope;
     const controller = new AbortController();
     eventPageRequest.current?.abort();
     eventPageRequest.current = controller;
-    setLoadingMoreEvents(true);
+    setLoadingEarlierEvents(true);
     setError(null);
     try {
       const page = await api.listEvents(selectedSession.id, selectedVersionId, eventCursor, controller.signal);
@@ -498,7 +498,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     } finally {
       if (eventPageRequest.current === controller) {
         eventPageRequest.current = null;
-        setLoadingMoreEvents(false);
+        setLoadingEarlierEvents(false);
       }
     }
   };
@@ -975,17 +975,17 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 <ArchiveTranscript
                   scopeId={eventScope}
                   records={events}
+                  earlier={{
+                    available: eventCursor !== null,
+                    loading: loadingEarlierEvents,
+                    load: () => void loadEarlierEvents(),
+                  }}
                   tail={
                     <>
                       {events.length === 0 && !loadingEvents && (
                         <Text size="sm" c="dimmed">
                           This captured version contains no JSONL records.
                         </Text>
-                      )}
-                      {eventCursor !== null && (
-                        <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                          Load more records
-                        </Button>
                       )}
                     </>
                   }

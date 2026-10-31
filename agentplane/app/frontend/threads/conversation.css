@@ -12,7 +12,7 @@
 
 /* The run chooses a compact folded-row policy; the shared header owns its geometry. */
 .agentplane-run-steps {
-  --agentplane-disclosure-collapsed-height: var(--agentplane-disclosure-compact-height);
+  --ui-disclosure-collapsed-height: var(--ui-disclosure-compact-height);
 }
 
 /* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
@@ -87,7 +87,7 @@
   gap: var(--mantine-spacing-xs);
 }
 
-.agentplane-step-preview .agentplane-markdown--single-line {
+.agentplane-step-preview .ui-markdown--single-line {
   white-space: inherit;
 }
 
@@ -264,8 +264,8 @@
 .agentplane-command-card-line:focus-within
   .agentplane-command-progress[data-stage="effected"]
   .agentplane-command-progress-hit,
-.agentplane-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
-.agentplane-user-message-row:focus-within
+.transcript-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.transcript-user-message-row:focus-within
   .agentplane-command-progress[data-stage="effected"]
   .agentplane-command-progress-hit,
 .agentplane-command-progress[data-stage="effected"]:is(:hover, :focus-within) .agentplane-command-progress-hit {
@@ -274,7 +274,7 @@
 }
 
 @media (hover: none) {
-  .agentplane-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed])
+  .transcript-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed])
     .agentplane-command-progress[data-stage="effected"]
     .agentplane-command-progress-hit,
   .agentplane-evidence-owner[data-evidence-revealed]
@@ -320,15 +320,15 @@
    edge, and detail centred on the indicator runs off the page. The row is the containing block
    instead: detail opens below the indicator, flush with the row's right edge, never wider than the
    row. */
-.agentplane-user-message-row {
+.transcript-user-message-row {
   position: relative;
 }
 
-.agentplane-user-message-aside .agentplane-command-progress {
+.transcript-user-message-aside .agentplane-command-progress {
   position: static;
 }
 
-.agentplane-user-message-aside .agentplane-command-progress-label {
+.transcript-user-message-aside .agentplane-command-progress-label {
   top: 1.8rem;
   bottom: auto;
   left: auto;

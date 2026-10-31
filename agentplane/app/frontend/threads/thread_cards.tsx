@@ -267,7 +267,7 @@ function ReasoningPreview({
 
   useLayoutEffect(() => {
     const element = preview.current;
-    const content = element?.querySelector<HTMLElement>(".agentplane-markdown--single-line");
+    const content = element?.querySelector<HTMLElement>(".ui-markdown--single-line");
     if (body === null || !element || !content) {
       onOverflowChange(false);
       return;

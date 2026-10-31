@@ -17,11 +17,10 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
   a captured version when its contents must have independent state.
 - Change a row's `revision` when its contents change; retain its `key` when extending
   an existing group. `anchorKeys` map stable content identities to their current row.
-- Choose `initialPosition` and `followTail` explicitly. Agentplane opens at the end
-  and follows; the archive opens at the start and preserves reading during append
-  pagination. `showJumpToLatest` controls the explicit return-to-tail button.
-- `earlier` offers optional prepend loading near the start; `tail` can contain
-  append-pagination controls. The library owns neither API nor cursor semantics.
+- History opens at the bottom and follows the tail until the reader scrolls up.
+  `showJumpToLatest` controls the explicit return-to-tail button.
+- `earlier` offers optional prepend loading near the start; `tail` holds provisional
+  content or an empty state. The library owns neither API nor cursor semantics.
 - `diagnostics` optionally receives geometry and interaction events. Agentplane
   adapts these into its own opt-in recorder; the shared library installs no recorder.
 

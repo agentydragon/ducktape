@@ -118,6 +118,18 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
             await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            history = page.get_by_role("region", name="Conversation records")
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            assert await history.evaluate(
+                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
+            )
+            assert any("direction=backward" in url for url, _status in api_responses)
+            await page.get_by_role("button", name="Load earlier records").click()
+            await expect(page.get_by_role("button", name="Load earlier records")).to_have_count(0)
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            assert await history.evaluate(
+                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
+            )
 
             version_picker = page.get_by_label("Captured version")
             await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
@@ -132,7 +144,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await page.reload(wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             await expect(transcript).to_contain_text("This JSONL line could not be parsed")
-            malformed_record = transcript.locator('[data-event-ordinal="3"]')
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
@@ -156,7 +168,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
 
             await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-            malformed_record = transcript.locator('[data-event-ordinal="3"]')
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
@@ -201,6 +213,16 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
         ),
     ]
     latest_suffix = [
+        *[
+            _jsonl_record(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": f"Archived intermediate answer {index}."}]},
+                },
+                older_time + timedelta(seconds=index + 2),
+            )
+            for index in range(101)
+        ],
         _jsonl_record(
             {
                 "type": "assistant",

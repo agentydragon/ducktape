@@ -29,7 +29,7 @@ export function UserMessage({
   return (
     <Group
       {...rowProps}
-      className={`agentplane-user-message-row${rowClassName ? ` ${rowClassName}` : ""}`}
+      className={`transcript-user-message-row${rowClassName ? ` ${rowClassName}` : ""}`}
       justify="flex-end"
       align="flex-start"
       gap="xs"
@@ -37,13 +37,13 @@ export function UserMessage({
       style={{ width: "100%", ...rowStyle }}
     >
       {aside && (
-        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
+        <Stack className="transcript-user-message-aside" gap={2} align="flex-end">
           {aside}
         </Stack>
       )}
       <Paper
         {...bubbleProps}
-        className={`agentplane-user-bubble${bubbleClassName ? ` ${bubbleClassName}` : ""}`}
+        className={`transcript-user-bubble${bubbleClassName ? ` ${bubbleClassName}` : ""}`}
         p="sm"
         style={{ ...bubbleStyle, ...(pending ? { fontStyle: "italic", opacity: 0.6 } : {}) }}
       >
@@ -57,7 +57,7 @@ export function UserMessage({
 /** Text kept verbatim, with line breaks preserved and long lines wrapped inside the message. */
 export function VerbatimText({ text }: { text: string }): JSX.Element {
   return (
-    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+    <Text className="transcript-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
       {text}
     </Text>
   );

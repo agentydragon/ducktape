@@ -15,6 +15,7 @@ so each package holding specs calls it; nothing checks that one that does not ha
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load(":ts_library.bzl", "ts_library")
@@ -50,16 +51,11 @@ def vitest_config(name, environment, setup_files = [], data = []):
     test = {"environment": environment, "include": ["**/*.test.js"]}
     if setup_files:
         setup_paths = []
+        package = native.package_name()
+        depth = len(package.split("/")) if package else 0
         for setup_file in setup_files:
             label = native.package_relative_label(setup_file)
-            origin = [part for part in native.package_name().split("/") if part]
-            destination = [part for part in (label.package + "/" + label.name).split("/") if part]
-            common = 0
-            for left, right in zip(origin, destination):
-                if left != right:
-                    break
-                common += 1
-            setup_paths.append("./" + "/".join([".."] * (len(origin) - common) + destination[common:]))
+            setup_paths.append("./" + "../" * depth + paths.join(label.package, label.name))
 
         # Keep Vitest's setup entry beneath its config root. Shared setup modules can
         # live outside it, but direct setupFiles paths there become unresolvable /@fs URLs.

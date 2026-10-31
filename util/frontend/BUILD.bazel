@@ -250,7 +250,6 @@ vitest_test(
     ],
 )
 
-# Shared disclosure primitives extracted from Agentplane's browser frontend.
 js_library(
     name = "disclosure_css",
     srcs = ["disclosure.css"],

@@ -216,8 +216,9 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             geometry["height"] >= 150 and geometry["top"] >= 0 and geometry["bottom"] <= geometry["viewport"]
         )
         assert transcript_viewport_is_usable, f"conversation viewport is too small or outside the viewport: {geometry}"
-        assert await events.locator('[data-event-ordinal="1"]').evaluate(
-            "element => { const parent = element.closest('[aria-label=\"Conversation records\"]'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
+        await expect(events).to_have_attribute("data-layout-settled", "true")
+        assert await events.evaluate(
+            "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
         )
         await view.check(context="child sessions scroll independently and the conversation stays visible")
         await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")

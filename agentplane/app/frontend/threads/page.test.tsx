@@ -632,8 +632,8 @@ it("sends the draft on Enter and clears it", async () => {
   await press(field, {});
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
   expect(field.value).toBe("");
-  const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
-  expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
+  const bubble = container.querySelector<HTMLElement>('.transcript-user-bubble[data-message-phase="local"]');
+  expect(bubble?.querySelector(".transcript-verbatim")?.textContent).toBe("hello");
   expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
     "Saved in browser · waiting for Dispatcher"
   );
@@ -1640,7 +1640,7 @@ it.each([
       ],
     })
   );
-  const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
+  const bubble = container.querySelector<HTMLElement>(`.transcript-user-bubble[data-message-phase="${phase}"]`);
   const plainOutcome = bubble?.parentElement?.querySelector(".agentplane-command-noop");
   expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
   expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
@@ -1655,7 +1655,7 @@ it.each([
     outcome === "noop" ? undefined : status
   );
   expect(bubble?.parentElement?.querySelector("button[aria-label='Dismiss']")).toBeNull();
-  expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).not.toBeNull();
+  expect(container.querySelector(`.transcript-user-bubble[data-message-phase="${phase}"]`)).not.toBeNull();
 });
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
@@ -1748,7 +1748,7 @@ it("uses this browser's submitted text while the echo loads and leaves remote in
   const local = sections.find((section) => section.querySelector(`[data-command-id="${localId}"]`))!;
   const remote = sections.find((section) => section.querySelector(`[data-command-id="${remoteId}"]`))!;
 
-  expect(local.querySelector(".agentplane-verbatim")?.textContent).toBe("Text submitted by this browser.");
+  expect(local.querySelector(".transcript-verbatim")?.textContent).toBe("Text submitted by this browser.");
   expect(local.textContent).not.toContain("Loading complete revision");
   expect(remote.textContent).toContain("Loading complete revision");
 });
@@ -1764,7 +1764,7 @@ it("replaces locally known text with the service echo once that payload arrives"
     onInputEchoLoaded
   );
 
-  expect(section.querySelector(".agentplane-verbatim")?.textContent).toBe("Text returned by the service.");
+  expect(section.querySelector(".transcript-verbatim")?.textContent).toBe("Text returned by the service.");
   expect(onInputEchoLoaded).toHaveBeenCalledWith("local-input");
 });
 
@@ -1780,7 +1780,7 @@ it.each(["Bash", "commandExecution"])(
       { "entity-2:text": "A command may exit nonzero as part of normal investigation." }
     );
 
-    const summary = run.querySelector(".agentplane-disclosure-summary")!;
+    const summary = run.querySelector(".ui-disclosure-summary")!;
     expect(summary.querySelector('[role="img"][aria-label="Failed"]')).toBeNull();
   }
 );
@@ -1795,7 +1795,7 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
     false,
     { "test-entity-2:text": "The plan is to **inspect** the evidence." }
   );
-  const summary = run.querySelector(".agentplane-disclosure-summary")!;
+  const summary = run.querySelector(".ui-disclosure-summary")!;
   expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
   expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
   expect(run.textContent).not.toContain("test-read");
@@ -1812,13 +1812,9 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
   const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
   const [live] = await renderHistory(segments, true);
-  expect(live.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe(
-    "Streaming"
-  );
+  expect(live.querySelector('.ui-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
   const [retained] = await renderHistory(segments, false);
-  expect(retained.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe(
-    "Incomplete"
-  );
+  expect(retained.querySelector('.ui-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
 });
 
 it("puts a live assistant-text cursor inline after its Markdown body", async () => {
@@ -1828,11 +1824,11 @@ it("puts a live assistant-text cursor inline after its Markdown body", async () 
     true,
     { "streaming-reply:text": body }
   );
-  const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+  const cursor = row.querySelector<HTMLElement>(".ui-streaming-cursor");
 
   expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
   expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
-  expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
+  expect(cursor?.closest(".ui-markdown")).not.toBeNull();
   expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
 });
 
@@ -1852,8 +1848,8 @@ it("shows a lone tool call directly and opens its details with one click", async
     { "single-tool:arguments": '{"path":"test-file.txt"}' }
   );
   expect(row.querySelector(".agentplane-step-title")?.textContent).toBe("test-read");
-  expect(row.querySelectorAll(".agentplane-disclosure-summary")).toHaveLength(1);
-  const summary = row.querySelector(".agentplane-disclosure-summary")!;
+  expect(row.querySelectorAll(".ui-disclosure-summary")).toHaveLength(1);
+  const summary = row.querySelector(".ui-disclosure-summary")!;
   await toggle(summary);
   expect(summary.getAttribute("aria-expanded")).toBe("true");
   expect(row.textContent).toContain("test-file.txt");
@@ -1894,7 +1890,7 @@ describe("recovery presentation", () => {
         true,
         { "recovered-reply:text": "Interrupted reply" }
       );
-      expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
+      expect(row.querySelector(".ui-streaming-cursor")).toBeNull();
       expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
     }
   );
@@ -1940,7 +1936,7 @@ describe("recovery presentation", () => {
       false,
       { "test-entity-2:text": "Kept in context" }
     );
-    const summary = run.querySelector(".agentplane-disclosure-summary")!;
+    const summary = run.querySelector(".ui-disclosure-summary")!;
     expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
     expect(badgeLabels(run)).toEqual([]);
 

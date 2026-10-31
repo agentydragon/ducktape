@@ -35,6 +35,6 @@ async def completed_rollout(view: VisualPage, app: AgentplaneFixture) -> VisualP
 async def shell_calls(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
     await app.build(Scene.SHELL_CALLS)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
     return view

@@ -63,13 +63,8 @@ export class HistoryViewport {
     private readonly geometry: HistoryGeometry,
     private readonly render: (synchronous: boolean) => void,
     private readonly loadOlder: () => void,
-    initialPosition: "start" | "end",
-    private readonly followTail: boolean,
     private readonly diagnostics: HistoryDiagnostics | undefined
-  ) {
-    if (initialPosition === "start")
-      this.intent = { kind: "reading", anchor: { entity: "", offset: 0, inset: 0, target: null } };
-  }
+  ) {}
 
   mount(element: HTMLDivElement, content: HTMLDivElement, tail: HTMLDivElement): void {
     this.disposed = false;
@@ -321,7 +316,7 @@ export class HistoryViewport {
       return false;
     // An unowned downward return uses this view's last committed extent. Unlike an arbitrary
     // historical bottom, it requires actual movement and cannot override an upward gesture.
-    if (this.followTail && !movedUp && !gestureUp && (maximum - top <= 24 || close(top, this.lastMaximum))) {
+    if (!movedUp && !gestureUp && (maximum - top <= 24 || close(top, this.lastMaximum))) {
       this.setIntent({ kind: "following" }, "scrolled-to-bottom");
       return true;
     }

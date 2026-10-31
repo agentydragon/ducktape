@@ -40,9 +40,9 @@ describe("JsonView", () => {
         <HighlightedText text='{"status":"ok"}' surface="plain" />
       </div>
     );
-    const surfaces = [...container.querySelectorAll(".agentplane-code-surface-framed, .agentplane-code-surface-plain")];
+    const surfaces = [...container.querySelectorAll(".ui-code-surface-framed, .ui-code-surface-plain")];
     expect(surfaces).toHaveLength(2);
-    expect(surfaces[0]?.classList.contains("agentplane-code-surface-framed")).toBe(true);
-    expect(surfaces[1]?.classList.contains("agentplane-code-surface-plain")).toBe(true);
+    expect(surfaces[0]?.classList.contains("ui-code-surface-framed")).toBe(true);
+    expect(surfaces[1]?.classList.contains("ui-code-surface-plain")).toBe(true);
   });
 });

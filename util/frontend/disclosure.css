@@ -1,90 +1,89 @@
 /* Design policy lives here. A section computes its own inset once; headers and terminal bodies
    consume it. Nested panels stay full-width and never subtract a parent's padding. */
 :root {
-  --agentplane-disclosure-gutter: var(--mantine-spacing-xs);
-  --agentplane-disclosure-indent-step: calc(var(--mantine-spacing-xs) * 0.5);
-  --agentplane-disclosure-body-spacing: var(--mantine-spacing-xs);
-  --agentplane-disclosure-row-height: 2.75rem;
-  --agentplane-disclosure-collapsed-height: var(--agentplane-disclosure-row-height);
-  --agentplane-disclosure-compact-height: 1.5rem;
-  --agentplane-disclosure-action-gap: var(--mantine-spacing-xs);
-  --agentplane-disclosure-chevron-size: 1rem;
+  --ui-disclosure-gutter: var(--mantine-spacing-xs);
+  --ui-disclosure-indent-step: calc(var(--mantine-spacing-xs) * 0.5);
+  --ui-disclosure-body-spacing: var(--mantine-spacing-xs);
+  --ui-disclosure-row-height: 2.75rem;
+  --ui-disclosure-collapsed-height: var(--ui-disclosure-row-height);
+  --ui-disclosure-compact-height: 1.5rem;
+  --ui-disclosure-action-gap: var(--mantine-spacing-xs);
+  --ui-disclosure-chevron-size: 1rem;
 }
 
 @media (min-width: 48rem) {
   :root {
-    --agentplane-disclosure-row-height: 1.75rem;
+    --ui-disclosure-row-height: 1.75rem;
   }
 }
 
-.agentplane-disclosure,
-.agentplane-disclosure-static {
-  --agentplane-disclosure-inset: calc(
-    var(--agentplane-disclosure-gutter) + var(--agentplane-disclosure-depth, 0) *
-      var(--agentplane-disclosure-indent-step)
+.ui-disclosure,
+.ui-disclosure-static {
+  --ui-disclosure-inset: calc(
+    var(--ui-disclosure-gutter) + var(--ui-disclosure-depth, 0) * var(--ui-disclosure-indent-step)
   );
   min-width: 0;
 }
 
-.agentplane-disclosure-item {
+.ui-disclosure-item {
   min-width: 0;
   border-bottom: 0;
 }
 
-.agentplane-collapsible-card {
+.ui-collapsible-card {
   position: relative;
   padding: 0;
-  border-radius: var(--agentplane-disclosure-edge-radius);
+  border-radius: var(--ui-disclosure-edge-radius);
 }
 
 /* Frame variants are chosen by the card, rather than undone by descendant selectors. */
-.agentplane-collapsible-card[data-nested="false"] {
-  --agentplane-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
+.ui-collapsible-card[data-nested="false"] {
+  --ui-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
   border: 1px solid transparent;
 }
 
-.agentplane-collapsible-card[data-nested="false"][data-open="true"] {
+.ui-collapsible-card[data-nested="false"][data-open="true"] {
   border-color: var(--mantine-color-default-border);
 }
 
-.agentplane-collapsible-card[data-nested="true"] {
-  --agentplane-disclosure-edge-radius: 0px;
+.ui-collapsible-card[data-nested="true"] {
+  --ui-disclosure-edge-radius: 0px;
 }
 
 /* The button spans every column, including the gutters. Its label/chevron use the same tracks
    as the separate action, so dynamic action widths need neither measurement nor compensation. */
-.agentplane-disclosure-header {
+.ui-disclosure-header {
   box-sizing: border-box;
   display: grid;
   grid-template-columns:
-    minmax(0, 1fr) max-content var(--agentplane-disclosure-action-gap)
-    var(--agentplane-disclosure-chevron-size) var(--agentplane-disclosure-gutter);
+    minmax(0, 1fr) max-content var(--ui-disclosure-action-gap)
+    var(--ui-disclosure-chevron-size) var(--ui-disclosure-gutter);
   min-width: 0;
   align-items: center;
 }
 
-.agentplane-disclosure-heading {
+.ui-disclosure-heading {
   position: sticky;
   background: var(--mantine-color-body);
-  border-start-start-radius: var(--agentplane-disclosure-edge-radius, 0px);
-  border-start-end-radius: var(--agentplane-disclosure-edge-radius, 0px);
+  border-start-start-radius: var(--ui-disclosure-edge-radius, 0px);
+  border-start-end-radius: var(--ui-disclosure-edge-radius, 0px);
 }
 
-.agentplane-disclosure-heading[hidden] {
+.ui-disclosure-heading[hidden] {
   display: none;
 }
 
-.agentplane-disclosure-heading[data-expanded="false"] {
+.ui-disclosure-heading[data-expanded="false"] {
   border-radius: var(--mantine-radius-sm);
 }
 
-.agentplane-disclosure-summary,
-.agentplane-disclosure-static {
+.ui-disclosure-summary,
+.ui-disclosure-static {
   font-size: var(--mantine-font-size-sm);
   line-height: var(--mantine-line-height-sm);
 }
 
-.agentplane-disclosure-summary {
+.ui-disclosure-summary {
   grid-column: 1 / -1;
   grid-row: 1;
   box-sizing: border-box;
@@ -93,78 +92,78 @@
   align-items: center;
   width: 100%;
   min-width: 0;
-  min-height: var(--agentplane-disclosure-row-height);
+  min-height: var(--ui-disclosure-row-height);
   padding: 0;
   border-radius: inherit;
 }
 
-.agentplane-disclosure-heading[data-expanded="false"] > .agentplane-disclosure-summary,
-.agentplane-disclosure-static {
-  min-height: var(--agentplane-disclosure-collapsed-height);
+.ui-disclosure-heading[data-expanded="false"] > .ui-disclosure-summary,
+.ui-disclosure-static {
+  min-height: var(--ui-disclosure-collapsed-height);
 }
 
-.agentplane-disclosure-summary-content,
-.agentplane-disclosure-static-content {
+.ui-disclosure-summary-content,
+.ui-disclosure-static-content {
   grid-column: 1;
   grid-row: 1;
   display: flex;
   align-items: center;
   min-width: 0;
   padding: 0;
-  margin-inline-start: var(--agentplane-disclosure-inset);
+  margin-inline-start: var(--ui-disclosure-inset);
 }
 
-.agentplane-disclosure-chevron {
+.ui-disclosure-chevron {
   grid-column: 4;
   grid-row: 1;
-  width: var(--agentplane-disclosure-chevron-size);
-  height: var(--agentplane-disclosure-chevron-size);
+  width: var(--ui-disclosure-chevron-size);
+  height: var(--ui-disclosure-chevron-size);
   margin: 0;
 }
 
-.agentplane-disclosure-aside {
+.ui-disclosure-aside {
   grid-column: 2;
   grid-row: 1;
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  padding-inline-start: var(--agentplane-disclosure-action-gap);
+  padding-inline-start: var(--ui-disclosure-action-gap);
   white-space: nowrap;
 }
 
-.agentplane-disclosure-heading[data-expanded="true"][data-depth="0"] {
+.ui-disclosure-heading[data-expanded="true"][data-depth="0"] {
   box-shadow: 0 1px var(--mantine-color-default-border);
 }
 
-.agentplane-disclosure-panel,
-.agentplane-disclosure-content {
+.ui-disclosure-panel,
+.ui-disclosure-content {
   min-width: 0;
   overflow: visible;
 }
 
-.agentplane-disclosure-panel {
-  --agentplane-disclosure-edge-radius: 0px;
+.ui-disclosure-panel {
+  --ui-disclosure-edge-radius: 0px;
 }
 
-.agentplane-disclosure-content {
+.ui-disclosure-content {
   padding: 0;
 }
 
-.agentplane-disclosure-body {
+.ui-disclosure-body {
   min-width: 0;
-  padding-block: var(--agentplane-disclosure-body-spacing);
-  padding-inline-start: var(--agentplane-disclosure-inset, var(--agentplane-disclosure-gutter));
-  padding-inline-end: var(--agentplane-disclosure-gutter);
+  padding-block: var(--ui-disclosure-body-spacing);
+  padding-inline-start: var(--ui-disclosure-inset, var(--ui-disclosure-gutter));
+  padding-inline-end: var(--ui-disclosure-gutter);
 }
 
-.agentplane-disclosure-static {
+.ui-disclosure-static {
   position: relative;
 }
 
-.agentplane-clamped-collapse {
+.ui-clamped-collapse {
   display: block;
   margin-inline-start: auto;
-  padding: var(--agentplane-disclosure-body-spacing) var(--agentplane-disclosure-gutter);
+  padding: var(--ui-disclosure-body-spacing) var(--ui-disclosure-gutter);
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-sm);
 }

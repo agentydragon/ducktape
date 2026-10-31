@@ -46,7 +46,7 @@ async def test_llm_request_json_disclosures(visual: VisualHarness, capture_name:
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
-        last_block = request.locator(".agentplane-code-block").last
+        last_block = request.locator(".ui-code-block").last
         await last_block.scroll_into_view_if_needed()
         await expect(last_block.locator(".cm-content")).to_be_visible()
         await view.capture("LLMRequestsToolCallJsonDisclosures", target=view.page.locator("#shot"))
@@ -59,7 +59,7 @@ async def test_llm_request_json_dark(visual: VisualHarness, capture_name: str) -
         request = view.page.locator("#shot > div > details[open]")
         await expect(request).to_have_count(1)
         await _open_json_disclosures(request)
-        last_block = request.locator(".agentplane-code-block").last
+        last_block = request.locator(".ui-code-block").last
         await last_block.scroll_into_view_if_needed()
         await expect(last_block.locator(".cm-content")).to_be_visible()
         await view.capture("LLMRequestsToolCallDark", target=view.page.locator("#shot"))
@@ -72,7 +72,7 @@ async def test_llm_request_chat_completions(visual: VisualHarness, capture_name:
         await expect(shot.get_by_text("Chat Request JSON")).to_have_count(2)
         await expect(shot.get_by_text("Chat Response JSON")).to_be_visible()
         await expect(shot.get_by_text("Error Response", exact=True)).to_be_visible()
-        await expect(shot.locator(".agentplane-code-block .cm-content")).to_have_count(4)
+        await expect(shot.locator(".ui-code-block .cm-content")).to_have_count(4)
         await view.capture("LLMRequestsChatCompletions", target=shot)
 
 
@@ -86,7 +86,7 @@ async def test_llm_request_anthropic(visual: VisualHarness, capture_name: str) -
         await expect(sections).to_have_count(2)
         await view.capture("LLMRequestsAnthropicRequest", target=sections.nth(0))
         await sections.nth(1).scroll_into_view_if_needed()
-        code = shot.locator(".agentplane-code-block .cm-content")
+        code = shot.locator(".ui-code-block .cm-content")
         await expect(code).to_have_count(2)
         await view.capture("LLMRequestsAnthropicResponse", target=sections.nth(1))
 

@@ -1,4 +1,4 @@
-import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core";
+import { Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { VirtualizedHistory } from "../../../util/frontend/transcript/virtualized_history";
 import { DisclosureBody, DisclosureCard } from "../../../util/frontend/disclosure";
@@ -21,20 +21,26 @@ function formatDateTime(value: string | null): string {
 export function ArchiveTranscript({
   scopeId,
   records,
+  earlier,
   tail,
 }: {
   scopeId: string;
   records: readonly EventRecord[];
+  earlier: { available: boolean; loading: boolean; load: () => void };
   tail: ReactNode;
 }): JSX.Element {
   return (
     <RetainedDisclosureProvider key={scopeId}>
+      {earlier.available && (
+        <Button variant="subtle" size="compact-sm" loading={earlier.loading} onClick={earlier.load}>
+          Load earlier records
+        </Button>
+      )}
       <VirtualizedHistory
         scopeId={`archive:${scopeId}`}
-        initialPosition="start"
-        followTail={false}
+        earlier={earlier}
         label="Conversation records"
-        showJumpToLatest={false}
+        showJumpToLatest={true}
         rows={transcriptRows(records).map((row) => ({
           key: String(row.records[0].ordinal),
           revision: `${row.kind}:${row.records.length}:${row.records.at(-1)!.ordinal}`,

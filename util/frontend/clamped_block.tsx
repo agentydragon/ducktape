@@ -111,10 +111,10 @@ export function ClampedBlock({
   );
 
   return (
-    <div className="agentplane-clamped-block" data-expanded={expanded} data-label={label}>
+    <div className="ui-clamped-block" data-expanded={expanded} data-label={label}>
       {stickyCollapse ? (
         <Disclosure
-          className="agentplane-clamped-disclosure"
+          className="ui-clamped-disclosure"
           summary={header ?? label}
           headingVisible={expanded}
           open={true}
@@ -133,7 +133,7 @@ export function ClampedBlock({
           </DisclosureBody>
           {expanded && (
             <UnstyledButton
-              className="agentplane-clamped-collapse"
+              className="ui-clamped-collapse"
               aria-label={`Show less ${label}`}
               onClick={() => setExpanded(false)}
             >

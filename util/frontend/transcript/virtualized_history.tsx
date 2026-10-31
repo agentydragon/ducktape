@@ -21,8 +21,6 @@ export interface VirtualizedHistoryProps<T> {
   scopeId: string;
   rows: readonly HistoryItem<T>[];
   renderRow: (value: T) => ReactNode;
-  initialPosition: "start" | "end";
-  followTail: boolean;
   label: string;
   showJumpToLatest: boolean;
   earlier?: { available: boolean; loading: boolean; load: () => void };
@@ -40,8 +38,6 @@ function HistoryViewportView<T>({
   scopeId,
   rows,
   renderRow,
-  initialPosition,
-  followTail,
   label,
   showJumpToLatest,
   earlier,
@@ -70,8 +66,6 @@ function HistoryViewportView<T>({
           else redraw();
         },
         () => loadOlder.current(),
-        initialPosition,
-        followTail,
         diagnostics
       )
   );

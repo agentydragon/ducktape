@@ -28,7 +28,7 @@ function History(): JSX.Element {
       <div className="agentplane-evidence-owner" data-testid="second">
         <p>Second item</p>
       </div>
-      <div className="agentplane-user-message-row" data-testid="input-row">
+      <div className="transcript-user-message-row" data-testid="input-row">
         <span data-testid="input-aside">Status</span>
         <div className="agentplane-evidence-owner" data-testid="input-bubble">
           Message
@@ -36,7 +36,7 @@ function History(): JSX.Element {
       </div>
       <div className="agentplane-evidence-owner" data-testid="tool-owner">
         <div className="agentplane-step-details">
-          <button className="agentplane-disclosure-summary" data-testid="tool-summary">
+          <button className="ui-disclosure-summary" data-testid="tool-summary">
             Bash
           </button>
         </div>

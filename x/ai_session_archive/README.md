@@ -78,3 +78,8 @@ Captured versions open at the beginning. Loading another page preserves the read
 position. Expansion choices survive virtualized row remounts and reset when the
 selected session or captured version changes. Parsing and grouping belong to this
 application; the shared viewport has no Claude, Codex or Agentplane protocol dependency.
+
+The conversation opens at the latest captured records. Scrolling upward loads older
+pages while retaining the reading position; “Load earlier records” also supports
+keyboard navigation. Event API requests default to forward pagination;
+`direction=backward` returns records before the exclusive cursor in ascending order.

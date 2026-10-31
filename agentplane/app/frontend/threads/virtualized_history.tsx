@@ -45,8 +45,6 @@ export function VirtualizedHistory({
   return (
     <History
       scopeId={threadId}
-      initialPosition="end"
-      followTail={true}
       label="Thread history"
       showJumpToLatest={running}
       earlier={{ available: history.olderAvailable, loading: history.loadingOlder, load: history.loadOlder }}
