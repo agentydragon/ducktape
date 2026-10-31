@@ -118,6 +118,12 @@ Expansion choices survive virtualized row remounts and reset when the
 selected session or captured version changes. Parsing and grouping belong to this
 application; the shared viewport has no Claude, Codex or Agentplane protocol dependency.
 
+The top-bar Transcript recorder records layout geometry, scroll/input events and browser
+performance entries locally across session and captured-version switches. Start recording
+before reproducing a jump; use Mark a jump, then Stop and download recording. Capture is
+bounded and opt-in. The JSON includes session/version and row identifiers, but no message
+text, tool arguments, output or resource URLs. Review its identifiers before sharing.
+
 The conversation opens at the latest captured records. Scrolling upward loads older
 pages while retaining the reading position; “Load earlier records” also supports
 keyboard navigation. Event API requests default to forward pagination;

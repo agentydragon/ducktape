@@ -2,6 +2,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 
 # gazelle:exclude test_visual.py
 # gazelle:exclude test_visual_claude_tools.py
+# gazelle:exclude test_visual_recorder.py
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -111,6 +112,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":history_recorder",
         ":import_progress",
         ":schema",
         ":transcript",
@@ -120,6 +122,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//util/frontend:resize_handle",
+        "//util/frontend/transcript:history_recorder_tools",
     ],
 )
 
@@ -300,6 +303,36 @@ py_visual_test(
     title = "Claude paired tool steps",
 )
 
+py_visual_test(
+    name = "visual_recorder",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_recorder",
+    test_srcs = ["test_visual_recorder.py"],
+    title = "Archive transcript recorder",
+)
+
+ts_library(
+    name = "history_recorder",
+    srcs = ["history-recorder.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//util/frontend/transcript:history_recorder"],
+)
+
 ts_library(
     name = "transcript_rows",
     srcs = ["transcript-rows.ts"],
@@ -323,6 +356,7 @@ ts_library(
     ],
     deps = [
         ":event_content",
+        ":history_recorder",
         ":schema",
         ":transcript_rows",
         "//:node_modules/@mantine/core",

@@ -1,8 +1,9 @@
-"""The history's User Timing marks (frontend/threads/thread_view_recorder.ts), collected by the
-Playwright init script (thread_view_marks.js) and read back as typed events.
+"""The history's User Timing marks (`HistoryEvent` in util/frontend/transcript/history_diagnostics.ts),
+collected from the `agentplane:thread-view:` namespace by the Playwright init script
+(thread_view_marks.js) and read back as typed events.
 
-`ThreadViewEvent` there and the models here are one contract: an event kind or field added on either
-side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
+`HistoryEvent` there and the `ThreadViewEvent` models here are one contract: an event kind or field
+added on either side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
 
 import asyncio
 import logging

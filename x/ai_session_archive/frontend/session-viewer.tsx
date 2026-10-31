@@ -28,6 +28,8 @@ import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord, Harness, Machine, SessionKind, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
+import { HistoryRecorderTools } from "../../../util/frontend/transcript/history_recorder_tools";
+import { historyRecorder } from "./history-recorder";
 
 const SESSION_PAGE_SIZE = 50;
 const SESSION_SIDEBAR_MIN_WIDTH = 240;
@@ -646,9 +648,17 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
       <Box component="header" className="session-browser-header">
         <Box>
-          <Title order={1} size="h3">
-            Local agent sessions
-          </Title>
+          <Group gap="xs" justify="space-between" wrap="nowrap">
+            <Title order={1} size="h3">
+              Local agent sessions
+            </Title>
+            <HistoryRecorderTools
+              recorder={historyRecorder}
+              label="Transcript recorder"
+              downloadPrefix="ai-session-archive-history-recording"
+              position="bottom-end"
+            />
+          </Group>
           <Text size="sm" c="dimmed">
             Captured Claude Code and Codex CLI conversations
           </Text>

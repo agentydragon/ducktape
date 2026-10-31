@@ -44,10 +44,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_view_recorder",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:icons",
+        "//util/frontend/transcript:history_recorder_tools",
     ],
 )
 
@@ -55,7 +54,7 @@ ts_library(
     name = "thread_view_recorder",
     srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//util/frontend/transcript:history_diagnostics"],
+    deps = ["//util/frontend/transcript:history_recorder"],
 )
 
 agentplane_vitest_test(
