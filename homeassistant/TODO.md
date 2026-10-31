@@ -29,9 +29,6 @@
     dashboard for availability, request behavior, entity counts, and automation failures.
   - Define the queries and retention requirements before choosing storage. Keep operational
     metrics in Prometheus and avoid exporting high-cardinality entity history by default.
-  - Confirm the History panel renders pre-cutover records; keep the SQLite file
-    and VolSync snapshots until the check in
-    [the cutover plan](plans/recorder_postgres_cutover.md) passes.
   - Add InfluxDB or another time-series store only if concrete long-retention entity-state
     analysis or Grafana queries are not served well by the recorder database.
 
