@@ -68,11 +68,11 @@ export function followResponse<F>(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
+      onFrame(value);
       if (connection.phase !== "live") {
         retries = 0;
         report({ phase: "live", since: Date.now() });
       }
-      onFrame(value);
     }
   }
 

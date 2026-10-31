@@ -633,6 +633,7 @@ const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
+const FUTURE_DELIVERY_THREAD = "5f1c4a2e-0000-4000-8000-000000000010";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
 
@@ -931,6 +932,21 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     last_cursor: 7,
     last_event_at: ago(4 * 60_000),
     harness_state: "HARNESS_STATE_STOPPED",
+    feed_status: "active",
+  },
+  {
+    ...NULL_THREAD_FIELDS,
+    id: FUTURE_DELIVERY_THREAD,
+    sandbox: "ready-sandbox",
+    harness: "HARNESS_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(3 * HOUR),
+    name: "Future delivery state",
+    archived: false,
+    last_cursor: 7,
+    last_event_at: ago(5 * 60_000),
+    harness_state: "HARNESS_STATE_RUNNING",
     feed_status: "active",
   },
   {
@@ -3355,6 +3371,7 @@ function liveEvents(url: URL): ServerSentEvent[] {
       },
       [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
       [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
+      [FUTURE_DELIVERY_THREAD]: { unacknowledged: 1, notice: { unknown: 999 } },
     };
     const inboxes = url.searchParams
       .getAll("thread_id")

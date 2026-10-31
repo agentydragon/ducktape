@@ -688,6 +688,19 @@ ts_library(
     name = "notification_types",
     srcs = ["notification_types.ts"],
     tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/proto:notification_operator_proto_js",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "notification_types_test",
+    srcs = ["notification_types.test.ts"],
+    deps = [
+        ":notification_types",
+        "//:node_modules/vitest",
+    ],
 )
 
 ts_library(
@@ -695,6 +708,7 @@ ts_library(
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":format_time",
         ":live_stream",
         ":notification_types",

@@ -16,9 +16,30 @@ export interface WatchHandlers {
   onConnection: (connection: StreamConnection) => void;
 }
 
-interface Message {
-  result?: unknown;
-  error?: { code: number; message: string };
+type Message = { result: unknown } | { error: { code: number; message: string } };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function decodeMessage(line: string): Message {
+  const value: unknown = JSON.parse(line);
+  if (!isRecord(value)) throw new TypeError("watch message must be an object");
+  const hasResult = Object.prototype.hasOwnProperty.call(value, "result");
+  const hasError = Object.prototype.hasOwnProperty.call(value, "error");
+  if (hasResult === hasError) throw new TypeError("watch message must contain exactly one of result or error");
+  if (hasError) {
+    const error = value.error;
+    if (
+      !isRecord(error) ||
+      typeof error.code !== "number" ||
+      !Number.isInteger(error.code) ||
+      typeof error.message !== "string"
+    )
+      throw new TypeError("watch error message must contain an integer code and string message");
+    return { error: { code: error.code, message: error.message } };
+  }
+  return { result: value.result };
 }
 
 /** Splits text into lines and each into its message's `result`, erroring on an `error` message. */
@@ -30,10 +51,13 @@ function results(): TransformStream<string, unknown> {
       partial = lines.pop() ?? "";
       for (const line of lines) {
         if (line === "") continue;
-        const message = JSON.parse(line) as Message;
-        if (message.error !== undefined) throw new Error(`${message.error.message} (code ${message.error.code})`);
+        const message = decodeMessage(line);
+        if ("error" in message) throw new Error(`${message.error.message} (code ${message.error.code})`);
         controller.enqueue(message.result);
       }
+    },
+    flush() {
+      if (partial !== "") throw new TypeError("watch ended with an unterminated message");
     },
   });
 }
