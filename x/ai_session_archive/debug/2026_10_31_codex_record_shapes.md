@@ -6,12 +6,12 @@ claim about all Codex archives. The inventory sampled the first 7,245 lines of t
 rollout and the full two comparison files; it recorded field names and type counts only, not
 transcript text.
 
-| Sample | Lines | Bytes |
-| --- | ---: | ---: |
-| `~/.codex/sessions/2026/10/30/rollout-2026-10-30T22-19-55-01a19066-7395-7380-87e7-d3d7368c2b26.jsonl` (bounded prefix) | 7,245 | 32,422,746 |
-| `~/.codex/sessions/2026/10/30/rollout-2026-10-30T23-58-57-01a190c1-1e0e-7b00-82d8-b0cf1b707ae2.jsonl` | 461 | 2,204,460 |
-| `~/.codex/sessions/2026/10/28/rollout-2026-10-28T23-53-57-01a1866f-d0d8-72d2-a156-2413f6173515.jsonl` | 29 | 207,659 |
-| **Total inspected** | **7,735** | **34,834,865** |
+| Sample                                                                                                                 |     Lines |          Bytes |
+| ---------------------------------------------------------------------------------------------------------------------- | --------: | -------------: |
+| `~/.codex/sessions/2026/10/30/rollout-2026-10-30T22-19-55-01a19066-7395-7380-87e7-d3d7368c2b26.jsonl` (bounded prefix) |     7,245 |     32,422,746 |
+| `~/.codex/sessions/2026/10/30/rollout-2026-10-30T23-58-57-01a190c1-1e0e-7b00-82d8-b0cf1b707ae2.jsonl`                  |       461 |      2,204,460 |
+| `~/.codex/sessions/2026/10/28/rollout-2026-10-28T23-53-57-01a1866f-d0d8-72d2-a156-2413f6173515.jsonl`                  |        29 |        207,659 |
+| **Total inspected**                                                                                                    | **7,735** | **34,834,865** |
 
 The selected response payloads contained 874 `reasoning`, 321 `message`, 117 `agent_message`,
 131 `function_call`, 131 `function_call_output`, 732 `custom_tool_call`, and 731
