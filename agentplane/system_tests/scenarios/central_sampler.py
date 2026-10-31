@@ -615,22 +615,30 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
             )
         request = await model.request()
         assert request.native.client_metadata.session_id == session_id
-        model_context = "\n".join((request.system_text, *request.user_texts))
-        resumed_tool_outputs = [
-            "\n".join(output.blocks) for output in request.tool_outputs if output.call_id == "run-resumed-process"
-        ]
+        resumed_tool_outputs = [output for output in request.tool_outputs if output.call_id == "run-resumed-process"]
         await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
         await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
-
-        assert "The execution Sandbox changed incarnation" in model_context, "resumed request omitted the notice"
-        (result_output,) = resumed_tool_outputs
-        result = json.loads(result_output)
-        assert result["exit_code"] == 0, result
-        assert result["output"].splitlines() == ["before-resume", "after-resume"]
 
         snapshot = await deployed.sampler.GetSession(
             sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
         )
+        assert len(resumed_tool_outputs) == 2, (
+            "expected the exec result followed by the Sandbox incarnation notice; "
+            f"expected_incarnation={snapshot.expected_incarnation_uid!r}, "
+            f"resumed_incarnation={resumed.pod.uid!r}, blocked={snapshot.blocked}, "
+            f"tool_outputs={resumed_tool_outputs!r}"
+        )
+        exec_output, notice_output = resumed_tool_outputs
+        exec_output_text = "\n".join(exec_output.blocks)
+        notice_output_text = "\n".join(notice_output.blocks)
+        assert exec_output_text.startswith("Script completed\n"), exec_output_text
+        _, separator, result_json = exec_output_text.partition("Output:\n")
+        assert separator, f"exec result omitted the output envelope: {exec_output_text!r}"
+        assert notice_output_text.startswith("The execution Sandbox changed incarnation"), notice_output_text
+        result = json.loads(result_json.strip())
+        assert result["exit_code"] == 0, result
+        assert result["output"].splitlines() == ["before-resume", "after-resume"]
+
         assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == resumed.pod.uid
         assert not snapshot.blocked
