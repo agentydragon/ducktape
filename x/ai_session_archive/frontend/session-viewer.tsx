@@ -82,6 +82,15 @@ function transcriptStatusColor(session: SessionSummary): string {
   }
 }
 
+function TranscriptStatusBadge({ session, size }: { session: SessionSummary; size: "xs" | "sm" }): JSX.Element | null {
+  if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
+  return (
+    <Badge size={size} color={transcriptStatusColor(session)} variant="light">
+      {transcriptStatusLabel(session)}
+    </Badge>
+  );
+}
+
 function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
   switch (status) {
     case "pending":
@@ -878,9 +887,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         Identity inferred
                       </Badge>
                     )}
-                    <Badge color={transcriptStatusColor(selectedSession)} variant="light">
-                      {transcriptStatusLabel(selectedSession)}
-                    </Badge>
+                    <TranscriptStatusBadge session={selectedSession} size="sm" />
                     {selectedSession.native_session_id_conflict && (
                       <Badge color="red" variant="light">
                         Conflicting native session IDs
@@ -1041,9 +1048,7 @@ function SessionRow({
             {harnessLabel(session.harness)}
           </Text>
           <Group gap={6} wrap="wrap" justify="flex-end">
-            <Badge size="xs" color={transcriptStatusColor(session)} variant="light">
-              {transcriptStatusLabel(session)}
-            </Badge>
+            <TranscriptStatusBadge session={session} size="xs" />
             <Text size="xs" c="dimmed">
               {session.version_count} {session.version_count === 1 ? "version" : "versions"}
             </Text>
