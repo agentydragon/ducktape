@@ -69,7 +69,7 @@ pub(crate) fn apply_global_escape_taint(
     global_object_names: &BTreeSet<&'static str>,
     per_statement: &mut [StructuralStatementFacts],
 ) {
-    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum Key {
         Statement(usize),
         Binding(Id),

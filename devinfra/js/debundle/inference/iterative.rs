@@ -8,7 +8,9 @@
 
 use super::Judgment;
 use crate::analysis_inputs::ProofDependencies;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::Hash;
 
 /// Typed access to facts during one producer evaluation. A family adapter can
 /// project this interface onto a shared program store without copying facts or
@@ -72,9 +74,9 @@ impl<Key, Fact, Context: FactContext<Key, Fact>> CertificateContext<Key, Fact>
 }
 
 pub(crate) trait IterativeRules: Sized {
-    type Key: Clone + Ord;
+    type Key: Clone + Ord + Hash;
     type Fact;
-    type Rule: Clone + Ord;
+    type Rule: Clone + Ord + Hash;
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
 
@@ -113,14 +115,14 @@ pub(crate) trait IterativeRules: Sized {
 
 pub(crate) struct IterativeInference<R: IterativeRules> {
     rules: R,
-    facts: BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
+    facts: FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
 }
 
 impl<R: IterativeRules> IterativeInference<R> {
     pub(crate) fn new(rules: R) -> Self {
         Self {
             rules,
-            facts: BTreeMap::new(),
+            facts: FxHashMap::default(),
         }
     }
 
@@ -176,7 +178,9 @@ impl<R: IterativeRules> IterativeInference<R> {
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
         let Self { rules, mut facts } = self;
-        let mut registered: BTreeSet<_> = producers.into_iter().collect();
+        // Only `pending` orders evaluation; the other worklist maps are
+        // looked up per key and rule, never iterated in an order that matters.
+        let mut registered: FxHashSet<_> = producers.into_iter().collect();
         for (key, fact) in &facts {
             registered.extend(rules.producers_for(key, fact.value()));
         }
@@ -185,18 +189,18 @@ impl<R: IterativeRules> IterativeInference<R> {
             .cloned()
             .map(|rule| (0usize, rule))
             .collect();
-        let mut scheduled: BTreeMap<_, _> = pending
+        let mut scheduled: FxHashMap<_, _> = pending
             .iter()
             .map(|(round, rule)| (rule.clone(), *round))
             .collect();
-        let mut watchers: BTreeMap<R::Key, BTreeSet<R::Rule>> = BTreeMap::new();
+        let mut watchers: FxHashMap<R::Key, FxHashSet<R::Rule>> = FxHashMap::default();
         // Each rule's keys in `watchers`. A re-evaluated rule mostly repeats
         // its reads; checking its own small set first spares a search of the
         // whole watcher map for every repeated read.
-        let mut watched: BTreeMap<R::Rule, BTreeSet<R::Key>> = BTreeMap::new();
+        let mut watched: FxHashMap<R::Rule, FxHashSet<R::Key>> = FxHashMap::default();
         // With `EVALUATES_CHANGES`, each evaluated rule's watched keys that
         // changed after its last evaluation read them.
-        let mut changed_since: BTreeMap<R::Rule, BTreeSet<R::Key>> = BTreeMap::new();
+        let mut changed_since: FxHashMap<R::Rule, BTreeSet<R::Key>> = FxHashMap::default();
         #[cfg(test)]
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
@@ -211,13 +215,9 @@ impl<R: IterativeRules> IterativeInference<R> {
                 evaluations += 1;
             }
             let known = watched.entry(rule.clone()).or_default();
-            for key in context.take_reads() {
-                if !known.contains(&key) {
-                    watchers
-                        .entry(key.clone())
-                        .or_default()
-                        .insert(rule.clone());
-                    known.insert(key);
+            for key in context.reads {
+                if known.insert(key.clone()) {
+                    watchers.entry(key).or_default().insert(rule.clone());
                 }
             }
             for key in context.changed {
@@ -272,30 +272,22 @@ impl<R: IterativeRules> IterativeInference<R> {
 /// Mutable access is scoped to one monotone producer. Both absent and present
 /// reads install watchers, including reads made before a producer exists.
 pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
-    facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
+    facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
     /// In read order, with repeats: appending is cheaper than a set insert
-    /// for every read; `into_reads` sorts and deduplicates once.
+    /// for every read, and the solver skips keys the rule already watches.
     reads: Vec<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
 }
 
 impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
-    fn new(facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
+    fn new(facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
         Self {
             facts,
             reads: Vec::new(),
             changed: BTreeSet::new(),
             dependencies: ProofDependencies::default(),
         }
-    }
-
-    /// The distinct keys read, in key order.
-    fn take_reads(&mut self) -> Vec<R::Key> {
-        let mut reads = std::mem::take(&mut self.reads);
-        reads.sort_unstable();
-        reads.dedup();
-        reads
     }
 }
 
@@ -311,7 +303,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
 
     /// Writes are immediately visible to subsequent reads in this producer.
     fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
-        use std::collections::btree_map::Entry;
+        use std::collections::hash_map::Entry;
         let changed = match self.facts.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert(Judgment {
@@ -367,16 +359,17 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
 /// Immutable results after every supplied producer and its dependents settle.
 #[derive(Debug, Clone)]
 pub(crate) struct IterativeFacts<Key, Fact> {
-    facts: BTreeMap<Key, Judgment<Key, Fact>>,
+    facts: FxHashMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]
     evaluations: usize,
 }
 
-impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
+impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
     pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
         self.facts.get(key)
     }
 
+    /// In no particular order.
     pub(crate) fn keys(&self) -> impl Iterator<Item = &Key> {
         self.facts.keys()
     }
@@ -399,7 +392,7 @@ mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
 
-    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum TransferKey {
         Input,
         Intermediate,
@@ -466,7 +459,7 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut facts = BTreeMap::new();
+        let mut facts = FxHashMap::default();
         {
             let mut context = IterativeContext::<TransferRules>::new(&mut facts);
             context.assume(&dependencies);
@@ -489,14 +482,14 @@ mod tests {
 
     struct RequestedRules;
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum RequestedKey {
         Inputs,
         Projection,
         Result,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum RequestedProducer {
         InitialInputs,
         ProjectInputs,

@@ -1608,7 +1608,7 @@ struct CallableReturnInputs {
     by_origin: BTreeMap<u32, NativeReceiverRoots>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum ReceiverFlowKey {
     Assignment(usize),
     Binding(Id),
@@ -2757,7 +2757,7 @@ mod iterative_alias_closure_tests {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum ReceiverFlowRule {
     Assignment(usize),
     Binding(Id),
@@ -9266,7 +9266,7 @@ impl ExecutionIndex {
         // exported: removing a factory can invalidate fresh-result writes used
         // by another candidate in the next evaluation.
         type Members = BTreeMap<Id, BTreeSet<String>>;
-        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         enum Rejected {
             Factory(Id),
             NoReentry(Id),

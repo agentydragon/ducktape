@@ -214,7 +214,7 @@ pub fn solve_loader_closure<W: Clone + Ord>(
         .collect()
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum Key {
     Reach(ChunkId),
     LoaderClosed(ChunkId),
@@ -222,7 +222,7 @@ enum Key {
 
 /// Reach rules order before target rules, so a round settles reachability
 /// before evaluating the verdicts that read it.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum Rule {
     Reach(ChunkId),
     LoaderClosed(ChunkId),

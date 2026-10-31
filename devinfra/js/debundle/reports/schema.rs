@@ -478,7 +478,7 @@ pub struct NativePrototypePropertyCheck {
 
 /// Diagnostic effects activated before a modeled native premise. This does
 /// not certify the premise or impose an emitted-module ordering constraint.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeProgramPointKind {
     Evaluate,

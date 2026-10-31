@@ -17,7 +17,7 @@ use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
     Prefix(SourceUnitOrdinal),
     /// The statement's purity, computed at its program point before it
@@ -31,7 +31,7 @@ enum RuntimeKey {
     InvocationMemo(ProgramPoint),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeRule {
     ExecuteOwner(SourceUnitOrdinal),
     Transfer(ProgramPoint),
@@ -51,7 +51,7 @@ enum RuntimeFact {
 
 /// The path identifies an occurrence within its parent's transfer, rather than
 /// conflating repeated evaluation of the same expression in different contexts.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct ProgramPoint {
     owner: SourceUnitOrdinal,
     path: Vec<(NativeProgramPointKind, usize)>,

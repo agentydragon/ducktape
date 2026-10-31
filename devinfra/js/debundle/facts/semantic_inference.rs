@@ -30,7 +30,7 @@ use std::rc::Rc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum SemanticKey {
     LocalClass(u32),
     PrimitiveSetIteration(u32),
