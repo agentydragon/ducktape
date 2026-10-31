@@ -53,6 +53,7 @@ pub struct AssignmentReport {
 /// `lazy_closure` rows the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
+    pub rejection: BlockingRejection,
     pub modules: Vec<ModulePath>,
     /// Spec-author-actionable cut: realizability-constraining
     /// (`at-init` or `side-effect`) reasons whose removal (by
@@ -120,6 +121,45 @@ pub struct BlockingSccEntry {
     /// See [`CycleReport::inert_commuting_edges`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inert_commuting_edges: Vec<CycleEdge>,
+    /// Which gate pass rejected the SCC. `None` only in reports written
+    /// before the field existed.
+    #[serde(default)]
+    pub rejection: Option<BlockingRejection>,
+}
+
+/// Wire projection of [`SccRejection`] for `cycles.json` and the bail
+/// summary.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockingRejection {
+    /// Pass 1: a cycle of constraining edges. The root cause whenever
+    /// present.
+    MutualConstrainingCycle,
+    /// Pass 2 under the real linker order: an independent blocker.
+    EsmEvaluationTdz,
+    /// Pass 2 while a Pass-1 cycle exists: computed under `ModuleId`
+    /// import order, a consequence of the Pass-1 SCCs (see
+    /// [`SccRejection::TdzWithoutLinkerOrder`]).
+    TdzWithoutLinkerOrder,
+    /// Written by a newer engine; readers treat it as a blocker.
+    #[serde(other)]
+    Unrecognized,
+}
+
+impl BlockingRejection {
+    pub fn of(rejection: SccRejection) -> Self {
+        match rejection {
+            SccRejection::MutualConstrainingCycle => Self::MutualConstrainingCycle,
+            SccRejection::EsmEvaluationTdz => Self::EsmEvaluationTdz,
+            SccRejection::TdzWithoutLinkerOrder => Self::TdzWithoutLinkerOrder,
+        }
+    }
+
+    /// A consequence of another reported SCC rather than an independent
+    /// blocker.
+    pub fn is_consequential(self) -> bool {
+        self == Self::TdzWithoutLinkerOrder
+    }
 }
 
 impl BlockingSccEntry {
@@ -131,6 +171,7 @@ impl BlockingSccEntry {
             modules: cycle.modules.clone(),
             cut: cycle.cut.clone(),
             inert_commuting_edges: cycle.inert_commuting_edges.clone(),
+            rejection: Some(cycle.rejection),
         }
     }
 
@@ -341,9 +382,29 @@ impl CycleEdge {
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
     const TOP_K: usize = 10;
+    let roots = cycles
+        .iter()
+        .filter(|c| c.rejection == BlockingRejection::MutualConstrainingCycle)
+        .count();
+    let consequential = cycles
+        .iter()
+        .filter(|c| c.rejection.is_consequential())
+        .count();
+    if consequential > 0 {
+        out.push_str(&format!(
+            "Root cause: {roots} mutual constraining cycle(s) (Pass 1). With a Pass-1 cycle there is no linker order, so {consequential} Pass-2 SCC(s) below were checked under ModuleId import order and are marked consequential; resolve the Pass-1 cycle(s) and re-run before acting on them.\n",
+        ));
+    }
     for (i, cycle) in cycles.iter().enumerate() {
         out.push_str(&format!(
-            "Cycle #{i}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
+            "Cycle #{i}{}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
+            match cycle.rejection {
+                BlockingRejection::MutualConstrainingCycle => " [Pass 1: mutual constraining cycle]",
+                BlockingRejection::EsmEvaluationTdz => " [Pass 2: ESM evaluation TDZ]",
+                BlockingRejection::TdzWithoutLinkerOrder =>
+                    " [Pass 2, consequential: no linker order while Pass 1 rejects]",
+                BlockingRejection::Unrecognized => "",
+            },
             cycle.modules.len(),
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),
@@ -595,7 +656,7 @@ pub fn validate_assignment(
                 // The diagnosis's source-unit edges ARE the cut: the
                 // simulator surfaced exactly the constraining
                 // `(from, to)` pairs whose post-order check failed.
-                SccRejection::EsmEvaluationTdz => (
+                SccRejection::EsmEvaluationTdz | SccRejection::TdzWithoutLinkerOrder => (
                     cycle_edges_for(
                         dependency_graph,
                         assignment,
@@ -613,6 +674,7 @@ pub fn validate_assignment(
                 ),
             };
             CycleReport {
+                rejection: BlockingRejection::of(diagnosis.rejection),
                 modules: diagnosis
                     .core
                     .modules

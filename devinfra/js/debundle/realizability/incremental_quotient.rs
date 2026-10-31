@@ -728,7 +728,7 @@ impl IncrementalQuotient {
                         modules,
                         constraining_dependency_edges,
                     },
-                    rejection: SccRejection::EsmEvaluationTdz,
+                    rejection: simulation.tdz_rejection(),
                 });
             }
         }
@@ -823,7 +823,7 @@ impl IncrementalQuotient {
                         modules: i_modules,
                         constraining_dependency_edges,
                     },
-                    rejection: SccRejection::EsmEvaluationTdz,
+                    rejection: simulation.tdz_rejection(),
                 });
             }
         }
@@ -866,7 +866,7 @@ impl IncrementalQuotient {
             && !reported.contains(&i_modules)
             && self.overlay_constraining_pair_inside(&i_modules, overlay)
         {
-            let tdz_pairs = self.overlay_tdz_pairs(&i_modules, overlay);
+            let (rejection, tdz_pairs) = self.overlay_tdz_pairs(&i_modules, overlay);
             if !tdz_pairs.is_empty() {
                 let constraining_dependency_edges =
                     self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
@@ -875,7 +875,7 @@ impl IncrementalQuotient {
                         modules: i_modules,
                         constraining_dependency_edges,
                     },
-                    rejection: SccRejection::EsmEvaluationTdz,
+                    rejection,
                 });
             }
         }
@@ -940,14 +940,17 @@ impl IncrementalQuotient {
         &self,
         modules: &BTreeSet<ModuleId>,
         overlay: &QuotientOverlay,
-    ) -> Vec<(ModuleId, ModuleId)> {
+    ) -> (SccRejection, Vec<(ModuleId, ModuleId)>) {
         let simulation = self.build_simulator(Some(overlay));
         let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = self
             .constraining_pairs_with_overlay(overlay)
             .into_iter()
             .filter(|pair| !self.constraining_bucket_is_empty_with_overlay(*pair, overlay))
             .collect();
-        simulation.tdz_pairs(modules, &effective_pairs).collect()
+        (
+            simulation.tdz_rejection(),
+            simulation.tdz_pairs(modules, &effective_pairs).collect(),
+        )
     }
 
     /// Whether `a` and `b` sit in the same multi-module SCC of the
@@ -1075,7 +1078,7 @@ impl IncrementalQuotient {
 
         // Tier 3: exact Pass 2 — the shared scoped-simulator
         // evaluation.
-        if self.overlay_tdz_pairs(&i_modules, overlay).is_empty() {
+        if self.overlay_tdz_pairs(&i_modules, overlay).1.is_empty() {
             LadderDecision::SimulatorAccept
         } else {
             LadderDecision::SimulatorReject

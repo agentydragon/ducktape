@@ -249,6 +249,75 @@ fn constraining_cycle_across_two_modules_is_unrealizable() {
 /// kept only when the queried module participates in it. A module
 /// outside every diagnosis sees a realizable verdict even though the
 /// full verdict is unrealizable.
+/// Modules 1 and 2 at-init read each other (Pass 1). Module 3 at-init reads
+/// module 1, which lazily reads module 3, so the I-SCC {1, 2, 3} strictly
+/// contains the Pass-1 SCC. With a cyclic constraining subgraph there is no
+/// linker order: Pass 2 still rejects the I-SCC (its mutual pair cannot both
+/// hold), but marks it as computed without one. Breaking the mutual pair
+/// gives the simulator a linker order, which rescues {1, 3}.
+#[test]
+fn pass_two_under_a_pass_one_cycle_is_marked_without_linker_order() {
+    let nodes = |count: usize| {
+        (0..count)
+            .map(|i| {
+                let name = format!("unit:{i}");
+                if i == 0 {
+                    residual_source_unit(&name, i + 1, &["Seed"], 1)
+                } else {
+                    active_source_unit(&name, i + 1, &["Value"], 1, "ui/m")
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let edge = |id: &str, from: &str, to: &str, kind: DepKind, constrains: bool| {
+        dependency_edge(id, from, to, kind, constrains)
+    };
+    let shared = vec![
+        edge("e:12", "unit:1", "unit:2", DepKind::EagerUse, true),
+        edge("e:31", "unit:3", "unit:1", DepKind::EagerUse, true),
+        edge("e:13", "unit:1", "unit:3", DepKind::LazyUse, false),
+    ];
+    let mut cyclic = shared.clone();
+    cyclic.push(edge("e:21", "unit:2", "unit:1", DepKind::EagerUse, true));
+    let verdict_of = |edges: Vec<_>| {
+        let graph = DependencyGraph::from_report(&singleton_graph(nodes(4), edges)).unwrap();
+        let assignment = ModuleAssignment::from_assignments(
+            (0..4).map(ModuleId).collect(),
+            analysis::EntryDestination::from_module_id(ModuleId(0)),
+        );
+        let pure = check_realizability(&graph, &assignment);
+        let index = RealizabilityIndex::from_assignment(&graph, assignment);
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(pure.clone()),
+            "incremental and pure gates must classify alike",
+        );
+        pure
+    };
+
+    let rejections: BTreeSet<(Vec<ModuleId>, SccRejection)> = verdict_of(cyclic)
+        .unrealizable_sccs
+        .into_iter()
+        .map(|scc| (scc.core.modules.into_iter().collect(), scc.rejection))
+        .collect();
+    assert_eq!(
+        rejections,
+        BTreeSet::from([
+            (
+                vec![ModuleId(1), ModuleId(2)],
+                SccRejection::MutualConstrainingCycle
+            ),
+            (
+                vec![ModuleId(1), ModuleId(2), ModuleId(3)],
+                SccRejection::TdzWithoutLinkerOrder
+            ),
+        ]),
+    );
+
+    let acyclic = verdict_of(shared);
+    assert!(acyclic.is_realizable(), "{acyclic:#?}");
+}
+
 #[test]
 fn touching_filter_keeps_only_diagnoses_involving_the_queried_module() {
     // Mutual eager cycle between mod 1 and mod 2; source unit 2 (`const c`)
@@ -659,7 +728,7 @@ fn overlay_bucket_emptiness_matches_materialized_added_and_removed_edges() {
 }
 
 type NormalizedVerdict = (
-    BTreeSet<(Vec<ModuleId>, Vec<usize>)>,
+    BTreeSet<(Vec<ModuleId>, Vec<usize>, SccRejection)>,
     BTreeSet<(ModuleId, ModuleId, usize)>,
 );
 
@@ -675,7 +744,7 @@ fn normalize_verdict(verdict: RealizabilityVerdict) -> NormalizedVerdict {
                 .into_iter()
                 .map(|edge| edge.0)
                 .collect();
-            (modules, edges)
+            (modules, edges, scc.rejection)
         })
         .collect();
     let rebinds = verdict

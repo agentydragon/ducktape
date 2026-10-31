@@ -69,8 +69,9 @@ pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 /// - [`SccRejection::MutualConstrainingCycle`]: every constraining
 ///   cross-module source unit edge whose endpoints both fall inside
 ///   `core.modules`.
-/// - [`SccRejection::EsmEvaluationTdz`]: only the source unit edges backing
-///   the constraining `(from, to)` pairs whose simulated post-order
+/// - [`SccRejection::EsmEvaluationTdz`] and
+///   [`SccRejection::TdzWithoutLinkerOrder`]: only the source unit edges
+///   backing the constraining `(from, to)` pairs whose simulated post-order
 ///   check failed — the surgical set whose removal (by co-locating the
 ///   binding pair) lifts the violation.
 ///
@@ -87,7 +88,7 @@ pub struct SccDiagnosis {
 /// How the realizability gate decided an SCC is unrealizable. See
 /// docs/design.md "Lemma 2: entry-side import ordering" for the
 /// two-pass gating rule.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum SccRejection {
     /// Pass 1: the SCC is cyclic in the constraining-edge subgraph
     /// alone — a mutual-eager cycle no source import order can
@@ -100,6 +101,13 @@ pub enum SccRejection {
     /// under the materializer's actual import-order choices. This also includes
     /// the implicit entry-to-module edge: entry always evaluates last.
     EsmEvaluationTdz,
+    /// Pass 2 while Pass 1 also rejects: the constraining subgraph is
+    /// cyclic, so no linker order exists and the simulator ordered imports
+    /// by `ModuleId`. The TDZ is proved only under that stand-in order, and
+    /// an I-SCC containing a Pass-1 SCC always yields one. Still a
+    /// rejection, but a consequence of the `MutualConstrainingCycle`
+    /// diagnoses, not an independent blocker: re-run after resolving them.
+    TdzWithoutLinkerOrder,
 }
 
 /// Cross-destination rebinding write. ESM imports are read-only in the
@@ -341,7 +349,7 @@ fn verdict_from_canonical(
                     modules,
                     constraining_dependency_edges: dependency_edges,
                 },
-                rejection: SccRejection::EsmEvaluationTdz,
+                rejection: simulation.tdz_rejection(),
             });
         }
     }
