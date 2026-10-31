@@ -175,5 +175,15 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
     )
 
 
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_dispatcher_same_session_survives_central_sampler_rolling_update(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.dispatcher_same_session_survives_sampler_rolling_update(
+        cluster, tmp_path, scripted, Executor(template="runner", cwd="/state/workspaces/central-rollout-acceptance")
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
