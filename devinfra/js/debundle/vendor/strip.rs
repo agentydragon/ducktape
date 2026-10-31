@@ -554,10 +554,11 @@ fn sweep_unreachable_top_level(
                     .get(id)
                     .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
         };
-        let mut reached: Vec<&Id> = an.reads.iter().collect();
+        let mut reached: Vec<&Id> = an.eager_bindings.iter().collect();
         let mut lexical: Vec<&Id> = an.at_init.unresolved_sources.iter().collect();
         let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
         if an.at_init.unresolved_inline_fn {
+            reached.extend(&an.reads);
             callees.extend(&an.lazy_calls);
         }
         let mut entered = BTreeSet::new();
@@ -1122,6 +1123,8 @@ struct ItemAnalysis {
     effects_summarizable: bool,
     /// Rebound bindings, eager or lazy.
     rebinds: BTreeSet<Id>,
+    /// Bindings the statement reads or rebinds at init, outside closures.
+    eager_bindings: BTreeSet<Id>,
     /// The statement's own at-init calls.
     at_init: CallSites,
     /// Identifier callees anywhere in the statement, closures included.
@@ -1203,6 +1206,13 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
             .eager
             .iter()
             .chain(&fact.rebinds.lazy)
+            .cloned()
+            .collect(),
+        eager_bindings: fact
+            .reads
+            .eager
+            .iter()
+            .chain(&fact.rebinds.eager)
             .cloned()
             .collect(),
         at_init: CallSites {
