@@ -253,6 +253,7 @@ pkg_tar(
 erofs_image(
     name = "root_erofs",
     out = "root.img",
+    compress_lz4 = True,
     tar = ":root_tar",
     volume_label = "guest",
 )
