@@ -1103,6 +1103,7 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                     if (state.events.includes('resized')) resolve();
                 })),
             };
+            area.addEventListener('wheel', () => state.events.push('wheel'));
             return state;
         }""",
         gesture_distance,
@@ -1144,7 +1145,6 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                 growing.style.minHeight = `${height + 600}px`;
             }"""
         )
-        assert not gesture.done(), "the resize must land while the native gesture is still running"
     finally:
         await gesture
         await cdp.detach()
@@ -1159,8 +1159,12 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
     )
     await state.dispose()
     # An application scroll correction can emit its own scrollend before the test's resize
-    # observer runs. The CDP gesture above must still finish and emit a later scrollend.
-    assert outcome["events"].index("resized") < len(outcome["events"]) - 1, outcome
+    # observer runs. Native wheel events on both sides prove the resize landed mid-gesture;
+    # the last scrollend must follow it, regardless of when the CDP response reached Python.
+    resized = outcome["events"].index("resized")
+    assert "wheel" in outcome["events"][:resized], outcome
+    assert "wheel" in outcome["events"][resized + 1 :], outcome
+    assert outcome["events"][-1] == "scrollend", outcome
     assert outcome["connected"], outcome
     # Only the requested scroll should move the line, irrespective of the 600px resize.
     assert abs(outcome["movement"] - gesture_distance) <= 2, (
