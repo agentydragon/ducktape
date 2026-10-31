@@ -465,6 +465,34 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 	}
 }
 
+func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	intent, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "executor", "method": "initialize"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
+	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
+		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
+	}}
+	frameErr := errors.New("native response frame persistence failed")
+	err = executor.finishOpenFailure(t.Context(), intent, response, frameErr)
+	var rejected *executorRejectedError
+	if !errors.As(err, &rejected) || rejected.recorded || isDefinitiveLostExecutorSession(rejected, "retained-executor") {
+		t.Fatalf("partial response evidence qualified for session loss recovery: rejection=%+v error=%v", rejected, err)
+	}
+	if !errors.Is(err, frameErr) {
+		t.Fatalf("native frame persistence error was discarded: %v", err)
+	}
+	result, err := intentResultForDB(t, store, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["outcome"] != "rejected" {
+		t.Fatalf("typed rejection was not durably settled: %+v", result)
+	}
+}
+
 func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	if err := store.RegisterProcess(t.Context(), owner, "old-process", false); err != nil {

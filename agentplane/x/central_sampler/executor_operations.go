@@ -203,7 +203,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, "initialize", opened.NativeFrames)
 	if opened.Status == nil || opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		cancel()
-		return errors.Join(frameErr, e.finishOpenFailure(ctx, intent, opened))
+		return e.finishOpenFailure(ctx, intent, opened, frameErr)
 	}
 	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
 		cancel()
@@ -249,7 +249,7 @@ func (e *Executor) openSession(ctx context.Context, resume *string) error {
 	return nil
 }
 
-func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse) error {
+func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse, nativeEvidenceErr error) error {
 	if response.Status != nil && response.Status.Outcome == executorpb.ExecutionStatus_OUTCOME_REJECTED {
 		message := response.Status.Message
 		if message == "" {
@@ -258,19 +258,21 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 		rejectedError := &executorRejectedError{method: "initialize", code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
 		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "rejected", "request_id": intent, "rejected": rejected}); err != nil {
-			return errors.Join(rejectedError, err)
+			return errors.Join(nativeEvidenceErr, rejectedError, err)
 		}
-		rejectedError.recorded = true
-		return rejectedError
+		// A typed rejection alone is insufficient if accompanying native frames failed to
+		// persist. Session-loss recovery requires the complete response evidence boundary.
+		rejectedError.recorded = nativeEvidenceErr == nil
+		return errors.Join(nativeEvidenceErr, rejectedError)
 	}
 	message := "execution session open outcome is unknown"
 	if response.Status != nil && response.Status.Message != "" {
 		message = response.Status.Message
 	}
 	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": "unknown", "request_id": intent, "message": message}); err != nil {
-		return errors.Join(errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
+		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
 	}
-	return &executorTransportError{method: "initialize", phase: "response", intentID: intent, cause: errors.New(message)}
+	return errors.Join(nativeEvidenceErr, &executorTransportError{method: "initialize", phase: "response", intentID: intent, cause: errors.New(message)})
 }
 
 func (e *Executor) watchSession(streamCtx context.Context, stream executorSessionStream, operationID, sessionID string, generation uint64, cancel context.CancelFunc, done chan struct{}) {
@@ -628,7 +630,7 @@ type executorRejectedError struct {
 	method   string
 	code     int
 	message  string
-	recorded bool
+	recorded bool // The semantic result and all native response frames are durably recorded.
 }
 
 func (e *executorRejectedError) Error() string {
