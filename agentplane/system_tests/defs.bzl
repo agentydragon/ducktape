@@ -26,7 +26,7 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], pyc_collection = "inherit"):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -70,4 +70,5 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         deps = deps + [
             "//agentplane/system_tests/k3s:system_test_target",
         ],
+        pyc_collection = pyc_collection,
     )

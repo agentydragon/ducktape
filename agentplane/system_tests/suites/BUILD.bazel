@@ -12,6 +12,7 @@ package(
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
+    pyc_collection = "include_pyc",
     stack = "pod",
     deps = [
         ":conftest",
