@@ -3,8 +3,8 @@ package session
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )

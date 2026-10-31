@@ -255,7 +255,7 @@ incarnation's ingress acknowledgement.
 
 ## Validation and rollback
 
-`bbr test //agentplane/runner/supervision:supervision_test` runs the generic process-controller cases
+`bbr test //agentplane/env/supervision:supervision_test` runs the generic process-controller cases
 against an in-memory COSI engine. `bbr test //agentplane/runner:runner_test` runs with the race
 detector and covers Runner lifecycle behavior and its integration with supervision. Validate public
 quiesce and status behavior

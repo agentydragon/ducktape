@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -17,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 func TestMain(m *testing.M) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
@@ -21,7 +22,6 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"

@@ -16,12 +16,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	runnertransporttesting "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
 	"github.com/coder/websocket"

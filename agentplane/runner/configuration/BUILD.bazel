@@ -11,11 +11,11 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/configuration",
     deps = [
+        "//agentplane/env/supervision",
         "//agentplane/runner/codexappserver",
         "//agentplane/runner/codexexecserver",
         "//agentplane/runner/harness",
         "//agentplane/runner/session",
-        "//agentplane/runner/supervision",
         "//agentplane/runner_transport",
         "@org_uber_go_zap//:zap",
     ],

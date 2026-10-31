@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -23,7 +24,6 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/cosi-project/runtime/pkg/resource"

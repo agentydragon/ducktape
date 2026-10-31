@@ -53,7 +53,7 @@ def _clear_generation(directory: Path) -> None:
 @pytest.mark.parametrize("backend", ["pid1", "subprocess"])
 async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, backend: str) -> None:
     load_oci_image(debian_slim.IMAGE)
-    binary = get_required_path("_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
+    binary = get_required_path("_main/agentplane/env/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runner-pid1-{backend}-{mode}")
         .with_kwargs(user=f"{os.getuid()}:{os.getgid()}", pids_limit=64, mem_limit="256m")
@@ -98,9 +98,7 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
     load_oci_image(debian_slim.IMAGE)
     runner = get_required_path(launches.RUNNER_BINARY).resolve()
-    fixture = get_required_path(
-        "_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture"
-    ).resolve()
+    fixture = get_required_path("_main/agentplane/env/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
     host_control = gateway.endpoint
     assert isinstance(host_control.security, Insecure)
     config = Configuration(

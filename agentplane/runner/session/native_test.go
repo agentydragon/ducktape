@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	codexadapter "github.com/agentydragon/ducktape/agentplane/runner/codex"
@@ -19,7 +20,6 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/cosi-project/runtime/pkg/controller"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"

@@ -8,9 +8,9 @@ import (
 	"io"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 // nativeConnection owns protocol readers and handshake waiters. Session supplies

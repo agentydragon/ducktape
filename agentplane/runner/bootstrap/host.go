@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/env/operation"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/cosi-project/runtime/pkg/controller"

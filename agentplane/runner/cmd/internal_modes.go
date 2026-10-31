@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
 	"github.com/agentydragon/ducktape/agentplane/runner/executor"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 )
 

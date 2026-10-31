@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"golang.org/x/sync/errgroup"
 )
 

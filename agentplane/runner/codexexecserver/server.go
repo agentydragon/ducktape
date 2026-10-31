@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
-	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"

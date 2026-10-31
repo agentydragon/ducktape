@@ -18,7 +18,7 @@ go_library(
         "systemd.go",
         "systemd_policy.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/supervision",
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/supervision",
     deps = [
         "//agentplane/runner/cosi",
         "@com_github_coreos_go_systemd_v22//dbus",

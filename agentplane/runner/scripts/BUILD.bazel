@@ -12,7 +12,7 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
-        "//agentplane/runner/supervision",
+        "//agentplane/env/supervision",
         "@org_golang_x_sync//errgroup",
     ],
 )

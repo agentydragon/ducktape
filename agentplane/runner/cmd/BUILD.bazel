@@ -11,11 +11,11 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
     deps = [
+        "//agentplane/env/supervision",
         "//agentplane/observability",
         "//agentplane/runner",
         "//agentplane/runner/configuration",
         "//agentplane/runner/executor",
-        "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",

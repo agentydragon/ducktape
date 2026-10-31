@@ -167,7 +167,7 @@ The Pod system tests exercise the selected production backend through the shared
 This adds neither privileges nor a production service or endpoint.
 
 The system-test guest boots real systemd and a system bus with the same static runner/slice units.
-Before Runner starts, `//agentplane/runner/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
+Before Runner starts, `//agentplane/env/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary
 stop and scoped startup fencing. Existing VM scenarios then exercise storage, actual harnesses,
 tool OOM and suspend/resume through the platform. The fixture's test wrapper and read-only observer

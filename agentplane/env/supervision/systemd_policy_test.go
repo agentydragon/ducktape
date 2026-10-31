@@ -1,0 +1,66 @@
+package supervision
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestSystemdOwnerValidate(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		owner SystemdOwner
+	}{
+		{name: "missing unit", owner: SystemdOwner{LifetimeDirectory: "/run/owner", ScopeID: "owner"}},
+		{name: "relative lifetime directory", owner: SystemdOwner{Unit: "owner.service", LifetimeDirectory: "run/owner", ScopeID: "owner"}},
+		{name: "missing scope ID", owner: SystemdOwner{Unit: "owner.service", LifetimeDirectory: "/run/owner"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.owner.validate(); err == nil {
+				t.Fatal("invalid systemd owner was accepted")
+			}
+		})
+	}
+}
+
+func TestSystemdScopeIdentity(t *testing.T) {
+	const stateDir, sandboxUID = "/state/sandbox", "sandbox-uid"
+	runnerIdentity := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runnerUnit, LifetimeDirectory: runnerLifetimeDirectory, ScopeID: SystemdRunnerScopeID})
+	if want := stateDir + "\x00" + sandboxUID; runnerIdentity != want {
+		t.Fatalf("Runner scope identity = %q, want existing identity %q", runnerIdentity, want)
+	}
+	runtime := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdRunnerScopeID})
+	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-harness-host.service", LifetimeDirectory: "/run/agentplane-harness-host-lifetime", ScopeID: "harness-host"})
+	execution := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-execution-service.service", LifetimeDirectory: "/run/agentplane-execution-lifetime", ScopeID: "execution-service"})
+	if runtime != runnerIdentity || harness == runtime || execution == runtime || execution == harness {
+		t.Fatal("distinct systemd owners shared a native process scope")
+	}
+}
+
+func TestPrepareSystemdOwner(t *testing.T) {
+	const invocationID = "0123456789abcdef0123456789abcdef"
+	t.Setenv("INVOCATION_ID", invocationID)
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	owner := SystemdOwner{Unit: "agentplane-execution-service.service", LifetimeDirectory: directory, ScopeID: "execution-service"}
+	policy := &SystemdPolicy{}
+	if err := policy.prepareOwner(owner); err != nil {
+		t.Fatal(err)
+	}
+	if policy.parentUnit() != owner.Unit {
+		t.Fatalf("parent unit = %q, want %q", policy.parentUnit(), owner.Unit)
+	}
+	wantMarker := filepath.Join(directory, invocationID)
+	if policy.lifetimeMarker != wantMarker {
+		t.Fatalf("lifetime marker = %q, want %q", policy.lifetimeMarker, wantMarker)
+	}
+	info, err := os.Stat(wantMarker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0444 {
+		t.Fatalf("lifetime marker mode = %v, want read-only regular file", info.Mode())
+	}
+}
