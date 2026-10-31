@@ -123,6 +123,7 @@ class Agent:
         client: Client,
         *,
         sandbox: str,
+        sandbox_uid: UUID,
         harness: runner_pb2.Harness,
         model: str,
         instructions: str = "",
@@ -147,7 +148,9 @@ class Agent:
             session_id = uuid4()
             async for attempt in runner_startup_retries():
                 with attempt:
-                    await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
+                    await client.create_session(
+                        sandbox, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec)
+                    )
                     thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
                     return cls(client, thread_id=thread.id, cursor=0)
             raise AssertionError("unreachable: reraise=True either returns an agent or raises")

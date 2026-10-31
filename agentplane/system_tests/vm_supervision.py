@@ -1,7 +1,7 @@
 """Check native systemd supervision through ordinary Session setup and History."""
 
 import shlex
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
@@ -41,7 +41,7 @@ while ! test -e child-ready; do sleep 0.01; done
 
 
 async def session_setup_is_supervised(
-    client: Client, sandbox_name: str, harness: runner_pb2.Harness, model: str
+    client: Client, sandbox_name: str, sandbox_uid: UUID, harness: runner_pb2.Harness, model: str
 ) -> Agent:
     session_id = uuid4()
     # A fresh nested path exercises Runner's workspace helper rather than a pre-created cwd.
@@ -49,6 +49,7 @@ async def session_setup_is_supervised(
     stdout, stderr = await run_setup(
         client,
         sandbox_name=sandbox_name,
+        sandbox_uid=sandbox_uid,
         session_id=session_id,
         harness=harness,
         model=model,
@@ -105,6 +106,7 @@ async def session_setup_is_supervised(
     checked, errors = await run_setup(
         client,
         sandbox_name=sandbox_name,
+        sandbox_uid=sandbox_uid,
         session_id=uuid4(),
         harness=harness,
         model=model,

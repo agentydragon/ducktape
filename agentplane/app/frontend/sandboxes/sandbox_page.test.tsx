@@ -590,6 +590,7 @@ it("uses the configured preset working directory template and setup script for l
   const body = await postedBody(sessions);
   expect(body.spec.cwd).toBe("/state/custom/{session_id}/work");
   expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(body.sandbox_uid).toBe("00000000-0000-4000-8000-000000000001");
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 

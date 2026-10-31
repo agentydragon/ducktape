@@ -111,8 +111,9 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The Gateway has no Session placement registry;
 it resolves proxy destinations from current Sandbox identity and connection state. History separately
 records the writer's namespace and name.
-App commands use the Thread's stored Sandbox name and send it to Dispatcher, which records the current
-Sandbox UID without checking the Session's earlier association. The complete Session-to-incarnation
+The app sends the expected Sandbox UID on Session opens and commands, and Dispatcher checks it against
+the current Sandbox before accepting the request. This fences same-name replacement at the request
+boundary; it does not validate a Session's earlier association. The complete Session-to-incarnation
 authority across opens, commands and resume remains under review in the
 [service-boundary contract](service_boundaries.md).
 
@@ -363,10 +364,11 @@ delivery and ordering; the app does not maintain a second command queue.
 ## Session opening and command ownership
 
 Sandbox creation and Session opening are separate operations. The app creates and manages the
-Sandbox through Kubernetes; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID and
-resolved spec to Dispatcher `OpenSession`. The Dispatcher records the opening and delivers it when
-the Sandbox is ready. The first input, if any, is a separate command with its own ID and durable
-Dispatcher result; there is no app transaction that queues an initial input with Sandbox creation.
+Sandbox through Kubernetes; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID, the
+expected Sandbox UID and resolved spec to Dispatcher `OpenSession`. Dispatcher checks that UID against
+the current Sandbox before recording the opening, then delivers it when the Sandbox is ready. The first
+input, if any, is a separate command with its own ID and durable Dispatcher result; there is no app
+transaction that queues an initial input with Sandbox creation.
 
 ## Reconnect and catch-up
 

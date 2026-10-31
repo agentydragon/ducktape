@@ -16,6 +16,7 @@ async def run_setup(
     client: Client,
     *,
     sandbox_name: str,
+    sandbox_uid: UUID,
     session_id: UUID,
     harness: runner_pb2.Harness,
     model: str,
@@ -29,7 +30,9 @@ async def run_setup(
         record_exception=False,
         set_status_on_exception=False,
     ):
-        await client.create_session(sandbox_name, session_id, overrides=MessageToDict(spec), setup_script=setup_script)
+        await client.create_session(
+            sandbox_name, session_id, sandbox_uid=sandbox_uid, overrides=MessageToDict(spec), setup_script=setup_script
+        )
         thread_id = session_id
         # Runner admission precedes History's Thread projection, which owns the event stream.
         await client.wait_for_thread_projection(thread_id, timeout_s=BOUND_SECONDS)

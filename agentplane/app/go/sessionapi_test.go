@@ -85,13 +85,13 @@ var (
 
 func TestNewSessionBodyTracksAnExplicitNullSetupScript(t *testing.T) {
 	var omitted, cleared newSessionBody
-	if err := json.Unmarshal([]byte(`{"session_id":"00000000-0000-0000-0000-000000000000","spec":{}}`), &omitted); err != nil {
+	if err := json.Unmarshal([]byte(`{"session_id":"00000000-0000-0000-0000-000000000000","sandbox_uid":"00000000-0000-4000-8000-000000000001","spec":{}}`), &omitted); err != nil {
 		t.Fatal(err)
 	}
 	if omitted.SetupScriptPresent {
 		t.Fatal("omitted setup_script was marked present")
 	}
-	if err := json.Unmarshal([]byte(`{"session_id":"00000000-0000-0000-0000-000000000000","spec":{},"setup_script":null}`), &cleared); err != nil {
+	if err := json.Unmarshal([]byte(`{"session_id":"00000000-0000-0000-0000-000000000000","sandbox_uid":"00000000-0000-4000-8000-000000000001","spec":{},"setup_script":null}`), &cleared); err != nil {
 		t.Fatal(err)
 	}
 	if !cleared.SetupScriptPresent || cleared.SetupScript != nil {

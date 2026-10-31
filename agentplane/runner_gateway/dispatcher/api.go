@@ -325,17 +325,20 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err != nil {
 		return nil, err
 	}
-	if err := required(request.GetSessionId(), request.GetSandbox()); err != nil {
-		return nil, err
-	}
-	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTarget); err != nil {
+	if err := required(request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid()); err != nil {
 		return nil, err
 	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.Store.OpenSession(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
+	if current.UID != request.GetSandboxUid() {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
+	}
+	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTarget); err != nil {
+		return nil, err
+	}
+	row, err := s.Store.OpenSession(ctx, request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
 		request.GetSpec(), request.SetupScript, wake)
 	if err != nil {
 		return nil, apiError(err)

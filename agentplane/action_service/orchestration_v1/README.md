@@ -29,7 +29,8 @@ it. Approving a launch approves its grants, and a launch that names none gets no
 
 **One incarnation.** Every Action on a Sandbox names it by name and UID, and a grant matches only
 that UID. Before each command and Session read, the executor rereads the Sandbox and refuses
-another incarnation, since `OpenSession` takes the Sandbox by name alone. `get_session`, `read_turns` and `wait_for_turn` answer only
+another incarnation. Openings and commands pass that expected UID to the Dispatcher, which checks
+the current Sandbox UID before accepting them. `get_session`, `read_turns` and `wait_for_turn` answer only
 for a Session that its opening or its history ties to that UID and neither ties to another;
 `list_sessions` finds Sessions by the UID alone, so it still lists them once the Sandbox is deleted.
 

@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.app.testing.models import ThreadView
+from agentplane.app.testing.models import SandboxView, ThreadView
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
@@ -146,9 +146,11 @@ async def _wait_suspended(client: Client, name: str) -> None:
 
 
 async def _open_agent(
-    client: Client, name: str, harness: runner_pb2.Harness, model_name: str, *, cwd: str = WORKING_DIRECTORY
+    client: Client, view: SandboxView, harness: runner_pb2.Harness, model_name: str, *, cwd: str = WORKING_DIRECTORY
 ) -> Agent:
-    agent = await Agent.open(client, sandbox=name, harness=harness, model=model_name, cwd=cwd)
+    agent = await Agent.open(
+        client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model_name, cwd=cwd
+    )
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent
 
@@ -209,7 +211,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
         cluster, f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace
     )
 
-    agent = await _open_agent(client, view.name, harness, offered_model)
+    agent = await _open_agent(client, view, harness, offered_model)
     model = scripted.model(view.pod.name, harness)
     marker = f"POD_CONTEXT_{uuid4().hex}"
     turn, history_before, _ = await _turn(
@@ -269,7 +271,7 @@ async def vm_mtls_certificate_authenticates_a_session(
         cluster, f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace
     )
 
-    agent = await _open_agent(client, view.name, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
+    agent = await _open_agent(client, view, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
     model = scripted.model(view.pod.name, harness)
     turn, _, _ = await _turn(
         client,

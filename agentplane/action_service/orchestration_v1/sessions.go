@@ -27,7 +27,7 @@ func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArg
 		return nil, err
 	}
 	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SetupScript: args.SetupScript,
+		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SandboxUid: string(args.Sandbox.UID), SetupScript: args.SetupScript,
 		Spec: &runnerpb.SessionSpec{
 			Harness: runnerpb.Harness(runnerpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
@@ -101,8 +101,7 @@ func (e *Executor) changeReasoningEffort(ctx context.Context, args contract.Chan
 }
 
 // requireSandbox reads the named incarnation, refusing a Sandbox that is gone or is another incarnation. A grant is
-// pinned to one incarnation, and OpenSession takes the Sandbox by name alone, so this is what keeps a call from reaching
-// a same-name replacement.
+// pinned to one incarnation; commands and openings pass its UID to the Dispatcher, which checks the current UID too.
 func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) (*sandboxapi.Sandbox, error) {
 	var sandbox sandboxapi.Sandbox
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)

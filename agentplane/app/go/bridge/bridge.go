@@ -80,14 +80,18 @@ func New(sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher, rea
 // OpenSession queues one immutable Session specification. The caller-minted
 // UUID is the dispatcher's idempotency key, so a timeout is returned with that
 // same ID for reconciliation or retry.
-func (b *RunnerBridge) OpenSession(ctx context.Context, sandbox string, sessionID uuid.UUID, spec *runnerpb.SessionSpec, setupScript *string) (*dispatcherpb.SessionOpening, error) {
-	if sandbox == "" || spec == nil {
-		return nil, errors.New("Sandbox name and Session spec are required")
+func (b *RunnerBridge) OpenSession(
+	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *runnerpb.SessionSpec, setupScript *string,
+) (*dispatcherpb.SessionOpening, error) {
+	if sandbox == "" || sandboxUID == "" || spec == nil {
+		return nil, errors.New("Sandbox name, UID and Session spec are required")
 	}
 	if setupScript != nil && utf8.RuneCountInString(*setupScript) > MaxSetupScriptCharacters {
 		return nil, fmt.Errorf("setup script exceeds %d characters", MaxSetupScriptCharacters)
 	}
-	request := &dispatcherpb.OpenSessionRequest{Sandbox: sandbox, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*runnerpb.SessionSpec)}
+	request := &dispatcherpb.OpenSessionRequest{
+		Sandbox: sandbox, SandboxUid: sandboxUID, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*runnerpb.SessionSpec),
+	}
 	if setupScript != nil {
 		value := *setupScript
 		request.SetupScript = &value
@@ -103,7 +107,8 @@ func (b *RunnerBridge) OpenSession(ctx context.Context, sandbox string, sessionI
 		return nil, err
 	}
 	opening := response.GetOpening()
-	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox {
+	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox ||
+		opening.GetSandboxUid() != sandboxUID {
 		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
 	}
 	return opening, nil

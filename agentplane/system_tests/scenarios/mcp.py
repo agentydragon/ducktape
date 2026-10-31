@@ -118,7 +118,7 @@ class ScriptedAgent:
         upstream: ScriptedUpstream,
     ) -> ScriptedAgent:
         assert sandbox.pod is not None
-        agent = await Agent.open(client, sandbox=sandbox.name, harness=harness, model=model)
+        agent = await Agent.open(client, sandbox=sandbox.name, sandbox_uid=sandbox.uid, harness=harness, model=model)
         return cls(agent=agent, model=upstream.model(sandbox.pod.name, harness))
 
     async def run(self, *args: str) -> action_service_pb2.ActionRequest:

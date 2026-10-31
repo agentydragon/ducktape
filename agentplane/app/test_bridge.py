@@ -82,9 +82,11 @@ async def failed_bridge_state(
     evidence.write_json("bridge-state.json", state)
 
 
-async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID) -> str:
+async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID, sandbox_uid: str) -> str:
     """Create a Session through the app, and wait for the Thread History's record of its opening gives it."""
-    opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
+    opened = await http.post(
+        SESSIONS, json={"session_id": str(session_id), "sandbox_uid": sandbox_uid, "spec": MessageToDict(spec)}
+    )
     assert opened.status_code == 201, opened.text
     thread_id = str(opened.json()["sessionId"])
     async for attempt in AsyncRetrying(
@@ -242,9 +244,15 @@ async def _next_model_request(model: ScriptedModel) -> Any:
 
 
 async def _open_thread_with_seed(
-    http: httpx.AsyncClient, model: ScriptedModel, spec: runner_pb2.SessionSpec, *, seed_prompt: str, seed_answer: str
+    http: httpx.AsyncClient,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    sandbox_uid: str,
+    *,
+    seed_prompt: str,
+    seed_answer: str,
 ) -> str:
-    thread_id = await _create(http, spec, uuid4())
+    thread_id = await _create(http, spec, uuid4(), sandbox_uid)
     accepted = await http.post(
         f"/threads/{thread_id}/submit-input", json={"commandId": "seed-input", "text": seed_prompt}
     )
@@ -275,7 +283,9 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
     async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
-        thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input", json={"commandId": "streaming-input", "text": "Start a long answer"}
         )
@@ -425,7 +435,9 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         }
     )
     async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
-        thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
             json={"commandId": "tool-input", "text": "Run the blocking side effect once"},
@@ -519,7 +531,9 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
     async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
-        thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
+        thread_id = await _open_thread_with_seed(
+            http, model, spec, sandbox_runner.destination.sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+        )
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
             json={"commandId": "completed-tool-input", "text": "Run one completed tool"},
@@ -622,7 +636,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
             base_url=survivor.url, cookies=survivor.cookies, headers={"Origin": survivor.url}, timeout=60
         ) as survivor_http,
     ):
-        thread = UUID(await _create(http, spec, uuid4()))
+        thread = UUID(await _create(http, spec, uuid4(), sandbox.uid))
         await delivered_opening(session_dispatcher, thread)
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
@@ -703,7 +717,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
 ) -> None:
     """The Dispatcher opens the Session and delivers its inputs, before and after a harness kill, while
     History's ingress is held back."""
-    thread_id = UUID(await _create(http, spec, uuid4()))
+    thread_id = UUID(await _create(http, spec, uuid4(), sandbox.uid))
     await delivered_opening(session_dispatcher, thread_id)
     await history.service.settled(thread_id, lambda _summary: True)
     (runner_session,) = [row for row in await sandbox_runner.list_sessions() if row.session_id == str(thread_id)]

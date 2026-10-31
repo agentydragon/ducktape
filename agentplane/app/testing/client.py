@@ -181,6 +181,7 @@ class Client:
         name: str,
         session_id: UUID,
         *,
+        sandbox_uid: UUID,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> None:
@@ -188,7 +189,9 @@ class Client:
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
-        opening = await self.open_session(name, session_id, overrides=overrides, setup_script=setup_script)
+        opening = await self.open_session(
+            name, session_id, sandbox_uid=sandbox_uid, overrides=overrides, setup_script=setup_script
+        )
         return await self.wait_for_session_admission(name, session_id, opening=opening)
 
     async def open_session(
@@ -196,11 +199,14 @@ class Client:
         name: str,
         session_id: UUID,
         *,
+        sandbox_uid: UUID,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> session_dispatcher_pb2.SessionOpening:
         """Submit an opening and return its first durable state without waiting for admission."""
-        body = NewSession(session_id=session_id, spec=overrides or {}, setup_script=setup_script)
+        body = NewSession(
+            session_id=session_id, sandbox_uid=sandbox_uid, spec=overrides or {}, setup_script=setup_script
+        )
         answered = await self._json(
             "POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json", exclude_none=True)
         )

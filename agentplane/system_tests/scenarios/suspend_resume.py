@@ -146,7 +146,13 @@ class _ResumeRun:
         offered = (await self.client.models()).harnesses[Harness(harness_name)]
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(
-            self.client, sandbox=self.view.name, harness=harness, model=offered[0], cwd=cwd, instructions=instructions
+            self.client,
+            sandbox=self.view.name,
+            sandbox_uid=self.view.uid,
+            harness=harness,
+            model=offered[0],
+            cwd=cwd,
+            instructions=instructions,
         )
         snapshot = await self.client.runner_status(self.view.name)
         self.initial_boot_id = snapshot.runner_boot_id
