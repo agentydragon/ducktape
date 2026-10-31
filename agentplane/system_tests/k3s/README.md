@@ -113,11 +113,14 @@ Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties:
 (`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. So the stack runs no Cilium, KubeVirt only with
 software emulation, and kube-proxy with ClusterIP Services.
 
-**Gotcha:** rules_python's precompile (`pyc_collection = "include_pyc"`) fails on RBE, because the exec
-interpreter does not find its standard library. Each action compiles bytecode as it imports, about three
-quarters of import time; with the chart rendered at build time, imports still take 10–13 s before pytest starts
-([measurements](debug/stack_timings.md#fixture-chart-rendered-at-build-time-2026-10-21)). Worker speed dominates run-to-run variance
-([per-worker timings](debug/stack_timings.md#phase-timings-and-image-bytes-2026-10-21)), so a time budget has to hold on slow workers.
+The earlier RBE precompile failure no longer reproduces with `rules_python` 2.4.3: a target using
+`pyc_collection = "include_pyc"` passes and Python loads the generated `.pyc` files. The
+[current experiment](debug/pyc_precompilation.md) shows the large compile action graph and the
+observed warm-run difference, so the suites do not enable collection yet. With the chart rendered at
+build time, imports still took 10–13 s before pytest in the October 21 measurements
+([measurements](debug/stack_timings.md#fixture-chart-rendered-at-build-time-2026-10-21)). Worker speed dominates
+run-to-run variance ([per-worker timings](debug/stack_timings.md#phase-timings-and-image-bytes-2026-10-21)),
+so a time budget has to hold on slow workers.
 
 ## Sandbox lifecycle coverage
 
