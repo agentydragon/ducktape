@@ -11,12 +11,12 @@ down as its PRs land.
 Agents iterate on specs. Most edits change module assignment, co-location or
 `commuting_statements`, none of which change chunk analysis, yet every run
 recomputes all of it. Measured on `devel` `a7520fb884` (`-c opt`, local host,
-gaffer-private `origin/main` `7b2d174f` specs; [§ Measurements](#measurements)):
+gaffer-private `origin/main` `831c8502` specs; [§ Measurements](#measurements)):
 
-| Input                             | Wall to end of materialize | Analysis share                   | Peak RSS |
-| --------------------------------- | -------------------------- | -------------------------------- | -------- |
-| Tana (1 chunk plus vendor)        | 259–265 s                  | 238–263 s (S2 84–97, S3 154–166) | 4.6 GiB  |
-| Claude CLI (76 chunks), full emit | 81.5 s (86.7 s total)      | 66 s (S2 40, S3 26 wall)         | 8.6 GiB  |
+| Input                             | Wall to end of materialize | Analysis share           | Peak RSS |
+| --------------------------------- | -------------------------- | ------------------------ | -------- |
+| Tana (1 chunk plus vendor)        | 130 s                      | 120 s (S2 77, S3 43)     | 4.5 GiB  |
+| Claude CLI (76 chunks), full emit | 79 s (83 s total)          | 64 s (S2 38, S3 26 wall) | 8.6 GiB  |
 
 ## Stage map
 
@@ -24,14 +24,14 @@ Stage names follow the code, not the original proposal. "Selector solve" is
 `prepare_logical_chunk` → `solve_projected_chunks` → `claim_prepared_chunk`
 (`lowering/mod.rs`).
 
-| Stage                          | Code                                                                                                                                                                                                           | Reads                                                                                                                               | Tana                         | Claude                               |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------ |
-| S0 prepare                     | `pipeline.rs::prepare_transform`: parse every chunk, `build_vendor_resolution_plan`                                                                                                                            | sources, `inputs`, vendor marks, package roots                                                                                      | 1.6 s                        | 3.8 s                                |
-| S1 structural + selector solve | `collect_chunk_source_facts`, selector solve                                                                                                                                                                   | source; all module YAML (anchors couple modules)                                                                                    | 3.4 s                        | 1.3 s                                |
-| S2 program-wide                | `export_policies`, `export_reentry_reports` (loader derivation, closure blockers), `cross_module::collect_cross_module_imported_purities` (provider execution indexes, callable summaries, premise resolution) | sources, `host_behavior`, `program_premises`, `chunk_export_purity`, premise lists, vendor plan; today also assignment (C1, C3, C4) | 0.2 s + 84–97 s              | 7.5 s + 40 s                         |
-| S3 per-chunk analysis          | `finish_logical_chunk` → `complete_chunk_structural_with_inputs` → `analyze_chunk_with_policy` (one `IterativeInference` context: interpreter and purity)                                                      | chunk source, S2 output, annotation premises, analysis half of `chunk_analysis_options`                                             | 154–166 s                    | 26 s wall, 58 s CPU                  |
-| S4 graph and gate              | `compute_dependency_graph_and_atomic_groups_with`, rebind folds, `builder.finalize`, `AssignmentAnalysis`, `validate_and_emit_reports`                                                                         | S3 facts, `commuting_statements`, `dataflow_aware_s_chain`, assignment                                                              | 4.1–4.7 s graph + 4.0 s gate | 7.4 s + 1.8 s (`cli`, critical path) |
-| S5 lower and emit              | `lower_chunk`, naturalize, emission rewrites (including vendor strip), prune, `ReconstructionPlan`, `write_js_tree`                                                                                            | S4 placement, `chunk_renames`, output config                                                                                        | 5.0 s lower; emit see below  | 0.3 s + 5.2 s                        |
+| Stage                          | Code                                                                                                                                                                                                           | Reads                                                                                                                               | Tana                         | Claude                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------- |
+| S0 prepare                     | `pipeline.rs::prepare_transform`: parse every chunk, `build_vendor_resolution_plan`                                                                                                                            | sources, `inputs`, vendor marks, package roots                                                                                      | 1.6 s                        | 3.8 s                         |
+| S1 structural + selector solve | `collect_chunk_source_facts`, selector solve                                                                                                                                                                   | source; all module YAML (anchors couple modules)                                                                                    | 3.4 s                        | 1.3 s                         |
+| S2 program-wide                | `export_policies`, `export_reentry_reports` (loader derivation, closure blockers), `cross_module::collect_cross_module_imported_purities` (provider execution indexes, callable summaries, premise resolution) | sources, `host_behavior`, `program_premises`, `chunk_export_purity`, premise lists, vendor plan; today also assignment (C1, C3, C4) | 0.2 s + 77 s                 | 7.5 s + 38–40 s               |
+| S3 per-chunk analysis          | `finish_logical_chunk` → `complete_chunk_structural_with_inputs` → `analyze_chunk_with_policy` (one `IterativeInference` context: interpreter and purity)                                                      | chunk source, S2 output, annotation premises, analysis half of `chunk_analysis_options`                                             | 43 s                         | 26 s wall, 55–58 s CPU        |
+| S4 graph and gate              | `compute_dependency_graph_and_atomic_groups_with`, rebind folds, `builder.finalize`, `AssignmentAnalysis`, `validate_and_emit_reports`                                                                         | S3 facts, `commuting_statements`, `dataflow_aware_s_chain`, assignment                                                              | 3.8–4.7 s graph + 4.0 s gate | 5.4–7.4 s + 1.8–3.3 s (`cli`) |
+| S5 lower and emit              | `lower_chunk`, naturalize, emission rewrites (including vendor strip), prune, `ReconstructionPlan`, `write_js_tree`                                                                                            | S4 placement, `chunk_renames`, output config                                                                                        | 5.0 s lower; emit see below  | 0.3 s + 5.2 s                 |
 
 S1 and S2 run once per program; S3, S4 and the lowering half of S5 run per
 chunk in parallel, so Claude's wall is its `cli` chunk.
@@ -40,10 +40,9 @@ The vendor strip (`vendor/strip.rs::analyze_prune_items`) runs a sixth,
 separate analysis: `analyze_vendor_prune_chunk`, the full interpreter over the
 partially swapped vendor chunk with default inputs, after materialize. On the
 Tana `--emit-on-rejection` run it was still running single-threaded at 25 min
-(`Executor::callback_values` hot) when the harness killed it. It is a pure
-function of the vendor chunk after its own rewrites and the vendor plan, so it
-is cacheable the same way; its runtime is an analysis-performance bug either
-way.
+(`Executor::callback_values` hot) when the harness killed it; that regression
+is being fixed separately. It is a pure function of the vendor chunk after its
+own rewrites and the vendor plan, so it is cacheable the same way.
 
 ## Spec keys by stage
 
@@ -114,10 +113,7 @@ through `resolved_member_sites` (`lowering/cross_module.rs` around lines 1042
 and 1251). Renaming or moving the member changes the premise's meaning. Cut:
 the projection resolves each to `(chunk, body_index, binding)`; S2 never sees
 module paths. Optionally a later codemod rewrites `resolved_member` to
-`source_match` and retires the variant. All three entries that `devel` now
-reports inert in the gaffer `origin/main` specs (Tana
-`static/index-DI2GynTv[16]`, two Claude `apiErrors` entries) use
-`resolved_member`; worth checking that resolution is correct while touching it.
+`source_match` and retires the variant.
 
 **C4 — `declared_pure_new` reaches S2** from `purity: pure_new` annotations
 (`lowering/mod.rs` → `cross_module.rs:629`). Same shape as C2; covered by the
@@ -180,6 +176,10 @@ chunks).
 
 ### Measurements
 
+Artifact sizes and load times below come from the earlier `7b2d174f` specs,
+on which Tana's S3 took 154–166 s (before gaffer-private #680 added the
+`runFunc` premise); stage times above are from `831c8502`.
+
 Prototype: `Serialize`/`Deserialize` added to about 250 analysis-crate types.
 `StatementFacts`, `CrossModulePurities` and `AnalysisInputs` derive cleanly
 with everything they contain; the few types that cannot (`&'static` builtin
@@ -236,8 +236,8 @@ measured end-to-end run of the split.
 
 | Edit                                                                        | Tana                                                      | Claude                                                     |
 | --------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
-| Today, any edit                                                             | ~260 s to end of materialize                              | 87 s                                                       |
-| Assignment, co-location, module rename, selector rewrite resolving the same | ~20 s (1.6 + 3.4 + 1.5 + 0.3 + 4.5 + 4.0 + 5.0) plus emit | ~23 s (3.8 + 1.3 + 2.8 + 7.4 + 1.8 + 0.3 + 5.2)            |
+| Today, any edit                                                             | ~130 s to end of the gate                                 | 83 s                                                       |
+| Assignment, co-location, module rename, selector rewrite resolving the same | ~20 s (1.6 + 2.7 + 1.5 + 0.3 + 3.8 + 4.3 + 5.0) plus emit | ~23 s (3.8 + 1.3 + 2.8 + 7.4 + 1.8 + 0.3 + 5.2)            |
 | `commuting_statements`, `dataflow_aware_s_chain` (after C5)                 | same as assignment                                        | same as assignment                                         |
 | Premise edits (annotations, input lists, `chunk_export_purity`, host keys)  | full analysis; no gain                                    | full analysis; per-chunk S3 actions recover most (phase 2) |
 
