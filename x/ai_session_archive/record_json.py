@@ -22,7 +22,7 @@ def parse_record_json(content: bytes) -> ParsedRecordJson:
     try:
         text = content.decode("utf-8", errors="strict")
         parsed = json.loads(text, parse_constant=_reject_json_constant)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError, RecursionError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         return ParsedRecordJson(None, f"{type(exc).__name__}: {exc}"[:1000], None, None)
 
     timestamp = _record_timestamp(parsed) if isinstance(parsed, dict) else None
