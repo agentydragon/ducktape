@@ -159,6 +159,10 @@ the app; asynchronous controller work can start a separate trace, so join those 
 batch their own exports, so a process killed without shutdown can still lose its final spans.
 Request bodies, model transcripts, headers and authentication values are not retained.
 
+Each Runner process adds its launch Sandbox UID to the OpenTelemetry resource, so operation spans
+keep their guest identity across independent traces and concurrent work. The VM suite checks those
+exported identities, request parentage and native harness stages in `process-spans.jsonl`.
+
 ## VM workspace ownership
 
 The `vm_workspace_ownership` scenario creates one uniquely named VM Sandbox and

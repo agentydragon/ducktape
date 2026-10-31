@@ -266,7 +266,6 @@ func (s *Server) WatchState(
 	if err != nil {
 		return err
 	}
-	trace.SpanFromContext(server.Context()).SetAttributes(attribute.String("sandbox.uid", current.sandboxUID))
 	defer s.finishWatch(current)
 	if err := s.config.AdoptIncarnation(current.ctx, current.incarnationUID); err != nil {
 		return err
@@ -318,7 +317,7 @@ func (s *Server) forwardWatchState(
 			stageSeen = true
 			lastStage = stage
 			if stageName, ok := quiesceStageName(stage); ok {
-				recordQuiesceStage(ctx, current.GetSandboxUid(), stageName)
+				recordQuiesceStage(ctx, stageName)
 				trace.SpanFromContext(ctx).AddEvent(
 					"agentplane.runner.quiesce_stage",
 					trace.WithAttributes(attribute.String("agentplane.runner.quiesce.stage", stageName)),
@@ -360,12 +359,9 @@ func quiesceStageName(stage runnerstatepb.RunnerFacts_QuiesceStage) (string, boo
 	}
 }
 
-func recordQuiesceStage(ctx context.Context, sandboxUID, stage string) {
+func recordQuiesceStage(ctx context.Context, stage string) {
 	_, span := observability.Start(ctx, "agentplane.runner.quiesce_stage")
-	span.SetAttributes(
-		attribute.String("sandbox.uid", sandboxUID),
-		attribute.String("agentplane.runner.quiesce.stage", stage),
-	)
+	span.SetAttributes(attribute.String("agentplane.runner.quiesce.stage", stage))
 	span.End()
 }
 

@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -42,13 +43,23 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	shutdownTracing, err := observability.Init(ctx, "runner")
+	settings, ingress, handled, err := loadServiceConfiguration(os.Args[1:])
+	if err != nil {
+		zap.L().Error("runner configuration load failed", zap.Error(err))
+		return 1
+	}
+	if handled {
+		return 0
+	}
+	shutdownTracing, err := observability.Init(
+		ctx, "runner", attribute.String("sandbox.uid", settings.Launch.Sandbox.UID),
+	)
 	if err != nil {
 		zap.L().Error("runner tracing setup failed", zap.Error(err))
 		return 1
 	}
 	defer shutdownTracing()
-	err = runService(ctx, os.Args[1:])
+	err = runService(ctx, settings, ingress)
 	if err != nil {
 		zap.L().Error("runner stopped", zap.Error(err))
 		return 1

@@ -12,6 +12,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.k3s.vm_trace_contract import assert_vm_process_trace_contract
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE
 from agentplane.system_tests.scenario import ScenarioResources
@@ -19,11 +20,34 @@ from agentplane.system_tests.scenarios import central_sampler, runner_credential
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import traced_scenario
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # runner_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf
 
 pytestmark = pytest.mark.vm_sandboxes
+
+
+async def _wait_for_vm_process_trace_contract() -> None:
+    output_dir = undeclared_outputs_dir()
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 30
+    artifacts = [output_dir / "test-spans.jsonl", output_dir / "process-spans.jsonl"]
+    last_sizes: tuple[int, ...] = ()
+    error: AssertionError | None = None
+    while True:
+        current_sizes = tuple(path.stat().st_size if path.exists() else 0 for path in artifacts)
+        if current_sizes != last_sizes:
+            try:
+                assert_vm_process_trace_contract(output_dir)
+            except AssertionError as caught:
+                error = caught
+            else:
+                return
+            last_sizes = current_sizes
+        if loop.time() >= deadline:
+            raise AssertionError(f"VM process trace contract failed: {error}") from error
+        await asyncio.sleep(0.5)
 
 
 @pytest.mark.vm_sandboxes
@@ -75,6 +99,8 @@ async def test_vm_scenarios(
         )
         scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(runner_pb2.HARNESS_CODEX, VM_TEMPLATE)))
         scenarios.create_task(traced_scenario("codex-tool-oom", oom()))
+
+    await _wait_for_vm_process_trace_contract()
 
 
 if __name__ == "__main__":

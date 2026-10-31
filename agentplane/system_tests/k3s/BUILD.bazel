@@ -631,11 +631,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "vm_trace_contract",
+    srcs = ["vm_trace_contract.py"],
+    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+)
+
 py_test(
     name = "test_process_traces",
     srcs = ["test_process_traces.py"],
     deps = [
         ":process_traces",
+        ":vm_trace_contract",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//grpcio",
