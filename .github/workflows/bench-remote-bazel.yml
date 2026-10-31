@@ -2,12 +2,26 @@ name: Remote Bazel Benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Full benchmark or opt-in visual publisher colocation probe
+        type: choice
+        options: [full, visual-colocation]
+        default: full
+      visual_ci_run_id:
+        description: Completed same-repository PR CI run to republish during the probe
+        type: string
+        required: false
+
+permissions:
+  contents: read
 
 env:
   GIT_REPO_DEFAULT_BRANCH: devel
 
 jobs:
   bench:
+    if: inputs.mode != 'visual-colocation'
     name: Benchmark (bb remote)
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -34,3 +48,73 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: test --keep_going //...
+
+  visual-colocation:
+    if: inputs.mode == 'visual-colocation'
+    name: Visual publisher colocation probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+      pull-requests: write
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      # Host actions, flake packages and scripts all come from trusted devel.
+      # The selected PR revision is checked out only by the remote runner.
+      - uses: actions/checkout@v7
+        with:
+          ref: devel
+          persist-credentials: false
+
+      - name: Resolve completed PR CI run
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.visual_ci_run_id }}
+        run: |
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" > "$RUNNER_TEMP/cohost-upstream.json"
+          jq -e '.status == "completed" and .conclusion != "cancelled" and .name == "CI" and .event == "pull_request" and .head_repository.full_name == env.GITHUB_REPOSITORY' "$RUNNER_TEMP/cohost-upstream.json"
+          jq -r '["sha=" + .head_sha, "attempt=" + (.run_attempt | tostring), "conclusion=" + .conclusion, "head_ref=" + .head_repository.owner.login + ":" + .head_branch, "url=" + .html_url] | .[]' "$RUNNER_TEMP/cohost-upstream.json" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bb .#bbapi .#pr-visuals"
+
+      - name: Record trusted control revision and tool pins
+        run: |
+          git rev-parse HEAD
+          jq '.pins | {bb, bbapi, "pr-visuals": .["pr-visuals"]}' nix/artifact-pins.json
+
+      # This republishes that completed run while a fresh test executes against
+      # its PR head. It measures overlap and the job's completion barrier; it
+      # does not replace normal publication or claim a matched CI speedup.
+      # Re-publication can refresh Before images resolved through fallback pointers.
+      - parallel:
+          - name: Test on remote runner
+            uses: ./.github/actions/bb-remote
+            with:
+              run_from_commit: ${{ steps.upstream.outputs.sha }}
+              script: >-
+                python3 -c 'import os; assert not any(key in os.environ for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "COHOST_PUBLISHER_SENTINEL"))' &&
+                bazel test --config=rbe --config=ci --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" --nocache_test_results //devinfra/pr_visuals:test_publisher
+
+          - name: Republish completed visual review
+            env:
+              AWS_ACCESS_KEY_ID: ${{ secrets.PR_VISUALS_ACCESS_KEY }}
+              AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
+              AWS_REGION: us-east-1
+              GITHUB_TOKEN: ${{ github.token }}
+              COHOST_PUBLISHER_SENTINEL: cohost-probe-only
+              CI_RUN_ID: ${{ inputs.visual_ci_run_id }}
+              CI_RUN_ATTEMPT: ${{ steps.upstream.outputs.attempt }}
+              HEAD_SHA: ${{ steps.upstream.outputs.sha }}
+              PR_HEAD_REF: ${{ steps.upstream.outputs.head_ref }}
+              CI_CONCLUSION: ${{ steps.upstream.outputs.conclusion }}
+              CI_RUN_URL: ${{ steps.upstream.outputs.url }}
+            run: |
+              test "$COHOST_PUBLISHER_SENTINEL" = cohost-probe-only
+              pr-visuals-publish --ci-run-id "$CI_RUN_ID" --ci-run-attempt "$CI_RUN_ATTEMPT" --sha "$HEAD_SHA" --pull-request-head "$PR_HEAD_REF" --check-external-id "pr-visual-review:$CI_RUN_ID:$CI_RUN_ATTEMPT" --ci-conclusion "$CI_CONCLUSION" --ci-details-url "$CI_RUN_URL" --work-dir "$RUNNER_TEMP/pr-visuals-probe" --repository "$GITHUB_REPOSITORY" --endpoint https://s3.allegedly.works --bucket pr-visuals --public-base-url https://s3.allegedly.works/pr-visuals
