@@ -80,7 +80,7 @@ impl Visit for TopLevelAwaitFinder {
 ///
 /// **Sharing**: materialization computes this layer once and feeds it
 /// to selector resolution and then to [`analyze_chunk_with_policy`]
-/// (via `chunk_analysis::compute_chunk_analysis`). Semantic passes may revisit
+/// (via `chunk_analysis::compute_chunk_facts`). Semantic passes may revisit
 /// the retained item views. `vendor::strip` calls [`analyze_vendor_prune_chunk`]
 /// on transformed output syntax, for which the materializer's original facts
 /// do not apply.

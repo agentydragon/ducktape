@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DepKind, DependencyGraph, DependencyGraphBuildError, DependencyGraphOptions, SourceUnitId,
+    DepKind, DependencyGraph, DependencyGraphBuildError, GraphOptions, SourceUnitId,
     build_dependency_graph_with,
 };
 
@@ -66,10 +66,10 @@ pub struct DependencyGraphAndAtomicGroups {
 }
 
 /// Build a dependency graph from chunk facts under the per-chunk
-/// [`DependencyGraphOptions`] and immediately compute its atomic groups.
+/// [`GraphOptions`] and immediately compute its atomic groups.
 pub fn compute_dependency_graph_and_atomic_groups_with(
     facts: &[StatementFacts],
-    options: DependencyGraphOptions,
+    options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
     let dependency_graph = build_dependency_graph_with(facts, options, commuting_statements)?;

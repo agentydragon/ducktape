@@ -119,11 +119,10 @@ module paths. Optionally a later codemod rewrites `resolved_member` to
 (`lowering/mod.rs` → `cross_module.rs:629`). Same shape as C2; covered by the
 same projection.
 
-**C5 — `commuting_statements` is a gate premise routed through analysis.** It
-is resolved in S2, carried in `AnalysisAssumptions`, and read only by graph
-build (`chunk_analysis/mod.rs`). Cut: resolve it in S4 against the chunk's
-structural facts, pass it only to graph build, and delete the field from
-`AnalysisAssumptions` so the type proves S3 cannot read it. The
+**C5 — `commuting_statements` is a gate premise resolved in S2.** Only graph
+build (`chunk_analysis::build_chunk_graph`) reads it, and
+`AnalysisAssumptions` no longer carries it, but S2 still resolves it. Cut:
+resolve it in S4 against the chunk's structural facts. The
 commuting-statements diagnostic path moves with it.
 
 **C6 — spec paths and whole-spec provenance in analysis output.** S2 evidence
@@ -319,11 +318,6 @@ A stage may read only what its key covers. Enforced, not documented:
 Each PR is byte-identical on the e2e suite and both canonical inputs unless
 it says otherwise.
 
-1. **Split graph build out of analysis (C5, types).** `compute_chunk_analysis`
-   becomes `analyze_chunk` plus `build_chunk_graph(facts, GraphOptions,
-commuting)`; `DependencyGraphOptions` splits into analysis and graph
-   halves; `commuting_statements` moves out of `AnalysisAssumptions` (still
-   resolved in S2).
 2. **Resolve `commuting_statements` in S4**, against the chunk's structural
    facts, with its diagnostics.
 3. **`AnalysisProjection` (C2, C3, C4, C7).** Computed after the selector
@@ -343,7 +337,7 @@ commuting)`; `DependencyGraphOptions` splits into analysis and graph
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.
 
-PRs 1, 2, 5 and 6 are independent of each other; 3 needs 2 for the commuting
+PRs 2, 5 and 6 are independent of each other; 3 needs 2 for the commuting
 selectors; 7 needs all before it.
 
 ## Interaction with other work

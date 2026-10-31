@@ -27,8 +27,8 @@ mod quotient;
 mod tests;
 
 pub use build::{
-    CommutingStatementsDiagnostic, DependencyGraphBuildError, DependencyGraphOptions,
-    DuplicateTopLevelDeclaration, KnownConflict, PremiseVerdict, build_dependency_graph_with,
+    CommutingStatementsDiagnostic, DependencyGraphBuildError, DuplicateTopLevelDeclaration,
+    GraphOptions, KnownConflict, PremiseVerdict, build_dependency_graph_with,
 };
 pub use dependency_graph::{
     AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId,

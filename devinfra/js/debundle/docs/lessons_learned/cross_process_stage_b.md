@@ -7,8 +7,8 @@ assemble assignment → realizability → lower) reads it as input. Goal:
 spec edits hit only Stage B; Stage A's expensive parse + analysis
 gets cached.
 
-The current in-process composer is
-`chunk_analysis/mod.rs::compute_chunk_analysis`. No on-disk sidecar or
+The current in-process steps are `chunk_analysis/mod.rs::compute_chunk_facts`
+and `build_chunk_graph`. No on-disk sidecar or
 cross-process consumer exists. **The design is abandoned.** This note records
 why, so we don't sleepwalk back into it.
 
@@ -106,12 +106,10 @@ doesn't justify it.
 
 ## What we kept
 
-The composer pattern survived: `compute_chunk_analysis` is a
-clean function that runs parse → facts → dependency graph → atomic-units
-behind one named call. Its value is **structural readability** —
-the materializer reads more cleanly when chunk analysis is a single
-function call rather than four inline stages — not cross-process
-caching.
+The composer pattern survived as two named calls, facts
+(`compute_chunk_facts`) then dependency graph and atomic units
+(`build_chunk_graph`). Its value is **structural readability**, not
+cross-process caching.
 
 ## Pointers
 

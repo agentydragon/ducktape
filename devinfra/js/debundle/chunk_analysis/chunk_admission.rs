@@ -2,7 +2,7 @@
 //! assumptions of docs/design.md §"Conditions on the input chunk"
 //! (A1 `eval`, A3 internal dynamic `import()`, A5 cheap
 //! `import.meta` reflection shapes). Runs during chunk analysis
-//! ([`crate::compute_chunk_analysis`]) right next to the A2
+//! ([`crate::compute_chunk_facts`]) right next to the A2
 //! top-level-await bail, before any quotient or lowering work.
 //!
 //! The scan is deliberately partial — it enforces the cheap,

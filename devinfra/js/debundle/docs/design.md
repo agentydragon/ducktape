@@ -1867,7 +1867,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   scope at the call site; the static analyzer cannot see what it
   references; `I` would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
-  `chunk_analysis::compute_chunk_analysis` next to the A2 bail)
+  `chunk_analysis::compute_chunk_facts` next to the A2 bail)
   rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
   at module top level (looking through parens and comma sequences to
   the callee), with the offending statement ordinal in the
@@ -1883,7 +1883,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   `facts::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
-  fields), and `chunk_analysis::compute_chunk_analysis` `bail!`s
+  fields), and `chunk_analysis::compute_chunk_facts` `bail!`s
   with the offending statement ordinal as soon as fact analysis
   returns — before any quotient or lowering work. Production
   chunks we target are TLA-free in practice; the rejection turns
@@ -2461,13 +2461,14 @@ The per-chunk pipeline is two halves with sharply different
 dependencies:
 
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
-  dependency graph → structural atomic groups. Pure function of
-  `(source bytes, analysis hints, DependencyGraphOptions)`. The composer
-  is `chunk_analysis::compute_chunk_analysis`, returning a
-  `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
-  crate's `AssignmentInputs` — that bundles `ChunkFactAnalysis` (facts +
-  top-level-await detection + redundant-hint warnings) with the
-  `DependencyGraphAndAtomicGroups` derived from those facts.
+  dependency graph → structural atomic groups, in two steps.
+  `chunk_analysis::compute_chunk_facts` is a pure function of
+  `(source bytes, analysis hints, admission overrides)` returning
+  `ChunkFactAnalysis` (facts, top-level-await detection, redundant-hint
+  warnings). `chunk_analysis::build_chunk_graph` derives the
+  `DependencyGraphAndAtomicGroups` from those facts, `GraphOptions` and the
+  chunk's resolved `commuting_statements`; no graph input reaches the
+  facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
   `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
@@ -3016,7 +3017,7 @@ top-level item views and static statement facts independently of author assertio
 `spec_resolution` gives this source census to the joint selector solver, then
 transfers it to lowering. After cross-module inputs are resolved, lowering
 completes `StructuralChunkAnalysis` with one canonical value-flow solve and
-passes it to `compute_chunk_analysis`. That pass combines it
+passes it to `compute_chunk_facts`. That pass combines it
 with `AnalysisInputs`: explicit `AnalysisAssumptions`, imported summaries, and
 analysis policy. Imported summaries may themselves depend on contracts declared
 for their source chunks. These inputs remain distinct from inferred facts.
@@ -3630,8 +3631,8 @@ rejected.
 ## AssignmentInputs + AssignmentAnalysis: dependency graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
-the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR; distinct from
-`chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
+the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR, built from the
+spec-independent `DependencyGraphAndAtomicGroups`) and a
 `AssignmentAnalysis` wrapping it (assignment + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
 explicit logical modules, the dependency graph, and the module dep graph derived by

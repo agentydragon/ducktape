@@ -721,11 +721,6 @@ pub struct AnalysisAssumptions {
     pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     /// Source-selected author premises for one exact local helper parameter.
     pub argument_inputs: Vec<ResolvedArgumentInput>,
-    /// Source-resolved author premises that two of this chunk's source units
-    /// commute during initialization. The dependency-graph build inerts the
-    /// `Sequenced` edges between each pair and rejects a pair the facts
-    /// contradict (SPEC.md § Commuting statements).
-    pub commuting_statements: Vec<ResolvedCommutingStatements>,
     /// Host operations the author audited as unable to run application code
     /// synchronously (`host_behavior.reentry_free_operations`).
     pub reentry_free_operations: BTreeSet<spec::ReentryFreeOperation>,

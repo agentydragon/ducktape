@@ -33,14 +33,14 @@ use crate::{
 use analysis::facts::{ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
     AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
-    DependencyGraphOptions, EntryDestination, LocalEffectPolicy, ModuleId, ModuleRole,
-    PlannedModule, top_level_id,
+    EntryDestination, GraphOptions, LocalEffectPolicy, ModuleId, ModuleRole, PlannedModule,
+    top_level_id,
 };
 use anyhow::{Context, Result, bail};
 use artifact::paths::{join_module_path, normalize_module_path};
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
-use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
+use chunk_analysis::{DynamicImportTarget, build_chunk_graph, compute_chunk_facts};
 use gate::{
     AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
@@ -52,7 +52,10 @@ use output_layout::{
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
-use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
+use spec::{
+    ChunkRenames, DependencyGraphOptions, InitializerPurity, LogicalModule, MemberPurity,
+    UnassignedMode,
+};
 use spec_resolution::{
     LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
     logical_requests_for_chunk, project_chunk,
@@ -467,7 +470,7 @@ pub(super) fn finish_logical_chunk(
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
-    let mut dependency_graph_options = chunk_analysis_options
+    let dependency_graph_options = chunk_analysis_options
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
@@ -512,11 +515,6 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or_default();
         inputs.assumptions.argument_inputs = cross_module_purities
             .argument_inputs
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.assumptions.commuting_statements = cross_module_purities
-            .commuting_statements
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
@@ -655,18 +653,11 @@ pub(super) fn finish_logical_chunk(
         inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
             .non_reentrant_global_membership
             .clone();
-        // Source inputs were already resolved and validated in the whole-
-        // program prepared execution index. Pure graph construction has no
-        // parser/source context and must not silently consume this spec field.
-        dependency_graph_options.value_inputs.clear();
-        dependency_graph_options.native_operation_inputs.clear();
-        dependency_graph_options.native_call_identity_inputs.clear();
-        dependency_graph_options.argument_inputs.clear();
-        dependency_graph_options.commuting_statements.clear();
         inputs
     };
-    // Chunk analysis: hint-sensitive facts, dependency graph, and structural
-    // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
+    let graph_options = GraphOptions::from(&dependency_graph_options);
+    // Chunk analysis: hint-sensitive facts, then the dependency graph and
+    // structural atomic groups. See `chunk_analysis/mod.rs`.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
     let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
         structural_analysis,
@@ -681,20 +672,30 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or(&BTreeMap::new()),
         &analysis_inputs.assumptions.argument_inputs,
     );
-    let chunk_analysis = match compute_chunk_analysis(
+    let analysis = compute_chunk_facts(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,
         &analysis_inputs,
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
-        dependency_graph_options,
+        dependency_graph_options.admission_overrides,
         export_reentry_policies
             .get(&chunk_id_interned)
             .unwrap_or(&ExportReentryPolicy::Conservative),
         &resolve_dynamic_import,
+    )?;
+    let precomputed = match build_chunk_graph(
+        chunk_id,
+        &analysis,
+        graph_options,
+        cross_module_purities
+            .commuting_statements
+            .get(chunk_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
     ) {
-        Ok(chunk_analysis) => chunk_analysis,
+        Ok(precomputed) => precomputed,
         Err(error) => {
             // A rejected `commuting_statements` entry is an author-premise
             // diagnostic, not a pipeline fault: record it, with the selector
@@ -717,10 +718,6 @@ pub(super) fn finish_logical_chunk(
         }
     };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
-    let ChunkAnalysisOutput {
-        fact_analysis: analysis,
-        dependency_graph_and_atomic_groups: precomputed,
-    } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &runtime_ast.module.body, target_dir)?;
