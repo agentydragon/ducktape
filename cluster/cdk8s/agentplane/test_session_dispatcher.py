@@ -52,26 +52,24 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         )
 
 
-def test_app_and_migration_use_same_database_uri_secret(staging_manifests: list[dict[str, Any]]) -> None:
+def test_app_migrates_with_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
     )
     pod = deployment["spec"]["template"]["spec"]
 
-    containers = [
-        one(container for container in pod["containers"] if container["name"] == "app"),
-        one(container for container in pod["initContainers"] if container["name"] == "migrate"),
-    ]
+    assert not pod.get("initContainers")
+    container = one(container for container in pod["containers"] if container["name"] == "app")
     database_url_name = env_name(app.Settings, "database_url")
 
-    for container in containers:
-        variables = container["env"]
-        database_url = one(variable for variable in variables if variable["name"] == database_url_name)
-        assert database_url == {
-            "name": database_url_name,
-            "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
-        }
-        assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
+    variables = container["env"]
+    database_url = one(variable for variable in variables if variable["name"] == database_url_name)
+    assert database_url == {
+        "name": database_url_name,
+        "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
+    }
+    assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
+    assert container["startupProbe"]["httpGet"]["path"] == "/healthz"
 
 
 def test_app_uses_dispatcher_grpc_target_without_legacy_http_flag(staging_manifests: list[dict[str, Any]]) -> None:

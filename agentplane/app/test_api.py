@@ -14,10 +14,14 @@ from agentplane.app.testing.models import SandboxView, ThreadPage, ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.net import listen_tcp
+from util.testing.postgres import DatabaseNames, create_temporary_database
 
 
-async def test_go_app_serves_a_parent_owned_listener(db_url: str, sandbox: SandboxCluster) -> None:
-    with listen_tcp() as listener:
+async def test_go_app_serves_a_parent_owned_listener(
+    postgres_admin_url: str, database_names: DatabaseNames, sandbox: SandboxCluster
+) -> None:
+    # The normal serving path must migrate a fresh database before it reports readiness.
+    with create_temporary_database(postgres_admin_url, database_names()) as db_url, listen_tcp() as listener:
         config: dict[str, object] = {
             "database_url": db_url,
             "kubeconfig": str(sandbox.server.kubeconfig),

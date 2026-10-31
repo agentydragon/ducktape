@@ -45,7 +45,7 @@ func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCurrentSchema(t, db)
-	assertAlembicHead(t, db)
+	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 
 	_, err := db.ExecContext(t.Context(), `
@@ -90,7 +90,36 @@ func TestUpAdoptsPopulatedAlembicHeadWithoutChangingRows(t *testing.T) {
 		t.Fatalf("operator session rows changed during adoption:\nbefore: %s\nafter:  %s", beforeSessions, got)
 	}
 	assertCurrentSchema(t, db)
-	assertAlembicHead(t, db)
+	assertNoAlembicMarker(t, db)
+	assertGooseVersion(t, db)
+}
+
+func TestUpRetiresMarkerFromAppliedVersionOneWithoutChangingRows(t *testing.T) {
+	db := openDatabase(t)
+	provider, err := newProvider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0037_drop_auto_thread_titles" {
+		t.Fatalf("version 1 Alembic marker = %q", got)
+	}
+	seedCurrentSchema(t, db)
+	beforeThreads := jsonRows(t, db, "thread")
+	beforeSessions := jsonRows(t, db, "operator_browser_session")
+
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if got := jsonRows(t, db, "thread"); got != beforeThreads {
+		t.Fatalf("thread rows changed: before %s, after %s", beforeThreads, got)
+	}
+	if got := jsonRows(t, db, "operator_browser_session"); got != beforeSessions {
+		t.Fatalf("operator session rows changed: before %s, after %s", beforeSessions, got)
+	}
+	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 }
 
@@ -105,7 +134,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up accepted an unknown Alembic revision")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 		assertNotCreated(t, db, "operator_browser_session")
 		if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0035_event_log_into_thread" {
 			t.Fatalf("Alembic revision changed on rejection: %q", got)
@@ -118,7 +147,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up accepted a partial unmarked app schema")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 		assertNotCreated(t, db, "operator_browser_session")
 		assertNotCreated(t, db, "alembic_version_app")
 	})
@@ -133,7 +162,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up adopted an incomplete schema at Alembic head")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 		assertNotCreated(t, db, "operator_browser_session")
 		if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0037_drop_auto_thread_titles" {
 			t.Fatalf("Alembic revision changed on rejection: %q", got)
@@ -150,7 +179,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up adopted a thread table with an incompatible primary key")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 	})
 
 	t.Run("head marker with altered session check", func(t *testing.T) {
@@ -164,7 +193,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up adopted an altered operator session check")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 	})
 
 	t.Run("head marker with unexpected foreign key", func(t *testing.T) {
@@ -174,7 +203,7 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		if err := Up(t.Context(), db); err == nil {
 			t.Fatal("Up adopted a thread table with an unexpected foreign key")
 		}
-		assertNotCreated(t, db, "agentplane_app_goose_version")
+		assertNoAppliedMigration(t, db)
 	})
 }
 
@@ -202,7 +231,7 @@ func TestConcurrentUpRunnersSerialize(t *testing.T) {
 		}
 	}
 	assertCurrentSchema(t, db)
-	assertAlembicHead(t, db)
+	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 }
 
@@ -301,23 +330,34 @@ func assertColumns(t *testing.T, db *sql.DB, table string, expected ...string) {
 	}
 }
 
-func assertAlembicHead(t *testing.T, db *sql.DB) {
+func assertNoAlembicMarker(t *testing.T, db *sql.DB) {
 	t.Helper()
-	if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0037_drop_auto_thread_titles" {
-		t.Fatalf("alembic_version_app = %q, want 0037_drop_auto_thread_titles", got)
-	}
+	assertNotCreated(t, db, "alembic_version_app")
 }
 
 func assertGooseVersion(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var applied int
 	if err := db.QueryRowContext(t.Context(), `
-		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id = 1 AND is_applied
+		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id = 2 AND is_applied
 	`).Scan(&applied); err != nil {
 		t.Fatal(err)
 	}
 	if applied != 1 {
-		t.Fatalf("expected Goose baseline version 1 applied once, got %d rows", applied)
+		t.Fatalf("expected Goose version 2 applied once, got %d rows", applied)
+	}
+}
+
+func assertNoAppliedMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var applied int
+	if err := db.QueryRowContext(t.Context(), `
+		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id > 0 AND is_applied
+	`).Scan(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("rejected schema recorded %d applied migrations", applied)
 	}
 }
 
