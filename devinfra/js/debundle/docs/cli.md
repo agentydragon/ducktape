@@ -1288,12 +1288,20 @@ debundle spec propose-commutations \
   miss, and the pair is not emitted;
 - ranks proposals: `single_pair_cut` (inerting this pair alone leaves the
   SCC's constraining subgraph acyclic, every parallel unit edge counted) before
-  `partial_cut`, then by `remaining_module_pair_edges`.
+  `partial_cut`, then by `remaining_module_pair_edges`;
+- inerts every proposal of the SCC together and writes one `sccs` row per
+  SCC (its `modules` and a `verdict`): `pairs_break`, or `pairs_cannot_break`
+  with `residual_modules` (the modules still on a constraining cycle) and
+  `blocking_edges`, the constraining edges between them counted by `kind` and
+  `reason` (`kind_not_inertable` for `eager_use` and the other kinds no
+  premise inerts, else the rejection reason of the edge's pair). An SCC with
+  no proposal still gets its row.
 
 Each proposal carries the `entry` to paste, both endpoints (source unit,
-binding, module, source location, a source excerpt, `selector_origin`), the
-`inerted_edges` with their `SequencedCause` explanation, and the SCC it
-breaks. `draft_yaml` is the `chunk_analysis_options.<chunk>.commuting_statements`
+binding, module, source location, the source unit's first line — its own
+declarator in a comma-list declaration — and `selector_origin`), the
+`inerted_edges` with their `SequencedCause` explanation, and the `scc_id` of
+the SCC it cuts. `draft_yaml` is the `chunk_analysis_options.<chunk>.commuting_statements`
 fragment in rank order, each entry preceded by the same facts as comments and
 `note` left `null` for the author's rationale; `--out` writes it to a file.
 The command is read-only analysis: it never writes into the spec, and an

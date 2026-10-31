@@ -143,7 +143,9 @@ enum SpecNsCommand {
     /// ranked single-pair cuts first. `eager_use` cut edges are reported
     /// as needing co-location; a pair the gate would reject (a known
     /// conflict, an unused premise) or an endpoint without a unique
-    /// selector is reported, not emitted. Dry-run: nothing is written
+    /// selector is reported, not emitted. Each SCC gets a verdict: whether
+    /// its proposals together break it, else the blocking edges by kind and
+    /// reason. Dry-run: nothing is written
     /// into the spec; `--out` writes the YAML draft. Applying an entry is
     /// the author's step (docs/spec_editing.md § Proposing commutations).
     #[command(name = "propose-commutations")]

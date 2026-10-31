@@ -1,8 +1,8 @@
 //! `debundle spec propose-commutations` over real rejection reports: the
 //! command drafts `commuting_statements` entries for the `sequenced` cut edges
 //! the gate would accept, and reports — without emitting — the cut edges a
-//! premise can never inert, the pairs the gate would reject, and the endpoints
-//! without a unique selector.
+//! premise can never inert, the pairs the gate would reject, the endpoints
+//! without a unique selector, and every SCC that pairs alone cannot break.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -75,6 +75,32 @@ fn array<'a>(report: &'a Value, key: &str) -> &'a [Value] {
     report[key]
         .as_array()
         .unwrap_or_else(|| panic!("{key} must be an array: {report:#}"))
+}
+
+fn only_scc(report: &Value) -> &Value {
+    let [scc] = array(report, "sccs") else {
+        panic!("one SCC: {report:#}");
+    };
+    assert_eq!(scc["scc_id"], 0);
+    scc
+}
+
+/// `(kind, reason)` of every blocking-edge row of an SCC pairs cannot break.
+fn blocking_rows(scc: &Value) -> Vec<(String, String)> {
+    assert_eq!(scc["verdict"], "pairs_cannot_break", "{scc:#}");
+    array(scc, "blocking_edges")
+        .iter()
+        .map(|row| {
+            assert!(
+                row["count"].as_u64().is_some_and(|count| count > 0),
+                "{row:#}"
+            );
+            (
+                row["kind"].as_str().expect("kind").to_owned(),
+                row["reason"].as_str().expect("reason").to_owned(),
+            )
+        })
+        .collect()
 }
 
 /// The draft is the `chunk_analysis_options` fragment the author pastes.
@@ -188,6 +214,10 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     // gate and the emitted bundle preserves the entry output.
     let fixture = run_fixture(opaque_split(vec![first_entry]));
     assert_preserved_entry_output(&fixture, OPAQUE_OUTPUT);
+
+    let scc = only_scc(&report);
+    assert_eq!(scc["verdict"], "pairs_break", "{scc:#}");
+    assert_eq!(array(scc, "modules").len(), 2, "{scc:#}");
 }
 
 /// The source unit of a comma-list declarator is the declarator, not the
@@ -262,6 +292,15 @@ fn eager_cycle_needs_co_location() {
         assert_eq!(need["edge"]["kind"], "eager_use", "{need:#}");
         assert_eq!(need["scc_id"], 0);
     }
+    // No pair exists, and the SCC row says so instead of staying silent.
+    let scc = only_scc(&report);
+    assert_eq!(scc["residual_modules"], 2, "{scc:#}");
+    for row in blocking_rows(scc) {
+        assert_eq!(
+            row,
+            ("eager_use".to_owned(), "kind_not_inertable".to_owned())
+        );
+    }
     assert_eq!(
         draft_pairs(&report),
         Vec::<CommutingStatementsContract>::new()
@@ -301,6 +340,11 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
         assert_eq!(proposal["single_pair_cut"], false, "{proposal:#}");
         assert_eq!(proposal["rank_reason"], "partial_cut", "{proposal:#}");
     }
+    let rows = blocking_rows(only_scc(&report));
+    assert!(
+        rows.contains(&("eager_use".to_owned(), "kind_not_inertable".to_owned())),
+        "{rows:?}"
+    );
 }
 
 /// A known write/read conflict on one `globalThis` property is the gate's
@@ -349,6 +393,11 @@ fn known_global_property_conflict_is_reported_not_proposed() {
             );
         }
     }
+    let rows = blocking_rows(only_scc(&report));
+    assert!(
+        rows.contains(&("sequenced".to_owned(), "known_conflict".to_owned())),
+        "{rows:?}"
+    );
 }
 
 /// An anonymous endpoint whose statement appears twice has no unique
