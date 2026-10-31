@@ -203,7 +203,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			return nil
 		}
 		var subjectGeneration int64
-		table, where, args := recording.Subject.row()
+		table, where, args := refreshWhere(recording.Subject)
 		if err := tx.QueryRowContext(ctx, "SELECT generation FROM "+table+" WHERE "+where, args...).Scan(&subjectGeneration); err != nil {
 			return fmt.Errorf("%s %+v: %w", table, recording.Subject, err)
 		}
