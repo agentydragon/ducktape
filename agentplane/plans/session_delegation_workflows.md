@@ -1,8 +1,9 @@
-# Caller-privilege Session delegation: proposal for review
+# Caller-privilege Session delegation: approved implementation plan
 
-Status: **partially reviewed; catalogue visibility and additive briefing accepted.** The remaining
-authority, scope and interface choices await stakeholder review. This proposes a bounded workflow for
-[`THREAD_CREATE_POLICY`](task_dag.md#thread_create_policy--authorize-session-creation-separately).
+Status: **existing-environment implementation approved, 2026-10-31; fresh provisioning deferred.**
+The selected first
+workflow and its implementation capstone are tracked under
+[`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
 The tools below are proposed additions, not currently callable APIs. The source audit describes
 the implementation at `9d845b6d0acf9ed60c72274e48e973267d258101`; the existing system-test
 scenario was read, not executed for this proposal.
@@ -14,53 +15,96 @@ ServiceAccount authority. Support workload callers and external MCP callers thro
 backend checks. Keep opening a Session and submitting its first input separate. Provide a small
 observation tool that correlates a command with its turn and returns structured facts.
 
-| Decision for review | Recommendation                                                                                                              | Consequence / alternative                                                                                                                                                                              |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| First target scope  | Reuse an existing environment with the same SA UID as the caller                                                            | New environments with that SA need a controller/provisioning contract; include that work now if fresh-environment delegation is required for the first milestone.                                      |
-| Session authority   | Record the logical execution principal at Dispatcher admission, separately from backend peers and evidence writers          | Deriving authority only from a live environment makes retained reads and future environment-free Sessions depend on that environment's lifetime.                                                       |
-| Agent interface     | Backend-authorized Session tools through MCP and CLI                                                                        | An Action wrapper is also possible, but needs verified caller attribution and the same backend enforcement. Existing operator-approved orchestration remains a distinct authority path.                |
-| Approval defaults   | Routine same-principal Session operations execute automatically; new-environment creation initially requires human approval | Dedicated environment-management Actions need their own typed provisioning contract. `orchestration_v1` is not a prerequisite for either new path.                                                     |
-| Child results       | Observe input delivery and the correlated turn's output; follow up with another input                                       | A task-level `report`/`blocked` protocol is additional product work. Neither turn completion nor inbox acknowledgement proves task success.                                                            |
-| Required reads      | A narrow same-principal read/control contract for this workflow                                                             | This requires explicit approval here; it does not select the held, broader cross-SA archive policy. Without result reads, select another authenticated result-delivery contract before implementation. |
+| Contract item      | Selected behavior                                                                                                           | Consequence / alternative                                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First target scope | Reuse an existing environment with the same SA UID as the caller                                                            | New-environment creation and its template catalogue are deferred until catalogue ownership/location is selected; they do not hold existing-environment delegation.                          |
+| Session authority  | Record the logical execution principal at Dispatcher admission, separately from backend peers and evidence writers          | Deriving authority only from a live environment makes retained reads and future environment-free Sessions depend on that environment's lifetime.                                            |
+| Agent interface    | Backend-authorized Session tools through MCP and CLI                                                                        | An Action wrapper is also possible, but needs verified caller attribution and the same backend enforcement. Existing operator-approved orchestration remains a distinct authority path.     |
+| Approval defaults  | Routine same-principal Session operations execute automatically; new-environment creation initially requires human approval | Dedicated environment-management Actions need their own typed provisioning contract. `orchestration_v1` is not a prerequisite for either new path.                                          |
+| Child results      | Observe input delivery and the correlated turn's output; follow up with another input                                       | A task-level `report`/`blocked` protocol is additional product work. Neither turn completion nor inbox acknowledgement proves task success.                                                 |
+| Required reads     | A narrow same-principal read/control contract for this workflow                                                             | Approved for this same-principal workflow; broader cross-SA archive policy remains held. Without result reads, select another authenticated result-delivery contract before implementation. |
 
-The table contains the remaining proposed choices, including authority and transport. After review, split the selected work into independently finishable DAG
-nodes with real dependencies and re-estimate the two-week sprint. Reliability remains P0; a new
+The stakeholder approved building this contract. The DAG splits implementation into independently
+finishable outcomes and records real integration prerequisites. Reliability remains P0; a new
 authorization contract is substantial work and should not be assumed to fit the remaining sprint.
 
 ### Accepted choices, 2026-10-31
 
-- **Full template catalogue:** return the complete deployment-published catalogue, with pagination;
-  do not filter its templates by ServiceAccount. Creation remains a separate approval decision.
+- **Full template catalogue, when implemented:** return the complete deployment-published catalogue,
+  with pagination and no per-SA template filtering. Catalogue ownership and fresh provisioning
+  are deferred; the first release reuses existing environments.
 - **Additive briefing:** `sessions_open.additional_instructions` appends a child briefing while
   preserving the default platform guidance. It does not replace the effective prompt.
 - **Explicit first input:** opening a Session, including with `additional_instructions`, does not
   start a model turn. The caller must submit input separately to start work.
+- **Future creation identity:** reuse the caller's existing SA and permissions without owning or
+  changing that SA, adding PolicyBindings or manufacturing grants. Request extra access separately.
+- **Future template lifetime:** pin the approved configuration across restarts; updating it is an
+  explicit operation. Where the published catalogue lives and how its revisions are owned still
+  need review before creation is implemented.
 
 ## Authorization and approval defaults
 
-**Proposal following the operator's 2026-10-31 clarification:** avoid depending on
+**Approved implementation direction, 2026-10-31:** avoid depending on
 `orchestration_v1`; extract environment management into dedicated Actions. Human approval for
-creating an environment is acceptable. The defaults below remain part of the contract for review.
+creating an environment is the initial default.
 
-The new Session tools use backend authorization directly. They do not create an `ActionRequest` or
-wait for a human Decision. If exposed through Actions as well, their automatic execution must use
+Use direct backend gRPC and CLI access where the existing APIs make that straightforward.
+Action adapters are also approved as an initial surface. Routine same-principal operations do not
+wait for a human Decision. An Action adapter's automatic execution must use
 the same verified caller and backend checks; an Action wrapper cannot substitute its own broader
 service authority.
 
 The [tool reference](#tool-contract-derived-from-the-workflows) specifies the authorization and
 approval rule for every proposed operation.
 
-The read contract needs stakeholder approval once before implementation, not per-call approval.
-An external MCP caller uses its Connection's verified account under the same rules. Neither a
+The narrow same-principal read contract is approved; reads need no per-call human approval.
+An external MCP caller uses its Connection's verified account under the same rules. Normal access
+requires a verified SA in the served namespaces and per-object UID checks, not a second per-SA
+Dispatcher caller allowlist. Existing privileged backend bypass remains explicit and Pod-bound. Neither a
 parent/creator label nor a discovered handle confers access. Failed authorization is a structured
 denial; privileged broker operations require a separate explicit contract. Runtime validation
 and configured model/resource policies still apply to otherwise authorized calls.
 
 Creating a new environment is a separate Action with human approval initially. Its request must
-show the concrete template/backend, resources, execution account and selected mounts/policies;
+show the concrete template/backend, resources, execution account and workload mounts/security settings;
 approval covers those parameters, not arbitrary future Session control or a different account.
 Other environment lifecycle Actions need their own reviewed scope and approval policy. This
 proposal adds no blanket auto-approval rule for environment management.
+
+## First implementation scope
+
+Ship existing-environment list/get and the seven Session operations. An external MCP caller can
+reuse an eligible existing environment without having an environment of its own. An empty list
+means an operator must prepare a suitable environment; the first release does not create one.
+`environments_list_templates`, `environments_get_creation` and `environments/create` remain
+later design/implementation work. Keep their sketches below to preserve the agreed direction,
+without making catalogue decisions prerequisites for the existing-environment workflow.
+
+## Transport and implementation mapping
+
+**Operator direction, 2026-10-31:** aim for an approximately one-to-one mapping between domain
+operations and owning gRPC methods, callable from the Agentplane CLI. Use the existing gRPC APIs
+now where little additional work is needed. Actions-first is acceptable elsewhere; keep the
+verified caller and backend ownership, and record each remaining RPC/CLI extraction explicitly.
+This does not require a new service or binary, a general transport rewrite, or `orchestration_v1`.
+
+| Operation                                                 | Initial backend mapping                                                                    | Remaining work / TODO                                                                                                                                                                                                                                         |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open, submit input, cancel queued input, interrupt a turn | Existing `SessionDispatcher.OpenSession`, `SubmitInput`, `CancelDispatch`, `InterruptTurn` | Add target UID/principal checks, then expose generated clients through CLI/MCP. Additional briefing maps to the existing caller-instruction input; prompt composition is backend-owned.                                                                       |
+| Get Session                                               | `SessionDispatcher.GetSessionOpening` plus `HistoryService.GetSessionSummary`              | Keep the composite read in neutral client code initially; add an owning snapshot RPC only if useful, without moving authority between services.                                                                                                               |
+| Read turns, observe one input                             | Existing History reads/follows plus Dispatcher command receipts                            | Extract the compact projection from legacy orchestration DTOs. TODO: owning typed RPCs for the compact turn/observation contract and equivalent direct CLI commands where initial Actions perform the composition.                                            |
+| List/get existing environments                            | Typed Sandbox inventory and runtime/configuration sources                                  | Publish same-SA UID-scoped reads through their backend. Direct gRPC/CLI where straightforward; do not expose a raw unfiltered namespace list.                                                                                                                 |
+| List templates                                            | Full deployment-published catalogue                                                        | Extract shared defaults from app-owned presets. Direct backend read can share the Action Service process; no app calls. TODO: dedicated read RPC/CLI if initially exposed as an Action.                                                                       |
+| Create environment, observe creation                      | Dedicated `environments/create` Action plus neutral provisioning/lookup code               | Human approval initially. First retain the caller UID and support shared-account environments end to end. TODO: typed create/lookup RPCs and direct CLI access for any initially Action-only operation; direct create still needs a valid approval authority. |
+
+### Budget and broader-policy boundaries
+
+Count limits do not replace spend controls: the operator's stated concern is provider usage cost.
+A future per-account spend budget belongs at LLM ingress and also covers message-triggered work.
+No new spend-budget implementation or general different-privilege delegation policy gates this
+caller-privilege slice. Broader launch/default/grant and cross-SA archive decisions remain in
+their existing DAG nodes.
 
 ## What an environment means in this version
 
@@ -137,8 +181,8 @@ permissions, tool availability or environment state; those remain discoverable r
 
 A deliberate omission/replacement of platform guidance should require a separate, explicit
 advanced option, never an empty `instructions` value or ordinary additional briefing. This draft
-selects safe additive behavior for the normal spawning tool; the advanced override's exact
-interface remains a review question. Prompts are not an authorization boundary: changing or
+selects additive behavior for the normal spawning tool; an advanced override needs its own
+reviewed interface when needed. Prompts are not an authorization boundary: changing or
 omitting guidance does not change backend RBAC, Action policy or environment isolation.
 
 ## Proposed workflow A: agent reuses its environment
@@ -328,15 +372,18 @@ an OAuth connection whose bound account is the target's actual SA, with explicit
 backend-audience permission. That is deployable configuration work, not a caller-supplied override
 or permission to mint arbitrary workload tokens.
 
-### When no eligible environment exists: dedicated provisioning Actions
+### Later: when no eligible environment exists, dedicated provisioning Actions
 
-The proposed creation path uses dedicated environment tools and an Action backed by a typed
-provisioning API. It is not currently callable; it has no dependency on `orchestration_v1`.
+This path is deferred at the stakeholder's request until template catalogue ownership/location is
+settled. Today underlying Pod/VM workload templates are namespaced Kubernetes `SandboxTemplate`
+objects generated from Git-managed cdk8s configuration; launch defaults also live in app/deployment
+presets. The fuller backend catalogue needs an explicit owner. The sketch uses dedicated tools
+and an Action over typed provisioning code, with no `orchestration_v1` dependency.
 
 1. Discover `environments_list_templates` through `tools/list` and call `{"limit":20}`. Select a
    deployment-published VM or Pod configuration and retain its complete `template` reference, including its
    revision. The returned configuration includes the caller's actual execution account, resources,
-   mounts and policies. Publication means the configuration is offered for submission, not that
+   mounts and workload security settings. Publication means the configuration is offered for submission, not that
    the caller is approved to create it. No new per-SA template-eligibility rule is proposed.
    The agent does not guess template names, revisions or resource defaults. Discover `environments/create` and its current schema/policy through the normal Action catalog.
 2. Retain a creation UUID and a separate Action key before submitting. For example, after discovering
@@ -382,10 +429,10 @@ provisioning API. It is not currently callable; it has no dependency on `orchest
    approved creation does not itself open a Session, guarantee readiness or grant a different
    principal authority.
 
-Same-SA provisioning needs controller-owned shared-account lifetime, a revision/snapshot contract
-and typed creation recovery. Those are real backend gaps, covered by
-[`ENVIRONMENT_ACTIONS_DESIGN`](task_dag.md#environment_actions_design--dedicated-environment-management-actions).
-The tools and their schemas are included below for review. Existing-target discovery and delegation
+Later same-SA provisioning needs controller support for a borrowed account with pinned UID,
+a revision/snapshot contract and typed creation recovery. Those are real backend gaps, covered by
+[`ENVIRONMENT_MANAGEMENT`](task_dag.md#environment_management--dedicated-environment-tools-and-creation).
+These later tool/schema sketches remain below. Existing-target discovery and delegation
 can ship independently of fresh provisioning; an external caller with no eligible target must
 wait for provisioning support or operator preparation of a suitable environment.
 
@@ -395,11 +442,15 @@ SA and remains a separate legacy capability. Its system scenario
 
 ## Tool contract derived from the workflows
 
-These are proposed MCP/CLI interfaces, not existing callable APIs. Results use MCP
+These are the selected MCP/CLI interface contracts and deferred provisioning sketches, not
+existing callable APIs. The first release includes `environments_list`, `environments_get` and
+the seven `sessions_*` operations; template discovery, creation and creation lookup are **later**.
+Results use MCP
 `structuredContent` plus a matching JSON text fallback. Callers do not parse prose for state,
 authority failures, IDs or recovery. The CLI exposes equivalent machine-readable output.
 
-The four environment read tools and seven Session tools authorize directly at their backends.
+The environment reads and Session operations enforce authority at their owning backends, whether
+exposed directly or through an initially Action-based adapter.
 **`environments/create` names an Action** (`group: "environments", name: "create"`), submitted
 through the existing generic `request_action` envelope; the slash is not an MCP tool name. Its
 inner argument/result schemas appear in the same reference table below. An Action executor must
@@ -421,11 +472,11 @@ projections belong to neutral shared clients/backends, with no `orchestration_v1
 
 | Name                             | Purpose                                                                                                                                                                                                                                                                                                          | Approval / authorization                                                                                                                                                                          | Input schema                                                                                                                          | Success-output schema                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `environments_list_templates`    | Discover the full deployment-published Pod/VM catalogue, exact revision handles and what a creation approval would cover. Use when no eligible environment exists; it creates nothing.                                                                                                                           | Authenticated read of the full catalogue, without per-SA template filtering; discovery is not creation approval.                                                                                  | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<TemplateDescriptor>`                                                                                                 |
+| `environments_list_templates`    | **Later.** Discover the full deployment-published Pod/VM catalogue, exact revision handles and what a creation approval would cover. Use when no eligible environment exists; it creates nothing.                                                                                                                | Authenticated read of the full catalogue, without per-SA template filtering; discovery is not creation approval.                                                                                  | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<TemplateDescriptor>`                                                                                                 |
 | `environments_list`              | Discover existing environments eligible for Session work, including their full handles, readiness, instructions and runtime choices. An empty list is valid; a backend failure is an error.                                                                                                                      | Automatic, filtered to the caller's eligible same-SA targets.                                                                                                                                     | `{limit: integer (1..100), after?: OpaqueCursor}`                                                                                     | `Page<EnvironmentDescriptor>`                                                                                              |
 | `environments_get`               | Refresh one environment's state and usable Session configuration. Use the complete handle; a same-name replacement is refused.                                                                                                                                                                                   | Automatic for an authorized target.                                                                                                                                                               | `{target: TargetRef}`                                                                                                                 | `EnvironmentDescriptor`                                                                                                    |
-| `environments_get_creation`      | Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                                                                                                                                                 | Automatic for the creation's authenticated owner.                                                                                                                                                 | `{creation_id: UUID}`                                                                                                                 | `CreationObservation`                                                                                                      |
-| **Action `environments/create`** | Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                                                                                                                                         | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                                            | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`                                         | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
+| `environments_get_creation`      | **Later.** Look up a creation by its retained ID after a lost reply or uncertain outcome. This read neither repeats creation nor approves a pending Action.                                                                                                                                                      | Automatic for the creation's authenticated owner.                                                                                                                                                 | `{creation_id: UUID}`                                                                                                                 | `CreationObservation`                                                                                                      |
+| **Action `environments/create`** | **Later.** Create a managed environment under the caller's account from the reviewed template revision. Return a creation receipt; it does not open a Session or promise readiness.                                                                                                                              | Human approval initially, plus backend validation of the actual caller/account, namespace, revision and configuration.                                                                            | `{creation_id: UUID, name: string (Kubernetes DNS subdomain, 1..253), template: TemplateRef}`                                         | `CreationObservation` as the Action's result, inside its ordinary Action request/Decision/Execution envelope.              |
 | `sessions_open`                  | Durably open a child Session with default platform guidance, an optional additive brief and one-time setup. Opening does not start a model turn; send the task with `sessions_submit_input`. Same UUID/request recovers the original; conflicting reuse fails. Admission does not mean harness/model acceptance. | Caller is authenticated; target's actual SA UID equals caller's verified SA UID; target UID is fenced at Dispatcher admission; the owning runtime validates the requested harness/model settings. | `{target: TargetRef, session_id: UUID, spec: SessionSpec, additional_instructions?: string, setup_script?: string (maxLength 65536)}` | `{opening: Dispatcher.SessionOpening}`; normally queued initially.                                                         |
 | `sessions_submit_input`          | Durably admit input separately from opening; same command ID/request recovers its original admission.                                                                                                                                                                                                            | Same trusted logical Session principal and actual target execution account as caller; target/Session binding and target UID match.                                                                | `{target: TargetRef, session_id: UUID, command_id: UUID, text: string (nonempty)}`                                                    | `{dispatch: Dispatcher.Dispatch}`; stored is not consumed.                                                                 |
 | `sessions_observe_input`         | Bounded, read-only observation correlated to one command; timeout does not cancel work.                                                                                                                                                                                                                          | Same retained logical principal under the narrow read rule; live environment not required.                                                                                                        | `{session_id: UUID, command_id: UUID, wait_seconds: integer (0..30), resume_token?: OpaqueToken}`                                     | `{session_id: UUID, command_id: UUID, dispatch: SourcePart<Dispatcher.Dispatch, "dispatcher">, observation: Observation}`. |
@@ -442,10 +493,12 @@ policy/Decision processing governs a creation request. Initially creation requir
 Any future per-template request restriction needs an explicit policy owner and enforcement
 contract; it must not be inferred from catalogue membership or a preset.
 
-The initial creation schema selects a complete configuration for review; it has no arbitrary Pod
+The later creation schema borrows the caller's existing SA and live permissions; it never adds
+PolicyBindings or grants and does not pin authorization state. It selects a complete workload
+configuration for review; it has no arbitrary Pod
 spec, alternate-account or resource-override field. The reviewed configuration fixes the namespace;
 `name` must be a valid Sandbox object name there. `TemplateDescriptor.configuration` shows the
-selected Pod/VM resources, mounts, policies and bootstrap before submission. The trusted approval
+selected Pod/VM resources, mounts, workload security settings and bootstrap before submission. The trusted approval
 view must resolve the exact requested revision; a missing/stale revision cannot silently resolve
 to a newer one. Execution must materialize that approved configuration or refuse before effects.
 Mutable templates currently resolve again on every start, so this revision/snapshot contract is
@@ -495,7 +548,6 @@ type TemplateDescriptor = {
   configuration: {
     workload: SandboxTemplateSpec;
     execution_account: AccountRef;
-    policy_sets: string[];
     bootstrap?: string;
     wake_on_send: boolean;
     idle_suspend_after_seconds?: integer; // >= 60; absent means no idle suspension
@@ -657,7 +709,7 @@ a reply address nor a creator/parent edge grants send/read access.
 | `OpenSession` pre-check cannot fence replacement during the RPC              | Add expected UID to the backend opening contract and check it there, including deduplication. Scope all subsequent lookups to authenticated authority.                                                                                                                                                                                                                                    |
 | Raw wait/read flow is cumbersome and not command-specific                    | Neutral shared client projection implements `observe_input` over scoped Dispatcher and History APIs. CLI/MCP invoke both as the caller, without a new privileged result database, queue or task owner. Reuse existing command correlation/folding where possible.                                                                                                                         |
 | Direct MCP mutation recovery and structured failure details are incomplete   | New tools preserve caller-held IDs, offer lookup, return typed structured failures and use the same authorization as raw clients. CLI exposes the equivalent contract with machine-readable output.                                                                                                                                                                                       |
-| Current launch creates a separate Sandbox SA                                 | Controller/provisioner needs a reviewed selected/shared-SA ownership and lifecycle contract before offering same-SA new environments. Action execution boxes already have a related caller-SA path; unify provisioning semantics where applicable rather than equating unlike current APIs.                                                                                               |
+| Current launch creates a separate Sandbox SA                                 | Future provisioning must implement the accepted borrowed-SA/no-new-grants contract and pin approved configuration; it stays deferred until catalogue ownership is selected. Action execution boxes already have a related caller-SA path; unify provisioning semantics where applicable rather than equating unlike current APIs.                                                         |
 
 Recording a logical principal does not itself route execution credentials or provider billing.
 Implementation must check the effective account for execution, egress and model access; for this
@@ -671,7 +723,7 @@ all-Sandbox grants or a general delegation hierarchy is not a prerequisite. Exis
 [`ORCHESTRATION_V1_BACKEND_GRANTS`](task_dag.md#orchestration_v1_backend_grants--orchestration_v1-operations-on-backend-grants)
 has a reviewed migration. Avoid a second general authorization owner in the new facade.
 
-## Implementation sequence after selection
+## Approved implementation sequence
 
 1. **Pin admission/identity and read contracts.** Specify trusted association propagation,
    target UID fencing, exact same-SA rule, revocation, existing-record handling and additive
@@ -685,8 +737,8 @@ has a reviewed migration. Avoid a second general authorization owner in the new 
 3. **Expose MCP/CLI tools and observation projection.** Schemas/client work can proceed against the
    pinned contract; end-to-end usability waits on the enforcing backends. No dependency on owning
    the JS host, changing the whole environment model, or projecting native harness subagents.
-4. **Exercise both workflows; revise scope if they fail.** Implement fresh same-SA provisioning
-   independently only after its contract is selected. This sequencing recommendation is not a
+4. **Exercise both reuse workflows; revise scope if they fail.** Fresh provisioning stays deferred
+   until its catalogue ownership decision and identity/approval prerequisites. This sequencing recommendation is not a
    technical dependency of target reuse or a promise to finish all phases inside the current sprint.
 
 Exit evidence must include complete executable examples using only published schemas/instructions:
@@ -694,9 +746,9 @@ target discovery, working directory preparation, independent child opening, firs
 command-correlated result, follow-up, queued cancellation/running-turn interruption, and lost-reply
 recovery. Show that opening with additional instructions starts no model turn, then explicit input
 starts work. Cover native and central harnesses where offered, an external MCP caller with no local
-environment, and an empty target list with an explicit provisioning route. If fresh provisioning
-is selected, exercise its full request/approval/creation sequence; otherwise show the unsupported
-path clearly without inventing a successful launch. Run with the app unavailable. Test foreign-SA
+environment, and an empty target list with an explicit provisioning route. Exercise the full fresh-provisioning
+request/approval/creation sequence when that separately shipped path is ready. Before it ships,
+show the unsupported path clearly without inventing a successful launch. Run with the app unavailable. Test foreign-SA
 denial, forged parent/principal, Session/command mismatch, SA and Sandbox replacement, read revocation, History lag/gaps, concurrent inputs and service rolls. A
 scripted harness proves protocol behavior; an agent exercise must separately show it can discover
 and use the interface without private fixture handles or undocumented help.

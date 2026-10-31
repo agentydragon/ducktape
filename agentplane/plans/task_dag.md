@@ -19,7 +19,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                                       |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Investigate concrete regressions reported during normal use; the dedicated disruption/continuation exercise remains [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                           |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, the approved delegation implementation nodes, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                     |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                            |
 | Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                           |
 | Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                           |
@@ -116,8 +116,12 @@ normal use. Revisit [a focused follow-up](task_freezer.md#central_sampler_reliab
 only if that use exposes continued instability. This exercise no longer gates the sprint or the
 daily CI milestone; no dedicated acceptance worker is dispatched.
 
-The [delegation proposal](https://github.com/agentydragon/ducktape/pull/13229) still awaits
-stakeholder review; its implementation remains outside the current dispatch. File conflicts do
+The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
+implementation, operator 2026-10-31**. Start the independent backend foundations and client work
+below; routine calls use same-SA authorization and environment creation initially needs human
+approval when implemented. **First release: reuse existing environments; new environment creation
+and template-catalogue ownership are deferred by the operator.** Prefer existing gRPC methods and
+CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction TODOs where needed. File conflicts do
 not block independent PRs. Required system checks and a documented rollback precede staging changes.
 
 The control-plane deployment target remains rolling updates with at least two replicas, with the
@@ -130,8 +134,8 @@ the broader runtime redesign remain outside this sprint.
 Give concrete reliability regressions first attention when reported. Dedicated sampler-roll and
 JS/exec continuation exercises are deferred pending operator use; they do not hold independent work.
 
-P1 scheduling and caller-privilege creation contract work can proceed in parallel. Session-creation
-implementation waits for its bounded authority/admission contract; the daily CI product milestone
+P1 scheduling and the approved caller-privilege delegation implementation proceed in parallel.
+Independent foundations and clients can start against the approved contract; the daily CI product milestone
 needs both scheduled wake and Session creation/cooperation. Dedicated sampler disruption acceptance
 is not a prerequisite.
 
@@ -144,7 +148,7 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
-        THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
+        THREAD_CREATE_AUTHORIZATION[Caller-privilege delegation capstone]
         THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT[Daily CI product milestone]
         SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
     end
@@ -346,9 +350,9 @@ a general CI/comment/review replay mechanism.
 
 ## 3. Multiagent decisions before implementations
 
-These are operator-reviewable decisions, not permission to implement every possibility. Publish a
-coherent access contract before implementing the operations it protects. The selected first slice
-is caller-privilege-level Session creation; it does not wait for the complete multiagent model or
+The caller-privilege delegation contract is approved for implementation. Broader multiagent
+possibilities below retain their own decision gates. The selected first slice is caller-privilege
+Session creation; it does not wait for the complete multiagent model or
 different-privilege launch policy. Broader delegation still needs its identity/authority review.
 Do not equate creating a resource, reading history, sending a message or receiving/acking it.
 
@@ -368,7 +372,7 @@ separately reviewed broader proposal.
 Send and transcript-read permissions are independent in both directions. A2A is open at this
 communication boundary; its harness/thread-protocol rejection has a different scope. Transport
 facades are not prerequisite decisions, and content classification is outside v1. Exact schemas and
-the remaining contracts below still require review before implementation.
+the broader contracts below retain their individual review gates.
 
 ```mermaid
 flowchart TD
@@ -377,15 +381,32 @@ flowchart TD
     HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
-    THREAD_CREATE_POLICY[Selected P1 decision: caller-privilege Session creation]
-    THREAD_CREATE_AUTHORIZATION[Blocked: implement the selected create contract]
-    ENVIRONMENT_ACTIONS_DESIGN[Later decision: dedicated environment-management Actions]
+    SESSION_OPEN_UID_FENCE[In review: UID-fenced opening]
+    SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
+    SESSION_CALLER_AUTHORITY[In flight: trusted same-SA authority]
+    SESSION_PRINCIPAL_READS[Retained same-principal History reads]
+    SESSION_TARGET_DISCOVERY[Ready: existing target discovery]
+    SESSION_DELEGATION_TOOLS[In flight: CLI, remaining MCP delegation tools]
+    ACTION_CALLER_UID[Deferred: retain approved caller UID]
+    ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
+    ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
+    ENVIRONMENT_MANAGEMENT[Deferred: environment catalogue and creation]
+    THREAD_CREATE_AUTHORIZATION[Capstone: usable caller-privilege delegation]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
-    THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
+    SESSION_OPEN_UID_FENCE --> THREAD_CREATE_AUTHORIZATION
+    SESSION_PLATFORM_GUIDANCE --> THREAD_CREATE_AUTHORIZATION
+    SESSION_CALLER_AUTHORITY --> SESSION_PRINCIPAL_READS
+    SESSION_CALLER_AUTHORITY --> THREAD_CREATE_AUTHORIZATION
+    SESSION_PRINCIPAL_READS --> THREAD_CREATE_AUTHORIZATION
+    SESSION_TARGET_DISCOVERY --> THREAD_CREATE_AUTHORIZATION
+    SESSION_DELEGATION_TOOLS --> THREAD_CREATE_AUTHORIZATION
+    ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
+    ACTION_CALLER_UID --> ENVIRONMENT_MANAGEMENT
+    ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
     DAILY_CI_AGENT[Selected P1 capstone: daily CI-maintenance agent]
     SCHEDULED_AGENT_WAKE --> DAILY_CI_AGENT
@@ -413,7 +434,7 @@ and which controls must remain unavailable. Native integration itself stays froz
 native children from the messaging and access model.
 
 This gates broader different-privilege create/delegation and `AGENT_LAUNCH_POLICY_DESIGN`; the
-selected caller-privilege `THREAD_CREATE_POLICY` slice proceeds with its own reviewed contract.
+approved caller-privilege delegation slice proceeds with its own contract.
 Messaging needs only the
 [Session inbox access rule](../notification_service/docs/api.md#messages) and
 history reads only their own rule type, so creator, manager and parent semantics do not hold them up. The app's existing auth path may remain a special case for v1. Reducing that
@@ -472,84 +493,92 @@ ownerReference until that is reviewed. Related: a ServiceAccount recreated in pl
 keeps failing as a different writer, and letting the Sandbox UID take over as the pin is a separate
 decision.
 
-### `THREAD_CREATE_POLICY` — authorize session creation separately
+### Approved caller-privilege delegation implementation
 
-**Selected P1 decision; draft [#13229](https://github.com/agentydragon/ducktape/pull/13229)
-awaits stakeholder review.** Start independently
-addressable Agentplane child Sessions at the caller's privilege level, using its ServiceAccount.
-Reusing an environment with a separate working directory is acceptable. Different-privilege
-workers and generic delegation can wait; native harness subagents remain available independently.
+**Approved by the operator, 2026-10-31:** [contract and realistic workflows](session_delegation_workflows.md),
+tracked in [#13229](https://github.com/agentydragon/ducktape/pull/13229). Normal same-account calls
+need no human approval; full template catalogue discovery is unfiltered by SA. The additive
+`additional_instructions` brief preserves platform guidance and never starts a turn; callers
+submit input separately. New environment creation initially needs human approval.
 
-**Proposal prepared by `/root`, 2026-10-30 PDT; awaiting stakeholder review:**
-[caller-privilege delegation workflows](session_delegation_workflows.md). It maps existing-target
-and external MCP examples to current operations and proposed additions, including logical
-principal attribution, account-token admission, target discovery, UID fencing and command-correlated
-result reads. Review its explicit authority/interface/read-scope decisions and fresh-environment
-scope before dispatching implementation; replan the remaining sprint for the selected backend work.
+Prefer existing owning gRPC APIs and Agentplane CLI clients where straightforward. Actions-first
+is approved for other paths, with explicit RPC/CLI extraction TODOs in the contract. The app is
+never a backend dependency; `orchestration_v1` is not a prerequisite. Keep the same verified caller
+and authority enforcement across all surfaces. No zero-environment child or different-privilege
+worker is claimed by this slice.
 
-**Accepted by the operator, 2026-10-31:** expose the full deployment-published template catalogue
-without per-SA template filtering; use additive `additional_instructions` for the child briefing,
-preserving default platform guidance. Opening with those instructions must not start a model turn;
-the API descriptions must state that the caller still submits input separately to start work.
-Other authority, scope and interface choices remain under review.
+The graph's capstone edges are **integration/completion prerequisites**. Schema/client work can
+start against the approved contracts while enforcing backends are built in parallel; live normal
+caller exposure waits for those checks. A real data/protocol prerequisite still gates work that
+cannot be specified until it exists. File conflicts alone do not serialize independent PRs.
 
-The proposal's approval defaults keep authorized same-principal Session operations automatic and
-new-environment creation human-approved initially. Dedicated environment management is scoped in
-`ENVIRONMENT_ACTIONS_DESIGN`; `orchestration_v1` is not a prerequisite for the new workflows.
-The proposal includes a combined tool/schema reference and a concrete creation-to-Session sequence.
-Existing-target `environments_list`/`environments_get` discovery belongs to the selected delegation
-slice and does not wait for fresh provisioning.
-Spawning adds a child briefing to backend-owned platform/environment guidance; it must not clear
-that guidance when a preset is omitted or the caller supplies its own instructions. Resolve and
-retain the effective prompt once for opening retries and resume, consistently across native and
-central runtimes. Catalogue discovery exposes published configurations; it is not an extra per-SA
-template-eligibility policy. Creation approval stays with Action policy and the operator.
+### `SESSION_OPEN_UID_FENCE` — UID-fence Dispatcher opening
 
-Review the bounded API and authority contract: which existing same-account targets may be used,
-defaults/cwd, creation provenance, message/result delivery and caller-visible lifecycle controls.
-Preserve separate Session, environment, process and authority identities. Use Claude/Codex native
-workflows as inspiration, without requiring their child-ingestion research or making a parent
-edge silently confer authority. Existing durable Dispatcher admission remains the command owner.
-Opening another Session in one environment provides no new isolation boundary.
+**In review, [#13383](https://github.com/agentydragon/ducktape/pull/13383),
+`/root/delegation_open_uid`, 2026-10-31.** Require the expected Sandbox UID in the
+existing `OpenSession` RPC, enforce it at backend admission and preserve it in deduplication.
+Update every caller and the contract together. The rollout/rollback description must state the
+mixed-version behavior; existing running Sessions are not opening calls. This does not itself
+open the Dispatcher to normal callers.
 
-The broader create policy retains its scope/defaults, creator visibility and revocation questions,
-and any launch-and-open composition must define the required operations separately.
+### `SESSION_PLATFORM_GUIDANCE` — platform guidance independent of presets
 
-Select the interface using the realistic-example requirement above: include existing-environment
-and external MCP caller sequences, with concrete discovery, handle acquisition and backend mapping.
+**In review, [#13384](https://github.com/agentydragon/ducktape/pull/13384),
+`/root/delegation_platform_guidance`, 2026-10-31.** Share backend-owned composition
+for default platform/environment guidance plus the additive child brief. Start with the central
+path that currently bypasses Runner composition; retain resolved content across duplicate opening
+and resume without changing the raw request's identity. Complete native/central parity, child
+identity/destination and prompt inspection as needed for the approved workflow. Preserve harness
+base prompts. Opening/setup does not manufacture a first input or model turn.
 
-Within this slice, settle admission and identity before `THREAD_CREATE_AUTHORIZATION`. Compare an
-agent-facing facade forwarding verified caller scope with direct scoped Dispatcher admission;
-today its callers are a fixed service allowlist. A narrow same-account admission contract need
-not wait for all of `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, but every exposed path must enforce
-the same authority. The Dispatcher currently keys `OpenSession` on a caller-minted `session_id`;
-review any proposed change to that rule against `HARNESS_IDENTITY_DESIGN` rather than assuming a
-service-reserved ID is required. Neither choice depends on History keys or the held read policy.
+### `SESSION_CALLER_AUTHORITY` — same-SA admission and immutable Session authority
 
-**Operator inputs, 2026-10-21 UTC (not decisions):**
+**In flight, `/root/delegation_dispatcher_authority`, 2026-10-31.** Admit workload and explicitly account-scoped
+external callers through the shared authentication machinery. Normal access uses any verified
+SA in the configured served namespaces, without another per-SA caller allowlist. Privileged
+backend bypass still requires its explicit allowed Pod-bound service identity. At opening, verify the target's
+actual SA UID and retain the trusted logical principal separately from backend peers, writers,
+creator labels and target identity. Enforce it on commands, lookup, list/watch, queued cancellation
+and turn-specific interruption. Keep explicit privileged backend/broker paths distinct.
+Unassociated existing records require an explicit trusted association before normal caller access;
+do not infer ownership by name, from a replacement SA or from a parent edge.
 
-- Handle "where can SA X create new sessions" "similarly to the inbox-sending permission groups". As
-  sends and reads each get their own rule type, session creation would be one more, with the same
-  direct and `allSandboxes` targets as the
-  [Session inbox access rule](../notification_service/docs/api.md#messages).
-  Only enforcement differs: the Dispatcher's caller, not the Notification service.
-- Creating sessions in the Sandbox the SA runs in is "a permission i'd be ok granting automatically
-  (since SA is the unit of isolation)". "Own" needs no rule: a Sandbox runs as the ServiceAccount of its
-  own name.
-- A limit on active sessions or Sandboxes "might be shelved", since cluster limits already bound
-  Sandboxes. What he cares about more is "i don't want this thing to drain my whole usage", which is a
-  spend budget rather than a count. A message wakes a Sandbox and starts a turn, so it is a spend path
-  too; the inbox's cap of 128 unacknowledged messages per sender bounds the queue, not spend. A budget
-  would sit at LLM ingress per ServiceAccount, not in these grants.
+### `SESSION_PRINCIPAL_READS` — narrow retained same-principal History access
 
-### `THREAD_CREATE_AUTHORIZATION` — implement caller-privilege session creation
+**Implementation prerequisite: the trusted association contract in `SESSION_CALLER_AUTHORITY`.**
+Propagate and store its immutable principal through designated authenticated native/central paths,
+separately from the producer SA and Sandbox metadata. Enforce the narrow same-principal read rule,
+including source lookup, batch/filter/watch reads and revocation. Retained reads do not require a
+live Sandbox. This approved slice does not wait for held broader cross-SA archive/tag policy.
 
-**Blocked on the selected caller-privilege create contract; P1.** Enforce scope/defaults and
-idempotent Open lookup at the service boundary. Check forbidden targets/overrides, a lost creation
-reply and cancellation affecting only the intended Session. Show an agent naturally discovering
-the interface, starting a child, sending follow-up work and receiving its result. Update canonical
-agent-facing instructions with the interface; do not require the full archive-read or different-SA
-delegation design for this slice.
+### `SESSION_TARGET_DISCOVERY` — discover usable existing environments
+
+**Ready; selected P1.** Expose bounded same-SA UID-filtered list/get descriptors from Sandbox
+inventory and runtime/configuration owners: full target handle, freshness/readiness, useful paths,
+instructions and offered harness/model/effort values. No new `cwd_policy` API; use existing backend
+path validation. Extract shared config from app-owned defaults; no backend app call. Discovery
+and admission remain separate checks, with same-name/UID replacement refused.
+
+### `SESSION_DELEGATION_TOOLS` — usable Session CLI/MCP operations
+
+**In flight, `/root/delegation_session_cli`, 2026-10-31:** direct Dispatcher CLI commands,
+stacked on #13383. MCP and compact History/result projection remain to dispatch; full workflow
+exposure waits for backend enforcement.
+Expose open, submit, get, command-correlated observe, retained turn reads, queued cancel and exact
+turn interruption. Existing direct Dispatcher gRPC mappings and CLI support should land now where
+simple. Extract neutral result projections, preserving source, lag/gaps, partial facts/errors,
+opaque cursors and lost-reply recovery IDs. Action adapters may provide the first surface where a
+new owning RPC would add substantial work; record that exact RPC/CLI TODO. Update agent-facing
+instructions/tool descriptions and executable workflows rather than depending on private handles.
+
+### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
+
+**Selected P1 capstone; implementation approved.** Close the existing-environment and external-MCP
+workflows only when caller enforcement, target discovery, platform guidance and result reads/tools
+work together. Show natural discovery, directory preparation, separate opening/first input,
+correlated result, follow-up, lost-reply recovery and scoped cancellation/interruption. Existing
+broader archive and different-SA delegation work is not a prerequisite. Fresh provisioning is deferred until its template-catalogue decision and identity/approval
+prerequisites; it does not hold environment reuse.
 
 ### `DAILY_CI_AGENT` — a daily CI-maintenance agent that can delegate fixes
 
@@ -566,24 +595,55 @@ tool call does not prove agent usability. Reuse existing work/PR evidence when d
 open another fix. Set the concrete schedule, model, credentials and notification destination before
 activation; activation is follow-up work after this planning review.
 
-### `ENVIRONMENT_ACTIONS_DESIGN` — dedicated environment-management Actions
+### `ACTION_CALLER_UID` — retain the caller identity through approval and execution
 
-**Later decision; operator direction, 2026-10-31 UTC.** Extract environment management from
-`orchestration_v1` into dedicated Actions backed by typed provisioning/lifecycle APIs. Start with
-the [proposed tool contracts](session_delegation_workflows.md#tool-contract-derived-from-the-workflows):
-`environments_list_templates`, `environments_list`, `environments_get`,
-`environments_get_creation`, and Action `environments/create`. Creation is initially human-approved.
-Review complete Pod/VM configuration and resource/account authority, approved template revision
-snapshots, separate Action/creation recovery IDs, and retained outcomes. Selecting a shared caller
-SA needs controller-owned identity and lifecycle support; today's broker creates a new SA and is
-not same-privilege provisioning.
+**Deferred with fresh provisioning; also required if a selected retained Action adapter needs caller UID.**
+Direct Session gRPC/CLI work does not wait for this. Action authentication obtains a verified SA UID but currently
+retains only namespace/name in the request/worker caller. Persist the verified UID at admission
+and carry it through approval, receipt and execution payloads. An approved delayed creation must
+not act for a replacement account with the same name. Preserve request state and existing named
+subject semantics; do not guess a UID for old requests or quietly widen token-minting permission.
 
-Deliver a reviewed API/approval contract and migration scope, with a realistic external-MCP
-sequence from creation request through returned Sandbox UID to the ordinary Session tools. Keep
-creation and Session opening separate; give other lifecycle operations their own policy. Do not
-require the integration app or make the legacy broker a dependency. Existing-target delegation
-does not wait for this work; broader/different-privilege launch remains in
-`AGENT_LAUNCH_POLICY_DESIGN`. No provisioning implementation is dispatched by this node.
+### `ENVIRONMENT_SHARED_ACCOUNT` — environments using a pinned existing SA
+
+**Deferred with fresh provisioning; identity choice accepted by the operator, 2026-10-31.**
+Add an
+explicit namespace/name/UID-pinned execution-account reference alongside the existing
+Sandbox-owned identity mode. Controller workload rendering, shared readers, gateway admission,
+History association and public projections must agree on the actual account. Shared mode must
+not create/label/own/delete that SA or manufacture grants/PolicyBindings for it. A recreated SA
+is a different account. A controller-only identity switch is incomplete while readers still
+assume account name equals Sandbox name; update every affected consumer in the same contract.
+
+### `ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN` — catalogue ownership and location
+
+**Deferred decision; operator, 2026-10-31.** The first release can reuse existing environments
+without exposing creation/templates. Decide where the backend's full published configurations
+live, who publishes them, how underlying Kubernetes `SandboxTemplate` objects and app/deployment
+launch defaults become one coherent catalogue, and how revisions/snapshots are retained. Compare
+Git/deployment-owned publication with a backend-managed catalogue; no app dependency or new
+mandatory process is assumed. Full catalogue visibility and pinning approved configuration across
+restarts are accepted; storage/ownership and the explicit update interface remain to review.
+Revisit when selecting fresh-environment creation, not as a gate on Session delegation.
+
+### `ENVIRONMENT_MANAGEMENT` — dedicated environment tools and creation
+
+**Deferred by the operator, 2026-10-31; template ownership is intentionally postponed.**
+When selected, implement full published template discovery and typed creation/status/recovery
+with a dedicated `environments/create` Action, initially human-approved. Creation requires
+`ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN`, `ACTION_CALLER_UID` and `ENVIRONMENT_SHARED_ACCOUNT`.
+Existing-environment list/get belongs to `SESSION_TARGET_DISCOVERY` and proceeds now.
+
+Keep the API/executor over neutral Sandbox domain code and make the concrete backend/process
+placement part of the catalogue decision. No integration-app dependency. Implement owning gRPC
+reads and CLI where straightforward; track any initially Action-only RPC/CLI extraction TODOs.
+Catalogue reads are not creation permission.
+
+Accepted future behavior: borrow the caller's existing SA/permissions without owning it or adding
+grants, and pin the exact approved configuration across restarts. Materialize that snapshot or
+refuse before effects. Bind creation UUID to actual caller UID and exact request, separately from
+the Action key, and reconcile unknown outcomes without replay. Creation returns a Sandbox UID,
+not a Session or readiness promise. Other lifecycle and different-privilege launch remain separate.
 
 ### `AGENT_LAUNCH_POLICY_DESIGN` — Sandbox launch and delegation policy
 
@@ -600,7 +660,7 @@ Sandbox that does not exist yet, so the launch would create the grant: a PolicyS
 owned by the new Sandbox, whose `session_inbox_access` rule has a UID-pinned direct target, deleted with it.
 An explicit launch option keeps "launch alone does not grant messaging"; whether it is the default is
 the operator's to choose. Stamping an inbox tag at launch, which presets already do, is the
-alternative. Spend limits: see `THREAD_CREATE_POLICY`.
+alternative. Spend limits: see the [approved scope boundary](session_delegation_workflows.md#budget-and-broader-policy-boundaries).
 
 **Operator input, 2026-10-27 UTC (not a decision):** decide "how to specify what's the set of things that an agent
 may allow its launched sandboxes to do": the templates, PolicySets and tags a launcher may give the workers it starts

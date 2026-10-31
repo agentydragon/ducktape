@@ -7,7 +7,7 @@ and bounding what a launcher may let its workers do.
 
 **Priority update, 2026-10-30 PDT:** the next agent workflow is caller-privilege Agentplane Session
 spawning and cooperation for a standing daily CI-maintenance agent. Follow the
-[selected create contract](task_dag.md#thread_create_policy--authorize-session-creation-separately)
+[approved delegation contract](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone)
 and [stakeholder priorities](task_dag.md#stakeholder-priorities-2026-10-30-pdt). Different-privilege
 launch bounds below remain later work. Reuse the canonical operation authorities and make the
 interface naturally discoverable to agents; a new authorization bypass is not an acceptable
@@ -87,4 +87,4 @@ Later and unplanned: auto-approved launches within reviewed bounds (`AGENT_LAUNC
 Actions (suspend, resume, delete), an inbox for external callers, subscriptions to a worker's lifecycle ("this
 Sandbox died"), a fleet view grouping workers under their launcher, one preset owner the app and the group both read
 at run time instead of two rendered copies (operator, 2026-10-27 00:51 UTC), and a spend budget per account at the
-LLM ingress, which `THREAD_CREATE_POLICY` records as the operator's actual concern.
+LLM ingress, recorded in the [delegation scope boundary](session_delegation_workflows.md#budget-and-broader-policy-boundaries).
