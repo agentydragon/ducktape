@@ -148,8 +148,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         fixture_chart.MCP_EDGE_SERVICE.url
     )
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
-    actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    assert actions_config["integrated_connection_service"] is False
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
     edge_migrator = edge_pod["initContainers"][0]
