@@ -866,12 +866,26 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: 
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
+    history = page.get_by_role("region", name="Thread history")
     call = page.locator(".agentplane-step-details").filter(has_text="step 16")
     output_control = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
     output = call.locator(".agentplane-output-disclosure .agentplane-code-block")
     await _in_viewport(output_control)
     await expect(output).to_contain_text("step 16")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await _focus(page, output)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await wait_for_stable(page)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await expect(history).to_have_attribute("data-scroll-mode", "following")
+    await _in_viewport(output_control)
     await _in_viewport(output)
+    scroll = await history.evaluate(
+        "element => ({scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight})"
+    )
+    assert abs(scroll["scrollHeight"] - scroll["scrollTop"] - scroll["clientHeight"]) <= 1, scroll
+    await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
 
 
