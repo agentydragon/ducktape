@@ -285,7 +285,7 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await page.get_by_role("link", name=re.compile("Tools and reasoning fixture")).click()
         history = page.get_by_role("region", name="Conversation records")
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        group = history.get_by_role("button", name="1 tool call", exact=True)
+        group = history.get_by_role("button", name=re.compile("read_build_log"))
         await expect(group).to_have_attribute("aria-expanded", "false")
         await expect(history).to_contain_text("missing test configuration")
         await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
@@ -310,7 +310,6 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
         await expect(group).to_have_attribute("aria-expanded", "true")
         await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
         tool = history.locator('[data-activity-step="tool"]')
-        await tool.get_by_role("button", name=re.compile("read_build_log")).click()
         await expect(tool).to_contain_text("Fixture build output")
         await tool.scroll_into_view_if_needed()
         await expect(history).to_have_attribute("data-layout-settled", "true")
@@ -330,7 +329,7 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
         if width < 600:
             await page.get_by_role("button", name="Session list", exact=True).click()
-        await page.get_by_role("link", name="Archive transcript UI work", exact=True).click()
+        await page.get_by_role("link", name=re.compile("Archive transcript UI work")).click()
         history = page.get_by_role("region", name="Conversation records")
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await expect(history).to_contain_text("The components are shared.")
@@ -355,9 +354,12 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await view.capture(name=f"{capture_name}_tool_output")
         await tool.get_by_role("button", name="Show all 48 lines", exact=True).click()
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(0)
+        await tool.hover()
         await tool.get_by_role("button", name="Raw JSONL record", exact=True).click()
         await expect(tool.get_by_role("region", name="Raw JSONL record")).to_have_count(2)
         await expect(tool).to_contain_text('"call_id":"check"')
+        await tool.get_by_role("region", name="Raw JSONL record").first.scroll_into_view_if_needed()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
         await view.capture(name=f"{capture_name}_source")
 
 

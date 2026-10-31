@@ -909,22 +909,20 @@ it("does not append a session page after changing the harness filter", async () 
 
 it("keeps commentary visible and pairs a tool's arguments, output and source records", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/mixed-transcript-fixture");
-  const group = findControl(view, "1 tool call");
+  const tool = view.querySelector<HTMLElement>('[data-activity-step="tool"]')!;
+  const group = findControl(tool, "read_build_log");
   expect(group.getAttribute("aria-expanded")).toBe("false");
   expect(view.textContent).toContain("missing test configuration");
   expect(view.textContent).toContain("I will inspect the build log.");
   expect(view.textContent).not.toContain("Fixture build output");
   await act(async () => group.click());
-  const tool = view.querySelector<HTMLElement>('[data-activity-step="tool"]')!;
   expect(tool.textContent).toContain("read_build_log");
-  expect(tool.textContent).not.toContain("Fixture build output");
-  await act(async () => findControl(tool, "read_build_log").click());
   expect(tool.textContent).toContain("Arguments");
   expect(tool.textContent).toContain("Fixture build output");
   const rawControl = findControl(tool, "Raw JSONL record");
   await act(async () => rawControl.click());
   const rawPanel = document.getElementById(rawControl.getAttribute("aria-controls")!)!;
-  expect(rawPanel.querySelectorAll("pre")).toHaveLength(2);
+  expect(rawPanel.querySelectorAll("pre")).toHaveLength(3);
   expect(rawPanel.textContent).toContain('"call_id":"build-log"');
   expect(rawPanel.textContent).toContain("function_call_output");
 });
@@ -940,7 +938,6 @@ it("retains an open result step when prepend supplies its matching call", async 
     },
   };
   const view = await renderViewer(api, "/sessions/mixed-transcript-fixture");
-  await act(async () => findControl(view, "1 tool result").click());
   await act(async () =>
     findControl(view.querySelector<HTMLElement>('[data-activity-step="tool"]')!, "Tool result").click()
   );
@@ -949,7 +946,11 @@ it("retains an open result step when prepend supplies its matching call", async 
     findControl(view, "Load earlier records").click();
     await flush();
   });
-  expect(findControl(view, "1 tool call").getAttribute("aria-expanded")).toBe("true");
+  expect(
+    findControl(view.querySelector<HTMLElement>('[data-activity-step="tool"]')!, "read_build_log").getAttribute(
+      "aria-expanded"
+    )
+  ).toBe("true");
   expect(view.textContent).toContain("Arguments");
   expect(view.textContent).toContain("Fixture build output");
   expect(view.textContent).not.toContain("The call is outside the loaded records");

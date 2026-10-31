@@ -70,6 +70,8 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
   const id = `group:${row.records.at(-1)!.ordinal}`;
   const [open] = useRetainedDisclosure(id);
   if (row.kind === "record") return <EventRow record={row.records[0]} />;
+  if (row.kind === "activity" && row.steps.length === 1)
+    return <ActivityStepView steps={row.steps} sourceRecords={row.records} />;
   return (
     <DisclosureCard open={open}>
       <RetainedDisclosure
@@ -77,7 +79,9 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
         summary={
           row.kind === "activity" ? (
             <>
-              {summarizeActivity(row.steps)}
+              <Text span size="sm" c="dimmed">
+                {summarizeActivity(row.steps)}
+              </Text>
               {row.steps.some((step) => step.kind === "tool" && step.failed) && (
                 <Text span size="xs" c="red">
                   {" "}
@@ -86,7 +90,9 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
               )}
             </>
           ) : (
-            "Session details"
+            <Text span size="xs" c="dimmed">
+              Session details
+            </Text>
           )
         }
       >
@@ -132,10 +138,16 @@ function ActivitySteps({ steps }: { steps: ActivityStep[] }): JSX.Element {
   );
 }
 
-function ActivityStepView({ steps }: { steps: ActivityStep[] }): JSX.Element {
+function ActivityStepView({
+  steps,
+  sourceRecords,
+}: {
+  steps: ActivityStep[];
+  sourceRecords?: EventRecord[];
+}): JSX.Element {
   const step = steps[0];
-  const records = steps.flatMap((step) => step.records);
-  const id = `step:${records.at(-1)!.ordinal}`;
+  const records = sourceRecords ?? steps.flatMap((step) => step.records);
+  const id = `step:${steps.at(-1)!.records.at(-1)!.ordinal}`;
   const [open, setOpen] = useRetainedDisclosure(id);
   const [raw, setRaw] = useRetainedDisclosure(`${id}:raw`);
   const inputExpansion = useRetainedDisclosure(`${id}:input`);
