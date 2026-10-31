@@ -130,29 +130,19 @@ pub struct StatementFacts {
     /// everything else takes the conservative fallback.
     pub declares_direct_function: bool,
     /// Static-key `globalThis.<prop>` cells the statement writes
-    /// at-init (`globalThis.tag = ...` records `"tag"`). Dynamic-key
-    /// accesses bail `cell_writes_summarizable` instead.
+    /// at-init (`globalThis.tag = ...` records `"tag"`). A dynamic key is a
+    /// `DynamicCellWrites` havoc instead.
     pub global_writes: BTreeSet<String>,
     /// Static-key `globalThis.<prop>` cells the statement reads
     /// at-init.
     pub global_reads: BTreeSet<String>,
-    /// `false` when the statement contains a shape that defeats any
-    /// static reasoning about which cells it WRITES (`with`, direct
-    /// or indirect `eval`, `Function(...)`, dynamic-key
-    /// `globalThis[expr]`, `defineProperty`/`Proxy` on the global).
-    /// Consumed by the vendor strip's swap-privacy gate, whose call
-    /// side effects are covered by its own island-reachability
-    /// analysis.
-    pub cell_writes_summarizable: bool,
-    /// Every reason the dataflow-aware S-chain's stronger "which cells
-    /// does this statement TOUCH" question cannot be answered; non-empty
-    /// whenever `cell_writes_summarizable` is `false`. Downstream passes
-    /// treat a statement with any cause as touching every cell
-    /// ([`StatementFacts::dataflow_summarizable`]) and the graph retains
+    /// Every reason the statement's cells ([`StatementFacts::effects`]) may
+    /// be incomplete: with any cause it may touch every cell
+    /// ([`StatementFacts::dataflow_summarizable`]), and the graph retains
     /// the causes on the edges that fallback emits. See `README.md` →
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
-    pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
+    pub havoc: BTreeSet<DataflowOpacityCause>,
     /// Heap-content cells of the statement's own at-init syntax. These are
     /// distinct from binding effects: mutating an array changes its contents,
     /// not the binding that names it. Its calls' cells are
@@ -406,8 +396,8 @@ pub enum EffectCell {
 }
 
 /// The (writes, reads) cell view of one statement, derived by
-/// [`StatementFacts::effects`]. The summarizability bits live on
-/// [`StatementFacts`] directly (`cell_writes_summarizable`,
+/// [`StatementFacts::effects`]. Its completeness is
+/// [`StatementFacts::havoc`] (`cell_writes_summarizable`,
 /// `dataflow_summarizable`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatementEffectSummary {
@@ -518,12 +508,11 @@ pub struct StructuralStatementFacts {
     pub declares_direct_function: bool,
     pub global_writes: BTreeSet<String>,
     pub global_reads: BTreeSet<String>,
-    pub cell_writes_summarizable: bool,
-    pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
+    pub havoc: BTreeSet<DataflowOpacityCause>,
 }
 
 /// One shape that defeats the dataflow-aware S-chain's cell tracking for
-/// a statement ([`StatementFacts::dataflow_opacity`]). The first three
+/// a statement ([`StatementFacts::havoc`]). The first three
 /// are policy-independent source shapes; `OpaqueAtInitCall` consults the
 /// purity classifier, so a declared-pure hint can lift it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -534,8 +523,8 @@ pub enum DataflowOpacityCause {
     MemberWriteOrAlias,
     /// `with`, direct or indirect `eval`, `Function(...)`, a dynamic-key
     /// global access, or `defineProperty`/`Proxy` on the global object:
-    /// the statement may write arbitrary cells (also clears
-    /// `cell_writes_summarizable`).
+    /// the statement may write arbitrary cells
+    /// ([`StatementFacts::cell_writes_summarizable`]).
     DynamicCellWrites,
     /// The statement reads a binding a bare global-object alias flowed
     /// into (`facts/global_object.rs`), so its summary misses global
@@ -550,7 +539,18 @@ impl StatementFacts {
     /// Whether the dataflow-aware S-chain may use this statement's exact
     /// cell summary instead of the strict every-prior-impure fallback.
     pub fn dataflow_summarizable(&self) -> bool {
-        self.dataflow_opacity.is_empty()
+        self.havoc.is_empty()
+    }
+
+    /// Whether the cells the statement WRITES are all in its summary: no
+    /// `with`, `eval`, `Function(...)`, dynamic-key `globalThis[expr]`, or
+    /// `defineProperty`/`Proxy` on the global. Read by the vendor strip's
+    /// swap-privacy gate, whose call side effects are covered by its own
+    /// island-reachability analysis.
+    pub fn cell_writes_summarizable(&self) -> bool {
+        !self
+            .havoc
+            .contains(&DataflowOpacityCause::DynamicCellWrites)
     }
 }
 

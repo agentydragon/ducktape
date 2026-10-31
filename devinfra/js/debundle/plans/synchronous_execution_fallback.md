@@ -124,7 +124,7 @@ Graph build turns those effects into edges (`graph/build.rs::promote_at_init_cal
 | `Sequenced` `binding_timeline` reader-after-writer (and writer-after-reader from the next writer)                   | `s` joins the binding's callback readers | ≈1.5 M                                 | 3, 5 (read sees the source-prefix value)     |
 | `EagerUse` `promoted_at_init` over `UnresolvedCallFallback` (`SourceUnitReadClosure` of unresolved sources/callees) | `!synchronous.complete`                  | 48,659 (3,111 pairs not already above) | 3                                            |
 | `Sequenced` `cell_order` heap-frontier barrier (`IncompleteSynchronousExecution`)                                   | `emit_heap_content_order`                | live frontier only                     | 5 (array/set contents)                       |
-| `Sequenced` `BarrierAfterPrior` against every prior impure unit                                                     | `dataflow_opacity`, not incompleteness   | 0 (`trusted_dataflow_summaries`)       | 5                                            |
+| `Sequenced` `BarrierAfterPrior` against every prior impure unit                                                     | `havoc`, not incompleteness              | 0 (`trusted_dataflow_summaries`)       | 5                                            |
 
 Each kind is needed under the current theorem. Unknown code running during
 `s` may invoke any callback it can reach. That callback's binding reads then
@@ -168,7 +168,7 @@ The event collapses to `Global` when any of these holds:
 Writes into the escape set are unchanged. A `Bounded` event still escapes its
 argument callbacks into `global_escaped_callbacks`, taints its inputs and marks
 class capabilities escaped. Only the read of the prefix-wide pool is narrowed.
-The binding-timeline, heap-frontier and `dataflow_opacity` rules are
+The binding-timeline, heap-frontier and `havoc` rules are
 unchanged, and they consume the narrowed read set.
 
 ### Soundness

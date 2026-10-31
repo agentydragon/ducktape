@@ -49,8 +49,7 @@ pub(crate) struct StatementFactsCollector {
     pub(crate) first_order_unresolved_inline_fn: bool,
     pub(crate) global_writes: BTreeSet<String>,
     pub(crate) global_reads: BTreeSet<String>,
-    pub(crate) cell_writes_summarizable: bool,
-    pub(crate) dataflow_opacity: BTreeSet<DataflowOpacityCause>,
+    pub(crate) havoc: BTreeSet<DataflowOpacityCause>,
     /// Unshadowed global-object alias names for this chunk
     /// (`globalThis`, `window`, ...). See
     /// [`unshadowed_global_object_aliases`].
@@ -85,8 +84,7 @@ impl StatementFactsCollector {
         promise_global_unshadowed: bool,
     ) -> Self {
         Self {
-            cell_writes_summarizable: true,
-            dataflow_opacity: BTreeSet::new(),
+            havoc: BTreeSet::new(),
             global_object_names,
             async_direct_function_bindings,
             promise_global_unshadowed,
@@ -229,17 +227,14 @@ impl StatementFactsCollector {
     /// question (member writes, alias shapes). The vendor strip's
     /// write-cell view stays summarizable.
     fn bail_summarizable(&mut self) {
-        self.dataflow_opacity
-            .insert(DataflowOpacityCause::MemberWriteOrAlias);
+        self.havoc.insert(DataflowOpacityCause::MemberWriteOrAlias);
     }
 
     /// Bail every consumer: the statement may WRITE arbitrary cells
     /// (`with`, eval, `Function(...)`, dynamic global keys,
     /// `defineProperty`/`Proxy` on the global object).
     fn bail_cell_writes(&mut self) {
-        self.cell_writes_summarizable = false;
-        self.dataflow_opacity
-            .insert(DataflowOpacityCause::DynamicCellWrites);
+        self.havoc.insert(DataflowOpacityCause::DynamicCellWrites);
     }
 
     fn is_global_object_expr(&self, expr: &Expr) -> bool {
@@ -1001,7 +996,7 @@ impl Visit for StatementFactsCollector {
     // decided in the policy phase (`has_opaque_at_init_call`): any
     // at-init call or `new` the purity classifier can't prove Pure
     // bails `dataflow_summarizable`. The structural checks below
-    // additionally flip `cell_writes_summarizable` for the shapes
+    // additionally record `DynamicCellWrites` for the shapes
     // that defeat WRITE-cell reasoning outright: direct and indirect
     // `eval`, `Function(...)`, `Object.defineProperty(globalThis,
     // ...)` / `Reflect.defineProperty(globalThis, ...)`, and

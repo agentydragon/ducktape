@@ -1336,7 +1336,7 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects().writes,
-        effects_summarizable: fact.cell_writes_summarizable,
+        effects_summarizable: fact.cell_writes_summarizable(),
         rebinds: fact
             .rebinds
             .eager
