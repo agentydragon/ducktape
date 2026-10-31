@@ -13,10 +13,11 @@ use crate::reports::schema::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-/// One intrinsic slot. Each belongs to a census family. `Global` and `Static`
-/// slots are own data properties, unknown only when a census write can reach
-/// that property (`OwnSlotWrites`); the prototype slots are unknown after any
-/// write to their family or the global object.
+/// One intrinsic slot. Each belongs to a census family. `Global`, `Static`,
+/// `PrototypeProperty` and `Species` slots are own properties, unknown only
+/// when a census write can reach that property (`OwnSlotWrites`); the
+/// whole-object prototype slots are unknown after any write to their family
+/// or the global object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IntrinsicSlot {
     /// The global object's own data property naming a family's constructor or
@@ -32,6 +33,13 @@ pub enum IntrinsicSlot {
     ArrayIteratorPrototype,
     /// `%SetIteratorPrototype%` and its `next`.
     SetIteratorPrototype,
+    /// One string-keyed own property of the family's prototype object:
+    /// `%Array.prototype.map%`, `%Array.prototype.constructor%`.
+    PrototypeProperty(NativeIntrinsic, &'static str),
+    /// The `@@species` accessor of the family's constructor. Symbol keys are
+    /// not told apart: any Symbol- or unknown-keyed write that may land on
+    /// the constructor reaches it.
+    Species(NativeIntrinsic),
 }
 
 impl IntrinsicSlot {
@@ -61,7 +69,11 @@ impl IntrinsicSlot {
     /// The census family whose writes the slot inherits.
     pub fn family(self) -> NativeIntrinsic {
         match self {
-            Self::Global(family) | Self::Static(family, _) | Self::Prototype(family) => family,
+            Self::Global(family)
+            | Self::Static(family, _)
+            | Self::Prototype(family)
+            | Self::PrototypeProperty(family, _)
+            | Self::Species(family) => family,
             Self::ArrayIteratorPrototype => NativeIntrinsic::Array,
             Self::SetIteratorPrototype => NativeIntrinsic::Set,
         }
@@ -84,12 +96,18 @@ pub enum SlotName {
     Prototype(NativeIntrinsic),
     ArrayIteratorPrototype,
     SetIteratorPrototype,
+    PrototypeProperty(NativeIntrinsic, String),
+    Species(NativeIntrinsic),
 }
 
 impl SlotName {
     pub fn family(&self) -> NativeIntrinsic {
         match self {
-            Self::Global(family) | Self::Static(family, _) | Self::Prototype(family) => *family,
+            Self::Global(family)
+            | Self::Static(family, _)
+            | Self::Prototype(family)
+            | Self::PrototypeProperty(family, _)
+            | Self::Species(family) => *family,
             Self::ArrayIteratorPrototype => NativeIntrinsic::Array,
             Self::SetIteratorPrototype => NativeIntrinsic::Set,
         }
@@ -99,6 +117,10 @@ impl SlotName {
         match self {
             Self::Global(family) => Some(OwnSlot::Global(*family)),
             Self::Static(family, property) => Some(OwnSlot::Static(*family, property)),
+            Self::PrototypeProperty(family, property) => {
+                Some(OwnSlot::PrototypeProperty(*family, property))
+            }
+            Self::Species(family) => Some(OwnSlot::Species(*family)),
             _ => None,
         }
     }
@@ -109,7 +131,9 @@ impl SlotName {
             Self::Prototype(family) => Some(NativeReceiverPath::Prototype(*family)),
             Self::ArrayIteratorPrototype => Some(NativeReceiverPath::ArrayIteratorPrototype),
             Self::SetIteratorPrototype => Some(NativeReceiverPath::SetIteratorPrototype),
-            Self::Global(_) | Self::Static(..) => None,
+            Self::Global(_) | Self::Static(..) | Self::PrototypeProperty(..) | Self::Species(_) => {
+                None
+            }
         }
     }
 }
@@ -122,6 +146,10 @@ impl From<IntrinsicSlot> for SlotName {
             IntrinsicSlot::Prototype(family) => Self::Prototype(family),
             IntrinsicSlot::ArrayIteratorPrototype => Self::ArrayIteratorPrototype,
             IntrinsicSlot::SetIteratorPrototype => Self::SetIteratorPrototype,
+            IntrinsicSlot::PrototypeProperty(family, property) => {
+                Self::PrototypeProperty(family, property.to_owned())
+            }
+            IntrinsicSlot::Species(family) => Self::Species(family),
         }
     }
 }
@@ -135,6 +163,10 @@ impl fmt::Display for SlotName {
             Self::Prototype(family) => write!(f, "%{}.prototype%", name(family)),
             Self::ArrayIteratorPrototype => f.write_str("%ArrayIteratorPrototype%"),
             Self::SetIteratorPrototype => f.write_str("%SetIteratorPrototype%"),
+            Self::PrototypeProperty(family, property) => {
+                write!(f, "%{}.prototype.{property}%", name(family))
+            }
+            Self::Species(family) => write!(f, "%{}[@@species]%", name(family)),
         }
     }
 }
@@ -142,10 +174,13 @@ impl fmt::Display for SlotName {
 impl std::str::FromStr for SlotName {
     type Err = String;
 
-    /// Accepts the display form with or without `%`; a member of a prototype
-    /// (`Set.prototype.add`) names its prototype slot.
+    /// Accepts the display form with or without `%`.
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let name = text.trim().trim_matches('%');
+        let (name, species) = match name.strip_suffix("[@@species]") {
+            Some(name) => (name, true),
+            None => (name, false),
+        };
         match name {
             "ArrayIteratorPrototype" => return Ok(Self::ArrayIteratorPrototype),
             "SetIteratorPrototype" => return Ok(Self::SetIteratorPrototype),
@@ -160,8 +195,8 @@ impl std::str::FromStr for SlotName {
             .ok_or_else(|| {
                 format!(
                     "{text:?} names no intrinsic slot; expected Family, Family.member, \
-                     Family.prototype, ArrayIteratorPrototype or SetIteratorPrototype \
-                     for a census family ({})",
+                     Family.prototype, Family.prototype.member, Family[@@species], \
+                     ArrayIteratorPrototype or SetIteratorPrototype for a census family ({})",
                     NativeIntrinsic::GLOBAL_BINDINGS
                         .iter()
                         .filter(|binding| NativeIntrinsic::for_global_binding(binding)
@@ -172,20 +207,25 @@ impl std::str::FromStr for SlotName {
                 )
             })?;
         Ok(match member {
+            None if species => Self::Species(family),
+            _ if species => return Err(format!("{text:?}: @@species follows a family name")),
             None => Self::Global(family),
-            Some(member) if member == "prototype" || member.starts_with("prototype.") => {
-                Self::Prototype(family)
-            }
-            Some(member) => Self::Static(family, member.to_owned()),
+            Some("prototype") => Self::Prototype(family),
+            Some(member) => match member.strip_prefix("prototype.") {
+                Some(property) => Self::PrototypeProperty(family, property.to_owned()),
+                None => Self::Static(family, member.to_owned()),
+            },
         })
     }
 }
 
-/// A `Global` or `Static` slot with a borrowed property name.
+/// An own-property slot with a borrowed property name.
 #[derive(Debug, Clone, Copy)]
 enum OwnSlot<'a> {
     Global(NativeIntrinsic),
     Static(NativeIntrinsic, &'a str),
+    PrototypeProperty(NativeIntrinsic, &'a str),
+    Species(NativeIntrinsic),
 }
 
 impl OwnSlot<'static> {
@@ -193,6 +233,10 @@ impl OwnSlot<'static> {
         match slot {
             IntrinsicSlot::Global(family) => Self::Global(family),
             IntrinsicSlot::Static(family, property) => Self::Static(family, property),
+            IntrinsicSlot::PrototypeProperty(family, property) => {
+                Self::PrototypeProperty(family, property)
+            }
+            IntrinsicSlot::Species(family) => Self::Species(family),
             _ => unreachable!("own-slot query for {slot:?}"),
         }
     }
@@ -201,7 +245,10 @@ impl OwnSlot<'static> {
 impl OwnSlot<'_> {
     fn family(self) -> NativeIntrinsic {
         match self {
-            Self::Global(family) | Self::Static(family, _) => family,
+            Self::Global(family)
+            | Self::Static(family, _)
+            | Self::PrototypeProperty(family, _)
+            | Self::Species(family) => family,
         }
     }
 }
@@ -279,16 +326,26 @@ impl PrototypeWrites {
 /// code mutating intrinsics. So a key reaches only slots its domain may name,
 /// an exact global-object receiver only `Global` slots, and an exact
 /// constructor receiver only that constructor's `Static` slots. Keys are
-/// string domains (`String`, `Affixed`) or `Unknown`; Symbol keys name no own
-/// slot and are never recorded.
+/// string domains (`String`, `Affixed`) or `Unknown`. Symbol keys name only
+/// `Species` slots, recorded apart.
+///
+/// The same holds for string-keyed properties of a prototype object
+/// (`PrototypeProperty`): an exact `%F.prototype%` receiver reaches only that
+/// prototype's properties under its key. A write to the global object or to
+/// a constructor names a different object and does not reach them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct OwnSlotWrites {
     /// An unknown key on an unknown receiver.
     every_slot: bool,
     global_keys: BTreeSet<NativePropertyKey>,
     static_keys: BTreeSet<(NativeIntrinsic, NativePropertyKey)>,
+    prototype_keys: BTreeSet<(NativeIntrinsic, NativePropertyKey)>,
+    /// Constructors with a Symbol-keyed write on their exact receiver.
+    symbol_statics: BTreeSet<NativeIntrinsic>,
     /// Keys on a receiver that may be any native object.
     any_receiver_keys: BTreeSet<NativePropertyKey>,
+    /// A Symbol key on a receiver that may be any native object.
+    any_receiver_symbol: bool,
 }
 
 impl OwnSlotWrites {
@@ -320,6 +377,8 @@ impl OwnSlotWrites {
                     base.global_keys
                         .insert(NativePropertyKey::String(name.to_owned()));
                     base.static_keys.insert((*root, NativePropertyKey::Unknown));
+                    base.prototype_keys
+                        .insert((*root, NativePropertyKey::Unknown));
                 }
                 None => base.every_slot = true,
             }
@@ -376,11 +435,25 @@ impl OwnSlotWrites {
             } else {
                 NativePropertyKey::Unknown
             };
-            // Every own slot is string-keyed.
+            // Only `Species` slots are Symbol-keyed.
             if matches!(
                 key,
                 NativePropertyKey::SymbolIterator | NativePropertyKey::OtherSymbol
             ) {
+                match &target.receiver {
+                    NativeReceiverPath::Constructor(family)
+                        if current.intact(IntrinsicSlot::Global(*family)) =>
+                    {
+                        self.symbol_statics.insert(*family);
+                    }
+                    NativeReceiverPath::GlobalObject => {}
+                    NativeReceiverPath::Prototype(family)
+                        if current.intact(IntrinsicSlot::Global(*family)) => {}
+                    NativeReceiverPath::ArrayIteratorPrototype
+                    | NativeReceiverPath::SetIteratorPrototype
+                        if derivation_intact => {}
+                    _ => self.any_receiver_symbol = true,
+                }
                 continue;
             }
             match &target.receiver {
@@ -403,10 +476,12 @@ impl OwnSlotWrites {
                     }
                     self.static_keys.insert((*family, key));
                 }
-                // `%F.prototype%` and the iterator prototypes own no
-                // `Global` or `Static` slot.
                 NativeReceiverPath::Prototype(family)
-                    if current.intact(IntrinsicSlot::Global(*family)) => {}
+                    if current.intact(IntrinsicSlot::Global(*family)) =>
+                {
+                    self.prototype_keys.insert((*family, key));
+                }
+                // The iterator prototypes own no recorded slot.
                 NativeReceiverPath::ArrayIteratorPrototype
                 | NativeReceiverPath::SetIteratorPrototype
                     if derivation_intact => {}
@@ -438,7 +513,10 @@ impl OwnSlotWrites {
     ) {
         let name = match slot {
             OwnSlot::Global(family) => family.global_binding(),
-            OwnSlot::Static(_, property) => Some(property),
+            OwnSlot::Static(_, property) | OwnSlot::PrototypeProperty(_, property) => {
+                Some(property)
+            }
+            OwnSlot::Species(_) => unreachable!("Species slots are Symbol-keyed"),
         };
         let may_name =
             move |key: &NativePropertyKey| name.is_none_or(|name| key.may_be_string(name));
@@ -451,6 +529,14 @@ impl OwnSlotWrites {
                     .iter()
                     .filter(move |(owner, _)| {
                         matches!(slot, OwnSlot::Static(family, _) if *owner == family)
+                    })
+                    .map(|(_, key)| key),
+            )
+            .chain(
+                self.prototype_keys
+                    .iter()
+                    .filter(move |(owner, _)| {
+                        matches!(slot, OwnSlot::PrototypeProperty(family, _) if *owner == family)
                     })
                     .map(|(_, key)| key),
             )
@@ -470,6 +556,9 @@ impl OwnSlotWrites {
         {
             return true;
         }
+        if let OwnSlot::Species(family) = slot {
+            return (exact_receivers && self.species_exact(family)) || self.any_receiver_symbol;
+        }
         let (mut exact, mut any) = self.keys_naming(slot);
         (exact_receivers && exact.next().is_some()) || any.next().is_some()
     }
@@ -483,10 +572,28 @@ impl OwnSlotWrites {
                 && self.global_keys.contains(&NativePropertyKey::Unknown)
     }
 
+    /// A Symbol- or unknown-keyed write on the exact constructor.
+    fn species_exact(&self, family: NativeIntrinsic) -> bool {
+        self.symbol_statics.contains(&family)
+            || self
+                .static_keys
+                .contains(&(family, NativePropertyKey::Unknown))
+    }
+
     /// How this one witness's writes reach `slot`, if they do.
     fn reach(&self, slot: OwnSlot<'_>) -> Option<SlotReach> {
         if self.every_slot {
             return Some(SlotReach::UnknownReceiver);
+        }
+        if let OwnSlot::Species(family) = slot {
+            return if self.symbol_statics.contains(&family) {
+                Some(SlotReach::NamedWrite)
+            } else if self.species_exact(family) {
+                Some(SlotReach::UnknownKey)
+            } else {
+                self.any_receiver_symbol
+                    .then_some(SlotReach::UnknownReceiver)
+            };
         }
         let (exact, mut any) = self.keys_naming(slot);
         let exact: Vec<_> = exact.collect();
@@ -546,16 +653,17 @@ impl IntegrityFlags {
         self.census_closed.then_some(&self.census_dependencies)
     }
 
-    /// An own data slot is intact when no census write reaches it. A
-    /// prototype slot covers every property on the object, so it stays
+    /// An own-property slot is intact when no census write reaches it. A
+    /// whole prototype slot covers every property on the object, so it stays
     /// family-level: intact only when neither its family nor the global
     /// object has a known or possible write.
     fn census_intact(&self, slot: IntrinsicSlot) -> bool {
         self.census_closed
             && match slot {
-                IntrinsicSlot::Global(_) | IntrinsicSlot::Static(..) => {
-                    self.own_slot_writes.intact(slot)
-                }
+                IntrinsicSlot::Global(_)
+                | IntrinsicSlot::Static(..)
+                | IntrinsicSlot::PrototypeProperty(..)
+                | IntrinsicSlot::Species(_) => self.own_slot_writes.intact(slot),
                 _ => prototype_slot_intact(&self.mutated, slot),
             }
     }
@@ -766,6 +874,8 @@ mod tests {
             IntrinsicSlot::Prototype(NativeIntrinsic::Array),
             IntrinsicSlot::ArrayIteratorPrototype,
             IntrinsicSlot::SetIteratorPrototype,
+            IntrinsicSlot::PrototypeProperty(NativeIntrinsic::Array, "map"),
+            IntrinsicSlot::Species(NativeIntrinsic::Array),
         ];
         for mutated in families
             .iter()
@@ -1063,6 +1173,114 @@ mod tests {
         );
     }
 
+    /// A prototype property is reached by a write naming it on that exact
+    /// prototype or on any receiver, never by writes to the global object or
+    /// to a constructor; `@@species` only by Symbol- or unknown-keyed writes
+    /// that may land on the constructor.
+    #[test]
+    fn prototype_properties_and_species_are_reached_by_key() {
+        use NativeIntrinsic::{Array, GlobalObject};
+        const MAP: IntrinsicSlot = IntrinsicSlot::PrototypeProperty(Array, "map");
+        const FOR_EACH: IntrinsicSlot = IntrinsicSlot::PrototypeProperty(Array, "forEach");
+        const SPECIES: IntrinsicSlot = IntrinsicSlot::Species(Array);
+        const PROBES: &[IntrinsicSlot] = &[MAP, FOR_EACH, SPECIES];
+        let prototype = NativeReceiverPath::Prototype(Array);
+        let constructor = NativeReceiverPath::Constructor(Array);
+        for (witnesses, expected) in [
+            (
+                vec![witness(Array, prototype.clone(), string("map"), &[])],
+                vec![FOR_EACH, SPECIES],
+            ),
+            (
+                vec![witness(
+                    Array,
+                    prototype.clone(),
+                    NativePropertyKey::Unknown,
+                    &[],
+                )],
+                vec![SPECIES],
+            ),
+            (
+                vec![witness(Array, constructor.clone(), string("from"), &[])],
+                vec![MAP, FOR_EACH, SPECIES],
+            ),
+            (
+                vec![witness(
+                    Array,
+                    constructor.clone(),
+                    NativePropertyKey::OtherSymbol,
+                    &[],
+                )],
+                vec![MAP, FOR_EACH],
+            ),
+            (
+                vec![witness(Array, constructor, NativePropertyKey::Unknown, &[])],
+                vec![MAP, FOR_EACH],
+            ),
+            (
+                vec![witness(
+                    GlobalObject,
+                    NativeReceiverPath::GlobalObject,
+                    string("map"),
+                    &[],
+                )],
+                vec![MAP, FOR_EACH, SPECIES],
+            ),
+            (
+                vec![witness(
+                    GlobalObject,
+                    NativeReceiverPath::Unknown,
+                    string("map"),
+                    &[],
+                )],
+                vec![FOR_EACH, SPECIES],
+            ),
+            (
+                vec![witness(
+                    GlobalObject,
+                    NativeReceiverPath::Unknown,
+                    NativePropertyKey::OtherSymbol,
+                    &[],
+                )],
+                vec![MAP, FOR_EACH],
+            ),
+            (
+                vec![witness(
+                    GlobalObject,
+                    NativeReceiverPath::Unknown,
+                    NativePropertyKey::Unknown,
+                    &[],
+                )],
+                vec![],
+            ),
+        ] {
+            assert_eq!(intact(&witnesses, PROBES), expected, "{witnesses:?}");
+        }
+        // A replaced `Array` binding makes `Array.prototype.x` any-receiver.
+        let mut rebind = witness(
+            Array,
+            NativeReceiverPath::GlobalObject,
+            string("Array"),
+            &[],
+        );
+        rebind.operation = NativeMutationOperation::BindingAssignment;
+        assert_eq!(
+            intact(
+                &[
+                    rebind,
+                    witness(
+                        Array,
+                        NativeReceiverPath::Prototype(Array),
+                        string("other"),
+                        &[]
+                    )
+                ],
+                PROBES
+            ),
+            PROBES
+        );
+    }
+
     #[test]
     fn slot_names_parse_their_display_and_member_forms() {
         for (text, slot) in [
@@ -1072,7 +1290,11 @@ mod tests {
             ),
             (
                 "Set.prototype.add",
-                SlotName::Prototype(NativeIntrinsic::Set),
+                SlotName::PrototypeProperty(NativeIntrinsic::Set, "add".to_owned()),
+            ),
+            (
+                "%Array[@@species]%",
+                SlotName::Species(NativeIntrinsic::Array),
             ),
             (
                 "Object.defineProperty",
@@ -1084,7 +1306,7 @@ mod tests {
             assert_eq!(text.parse::<SlotName>(), Ok(slot.clone()), "{text}");
             assert_eq!(slot.to_string().parse::<SlotName>(), Ok(slot));
         }
-        for text in ["globalThis", "Foo.bar", ""] {
+        for text in ["globalThis", "Foo.bar", "", "Array.from[@@species]"] {
             assert!(text.parse::<SlotName>().is_err(), "{text}");
         }
     }

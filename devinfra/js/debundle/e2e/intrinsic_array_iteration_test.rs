@@ -57,12 +57,182 @@ fn assert_early_iteration_rejected_with_executor(
     );
 }
 
+/// The split is accepted and the emitted entry prints what the source does:
+/// the callback ran on every element without invoking their stored
+/// `executor` callbacks, which read `later`.
+fn assert_iteration_split_accepted(collection: &str, trailing: &str, expected: &str) {
+    assert_iteration_split_accepted_after("", collection, trailing, expected);
+}
+
+fn assert_iteration_split_accepted_after(
+    setup: &str,
+    collection: &str,
+    trailing: &str,
+    expected: &str,
+) {
+    let source = format!(
+        "let later = 0;\n{setup}\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst result = {collection};\n{trailing}\nlater = 42;\nconsole.log(JSON.stringify(result), entries[0].executor());\n"
+    );
+    let mut steps = Vec::new();
+    if !setup.is_empty() {
+        steps.push(setup);
+    }
+    if !trailing.is_empty() {
+        steps.push(trailing);
+    }
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[Member::new("entries"), Member::new("result")],
+                &steps,
+            ),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, expected);
+}
+
+#[test]
+fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
+    for (collection, expected) in [
+        ("entries.some(entry => entry.id === 'b')", "true 42\n"),
+        ("entries.every(entry => entry.size > 0)", "true 42\n"),
+        ("entries.findIndex(entry => entry.id === 'b')", "1 42\n"),
+        ("entries.find(entry => entry.id === 'b').size", "2 42\n"),
+        (
+            "entries.reduce((total, entry) => total + entry.size, 0)",
+            "3 42\n",
+        ),
+        ("entries.reduce((first, entry) => first).id", "\"a\" 42\n"),
+        (
+            "entries.flatMap(entry => [entry.id, entry.size])",
+            "[\"a\",1,\"b\",2] 42\n",
+        ),
+        ("entries.flatMap(entry => entry.id)", "[\"a\",\"b\"] 42\n"),
+    ] {
+        assert_iteration_split_accepted(collection, "", expected);
+    }
+}
+
+/// Rows require only the Array prototype properties they read: writes to the
+/// global object, to `Array` statics, or to `Object.prototype` under other keys
+/// leave them intact.
+#[test]
+fn unrelated_intrinsic_writes_leave_iteration_rows_intact() {
+    for setup in [
+        "globalThis.appState = { ready: true };",
+        "Array.from = Array.from;",
+        "Array.prototype.unrelated = function () { return later; };",
+        "Object.defineProperty(Object.prototype, 'unrelated', { value: 1, configurable: true });",
+    ] {
+        assert_iteration_split_accepted_after(
+            setup,
+            "entries.map(entry => entry.size)",
+            "",
+            "[1,2] 42\n",
+        );
+    }
+}
+
+#[test]
+fn writes_reaching_a_row_slot_keep_real_effects() {
+    for (declarations, setup, collection, names) in [
+        (
+            "",
+            "Array.prototype.some = function () { observed = later; return false; };",
+            "entries.some(() => false)",
+            &[][..],
+        ),
+        (
+            "",
+            "Object.defineProperty(Array.prototype, 'every', { value() { observed = later; return true; }, configurable: true });",
+            "entries.every(() => true)",
+            &[],
+        ),
+        (
+            "const key = ['fi', 'nd'].join('');",
+            "Array.prototype[key] = function () { observed = later; };",
+            "entries.find(() => false)",
+            &["key"],
+        ),
+        (
+            "",
+            "Object.defineProperty(Array, Symbol.species, { get() { observed = later; return Array; }, configurable: true });",
+            "entries.map(entry => entry.id)",
+            &[],
+        ),
+        (
+            "",
+            "Array.prototype.constructor = { get [Symbol.species]() { observed = later; return Array; } };",
+            "entries.filter(() => true)",
+            &[],
+        ),
+    ] {
+        assert_early_iteration_rejected(declarations, &[setup], collection, "", names);
+    }
+}
+
+#[test]
+fn iteration_results_keep_retained_element_capabilities() {
+    for (collection, trailing) in [
+        (
+            "entries.find(entry => entry.id === 'a')",
+            "observed = result.executor();",
+        ),
+        (
+            "entries.reduce((last, entry) => entry.executor, null)",
+            "observed = result();",
+        ),
+        (
+            "entries.reduce((last, entry) => entry)",
+            "observed = result.executor();",
+        ),
+        (
+            "entries.flatMap(entry => [entry.executor])",
+            "observed = result[0]();",
+        ),
+        (
+            "entries.flatMap(entry => entry.executor)",
+            "observed = result[1]();",
+        ),
+    ] {
+        assert_early_iteration_rejected_with_executor("", &[], collection, trailing, &[], "later");
+    }
+}
+
+#[test]
+fn callback_writes_stay_ordered_before_later_readers() {
+    let source = "let later = 0;\nlet seen = 0;\nconst entries = [{ id: 'a' }, { id: 'b' }];\nentries.some(entry => { seen += 1; return entry.id === 'b'; });\nconst copy = seen;\nlater = 42;\nconsole.log(copy, seen, later);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[Member::new("seen"), Member::new("entries")],
+                &["entries.some(entry => { seen += 1; return entry.id === 'b'; });"],
+            ),
+            logical_module("readers", &[Member::new("copy")]),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "2 2 42\n");
+}
+
 #[test]
 fn actual_iteration_callback_invocation_keeps_early_reads() {
     for collection in [
         "entries.forEach(entry => { observed = entry.executor(); })",
         "entries.filter(entry => { observed = entry.executor(); return true; })",
         "entries.map(entry => { observed = entry.executor(); return entry.id; })",
+        "entries.some(entry => { observed = entry.executor(); return false; })",
+        "entries.every(entry => { observed = entry.executor(); return true; })",
+        "entries.find(entry => { observed = entry.executor(); return false; })",
+        "entries.findIndex(entry => { observed = entry.executor(); return false; })",
+        "entries.flatMap(entry => { observed = entry.executor(); return []; })",
+        "entries.reduce((total, entry) => { observed = entry.executor(); return total; }, 0)",
+        "entries.reduce((first, entry) => { observed = entry.executor(); return first; })",
     ] {
         assert_early_iteration_rejected_with_executor("", &[], collection, "", &[], "later");
     }
@@ -99,6 +269,8 @@ fn iteration_source_and_entry_mutation_remain_conservative() {
         &["replace"],
     );
     for collection in [
+        "entries.some((entry, index, array) => { if (index === 0) array[1] = { executor: () => later }; else observed = entry.executor(); return false; })",
+        "entries.reduce((total, entry, index, array) => { if (index === 0) array[1] = { executor: () => later }; else observed = entry.executor(); return total; }, 0)",
         "entries.forEach((entry, index, array) => { if (index === 0) array[1] = { executor: () => later }; else observed = entry.executor(); })",
         "entries.forEach((entry, index) => { if (index === 0) entries[1].executor = () => later; else observed = entry.executor(); })",
         "entries.forEach(function(entry, index) { if (index === 0) arguments[2][1] = { executor: () => later }; else observed = entry.executor(); })",
@@ -116,13 +288,22 @@ fn iteration_source_and_entry_mutation_remain_conservative() {
 
 #[test]
 fn replaced_methods_and_accessor_entries_keep_real_effects() {
-    assert_early_iteration_rejected(
-        "",
-        &["entries.forEach = callback => { observed = later; };"],
-        "entries.forEach(() => {})",
-        "",
-        &[],
-    );
+    for (setup, collection) in [
+        (
+            "entries.forEach = callback => { observed = later; };",
+            "entries.forEach(() => {})",
+        ),
+        (
+            "entries.some = callback => { observed = later; };",
+            "entries.some(() => false)",
+        ),
+        (
+            "entries.reduce = function () { observed = later; };",
+            "entries.reduce((total) => total, 0)",
+        ),
+    ] {
+        assert_early_iteration_rejected("", &[setup], collection, "", &[]);
+    }
     assert_early_iteration_rejected(
         "",
         &["Object.defineProperty(entries[0], 'id', { get() { observed = later; return 'a'; } });"],

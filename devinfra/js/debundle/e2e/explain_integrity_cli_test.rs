@@ -4,10 +4,10 @@
 use debundle_e2e_support::GraphFixture;
 use serde_json::{Value, json};
 
-// Line 1 writes an Object static, line 2 deletes through a global's value,
-// and line 3's `map` needs the Array intrinsics.
+// Line 1 writes an Object static, line 2 deletes `map` through a global's
+// value, and line 3's `map` needs `%Array.prototype.map%`.
 const SOURCE: &str = "Object.entries = function(object) { return []; };\n\
-function forget() { delete globalThis.registry.entry; }\n\
+function forget() { delete globalThis.registry.map; }\n\
 const values = [1, 2].map(value => value + 1);\n\
 console.log(values.join(','), typeof forget);\n";
 
@@ -65,20 +65,17 @@ fn a_failed_guard_names_the_witnesses_behind_its_unknown_slots() {
             .iter()
             .find(|guard| guard["guard"] == "array_intrinsics")
             .unwrap_or_else(|| panic!("array guard failed: {unit}"));
+        // The Object static write names neither another object's property
+        // nor the constructor's Symbol keys.
         assert_eq!(
             guard["slots"],
             json!([
-                {"slot": "%Array.prototype%", "intact": false},
-                {"slot": "%ArrayIteratorPrototype%", "intact": false},
-                {"slot": "%Object.prototype%", "intact": false},
+                {"slot": "%Array.prototype.constructor%", "intact": true},
+                {"slot": "%Array.prototype.map%", "intact": false},
+                {"slot": "%Array[@@species]%", "intact": true},
             ])
         );
-        // The Object static write couples only its own family's prototype.
-        assert_eq!(
-            reaches(slot(&report, "%Object.prototype%")),
-            [reach("family_coupling", 1), reach("unknown_receiver", 2)]
-        );
-        let array_prototype = slot(&report, "%Array.prototype%");
+        let array_prototype = slot(&report, "%Array.prototype.map%");
         assert_eq!(reaches(array_prototype), [reach("unknown_receiver", 2)]);
         let delete = &array_prototype["witnesses"][0];
         assert_eq!(delete["receiver_global"], "registry");

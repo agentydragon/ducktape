@@ -30,8 +30,8 @@ pub(super) struct ExplainIntegrityArgs {
     graph: PathBuf,
 
     /// Every census witness reaching this slot: `%Array.prototype%`,
-    /// `Object.prototype`, `Object.defineProperty`, `Set`,
-    /// `ArrayIteratorPrototype`.
+    /// `Object.prototype`, `Array.prototype.map`, `Array[@@species]`,
+    /// `Object.defineProperty`, `Set`, `ArrayIteratorPrototype`.
     #[arg(long, value_parser = parse_slot)]
     slot: Option<SlotName>,
 

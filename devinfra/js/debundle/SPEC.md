@@ -1489,6 +1489,31 @@ of its own, and A11 excludes host code changing intrinsics. So:
 A prototype slot covers every property on the object, including inherited
 lookups, so it is unknown after any write to its family or the global object.
 
+Two narrower slots name one own property each, under the same reach rules:
+
+- `%Array.prototype.map%` is the string-keyed own property `map` of the
+  prototype object. Writes to it come from an exact `%Array.prototype%`
+  receiver (exact while `%Array%` is intact) or from a receiver that may be any
+  object, under a key that may name it. The global object and the constructor
+  are different objects, so their writes never reach it. A family root mutated
+  without a witness reaches every property.
+- `%Array[@@species]%` is the constructor's `@@species` accessor. The census
+  does not tell Symbol keys apart, so any Symbol- or unknown-keyed write that
+  may land on `%Array%` reaches it.
+
+The Array iteration rows require only their method's slot. A row whose result
+array comes from `ArraySpeciesCreate` also requires `%Array.prototype.constructor%`
+and `%Array[@@species]%`. They need neither `%Object.prototype%` nor the Array
+iterator:
+
+- the receiver is a dense array whose indices below `length` are own data
+  properties, so `HasProperty` and `Get` never reach its prototype chain;
+- `length` is own;
+- no row's algorithm reads the iterator.
+
+Reads the callback performs, such as an element's property, are member reads
+the interpreter checks separately.
+
 Each consumer names every slot its operation reads: the callee's binding and
 member, and any constructor static or prototype method the algorithm looks up.
 
@@ -2675,8 +2700,8 @@ they do not assert that every reported dependency executes synchronously.
 
 Direct native calls and constructions the interpreter can summarize without
 running user code are the rows of `facts/abstract_domain/builtins.rs`
-(§ Synchronous analysis limits). The proofs below cover array iteration and
-`push`, which have no row yet.
+(§ Synchronous analysis limits). Array iteration methods are that file's
+`ITERATION_ROWS`; `push` has no row yet.
 
 An unexported `const` facade built by the exact nested
 `Object.freeze(Object.defineProperty({__proto__: null, ...ownData},
@@ -2688,12 +2713,39 @@ identity and property values, so a later call or publication still exposes its
 stored callbacks. The proof changes only construction-time callback reachability;
 ordinary eager dependencies, effects, and ordering remain.
 
-Bounded synchronous analysis can execute a known callback for direct one-callback
-`forEach`, `filter`, and `map` calls over a retained untainted dense ordinary
-array. It passes actual retained element capabilities and preserves callback
-reads, writes, coercions, and publication. Fresh results retain element aliases;
-iteration and spread do not invoke stored functions. Unsupported sources,
-mutation, intrinsic changes, and invocation limits retain conservative effects.
+Bounded synchronous analysis can execute a known callback for a direct
+`forEach`, `map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex` or
+`reduce` call over a retained untainted dense ordinary array: one callback, no
+`thisArg`, no spread; `reduce` also takes an initial value. The callback runs
+once per element, in index order, with the retained element, a primitive index
+and the source array (`reduce` passes the accumulator first). Its reads,
+writes, coercions and publication are observed effects of the statement.
+
+- **Early exit.** `some`, `every`, `find` and `findIndex` can stop at any
+  element. The analysis still runs the callback for every element: effects
+  only join, so the extra invocations add possible effects and remove none.
+- **Results.** `map`, `filter` and `flatMap` return a fresh array that retains
+  the element and callback-result aliases. A `flatMap` result whose positions
+  are unknown keeps its values as contents and is not iterated precisely
+  later. `find` returns an element or `undefined`; `reduce` returns the last
+  accumulator, and on an empty array without an initial value it throws.
+  Iteration and spread of a result do not invoke stored functions.
+- **The array as an argument.** The source array reaches the callback as its
+  last argument under its own allocation, so a write through that parameter
+  is a write to the source.
+- **Mutation.** Before each next element the analysis re-reads the source.
+  Unless the source is the same untainted dense array with the same element
+  values, and no element was tainted, the call falls back to conservative
+  whole effects.
+- **Holes, `thisArg`, own method slots.** A sparse or non-literal source is not
+  dense, a `thisArg` is not admitted, and an own `forEach`-style property on
+  the array taints it. Each is the conservative path.
+- **Integrity.** Each row's `requires` slots must be intact: the method's own
+  property of `%Array.prototype%` and, for a fresh array result, its
+  `constructor` and `%Array[@@species]%` (§ Native integrity inputs). An
+  intrinsic change, an unsupported operation in the callback, or exhausted
+  invocation limits also keep conservative effects.
+
 See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).
 
 A direct static `binding.push(...)` with non-spread primitive arguments may
