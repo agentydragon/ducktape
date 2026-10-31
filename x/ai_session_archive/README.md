@@ -55,6 +55,13 @@ remain separate candidates until identity/ambiguity checks resolve them.
 
 ## Read API and browser
 
+Claude display names prefer the last captured `custom-title` record, then the last
+`summary`, then the first ordinary user prompt. Prompt fallback excludes `isMeta`
+records and local-command markers; fork prompts use the directive following
+`fork-boilerplate`. New transcript versions recompute the projected name so later
+native titles and renames replace a prompt fallback. Already indexed versions are
+not reparsed solely to refresh this projection.
+
 The browser frontend lives in `//x/ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
 
 The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. It shows the latest capture by default; the conversation options menu provides older versions and capture metadata. Selecting an older version shows an Earlier capture indicator. Session badges describe exceptional states; a normal capture and its version count add no session-list chrome. The top bar shows compact progress beside the title only for machines with pending or failed import work; `/?view=import-progress` opens full snapshot, file-entry, and Codex metadata details for every registered machine. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
