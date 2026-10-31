@@ -4806,7 +4806,7 @@
     "codeql_default_setup": "not-configured"
   },
   "intervention_followup": {
-    "checked_at_utc": "2026-10-31T12:58:39.163320+00:00",
+    "checked_at_utc": "2026-10-31T12:34:39.396226+00:00",
     "pull_requests": {
       "p13066": {
         "number": 13066,
@@ -9331,9 +9331,162 @@
     ]
   },
   "attribution": "not collected",
+  "gate_headroom": {
+    "population_n": 85,
+    "clock": "Gate offsets are elapsed seconds from each head's labeled workflow-start proxy, as supplied in the reviewed input.",
+    "assumption": "Scenarios subtract the stated seconds from observed gate offsets, clipping each at zero, while holding other gate clocks and dependency structure fixed; adjusted completion order may change. This is a conditional upper-bound sensitivity, not a treatment effect or actual auto-merge readiness; do not add worker or CPU times.",
+    "last_gate_counts": {
+      "Build artifacts + imports check": 8,
+      "Pre-commit checks": 0,
+      "bazel-ci / Test & Build": 77
+    },
+    "last_gate_tied_heads": 0,
+    "scenarios": [
+      {
+        "name": "bazel-ci / Test & Build",
+        "mean_saved_wall_seconds": 24.03529411764706,
+        "p50_saved_wall_seconds": 30.0,
+        "p90_saved_wall_seconds": 30.0,
+        "total_saved_wall_seconds": 2043.0,
+        "benefiting_heads": 77,
+        "remaining_last_gate_counts": {
+          "Build artifacts + imports check": 24,
+          "Pre-commit checks": 1,
+          "bazel-ci / Test & Build": 61
+        },
+        "remaining_last_gate_tied_heads": 1
+      },
+      {
+        "name": "Build artifacts + imports check",
+        "mean_saved_wall_seconds": 1.4352941176470588,
+        "p50_saved_wall_seconds": 0.0,
+        "p90_saved_wall_seconds": 0.0,
+        "total_saved_wall_seconds": 122.0,
+        "benefiting_heads": 8,
+        "remaining_last_gate_counts": {
+          "Build artifacts + imports check": 2,
+          "Pre-commit checks": 2,
+          "bazel-ci / Test & Build": 82
+        },
+        "remaining_last_gate_tied_heads": 1
+      },
+      {
+        "name": "Pre-commit checks",
+        "mean_saved_wall_seconds": 0.0,
+        "p50_saved_wall_seconds": 0.0,
+        "p90_saved_wall_seconds": 0.0,
+        "total_saved_wall_seconds": 0.0,
+        "benefiting_heads": 0,
+        "remaining_last_gate_counts": {
+          "Build artifacts + imports check": 8,
+          "Pre-commit checks": 0,
+          "bazel-ci / Test & Build": 77
+        },
+        "remaining_last_gate_tied_heads": 0
+      }
+    ]
+  },
+  "prior_work_inventory": {
+    "source_devel_commit": {
+      "disposition": "Replaced with inspected devel61d18e604e37; historical source49475cae remains pinned.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "window_utc": {
+      "disposition": "Replaced25h20m arrival window with explicitly separate4h window; no matched effect claim.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "prior_report_commit": {
+      "disposition": "Replaced by prior_report object linking full previous report/evidence.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "collection": {
+      "disposition": "New recursively paginated arrival cohort and all-attempt job census.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "pr_heads": {
+      "disposition": "New121-head census; old406-head census remains historical, not added to current distributions.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "job_metrics": {
+      "disposition": "New named required-job/event summaries; older169 grouped rows remain historical.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "phase_rows": {
+      "disposition": "Old346 step aggregates retired from current sample; new representative job/step/Bazel timestamps and stock summaries retained.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "gate_headroom": {
+      "disposition": "Recomputed three conditional30s gate reductions on85 exact current heads. Interactive calculator retained; duplicate per-scenario head matrices omitted because current pr_heads rows contain complete offsets.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "occupancy": {
+      "disposition": "New selected-workflow completed-job lower bound; source/window and inclusion limits explicit.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "system_test_internals": {
+      "disposition": "Historical setup/scenario/split/cleanup experiments retained in shipped and prior-disposition prose, with complete original evidence pinned.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "stream_retry_cases": {
+      "disposition": "Old three automatic-replay cases retained historically; new four workflow reruns diagnosed separately. Replayguard shipped.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "stream_fault_control": {
+      "disposition": "Historical fake-gRPC5.0.466 runtime control remains evidence for client mechanism, not hosted reset cause. New13336/13343 investigation separate.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "symbol_strip_fresh_test_processes": {
+      "disposition": "Original post-adoption sample and matched control retained in prior findings; no current speedup inference.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "race_adoption": {
+      "disposition": "Old adoption census superseded as implementation decision by merged13216 and analysis reuse; elapsed effects still unmeasured.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "timelines": {
+      "disposition": "New five selected exact-head examples with real inner source and step/test clocks; old four remain historical.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "stock_recipes": {
+      "disposition": "Recomputed from new snapshot; supporting data, not standalone narrative.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "clock_limits": {
+      "disposition": "Retained and expanded in method/scope prose and structured method fields.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "attribution": {
+      "disposition": "Still not collected; no invented allocation.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "live_api_followup": {
+      "disposition": "Explicitly retained as historical selected lookup, unavailable epoch timestamps, SearchExecution mismatch,403 capacity boundary; no provider quota claim.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "race_setting_control": {
+      "disposition": "Historical control retained via prior findings; final build-wide policy supersedes per-test alternative, not its evidence.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "post_strip_census_unique_test_runner_executions": {
+      "disposition": "Historical denominator1412 remains in pinned evidence; not reused as current fresh test denominator.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "intervention_followup": {
+      "disposition": "Merge states and pointers refreshed for28PRs and issue13270; source-specific results retained with limits.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "prior_report_validation": {
+      "disposition": "Historical renders retained in pinned snapshot; replaced by new exact HTML screenshot review.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    },
+    "report_validation": {
+      "disposition": "New RBE desktop/mobile render verification replaces prior snapshot validation.",
+      "historical_evidence": "https://github.com/agentydragon/ducktape/blob/0bc60cbdee928604d55cedc6be2ff1392ff3b20d/latency/evidence.json"
+    }
+  },
   "report_validation": {
-    "html_sha256": "8298c7d5b00d96d0ecf4532f0fdc7f6e1f8959472683a08b77323ebfe272a9e9",
-    "invocation_id": "809e084e-4543-4eb8-8341-acceab7ad517",
+    "html_sha256": "9ad74d9e78e5959429256f10f55a5de93181bb9b67457183022efa5bd5ddbb40",
+    "invocation_id": "026fdde1-28b1-4629-a550-ed8061081f19",
     "target": "//devinfra/ci/reports/x/followup_preview:test_report",
     "result": "PASSED",
     "browser_cases": 2,
@@ -9342,28 +9495,37 @@
       [390, 844]
     ],
     "checks": [
-      "all ten images visually reviewed",
+      "all twelve images visually reviewed, two overview captures byte-identical to prior reviewed images",
+      "interactive gate comparison agrees with published summary",
       "internal anchors resolve",
       "document no horizontal overflow with disclosures open",
-      "mobile tables become labelled cards",
+      "mobile tables and captions responsive",
       "shared render and network health checks"
     ],
     "screenshots": [
       {
         "name": "decisions-1280.png",
-        "sha256": "c20d265a98e5d7636c391179907718fe91319c20a608ff87e4c90675d65697e0"
+        "sha256": "238e1694398c9c13229578934c02ba7979d2f958951fd6d8b4f8f07e87b2b16a"
       },
       {
         "name": "decisions-390.png",
-        "sha256": "d7584fe835730436530ccb4c211485155e635ecff088a69cd4b42aa74e05259c"
+        "sha256": "226ec8de2ded16391da3d7966e6de90448dd9a5b2c5b7d20801d56ddee931710"
       },
       {
         "name": "execution-1280.png",
-        "sha256": "28631ea714870c8748eff91bd4fd18a13ebcd5ee29916e55c76b65b57e8cda55"
+        "sha256": "802f26a68d8868a77d60cabf3c5fe765d78155807ecf4f50d6c785efeabef36c"
       },
       {
         "name": "execution-390.png",
-        "sha256": "a5fd82b6cd94361408cfe385d669c7f8fa2d55c76e7ba61a61135369ee2e5736"
+        "sha256": "7c050281880d9098baaf10a9e6334a046eafbf6cb872785abcea7d114919c6ea"
+      },
+      {
+        "name": "feedback-1280.png",
+        "sha256": "317629b4756668ccb46375da20879fefc1e25eb5cb24c4c69b2d9c7feb9accc8"
+      },
+      {
+        "name": "feedback-390.png",
+        "sha256": "b9c0af066e45d15ade07d9ade55308cc61d44d6a53d620a0175a6c71180e9656"
       },
       {
         "name": "overview-1280.png",
@@ -9375,19 +9537,19 @@
       },
       {
         "name": "retries-1280.png",
-        "sha256": "8c514c3ee48ceb877a547ac92d54bd72a83fb20e0cf9c3d02ea7d3631f870310"
+        "sha256": "2c4ad6e2d1b5fd11f13f335ade7a2377a9ae7b486ffe2348290764c6a1448e52"
       },
       {
         "name": "retries-390.png",
-        "sha256": "8f9fd542631e9c8d49618cd88f2b78c985fbeca19ac0b9aa83728fc3fef4362b"
+        "sha256": "232a465223f41535270b3cfc27075364faa30da81dff8fab25bc3a9a01050d1f"
       },
       {
         "name": "shipped-1280.png",
-        "sha256": "76f1614aa480e710e36442a0d0249dafd4be636d6e58bd1c1587aed41a3541f2"
+        "sha256": "7d95a1e93bdd3904e945381589e032184f446d78d08480e82396e3e00015672a"
       },
       {
         "name": "shipped-390.png",
-        "sha256": "1861e588baa5f50e22e1301ac71f4633eb699b37398aa98ca611b8226ce9a539"
+        "sha256": "66e8283878229f092c9572eab7a0931dc9013b0ca043a8935f96d8ce09cfde2d"
       }
     ],
     "scope": "Temporary source-worktree preview supplies authored report to normal RBE visual harness. No source implementation or sibling report namespace is changed."
