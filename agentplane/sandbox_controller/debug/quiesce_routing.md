@@ -30,6 +30,19 @@ Focused controller and Gateway package tests passed in
 [invocation `3eaa7a93`](https://app.buildbuddy.io/invocation/3eaa7a93-7c69-4336-986a-5ad4db0aaeb1):
 the controller test reads the persisted status at the Quiesce call after a held bootstrap,
 and the Gateway test uses the held snapshot to verify Quiesce forwarding while GetStatus,
-unauthorized callers, a replaced incarnation and an unready Pod remain rejected. A real
-post-fix Pod case is still needed to observe the first-call result; one passing sample would
-not establish that every possible source of `UNAVAILABLE` has been eliminated.
+unauthorized callers, a replaced incarnation and an unready Pod remain rejected. An added
+`SubmitInput` assertion on the same held snapshot passed in
+[invocation `1880ea00`](https://app.buildbuddy.io/invocation/1880ea00-4ced-4d5b-9a95-6d5c89b8fd5c).
+
+One uncached real Pod storage case on commit `0c5aa3e3b4` passed in
+[invocation `eb6c4ddd`](https://app.buildbuddy.io/invocation/eb6c4ddd-87a8-4db9-a73b-12a65e689793).
+The storage artifact reports `passed`, `cleanup_complete`, and `incompatible_claim_refused`.
+The old Runner's first controller Quiesce at 10:22:22.824–22.837 UTC and replacement Runner's
+first at 10:22:35.670–35.679 both recorded gRPC status 0, with no one-minute retry.
+The replacement call has linked controller, Gateway and Runner server spans in trace
+`97a00da2c7a14f616d6c087d24563901`; the Runner server span ran at
+10:22:35.675–35.678. These facts establish successful first-call forwarding in this sample.
+The trace does not establish whether this sample passed through the held-suspend cache window,
+nor that every possible source of `UNAVAILABLE` has been eliminated. Retained artifacts:
+`process-spans.jsonl` SHA-256 `3d886b5713264bbc1c03cf0566d7b8320c503bd97e36d2cee31eafe8ffadb17d`,
+`storage-pod-directory.json` SHA-256 `53d0a708d9ae941d26efd97f97dd56a4178360ee9792734fea2e4f1983029604`.
