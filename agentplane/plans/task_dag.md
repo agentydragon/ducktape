@@ -921,7 +921,7 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `CENTRAL_SAMPLER_HOST_AFFINITY` — preserve healthy JavaScript state across idle turns
 
-**Implementation underway; task owner reports central sampler runtime work in progress, 2026-10-31 UTC; awaiting PR.**
+**In review, P0; [#13349](https://github.com/agentydragon/ducktape/pull/13349), 2026-10-31 UTC.**
 The concrete operator-reported regression was ordinary turns in a Session alternating between two
 healthy sampler replicas. Each host change was treated as host loss, resetting the JavaScript epoch
 and injecting a loss notice. Neither Pod restarted; the original host-instance identity was
