@@ -253,7 +253,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	}
 	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
 	// The app and Runner Gateway hold patch on Sandboxes but not sandboxes/status: neither the main
-	// resource's status nor the old binding annotations can rebind the runner credential.
+	// resource's status nor credential annotations on the Sandbox can rebind the runner credential.
 	var pod corev1.Pod
 	var bound sandboxapi.RunnerCredential
 	eventually(t, func() bool {
@@ -266,21 +266,10 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	})
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
-		"metadata": {"annotations": {"agentplane.allegedly.works/runner-credential": "`+otherID+`", "agentplane.allegedly.works/runner-credential-kind": "pod"}},
+		"metadata": {"annotations": {"agentplane.allegedly.works/runner-credential": "`+otherID+`"}},
 		"status": {"runnerCredential": {"id": "`+otherID+`", "kind": "Pod"}}
 	}`))); err != nil {
 		t.Fatal(err)
-	}
-	// The controller strips the annotations when it reconciles the patch.
-	eventually(t, func() bool {
-		return objects.Get(ctx, key, sandbox) == nil && sandbox.Annotations[RunnerCredentialIDAnnotation] == ""
-	})
-	var unchanged corev1.Pod
-	if err := objects.Get(ctx, key, &unchanged); err != nil || unchanged.UID != pod.UID {
-		t.Fatalf("spec writer's patch replaced the bound Pod: %v", err)
-	}
-	if sandbox.Status.RunnerCredential == nil || *sandbox.Status.RunnerCredential != bound {
-		t.Fatalf("spec writer's patch changed the binding to %#v, want %#v", sandbox.Status.RunnerCredential, bound)
 	}
 	var account corev1.ServiceAccount
 	if err := objects.Get(ctx, key, &account); err != nil {
@@ -289,9 +278,20 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Patch(ctx, &account, client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"labels":{"agentplane.allegedly.works/use-action-service":"false","unrelated":"keep"}}}`))); err != nil {
 		t.Fatal(err)
 	}
+	// The ServiceAccount heal is a reconcile that read the patched Sandbox.
 	eventually(t, func() bool {
 		return objects.Get(ctx, key, &account) == nil && account.Labels[ActionCallerLabel] == "true" && account.Labels["unrelated"] == "keep"
 	})
+	var unchanged corev1.Pod
+	if err := objects.Get(ctx, key, &unchanged); err != nil || unchanged.UID != pod.UID {
+		t.Fatalf("spec writer's patch replaced the bound Pod: %v", err)
+	}
+	if err := objects.Get(ctx, key, sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.Status.RunnerCredential == nil || *sandbox.Status.RunnerCredential != bound {
+		t.Fatalf("spec writer's patch changed the binding to %#v, want %#v", sandbox.Status.RunnerCredential, bound)
+	}
 	var launch corev1.ConfigMap
 	launchKey := types.NamespacedName{Namespace: ns, Name: LaunchConfigMapName(key.Name)}
 	if err := objects.Get(ctx, launchKey, &launch); err != nil {

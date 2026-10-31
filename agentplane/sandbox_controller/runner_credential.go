@@ -34,14 +34,6 @@ const (
 	RunnerCredentialVMIUIDAnnotation     = "agentplane.allegedly.works/runner-credential-vmi-uid"
 	RunnerCredentialLastVMIUIDAnnotation = "agentplane.allegedly.works/runner-credential-last-vmi-uid"
 
-	// CLEANUP(added 2026-10-30): Remove these, legacyRunnerCredentialAnnotations and
-	//   migrateLegacyRunnerCredential once this commit runs in staging and no Sandbox has an
-	//   annotation starting with agentplane.allegedly.works/runner-credential (the migration
-	//   removes them on the Sandbox's first reconcile).
-	legacyRunnerCredentialKindAnnotation       = "agentplane.allegedly.works/runner-credential-kind"
-	legacyRunnerCredentialAcceptedIDAnnotation = "agentplane.allegedly.works/runner-credential-accepted-id"
-	legacyRunnerCredentialPodUIDAnnotation     = "agentplane.allegedly.works/runner-credential-pod-uid"
-
 	runnerCertificateGroup          = "cert-manager.io"
 	runnerCertificateVersion        = "v1"
 	runnerCertificateKind           = "Certificate"
@@ -52,57 +44,6 @@ const (
 
 var runnerCertificateGVK = schema.GroupVersionKind{
 	Group: runnerCertificateGroup, Version: runnerCertificateVersion, Kind: runnerCertificateKind,
-}
-
-// legacyRunnerCredentialAnnotations held the Sandbox's binding before status.runnerCredential, where
-// any writer that could patch the Sandbox could also rebind its runner identity.
-var legacyRunnerCredentialAnnotations = []string{
-	RunnerCredentialIDAnnotation, legacyRunnerCredentialKindAnnotation, legacyRunnerCredentialAcceptedIDAnnotation,
-	legacyRunnerCredentialPodUIDAnnotation, RunnerCredentialLastVMIUIDAnnotation,
-}
-
-// migrateLegacyRunnerCredential moves a binding still held in annotations to status, so a Sandbox
-// keeps its runner incarnation across the controller upgrade, then removes the annotations. An
-// existing status binding wins over any annotation.
-func (r *Reconciler) migrateLegacyRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox) error {
-	if !slices.ContainsFunc(legacyRunnerCredentialAnnotations, func(key string) bool {
-		_, found := sandbox.Annotations[key]
-		return found
-	}) {
-		return nil
-	}
-	if sandbox.Status.RunnerCredential == nil {
-		if binding, valid := legacyRunnerCredential(sandbox.Annotations); valid {
-			if err := r.setRunnerCredential(ctx, sandbox, binding); err != nil {
-				return err
-			}
-		}
-	}
-	for _, key := range legacyRunnerCredentialAnnotations {
-		delete(sandbox.Annotations, key)
-	}
-	return r.Update(ctx, sandbox)
-}
-
-// legacyRunnerCredential reads the annotation binding. One without a valid ID or kind is dropped,
-// and the controller issues a fresh credential, as it did for such a binding before.
-func legacyRunnerCredential(annotations map[string]string) (sandboxapi.RunnerCredential, bool) {
-	kind, known := map[string]sandboxapi.RunnerCredentialKind{
-		"pod": sandboxapi.RunnerCredentialKindPod, "vm": sandboxapi.RunnerCredentialKindVM,
-	}[annotations[legacyRunnerCredentialKindAnnotation]]
-	id := annotations[RunnerCredentialIDAnnotation]
-	if !known || !validRunnerCredentialID(id) {
-		return sandboxapi.RunnerCredential{}, false
-	}
-	binding := sandboxapi.RunnerCredential{
-		ID: id, Kind: kind,
-		PodUID:     annotations[legacyRunnerCredentialPodUIDAnnotation],
-		LastVMIUID: annotations[RunnerCredentialLastVMIUIDAnnotation],
-	}
-	if accepted := annotations[legacyRunnerCredentialAcceptedIDAnnotation]; validRunnerCredentialID(accepted) {
-		binding.AcceptedID = accepted
-	}
-	return binding, true
 }
 
 // runnerCredential is the Sandbox's binding, or the zero binding if none was issued.
