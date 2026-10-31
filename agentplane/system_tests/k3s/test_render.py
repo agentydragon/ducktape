@@ -20,7 +20,7 @@ from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.settings import Settings
-from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -387,6 +387,16 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     assert {name for rule in token_rules for name in rule["resourceNames"]} == {
         account.split("/")[1] for account in mintable_accounts
     }
+
+
+def test_vm_boot_probe_selects_only_oom_guest_at_runtime() -> None:
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    vm_sandboxes.select_boot_probe(fixture.objects, enabled=True)
+    selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
+    other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
+    selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert selected_args == other_args + " agentplane.boot-probe=1"
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:

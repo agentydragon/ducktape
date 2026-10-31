@@ -14,6 +14,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.vm_configuration import OOM_TEMPLATE
 from util.bazel.runfiles import get_required_path
 
 # The stack's `K3s.kubectl`: the stack calls this module while it starts.
@@ -27,6 +28,17 @@ READY_SECONDS = 600
 # virt-launcher.
 _KUBEVIRT_COMPONENTS = ("virt-api", "virt-controller", "virt-handler", "virt-launcher")
 _LAYOUTS = "_main/agentplane/system_tests/k3s/vm_sandboxes"
+
+
+def select_boot_probe(objects: list[dict[str, Any]], *, enabled: bool) -> None:
+    """Select the serial boot probe after manifest rendering, inside the VM test action."""
+    if not enabled:
+        return
+    template = one(
+        obj for obj in objects if obj["kind"] == "SandboxTemplate" and obj["metadata"]["name"] == OOM_TEMPLATE
+    )
+    boot = template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
+    boot["kernelArgs"] += " agentplane.boot-probe=1"
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
