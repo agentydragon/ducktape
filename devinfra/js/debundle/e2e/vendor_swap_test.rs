@@ -922,6 +922,50 @@ fn partial_swap_rejects_island_registration_through_an_alias() {
     );
 }
 
+/// React DOM's DevTools injection: island internals handed to a host global.
+/// Host code calling back into them is outside the analysed program, so the
+/// method that would fill the retained registry is not assumed to run.
+#[test]
+fn partial_swap_drops_island_internals_handed_to_a_host_hook() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set([\"mouseout\"]);\n\
+         const internals = { all, fill(name) { registry[name] = true; } };\n\
+         if (typeof globalThis.__HOOK__ !== \"undefined\") { var hook = globalThis.__HOOK__; hook.inject(internals); }\n\
+         export const e6 = () => internals.all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
+/// Anchor: the same internals handed to a chunk function, whose call is
+/// unresolved, may run `fill`, so the strip refuses.
+#[test]
+fn partial_swap_rejects_island_internals_handed_to_chunk_code() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set([\"mouseout\"]);\n\
+         const internals = { all, fill(name) { registry[name] = true; } };\n\
+         const local = { inject(target) { target.fill(\"onMouseEnter\"); } };\n\
+         local.inject(internals);\n\
+         export const e6 = () => internals.all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "internals handed to chunk code may fill the registry\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
 /// The same IIFE calling a function it declares, which fills the registry a
 /// residual reader prints: that body runs at init, so the strip must refuse.
 #[test]
