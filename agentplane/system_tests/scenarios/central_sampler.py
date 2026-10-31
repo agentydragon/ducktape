@@ -615,15 +615,18 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
             )
         request = await model.request()
         assert request.native.client_metadata.session_id == session_id
-        assert "The execution Sandbox changed incarnation" in "\n".join(request.user_texts)
-        (result_output,) = [
+        model_context = "\n".join((request.system_text, *request.user_texts))
+        resumed_tool_outputs = [
             "\n".join(output.blocks) for output in request.tool_outputs if output.call_id == "run-resumed-process"
         ]
+        await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
+        await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
+
+        assert "The execution Sandbox changed incarnation" in model_context, model_context
+        (result_output,) = resumed_tool_outputs
         result = json.loads(result_output)
         assert result["exit_code"] == 0, result
         assert result["output"].splitlines() == ["before-resume", "after-resume"]
-        await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
-        await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
 
         snapshot = await deployed.sampler.GetSession(
             sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
