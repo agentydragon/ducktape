@@ -387,6 +387,7 @@ flowchart TD
     SESSION_PRINCIPAL_READS[Retained same-principal History reads]
     SESSION_TARGET_DISCOVERY[Ready: existing target discovery]
     SESSION_DELEGATION_TOOLS[In flight: CLI, remaining MCP delegation tools]
+    SESSION_DELEGATION_TRANSPORT[Ready: workload proxy route for Session calls]
     ACTION_CALLER_UID[Deferred: retain approved caller UID]
     ENVIRONMENT_SHARED_ACCOUNT[Deferred: shared-SA environment identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
@@ -404,6 +405,7 @@ flowchart TD
     SESSION_PRINCIPAL_READS --> THREAD_CREATE_AUTHORIZATION
     SESSION_TARGET_DISCOVERY --> THREAD_CREATE_AUTHORIZATION
     SESSION_DELEGATION_TOOLS --> THREAD_CREATE_AUTHORIZATION
+    SESSION_DELEGATION_TRANSPORT --> THREAD_CREATE_AUTHORIZATION
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ACTION_CALLER_UID --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
@@ -570,6 +572,18 @@ simple. Extract neutral result projections, preserving source, lag/gaps, partial
 opaque cursors and lost-reply recovery IDs. Action adapters may provide the first surface where a
 new owning RPC would add substantial work; record that exact RPC/CLI TODO. Update agent-facing
 instructions/tool descriptions and executable workflows rather than depending on private handles.
+
+### `SESSION_DELEGATION_TRANSPORT` — workload Session calls through the existing proxy
+
+**Ready; source audit, `/root/delegation_dispatcher_authority`, 2026-10-31.** Reuse the
+Actions CLI's `HTTPS_PROXY`/CONNECT path and inert bearer placeholder for Dispatcher gRPC.
+Project the configured Dispatcher-audience token into the egress sidecar only; extend the existing
+credential substitution, scoped service route and network policies as required. Publish matching
+CLI URL/placeholder settings and agent guidance. Preserve backend SA/target checks; proxy
+reachability grants no cross-target authority. Do not add direct Runner egress or expose a real
+workload token to the agent container. This is independent transport integration; complete caller
+authorization before claiming a usable normal-caller workflow. External MCP's verified account
+forwarding remains part of `SESSION_DELEGATION_TOOLS`.
 
 ### `THREAD_CREATE_AUTHORIZATION` — caller-privilege delegation capstone
 
