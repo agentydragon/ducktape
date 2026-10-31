@@ -71,3 +71,32 @@ Runner Pod template therefore makes the egress relay a Kubernetes-native sidecar
 containers have exited. This keeps the existing protected telemetry route available through
 Runner's SDK shutdown; no sampling policy, deadline, or application lifecycle barrier changes.
 The earlier `UNAVAILABLE` at 09:44:34.643 remains a separate unresolved RPC failure.
+
+## Ordered-sidecar verification
+
+The same filtered Pod storage case passed again with the ordered relay in
+[invocation `dd7ffc77`](https://app.buildbuddy.io/invocation/dd7ffc77-ecaf-4ef1-a021-e47849c292a6).
+The test action took 165.5 s and `vm.case` took 78.442 s. These runs used different RBE workers
+and cache states; their durations are not a measured speedup. The storage artifact reports
+`passed`, `cleanup_complete`, and `incompatible_claim_refused`.
+
+The fixture receiver collected 1,768 process spans. The first Runner incarnation exported
+`none`, `draining`, `flushing`, and `quiesced` stage spans at 10:04:39.792, 10:04:41.190,
+10:04:41.202, and 10:04:41.212 UTC, plus its Runner-server `Quiesce` span at
+10:04:41.187–41.190. The replacement Runner exported `none` at 10:04:47.842, the server
+`Quiesce` span at 10:05:49.057–49.060, and `draining`, `flushing`, and `quiesced` at
+10:05:49.060, 10:05:49.078, and 10:05:49.084. These are Runner process spans, distinct from
+the Gateway's observation and Lease-publication spans.
+
+For the replacement Pod, `containerd.log` identifies Runner as `c0a458d5...` and its egress
+sidecar as `4974bc15...`. Kubelet sent SIGTERM to Runner at 10:05:49.171 and it exited at
+10:05:49.196. Only then did kubelet signal the sidecar at 10:05:49.224; it exited at
+10:05:49.236. This directly verifies the intended lifecycle ordering in the real K3s Pod.
+The retained `process-spans.jsonl` SHA-256 is
+`56eeaf37c13aaa1362d968373fed730f504f5c1dfba35a9d2354da8e36bcc55e`; the
+`containerd.log` SHA-256 is
+`2444ff73376ced61ecce79e937f8a6b9542e4a77bbe3f0da0754b82fdcde691a`.
+
+The replacement incarnation still had a controller/Gateway `UNAVAILABLE` Quiesce attempt at
+10:04:49.046 and waited for its existing retry deadline. Ordered trace-relay shutdown fixes
+collection of the final Runner spans, not that earlier RPC failure.
