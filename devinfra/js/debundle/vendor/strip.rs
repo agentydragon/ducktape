@@ -616,8 +616,8 @@ fn sweep_unreachable_top_level(
         let mut candidates = BTreeSet::new();
         // Each item followed into the region: the binding that led there and
         // the item that binding was read from (`None`: the statement's reach).
-        let mut via: BTreeMap<usize, (&Id, Option<usize>)> = BTreeMap::new();
-        let mut worklist: Vec<(&Id, bool, Option<usize>)> = reached
+        let mut via: BTreeMap<(usize, bool), (&Id, Option<(usize, bool)>)> = BTreeMap::new();
+        let mut worklist: Vec<(&Id, bool, Option<(usize, bool)>)> = reached
             .into_iter()
             .map(|id| (id, false, None))
             .chain(lexical.into_iter().map(|id| (id, true, None)))
@@ -643,9 +643,8 @@ fn sweep_unreachable_top_level(
             let code_may_run = code_may_run && !item_declares_native_container(&module.body[j]);
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
-                    if region.insert(k) {
-                        via.insert(k, (id, from));
-                    }
+                    region.insert(k);
+                    via.insert((k, code_may_run), (id, from));
                     // A value this statement itself computes (a loop variable,
                     // say) derives from what it reads at init; its closures
                     // are covered above.
@@ -654,7 +653,11 @@ fn sweep_unreachable_top_level(
                     } else {
                         &analyses[k].reads
                     };
-                    worklist.extend(reads.iter().map(|read| (read, code_may_run, Some(k))));
+                    worklist.extend(
+                        reads
+                            .iter()
+                            .map(|read| (read, code_may_run, Some((k, code_may_run)))),
+                    );
                 }
             }
         }
@@ -668,13 +671,20 @@ fn sweep_unreachable_top_level(
             for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
                 roots.entry((*id).clone()).or_insert_with(|| {
                     let mut trail = Vec::new();
-                    let mut item = Some(k);
-                    while let Some(at) = item
-                        && let Some(&(binding, from)) = via.get(&at)
-                        && trail.len() < 8
+                    let mut step = [(k, true), (k, false)]
+                        .into_iter()
+                        .find(|key| via.contains_key(key));
+                    while let Some(key) = step
+                        && let Some(&(binding, from)) = via.get(&key)
+                        && trail.len() < 12
                     {
-                        trail.push(format!("item {at} via `{}`", id_name(binding)));
-                        item = from;
+                        let running = if key.1 { "" } else { " (value)" };
+                        trail.push(format!(
+                            "item {}{running} via `{}`",
+                            key.0,
+                            id_name(binding)
+                        ));
+                        step = from;
                     }
                     format!(
                         "exposed by item {k} `{}`{}",
