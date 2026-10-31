@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 use js_ast::item_var_decl;
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap};
+use swc_common::{DUMMY_SP, SourceMap, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -496,9 +496,21 @@ fn sweep_unreachable_top_level(
     //   * a binding write is private unless some *retained* (`live`) item reads
     //     that binding; writes to a replacement-import local stay private
     //     (the old island configuring the new facade has no residual reader);
+    //   * an array or Set content write is private when that allocation is
+    //     born in a dropped item: the residual never creates it, and any live
+    //     path to it would cross a binding, global or content cell written by
+    //     a dropped item, which the other cases and the soundness gate above
+    //     check;
     //   * a statement the analyzer cannot summarize (dynamic `globalThis[expr]`,
     //     `eval`, `with`, `Function(...)`) may touch any cell and is never
-    //     private.
+    //     private;
+    //   * the cell summary covers the statement's own writes, not its
+    //     callees' in-place mutations (`registry[name] = deps` inside a called
+    //     function). A callee can only mutate state rooted at a binding it or
+    //     the statement reaches, so the effect is private only when none of
+    //     those bindings is retained state (`shared_roots`). External callees
+    //     see only what the statement hands them; replacing the package
+    //     promises their package-side effects.
     //
     // A swap-reachable observable effect that is not provably swap-private would
     // be silently deleted — an under-restriction soundness violation. Bail so
@@ -509,19 +521,66 @@ fn sweep_unreachable_top_level(
         .filter(|&(i, _)| live[i])
         .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
         .collect();
-    let swap_private_effect = |i: usize| -> bool {
-        let an = &analyses[i];
-        if !an.effects_summarizable {
-            return false;
-        }
-        an.observable_writes.iter().all(|cell| match cell {
-            EffectCell::GlobalProp(_)
-            | EffectCell::ArrayContents(_)
-            | EffectCell::SetContents(_) => false,
+    // Allocation origins are the allocation node's `span.lo`.
+    let born_in_dropped_item = |origin: u32| -> bool {
+        module.body.iter().zip(&live).any(|(item, &is_live)| {
+            let span = item.span();
+            !is_live && span.lo.0 <= origin && origin < span.hi.0
+        })
+    };
+    let private_cell = |cell: &EffectCell| -> bool {
+        match cell {
+            EffectCell::GlobalProp(_) => false,
+            EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
+                born_in_dropped_item(*origin)
+            }
             EffectCell::Binding(id) => {
                 replacement_import_locals.contains(id) || !live_reads.contains(id)
             }
-        })
+        }
+    };
+    // Retained state the statement or its callees may mutate in place: a
+    // binding they read that a retained item declares, unless its value is code
+    // or a primitive (shareable `{}` cells are state). With every
+    // callee summarized, synchronous execution names the bindings they reach.
+    // Otherwise follow lexical reads through dropped items and retained
+    // helpers, whose bodies an unsummarized callee may run.
+    let shared_roots = |an: &ItemAnalysis| -> BTreeSet<Id> {
+        let retained_state = |id: &Id| {
+            !replacement_import_locals.contains(id)
+                && declarer
+                    .get(id)
+                    .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
+        };
+        if let Some(callee_bindings) = &an.callee_bindings {
+            return an
+                .reads
+                .iter()
+                .chain(callee_bindings)
+                .filter(|id| retained_state(id))
+                .cloned()
+                .collect();
+        }
+        let mut roots = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut queue: Vec<&Id> = an.reads.iter().collect();
+        while let Some(id) = queue.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            if retained_state(id) {
+                roots.insert(id.clone());
+            } else if let Some(&j) = declarer.get(id) {
+                queue.extend(&analyses[j].reads);
+            }
+        }
+        roots
+    };
+    let swap_private_effect = |i: usize| -> bool {
+        let an = &analyses[i];
+        an.effects_summarizable
+            && an.observable_writes.iter().all(private_cell)
+            && shared_roots(an).is_empty()
     };
     for i in 0..analyses.len() {
         if live[i]
@@ -546,20 +605,24 @@ fn sweep_unreachable_top_level(
             analyses[i]
                 .observable_writes
                 .iter()
-                .filter(|cell| match cell {
-                    EffectCell::Binding(id) => {
-                        !replacement_import_locals.contains(id) && live_reads.contains(id)
-                    }
-                    EffectCell::GlobalProp(_)
-                    | EffectCell::ArrayContents(_)
-                    | EffectCell::SetContents(_) => true,
-                })
+                .filter(|cell| !private_cell(cell))
                 .map(format_effect_cell)
                 .collect::<Vec<_>>()
                 .join(", ")
         } else {
             "unsummarizable".to_string()
         };
+        let shared = shared_roots(&analyses[i])
+            .iter()
+            .map(|id| {
+                format!(
+                    "`{}` (declared by retained item {})",
+                    id_name(id),
+                    declarer[id]
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         let swapped_paths = swapped_reachability[i]
             .iter()
             .map(|package| {
@@ -568,7 +631,7 @@ fn sweep_unreachable_top_level(
             .collect::<Vec<_>>()
             .join("; ");
         bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s); writes not private: [{public_writes}]; swapped path: {swapped_paths}",
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s); writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
         );
     }
 
@@ -1033,6 +1096,9 @@ struct ItemAnalysis {
     /// set is unreliable and the statement must be treated as touching
     /// every observable cell.
     effects_summarizable: bool,
+    /// Top-level bindings the statement's synchronous callees read or
+    /// rebind; `None` when a callee could not be summarized.
+    callee_bindings: Option<BTreeSet<Id>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1091,6 +1157,7 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects().writes,
         effects_summarizable: fact.cell_writes_summarizable,
+        callee_bindings: fact.synchronous_callee_bindings(),
     }
 }
 
@@ -1139,6 +1206,22 @@ fn item_is_shareable_helper(item: &ModuleItem) -> bool {
                 || is_shareable_global_object_fallback_var(var)
         }
         _ => false,
+    }
+}
+
+/// A declaration whose value is a function or a primitive: nothing a callee
+/// can mutate in place (a function's body effects are followed separately).
+fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Fn(_), ..
+        })) => true,
+        _ => item_var_decl(item).is_some_and(|var| {
+            is_shareable_literal_var(var)
+                || is_shareable_function_var(var)
+                || is_shareable_intrinsic_alias_var(var)
+        }),
     }
 }
 

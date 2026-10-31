@@ -809,6 +809,73 @@ fn partial_swap_rejects_observable_side_effect_reading_swapped_binding() {
     );
 }
 
+/// React DOM's event-registry setup (`p3("onMouseEnter", ["mouseout",
+/// "mouseover"])`): an island function fills island state from an argument.
+fn island_registration(argument: &str, residual_reader: &str) -> String {
+    format!(
+        "const registry = {{}};\n\
+         const all = new Set();\n\
+         function register(name, deps) {{ registry[name] = deps; for (let i = 0; i < deps.length; i++) all.add(deps[i]); }}\n\
+         register(\"onMouseEnter\", {argument});\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => {residual_reader};\n"
+    )
+}
+
+fn run_island_registration_fixture(chunk_source: &str) -> PartialSwapFixture {
+    run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source,
+        caller_source: "import { e6, keepMe } from '../megachunk/entry.js';\n\
+             console.log(e6(), keepMe());\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    })
+}
+
+#[test]
+fn partial_swap_drops_island_registration_of_an_array_born_in_the_island() {
+    let fixture =
+        run_island_registration_fixture(&island_registration("[\"mouseout\", \"mouseover\"]", "7"));
+    assert_success(&fixture.result);
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        !emitted.contains("register("),
+        "island registration should be removed with the island:\n{emitted}",
+    );
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 7\n", "");
+}
+
+/// Dropping the island call would empty the registry residual code prints
+/// (`true onMouseEnter` would become `true `), so the strip must refuse,
+/// whether the call hands over a scalar or a fresh array.
+#[test]
+fn partial_swap_rejects_island_registration_that_a_residual_reader_observes() {
+    for argument in ["\"mouseout\"", "[\"mouseout\", \"mouseover\"]"] {
+        let fixture = run_island_registration_fixture(&island_registration(
+            argument,
+            "Object.keys(registry).join(\",\")",
+        ));
+        assert!(
+            !fixture.result.status.success(),
+            "{argument}: the registration a residual reader observes must not be dropped\nstderr:\n{}",
+            fixture.result.stderr,
+        );
+        assert!(
+            fixture.result.stderr.contains("`registry`"),
+            "{argument}: expected the retained registry named in stderr:\n{}",
+            fixture.result.stderr,
+        );
+    }
+}
+
 #[test]
 fn partial_swap_drops_original_package_island_with_local_mutations() {
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
