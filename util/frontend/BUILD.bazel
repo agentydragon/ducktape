@@ -237,4 +237,212 @@ vitest_test(
     ],
 )
 
+ts_library(
+    name = "history_sizes",
+    srcs = ["history_sizes.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+)
+
+vitest_test(
+    name = "history_sizes_test",
+    srcs = ["history_sizes.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":history_sizes",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "history_geometry",
+    srcs = ["history_geometry.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [":history_sizes"],
+)
+
+vitest_test(
+    name = "history_geometry_test",
+    srcs = ["history_geometry.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":history_geometry",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "history_diagnostics",
+    srcs = ["history_diagnostics.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+)
+
+ts_library(
+    name = "history_viewport",
+    srcs = ["history_viewport.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":history_diagnostics",
+        ":history_geometry",
+    ],
+)
+
+vitest_test(
+    name = "history_viewport_test",
+    srcs = ["history_viewport.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":history_geometry",
+        ":history_sizes",
+        ":history_viewport",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "virtualized_history",
+    srcs = [
+        "tabler_icons.d.ts",
+        "virtualized_history.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":disclosure",
+        ":history_diagnostics",
+        ":history_geometry",
+        ":history_viewport",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# Shared disclosure primitives extracted from Agentplane's browser frontend.
+js_library(
+    name = "disclosure_css",
+    srcs = ["disclosure.css"],
+)
+
+ts_library(
+    name = "disclosure",
+    srcs = ["disclosure.tsx"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":disclosure_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "clamped_block",
+    srcs = ["clamped_block.tsx"],
+    tsconfig = ":tsconfig",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":disclosure",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+vitest_test(
+    name = "clamped_block_test",
+    srcs = ["clamped_block.test.tsx"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":clamped_block",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "retained_disclosures",
+    srcs = ["retained_disclosures.tsx"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":disclosure",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+vitest_test(
+    name = "retained_disclosures_test",
+    srcs = ["retained_disclosures.test.tsx"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":retained_disclosures",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+js_library(
+    name = "message_css",
+    srcs = ["message.css"],
+)
+
+ts_library(
+    name = "message",
+    srcs = ["message.tsx"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":message_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 check_vitest_specs()

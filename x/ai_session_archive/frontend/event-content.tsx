@@ -2,6 +2,8 @@ import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 
 import { Markdown } from "../../../util/frontend/markdown";
+import { DisclosureBody } from "../../../util/frontend/disclosure";
+import { RetainedDisclosure } from "../../../util/frontend/retained_disclosures";
 import type { EventRecord } from "./schema";
 
 export function recordLabel(record: EventRecord): string {
@@ -47,7 +49,7 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
     return (
       <Stack gap="xs">
         {content.map((part, index) => (
-          <ContentPart key={`${part.kind}-${index}`} part={part} />
+          <ContentPart key={`${part.kind}-${index}`} id={`part:${record.ordinal}:${index}`} part={part} />
         ))}
       </Stack>
     );
@@ -66,14 +68,15 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
 
 type Part = { kind: string; text?: string; value?: unknown };
 
-function ContentPart({ part }: { part: Part }): JSX.Element {
+function ContentPart({ part, id }: { part: Part; id: string }): JSX.Element {
   if (part.kind === "text" && part.text !== undefined) return <Markdown source={part.text} />;
   if (part.kind === "thinking" && part.text !== undefined) {
     return (
-      <details>
-        <summary>Thinking</summary>
-        <Markdown source={part.text} />
-      </details>
+      <RetainedDisclosure id={id} summary="Thinking">
+        <DisclosureBody>
+          <Markdown source={part.text} />
+        </DisclosureBody>
+      </RetainedDisclosure>
     );
   }
   return (
@@ -120,6 +123,12 @@ function codexContent(parsed: Record<string, unknown>): Part[] | null {
       }
       return { kind: text(part.type) ?? "Content block", value: part };
     });
+  }
+  if (payload.type === "reasoning") {
+    return parts(payload.summary, (part) => ({
+      kind: "thinking",
+      text: text(part.text) ?? "Reasoning details unavailable",
+    }));
   }
   if (payload.type === "function_call" || payload.type === "custom_tool_call") {
     const name = text(payload.name) ?? text(payload.type)?.replaceAll("_", " ") ?? "Tool call";

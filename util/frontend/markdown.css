@@ -123,3 +123,33 @@
 .agentplane-markdown--single-line :where(a, code) {
   overflow-wrap: normal;
 }
+
+/* Live assistant text uses an inline caret so its streaming state doesn't create a separate row. */
+.agentplane-streaming-cursor {
+  display: inline-block;
+  margin-inline-start: 0.12em;
+  color: var(--mantine-primary-color-filled);
+  font-weight: 700;
+  animation: agentplane-streaming-cursor-blink 1s steps(1, end) infinite;
+}
+
+.agentplane-streaming-cursor::before {
+  content: attr(data-character);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentplane-streaming-cursor {
+    animation: none;
+  }
+}
+
+@keyframes agentplane-streaming-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}

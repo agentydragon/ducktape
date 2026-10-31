@@ -11,11 +11,11 @@ import {
   type HistoryRow,
   type RunContent,
 } from "./history_rows";
-import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/retained_disclosures";
 import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import { StepLine } from "./step_line";
 import { ProjectedControlCommand } from "./thread_commands";
-import { DisclosureCard } from "../disclosure";
+import { DisclosureCard } from "../../../../util/frontend/disclosure";
 
 /** A group of history rows, with the disclosure frame shared by runs and lifecycle groups. */
 function CollapsibleRows({

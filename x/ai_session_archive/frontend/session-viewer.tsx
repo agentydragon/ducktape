@@ -18,7 +18,7 @@ import {
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
-import { recordLabel, RecordContent, rawRecordText } from "./event-content";
+import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
@@ -972,23 +972,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   <Loader size="sm" aria-label="Loading conversation records" />
                 </Center>
               ) : (
-                <ScrollArea className="session-browser-events" type="auto">
-                  <Stack gap="sm" pb="md">
-                    {events.map((record) => (
-                      <EventRow key={`${record.ordinal}`} record={record} />
-                    ))}
-                    {events.length === 0 && !loadingEvents && (
-                      <Text size="sm" c="dimmed">
-                        This captured version contains no JSONL records.
-                      </Text>
-                    )}
-                    {eventCursor !== null && (
-                      <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                        Load more records
-                      </Button>
-                    )}
-                  </Stack>
-                </ScrollArea>
+                <ArchiveTranscript
+                  scopeId={eventScope}
+                  records={events}
+                  tail={
+                    <>
+                      {events.length === 0 && !loadingEvents && (
+                        <Text size="sm" c="dimmed">
+                          This captured version contains no JSONL records.
+                        </Text>
+                      )}
+                      {eventCursor !== null && (
+                        <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                          Load more records
+                        </Button>
+                      )}
+                    </>
+                  }
+                />
               )}
             </Stack>
           )}
@@ -1053,63 +1054,6 @@ function SessionRow({
         </Group>
       </Stack>
     </Button>
-  );
-}
-
-function EventRow({ record }: { record: EventRecord }): JSX.Element {
-  return (
-    <Paper withBorder radius="sm" p="sm" data-event-ordinal={record.ordinal}>
-      <Stack gap="xs">
-        <Group justify="space-between" align="start" gap="xs">
-          <Group gap="xs">
-            <Badge variant="light">{recordLabel(record)}</Badge>
-            <Text size="xs" c="dimmed">
-              Line {record.ordinal}
-            </Text>
-            {record.parse_error != null && (
-              <Badge color="orange" variant="light">
-                Malformed JSONL
-              </Badge>
-            )}
-          </Group>
-          <Text size="xs" c="dimmed">
-            {formatDateTime(record.timestamp)}
-          </Text>
-        </Group>
-        <RecordContent record={record} />
-        <details>
-          <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>Raw JSONL record</summary>
-          <Box
-            component="pre"
-            mt="xs"
-            p="xs"
-            style={{
-              background: "var(--mantine-color-default-hover)",
-              borderRadius: "var(--mantine-radius-sm)",
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              fontSize: "var(--mantine-font-size-xs)",
-            }}
-          >
-            {rawRecordText(record.raw_base64)}
-          </Box>
-          <details>
-            <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>
-              Exact line bytes (base64)
-            </summary>
-            <Box
-              component="pre"
-              mt="xs"
-              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--mantine-font-size-xs)" }}
-            >
-              {record.raw_base64}
-            </Box>
-          </details>
-        </details>
-      </Stack>
-    </Paper>
   );
 }
 

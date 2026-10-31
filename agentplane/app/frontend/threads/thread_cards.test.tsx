@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
-import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { RetainedDisclosureProvider } from "../../../../util/frontend/retained_disclosures";
 import { EntityCard } from "./thread_cards";
 import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";

@@ -1,19 +1,20 @@
-import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { ClampedBlock, lineCount } from "../clamped_block";
+import { ClampedBlock, lineCount } from "../../../../util/frontend/clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
-import { DisclosureBody, DisclosureCard } from "../disclosure";
+import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
+import { UserMessage, VerbatimText } from "../../../../util/frontend/message";
 import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/retained_disclosures";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
-import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
 import { StepLine, type StepMark } from "./step_line";
 import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
 
@@ -158,14 +159,6 @@ function FormattedBody({
   }
 }
 
-export function VerbatimText({ text }: { text: string }): JSX.Element {
-  return (
-    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-      {text}
-    </Text>
-  );
-}
-
 /** The operator's input, including provisional sends. Progress and action sit in the
  * gutter before the bubble, so the bubble reads the same when they go; local text
  * uses no event evidence until runner admission gives it an ordered Event. */
@@ -194,46 +187,40 @@ export function UserInputBubble({
 }): JSX.Element {
   return (
     <Stack gap="xs" style={{ width: "100%" }}>
-      <Group
-        className="agentplane-user-message-row"
-        justify="flex-end"
-        align="flex-start"
-        gap="xs"
-        wrap="nowrap"
-        style={{ width: "100%" }}
-        data-command-id={commandId ?? entity?.entityId}
+      <UserMessage
+        rowAttributes={{ "data-command-id": commandId ?? entity?.entityId }}
+        bubbleAttributes={{
+          className: "agentplane-evidence-owner",
+          "data-message-phase": phase,
+          "data-has-action": action ? "true" : undefined,
+          "data-has-aside": progress || action ? "true" : undefined,
+        }}
+        pending={pending}
+        aside={
+          progress || action ? (
+            <>
+              {progress}
+              {action && (
+                <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+                  {action.label}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+        overlay={entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
       >
-        {(progress || action) && (
-          <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-            {progress}
-            {action && (
-              <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-                {action.label}
-              </Button>
-            )}
-          </Stack>
-        )}
-        <Paper
-          className="agentplane-user-bubble agentplane-evidence-owner"
-          data-message-phase={phase}
-          data-has-action={action ? "true" : undefined}
-          data-has-aside={progress || action ? "true" : undefined}
-          p="sm"
-          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
-        >
-          {entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
-          {entity ? (
-            <Body
-              reference={entity.inputRef}
-              format="text"
-              fallbackText={fallbackText}
-              onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
-            />
-          ) : text !== undefined ? (
-            <VerbatimText text={text} />
-          ) : null}
-        </Paper>
-      </Group>
+        {entity ? (
+          <Body
+            reference={entity.inputRef}
+            format="text"
+            fallbackText={fallbackText}
+            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+          />
+        ) : text !== undefined ? (
+          <VerbatimText text={text} />
+        ) : null}
+      </UserMessage>
       {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
     </Stack>
   );

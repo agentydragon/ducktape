@@ -62,3 +62,19 @@ The browser selects a session at `/sessions/<session-id>` and keeps the machine,
 `//x/ai_session_archive:web_image` packages the owner-authenticated read API with the frontend bundle in its Bazel runfiles; `//x/ai_session_archive:web_bin` does the same for local runs. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
 
 The API lists machines and sessions, supports filtering child sessions by `parent_session_id`, and serves captured versions and paginated records. Each event response includes replacement-decoded text and lossless base64 bytes. Claude path-derived parent links are explicitly marked as inferred. Codex metadata links distinguish resolved, unresolved, ambiguous, and conflicting parent IDs, with conflicting native-ID candidates available in the session summary. The web process does not ingest data or run migrations; the cluster deployment supplies separate importer CronJobs and migration init containers.
+
+## Transcript presentation
+
+The browser uses the shared `util/frontend` message, disclosure and virtualized
+history components. Archive-owned heuristics leave prompts and final assistant
+answers visible, fold consecutive tool/reasoning activity (including interleaved
+bookkeeping), and fold known standalone metadata into Session details. Claude
+`user` records containing only tool results are activity; mixed text/content stays
+visible. Codex commentary is activity; final answers remain visible. Unknown record
+types, parse failures and explicit tool errors stay visible. Every original record
+remains accessible through its raw JSONL and exact-byte disclosures.
+
+Captured versions open at the beginning. Loading another page preserves the reader's
+position. Expansion choices survive virtualized row remounts and reset when the
+selected session or captured version changes. Parsing and grouping belong to this
+application; the shared viewport has no Claude, Codex or Agentplane protocol dependency.

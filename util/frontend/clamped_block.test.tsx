@@ -1,9 +1,21 @@
 // @vitest-environment happy-dom
+import { MantineProvider } from "@mantine/core";
 import { act, type JSX, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mount } from "./actions/testing/harness";
 import { ClampedBlock, lineCount } from "./clamped_block";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const roots: ReturnType<typeof createRoot>[] = [];
+
+async function mount(node: JSX.Element): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () => root.render(<MantineProvider env="test">{node}</MantineProvider>));
+  return container;
+}
 
 // happy-dom does no layout, so the content's height is whatever a test says it is.
 function contentHeight(pixels: number): void {
@@ -14,7 +26,10 @@ function control(container: HTMLElement, label: string): HTMLElement | undefined
   return [...container.querySelectorAll<HTMLElement>("button")].find((button) => button.textContent === label);
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  for (const root of roots.splice(0)) await act(async () => root.unmount());
+  vi.restoreAllMocks();
+});
 
 describe("ClampedBlock", () => {
   it("tracks content size through expansion and collapse", async () => {

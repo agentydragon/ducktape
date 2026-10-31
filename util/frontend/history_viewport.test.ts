@@ -102,7 +102,9 @@ class ViewportRig {
     rows: readonly { readonly key: string; readonly height: number }[],
     width: number,
     viewportHeight: number,
-    loadOlder: () => void = () => undefined
+    loadOlder: () => void = () => undefined,
+    initialPosition: "start" | "end" = "end",
+    followTail = true
   ) {
     this.widthValue = width;
     this.viewportHeight = viewportHeight;
@@ -154,7 +156,10 @@ class ViewportRig {
       `view-${this.threadId}`,
       this.geometry,
       (synchronous) => this.renderRequests.push(synchronous),
-      loadOlder
+      loadOlder,
+      initialPosition,
+      followTail,
+      undefined
     );
     activeRigs.add(this);
   }
@@ -254,6 +259,29 @@ afterEach(() => {
 });
 
 describe("HistoryViewport DOM boundary", () => {
+  it("opens archive history at its start and preserves reading at the bottom when following is disabled", () => {
+    const rig = new ViewportRig(
+      Array.from({ length: 7 }, (_, index) => ({ key: `archive:${index}`, height: 100 })),
+      400,
+      200,
+      () => undefined,
+      "start",
+      false
+    );
+    rig.mount();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(0);
+    expect(rig.viewport.dataset.scrollMode).toBe("reading");
+    rig.userScrollTo(500);
+    rig.controller.scrolled();
+    rig.flush();
+    expect(rig.viewport.dataset.scrollMode).toBe("reading");
+    rig.setHeight("archive:6", 200);
+    rig.resizeObserver.deliverDelayed();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(500);
+  });
+
   it("does not follow inaccurate estimates and settles equal and changed readings once", () => {
     const rig = new ViewportRig(
       Array.from({ length: 7 }, (_, index) => ({ key: `short:${index}`, height: 35 })),

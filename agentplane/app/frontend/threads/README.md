@@ -8,7 +8,8 @@ the status indicator, and the Thread tab favicon belong with that navigation.
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
 and send/interrupt controls; `history_row_views.tsx` renders history rows,
-and `virtualized_history.tsx` renders immutable geometry plans. `history_geometry.ts` owns height evidence and row positions;
+and `virtualized_history.tsx` adapts Thread rows to the shared `util/frontend` viewport.
+The shared `history_geometry.ts` owns height evidence and row positions;
 `history_viewport.ts` verifies committed DOM geometry and owns reader intent and scroll writes.
 `thread_view_recorder.ts` owns opt-in diagnostic recording and its event schema, and
 `thread_view_recorder_tools.tsx` exposes recording controls in the sidebar. `command_delivery.ts`
@@ -29,7 +30,7 @@ guarantees, `scrolling_verification.md` for engineering checks, and
 
 ## Disclosure layout ownership
 
-The shared primitives live in `../disclosure.tsx` and `../disclosure.css`:
+The shared primitives live in `util/frontend/disclosure.tsx` and `disclosure.css`:
 
 - `DisclosureCard` owns the outer frame. Its context selects outer/nested variants;
   consumers do not remove ancestor borders with descendant selectors.

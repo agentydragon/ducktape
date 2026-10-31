@@ -1,6 +1,6 @@
 import { createContext, type JSX, type ReactNode, useContext, useMemo, useState } from "react";
 
-import { Disclosure } from "../disclosure";
+import { Disclosure } from "./disclosure";
 
 const MAX_RETAINED_DISCLOSURES = 128;
 

@@ -18,11 +18,6 @@
   gap: var(--mantine-spacing-sm);
 }
 
-.session-browser-events {
-  flex: 1;
-  min-height: 0;
-}
-
 .session-browser-related-sessions {
   max-height: min(20dvh, 156px);
   min-height: 0;

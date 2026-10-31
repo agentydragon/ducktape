@@ -210,5 +210,35 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
 
 
+@pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
+async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name: str, width: int) -> None:
+    async with visual.open(
+        "shared-transcript-disclosures",
+        viewport=Viewport(width=width, height=1000),
+        color_scheme="light",
+        capture_name=capture_name,
+    ) as view:
+        page = view.page
+        await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+        if width < 600:
+            await page.get_by_role("button", name="Session list", exact=True).click()
+        await page.get_by_role("button", name=re.compile("Tools and reasoning fixture")).click()
+        history = page.get_by_role("region", name="Conversation records")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        group = history.get_by_role("button", name="Tools and reasoning · 5 records", exact=True)
+        await expect(group).to_have_attribute("aria-expanded", "false")
+        await expect(history).to_contain_text("missing test configuration")
+        await expect(history.get_by_text("I will inspect the build log.", exact=True)).not_to_be_visible()
+        await view.capture(name=f"{capture_name}_folded")
+        await group.click()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(group).to_have_attribute("aria-expanded", "true")
+        await expect(history.get_by_text("I will inspect the build log.", exact=True)).to_be_visible()
+        await view.capture(name=f"{capture_name}_expanded")
+        await group.click()
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await expect(group).to_have_attribute("aria-expanded", "false")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

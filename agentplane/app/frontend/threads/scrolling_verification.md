@@ -3,8 +3,8 @@
 The reader-facing contract is [`../SPEC.md`](../SPEC.md). This document records
 implementation context and how to assess changes against that contract.
 
-`VirtualizedHistory` in `virtualized_history.tsx` renders immutable plans from `history_geometry.ts`
-and reads paginated rows from the Electric-backed store. `history_viewport.ts` owns the DOM boundary:
+`virtualized_history.tsx` adapts the Electric-backed store to `util/frontend/virtualized_history.tsx`,
+which renders immutable plans from the shared `history_geometry.ts`. The shared `history_viewport.ts` owns the DOM boundary:
 it reads current mounted boxes after commit, promotes observations separately from estimates,
 and reconciles reader intent only after those boxes agree with the committed plan. Its reconciler
 is the only scroll-position writer. A stable scrollbar gutter keeps overflow from changing width.

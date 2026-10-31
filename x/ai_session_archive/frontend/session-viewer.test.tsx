@@ -285,10 +285,8 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
 
   const malformed = view.querySelector<HTMLElement>('[data-event-ordinal="3"]');
   expect(malformed?.textContent).toContain("Malformed JSONL");
-  const rawDisclosure = malformed?.querySelector<HTMLDetailsElement>("details");
-  expect(rawDisclosure).not.toBeNull();
-  rawDisclosure!.open = true;
-  expect(rawDisclosure!.querySelector("pre")?.textContent).toBe('{"type":"response_item","payload":');
+  await act(async () => findControl(malformed!, "Raw JSONL record").click());
+  expect(malformed!.querySelector("pre")?.textContent).toBe('{"type":"response_item","payload":');
 
   await act(async () => {
     findControl(view, "Load more records").click();
@@ -775,4 +773,18 @@ it("does not append a session page after changing the harness filter", async () 
 
   expect(view.textContent).not.toContain("Stale session page");
   expect(view.textContent).toContain("Inspect a local transcript");
+});
+
+it("folds intermediate work, preserves final answers, and exposes the original record", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/mixed-transcript-fixture");
+  const group = findControl(view, "Tools and reasoning · 5 records");
+  expect(group.getAttribute("aria-expanded")).toBe("false");
+  expect(view.textContent).toContain("missing test configuration");
+  expect(view.textContent).not.toContain("I will inspect the build log.");
+  await act(async () => group.click());
+  expect(group.getAttribute("aria-expanded")).toBe("true");
+  expect(view.textContent).toContain("I will inspect the build log.");
+  const tool = view.querySelector<HTMLElement>('[data-event-ordinal="5"]')!;
+  await act(async () => findControl(tool, "Raw JSONL record").click());
+  expect(tool.querySelector("pre")?.textContent).toContain("read_build_log");
 });
