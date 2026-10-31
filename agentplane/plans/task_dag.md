@@ -924,11 +924,13 @@ sampler, MCP edge and Electric. Actions and Notifications already have two repli
 updates, and egress uses three. These are configuration observations, not a live-cluster audit.
 
 The sampler belongs to `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; keep the other service changes independent.
-For Electric, review replication-slot/stream identity and shape-state behavior before choosing a
-multi-instance topology. For Actions and Notifications, resolve old/new writer migration overlap
-before removing the `Recreate` policy. Record concrete per-service implementation and acceptance
-nodes once their contracts are selected; existing singleton exceptions must have an owner and an
-explicit reason to remain.
+For Actions and Notifications, resolve old/new writer migration overlap before removing the
+`Recreate` policy. Electric is an explicit exception pending independent HA work: its fixed
+replication stream permits one active writer, while each current Pod has its own empty shape store
+and the App proxy has no stable backend routing. A second Pod on the same stream would be a waiting
+replica that cannot serve that store's shapes. The [Electric HA audit](electric_ha.md) records the
+separate-stream/store option, required routing and slot lifecycle, and acceptance work; do not
+count a replica-setting change as completion. Other singleton exceptions need an owner and reason.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
