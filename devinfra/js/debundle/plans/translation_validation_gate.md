@@ -4,13 +4,20 @@ Replace the realizability gate's "no cycle among materialized constraining
 edges" (Pass 1) plus separate ESM simulation (Pass 2) with translation
 validation of the candidate emit:
 
-1. compute the order the emitted modules actually evaluate statements in (the
-   Pass 2 simulator, run on the real linker and import order);
+1. compute the order the emitted modules actually evaluate statements in;
 2. find the statement pairs whose relative order differs from source order;
 3. accept iff every such pair commutes, judged from the interpreter's effect
    facts, with TDZ as an ordinary effect conflict.
 
-This plan burns down as its steps land.
+Neither pass survives as a verdict. Cycle detection becomes at most a hint to
+the order search. The ESM loader model becomes a plain, exact component: it
+evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
+always runs on the real emitted order, never on a fallback order. Today Pass 2
+runs on a `ModuleId` order whenever Pass 1 is cyclic, which manufactured
+Tana's 1,800-module SCC (`debug/2026_10_31_tana_scc_pessimism.md`).
+
+The architecture this serves is <target_architecture.md>. This plan burns
+down as its steps land.
 
 ## Problem
 
@@ -139,7 +146,7 @@ side-effect imports the emitter adds for ordering. So the search chooses
 phantom imports, outside the interpreter:
 
 1. **Seed.** Take today's Lemma 2 order, computed over the constraining edges
-   minus the soft categories: heap-frontier `cell_order`, and
+   (with any cycle among them condensed) minus the soft categories: heap-frontier `cell_order`, and
    `binding_timeline` edges with a `fallback` side. Hard edges are binding
    reads, rebinds and definite cell conflicts.
 2. **Validate.** Run the sweep on the seed's emitted order.
@@ -148,8 +155,10 @@ phantom imports, outside the interpreter:
      clears it, accept the pair;
    - otherwise add `u → v` as a hard ordering edge (a phantom import) and go
      back to step 1.
-4. **Stop** when the order validates, or when the hard edges form a module
-   cycle. A cycle is a rejection, with the cycle's pairs as evidence. Each
+4. **Stop** when the order validates, or when an added hard edge would close a
+   module cycle. The order then cannot be steered further; the loader model
+   still evaluates the order the imports give, and validation rejects with the
+   remaining conflicting pairs as evidence, never with the cycle. Each
    iteration only adds edges, so the loop terminates.
 
 Spec authors keep control of placement. The search only orders modules the
@@ -180,8 +189,8 @@ static/index-DI2GynTv: `xS` (unit 3307, module app/bootstrap/initbundle/part-203
   in chunk_analysis_options.static/index-DI2GynTv.commuting_statements.
 ```
 
-`gate list` and `gate describe` gain a `swapped_conflict` evidence kind
-beside cycles and atomic-group conflicts. The report keeps the full set of
+`gate list` and `gate describe` gain a `swapped_conflict` evidence kind,
+which replaces cycles and atomic-group conflicts once the flip lands. The report keeps the full set of
 swapped conflicting pairs, not only the first.
 
 ## Interaction with other work
@@ -225,7 +234,8 @@ Each step keeps today's gate authoritative until the comparison is clean.
    side by side: today's verdict, TV's verdict, and swapped pairs per
    category.
 4. **Flip.** TV decides; today's gate becomes a report section for one
-   release, then goes. `commuting_statements` diagnostics move to the
+   release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
+   fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
 5. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
@@ -322,7 +332,7 @@ heuristic order):
 - **Search granularity.** Do phantom imports between whole modules give the
   search enough freedom, or do some conflicts need a statement moved to
   another module (a spec edit, out of scope)? Step 3's report will show how
-  often the refine loop ends in a hard cycle.
+  often the refine loop stops because a hard edge would close a cycle.
 - **Host-ordered effects.** Microtask and timer enqueue and host output need
   an explicit cell before TV can accept swaps of statements that only enqueue.
   Until then those stay `Havoc`, which is safe.
