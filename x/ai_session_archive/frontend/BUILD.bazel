@@ -269,6 +269,7 @@ py_visual_test(
         ":visual_harness_css",
     ],
     harness = ":visual_harness_js",
+    shard_count = 2,
     test_deps = [
         "//util/testing:page_capture",
         "//util/testing:viewports",

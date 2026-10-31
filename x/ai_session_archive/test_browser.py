@@ -139,7 +139,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             async with page.expect_response(
                 lambda response: f"/versions/{latest_id}/events?" in response.url and "cursor=" in response.url
             ) as earlier_page:
-                await page.mouse.wheel(0, -10000)
+                await page.mouse.wheel(0, -(await history.evaluate("element => element.scrollHeight")))
             earlier_response = await earlier_page.value
             assert earlier_response.ok
             assert (await earlier_response.json())["data"][0]["ordinal"] == 0
