@@ -2,6 +2,9 @@
 
 The post-routing Pod suite in BuildBuddy invocation
 `856dbe85-5d71-594c-acb0-ad16366407aa` passed all 35 tests. Its
+source revision was `c40cc24a` on the Quiesce-routing branch, before the
+ordered telemetry relay merged as PR #13319. This chronology matters to
+interpreting its Runner shutdown timings. Its
 `//agentplane/system_tests/suites:test_pod` undeclared outputs contain
 `test-spans.jsonl`, `process-spans.jsonl`, `containerd.log`, and `k3s.log`.
 Download the latter three with `bbapi artifact download <invocation> \
@@ -33,13 +36,19 @@ unmounting its volumes at 10:29:25.591 and the Sandbox disappeared at
 10:29:25.712. Mapping containerd `RunPodSandbox` and `CreateContainer`
 IDs to `StopContainer` pairs across the suite gives 15 Runner stops
 between 5.026 and 5.092 seconds, with other Runner stops around
-0.04–0.08 seconds. This bimodality is a native child termination path,
-not a slow Quiesce RPC or client polling. The Runner supervisor grants
-native children five seconds after SIGTERM before fencing their process
-group (`agentplane/runner/supervision/supervisor.go:stopNative`); the
-current artifacts do not identify which child held each slow stop.
+0.04–0.08 seconds. This bimodality is a Runner container shutdown path,
+not a slow Quiesce RPC or client polling. A separate pre-fix Pod storage
+run had already identified the old relay lifecycle: kubelet stopped the
+ordinary egress sidecar before Runner's final OTLP flush, leaving Runner
+alive for about five seconds. PR #13319 made the relay a native sidecar;
+its real Pod storage proof (`dd7ffc77-ecaf-4ef1-a021-e47849c292a6`)
+shows the replacement Runner exited 26 ms after SIGTERM, before kubelet
+stopped the relay. Thus the old sample cannot establish a remaining
+native child grace problem. The Runner supervisor's five-second child
+grace is a separate safety fence and should not be changed from these data.
 
 No timeout, force kill, finalizer, UID check, or volume-release barrier
-should change based on this result. A targeted reduction requires child
-exit evidence during the Runner's orderly shutdown and a lifecycle fix
-that preserves the five-second fence for children that do not exit.
+should change based on this result. A fresh filtered Pod storage run on
+current `devel` is needed to measure the remaining deletion tail after
+the ordered relay fix; compare its physical Pod and volume cleanup
+timestamps before proposing another lifecycle change.
