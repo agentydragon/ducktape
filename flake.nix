@@ -400,12 +400,18 @@
         atticTargets;
 
       # Development shell — enter via `nix develop` or direnv (`use flake`).
-      devShells.${system}.default = pkgs.mkShell {
-        # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
-        dontAddPythonPath = "1";
-        packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
-        inherit (systemLibs) buildInputs;
-        LD_LIBRARY_PATH = systemLibs.libraryPath;
+      devShells.${system} = {
+        default = pkgs.mkShell {
+          # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
+          dontAddPythonPath = "1";
+          packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
+          inherit (systemLibs) buildInputs;
+          LD_LIBRARY_PATH = systemLibs.libraryPath;
+        };
+        ai-usage = import ./x/ai_usage_investigation/shell.nix {
+          inherit pkgs;
+          baseShell = self.devShells.${system}.default;
+        };
       };
 
       # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but
