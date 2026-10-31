@@ -592,7 +592,6 @@ impl SemanticFacts {
 pub(crate) struct ArgumentNoEscapeFacts {
     facts: SemanticFacts,
     inputs: BTreeMap<Id, Vec<(u32, usize, usize)>>,
-    spec_locations: BTreeMap<crate::analysis_inputs::ArgumentInputRef, String>,
 }
 
 pub(crate) struct ArgumentBorrowProof {
@@ -613,7 +612,6 @@ impl ArgumentNoEscapeFacts {
         let mut callables = CallableInferenceInputs::default();
         let mut selected = BTreeMap::<Id, Vec<(u32, usize, usize)>>::new();
         let mut rules = BTreeMap::new();
-        let mut spec_locations = BTreeMap::new();
         for input in inputs {
             let binding = &input.binding;
             let function = input.function_start;
@@ -639,10 +637,6 @@ impl ArgumentNoEscapeFacts {
                 (binding.clone(), function, parameter_index, exact_arity),
                 input.evidence.reference.clone(),
             );
-            spec_locations.insert(
-                input.evidence.reference.clone(),
-                input.evidence.spec_location.clone(),
-            );
         }
         Self {
             facts: SemanticFacts::solve(SemanticRules {
@@ -652,7 +646,6 @@ impl ArgumentNoEscapeFacts {
                 ..SemanticRules::default()
             }),
             inputs: selected,
-            spec_locations,
         }
     }
 
@@ -673,17 +666,9 @@ impl ArgumentNoEscapeFacts {
                         parameter_index: index,
                         exact_arity,
                     };
-                    let mut inference_use = self.facts.inference_use(&key)?;
-                    for reference in &inference_use.argument_input_refs {
-                        if let Some(location) = self.spec_locations.get(reference) {
-                            inference_use
-                                .argument_input_spec_locations
-                                .insert(location.clone());
-                        }
-                    }
                     Some(ArgumentBorrowProof {
                         dependencies: self.facts.dependencies(&key)?.clone(),
-                        inference_use,
+                        inference_use: self.facts.inference_use(&key)?,
                     })
                 })?
             })

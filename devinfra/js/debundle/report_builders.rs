@@ -9,6 +9,7 @@ use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
+use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis::reports::schema::{
     CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
     ImportedCallableSummaryReport, LineRange, ReturnedRecordUseReport,
@@ -38,6 +39,7 @@ struct AtomicEdgeAccumulator {
 pub(crate) fn build_dependency_graph_report(
     assignment_analysis: &AssignmentAnalysis,
     program_graph: std::path::PathBuf,
+    author_inputs: &AuthorInputLocations<'_>,
 ) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
@@ -55,7 +57,7 @@ pub(crate) fn build_dependency_graph_report(
         },
         || {
             rayon::join(
-                || build_source_unit_nodes_and_edges(assignment_analysis),
+                || build_source_unit_nodes_and_edges(assignment_analysis, author_inputs),
                 || build_atomic_graph_report(assignment_analysis),
             )
         },
@@ -170,6 +172,7 @@ fn attach_cause_refs(
 /// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_source_unit_nodes_and_edges(
     assignment_analysis: &AssignmentAnalysis,
+    author_inputs: &AuthorInputLocations<'_>,
 ) -> (Vec<SourceUnitReport>, Vec<DependencyEdgeReport>) {
     let assignment = assignment_analysis.assignment();
     let dependency_graph = assignment_analysis.inputs().dependency_graph();
@@ -189,6 +192,7 @@ fn build_source_unit_nodes_and_edges(
             heap_native_integrity_uses: node.heap_native_integrity_uses.clone(),
             synchronous_execution: node.synchronous_execution.as_ref().map(|execution| {
                 let mut report = execution.clone();
+                author_inputs.render_synchronous_execution(&mut report);
                 report.callback_factory_uses = node.callback_factory_uses.iter().map(|proof_use| {
                     CallbackFactoryUseReport {
                         summary_ref: format!("imported_callable:{}", proof_use.imported_local),

@@ -499,19 +499,29 @@ impl ProofDependencies {
 /// Evidence retained for an author-conditioned value refinement. The physical
 /// input path and digest identify the bytes consumed by the parser; they do not
 /// establish the external runtime premise recorded by the author.
+///
+/// Analysis output names the premise only by its path inside the spec, so it
+/// does not depend on where the spec or the inputs live. The fields marked
+/// report-only are `None` in analysis output and filled in by
+/// [`crate::reports::author_inputs::AuthorInputLocations`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ValueInputEvidence {
     pub reference: ValueInputRef,
+    /// `chunk_analysis_options.<chunk>.value_inputs[<i>]`; reports prefix the
+    /// authored spec file.
     pub spec_location: String,
     pub source_match: SourceMatchClaim,
     pub value_kind: CapturedValueKind,
     pub source_path: String,
-    pub parser_input_file: String,
+    /// Report-only: the absolute parser input file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser_input_file: Option<String>,
     pub audited_source_sha256: String,
     pub selected_binding: String,
     pub declaration_location: Option<SourceLocation>,
     pub initializer_location: Option<SourceLocation>,
     pub expected_export: Option<String>,
+    /// Report-only: the author's note on the input.
     pub note: Option<String>,
 }
 
@@ -534,18 +544,24 @@ pub enum NativeInputKind {
 }
 
 /// Provenance retained for an author-certified native operation or call site.
+/// Spec-relative like [`ValueInputEvidence`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeOperationInputEvidence {
     pub reference: NativeOperationInputRef,
+    /// `chunk_analysis_options.<chunk>.native_{operation,call_identity}_inputs[<i>]`;
+    /// reports prefix the authored spec file.
     pub spec_location: String,
     pub selector: NativeOperationSelectorProvenance,
     pub operation: NativeInputKind,
     pub source_path: String,
-    pub parser_input_file: String,
+    /// Report-only: the absolute parser input file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser_input_file: Option<String>,
     pub audited_source_sha256: String,
     pub selected_binding: String,
     pub declaration_location: Option<SourceLocation>,
     pub initializer_location: Option<SourceLocation>,
+    /// Report-only: the author's note on the input.
     pub note: Option<String>,
 }
 
@@ -562,19 +578,20 @@ pub struct ArgumentInputRef {
     pub input_index: usize,
 }
 
+/// Spec-relative like [`ValueInputEvidence`]; reports render only its
+/// location (`InferenceUse::argument_input_spec_locations`).
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ArgumentInputEvidence {
     pub reference: ArgumentInputRef,
+    /// `chunk_analysis_options.<chunk>.argument_inputs[<i>]`.
     pub spec_location: String,
     pub source_match: SourceMatchClaim,
     pub source_path: String,
-    pub parser_input_file: String,
     pub audited_source_sha256: String,
     pub selected_binding: String,
     pub parameter_index: usize,
     pub exact_arity: usize,
     pub declaration_location: Option<SourceLocation>,
-    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone)]

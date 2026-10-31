@@ -8,6 +8,7 @@ use swc_common::GLOBALS;
 
 use analysis::RedundantPurityHint;
 use analysis::facts::ExportReentryPolicy;
+use analysis::reports::author_inputs::AuthorInputLocations;
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModuleRequestMode};
@@ -480,6 +481,7 @@ pub fn materialize_logical_modules(
     let program_graph = ProgramGraphOutput::new(
         options.graph_provenance.as_ref(),
         cross_module_purities.native_integrity.as_ref(),
+        AuthorInputLocations::new(options.graph_provenance.as_ref(), chunk_analysis_options)?,
     );
     let chunk_results = GLOBALS
         .with(|globals| {

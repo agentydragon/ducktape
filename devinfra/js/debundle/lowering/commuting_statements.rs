@@ -18,7 +18,7 @@ use source_identity::{SourceUnitOrdinal, StatementId};
 use spec::{CommutingStatementsContract, SourceUnitSelector};
 use swc_ecma_ast::{Module, ModuleItem};
 
-use super::cross_module::{author_input_spec_path, select_one_declared_binding};
+use super::cross_module::select_one_declared_binding;
 use super::materialize::ResolvedMemberSite;
 
 /// Resolve every `commuting_statements` pair of `chunk_name` to two distinct
@@ -36,9 +36,9 @@ pub(super) fn resolve_chunk_commuting_statements(
         return Ok(Vec::new());
     }
     let prefix = format!("chunk_analysis_options.{chunk_name}.commuting_statements");
-    let spec_path = author_input_spec_path(
-        graph_provenance.context("commuting statements require graph provenance")?,
-    )?;
+    let spec_path = graph_provenance
+        .context("commuting statements require graph provenance")?
+        .author_spec_path()?;
     let module = Module {
         span: Default::default(),
         body: body.to_vec(),

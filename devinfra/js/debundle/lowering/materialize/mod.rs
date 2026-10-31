@@ -1428,8 +1428,10 @@ fn validate_and_emit_reports<'a>(
             report_out_dir,
             chunk_id,
             DEPENDENCY_GRAPH_REPORT,
-            &assignment_analysis
-                .dependency_graph_report(program_graph.reference_for(report_out_dir, chunk_id)?),
+            &assignment_analysis.dependency_graph_report(
+                program_graph.reference_for(report_out_dir, chunk_id)?,
+                program_graph.author_inputs(),
+            ),
         )?;
         write_chunk_report_json(
             report_out_dir,
