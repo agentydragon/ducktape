@@ -1639,7 +1639,8 @@ impl Visit for AllNames {
 type RegionStep = (usize, bool);
 
 /// How code uses bindings' values: every occurrence except a plain property
-/// read (`x.a`, `x.a.b`, `typeof x.a`) exposes the binding — a member write
+/// read (`x.a`, `x.a.b`), `typeof`, or an identity check (`===`, `!==`,
+/// `instanceof`) exposes the binding — a member write
 /// or `delete` rooted at it, a method call on it (the callee gets it as
 /// `this`), or any use that hands the value on. Names are compared without
 /// scope resolution, so a shadowing local only adds exposures.
@@ -1729,7 +1730,24 @@ impl Visit for ExposedBindings {
         update.visit_children_with(self);
     }
 
+    // Identity checks read a value without handing it on.
+    fn visit_bin_expr(&mut self, bin: &BinExpr) {
+        if matches!(
+            bin.op,
+            BinaryOp::EqEqEq | BinaryOp::NotEqEq | BinaryOp::InstanceOf
+        ) {
+            self.visit_read_chain(&bin.left);
+            self.visit_read_chain(&bin.right);
+        } else {
+            bin.visit_children_with(self);
+        }
+    }
+
     fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if unary.op == UnaryOp::TypeOf {
+            self.visit_read_chain(&unary.arg);
+            return;
+        }
         if unary.op == UnaryOp::Delete
             && let Expr::Member(member) = &*unary.arg
             && let Some(root) = member_root(&member.obj)
@@ -1806,7 +1824,28 @@ fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
                 || is_shareable_function_var(var)
                 || is_shareable_intrinsic_alias_var(var)
                 || is_symbol_var(var)
+                || var
+                    .decls
+                    .iter()
+                    .all(|decl| decl.init.as_deref().is_some_and(is_primitive_valued_expr))
         }),
+    }
+}
+
+/// An expression whose value is always a primitive: a non-regex literal, an
+/// untagged template, or a unary, update, arithmetic, comparison or bitwise
+/// operation (`nE * 60`). Logical operators and conditionals pass an operand
+/// through and are not included.
+fn is_primitive_valued_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => is_primitive_valued_expr(&paren.expr),
+        Expr::Lit(lit) => !matches!(lit, Lit::Regex(_)),
+        Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
+        Expr::Bin(bin) => !matches!(
+            bin.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ),
+        _ => false,
     }
 }
 
