@@ -5910,7 +5910,68 @@ impl ExecutionIndex {
                 _ => {}
             }
         }
+        // A non-standard property only read here is a candidate too: with no
+        // store it stays absent or a named property.
+        let mut reads = BTreeSet::new();
+        for expr in self
+            .intrinsic_writes
+            .iter()
+            .flat_map(|write| std::iter::once(&write.receiver).chain(&write.value))
+            .chain(self.prototype_calls.iter().map(|call| &call.callee))
+            .chain(assignments.iter().map(|(_, value)| value))
+        {
+            self.global_property_reads(expr, &context, &mut reads);
+        }
+        candidates.names.extend(reads);
         candidates
+    }
+
+    /// Non-standard property names `expr` reads from the global object.
+    fn global_property_reads(
+        &self,
+        expr: &ValueExpr,
+        context: &BundleGlobalContext<'_>,
+        reads: &mut BTreeSet<String>,
+    ) {
+        match expr {
+            ValueExpr::Member(base, property, _) => {
+                if let Some(name) = property
+                    && !reads.contains(name)
+                    && !is_standard_global(name)
+                    && self.census_globals.binding_root(name).is_none()
+                    && context.roots(base).contains(&NativeReceiverRoot::Intrinsic(
+                        NativeIntrinsic::GlobalObject,
+                    ))
+                {
+                    reads.insert(name.clone());
+                }
+                self.global_property_reads(base, context, reads);
+            }
+            ValueExpr::Call(callee, arguments, _) | ValueExpr::New(callee, arguments, _) => {
+                self.global_property_reads(callee, context, reads);
+                for argument in arguments {
+                    self.global_property_reads(argument, context, reads);
+                }
+            }
+            ValueExpr::ObjectLiteral(_, properties) => {
+                for (_, value) in properties {
+                    self.global_property_reads(value, context, reads);
+                }
+            }
+            ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
+                self.global_property_reads(inner, context, reads);
+            }
+            ValueExpr::Primitive(values) | ValueExpr::Alternatives(values) => {
+                for value in values {
+                    self.global_property_reads(value, context, reads);
+                }
+            }
+            ValueExpr::Binding(_)
+            | ValueExpr::Alloc(..)
+            | ValueExpr::Undefined
+            | ValueExpr::NonCallable
+            | ValueExpr::Unknown => {}
+        }
     }
 
     /// The `candidates` this module's writes keep bundle-owned: a greatest

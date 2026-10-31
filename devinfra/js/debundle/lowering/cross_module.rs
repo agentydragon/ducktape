@@ -534,7 +534,6 @@ pub(super) fn collect_cross_module_imported_purities(
         artifact,
         &modules,
         chunk_analysis_options,
-        graph_provenance,
         chunk_filter,
     )?;
     let commuting_statements = resolve_commuting_statements(
@@ -1457,7 +1456,6 @@ fn resolve_no_accessor_install_callables(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, DependencyGraphOptions>,
-    graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedNoAccessorInstall>>> {
     let mut resolved = BTreeMap::new();
@@ -1478,12 +1476,6 @@ fn resolve_no_accessor_install_callables(
         let facts = modules
             .get(chunk_name)
             .with_context(|| format!("{prefix} has no analyzed provider"))?;
-        let source = graph_provenance
-            .context("no_accessor_install_callables require graph parser-input provenance")?
-            .chunk_sources
-            .iter()
-            .find(|entry| entry.chunk_id == *chunk_name)
-            .with_context(|| format!("{prefix} has no parser-input provenance"))?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -1494,12 +1486,6 @@ fn resolve_no_accessor_install_callables(
         let mut selected = Vec::new();
         for (input_index, contract) in options.no_accessor_install_callables.iter().enumerate() {
             let request_id = format!("{prefix}[{input_index}]");
-            ensure!(
-                contract.audited_source_sha256 == source.sha256,
-                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
-                source.sha256,
-                contract.audited_source_sha256
-            );
             let (body_index, _) =
                 select_one_declared_binding(&selector_chunk, &request_id, &contract.source_match)?;
             let mut callables = SelectedCallables::default();

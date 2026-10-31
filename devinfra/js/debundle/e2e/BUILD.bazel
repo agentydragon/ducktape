@@ -182,7 +182,6 @@ debundle_e2e_test(
     deps = [
         "@crates//:serde_json",
         "@crates//:serde_yaml",
-        "@crates//:sha2",
     ],
 )
 

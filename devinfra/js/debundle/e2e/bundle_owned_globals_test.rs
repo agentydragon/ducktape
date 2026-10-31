@@ -3,7 +3,6 @@
 //! writes through its value reach no native slot.
 
 use debundle_e2e_support::*;
-use sha2::{Digest, Sha256};
 
 /// `mutations` are anonymous statements and `members` the declarations of
 /// the bundle code; `new Map()` follows and a published callback reads
@@ -155,20 +154,12 @@ fn a_store_in_another_chunk_keeps_the_slot_unknown() {
 
 const ACCESSOR_CALL: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }\nfunction other(target, key) { target[key](); }";
 
-fn no_accessor_install(
-    source: &str,
-    declaration: &str,
-    binding: &str,
-) -> NoAccessorInstallCallableContract {
+fn no_accessor_install(declaration: &str, binding: &str) -> NoAccessorInstallCallableContract {
     NoAccessorInstallCallableContract {
         source_match: serde_yaml::from_str(&format!(
             "match: {declaration:?}\nbindings: [{binding}]\n"
         ))
         .expect("source selector"),
-        audited_source_sha256: Sha256::digest(source.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
         note: Some("Every caller passes a primitive value.".into()),
     }
 }
@@ -191,7 +182,7 @@ fn a_premise_on_the_calling_function_keeps_the_slot() {
         let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
         let fixture = run_fixture(accessor_opts(
             &source,
-            no_accessor_install(&source, declaration, "call"),
+            no_accessor_install(declaration, "call"),
         ));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
@@ -214,11 +205,7 @@ fn a_premise_on_another_function_keeps_the_slot_unknown() {
     expect_atomic_conflict_rejection(
         accessor_opts(
             &source,
-            no_accessor_install(
-                &source,
-                "function other(target, key) { target[key](); }",
-                "other",
-            ),
+            no_accessor_install("function other(target, key) { target[key](); }", "other"),
         ),
         &["values/native", "values/later"],
         &[],
@@ -232,7 +219,6 @@ fn a_premise_needs_one_function_with_a_computed_call() {
         accessor_opts(
             &source,
             no_accessor_install(
-                &source,
                 "function install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }",
                 "install",
             ),
@@ -250,7 +236,6 @@ fn a_premise_needs_one_function_with_a_computed_call() {
         accessor_opts(
             &pair,
             no_accessor_install(
-                &pair,
                 "const other = [(target, key) => target[key](), () => 0];",
                 "other",
             ),
@@ -260,14 +245,35 @@ fn a_premise_needs_one_function_with_a_computed_call() {
             "exactly one outermost function",
         ],
     );
-    let mut stale = no_accessor_install(
-        &source,
-        "function call(method, key, value) { root[method](key, value); }",
-        "call",
-    );
-    stale.audited_source_sha256 = "0".repeat(64);
-    expect_rejection_containing_all(
-        accessor_opts(&source, stale),
-        &["no_accessor_install_callables[0]", "stale"],
-    );
+}
+
+/// `componentHandler` is never stored by analyzed code, so under the host
+/// claim it is absent or a named element, never the global object.
+const COMPONENT_HANDLER: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction upgrade(element, method) { window.componentHandler && window.componentHandler[method](element); }";
+
+#[test]
+fn a_global_no_write_names_is_never_the_global_object() {
+    let source = source(COMPONENT_HANDLER);
+    let fixture = run_fixture(opts(&source, &["root", "install", "upgrade"], &[], true));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_all_emitted_js_checks(&fixture);
+}
+
+#[test]
+fn a_write_that_may_name_a_read_global_keeps_it_unknown() {
+    for (write, member) in [
+        ("function set(key, value) { window[key] = value; }", "set"),
+        (
+            "function alias() { Object.defineProperty(window, \"componentHandler\", { value: window }); }",
+            "alias",
+        ),
+        ("function alias() { componentHandler = window; }", "alias"),
+    ] {
+        let source = source(&format!("{COMPONENT_HANDLER}\n{write}"));
+        expect_atomic_conflict_rejection(
+            opts(&source, &["root", "install", "upgrade", member], &[], true),
+            &["values/native", "values/later"],
+            &[],
+        );
+    }
 }

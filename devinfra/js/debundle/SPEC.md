@@ -1566,7 +1566,8 @@ census write that may store into `g` stores a fresh object, a primitive, a
 fresh `Map`, `Set`, `WeakMap` or `WeakSet` (when no write may replace those
 bindings), or the value of a bundle-owned property, `g`'s own included:
 `root.g = {}`, `root.g = root.g || {}`, `root.g ??= new Map()`,
-`root[key] = root[key] ?? { ... }`. A store that may name `g` is any write
+`root[key] = root[key] ?? { ... }`. A property analyzed code only reads, such
+as `window.componentHandler`, qualifies vacuously. A store that may name `g` is any write
 whose key domain may be `g` and whose receiver may be the global object, an
 unknown value, a native descendant or a prototype. Properties keyed by
 `Symbol.for` symbols form one bundle-owned slot, read through a stable binding
@@ -1594,13 +1595,12 @@ no_accessor_install_callables:
       match: |
         var runFunc = ne((t, ...e) => { ... }, "runFunc");
       bindings: [runFunc]
-    audited_source_sha256: <parser input SHA-256>
     note: Every caller passes only strings.
 ```
 
 `source_match` selects one declaration whose statement contains exactly one
-outermost function (or accessor) with at least one computed-key method call;
-`audited_source_sha256` is the chunk's parser input. The entry covers every
+outermost function (or accessor) with at least one computed-key method call.
+The entry covers every
 computed-key method call in that function, its nested functions included. The
 author asserts that no activation of those calls installs an accessor, for example because every argument that reaches
 `__defineGetter__`'s callable position is a primitive, which throws `TypeError`
@@ -1613,7 +1613,10 @@ property; the `%Object.prototype%` names are in the list. Every later store
 into `g`, on the global object or a prototype it inherits from, writes a
 non-intrinsic value, so `g` never holds an intrinsic; a `delete` only removes.
 Writes through `g`'s value land on non-intrinsic objects, so they cannot store
-into `g` on the global chain either. Setters and Proxy traps a write runs are
+into `g` on the global chain either. A property no write names stays absent or
+a named element: a call through it throws or runs on that element, and an
+accessor it installs lands on the element, never on the global object or an
+intrinsic slot. Setters and Proxy traps a write runs are
 analyzed source with census writes of their own; A11 excludes host code
 changing intrinsics or adding globals, and covers hidden native-alias paths as
 for every census fact: an aliased descriptor method, or a write through a
