@@ -2728,8 +2728,7 @@ as constraining, keyed by `explanation.kind`:
   `dynamic_cell_writes`, `global_object_alias_escape`,
   `opaque_at_init_call`}), `heap_allocation`, or `heap_frontier` with its
   `causes` ⊆ {`array_content_effects`, `non_summarizable_impure`,
-  `incomplete_synchronous_execution`, `unresolved_callee`,
-  `callee_heap_effects`}. Each conflict is `read_after_write`,
+  `incomplete_synchronous_execution`, `callee_heap_effects`}. Each conflict is `read_after_write`,
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
   `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`

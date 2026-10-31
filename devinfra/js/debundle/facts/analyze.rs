@@ -259,7 +259,7 @@ pub(crate) fn structural_value_flow(
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
 ) -> ChunkValueFlow {
     let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
-    candidate_roots.extend(super::array_content_effects::array_candidate_roots(body));
+    candidate_roots.extend(super::heap_contents::array_candidate_roots(body));
     ChunkValueFlow::analyze_with_native_set_allocations(
         body,
         &candidate_roots,
@@ -592,10 +592,10 @@ where
     value_flow.augment_calls(&body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
     let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
-    let native_read_uses = super::array_content_effects::annotate_heap_content_effects(
+    let heap_contents = super::heap_contents::annotate_heap_contents(
         &body,
         &value_flow,
-        super::array_content_effects::HeapContentProofs {
+        super::heap_contents::HeapContentProofs {
             local_class: &local_class_heap_proof,
             set_iterable: &set_iterable_proof,
             fresh_freeze: &fresh_freeze_heap_proof,
@@ -628,6 +628,7 @@ where
                     set_iterable: &set_iterable_proof,
                     graph: &graph,
                     purity: &purity_context,
+                    callable_heap_contents: &heap_contents.callables,
                     index: prepared_sync_index,
                 },
                 &shadowed,
@@ -670,7 +671,7 @@ where
             }
         }
     }
-    for (fact, (inferences, inputs)) in facts.iter_mut().zip(native_read_uses) {
+    for (fact, (inferences, inputs)) in facts.iter_mut().zip(heap_contents.native_read_uses) {
         if let Some(calls) = &mut fact.synchronous_calls {
             for use_ in inferences {
                 if !calls.inference_uses.contains(&use_) {
@@ -917,7 +918,9 @@ fn assemble_statement_facts(
         global_reads,
         cell_writes_summarizable,
         dataflow_opacity,
-        heap_contents: super::HeapContentEffects::default(),
+        heap_contents: super::HeapContentCells::default(),
+        heap_one_shot_allocation: None,
+        deferred_heap_allocations: BTreeSet::new(),
         heap_native_integrity_uses: Vec::new(),
         // Conservative until `settle_statement_purity` records the verdict.
         purity: Purity::NotPure {

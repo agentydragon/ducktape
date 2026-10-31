@@ -263,10 +263,8 @@ pub enum HeapBarrierCause {
     /// Synchronous execution analysis reported incomplete effects
     /// (`synchronous_execution.complete = false`).
     IncompleteSynchronousExecution,
-    /// An at-init callee is not a never-rebound direct chunk function,
-    /// so its body's heap effects cannot be promoted.
-    UnresolvedCallee,
-    /// A resolved at-init callee's body is itself heap-opaque.
+    /// The body of a callable synchronous execution invoked is itself
+    /// heap-opaque.
     CalleeHeapEffects,
 }
 
@@ -371,7 +369,6 @@ impl HeapBarrierCause {
             Self::ArrayContentEffects => "array content effects",
             Self::NonSummarizableImpure => "impure and not summarizable",
             Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
-            Self::UnresolvedCallee => "unresolved at-init callee",
             Self::CalleeHeapEffects => "heap-opaque callee body",
         }
     }
