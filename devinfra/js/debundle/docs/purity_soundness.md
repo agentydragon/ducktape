@@ -539,7 +539,12 @@ These types are a purity fact under kind-precise operands. A coercion of
 primitives runs no user code, so the only remaining effect is a throw, and the
 types gate exactly those: `ToNumber` and `ToString` of a Symbol (numeric
 operators, templates, string concatenation), a BigInt combined arithmetically
-with another numeric kind, unary `+` on a BigInt, and `>>>` on a BigInt. The
+with another numeric kind, unary `+` and `>>>` on a BigInt, and every BigInt
+operation whose operand values the types do not bound: `/` and `%` by `0n` and
+`**` with a negative exponent throw a RangeError, and an operation that can
+grow a BigInt (`+`, `-`, `*`, `**`, shifts, unary `-` and `~`) can exceed the
+engine's size limit. Only comparisons, equality, bitwise `&`/`|`/`^` and
+string concatenation resolve on BigInt operands. The
 statement's purity resolves a coercion only when every operand's possible
 types make that operation non-throwing (`primitive::binary_throws` for binary
 operators); an operand known only to be primitive does not resolve. Evaluating
