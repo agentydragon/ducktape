@@ -17,6 +17,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const eventLogIndexLimitExceededMessage = "Log index limit exceeded"
+
+func isEventLogIndexLimitExceeded(err error) bool {
+	return status.Code(err) == codes.ResourceExhausted && status.Convert(err).Message() == eventLogIndexLimitExceededMessage
+}
+
 func newRPCConnection(base, key string, timeout time.Duration, retries int) (*grpc.ClientConn, error) {
 	endpoint, err := url.Parse(base)
 	if err != nil {
@@ -84,6 +90,11 @@ func readRPCInterceptor(key string, timeout time.Duration, retries int) grpc.Una
 		var err error
 		for attempt := 0; attempt < attempts; attempt++ {
 			err = invoke(ctx, method, req, reply, conn, opts...)
+			if method == "/buildbuddy.service.BuildBuddyService/GetEventLogChunk" && isEventLogIndexLimitExceeded(err) {
+				// This is a deterministic cursor/index limit, not a transient
+				// resource shortage. Let the watcher recover from the first chunk.
+				return err
+			}
 			if status.Code(err) != codes.Unavailable && status.Code(err) != codes.ResourceExhausted {
 				return err
 			}

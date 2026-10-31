@@ -73,6 +73,18 @@ func TestGRPCReadRetriesRespectDeadlineAndCredentials(t *testing.T) {
 	}
 }
 
+func TestGRPCDoesNotRetryPermanentEventLogIndexLimit(t *testing.T) {
+	calls := 0
+	err := readRPCInterceptor("test-key", time.Second, 3)(context.Background(), "/buildbuddy.service.BuildBuddyService/GetEventLogChunk", nil, nil, nil,
+		func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error {
+			calls++
+			return status.Error(codes.ResourceExhausted, eventLogIndexLimitExceededMessage)
+		})
+	if calls != 1 || status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("calls=%d err=%v, want one permanent cursor failure", calls, err)
+	}
+}
+
 func TestGRPCDoesNotRetryPermissionErrorsOrMutations(t *testing.T) {
 	for _, test := range []struct {
 		method string
