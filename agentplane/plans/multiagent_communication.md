@@ -9,6 +9,21 @@ and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisio
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
 The operator may revisit the service-enforced rule direction if implementation does not work well.
 
+## Selected first workflow, 2026-10-30 PDT
+
+The [stakeholder priority order](task_dag.md#stakeholder-priorities-2026-10-30-pdt) selects
+Agentplane-level Session spawning at the caller's privilege level, including reuse of its
+environment with separate directories. Starting less-privileged agents can wait. The first
+concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
+for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
+
+The bounded create/control/communication contract needs review, but does not depend on settling
+the complete management/delegation vocabulary or implementing native-child Session projection.
+Use Claude/Codex workflows as reference designs for natural tool use. Domain identities, authority,
+durable ownership and failure behavior still need to be sound in this first slice. Cross-access
+cooperation remains a product goal; the broader requirements below are not all prerequisites for
+same-privilege spawning.
+
 ## Requirements and preferences
 
 - Agents with different access must be able to collaborate across separate Sandboxes. Useful

@@ -117,10 +117,6 @@ Extract from concrete repeated source implementations, not a hypothetical univer
 
 On an operator-selected source/use case. Define bounded entity/event filters, retained state versus edge semantics and authorized source access first.
 
-### `CRON_NOTIFICATIONS` — scheduled notifications for agents
-
-On scheduling demand. Review missed-tick/timezone/overlap policy before implementing durable schedules; it does not authorize wake.
-
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
 On a selected rollout-following use case. Review Deployment identity/watch recovery and decide whether Notifications is the owner. If implemented as subscriptions, depend on the main DAG's `SUBSCRIPTION_AUTHORIZATION_DESIGN` and `SUBSCRIPTION_AUTHORIZATION`: source observation scope is not implied by owning an inbox.

@@ -5,6 +5,16 @@ Codex `rust-v0.162.1` features the central sampler has not ported yet. Ported be
 steering stream cuts and pending-input ordering, cell resource limits). Features left out on purpose
 are in the [README](../README.md#codex-features-left-out).
 
+## Selected workflow work
+
+The [stakeholder priorities](../../../plans/task_dag.md#stakeholder-priorities-2026-10-30-pdt)
+select resilience against rolls and JS/exec faults first, followed by caller-privilege
+Agentplane-level Session spawning and communication for a daily CI-maintenance agent.
+Use Codex multi-agent v2, its agent message board and Claude Code subagents as reference designs;
+implement the Agentplane Session workflow rather than porting a native child model wholesale.
+Agent discovery/use and sound domain contracts are acceptance criteria. The gaps below are
+candidates when the chosen workflow needs them, not a competing feature-parity queue.
+
 ## Later
 
 - **Guardian-style automatic approval review**, built at Agentplane's level for every harness, not
@@ -15,11 +25,8 @@ are in the [README](../README.md#codex-features-left-out).
   deferred behind tool search like Codex's MCP tools. Needs design first: what happens when the set
   of available Actions changes mid-Session, and how agents learn of additions and removals.
   Coordinate provider-visible changes with the [Anthropic dynamic-tool follow-up](anthropic.md#dynamic-tool-definitions).
-- **Skills (medium priority):** Codex `SKILL.md` discovery and injection. Needs design first: where
+- **Skills:** Codex `SKILL.md` discovery and injection. Needs design first: where
   skills live and how their files reach the execution environment.
-- **Subagents and multi-agent:** build as Agentplane-level cross-Session messaging with privileges,
-  not a port. Use Codex multi-agent v2 and its agent message board, and Claude Code's subagents, as
-  reference designs.
 - **Memories:** Codex-style memory extraction and consolidation across Sessions.
 - **Goals:** persisted Session goals with automatic continuation.
 - **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
