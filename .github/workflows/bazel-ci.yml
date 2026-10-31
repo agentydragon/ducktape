@@ -41,7 +41,7 @@ on:
     outputs:
       bazel_invocation_ids:
         description: >
-          The uninstrumented build invocation. Publish planners reuse its output
+          The artifact build invocation. Publish planners reuse its output
           digests; test verdicts come separately from test_invocation_id. Empty when
           the job did not run, which callers must treat as "prove nothing",
           not "nothing changed".

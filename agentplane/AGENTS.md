@@ -20,6 +20,18 @@ The integration app is a client of the backend services, never their dependency
 Service settings reject unknown keys, and the cdk8s manifests set them: add a setting in code before
 a manifest sets it; remove one from the manifests first and the field after rollout.
 
+## Database migrations
+
+PostgreSQL services embed Goose migrations in their serving binary and run the shared
+`postgres/go/migrate.Run` lifecycle during normal startup, before workers or request handling.
+Use a stable per-database Goose history table and advisory lock. Use versioned SQL or registered
+Go migrations; no unversioned startup converters, separate migrator images or migration init
+containers. `--migrate-only` in the same binary is available for fixtures and explicit maintenance.
+Deploy with rolling updates and a startup probe covering initialization; schema changes must
+support overlapping old/new writers or have an explicitly reviewed writer cutover.
+See the [migration contract](postgres/go/migrate/README.md) for timeouts, baseline adoption and
+the Runner's SQLite journal.
+
 ## gRPC services
 
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
