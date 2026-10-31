@@ -281,6 +281,73 @@ assumptions above but yields 16% of edges and no gate change on Tana. Gate
 it on step 1 and on cross-chunk callable reach: summaries for the vendor
 imports would turn rule 1's largest group into `Bounded`.
 
+### Stored-callback invokers (design, not started)
+
+Collapse rule 1 treats any vendor callee as able to call every callback
+vendor code was ever handed. A provider contract could narrow that. An export
+`X` that stores callbacks names the calls `Y` that may invoke them. The author
+audits that no `Y` call runs during synchronous initialization, or lists the
+exceptions. A callback handed to `X` then leaves `global_escaped_callbacks`.
+It stays escaped for a call in `Y` and for any loss whose reach is `Global`
+through an unknown callee that could be in `Y`.
+
+Proposed SPEC wording (§ Audited callback factories):
+
+> `chunk_export_purity.<defining chunk>.stored_callback_invokers` maps an
+> export (or `namespace.member` chain root) `X` to a list `Y` of exports and
+> member names. It asserts that a callback passed to a call rooted at `X`, or
+> to a method of its result, is invoked synchronously only by a call to a
+> member of `Y` on that result or a value derived from it. It is never
+> invoked by `X`'s own call, by another export, or by host code. The
+> analyzer removes those callbacks from the escape set except at statements
+> that call a member of `Y` or reach an unknown callee whose value may be a
+> `Y` member. Such a statement keeps the conservative pool. The author must
+> audit every provider branch and its retained graph. The contract is about
+> invocation timing only: it grants no purity, and it does not cover a call
+> that publishes the callback elsewhere.
+
+Candidates on Tana, with the 64 vendor-import escapes probed on devel
+`5dfe2142` (Ducktape
+`debug/2026_10_30_havoc_reach_pool_composition.md`):
+
+| Provider | Exports (escapes)                                           | `Y`                                                                      | Exception to examine                                                                                                                                                     |
+| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Zod 4    | `string()` chains (19), `object()` chains (7), `lazy()` (7) | `parse`, `safeParse`, `parseAsync`, `safeParseAsync`, `spa`, `decode`, … | `lazy`'s getter runs when a later schema construction reads `optin`/`optout`/`innerType` (`defineLazy`). That is construction, not parse, so `Y` must include it.        |
+| MobX     | `when` (2), `runInAction` (1)                               | any observable write or action end (batch end runs pending reactions)    | `runInAction` invokes at the call (not stored). `when`/`reaction`/`autorun` effects run at the end of a later batch during init, so `Y` is effectively every MobX write. |
+
+The mobx-react-lite `observer` (16) needs no new kind: gaffer-private #684
+lists it under `callback_factory_exports`.
+
+**Verification probe.** The statement-trace probe (gaffer-private
+`tana/re/web/debug/host_contract/statement_trace_runtime_test.py`) records the
+functions run between two statement breakpoints. For this contract it would:
+
+- break at every top-level statement that calls a `Y` member, and at each
+  statement whose pool includes the contract's callbacks;
+- record whether any callback handed to `X` ran there, by function identity
+  from precise coverage;
+- for Zod `lazy`, also record each getter invocation and the statement during
+  which it ran.
+
+A green probe covers one natural startup schedule. The source audit carries
+the claim to the other schedules emission admits.
+
+**Measured ceiling** (`probe-g-be`: gaffer main + #684, 4,941 events at 608
+statements, median pool 325). The ceiling drops the named escapes from every
+pool:
+
+| Escapes removed                                         | Median (max) | Events ≤ 64 | Statements ≤ 64 |
+| ------------------------------------------------------- | -----------: | ----------: | --------------: |
+| Zod and MobX contract                                   |    299 (367) |           2 |               1 |
+| every vendor-import escape                              |    289 (355) |           2 |               1 |
+| contract + `Fx` + `lV`                                  |    134 (202) |       1,562 |             134 |
+| contract + `Fx` + `lV` + native globals (`Object.*`, …) |     98 (154) |       1,816 |             222 |
+
+Global writes, parameter callees and about 40 single-route escapes remain. So
+the contract is worth building only together with the local routes (`Fx`,
+`lV`, `Object.*`), and even then it does not clear the 1,805-module SCC.
+Decide after those routes land.
+
 ## Not in scope
 
 Changing a budget constant; the export-reentry policy (<host_behavior.md>).
