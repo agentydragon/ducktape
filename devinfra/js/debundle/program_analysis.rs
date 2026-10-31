@@ -478,6 +478,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                     definition: Span::new(swc_common::BytePos(lo), swc_common::BytePos(hi)),
                     exported_as: tracked.exported_as,
                 },
+                loader_reach::TrackedBinding::CreatedLoader { .. } => LoaderBinding::CreatedLoader,
             },
             uses: tracked
                 .uses
@@ -487,6 +488,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                     line: key_line(tracked_use.key),
                     literal: tracked_use.literal,
                     call: tracked_use.call,
+                    consumer: tracked_use.consumer,
                     phase: phase(tracked_use.key),
                 })
                 .collect(),

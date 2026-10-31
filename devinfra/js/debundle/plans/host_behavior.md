@@ -82,16 +82,11 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
    - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
      paths, and protobufjs `inquire` loads its parameter. They are excluded
      under `program_premises.non_literal_loader_calls: native_addons_only`.
-4. **`module`** (3 sites). The sites are a `builtinModules` read
-   (stack-utils), a `createRequire` result used only for `.resolve`, and
-   fflate's top-level `createRequire("/")("worker_threads")`.
-   - The engine can classify these uses. A data-member read and a `.resolve`
-     load nothing. A `createRequire` result called with a literal is a literal
-     request, resolved against its base. Any other use stays opaque.
-   - The host facts needed are that a `createRequire` loader shares
-     `import.meta.require`'s audited behavior, and that loading `module` runs
-     no application code.
-   - fflate's site still requests `worker_threads`, which needs class 2.
+4. **`module`** (3 sites: a `builtinModules` read, a `createRequire` result
+   used only for `.resolve`, and fflate's `createRequire("/")("worker_threads")`)
+   is classified by its uses (SPEC.md § Loader-closed derivation). The audit
+   must show a `createRequire` loader shares `import.meta.require`'s behavior
+   and that loading `module` runs no application code.
 5. **Reach-back** (44 targets). This is genuine reentry, not a gap in the
    proof. A request for a chunk L that has not run yet, made while the target
    evaluates, runs L's body there. If L imports the target, L sees the live

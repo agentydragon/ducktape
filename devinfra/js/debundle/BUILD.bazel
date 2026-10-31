@@ -979,6 +979,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":js_ast",
+        ":spec",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",

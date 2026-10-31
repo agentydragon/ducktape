@@ -9,7 +9,10 @@ use analysis::loader_closure::{
     LoaderRequest, LoaderRequestTarget,
 };
 use anyhow::Result;
-use artifact::reports::{InteropUseKind, LoaderBinding, SitePhase, StaticModuleRequestMode};
+use artifact::reports::{
+    InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer, SitePhase,
+    StaticModuleRequestMode,
+};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, ResolvedImportReference};
 use serde::Serialize;
 use swc_common::Span;
@@ -184,7 +187,15 @@ impl LoaderSurfaces {
 
 /// `createRequire` from the `module` builtin makes a loader.
 fn is_loader_factory(specifier: &str) -> bool {
-    matches!(specifier, "module" | "node:module")
+    spec::NodeBuiltinModule::from_static_specifier(specifier)
+        == Some(spec::NodeBuiltinModule::Module)
+}
+
+/// Data members of the `module` builtin whose read cannot load or hook.
+const MODULE_DATA_MEMBERS: &[&str] = &["builtinModules"];
+
+fn is_module_data_read(consumer: &LoaderUseConsumer) -> bool {
+    matches!(consumer, LoaderUseConsumer::MemberRead(name) if MODULE_DATA_MEMBERS.contains(&name.as_str()))
 }
 
 /// Whether a census site can load a module on the stack that runs it.
@@ -218,6 +229,8 @@ enum LoaderUse<'s> {
     Literal {
         specifier: &'s str,
         resolve_from: ChunkId,
+        /// The returned namespace is only read for a `module` data member.
+        data_read_only: bool,
     },
     /// A direct call whose argument is not one string literal.
     NonLiteralCall,
@@ -293,11 +306,12 @@ impl Classifier<'_> {
             }
             SitePhase::MandatorilySuspended | SitePhase::Synchronous => {}
         }
-        let (specifier, resolve_from) = match loader_use {
+        let (specifier, resolve_from, data_read_only) = match loader_use {
             LoaderUse::Literal {
                 specifier,
                 resolve_from,
-            } => (specifier, resolve_from),
+                data_read_only,
+            } => (specifier, resolve_from, data_read_only),
             LoaderUse::NonLiteralCall
                 if self.program_premises.non_literal_loader_calls
                     == spec::NonLiteralLoaderCalls::NativeAddonsOnly =>
@@ -317,7 +331,7 @@ impl Classifier<'_> {
             .as_ref()
             .map(|reference| self.report_target(reference));
         let witness = witness(resolved_target.clone());
-        if is_loader_factory(specifier) {
+        if is_loader_factory(specifier) && !data_read_only {
             surface
                 .site_failures
                 .push((LoaderClosureFailureKind::LoaderFactoryRequest, witness));
@@ -443,12 +457,6 @@ pub(super) fn loader_surfaces(
                         .map(|reference| classifier.report_target(reference)),
                 })
             };
-            if is_loader_factory(&request.specifier) {
-                surface.site_failures.push((
-                    LoaderClosureFailureKind::LoaderFactoryRequest,
-                    static_witness(),
-                ));
-            }
             let closed_request = match &resolved {
                 Some(reference) if artifact.has_chunk(reference.target_chunk_id) => {
                     surface.static_targets.insert(reference.target_chunk_id);
@@ -467,6 +475,18 @@ pub(super) fn loader_surfaces(
             }
         }
         for request in &runtime.namespace_requests {
+            if is_loader_factory(&request.specifier) {
+                // The namespace carries `createRequire` and the loader hooks.
+                surface.site_failures.push((
+                    LoaderClosureFailureKind::LoaderFactoryRequest,
+                    witness(LoaderSite::NamespaceRequest {
+                        item: request.item_index,
+                        specifier: request.specifier.clone(),
+                        resolved_target: None,
+                    }),
+                ));
+                continue;
+            }
             let resolved = classifier.resolve(&request.specifier, source)?;
             if let Some(reference) = &resolved
                 && classifier.alias_chunks.contains(&reference.target_chunk_id)
@@ -498,6 +518,7 @@ pub(super) fn loader_surfaces(
                         .as_deref()
                         .expect("literal loader calls carry their specifier"),
                     resolve_from: source,
+                    data_read_only: false,
                 },
                 // Classified through the binding it initializes.
                 InteropUseKind::ImportMetaRequireReference
@@ -549,8 +570,74 @@ pub(super) fn loader_surfaces(
             )?;
         }
         for binding in &runtime.loader_bindings {
+            let use_witness = |loader_use: &LoaderBindingUse, resolved_target| {
+                witness(LoaderSite::LoaderBindingUse {
+                    item: loader_use.item_index,
+                    line: loader_use.line,
+                    call: loader_use.call,
+                    specifier: loader_use.literal.clone(),
+                    resolved_target,
+                })
+            };
             let resolve_from = match &binding.binding {
                 LoaderBinding::LoaderAlias { .. } => source,
+                // A `module` named import loads nothing until a use makes a
+                // loader from it: `createRequire` may only initialize a
+                // tracked binding, and only data members may be read.
+                LoaderBinding::Import {
+                    source: specifier,
+                    imported,
+                } if is_loader_factory(specifier) => {
+                    for loader_use in &binding.uses {
+                        let classified = match imported.as_str() {
+                            "createRequire" => {
+                                loader_use.call
+                                    && loader_use.consumer == LoaderUseConsumer::BindingInitializer
+                            }
+                            member => MODULE_DATA_MEMBERS.contains(&member),
+                        };
+                        if !classified {
+                            surface.site_failures.push((
+                                LoaderClosureFailureKind::LoaderFactoryRequest,
+                                use_witness(loader_use, None),
+                            ));
+                        }
+                    }
+                    continue;
+                }
+                LoaderBinding::CreatedLoader => {
+                    for loader_use in &binding.uses {
+                        let classified = match (&loader_use.literal, &loader_use.consumer) {
+                            // A created loader resolves relative requests
+                            // against its own base, so only host module
+                            // names are fixed by the literal.
+                            (Some(specifier), _)
+                                if spec::HostModule::from_static_specifier(specifier).is_some() =>
+                            {
+                                LoaderUse::Literal {
+                                    specifier,
+                                    resolve_from: source,
+                                    data_read_only: is_module_data_read(&loader_use.consumer),
+                                }
+                            }
+                            (Some(_), _) => LoaderUse::Opaque,
+                            (None, _) if loader_use.call => LoaderUse::NonLiteralCall,
+                            // `resolve` computes a path and loads nothing.
+                            (None, LoaderUseConsumer::MemberCall(name)) if name == "resolve" => {
+                                continue;
+                            }
+                            (None, _) => LoaderUse::Opaque,
+                        };
+                        classifier.classify(
+                            &mut surface,
+                            &source_chunk,
+                            loader_use.phase,
+                            classified,
+                            |resolved_target| use_witness(loader_use, resolved_target),
+                        )?;
+                    }
+                    continue;
+                }
                 LoaderBinding::Import {
                     source: specifier,
                     imported,
@@ -585,6 +672,7 @@ pub(super) fn loader_surfaces(
                     Some(specifier) => LoaderUse::Literal {
                         specifier,
                         resolve_from,
+                        data_read_only: is_module_data_read(&loader_use.consumer),
                     },
                     None if loader_use.call => LoaderUse::NonLiteralCall,
                     None => LoaderUse::Opaque,
@@ -594,15 +682,7 @@ pub(super) fn loader_surfaces(
                     &source_chunk,
                     loader_use.phase,
                     classified,
-                    |resolved_target| {
-                        witness(LoaderSite::LoaderBindingUse {
-                            item: loader_use.item_index,
-                            line: loader_use.line,
-                            call: loader_use.call,
-                            specifier: loader_use.literal.clone(),
-                            resolved_target,
-                        })
-                    },
+                    |resolved_target| use_witness(loader_use, resolved_target),
                 )?;
             }
         }

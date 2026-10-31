@@ -249,6 +249,22 @@ pub enum LoaderBinding {
         /// Names a local export publishes it under.
         exported_as: Vec<String>,
     },
+    /// A binding initialized with a direct call of a `createRequire` named
+    /// import from the `module` builtin.
+    CreatedLoader,
+}
+
+/// What immediately consumes a use: the value a call returns, or the binding
+/// itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoaderUseConsumer {
+    /// `use.name`, read and not called.
+    MemberRead(String),
+    /// `use.name(...)`.
+    MemberCall(String),
+    /// The initializer of a `var`/`let`/`const` binding the walk tracks.
+    BindingInitializer,
+    Other,
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +275,9 @@ pub struct LoaderBindingUse {
     pub literal: Option<String>,
     /// A direct call, literal or not.
     pub call: bool,
+    /// For a call, what consumes its result; otherwise what consumes the
+    /// binding's value.
+    pub consumer: LoaderUseConsumer,
     pub phase: SitePhase,
 }
 
