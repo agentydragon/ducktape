@@ -39,7 +39,7 @@ use analysis::{
     EntryDestination, GraphOptions, LocalEffectPolicy, ModuleId, ModuleRole, PlannedModule,
     top_level_id,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::{join_module_path, normalize_module_path};
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
@@ -61,7 +61,7 @@ use spec_resolution::{
     LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
     logical_requests_for_chunk, project_chunk,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
 const DEBUNDLE_PROGRESS_ENV: &str = "DUCKTAPE_DEBUNDLE_PROGRESS";
@@ -404,13 +404,6 @@ impl ClaimedLogicalChunk<'_> {
         sites
     }
 
-    pub(super) fn explicit_binding_destinations(&self) -> (&str, HashMap<Id, usize>) {
-        (
-            self.prepared.context.chunk_id,
-            self.prepared.builder.owned_binding_destinations(),
-        )
-    }
-
     pub(super) fn take_declared_assumptions(&mut self) -> (String, AnalysisAssumptions) {
         (
             self.prepared.context.chunk_id.to_owned(),
@@ -637,14 +630,26 @@ pub(super) fn finish_logical_chunk(
             Some(rejection.clone()),
         ),
     };
+    // A certified Set spread is analysed as one stable interval: the seed,
+    // every intervening Set constructor and the spread stay in one output
+    // module. Analysis does not read the assignment, so the gate stage
+    // refuses a placement that splits the interval.
     if let Some(spreads) = cross_module_purities.stable_set_spreads.get(chunk_id) {
         for stable in spreads.values() {
-            anyhow::ensure!(
+            let destinations: BTreeSet<_> = stable
+                .interval_bindings
+                .iter()
+                .map(|binding| placement.bindings().get(binding))
+                .collect();
+            ensure!(
+                destinations.len() == 1,
+                "chunk {chunk_id}: certified Set spread interval {} spans several output modules; assign the seed, every intervening Set constructor and the spread to one module",
                 stable
                     .interval_bindings
                     .iter()
-                    .all(|binding| placement.bindings().get(binding) == Some(&stable.destination)),
-                "chunk {chunk_id}: certified Set spread interval changed output destination before emission"
+                    .map(|binding| format!("`{}`", binding.0))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
     }

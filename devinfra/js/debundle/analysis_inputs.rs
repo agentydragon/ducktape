@@ -679,15 +679,15 @@ pub struct ResolvedCommutingStatements {
     pub note: Option<String>,
 }
 
-/// Source- and explicit-output-certified Set spread. This is independent,
-/// one-way evidence for the shared value-flow solve, not a result inferred from
-/// that solve or from the eventual dependency graph.
+/// Source-certified Set spread. This is independent, one-way evidence for the
+/// shared value-flow solve, not a result inferred from that solve or from the
+/// eventual dependency graph.
 #[derive(Debug, Clone)]
 pub struct StableSetIterableUse {
     pub source_span: Span,
     pub spread_token_span: Span,
-    /// Explicit plan owner validated again against final emission placement.
-    pub destination: usize,
+    /// The seed, every intervening constructor and the spread, in order. The
+    /// gate stage refuses an emission placement that splits them.
     pub interval_bindings: Vec<Id>,
     pub dependencies: ProofDependencies,
 }

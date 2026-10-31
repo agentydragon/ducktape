@@ -786,10 +786,11 @@ globalThis`) marks the bindings it flows into (transitively,
   A separately certified `set_from_set_spread` operation contributes another
   typed fresh Set origin only when its spread reads a selected fresh Set across
   a source-order interval of independently certified inert constructors in
-  one explicit output. That exact spread records a `SetContents` read; later
-  aliases and mutations still use the shared cell frontier. This source and
-  output certificate precedes value-flow inference and does not depend on the
-  emitted graph's schedule conclusion.
+  one original declaration. That exact spread records a `SetContents` read;
+  later aliases and mutations still use the shared cell frontier. This source
+  certificate precedes value-flow inference and depends on neither the
+  assignment nor the emitted graph's schedule conclusion; the gate stage
+  refuses a placement that splits the interval across output modules.
   These facts constrain scheduling only: they
   do not reclassify calls as pure or establish a
   no-reentry/descriptor-integrity premise. In particular,
