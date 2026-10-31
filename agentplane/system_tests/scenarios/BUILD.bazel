@@ -34,6 +34,8 @@ py_library(
     name = "central_sampler",
     srcs = ["central_sampler.py"],
     deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/native/codex/testing:responses_sse",
@@ -43,6 +45,7 @@ py_library(
         "//agentplane/system_tests:central_sampler",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/system_tests:tracing",
         "//agentplane/testing:codex_model",

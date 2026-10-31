@@ -175,5 +175,15 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
     )
 
 
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
+    cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.pod_exec_session_rebinds_after_sandbox_suspend_resume(
+        cluster, client, tmp_path, scripted, Executor(template="runner", cwd="/state/workspaces/central-resume")
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

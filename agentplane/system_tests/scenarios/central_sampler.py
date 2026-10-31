@@ -6,19 +6,22 @@ from collections.abc import Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import grpc
 import pytest
 
+from agentplane.app.testing.client import Client
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
@@ -492,6 +495,154 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                     "terminal_cursor": terminal.cursor,
                     "folded_through": summary.folded_through,
                     "setup_state": runner_pb2.SetupState.Name(snapshot.attached.setup_state),
+                    "passed": True,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+
+async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
+    cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """A resident central Session continues its next requested exec on the resumed Pod."""
+    session_id = str(uuid4())
+    first_command_id, resumed_command_id = str(uuid4()), str(uuid4())
+    cwd = executor.cwd
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
+        opening = await deployed.dispatcher.OpenSession(
+            session_dispatcher_pb2.OpenSessionRequest(
+                session_id=session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert opening.opening.sandbox_uid == deployed.sandbox_uid
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command_id,
+                text="Start a process that records one marker and remains running.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == first_command_id
+        await _wait_for_setup(deployed, session_id)
+
+        request = await model.request()
+        assert request.native.client_metadata.session_id == session_id
+        assert request.native.code_mode
+        first_cell = (
+            'const started = await tools.exec_command({cmd: "echo before-resume >> incarnation.txt; sleep 120", '
+            "yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("expected a live process handle");\n'
+            'store("pre_resume_process", started.session_id);\n'
+            "text(JSON.stringify({session_id: started.session_id, output: started.output}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.Reasoning(
+                            "I will start the pre-resume process and keep its handle.",
+                            "test-opaque-pre-resume-reasoning",
+                        ),
+                        responses_sse.CustomToolCall("start-pre-resume-process", "exec", first_cell),
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        request = await model.request()
+        assert request.native.client_metadata.session_id == session_id
+        assert any(output.call_id == "start-pre-resume-process" for output in request.tool_outputs)
+        await model.reply(request, Text("The pre-resume process is running."))
+        await _wait_for_turn_status(deployed, session_id, first_command_id, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_execution_progress(deployed, session_id, "process", "running")
+
+        previous_incarnation = deployed.incarnation_uid
+        await client.suspend_sandbox(deployed.sandbox)
+        async with asyncio.timeout(SANDBOX_READY_SECONDS):
+            while True:
+                suspended = await client.sandbox(deployed.sandbox)
+                if suspended.operating_mode is OperatingMode.SUSPENDED and suspended.pod is None:
+                    break
+                await asyncio.sleep(0.2)
+
+        await client.resume_sandbox(deployed.sandbox)
+        resumed = await wait_until_running(client, deployed.sandbox, expected_uid=UUID(deployed.sandbox_uid))
+        assert str(resumed.uid) == deployed.sandbox_uid
+        assert resumed.pod is not None
+        assert resumed.pod.uid != previous_incarnation
+
+        submitted = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                command_id=resumed_command_id,
+                text="Run a new exec command and report the marker file contents.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert submitted.dispatch.command_id == resumed_command_id
+        request = await model.request()
+        assert request.native.client_metadata.session_id == session_id
+        assert "Run a new exec command" in "\n".join(request.user_texts)
+        resumed_cell = (
+            'const result = await tools.exec_command({cmd: "echo after-resume >> incarnation.txt; sleep 2; cat incarnation.txt", '
+            "yield_time_ms: 10000});\n"
+            "text(JSON.stringify({exit_code: result.exit_code, output: result.output}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.Reasoning(
+                            "I will run a fresh command on the resumed executor.", "test-opaque-resumed-exec-reasoning"
+                        ),
+                        responses_sse.CustomToolCall("run-resumed-process", "exec", resumed_cell),
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        request = await model.request()
+        assert request.native.client_metadata.session_id == session_id
+        assert "The execution Sandbox changed incarnation" in "\n".join(request.user_texts)
+        (result_output,) = [
+            "\n".join(output.blocks) for output in request.tool_outputs if output.call_id == "run-resumed-process"
+        ]
+        result = json.loads(result_output)
+        assert result["exit_code"] == 0, result
+        assert result["output"].splitlines() == ["before-resume", "after-resume"]
+        await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
+        await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
+
+        snapshot = await deployed.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        )
+        assert snapshot.executor.sandbox_uid == deployed.sandbox_uid
+        assert snapshot.expected_incarnation_uid == resumed.pod.uid
+        assert not snapshot.blocked
+        (undeclared_outputs_dir() / "central-sampler-pod-resume.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "sandbox": deployed.sandbox,
+                    "sandbox_uid": deployed.sandbox_uid,
+                    "previous_incarnation_uid": previous_incarnation,
+                    "resumed_incarnation_uid": resumed.pod.uid,
+                    "first_command_id": first_command_id,
+                    "resumed_command_id": resumed_command_id,
+                    "model_visible_notice": "The execution Sandbox changed incarnation",
+                    "workspace_output": result["output"],
                     "passed": True,
                 },
                 indent=2,
