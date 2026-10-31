@@ -472,6 +472,55 @@ describe("HistoryViewport DOM boundary", () => {
     expect(readerRecord.getBoundingClientRect().top - viewportTop).toBe(originalReaderOffset);
   });
 
+  it("releases nested anchor targets when the reader scrolls through an expanded group", () => {
+    const rig = new ViewportRig(
+      [
+        { key: "intro", height: 100 },
+        { key: "expanded-group", height: 500 },
+        { key: "tail", height: 100 },
+      ],
+      400,
+      200
+    );
+    const group = rig.rows[1].node;
+    const control = document.createElement("button");
+    const step = document.createElement("div");
+    step.dataset.historyAnchorKey = "step:reader";
+    group.append(control, step);
+    for (const [node, inset, height] of [
+      [control, 0, 20],
+      [step, 300, 200],
+    ] as const) {
+      Object.defineProperties(node, {
+        getBoundingClientRect: {
+          configurable: true,
+          value: () => rect(group.getBoundingClientRect().top + inset, 400, height),
+        },
+        getClientRects: { configurable: true, value: () => [node.getBoundingClientRect()] },
+      });
+    }
+    rig.mount();
+    rig.flush();
+    expect(rig.viewport.scrollTop).toBe(500);
+
+    rig.controller.disclose(control);
+    rig.setHeight("expanded-group", 700);
+    rig.resizeObserver.deliverDelayed();
+    rig.flush();
+    const writesBeforeScrolling = rig.writes.length;
+    for (const top of [480, 460, 440]) {
+      rig.controller.input("wheel", "up", true);
+      rig.userScrollTo(top);
+      rig.controller.scrolled();
+      rig.flush();
+      expect(rig.viewport.scrollTop).toBe(top);
+      rig.viewport.dispatchEvent(new Event("scrollend"));
+      rig.flush();
+      expect(rig.viewport.scrollTop).toBe(top);
+    }
+    expect(rig.writes).toHaveLength(writesBeforeScrolling);
+  });
+
   it("preserves following through an intermediate browser clamp after content shrinks", () => {
     const rig = new ViewportRig(
       Array.from({ length: 7 }, (_, index) => ({ key: `clamp:${index}`, height: 100 })),

@@ -381,6 +381,7 @@ export class HistoryViewport {
         anchor: {
           ...this.intent.anchor,
           target: null,
+          targetKey: null,
           inset: 0,
           offset: this.intent.anchor.offset - this.intent.anchor.inset - (top - previous),
         },
