@@ -230,9 +230,9 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/yaml",
         "//:node_modules/zod",
-        "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:parsed_json",
         "//agentplane/app/frontend:text_block",
+        "//util/frontend/transcript:text_block",
     ],
 )
 

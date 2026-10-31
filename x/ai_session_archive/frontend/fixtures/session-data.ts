@@ -1,5 +1,6 @@
 import type { SessionBrowserApi } from "../api";
 import type { EventRecord, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../schema";
+import { codexWorkRecords } from "./codex-work";
 
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
@@ -161,9 +162,37 @@ const sessions: SessionSummary[] = [
     parent_native_session_id: null,
     identity_inferred: false,
   },
+  {
+    id: "codex-work-fixture",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Archive transcript UI work",
+    cwd: "/fixture/project",
+    started_at: "2026-10-31T06:00:00Z",
+    last_activity_at: "2026-10-31T06:30:00Z",
+    latest_version_id: "codex-work-version",
+    version_count: 1,
+    latest_version_record_count: codexWorkRecords.length,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
 ];
 
 const versions: Record<string, SessionVersion[]> = {
+  "codex-work-fixture": [
+    {
+      id: "codex-work-version",
+      captured_at: "2026-10-31T06:30:00Z",
+      sha256: "f".repeat(64),
+      byte_size: 5000,
+      source_path: "/fixture/work.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
   "mixed-transcript-fixture": [
     {
       id: "mixed-version",
@@ -251,7 +280,12 @@ const mixedEvents: EventRecord[] = [
     5,
     {
       type: "response_item",
-      payload: { type: "function_call", name: "read_build_log", arguments: '{"target":"//fixture:test"}' },
+      payload: {
+        type: "function_call",
+        call_id: "build-log",
+        name: "read_build_log",
+        arguments: '{"target":"//fixture:test"}',
+      },
     },
     "response_item"
   ),
@@ -262,6 +296,7 @@ const mixedEvents: EventRecord[] = [
       type: "response_item",
       payload: {
         type: "function_call_output",
+        call_id: "build-log",
         output: "Fixture build output: missing configuration for the test environment.",
       },
     },
@@ -388,16 +423,18 @@ export const sessionFixtureApi: SessionBrowserApi = {
   async listEvents(sessionId, versionId, cursor) {
     if (sessionId === "inferred-claude-parent") return { data: [], next_cursor: null };
     const selected =
-      sessionId === "mixed-transcript-fixture"
-        ? mixedEvents
-        : sessionId === "codex-thread-1"
-          ? versionId === "codex-version-1"
-            ? codexOlderEvents
-            : codexLatestEvents
-          : claudeEvents;
+      sessionId === "codex-work-fixture"
+        ? codexWorkRecords
+        : sessionId === "mixed-transcript-fixture"
+          ? mixedEvents
+          : sessionId === "codex-thread-1"
+            ? versionId === "codex-version-1"
+              ? codexOlderEvents
+              : codexLatestEvents
+            : claudeEvents;
     const data = selected
       .filter((record) => cursor === undefined || record.ordinal < cursor)
-      .slice(-(sessionId === "mixed-transcript-fixture" ? 50 : 3));
+      .slice(-(["mixed-transcript-fixture", "codex-work-fixture"].includes(sessionId) ? 50 : 3));
     const first = data.at(0)?.ordinal ?? null;
     return {
       data,

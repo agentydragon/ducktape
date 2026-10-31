@@ -240,8 +240,8 @@ async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, st
         await _open_tool_run(page)
     if state == "tool-hover":
         control = (
-            page.locator(".agentplane-step-details")
-            .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+            page.locator(".transcript-step-details")
+            .filter(has=page.locator(".transcript-step-title:text-is('Bash')"))
             .locator(".ui-disclosure-summary")
             .first
         )

@@ -84,6 +84,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//props/frontend:__subpackages__",
+        "//util/frontend/transcript:__pkg__",
         "//x/ai_session_archive/frontend:__pkg__",
     ],
     deps = [
@@ -137,6 +138,7 @@ ts_library(
     tsconfig = ":tsconfig",
     visibility = [
         "//agentplane:__subpackages__",
+        "//util/frontend/transcript:__pkg__",
         "//x/ai_session_archive/frontend:__pkg__",
     ],
     deps = [
@@ -277,7 +279,11 @@ ts_library(
     name = "clamped_block",
     srcs = ["clamped_block.tsx"],
     tsconfig = ":tsconfig",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//util/frontend/transcript:__pkg__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
     deps = [
         ":disclosure",
         "//:node_modules/@mantine/core",

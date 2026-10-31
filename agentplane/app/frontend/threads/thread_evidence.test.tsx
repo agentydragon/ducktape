@@ -35,7 +35,7 @@ function History(): JSX.Element {
         </div>
       </div>
       <div className="transcript-inspection-owner" data-testid="tool-owner">
-        <div className="agentplane-step-details">
+        <div className="transcript-step-details">
           <button className="ui-disclosure-summary" data-testid="tool-summary">
             Bash
           </button>

@@ -13,7 +13,7 @@ import {
 } from "./history_rows";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
-import { StepLine } from "./step_line";
+import { StepLine } from "../../../../util/frontend/transcript/step_line";
 import { ProjectedControlCommand } from "./thread_commands";
 import { DisclosureCard } from "../../../../util/frontend/disclosure";
 
@@ -34,7 +34,7 @@ function CollapsibleRows({
   return (
     <DisclosureCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
-        <Stack gap={steps ? 0 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
+        <Stack gap={steps ? 0 : "xs"} className={steps ? "transcript-steps" : undefined}>
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -121,7 +121,7 @@ function ReasoningGroup({
         open={open}
         onOpenChange={setOpen}
       >
-        <Stack gap={0} className="agentplane-run-steps">
+        <Stack gap={0} className="transcript-steps">
           <EntityCards threadId={threadId} entities={entities} live={live} />
         </Stack>
       </StepLine>

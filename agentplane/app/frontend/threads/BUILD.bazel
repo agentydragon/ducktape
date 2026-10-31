@@ -153,7 +153,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
-        ":step_line",
         ":thread_cards",
         ":thread_commands",
         ":thread_sync",
@@ -164,6 +163,7 @@ ts_library(
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
         "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
     ],
 )
 
@@ -358,18 +358,6 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "step_line",
-    srcs = ["step_line.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend:disclosure",
-    ],
-)
-
-ts_library(
     name = "thread_cards",
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
@@ -377,7 +365,6 @@ ts_library(
         ":command_progress",
         ":history_rows",
         ":shell_calls",
-        ":step_line",
         ":thread_evidence",
         ":thread_sync",
         "//:node_modules/@mantine/core",
@@ -387,12 +374,13 @@ ts_library(
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:shell_command_view",
         "//agentplane/proto:event_pb",
-        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
         "//util/frontend/transcript:message",
         "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
     ],
 )
 

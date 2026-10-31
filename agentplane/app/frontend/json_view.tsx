@@ -1,13 +1,7 @@
 import { type JSX, useMemo } from "react";
 
+import { looksLikeJson } from "../../../util/frontend/transcript/text_block";
 import { CodeBlock, type CodeBlockSurface } from "../../../util/frontend/code_block";
-
-/** True when `payload` announces itself as JSON structurally (starts with `{`/`[`) -- for a caller
- * holding a string that might not be JSON (tool output, a streamed partial), so a plain-text/log
- * payload isn't tokenized as if it were JSON punctuation. */
-export function looksLikeJson(payload: string): boolean {
-  return /^\s*[[{]/.test(payload);
-}
 
 /** A JSON-serializable value, rendered by the shared read-only code widget. */
 export function JsonView({ value, surface = "framed" }: { value: unknown; surface?: CodeBlockSurface }): JSX.Element {

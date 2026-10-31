@@ -80,15 +80,29 @@ The API lists machines and sessions, supports filtering by `parent_session_id` a
 
 ## Transcript presentation
 
-The browser uses the shared `util/frontend/transcript` message and virtualized history
-components, with disclosures from `util/frontend`. Archive-owned heuristics leave prompts and final assistant
-answers visible, fold consecutive tool/reasoning activity (including interleaved
-bookkeeping), and fold known standalone metadata into Session details. Claude
-`user` records containing only tool results are activity; mixed text/content stays
-visible. Codex commentary is activity; final answers remain visible. Unknown record
-types, parse failures and explicit tool errors stay visible. Every original record
-remains accessible through a compact inspection button and its exact-byte view.
-Assistant replies use plain Markdown; user inputs use the shared right-aligned
+The browser uses the shared `util/frontend/transcript` messages, compact step lines,
+bounded tool text and virtualized history. Archive-owned adapters leave user prompts
+and assistant commentary/answers visible. Consecutive intermediate work folds into
+semantic tool/reasoning/agent-message counts; bookkeeping stays inspectable under
+Session details and does not inflate those counts.
+A lone activity appears directly as an expandable step, with attached bookkeeping
+included in its source inspection.
+
+Codex function/custom calls pair with results by `call_id` across loaded pages. A
+paired step appears at its result's position and exposes both source records, with
+original line ordinals; an unpaired result identifies its missing call, and a call
+without a loaded result does not claim to be running or successful. Older prepends
+can supply a missing call without resetting the result's expansion. Consecutive
+readable reasoning summaries form a nested step. Encrypted-only reasoning adds no
+placeholder step; its original record remains under Session details. Subagent
+messages show their sender and readable content, or an unavailable-content label.
+Compaction is a compact marker with source inspection.
+
+Claude `user` records containing only tool results are activity; mixed text/content
+stays visible. Unknown record types and parse failures remain standalone. Explicit
+tool errors stay visible or mark the enclosing tool group as failed. Every original
+record remains accessible through a compact inspection button and its exact-byte
+view. Assistant replies use plain Markdown; user inputs use the shared right-aligned
 bubble. Inspection actions appear on hover, keyboard focus or touch selection
 without reserving a separate disclosure row.
 
