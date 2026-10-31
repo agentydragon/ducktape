@@ -382,7 +382,7 @@ flowchart TD
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
-    SESSION_CALLER_AUTHORITY[In flight: trusted same-SA authority]
+    SESSION_CALLER_AUTHORITY[In review: trusted same-SA authority]
     SESSION_CALLER_WAKE_POLICY[Decision: wake authority for same-SA calls]
     SESSION_PRINCIPAL_READS[Retained same-principal History reads]
     SESSION_TARGET_DISCOVERY[In flight: existing target discovery]
@@ -525,7 +525,8 @@ base prompts. Opening/setup does not manufacture a first input or model turn.
 
 ### `SESSION_CALLER_AUTHORITY` — same-SA admission and immutable Session authority
 
-**In flight, `/root/delegation_dispatcher_authority`, 2026-10-31.** Admit workload and explicitly account-scoped
+**In review, [#13390](https://github.com/agentydragon/ducktape/pull/13390),
+`/root/delegation_dispatcher_authority`, 2026-10-31.** Admit workload and explicitly account-scoped
 external callers through the shared authentication machinery. Normal access uses any verified
 SA in the configured served namespaces, without another per-SA caller allowlist. Privileged
 backend bypass still requires its explicit allowed Pod-bound service identity. At opening, verify the target's
