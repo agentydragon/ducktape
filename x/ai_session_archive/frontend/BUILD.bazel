@@ -81,6 +81,21 @@ ts_library(
 )
 
 ts_library(
+    name = "import_progress",
+    srcs = ["import-progress.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":schema",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
     name = "session_viewer",
     srcs = ["session-viewer.tsx"],
     isolated_typecheck = True,
@@ -88,6 +103,7 @@ ts_library(
     deps = [
         ":api",
         ":event_content",
+        ":import_progress",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -104,6 +120,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":import_progress",
         ":session_viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

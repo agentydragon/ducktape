@@ -9,10 +9,8 @@ import {
   Loader,
   NativeSelect,
   Paper,
-  Progress,
   ScrollArea,
   Select,
-  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -21,19 +19,11 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
-import type {
-  EventRecord,
-  Harness,
-  Machine,
-  MachineImportProgress,
-  SessionSummary,
-  SessionVersion,
-  SnapshotImportState,
-} from "./schema";
+import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
+import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
 
 const SESSION_PAGE_SIZE = 50;
-const IMPORT_PROGRESS_POLL_INTERVAL_MS = 10_000;
 const SESSION_SIDEBAR_MIN_WIDTH = 240;
 const SESSION_SIDEBAR_MAX_WIDTH = 520;
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
@@ -45,37 +35,6 @@ function maxSessionSidebarWidth(layoutWidth: number): number {
     SESSION_SIDEBAR_MIN_WIDTH,
     Math.min(SESSION_SIDEBAR_MAX_WIDTH, layoutWidth - SESSION_TRANSCRIPT_MIN_WIDTH - SESSION_RESIZE_HANDLE_WIDTH)
   );
-}
-
-function snapshotStateLabel(state: SnapshotImportState | null): string {
-  switch (state) {
-    case "inventory_pending":
-      return "Inventory pending";
-    case "inventory_failed":
-      return "Inventory failed";
-    case "codex_metadata_pending":
-      return "Codex metadata pending";
-    case "codex_metadata_failed":
-      return "Codex metadata failed";
-    case "processing_pending":
-      return "File processing pending";
-    case "processing_failed":
-      return "File processing failed";
-    case "complete":
-      return "Complete";
-    case null:
-      return "No snapshots registered";
-  }
-}
-
-function snapshotStateColor(state: SnapshotImportState): "red" | "yellow" | "green" {
-  if (state === "inventory_failed" || state === "codex_metadata_failed" || state === "processing_failed") {
-    return "red";
-  }
-  if (state === "inventory_pending" || state === "codex_metadata_pending" || state === "processing_pending") {
-    return "yellow";
-  }
-  return "green";
 }
 
 function parentLinkLabel(kind: string | null): string | null {
@@ -166,10 +125,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     step: (delta) => storedSidebarPane.step(delta),
   };
   const [machines, setMachines] = useState<Machine[]>([]);
-  const [importProgress, setImportProgress] = useState<MachineImportProgress[]>([]);
-  const [loadingImportProgress, setLoadingImportProgress] = useState(true);
-  const [importProgressError, setImportProgressError] = useState<string | null>(null);
-  const [importProgressRefreshRequest, setImportProgressRefreshRequest] = useState(0);
+  const {
+    progress: importProgress,
+    loading: loadingImportProgress,
+    error: importProgressError,
+  } = useMachineImportProgress(api);
   const [sessionListRefreshRequest, setSessionListRefreshRequest] = useState(0);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadedSessionScope, setLoadedSessionScope] = useState<string | null>(null);
@@ -310,40 +270,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       });
     return () => controller.abort();
   }, [api]);
-
-  useEffect(() => {
-    let disposed = false;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    let activeRequest: AbortController | null = null;
-    const refresh = async (): Promise<void> => {
-      const controller = new AbortController();
-      activeRequest = controller;
-      setLoadingImportProgress(true);
-      try {
-        const progress = await api.listImportProgress(controller.signal);
-        if (!disposed && !controller.signal.aborted) {
-          setImportProgress(progress);
-          setImportProgressError(null);
-        }
-      } catch (reason) {
-        if (!disposed && !controller.signal.aborted) {
-          setImportProgressError(errorMessage(reason, "The archive service did not return import progress."));
-        }
-      } finally {
-        if (!disposed && activeRequest === controller) {
-          activeRequest = null;
-          setLoadingImportProgress(false);
-          timeout = setTimeout(() => void refresh(), IMPORT_PROGRESS_POLL_INTERVAL_MS);
-        }
-      }
-    };
-    void refresh();
-    return () => {
-      disposed = true;
-      activeRequest?.abort();
-      if (timeout !== null) clearTimeout(timeout);
-    };
-  }, [api, importProgressRefreshRequest]);
 
   useEffect(() => {
     sessionPageRequest.current?.abort();
@@ -650,11 +576,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           {error}
         </Alert>
       )}
-      <MachineImportProgressPanel
+      <MachineImportProgressSummary
         progress={importProgress}
         loading={loadingImportProgress}
         error={importProgressError}
-        onRefresh={() => setImportProgressRefreshRequest((current) => current + 1)}
+        returnTo={`${location.pathname}${location.search}`}
       />
       <Box
         ref={layoutRef}
@@ -1069,148 +995,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         </Paper>
       </Box>
     </Stack>
-  );
-}
-
-function MachineImportProgressPanel({
-  progress,
-  loading,
-  error,
-  onRefresh,
-}: {
-  progress: MachineImportProgress[];
-  loading: boolean;
-  error: string | null;
-  onRefresh: () => void;
-}): JSX.Element {
-  const progressExplanation = (
-    <>
-      Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
-      discovered. File counts cover entries inventoried so far; progress uses these entries as its denominator, and that
-      total can grow as snapshots are inventoried. Processed means handled, not necessarily imported as a transcript.
-      Codex metadata counts cover registered snapshots; completed snapshots can have partial metadata, shown separately.
-    </>
-  );
-
-  return (
-    <Paper component="section" aria-label="Import progress by machine" withBorder radius="sm" p="xs">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center">
-          <Text size="sm" fw={600}>
-            Import progress by machine
-          </Text>
-          <Group gap="xs">
-            <Text size="xs" c="dimmed" className="session-import-progress-refresh-note">
-              Progress refreshes every 10 seconds; refresh sessions separately
-            </Text>
-            <Button size="xs" variant="default" loading={loading} onClick={onRefresh}>
-              Refresh
-            </Button>
-          </Group>
-        </Group>
-        <Text size="xs" c="dimmed" className="session-import-progress-explanation-desktop">
-          {progressExplanation}
-        </Text>
-        <details className="session-import-progress-explanation-mobile">
-          <summary>Denominator: inventoried entries so far; can grow</summary>
-          <Text size="xs" c="dimmed" mt={4}>
-            {progressExplanation}
-          </Text>
-        </details>
-        {error !== null && (
-          <Text size="xs" c="red">
-            Could not refresh import progress: {error}
-          </Text>
-        )}
-        {progress.length === 0 ? (
-          loading ? (
-            <Center h={36}>
-              <Loader size="xs" aria-label="Loading import progress" />
-            </Center>
-          ) : (
-            <Text size="xs" c="dimmed">
-              No machines are registered yet.
-            </Text>
-          )
-        ) : (
-          <ScrollArea className="session-import-progress-machines" type="auto">
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
-              {progress.map((machine) => {
-                const totalFileCount =
-                  machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
-                const processedPercentage =
-                  totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
-                const pendingPercentage =
-                  totalFileCount === 0 ? 0 : (machine.pending_file_count / totalFileCount) * 100;
-                const failedPercentage = totalFileCount === 0 ? 0 : (machine.failed_file_count / totalFileCount) * 100;
-
-                return (
-                  <Paper key={machine.machine_id} withBorder radius="xs" p="xs">
-                    <Stack gap={2}>
-                      <Group justify="space-between" gap="xs" wrap="wrap">
-                        <Text size="sm" fw={600}>
-                          {machine.display_name}
-                        </Text>
-                        {machine.oldest_unfinished_snapshot_state !== null && (
-                          <Badge color={snapshotStateColor(machine.oldest_unfinished_snapshot_state)} variant="light">
-                            {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
-                          </Badge>
-                        )}
-                      </Group>
-                      <Text size="xs" c="dimmed">
-                        Snapshots: {machine.completed_snapshot_count} of {machine.known_snapshot_count} registered
-                        complete · {machine.failed_snapshot_count} failed
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Codex metadata: {machine.codex_metadata_pending_snapshot_count} pending ·{" "}
-                        {machine.codex_metadata_failed_snapshot_count} failed ·{" "}
-                        {machine.codex_metadata_partial_snapshot_count} partial
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Oldest unfinished snapshot:{" "}
-                        {machine.oldest_unfinished_snapshot_state === null
-                          ? machine.known_snapshot_count === 0
-                            ? "none registered"
-                            : "none; all registered snapshots complete"
-                          : formatDateTime(machine.oldest_unfinished_snapshot_at)}
-                      </Text>
-                      {totalFileCount === 0 ? (
-                        <Text size="xs" c="dimmed">
-                          No file entries inventoried yet.
-                        </Text>
-                      ) : (
-                        <>
-                          <Text size="xs" c="dimmed">
-                            File entries processed: {machine.processed_file_count} of {totalFileCount} inventoried
-                          </Text>
-                          <Progress.Root
-                            role="progressbar"
-                            aria-label={`${machine.display_name} file-entry progress`}
-                            aria-valuemin={0}
-                            aria-valuemax={totalFileCount}
-                            aria-valuenow={machine.processed_file_count}
-                            aria-valuetext={`${machine.processed_file_count} processed, ${machine.pending_file_count} pending, ${machine.failed_file_count} failed of ${totalFileCount} inventoried file entries`}
-                            size="sm"
-                          >
-                            {processedPercentage > 0 && <Progress.Section value={processedPercentage} color="blue" />}
-                            {pendingPercentage > 0 && <Progress.Section value={pendingPercentage} color="yellow" />}
-                            {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
-                          </Progress.Root>
-                        </>
-                      )}
-                      <Text size="xs" c="dimmed">
-                        File entries: {machine.processed_file_count} processed · {machine.pending_file_count} pending ·{" "}
-                        {machine.failed_file_count} failed
-                      </Text>
-                    </Stack>
-                  </Paper>
-                );
-              })}
-            </SimpleGrid>
-          </ScrollArea>
-        )}
-      </Stack>
-    </Paper>
   );
 }
 

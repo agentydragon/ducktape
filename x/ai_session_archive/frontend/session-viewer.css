@@ -75,11 +75,7 @@
 }
 
 .session-import-progress-machines {
-  max-height: 240px;
-}
-
-.session-import-progress-explanation-mobile {
-  display: none;
+  max-height: min(55dvh, 640px);
 }
 
 .session-browser-mobile-toggle,
@@ -140,21 +136,6 @@
   }
 
   .session-import-progress-machines {
-    max-height: 144px;
-  }
-
-  .session-import-progress-refresh-note,
-  .session-import-progress-explanation-desktop {
-    display: none;
-  }
-
-  .session-import-progress-explanation-mobile {
-    display: block;
-    font-size: var(--mantine-font-size-xs);
-    color: var(--mantine-color-dimmed);
-  }
-
-  .session-import-progress-explanation-mobile summary {
-    cursor: pointer;
+    max-height: 55dvh;
   }
 }

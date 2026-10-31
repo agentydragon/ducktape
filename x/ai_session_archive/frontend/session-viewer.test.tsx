@@ -259,21 +259,13 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   const view = await renderViewer(sessionFixtureApi);
 
   expect(view.textContent).toContain("ThinkPad");
-  expect(view.textContent).toContain("Import progress by machine");
-  expect(view.textContent).toContain("3 of 5 registered complete");
-  expect(view.textContent).toContain("Oldest unfinished snapshot:");
-  expect(view.textContent).toContain("File processing pending");
-  expect(view.textContent).toContain("Codex metadata pending");
-  expect(view.textContent).toContain("Codex metadata failed");
-  expect(view.textContent).toContain("Codex metadata: 1 pending · 0 failed · 1 partial");
-  expect(view.textContent).toContain("completed snapshots can have partial metadata, shown separately");
-  expect(view.textContent).toContain("27 processed · 4 pending · 0 failed");
-  expect(view.textContent).toContain("11 processed · 0 pending · 1 failed");
-  expect(view.textContent).toContain("File entries processed: 42 of 53 inventoried");
-  expect(view.textContent).toContain("Snapshot counts include registered snapshots");
-  expect(view.textContent).toContain("can grow as more are discovered");
-  expect(view.textContent).toContain("File counts cover entries inventoried so far");
-  expect(view.textContent).toContain("these entries as its denominator");
+  expect(view.textContent).toContain("Archive import");
+  expect(view.textContent).toContain("Syncing ThinkPad");
+  expect(view.textContent).toContain("27/31 inventoried file entries processed");
+  expect(view.textContent).toContain("11/12 inventoried file entries processed · 1 failed");
+  expect(view.textContent).not.toContain("Complete fixture machine");
+  expect(view.textContent).not.toContain("Snapshots: 3 of 5 registered complete");
+  expect(findControl(view, "Import details").getAttribute("href")).toBe("/?view=import-progress");
 
   const thinkpadProgress = findProgressBar(view, "ThinkPad");
   expect(thinkpadProgress.getAttribute("aria-valuenow")).toBe("27");
@@ -317,7 +309,31 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(view.textContent).not.toContain("I found two snapshots for this session.");
 });
 
-it("shows a zero-entry state without calculating a zero-denominator percentage", async () => {
+it("shows full import details for all machines and returns to the filtered session", async () => {
+  const sessionPath = "/sessions/codex-thread-1?machine=thinkpad&harness=codex&version=codex-version-1";
+  const view = await renderViewer(sessionFixtureApi, sessionPath);
+
+  await act(async () => {
+    findControl(view, "Import details").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Import progress details");
+  expect(view.textContent).toContain("Snapshots: 3 of 5 registered complete");
+  expect(view.textContent).toContain("Codex metadata: 0 pending · 0 failed · 1 partial");
+  expect(view.textContent).toContain("Complete fixture machine");
+  expect(view.textContent).toContain("File counts cover entries inventoried so far");
+  expect(findControl(view, "Back to sessions").getAttribute("href")).toBe(sessionPath);
+
+  await act(async () => {
+    findControl(view, "Back to sessions").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Local agent sessions");
+  expect(view.querySelector('input[aria-label="Filter by machine"]')).toHaveProperty("value", "ThinkPad");
+  expect(view.textContent).toContain("This is the earlier captured version.");
+});
+
+it("keeps an un-inventoried snapshot pending without a zero-denominator progress bar", async () => {
   const [fixtureMachine] = await sessionFixtureApi.listImportProgress();
   if (fixtureMachine === undefined) throw new Error("The session fixture has no import progress");
 
@@ -329,14 +345,14 @@ it("shows a zero-entry state without calculating a zero-denominator percentage",
           ...fixtureMachine,
           machine_id: "new-machine",
           display_name: "New machine",
-          known_snapshot_count: 0,
+          known_snapshot_count: 1,
           completed_snapshot_count: 0,
           failed_snapshot_count: 0,
           codex_metadata_pending_snapshot_count: 0,
           codex_metadata_failed_snapshot_count: 0,
           codex_metadata_partial_snapshot_count: 0,
-          oldest_unfinished_snapshot_at: null,
-          oldest_unfinished_snapshot_state: null,
+          oldest_unfinished_snapshot_at: "2026-10-28T17:00:00Z",
+          oldest_unfinished_snapshot_state: "inventory_pending",
           processed_file_count: 0,
           pending_file_count: 0,
           failed_file_count: 0,
@@ -346,6 +362,15 @@ it("shows a zero-entry state without calculating a zero-denominator percentage",
   };
   const view = await renderViewer(api);
 
+  expect(view.textContent).toContain("Syncing New machine");
+  expect(view.textContent).toContain("Inventory pending");
+  expect(view.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+
+  await act(async () => {
+    findControl(view, "Import details").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Snapshots: 0 of 1 registered complete");
   expect(view.textContent).toContain("No file entries inventoried yet.");
   expect(view.textContent).toContain("File entries: 0 processed · 0 pending · 0 failed");
   expect(view.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
@@ -460,7 +485,7 @@ it("refreshes import progress on demand and polls automatically", async () => {
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <MemoryRouter>
+        <MemoryRouter initialEntries={["/?view=import-progress"]}>
           <App api={api} />
         </MemoryRouter>
       </MantineProvider>
@@ -485,8 +510,13 @@ it("refreshes import progress on demand and polls automatically", async () => {
 
 it("lets the session list refresh separately from import progress", async () => {
   let sessionListRequests = 0;
+  let importProgressRequests = 0;
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
+    listImportProgress(signal) {
+      importProgressRequests += 1;
+      return sessionFixtureApi.listImportProgress(signal);
+    },
     listSessions(query, signal) {
       sessionListRequests += 1;
       return sessionFixtureApi.listSessions(query, signal);
@@ -494,6 +524,7 @@ it("lets the session list refresh separately from import progress", async () => 
   };
   const view = await renderViewer(api);
   const requestsBeforeRefresh = sessionListRequests;
+  const progressRequestsBeforeRefresh = importProgressRequests;
 
   await act(async () => {
     findControl(view, "Refresh session list").click();
@@ -501,7 +532,8 @@ it("lets the session list refresh separately from import progress", async () => 
   });
 
   expect(sessionListRequests).toBe(requestsBeforeRefresh + 1);
-  expect(view.textContent).toContain("Progress refreshes every 10 seconds; refresh sessions separately");
+  expect(importProgressRequests).toBe(progressRequestsBeforeRefresh);
+  expect(findControl(view, "Import details")).toBeDefined();
 });
 
 it("shows inferred subagent links and navigates to a placeholder parent", async () => {
@@ -631,6 +663,7 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
       return Promise.resolve({ data: query.parentSessionId === undefined ? [child] : [], next_cursor: null });
     },
     getSession(sessionId) {
+      if (sessionId === child.id) return Promise.resolve(child);
       if (sessionId === parent.id) return Promise.resolve(parent);
       throw new Error(`Unknown fixture session ${sessionId}`);
     },
