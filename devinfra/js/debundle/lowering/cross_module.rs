@@ -11,9 +11,10 @@ use std::sync::Arc;
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, CommutingEndpoint,
     CommutingStatementsRef, NativeInputKind, NativeIntegrity, NativeOperationInputEvidence,
-    NativeOperationInputRef, NativeOperationSelectorProvenance, ResolvedArgumentInput,
-    ResolvedBindingValueInput, ResolvedCommutingStatements, ResolvedNativeOperationInput,
-    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    NativeOperationInputRef, NativeOperationSelectorProvenance, NoAccessorInstallRef,
+    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedCommutingStatements,
+    ResolvedNativeOperationInput, ResolvedNoAccessorInstall, SelectedBindingValueInput,
+    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport, StableExportValue,
@@ -40,8 +41,12 @@ use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_identity::{SourceUnitOrdinal, StatementId};
 use source_match::source_match_claim_member_selectors;
 use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
-use swc_common::Spanned;
-use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat, Stmt, VarDeclarator};
+use swc_common::{Span, Spanned};
+use swc_ecma_ast::{
+    ArrowExpr, CallExpr, Callee, Decl, Function, GetterProp, Id, MemberProp, Module, ModuleDecl,
+    ModuleItem, Pat, SetterProp, Stmt, VarDeclarator,
+};
+use swc_ecma_visit::{Visit, VisitWith};
 
 use super::materialize::ResolvedMemberSite;
 
@@ -525,6 +530,13 @@ pub(super) fn collect_cross_module_imported_purities(
         graph_provenance,
         chunk_filter,
     )?;
+    let no_accessor_install_callables = resolve_no_accessor_install_callables(
+        artifact,
+        &modules,
+        chunk_analysis_options,
+        graph_provenance,
+        chunk_filter,
+    )?;
     let commuting_statements = resolve_commuting_statements(
         artifact,
         &modules,
@@ -646,6 +658,7 @@ pub(super) fn collect_cross_module_imported_purities(
             explicit_binding_destinations,
             argument_inputs: &argument_inputs,
             predefined_globals,
+            no_accessor_install_callables: &no_accessor_install_callables,
         },
     )?;
     Ok(CrossModulePurities {
@@ -1438,6 +1451,123 @@ fn resolve_argument_inputs(
         resolved.insert(chunk_name.clone(), selected);
     }
     Ok(resolved)
+}
+
+fn resolve_no_accessor_install_callables(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    options: &BTreeMap<String, DependencyGraphOptions>,
+    graph_provenance: Option<&GraphProvenance>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<BTreeMap<String, Vec<ResolvedNoAccessorInstall>>> {
+    let mut resolved = BTreeMap::new();
+    for (chunk_name, options) in options {
+        if options.no_accessor_install_callables.is_empty() {
+            continue;
+        }
+        let prefix = format!("chunk_analysis_options.{chunk_name}.no_accessor_install_callables");
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        ensure!(
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "{prefix} cannot target an outside-closure provider"
+        );
+        let facts = modules
+            .get(chunk_name)
+            .with_context(|| format!("{prefix} has no analyzed provider"))?;
+        let source = graph_provenance
+            .context("no_accessor_install_callables require graph parser-input provenance")?
+            .chunk_sources
+            .iter()
+            .find(|entry| entry.chunk_id == *chunk_name)
+            .with_context(|| format!("{prefix} has no parser-input provenance"))?;
+        let module = Module {
+            span: Default::default(),
+            body: facts.body.to_vec(),
+            shebang: None,
+        };
+        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
+        let selector_chunk = SelectorChunk::new(chunk_name, &module, source_facts);
+        let mut selected = Vec::new();
+        for (input_index, contract) in options.no_accessor_install_callables.iter().enumerate() {
+            let request_id = format!("{prefix}[{input_index}]");
+            ensure!(
+                contract.audited_source_sha256 == source.sha256,
+                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
+                source.sha256,
+                contract.audited_source_sha256
+            );
+            let (body_index, _) =
+                select_one_declared_binding(&selector_chunk, &request_id, &contract.source_match)?;
+            let mut callables = SelectedCallables::default();
+            facts
+                .body
+                .get(body_index)
+                .context("selected source item is missing")?
+                .visit_with(&mut callables);
+            let [function_span] = callables.functions[..] else {
+                bail!(
+                    "{request_id} must select a statement containing exactly one function, found {}",
+                    callables.functions.len()
+                );
+            };
+            ensure!(
+                callables.computed_method_call,
+                "{request_id} selects a function with no computed-key method call"
+            );
+            selected.push(ResolvedNoAccessorInstall {
+                reference: NoAccessorInstallRef {
+                    defining_chunk: chunk_name.clone(),
+                    input_index,
+                },
+                function_span,
+            });
+        }
+        resolved.insert(chunk_name.clone(), selected);
+    }
+    Ok(resolved)
+}
+
+/// The functions of one selected statement, accessors included.
+#[derive(Default)]
+struct SelectedCallables {
+    functions: Vec<Span>,
+    computed_method_call: bool,
+}
+
+impl Visit for SelectedCallables {
+    fn visit_function(&mut self, function: &Function) {
+        self.functions.push(function.span);
+        function.visit_children_with(self);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.functions.push(arrow.span);
+        arrow.visit_children_with(self);
+    }
+
+    fn visit_getter_prop(&mut self, getter: &GetterProp) {
+        self.functions.push(getter.span);
+        getter.visit_children_with(self);
+    }
+
+    fn visit_setter_prop(&mut self, setter: &SetterProp) {
+        self.functions.push(setter.span);
+        setter.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Some(member) = callee.as_member()
+            && matches!(member.prop, MemberProp::Computed(_))
+        {
+            self.computed_method_call = true;
+        }
+        call.visit_children_with(self);
+    }
 }
 
 /// Return the original authored flat-spec or tree-config path recorded when

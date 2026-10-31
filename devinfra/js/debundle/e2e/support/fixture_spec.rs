@@ -726,6 +726,7 @@ pub struct FixtureOpts<'a> {
     /// Source-selected exact native callee identity premises keyed by provider.
     pub native_call_identity_inputs: Vec<(String, Vec<spec::NativeCallIdentityInputContract>)>,
     pub argument_inputs: Vec<(String, Vec<spec::ArgumentInputContract>)>,
+    pub no_accessor_install_callables: Vec<(String, Vec<spec::NoAccessorInstallCallableContract>)>,
     /// Author-certified commuting source-unit pairs keyed by their chunk.
     pub commuting_statements: Vec<(String, Vec<spec::CommutingStatementsContract>)>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
@@ -771,6 +772,7 @@ impl<'a> FixtureOpts<'a> {
             native_operation_inputs: Vec::new(),
             native_call_identity_inputs: Vec::new(),
             argument_inputs: Vec::new(),
+            no_accessor_install_callables: Vec::new(),
             commuting_statements: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
@@ -849,6 +851,16 @@ impl<'a> FixtureOpts<'a> {
         inputs: Vec<spec::ArgumentInputContract>,
     ) -> Self {
         self.argument_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_no_accessor_install_callables(
+        mut self,
+        chunk: impl Into<String>,
+        callables: Vec<spec::NoAccessorInstallCallableContract>,
+    ) -> Self {
+        self.no_accessor_install_callables
+            .push((chunk.into(), callables));
         self
     }
 
@@ -1249,6 +1261,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
                 commuting_statements: Vec::new(),
                 native_call_identity_inputs: Vec::new(),
                 argument_inputs: Vec::new(),
+                no_accessor_install_callables: Vec::new(),
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
@@ -1317,6 +1330,12 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .entry(chunk.clone())
             .or_insert_with(DependencyGraphOptions::default)
             .argument_inputs = argument_inputs.clone();
+    }
+    for (chunk, callables) in &opts.no_accessor_install_callables {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .no_accessor_install_callables = callables.clone();
     }
     for (chunk, commuting_statements) in &opts.commuting_statements {
         chunk_analysis_options

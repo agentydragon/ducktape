@@ -177,7 +177,14 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
-debundle_e2e_test(name = "bundle_owned_globals_test")
+debundle_e2e_test(
+    name = "bundle_owned_globals_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
+)
 
 debundle_e2e_test(name = "native_construction_row_test")
 

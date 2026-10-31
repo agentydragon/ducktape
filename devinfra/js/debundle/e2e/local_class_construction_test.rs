@@ -631,6 +631,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
         vec![&NativeIntegrityUse {
             guard: NativeIntegrityGuard::SetIterable,
             value_input_refs: captured_input_refs(),
+            no_accessor_install_refs: BTreeSet::new(),
         }]
     );
 
@@ -659,6 +660,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
         vec![NativeIntegrityUse {
             guard: NativeIntegrityGuard::LocalClassConstruction,
             value_input_refs: captured_input_refs(),
+            no_accessor_install_refs: BTreeSet::new(),
         }]
     );
 

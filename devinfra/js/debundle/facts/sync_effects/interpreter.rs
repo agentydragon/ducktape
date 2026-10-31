@@ -886,13 +886,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn record_native_integrity_use(&self, guard: NativeIntegrityGuard) {
-        self.record_proof_dependencies(
-            guard,
-            &crate::analysis_inputs::ProofDependencies {
-                value_inputs: self.inputs.index.native_integrity_value_input_refs.clone(),
-                ..Default::default()
-            },
-        );
+        self.record_proof_dependencies(guard, &self.inputs.index.native_integrity_dependencies());
     }
 
     fn record_proof_dependencies(
@@ -905,11 +899,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .proof_dependencies
             .borrow_mut()
             .extend(dependencies);
-        if !dependencies.value_inputs.is_empty() {
+        if !dependencies.value_inputs.is_empty()
+            || !dependencies.no_accessor_install_callables.is_empty()
+        {
             self.state.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
                     guard,
                     value_input_refs: dependencies.value_inputs.clone(),
+                    no_accessor_install_refs: dependencies.no_accessor_install_callables.clone(),
                 },
             );
         }

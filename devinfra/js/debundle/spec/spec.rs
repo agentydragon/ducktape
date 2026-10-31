@@ -663,6 +663,12 @@ pub struct DependencyGraphOptions {
     /// exact local helper. Calls and callbacks retain their ordinary effects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub argument_inputs: Vec<ArgumentInputContract>,
+    /// Author-certified callables whose computed-key method calls never
+    /// install an accessor through `__defineGetter__` or `__defineSetter__`.
+    /// Each entry selects exactly one function. See SPEC.md § Bundle-owned
+    /// globals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -924,6 +930,18 @@ pub struct ArgumentInputContract {
     pub source_match: SourceMatchClaim,
     pub parameter_index: usize,
     pub exact_arity: usize,
+    pub audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One source-selected, SHA-bound callable whose computed-key method calls the
+/// author audited as never installing an accessor.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NoAccessorInstallCallableContract {
+    /// Selects one declaration whose statement contains exactly one function.
+    pub source_match: SourceMatchClaim,
     pub audited_source_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
