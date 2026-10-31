@@ -106,9 +106,14 @@ the gate and its evidence reports (`dependency_graph.json`, `cycles.json` /
 and the run still exits nonzero with the gate's diagnostic. An accepted spec
 produces exactly the output it produces without the flag.
 
+The run exits 3 exactly when the gate's rejection is its only failure and the
+marked tree below is complete; every other failure exits 1. A gate rejection
+alongside unresolved spec claims is such a failure and writes no tree.
+
 When the gate rejects a chunk, the rejected assignment is lowered anyway and
 the `write_js_tree` tree (entry and logical-module files, `package.json`, the
-tree reports) is written to its output directory, marked unrunnable:
+tree reports) is written to its output directory — or, for a spec that emits
+only a browser harness, to the harness's — marked unrunnable:
 
 - a `GATE_REJECTED` file at the output root, written before any module file,
   names each rejected chunk's verdict and the paths of its evidence report and
@@ -122,7 +127,8 @@ manifest is written: those describe a runnable bundle. The emitted modules are
 for reading, naming and review; by construction their module graph has the
 TDZ or side-effect-ordering hazard the gate reported (<docs/design.md> § Why a
 static gate, not a runtime check), so nothing may load them as a program.
-Without `write_js_tree` configured the flag writes nothing extra.
+Without `write_js_tree` or a browser harness configured the flag writes nothing
+extra.
 
 ## Dependency-graph array ordering
 

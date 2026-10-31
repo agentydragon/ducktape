@@ -12,7 +12,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::write_json;
 use artifact::{ChunkId, EmissionFiles};
 use serde::Serialize;
@@ -202,20 +202,25 @@ pub struct RejectedPlan {
 }
 
 impl RejectedPlan {
+    /// Fails, naming the gate's diagnostic too, on unresolved spec claims: a
+    /// reading-only tree carries the gate's rejection and no other failure.
     pub fn new(
         files: EmissionFiles,
         vendor: &VendorResolutionPlan,
         rejections: Vec<ChunkGateRejection>,
+        unresolved_claims: &[UnmatchedSpecClaim],
     ) -> Result<Self> {
         ensure!(
             !rejections.is_empty(),
             "a rejected plan needs at least one gate rejection"
         );
-        Ok(Self {
+        let plan = Self {
             files,
             excluded_chunk_ids: vendor.full_swap_chunk_ids(),
             rejections,
-        })
+        };
+        reject_unresolved_claims(unresolved_claims).with_context(|| plan.diagnostic())?;
+        Ok(plan)
     }
 
     pub fn files(&self) -> &EmissionFiles {

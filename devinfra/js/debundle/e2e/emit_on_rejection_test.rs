@@ -81,6 +81,51 @@ fn rejection_writes_marked_unrunnable_tree_without_harness() {
     );
 }
 
+/// A harness-only spec gets the reading-only tree where its harness would go.
+#[test]
+fn rejection_without_js_tree_writes_tree_to_harness_dir() {
+    let rejected = run_emit_on_rejection_fixture(
+        rejected_split().with_raw_spec_key("write_js_tree", serde_json::Value::Null),
+    );
+    let harness_root = rejected.harness_root.as_ref().unwrap();
+    assert!(harness_root.join("GATE_REJECTED").is_file());
+    for module in MODULE_FILES {
+        assert!(
+            harness_root.join("app").join(module).is_file(),
+            "missing {module}"
+        );
+    }
+    assert!(!harness_root.join("app/bootstrap.js").exists());
+    assert!(!rejected.app_root().exists());
+}
+
+/// A spec error beside the gate's rejection fails the run as a plain refusal,
+/// so nothing mistakes it for a reading-only tree.
+#[test]
+fn rejection_with_unresolved_claim_writes_no_tree() {
+    let opts = FixtureOpts::new(
+        AGGREGATOR_SOURCE,
+        vec![
+            logical_module("ids/index", &[Member::new("ids")]),
+            logical_module(
+                "ids/sub_a",
+                &[Member::new("sub_a"), Member::new("undeclared_binding")],
+            ),
+            logical_module("ids/sub_b", &[Member::new("sub_b")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_browser_harness();
+    let rejected = run_emit_on_rejection_failure_fixture(opts);
+    assert!(
+        rejected.report_path("cycles.json").is_file(),
+        "the gate ran"
+    );
+    assert!(rejected.stderr.contains("undeclared_binding"));
+    assert!(!rejected.gate_rejected_marker().exists());
+    assert!(!rejected.app_root().exists());
+}
+
 #[test]
 fn rejection_without_flag_writes_no_tree() {
     let rejected = run_rejection_fixture(rejected_split());

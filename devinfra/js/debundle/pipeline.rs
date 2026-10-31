@@ -30,6 +30,24 @@ use vendor::{
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
+/// Exit status of `debundle run --emit-on-rejection` when the realizability
+/// gate's rejection is the run's only failure and the marked reading-only tree
+/// is complete. Sync: `_GATE_REJECTED_EXIT_CODE` in `pipeline.bzl`.
+pub const GATE_REJECTED_EXIT_CODE: u8 = 3;
+
+/// The failure [`GATE_REJECTED_EXIT_CODE`] reports; displays the gate's
+/// diagnostic.
+#[derive(Debug)]
+pub struct GateRejected(String);
+
+impl std::fmt::Display for GateRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GateRejected {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformCli {
     pub spec_source: TransformSpecSource,
@@ -544,11 +562,22 @@ fn run_prepared_transform(
     // the marked reading-only tree, write that tree, and fail the run with the
     // gate's own diagnostic.
     if !gate_rejections.is_empty() {
-        let rejected_plan = RejectedPlan::new(emission_files, &vendor_plan, gate_rejections)?;
-        if let Some(cfg) = &spec.write_js_tree {
+        let rejected_plan = RejectedPlan::new(
+            emission_files,
+            &vendor_plan,
+            gate_rejections,
+            &unmatched_spec_claims,
+        )?;
+        // Where an accepted run writes its modules: the tree, else the harness.
+        let tree_dir = spec
+            .write_js_tree
+            .as_ref()
+            .map(|cfg| &cfg.out_dir)
+            .or(spec.emit_browser_harness.as_ref().map(|cfg| &cfg.out_dir));
+        if let Some(out_dir) = tree_dir {
             write_js_tree(&WriteTreeInput {
                 plan: EmittablePlan::Rejected(&rejected_plan),
-                out_dir: &cfg.out_dir,
+                out_dir,
                 lowerings: &selected_lowerings,
                 counts: &counts,
                 chunk_records: &emitted_chunk_records(
@@ -560,7 +589,7 @@ fn run_prepared_transform(
                 decomposition_by_chunk: &decomposition_by_chunk,
             })?;
         }
-        bail!("{}", rejected_plan.diagnostic());
+        return Err(GateRejected(rejected_plan.diagnostic()).into());
     }
 
     // Freeze the exact final syntax and replacement decisions before any

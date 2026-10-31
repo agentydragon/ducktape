@@ -24,7 +24,10 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
-use pipeline::{RunOutput, TransformArgs, TransformRunOptions, run_transform_cli};
+use pipeline::{
+    GATE_REJECTED_EXIT_CODE, GateRejected, RunOutput, TransformArgs, TransformRunOptions,
+    run_transform_cli,
+};
 use std::process::ExitCode;
 
 use crate::bindings_commands::BindingsNs;
@@ -423,7 +426,11 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
                 }
             }
             eprintln!("{error:#}");
-            ExitCode::from(1)
+            if error.downcast_ref::<GateRejected>().is_some() {
+                ExitCode::from(GATE_REJECTED_EXIT_CODE)
+            } else {
+                ExitCode::from(1)
+            }
         }
     }
 }

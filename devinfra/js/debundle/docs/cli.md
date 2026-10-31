@@ -455,10 +455,12 @@ the `gate` queries work on the rejection that was just reported.
 `debundle run --emit-on-rejection` (exclusive with `--dry-run`) additionally
 writes the logical-module tree of a gate-rejected spec for reading, naming and
 architecture review: the run still exits nonzero with the same diagnostic and
-the same reports, but the `write_js_tree` directory gets the entry and module
-files plus a `GATE_REJECTED` marker at its root naming the evidence report, and
+the same reports, but the `write_js_tree` directory (else the browser harness
+directory) gets the entry and module files plus a `GATE_REJECTED` marker at its root naming the evidence report, and
 each rejected chunk's entry opens with a banner comment saying the same. No
-browser harness or vendor assets are written. The contract is
+browser harness or vendor assets are written. Exit status 3 means the gate's
+rejection was the only failure and the tree is complete; any other failure
+exits 1. The contract is
 <../SPEC.md> § Reading-only output on gate rejection; the tree is not runnable.
 
 Selector failures follow the keep-going (default) and `--fail-fast` modes of

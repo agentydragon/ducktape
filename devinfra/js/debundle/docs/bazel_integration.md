@@ -39,6 +39,13 @@ bazelisk build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
 
+A reading-only target sets `emit_on_rejection = True`: it passes
+`--emit-on-rejection`, and the action succeeds on exit status 3 — the gate's
+rejection is the only failure — as well as 0. Every other failure still fails
+the build. A gate-rejected output is marked by `GATE_REJECTED` at its
+`write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
+output on gate rejection), so name the target for it, e.g. `debundle_readable`.
+
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
