@@ -1888,8 +1888,7 @@ empty `failing` map, and the app shows no watch warning. Delete this node once o
 
 ### In review
 
-Each candidate is one independently finishable PR; see the plan section of the same name:
-
+Each is one independently finishable PR; see the plan section of the same name:
 `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
