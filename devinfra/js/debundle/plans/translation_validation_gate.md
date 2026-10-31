@@ -233,24 +233,34 @@ swapped conflicting pairs, not only the first.
 ## Migration
 
 Each step keeps today's gate authoritative until the comparison is clean.
-TV over today's edges runs beside the gate and writes
-`translation_validation.json`; it agrees with the gate on every e2e fixture
+Step 1 has landed: TV over today's edges runs beside the gate, writes
+`translation_validation.json`, and agrees with the gate on every e2e fixture
 and on both canonical inputs.
 
-1. **Effect-set conflicts.** Switch the sweep to effect sets (needs
+2. **Effect-set conflicts.** Switch the sweep to effect sets (needs
    abstract-interpreter step 7) and report the differences against the
    edge-based verdict per category. A pair TV accepts that the gate rejects
    must have no conflicting cell. A pair TV rejects that the gate accepts is
-   a soundness bug in the edge rules or a missing effect. Forward edges move
-   into the sweep here (§ Relation to today's gate).
-2. **Search.** Seed from hard edges and add the refine loop. Report
+   a soundness bug in the edge rules or a missing effect.
+   - Forward edges move into the sweep here (§ Relation to today's gate).
+     The gate accepts some orders only by swapping a forward edge, which
+     step 1 reports as `forward_edges_swapped` outside its verdict: on
+     Claude, the accepted chunks `mcp` (30) and `remoteWorkerWire` (6).
+     Each needs an effect fact showing the read does not run at init, as a
+     `no_reentry_call` callback's does not; otherwise TV rejects them.
+3. **Search.** Seed from hard edges and add the refine loop. Report
    side by side: today's verdict, TV's verdict, and swapped pairs per
    category.
-3. **Flip.** TV decides; today's gate becomes a report section for one
+4. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
-4. **Slim.** The graph build materializes hard edges only, and the full edge
+   - TV needs the emitted import order, which only `AssignmentAnalysis`
+     (`debundle run`) builds. Peel's `gate::validate_assignment` callers
+     (`peel/propose.rs` decomposition validation) have none, so they get
+     no TV verdict. Before the flip they need that order, or keep today's
+     gate as their verdict.
+5. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
 
 The comparison runs in e2e as differential tests
