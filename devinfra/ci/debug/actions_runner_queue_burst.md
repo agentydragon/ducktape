@@ -87,30 +87,28 @@ older repositories may still run schedules, and repository `updated_at` is not
 an Actions activity timestamp. No account-wide runner capacity or pricing
 claim follows from these observations.
 
-## Recommended narrow change and proof
+## Current policy and proof needed
 
-Before `publish_only` waits for a superseded invocation, query the upstream
-`CI` run's **exact attempt** jobs through
-`GET /repos/agentydragon/ducktape/actions/runs/{run_id}/attempts/{attempt}/jobs`.
-Only when the Bazel job is conclusively `cancelled`, has no assigned runner
-(`runner_id == 0`), and has no executed steps should it return after completing
-the neutral visual check. No BuildBuddy invocation can have been launched by that
-job. Keep the existing wait and artifact publication path for a job that started,
-for incomplete or ambiguous API responses, and for every non-superseded run.
-Paginate the exact-attempt response and match the Bazel job explicitly; absence
-of a row is not absence of execution. A guard in `publish_only` is sufficient;
-there is no need to alter CI or release workflow concurrency.
+The operator subsequently chose a broader policy: **when upstream CI is
+cancelled, cancel its visual publication even if the CI job had started**. The
+publisher should complete any already-announced visual check as neutral, then
+skip its invocation wait, artifact download, bundle generation, and S3 upload.
+The two never-started cases above show avoidable runner occupation, but no
+longer define the policy boundary. A cancelled run that already produced visual
+artifacts also stops; its superseding run supplies the review. This deliberately
+forgoes the old cancelled-run immutable bundle that sometimes served as an
+exact-commit baseline. Completed CI runs, including failed test runs, retain
+their publication and devel baseline rules.
 
-An implementation should test both the never-started cancellation and a
-cancelled job with a runner or recorded steps, asserting that the latter still
-waits and publishes available immutable artifacts. Also test unavailable or
-ambiguous GitHub job data taking the existing wait path, and mainline
-publication retaining its completion and pointer rules. Validate with Bazel
-`//devinfra/pr_visuals:test_publisher`, then inspect fresh hosted publisher jobs
-after the e690 pin for the no-runner case and the started-cancellation case.
-The observed 11.1 runner-minutes is the upper bound for these two jobs' occupied
-time; actual savings exclude the short preflight and check completion. Its
-effect on required-check queue time remains unmeasured.
+The implementation should test both a cancelled run with no Bazel start and a
+cancelled run whose invocation already has artifacts: neither may wait, read
+CAS, or write S3, while an announced check reaches a terminal result. It should
+also test failed and successful completed runs, including devel publication.
+Validate with Bazel `//devinfra/pr_visuals:test_publisher`, then inspect fresh
+hosted publisher jobs after the e690 pin. The observed 11.1 runner-minutes is
+the upper bound for these two historical jobs' occupied time; actual savings
+exclude short check completion. Its effect on required-check queue time remains
+unmeasured. CI and release workflow concurrency need no change.
 
 ## Reproduction
 
