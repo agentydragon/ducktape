@@ -1,8 +1,9 @@
-# Electric high availability: topology decision boundary
+# Electric rolling exception and optional high availability
 
-Source audit, 2026-10-30 PDT. This records the work needed to meet the control-plane target of
-rolling updates with at least two useful replicas. It is a plan, not a claim about live cluster
-state or a change to Electric's deployment.
+Source audit, 2026-10-30 PDT. The operator accepts one Electric replica as an explicit exception to
+the two-replica rolling target: a brief sync interruption, refetch, or page reload during replacement
+is acceptable. The chart's current `Recreate` strategy may stay; no Electric deployment change is
+scheduled. This is a reference for any later topology work, not a claim about live cluster state.
 
 ## Current source and protocol
 
@@ -28,9 +29,10 @@ remains open as of this audit. The guide is a description of an upstream pattern
 our pinned image and storage would safely run that pattern. Do not silently turn the current
 `emptyDir` into a shared RWX volume or count a passive, empty-store Pod as a useful second replica.
 
-## Separate HA work
+## Optional separate HA work
 
-Keep Electric's HA change independent of the Agentplane service startup migration conversion.
+Multi-active Electric HA is unscheduled and optional. Keep any future HA change independent of the
+Agentplane service startup migration conversion.
 The promising separate-storage topology gives each active Electric instance its own replication
 slot/stream identity and shape store, as in Electric's
 [separate-storage guide](https://electric.ax/docs/sync/guides/upgrading#separate-storage-ephemeral).
@@ -49,6 +51,8 @@ It needs a design and acceptance pass before a manifest change:
    reads and Postgres slot/WAL observations. Verify Service readiness reflects the selected
    topology, and that stopping an instance releases or retires its replication resources.
 
-Until those contracts and tests exist, Electric remains an explicit exception to the two-replica
-target. This audit does not select a storage class, routing algorithm, slot cleanup policy, or
-upgrade of the pinned image.
+The accepted state is one active Electric instance with the current replacement behavior. If a
+single-replica rolling replacement is considered later, do not route traffic to a waiting empty-store
+Pod as if it could serve existing handles; validate the resulting refetch or reload behavior before
+changing the chart. This optional audit does not select a storage class, routing algorithm, slot
+cleanup policy, or upgrade of the pinned image.
