@@ -27,8 +27,10 @@ multi-endpoint Service. A failed `iptables-restore` prevents its whole Service
 ruleset from synchronizing, so an unrelated single-endpoint Dispatcher Service
 can fail too. The action's guest kernel must provide
 `CONFIG_NETFILTER_XT_MATCH_STATISTIC` as built-in support or an available module.
-The RBE OCI image is mounted as the guest root filesystem; changing its
-Dockerfile does not add guest-kernel support.
+The log proves the match is unavailable in this action; it does not distinguish
+an unset kernel option from a missing or unloadable matching module. The RBE
+OCI image is mounted as the guest root filesystem, so adding user-space
+iptables packages alone cannot supply kernel match support.
 
 ## Acceptance boundary
 
