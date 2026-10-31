@@ -16,6 +16,6 @@ pub(crate) fn map_with_swc_globals<Job: Send, Output: Send>(
                 .collect()
         })
     } else {
-        jobs.into_par_iter().map(|job| map(job)).collect()
+        jobs.into_par_iter().map(&map).collect()
     }
 }
