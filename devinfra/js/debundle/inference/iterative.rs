@@ -78,6 +78,25 @@ pub(crate) trait IterativeRules: Sized {
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
 
+    /// Whether the engine records, per rule, the keys that changed after the
+    /// rule read them, and evaluates through `evaluate_changed`.
+    const EVALUATES_CHANGES: bool = false;
+
+    /// Re-evaluate `rule` given `changed`: every key it has read that changed
+    /// after it read it. A rule whose contribution is a
+    /// join over its reads may join only the changed ones: the previous
+    /// contribution is already merged into its target, so the merged fact
+    /// and the change it reports are the same. Called only when
+    /// `EVALUATES_CHANGES` holds, and never for a rule's first evaluation.
+    fn evaluate_changed(
+        &self,
+        rule: &Self::Rule,
+        _changed: &BTreeSet<Self::Key>,
+        context: &mut impl FactContext<Self::Key, Self::Fact>,
+    ) {
+        self.evaluate(rule, context);
+    }
+
     /// Discover producers for a newly contributed request. Registration is
     /// idempotent; subsequent changes wake a producer through its normal reads.
     fn producers_for(&self, _key: &Self::Key, _fact: &Self::Fact) -> Vec<Self::Rule> {
@@ -175,12 +194,18 @@ impl<R: IterativeRules> IterativeInference<R> {
         // its reads; checking its own small set first spares a search of the
         // whole watcher map for every repeated read.
         let mut watched: BTreeMap<R::Rule, BTreeSet<R::Key>> = BTreeMap::new();
+        // With `EVALUATES_CHANGES`, each evaluated rule's watched keys that
+        // changed after its last evaluation read them.
+        let mut changed_since: BTreeMap<R::Rule, BTreeSet<R::Key>> = BTreeMap::new();
         #[cfg(test)]
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
             scheduled.remove(&rule);
             let mut context = IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts);
-            rules.evaluate(&rule, &mut context);
+            match changed_since.remove(&rule) {
+                Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
+                None => rules.evaluate(&rule, &mut context),
+            }
             #[cfg(test)]
             {
                 evaluations += 1;
@@ -212,6 +237,12 @@ impl<R: IterativeRules> IterativeInference<R> {
                     continue;
                 };
                 for dependent in dependents {
+                    if R::EVALUATES_CHANGES {
+                        changed_since
+                            .entry(dependent.clone())
+                            .or_default()
+                            .insert(key.clone());
+                    }
                     let next_round = if dependent > &rule {
                         round
                     } else {
@@ -580,6 +611,75 @@ mod tests {
             current.extend(contribution);
             current.len() != before
         }
+    }
+
+    /// Rule 0 joins keys 10, 11 and 12 into key 20; rules 1 and 2 grow 10
+    /// and 11 after rule 0 first read them.
+    struct ChangedJoin {
+        changed: std::rc::Rc<std::cell::RefCell<Vec<Vec<usize>>>>,
+    }
+
+    impl IterativeRules for ChangedJoin {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        const EVALUATES_CHANGES: bool = true;
+
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+            match rule {
+                0 => {
+                    let joined = [10, 11, 12]
+                        .into_iter()
+                        .filter_map(|key| context.read(key).cloned())
+                        .flatten()
+                        .collect();
+                    context.propose(20, joined);
+                }
+                1 => {
+                    context.propose(10, BTreeSet::from([1]));
+                }
+                2 => {
+                    context.propose(11, BTreeSet::from([2]));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        fn evaluate_changed(
+            &self,
+            rule: &usize,
+            changed: &BTreeSet<usize>,
+            context: &mut impl FactContext<usize, Self::Fact>,
+        ) {
+            assert_eq!(*rule, 0);
+            self.changed
+                .borrow_mut()
+                .push(changed.iter().copied().collect());
+            let joined = changed
+                .iter()
+                .filter_map(|key| context.read(*key).cloned())
+                .flatten()
+                .collect();
+            context.propose(20, joined);
+        }
+
+        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    #[test]
+    fn a_rule_evaluating_changes_receives_only_the_keys_that_grew_after_its_read() {
+        let changed = std::rc::Rc::default();
+        let mut inference = IterativeInference::new(ChangedJoin {
+            changed: std::rc::Rc::clone(&changed),
+        });
+        inference.seed(12, BTreeSet::from([3]));
+        let facts = inference.solve_values(0..3);
+        assert_eq!(facts[&20], BTreeSet::from([1, 2, 3]));
+        assert_eq!(*changed.borrow(), [vec![10, 11]]);
     }
 
     #[test]

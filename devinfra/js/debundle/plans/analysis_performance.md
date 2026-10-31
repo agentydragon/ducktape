@@ -24,15 +24,17 @@ stage is 77% synchronous interpreter (`annotate_synchronous_calls`).
 
 ## Ranked follow-ups
 
-1. **Vendor value-flow read volume** (Tana, about 50 s left). One fixpoint
-   makes 53.8M fact reads over 547,800 evaluations, because member and call
-   reads fan out per origin of large value sets
-   (<../perf/value_flow_tana_2026_10_29.md>). After #13314 and #13315, the
-   largest costs are the `FlowKey` fact-store search (12% of the stage), the
-   remaining worklist bookkeeping (11%) and allocation (12%). A semi-naive
-   formulation reads only the origins added since the rule's last
-   evaluation. It changes rule structure, so it needs its own
-   identical-output proof. Expected: most of the stage.
+1. **Vendor value-flow worklist cost** (Tana, about 45 s). Almost every
+   one of the event stratum's 54M fact reads comes from a re-evaluation (first
+   evaluations read 0.3M), and 26.3M wake checks fan changed keys out to their
+   watchers. Candidate reachability now re-joins only the keys that changed.
+   For events, joining only changed keys at each member and call node was
+   built and measured with identical output: event re-evaluation reads fell
+   from 54M to 35M, but the per-node join sets and per-wake key records cost
+   more than they saved (851G user instructions per Tana run against 844G for
+   candidates alone). Invocations, 21M of the remaining reads, would also need
+   grown parameters re-read within one evaluation. The remaining cost is
+   per-read and per-wake bookkeeping, which item 2 addresses.
 2. **Hashed inference storage** (Tana, 10 to 15 s). Use hash maps for the
    watcher map, scheduled map and fact store in `inference/iterative.rs`.
    Iteration order there does not affect results; only `pending` and the
