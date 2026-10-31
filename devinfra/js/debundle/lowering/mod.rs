@@ -50,7 +50,9 @@ pub use loader_surface::{
 };
 
 use imports::VendorReimportOracle;
-use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
+use io::{
+    ProgramGraphOutput, prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json,
+};
 
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
@@ -399,7 +401,6 @@ pub fn materialize_logical_modules(
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
                                 gate_rejection: options.gate_rejection,
-                                graph_provenance: options.graph_provenance.as_ref(),
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,
@@ -468,13 +469,17 @@ pub fn materialize_logical_modules(
         &declared_pure_new,
         Some(&cross_module_chunk_closure),
     )?;
+    let program_graph = ProgramGraphOutput::new(
+        options.graph_provenance.as_ref(),
+        cross_module_purities.native_integrity.as_ref(),
+    );
     let chunk_results = GLOBALS
         .with(|globals| {
             claimed
                 .into_par_iter()
                 .map(|chunk| {
                     GLOBALS.set(globals, || {
-                        finish_logical_chunk(chunk, &cross_module_purities)
+                        finish_logical_chunk(chunk, &cross_module_purities, &program_graph)
                     })
                 })
                 .collect::<Vec<_>>()

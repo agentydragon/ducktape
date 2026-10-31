@@ -264,12 +264,10 @@ pub fn graph_of(
 ) -> DependencyGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     DependencyGraphReport {
-        provenance: None,
         chunk_id: "x".to_string(),
+        program_graph: "../program_graph.json".into(),
         nodes,
         purity_causes: Vec::new(),
-        native_integrity_witnesses: Vec::new(),
-        native_prototype_mutations: Vec::new(),
         imported_callable_summaries: Vec::new(),
         edges,
         commuting_statements: Vec::new(),

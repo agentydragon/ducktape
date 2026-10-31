@@ -191,7 +191,7 @@ describe("ActionHistory", () => {
   it("retains the exact arguments inside the receipt disclosure", async () => {
     const container = await renderHistory([request("succeeded", 1)]);
     expect(container.textContent).toContain("Exact arguments");
-    const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
+    const block = [...container.querySelectorAll(".ui-code-block")].find((node) =>
       node.textContent?.includes("test-exact-token")
     );
     if (!block) throw new Error("missing the arguments");
@@ -385,7 +385,7 @@ describe("ActionHistory", () => {
     const container = await renderHistory([sshExec("succeeded")], [group("ssh", "mcp")]);
     // The request widget shows the command alone in its block, the response widget the exit code.
     const drawn = (): { request: boolean; response: boolean } => ({
-      request: [...container.querySelectorAll(".agentplane-code-block")].some(
+      request: [...container.querySelectorAll(".ui-code-block")].some(
         (block) =>
           [...block.querySelectorAll(".cm-line")]
             .map((line) => line.textContent ?? "")

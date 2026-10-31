@@ -80,22 +80,17 @@ def test_cross_owner_reader_is_explicit_and_json_encoded(staging_manifests: list
     assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
 
 
-def test_actions_roll_does_not_overlap_execution_protocols(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
-    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
-
-
-def test_actions_migrate_from_service_image(staging_manifests: list[dict[str, Any]]) -> None:
+def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     pod = deployment["spec"]["template"]["spec"]
-    migrator = one(item for item in pod["initContainers"] if item["name"] == "migrate")
     server = one(item for item in pod["containers"] if item["name"] == "actions")
-    assert migrator["image"] == server["image"]
-    assert migrator["command"] == ["/usr/local/bin/actions-migrate"]
+    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert not pod.get("initContainers")
+    assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
+    assert server["startupProbe"]["periodSeconds"] == 5
+    assert server["startupProbe"]["failureThreshold"] == 60
 
 
 if __name__ == "__main__":

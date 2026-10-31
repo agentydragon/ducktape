@@ -23,17 +23,28 @@
   min-height: 0;
 }
 
-.session-browser-related-sessions {
-  max-height: min(20dvh, 156px);
-  min-height: 0;
+.session-browser-related-trigger {
+  flex: 0 0 auto;
+}
+
+.session-browser-related-dropdown {
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(60dvh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
-.session-browser-related-sessions:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: -2px;
+.session-browser-relation-badge {
+  max-width: 100%;
+  height: auto;
+}
+
+.session-browser-relation-badge .mantine-Badge-label {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .session-browser-resize-handle {
@@ -68,7 +79,7 @@
 }
 
 .session-browser-related-children {
-  max-height: min(12dvh, 96px);
+  max-height: min(24dvh, 192px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -79,7 +90,6 @@
 }
 
 .session-browser-mobile-toggle,
-.session-browser-mobile-related-toggle,
 .session-browser-mobile-toolbar,
 .session-browser-mobile-sidebar-heading,
 .session-browser-mobile-backdrop {
@@ -117,7 +127,6 @@
   }
 
   .session-browser-mobile-toggle,
-  .session-browser-mobile-related-toggle,
   .session-browser-mobile-toolbar,
   .session-browser-mobile-sidebar-heading {
     display: flex;
@@ -131,11 +140,102 @@
     max-height: min(28dvh, 236px);
   }
 
-  .session-browser-related-sessions {
-    max-height: min(48dvh, 400px);
+  .session-browser-related-dropdown {
+    max-height: min(45dvh, 360px);
   }
 
   .session-import-progress-machines {
     max-height: 55dvh;
   }
+}
+
+.session-import-summary {
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.session-import-machine {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+
+.session-import-machine-name {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-import-machine-state {
+  flex: 0 0 auto;
+}
+
+.session-import-machine-progress {
+  width: 4.5rem;
+  flex: 0 0 auto;
+}
+
+.session-import-machine-counts {
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .session-import-summary {
+    justify-content: flex-start;
+  }
+
+  .session-import-machine-name {
+    max-width: 7rem;
+  }
+
+  .session-import-machine-progress {
+    width: 3.5rem;
+  }
+}
+
+/* Replies read as conversation; source inspection adds content only while open. */
+.archive-transcript-record {
+  padding-block: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.archive-transcript-record-body {
+  padding-inline-end: 1.5rem;
+}
+
+.archive-raw-record {
+  margin-block-start: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs);
+  border-inline-start: 2px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default-hover);
+}
+
+.archive-raw-record pre {
+  max-height: 22.5rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--mantine-font-size-xs);
+  margin-block: 0 var(--mantine-spacing-xs);
+}
+
+.session-browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-lg);
+}
+
+.session-browser-header .session-import-summary {
+  flex: 0 1 auto;
+}
+
+.session-browser-header > :first-child {
+  flex: 0 0 auto;
+  max-width: 100%;
 }

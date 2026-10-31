@@ -1,20 +1,21 @@
-import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
-import { DisclosureBody, DisclosureCard } from "../disclosure";
+import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
+import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
+import { TextBlock } from "../../../../util/frontend/transcript/text_block";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
-import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
-import { StepLine, type StepMark } from "./step_line";
+import { StepLine, type StepMark } from "../../../../util/frontend/transcript/step_line";
 import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
 
 type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
@@ -158,14 +159,6 @@ function FormattedBody({
   }
 }
 
-export function VerbatimText({ text }: { text: string }): JSX.Element {
-  return (
-    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-      {text}
-    </Text>
-  );
-}
-
 /** The operator's input, including provisional sends. Progress and action sit in the
  * gutter before the bubble, so the bubble reads the same when they go; local text
  * uses no event evidence until runner admission gives it an ordered Event. */
@@ -194,46 +187,40 @@ export function UserInputBubble({
 }): JSX.Element {
   return (
     <Stack gap="xs" style={{ width: "100%" }}>
-      <Group
-        className="agentplane-user-message-row"
-        justify="flex-end"
-        align="flex-start"
-        gap="xs"
-        wrap="nowrap"
-        style={{ width: "100%" }}
-        data-command-id={commandId ?? entity?.entityId}
+      <UserMessage
+        rowAttributes={{ "data-command-id": commandId ?? entity?.entityId }}
+        bubbleAttributes={{
+          className: "transcript-inspection-owner",
+          "data-message-phase": phase,
+          "data-has-action": action ? "true" : undefined,
+          "data-has-aside": progress || action ? "true" : undefined,
+        }}
+        pending={pending}
+        aside={
+          progress || action ? (
+            <>
+              {progress}
+              {action && (
+                <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+                  {action.label}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+        overlay={entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
       >
-        {(progress || action) && (
-          <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-            {progress}
-            {action && (
-              <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-                {action.label}
-              </Button>
-            )}
-          </Stack>
-        )}
-        <Paper
-          className="agentplane-user-bubble agentplane-evidence-owner"
-          data-message-phase={phase}
-          data-has-action={action ? "true" : undefined}
-          data-has-aside={progress || action ? "true" : undefined}
-          p="sm"
-          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
-        >
-          {entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
-          {entity ? (
-            <Body
-              reference={entity.inputRef}
-              format="text"
-              fallbackText={fallbackText}
-              onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
-            />
-          ) : text !== undefined ? (
-            <VerbatimText text={text} />
-          ) : null}
-        </Paper>
-      </Group>
+        {entity ? (
+          <Body
+            reference={entity.inputRef}
+            format="text"
+            fallbackText={fallbackText}
+            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+          />
+        ) : text !== undefined ? (
+          <VerbatimText text={text} />
+        ) : null}
+      </UserMessage>
       {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
     </Stack>
   );
@@ -280,7 +267,7 @@ function ReasoningPreview({
 
   useLayoutEffect(() => {
     const element = preview.current;
-    const content = element?.querySelector<HTMLElement>(".agentplane-markdown--single-line");
+    const content = element?.querySelector<HTMLElement>(".ui-markdown--single-line");
     if (body === null || !element || !content) {
       onOverflowChange(false);
       return;
@@ -341,7 +328,7 @@ function ReasoningPreview({
       summaryAside={summaryAside}
       aside={
         error && (
-          <button className="agentplane-step-retry" onClick={retry} type="button">
+          <button className="agentplane-tool-retry" onClick={retry} type="button">
             Retry
           </button>
         )
@@ -406,7 +393,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -531,21 +518,12 @@ function ToolCard({
               (call && !raw ? (
                 <ShellCommandView command={call.command} notes={call.notes} expansion={input} />
               ) : (
-                <div>
-                  <ClampedBlock
-                    maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
-                    lines={lineCount(argumentsBody)}
-                    label="Arguments"
-                    header={
-                      <Text size="sm" c="dimmed">
-                        Arguments
-                      </Text>
-                    }
-                    expansion={input}
-                  >
-                    <HighlightedText text={argumentsBody} />
-                  </ClampedBlock>
-                </div>
+                <TextBlock
+                  label="Arguments"
+                  text={argumentsBody}
+                  expansion={input}
+                  maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
+                />
               ))}
             {entity.outputRef && (
               <PayloadView reference={entity.outputRef}>
@@ -594,7 +572,7 @@ function ToolCard({
           );
         }
         return (
-          <DisclosureCard open={opened} className="agentplane-evidence-owner">
+          <DisclosureCard open={opened} className="transcript-inspection-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -615,7 +593,7 @@ function ToolCard({
               trailing={itemStatus([entity], live, !opened, opened)}
               aside={
                 args?.error && (
-                  <button className="agentplane-step-retry" onClick={args.retry} type="button">
+                  <button className="agentplane-tool-retry" onClick={args.retry} type="button">
                     Retry
                   </button>
                 )
@@ -693,12 +671,12 @@ export function EntityCard({
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
       return (
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           <Text c="dimmed">{label}</Text>
           <EvidenceToggle
             entity={entity}
             placement="overlay"
-            style={{ "--agentplane-evidence-overlay-inset": "0px" } as CSSProperties}
+            style={{ "--transcript-inspection-overlay-inset": "0px" } as CSSProperties}
           />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
@@ -710,11 +688,11 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" role="alert" className="agentplane-evidence-owner">
+      <Alert color="red" role="alert" className="transcript-inspection-owner">
         <EvidenceToggle
           entity={entity}
           placement="overlay"
-          style={{ "--agentplane-evidence-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
+          style={{ "--transcript-inspection-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
         />
         <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
@@ -811,11 +789,11 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
+      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="transcript-inspection-owner">
         {body}
       </DisclosureCard>
     );
-  return <Box className="agentplane-evidence-owner">{body}</Box>;
+  return <Box className="transcript-inspection-owner">{body}</Box>;
 }
 
 interface StatusBadge {

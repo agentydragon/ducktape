@@ -43,7 +43,7 @@ describe("CodeBlock hidden-character markers", () => {
   it("shows a labeled, accessible marker for a bidi override", () => {
     const marker = renderSpecialChar(0x202e, "RIGHT-TO-LEFT OVERRIDE", "");
     expect(marker.textContent).toBe("⟦RLO⟧");
-    expect(marker.className).toContain("cm-agentplane-special-char-bidi");
+    expect(marker.className).toContain("cm-ui-special-char-bidi");
     expect(marker.getAttribute("aria-label")).toContain("U+202E");
     expect(marker.title).toContain("U+202E");
   });
@@ -52,8 +52,8 @@ describe("CodeBlock hidden-character markers", () => {
     const zeroWidth = renderSpecialChar(0x200b, null, "");
     const control = renderSpecialChar(0x001b, null, "");
     expect(zeroWidth.textContent).toBe("⟦ZWSP⟧");
-    expect(zeroWidth.className).toContain("cm-agentplane-special-char-ignorable");
+    expect(zeroWidth.className).toContain("cm-ui-special-char-ignorable");
     expect(control.textContent).toBe("⟦ESC⟧");
-    expect(control.className).toContain("cm-agentplane-special-char-control");
+    expect(control.className).toContain("cm-ui-special-char-control");
   });
 });

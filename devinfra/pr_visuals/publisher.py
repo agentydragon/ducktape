@@ -255,8 +255,8 @@ def find_test_invocations(
 ) -> list[str]:
     """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
 
-    The by-run derivation (devinfra/buildbuddy/ci/invocation_ids.py) is what makes a *cancelled*
-    run addressable, and it is the only handle on a PR run, which records the merge SHA
+    The by-run derivation (devinfra/buildbuddy/ci/invocation_ids.py) is the only
+    handle on a PR run, which records the merge SHA
     and so cannot be found by head SHA. It is the fallback rather than the primary
     because it names the run that triggered this publish, which is frequently not the
     run that ran the tests.
@@ -285,7 +285,7 @@ def wait_for_test_invocations(
 
     A successful workflow can have no Bazel invocation when no targets were
     affected. A completed build with no test invocation proves Bazel selected no
-    tests. A failed or cancelled workflow alone cannot prove an absent remote
+    tests. A failed workflow alone cannot prove an absent remote
     invocation will not appear later.
     """
 
@@ -1318,46 +1318,6 @@ def _invocations_for(
     )
 
 
-def publish_only(args: argparse.Namespace, *, github_token: str, details_url: str | None) -> None:
-    """Upload a superseded run's commit bundle, saying nothing about it.
-
-    Deliberately does not call :func:`write_baseline_pointers`. Pointers are the
-    bucket's only mutable objects, `put_object` has no ordering guard, and the
-    publish workflow's concurrency group is keyed on `head_sha` — so a superseded
-    run and the run that superseded it do not serialize against each other, and a
-    slow superseded publish could walk a pointer backwards onto an older commit.
-    The immutable bundle is what makes an exact-baseline lookup succeed; the
-    superseding run advances the pointer moments later.
-    """
-    # Before publishing, not after: this terminates the check the `announce` job left
-    # `in_progress`, and a publish that then fails must not strand it there.
-    upsert_check_run(
-        repository=args.repository,
-        commit_sha=args.sha,
-        status="completed",
-        conclusion="neutral",
-        summary="Superseded by a newer commit before Bazel CI finished.",
-        details_url=details_url,
-        external_id=args.check_external_id,
-        token=github_token,
-    )
-    invocations = _invocations_for(args, run=subprocess.run)
-    test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
-    readiness = wait_for_test_invocations([test_id] if test_id in invocations else invocations, run=subprocess.run)
-    if readiness != "complete":
-        print("Superseded invocation did not finish before publication; publishing available artifacts only.")
-    tests = download_visual_tests(invocations, args.work_dir / "tests", run=subprocess.run)
-    if tests:
-        s3 = boto3.client("s3", endpoint_url=args.endpoint)
-        bundle = build_bundle(
-            tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository, base_sha=None
-        )
-        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"reviews/{args.sha}", client=s3)
-        print(f"Superseded run on {args.sha}: published {len(tests)} visual target(s); pointers left alone.")
-    else:
-        print(f"Superseded run on {args.sha}: no visual artifacts had arrived; nothing to publish.")
-
-
 def main() -> None:
     args = parser().parse_args()
     github_token = os.environ.get("GITHUB_TOKEN")
@@ -1373,18 +1333,18 @@ def main() -> None:
     ci_failures: list[str] = []
 
     if args.ci_conclusion == "cancelled":
-        # `bazel-ci.yml` cancels a superseded run the instant a newer commit lands on
-        # the branch. Such a run still has nothing true to *say* — the comment is a
-        # singleton, so letting it speak would overwrite the previous run's real review
-        # with a warning about a build nobody wants, and the run that superseded it is
-        # already on its way with the answer.
-        #
-        # It does, however, often have artifacts. Cancellation kills the workflow, not
-        # the Bazel invocation, which frequently completed with a full set of manifests
-        # already streamed to BuildBuddy. Those are published: the commit bundle is
-        # immutable and additive, and it is what lets a PR based on this commit resolve
-        # an exact baseline instead of falling back to a pointer.
-        publish_only(args, github_token=github_token, details_url=details_url)
+        # A direct CLI invocation must follow the workflow's cancelled-run policy too.
+        # Close an announced check without reading BuildBuddy or touching S3.
+        upsert_check_run(
+            repository=args.repository,
+            commit_sha=args.sha,
+            status="completed",
+            conclusion="cancelled",
+            summary="Bazel CI was cancelled; visual publication stopped.",
+            details_url=details_url,
+            external_id=args.check_external_id,
+            token=github_token,
+        )
         return
 
     pull_request: int | None = None

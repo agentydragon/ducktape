@@ -69,15 +69,6 @@ py_library(
 )
 
 py_library(
-    name = "migrate_container",
-    srcs = ["migrate_container.py"],
-    deps = [
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_library(
     name = "database",
     srcs = ["database.py"],
     deps = [
@@ -387,7 +378,6 @@ py_library(
         ":environment",
         ":frontend",
         ":history_service",
-        ":migrate_container",
         ":runner_gateway",
         ":service_workload",
         ":session_dispatcher",
@@ -493,7 +483,6 @@ py_library(
         ":database",
         ":environment",
         ":mcp_routes",
-        ":migrate_container",
         ":notifications",
         ":service_workload",
         "//agentplane:crd_group",
@@ -1220,7 +1209,6 @@ py_library(
     deps = [
         ":database",
         ":environment",
-        ":migrate_container",
         ":service_workload",
         "//agentplane:crd_group",
         "//agentplane/notification_service:settings",

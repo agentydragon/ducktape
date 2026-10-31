@@ -134,7 +134,10 @@ py_test(
 py_library(
     name = "codex_metadata",
     srcs = ["codex_metadata.py"],
-    deps = [":restic"],
+    deps = [
+        ":models",
+        ":restic",
+    ],
 )
 
 py_library(
@@ -142,6 +145,7 @@ py_library(
     srcs = ["ingest.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":claude_titles",
         ":codex_metadata",
         ":database",
         ":models",
@@ -584,5 +588,38 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "claude_titles",
+    srcs = ["claude_titles.py"],
+)
+
+py_test(
+    name = "test_claude_title_projection",
+    srcs = ["test_claude_title_projection.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_claude_titles",
+    srcs = ["test_claude_titles.py"],
+    deps = [
+        ":claude_titles",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

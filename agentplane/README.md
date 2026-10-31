@@ -42,8 +42,8 @@ use the same workload construct, including its database migration and projected 
 
 ## Go service images
 
-The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway, queue migrator, Policy Controller, Sandbox
-Controller, egress proxy, egress sidecar and egress history migrator build with `pure = "on"` on the pinned
+The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway/Dispatcher, Policy Controller, Sandbox
+Controller, egress proxy and egress sidecar build with `pure = "on"` on the pinned
 `gcr.io/distroless/static-debian13:nonroot` base (CA certificates and timezone data, no shell), with
 explicit UID/GID `1000:1000` and working directory `/`. LLM ingress also keeps the repository's
 explicit CA bundle layer. The Go runner uses its Nix sandbox image; Python services use their own

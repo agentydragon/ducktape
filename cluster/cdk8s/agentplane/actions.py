@@ -1,4 +1,4 @@
-"""The Action Service: its Deployment (+ Goose migrate initContainer), RBAC, ConfigMaps,
+"""The Action Service: its Deployment, RBAC, ConfigMaps,
 Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, the public HTTPRoute of
 an environment with an Action Service hostname, and the admission policy on the launcher grants of
 an environment with the orchestration_v1 group. Staging's policy sets are added by its chart.
@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import replace
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -16,7 +15,6 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
-    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -47,7 +45,6 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -87,7 +84,6 @@ _LAUNCHER_ACTIONS = (
 )
 _PEER_TIMEOUT_SECONDS = 15
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -259,7 +255,7 @@ def mcp_oauth_secret(namespace: str) -> SecretRef:
 
 
 class Actions(Construct):
-    """ServiceAccount, RBAC, ConfigMaps, Deployment (+ migrate initContainer), Service,
+    """ServiceAccount, RBAC, ConfigMaps, Deployment, Service,
     and optional PodDisruptionBudget for the Action Service. The fleet network policy, metrics
     scrape and public route are added by `add_platform_resources`.
     """
@@ -279,8 +275,6 @@ class Actions(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
         container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         """`history` and `dispatcher` are the peers the orchestration_v1 group calls, in an environment
@@ -297,8 +291,6 @@ class Actions(Construct):
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
         self.memory_limit = memory_limit
-        self.migrate_pull_policy = migrate_pull_policy
-        self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
@@ -481,6 +473,9 @@ class Actions(Construct):
         reload_secrets = self._reload_secrets()
         readiness = grpc_probe(port=self.service.pod_port, initial_delay_seconds=3)
         liveness = grpc_probe(port=self.service.pod_port, service="livez", initial_delay_seconds=20, period_seconds=30)
+        startup = grpc_probe(
+            port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, service="livez", failure_threshold=60
+        )
         workload = add_service_workload(
             self,
             self.env,
@@ -488,24 +483,17 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            replica_profile=replace(self.env.replicas, strategy=DeploymentStrategy.recreate()),
+            replica_profile=self.env.replicas,
             env_variables=self._container_env(),
             readiness=readiness,
             liveness=liveness,
+            startup=startup,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace=Duration.seconds(60),
-            migrate=migrate_init_container(
-                f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
-                name="migrate",
-                env_variables=self._database_env(),
-                command=["/usr/local/bin/actions-migrate"],
-                image_pull_policy=self.migrate_pull_policy,
-                memory_limit=self.migrate_memory_limit,
-            ),
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,

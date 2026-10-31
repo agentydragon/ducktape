@@ -1,14 +1,14 @@
 /* Each Action payload surface owns one frame and one inset; nested disclosures use no gutter. */
 .agentplane-operation-section {
-  --agentplane-disclosure-gutter: 0px;
-  --agentplane-disclosure-body-spacing: 0px;
+  --ui-disclosure-gutter: 0px;
+  --ui-disclosure-body-spacing: 0px;
   box-sizing: border-box;
   min-width: 0;
   overflow-wrap: anywhere;
-  background-color: var(--agentplane-code-surface-background, transparent);
-  border: var(--agentplane-code-surface-border, 0);
-  border-radius: var(--agentplane-code-surface-radius, 0);
-  padding: var(--agentplane-operation-padding, var(--agentplane-code-surface-padding, 0));
+  background-color: var(--ui-code-surface-background, transparent);
+  border: var(--ui-code-surface-border, 0);
+  border-radius: var(--ui-code-surface-radius, 0);
+  padding: var(--agentplane-operation-padding, var(--ui-code-surface-padding, 0));
 }
 
 .agentplane-operation-heading {

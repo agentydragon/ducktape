@@ -31,7 +31,6 @@ import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
-import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
 
 export {
   IconAlertTriangle,
@@ -64,5 +63,4 @@ export {
   IconSettings,
   IconTrash,
   IconX,
-  IconZoomCode,
 };

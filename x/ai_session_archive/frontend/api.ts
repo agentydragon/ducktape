@@ -16,6 +16,7 @@ export type SessionBrowserApi = {
   listSessions(query: SessionQuery, signal?: AbortSignal): Promise<SessionPage<SessionSummary>>;
   getSession(sessionId: string, signal?: AbortSignal): Promise<SessionSummary>;
   listVersions(sessionId: string, signal?: AbortSignal): Promise<SessionVersion[]>;
+  /** Returns the latest page first, then older records before the exclusive cursor. */
   listEvents(
     sessionId: string,
     versionId: string,
@@ -52,6 +53,7 @@ function sessionQuery(query: SessionQuery): string {
   if (query.harness !== undefined) params.set("harness", query.harness);
   if (query.cursor !== undefined) params.set("cursor", query.cursor);
   if (query.parentSessionId !== undefined) params.set("parent_session_id", query.parentSessionId);
+  for (const kind of query.kinds ?? []) params.append("kind", kind);
   return params.toString();
 }
 
@@ -78,7 +80,7 @@ export const httpApi: SessionBrowserApi = {
     return page.data;
   },
   listEvents(sessionId, versionId, cursor, signal) {
-    const params = new URLSearchParams({ limit: "100" });
+    const params = new URLSearchParams({ limit: "100", direction: "backward" });
     if (cursor !== undefined) params.set("cursor", String(cursor));
     const path = `/api/sessions/${encodeURIComponent(sessionId)}/versions/${encodeURIComponent(versionId)}/events?${params}`;
     return get<EventPage<EventRecord>>(path, signal);

@@ -147,7 +147,7 @@ flowchart LR
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
         CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
         CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
-        CONTROL_PLANE_ROLLING_SERVICES[Rolling control-plane deployment review]
+        CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -741,7 +741,7 @@ flowchart LR
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
     CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
     CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
-    CONTROL_PLANE_ROLLING_SERVICES[In-flight review: rolling control-plane services]
+    CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -849,6 +849,12 @@ on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_ab
 The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
 excludes sampling uncertainty, and draining inbound gRPC does not drain the independent agent loop.
 
+Before enabling two sampler replicas, resolve exporter concurrency. Exporters have no cross-replica
+claim. History deduplicates records and checkpoints cannot regress, but one copier can advance the
+remote acknowledgement beyond another stream's page `through`. Prove concurrent page convergence or
+establish shared export ownership before enabling the two-replica profile. This gate applies only to
+the sampler rollout; it does not block the other seven PostgreSQL service conversions.
+
 Design how multiple sampler replicas admit and own Sessions, transfer or drain ownership during
 rolls, and survive replica loss without duplicate sampling or executor effects. Include provider
 streams and durable completion, JavaScript host/cell state, retained executor bindings, lease renewal
@@ -863,6 +869,9 @@ acceptance plan covering two competing replicas, a roll during provider ingestio
 owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
 The bounded planned-drain contract below was selected by `/root` after reviewing the runtime/store
 evidence on 2026-10-30 PDT. The operator then selected rolling updates with at least two replicas.
+The draft assembled-system test [#13246](https://github.com/agentydragon/ducktape/pull/13246)
+records a separate K3s environment prerequisite for proving the sampler roll; it does not gate the
+other control-plane service conversions.
 Review shared-DB admission, ownership, command routing and migration overlap before the deployment
 change; retain drain as an independently finishable improvement. Sampling-abandonment decisions
 also remain here. Create implementation and rollout nodes after their contracts are selected.
@@ -913,26 +922,37 @@ replacement prerequisite for the current fixes. See the [runtime direction](sess
 
 ### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
 
-**In-flight review; `/root`, operator direction, 2026-10-30 PDT.** Use rolling updates with at least
-two replicas as the control-plane deployment target, except for Electric's accepted single-replica
-`Recreate` deployment. Treat that as deployment policy, not an intrinsic minimum in service or environment APIs.
-Select component changes after reviewing their coordination, state, migration overlap and client
-reconnect behavior; preserve data and identities.
+**In review; `/root`, operator direction, 2026-10-30 PDT.** The control-plane deployment target is
+at least two replicas with rolling updates for eight PostgreSQL-backed service deployments: App,
+Actions, Notifications, History, MCP edge, Runner Gateway/Dispatcher, Egress, and the central
+sampler. This is a deployment target, not an intrinsic minimum in service or environment APIs.
 
-Source and committed staging manifests currently show singleton `Recreate` deployments for the
-sampler, MCP edge and Electric. Actions and Notifications already have two replicas but still use
-`Recreate` for migration sequencing. The general staging profile is two replicas with rolling
-updates, and egress uses three. These are configuration observations, not a live-cluster audit.
+The shared startup migration contract from [#13240](https://github.com/agentydragon/ducktape/pull/13240)
+is merged. Each service embeds Goose migrations in its serving binary and runs them during normal
+startup before listeners or workers; the same binary's `--migrate-only` mode remains for fixture and
+CLI initialization. A migration failure keeps that replica from becoming ready. Schema ownership
+and service-specific migration behavior remain with each service.
 
-The sampler belongs to `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; keep the other service changes independent.
-For Actions and Notifications, resolve old/new writer migration overlap before removing the
-`Recreate` policy. Electric is an accepted single-replica exception: its fixed
-replication stream permits one active writer, while each current Pod has its own empty shape store
-and the App proxy has no stable backend routing. The operator accepts a brief sync interruption,
-refetch, or page reload during replacement; the current `Recreate` strategy may stay. The
-[Electric audit](electric_ha.md) records why a replica-setting change alone is unsound and the
-optional, unscheduled rolling and multi-active HA designs. Other singleton exceptions need an owner
-and reason.
+The eight service conversions are independent review items. Each converts its serving binary to run
+its own embedded migrations during startup. The shared `migrate_container.py` helper, its BUILD
+target and dependencies, and the `service_workload` init-container parameter can be removed after
+all callers convert. Verify that active services, fixtures, generators and operator instructions no
+longer rely on that path; preserve dated incident and handoff evidence.
+
+The sampler's assembled rolling and same-Session acceptance remains under
+`CENTRAL_SAMPLER_REPLICA_ROLLOUT`; it is a separate system-acceptance gate and does not block the
+other seven service conversions. The latest [draft acceptance #13246](https://github.com/agentydragon/ducktape/pull/13246)
+reports that the K3s Firecracker guest kernel lacks iptables `statistic` match support, so kube-proxy
+cannot install ClusterIP rules. The RBE run failed before provider admission or rollout. It did not
+prove rolling continuation or no duplicate external effects; this environment prerequisite does
+not block the other service conversions.
+
+Electric remains an accepted single-replica `Recreate` exception, as selected in [#13250](https://github.com/agentydragon/ducktape/pull/13250). The operator accepts a brief sync interruption, refetch, or page reload during replacement; no Electric rollout change is scheduled. Its fixed replication stream permits one active writer, while each Pod has its own empty shape store and the App proxy has no stable backend routing. The [Electric audit](electric_ha.md) explains why a replica-setting change alone is unsound and records optional, unscheduled rolling and multi-active HA designs. This exception is independent of the eight PostgreSQL service conversions.
+
+Exit: all eight service conversions and shared-helper cleanup are merged; regenerated manifests
+show the selected deployment profiles, startup probes and absence of migration init containers;
+focused existing service and fixture checks pass. This records source and acceptance status only,
+not deployment or live-cluster proof. Other replica exceptions require an explicit owner and reason.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 

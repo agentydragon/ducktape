@@ -30,12 +30,12 @@ async def test_action_payloads_share_operation_surfaces(
     await expect(panel.locator(".agentplane-output-disclosure .cm-line").first).to_have_text(
         "hello from the selected container"
     )
-    await expect(panel.locator(".cm-agentplane-special-char")).to_contain_text("ZWSP")
+    await expect(panel.locator(".cm-ui-special-char")).to_contain_text("ZWSP")
 
     sections = await panel.locator(".agentplane-operation-section").evaluate_all(
         "elements => elements.map(element => {"
         "const style = getComputedStyle(element);"
-        "const code = element.querySelector('.agentplane-code-block');"
+        "const code = element.querySelector('.ui-code-block');"
         "return {padding: style.paddingLeft, border: style.borderLeftWidth, codeBorder: code && getComputedStyle(code).borderLeftWidth};"
         "})"
     )
@@ -51,12 +51,12 @@ async def test_action_payloads_share_operation_surfaces(
 
     output = panel.locator(".agentplane-output-disclosure")
     toggle = output.get_by_role("button").first
-    editor = output.locator(".agentplane-code-block-container")
+    editor = output.locator(".ui-code-block-container")
     await expect(toggle).to_have_attribute("aria-expanded", "true")
     await toggle.click()
     await expect(toggle).to_have_attribute("aria-expanded", "false")
     await expect(editor).to_have_count(0)
-    await expect(output.locator(".agentplane-code-block-placeholder")).to_be_attached()
+    await expect(output.locator(".ui-code-block-placeholder")).to_be_attached()
 
     await view.page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
     await expect(editor).to_have_count(0)
@@ -87,13 +87,13 @@ async def test_action_code_releases_and_remounts_with_current_width(
     await app.mount_operation_presentation()
     page = view.page
     sample = page.locator("#parked-code-section")
-    editor = sample.locator(".agentplane-code-block-container")
+    editor = sample.locator(".ui-code-block-container")
     await sample.scroll_into_view_if_needed()
-    await expect(editor.locator(".agentplane-code-block")).to_be_attached()
+    await expect(editor.locator(".ui-code-block")).to_be_attached()
     initial_height = await editor.evaluate("element => element.getBoundingClientRect().height")
 
     await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-    placeholder = sample.locator(".agentplane-code-block-placeholder")
+    placeholder = sample.locator(".ui-code-block-placeholder")
     await expect(placeholder).to_be_attached()
     parked_height = await placeholder.evaluate("element => element.getBoundingClientRect().height")
     assert abs(parked_height - initial_height) <= 1
@@ -102,7 +102,7 @@ async def test_action_code_releases_and_remounts_with_current_width(
     await expect(placeholder).to_be_attached()
     assert await placeholder.evaluate("element => element.getBoundingClientRect().height") == parked_height
     await sample.scroll_into_view_if_needed()
-    await expect(editor.locator(".agentplane-code-block")).to_be_attached()
+    await expect(editor.locator(".ui-code-block")).to_be_attached()
     resized_height = await editor.evaluate("element => element.getBoundingClientRect().height")
     assert resized_height > initial_height + 100
 

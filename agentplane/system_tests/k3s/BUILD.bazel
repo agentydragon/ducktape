@@ -227,6 +227,7 @@ py_library(
         ":certificates",
         ":guest_logs",
         ":iptables_rule",
+        ":process_traces",
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:cluster",
@@ -610,5 +611,29 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "process_traces",
+    testonly = True,
+    srcs = ["process_traces.py"],
+    deps = [
+        "@pypi//grpcio",
+        "@pypi//opentelemetry_proto",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_process_traces",
+    srcs = ["test_process_traces.py"],
+    deps = [
+        ":process_traces",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//grpcio",
+        "@pypi//opentelemetry_proto",
+        "@pypi//pytest_bazel",
     ],
 )

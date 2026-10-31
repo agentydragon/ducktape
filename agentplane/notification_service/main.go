@@ -29,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -36,6 +37,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -54,6 +56,7 @@ import (
 )
 
 const (
+	migrationOnlyDatabaseURLEnv = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
 	// readHeaderTimeout bounds a request's headers. There is no other server timeout: the operator's watches
@@ -101,6 +104,9 @@ func inClusterDeps() (kubeDeps, error) {
 
 // run serves on the configured address, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate Notification Service database: %w", err)
+	}
 	deps, err := inClusterDeps()
 	if err != nil {
 		return err
@@ -308,13 +314,21 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
+	if err != nil {
+		slog.Error("Notification Service migration failed", "error", err)
+		os.Exit(1)
+	}
+	if handled {
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Notification Service configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "notification-service")
 	if err != nil {
 		slog.Error("Notification Service tracing setup failed", "error", err)

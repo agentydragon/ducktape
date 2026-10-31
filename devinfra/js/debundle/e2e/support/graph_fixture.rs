@@ -221,11 +221,13 @@ impl GraphFixture {
     /// Refresh the saved graph after deliberate changes to valid authoring inputs.
     pub fn refresh_graph(&self) {
         let rerun = self.rerun();
+        let fresh_graph = rerun.path().join("reports/tree/main/dependency_graph.json");
         fs::copy(
-            rerun.path().join("reports/tree/main/dependency_graph.json"),
-            &self.graph,
+            program_graph_path(&fresh_graph),
+            program_graph_path(&self.graph),
         )
-        .expect("refresh fixture graph from the real pipeline");
+        .expect("refresh fixture program graph from the real pipeline");
+        fs::copy(&fresh_graph, &self.graph).expect("refresh fixture graph from the real pipeline");
     }
 
     fn rerun(&self) -> TempDir {
@@ -280,5 +282,9 @@ impl GraphFixture {
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {
         read_json(&self.graph)
+    }
+
+    pub fn program_graph(&self) -> ProgramGraphReport {
+        read_program_graph(&self.graph)
     }
 }

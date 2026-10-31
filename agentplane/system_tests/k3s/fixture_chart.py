@@ -11,6 +11,7 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -497,8 +498,6 @@ def build_chart(
         registry_secret_name=None,
         runner_control_target=control_target,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     mcp_edge_service = mcp_edge.McpEdge(
         chart,
@@ -536,8 +535,6 @@ def build_chart(
             if env.vm_sandboxes
             else None
         ),
-        # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
-        disable_otel_sdk=True,
     )
     sandbox_controller.SandboxController(
         chart,
@@ -564,8 +561,6 @@ def build_chart(
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     notifications.Notifications(
         chart,
@@ -586,8 +581,6 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     command_sandbox.CommandSandbox(
         chart,
@@ -749,7 +742,28 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     root["serial"] = _VM_GUEST_ROOT_SERIAL
     volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
     volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
-    # Run the private supervisor checks once, in an existing harness VM. Both templates use
+    # Keep the smaller executor cgroup local to the OOM scenario; all other VM cases share runner-vm.
+    oom_template = deepcopy(template)
+    oom_template["metadata"]["name"] = vm_configuration.OOM_TEMPLATE
+    oom_config_map_name = f"{vm_configuration.OOM_TEMPLATE}-config"
+    oom_config_map = deepcopy(
+        one(
+            doc
+            for doc in objects
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{runner_vm.NAME}-config"
+        )
+    )
+    oom_config_map["metadata"]["name"] = oom_config_map_name
+    oom_config = json.loads(oom_config_map["data"]["runner.json"])
+    oom_config["environment"]["resources"]["executor"]["memory_max_bytes"] = vm_configuration.OOM_EXECUTOR_MEMORY_BYTES
+    oom_config_map["data"]["runner.json"] = json.dumps(oom_config, separators=(",", ":"))
+    oom_spec = oom_template["spec"]["vm"]["template"]["spec"]
+    config_volume = one(
+        disk for disk in oom_spec["volumes"] if disk.get("configMap", {}).get("name") == f"{runner_vm.NAME}-config"
+    )
+    config_volume["configMap"]["name"] = oom_config_map_name
+    objects.extend([oom_config_map, oom_template])
+    # Run the private supervisor checks once, in an existing harness VM. All templates use
     # the same guest root; the boot argument selects the fixture executable before Runner starts.
     supervision = deepcopy(template)
     supervision["metadata"]["name"] = vm_configuration.SUPERVISION_TEMPLATE

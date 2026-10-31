@@ -64,7 +64,7 @@ mod purity_classification;
 mod semantic_inference;
 mod set_iterables;
 mod source_unit_read_closure;
-pub(crate) mod standard_globals;
+pub mod standard_globals;
 mod statement_facts;
 pub(crate) mod sync_effects;
 mod value_flow;

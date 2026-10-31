@@ -3,8 +3,8 @@ import { Code, Stack, Text } from "@mantine/core";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../clamped_block";
-import { Disclosure } from "../../../disclosure";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../../../util/frontend/clamped_block";
+import { Disclosure } from "../../../../../../util/frontend/disclosure";
 import { OperationSection } from "../../../operation_section";
 import { TextBlock } from "../../../text_block";
 import { CodeBlock, type Language } from "../../../../../../util/frontend/code_block";

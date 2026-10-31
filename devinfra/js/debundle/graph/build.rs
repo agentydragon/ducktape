@@ -327,16 +327,6 @@ pub fn build_dependency_graph_with(
                     author_host_contract_uses: calls.author_host_contract_uses.clone(),
                 }
             }),
-            native_prototype_mutations: stmt
-                .synchronous_calls
-                .as_ref()
-                .map(|calls| calls.native_prototype_mutations.clone())
-                .unwrap_or_default(),
-            native_integrity_witnesses: stmt
-                .synchronous_calls
-                .as_ref()
-                .map(|calls| calls.native_integrity_witnesses.clone())
-                .unwrap_or_default(),
             callback_factory_uses: stmt
                 .synchronous_calls
                 .as_ref()

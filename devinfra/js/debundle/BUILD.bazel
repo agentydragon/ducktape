@@ -1082,6 +1082,7 @@ rust_library(
         "cli/edit_gate.rs",
         "cli/gate.rs",
         "cli/inspection_commands.rs",
+        "cli/integrity_explanation.rs",
         "cli/invocation.rs",
         "cli/mod.rs",
         "cli/module.rs",

@@ -71,6 +71,7 @@ fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
     );
     assert_preserved_entry_output(&fixture, "0 0 42 42\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let registry = graph["nodes"]
         .as_array()
         .unwrap()
@@ -95,7 +96,7 @@ fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
                 .any(|used| { used["evidence"]["operation"] == "set_empty_private_field" }))
     );
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| witnesses.iter().any(|witness| {
                 witness["target_slots"]
@@ -264,8 +265,9 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
     );
     assert_preserved_entry_output(&fixture, "first later\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        graph["native_integrity_witnesses"]
+        program_graph["native_integrity_witnesses"]
             .as_array()
             .is_some_and(|witnesses| witnesses.iter().any(|w| {
                 w["target_slots"]

@@ -121,6 +121,209 @@ func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
+func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &fakeExecutionClient{}
+	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("patch rejected")}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	_, err := e.Invoke(t.Context(), "apply_patch", json.RawMessage(`"*** Begin Patch\n*** End Patch"`))
+	if !errors.As(err, new(*toolError)) {
+		t.Fatalf("apply_patch error=%v, want a rejected nested tool promise", err)
+	}
+	if errors.As(err, new(*toolOutcomeError)) {
+		t.Fatalf("known pre-launch rejection reported an uncertain effect: %v", err)
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Processes) != 0 {
+		t.Fatalf("rejected start left live process state: %+v", state.Processes)
+	}
+	var processStatus string
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID).Scan(&processStatus); err != nil {
+		t.Fatal(err)
+	}
+	if processStatus != "exited" {
+		t.Fatalf("rejected start process status=%q, want exited after durable settlement", processStatus)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	registerRunningModelProcess(t, store, owner, "expired-native-process", 1200, 7, "observed output")
+	registerRunningModelProcess(t, store, owner, "unrelated-live-process", 1201, 3, "other output")
+	client := &fakeExecutionClient{}
+	reads := 0
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		if request.ProcessId != "expired-native-process" {
+			t.Fatalf("read process ID=%q", request.ProcessId)
+		}
+		reads++
+		if reads == 1 {
+			return &executorpb.ReadProcessResponse{
+				Status:  completedExecutionStatus(),
+				Chunks:  []*executorpb.ExecutionOutputChunk{{Seq: 8, Stream: "stdout", Data: []byte("new output")}},
+				NextSeq: 9,
+			}, nil
+		}
+		return &executorpb.ReadProcessResponse{Status: rejectedExecutionStatus("process unavailable")}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1200}`))
+	if !errors.As(err, new(*toolError)) {
+		t.Fatalf("write_stdin error=%v, want a rejected nested tool promise", err)
+	}
+	var outcome *toolOutcomeError
+	if !errors.As(err, &outcome) || outcome.evidence["remote_outcome"] != "unknown" || outcome.evidence["automatic_replay"] != false {
+		t.Fatalf("missing process rejection evidence=%+v", outcome)
+	}
+	stale, err := store.Process(t.Context(), owner, "expired-native-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.Status != "abandoned" || stale.AfterSequence == nil || *stale.AfterSequence != 8 || string(stale.BufferedOutput) != "observed outputnew output" {
+		t.Fatalf("stale process lost prior evidence or claimed a terminal result: %+v", stale)
+	}
+	if reads != 2 {
+		t.Fatalf("process read calls=%d, want one observed page and a later rejection", reads)
+	}
+	live, err := store.Process(t.Context(), owner, "unrelated-live-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Status != "running" || live.AfterSequence == nil || *live.AfterSequence != 3 || string(live.BufferedOutput) != "other output" {
+		t.Fatalf("unrelated process changed after rejection: %+v", live)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestReconcileRejectedProcessReadContinuesPastUnrelatedLiveProcess(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	registerRunningModelProcess(t, store, owner, "expired-native-process", 1300, 9, "observed output")
+	registerRunningModelProcess(t, store, owner, "unrelated-live-process", 1301, 4, "other output")
+	reads := map[string]int{}
+	client := &fakeExecutionClient{}
+	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		reads[request.ProcessId]++
+		if request.ProcessId == "expired-native-process" {
+			return &executorpb.ReadProcessResponse{Status: rejectedExecutionStatus("process unavailable")}, nil
+		}
+		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
+	}
+	e := newFakeExecutor(t, store, owner, client)
+
+	progressed, err := e.ReconcileProcesses(t.Context(), time.Second)
+	if err != nil || !progressed {
+		t.Fatalf("progressed=%t error=%v, want handled stale handle", progressed, err)
+	}
+	if reads["expired-native-process"] != 1 || reads["unrelated-live-process"] != 1 {
+		t.Fatalf("reconciliation reads=%v, want both handles visited", reads)
+	}
+	stale, err := store.Process(t.Context(), owner, "expired-native-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.Status != "abandoned" || stale.AfterSequence == nil || *stale.AfterSequence != 9 || string(stale.BufferedOutput) != "observed output" {
+		t.Fatalf("reconciliation lost stale process evidence: %+v", stale)
+	}
+	live, err := store.Process(t.Context(), owner, "unrelated-live-process")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Status != "running" || live.AfterSequence == nil || *live.AfterSequence != 4 || string(live.BufferedOutput) != "other output" {
+		t.Fatalf("unrelated process changed during reconciliation: %+v", live)
+	}
+	assertNoUnresolvedNestedIntents(t, store, owner)
+}
+
+func TestRejectedExecutorOperationRemainsOperationalWhenJournalFails(t *testing.T) {
+	t.Run("intent result", func(t *testing.T) {
+		store, owner := claimedExecutorStore(t)
+		_, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_intent ADD CONSTRAINT test_rejected_executor_intent CHECK (
+			result IS NULL OR request->>'method' <> 'process/start' OR result->>'outcome' <> 'rejected')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &fakeExecutionClient{}
+		client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+			return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("patch rejected")}, nil
+		}
+		e := newFakeExecutor(t, store, owner, client)
+		_, err = e.Invoke(t.Context(), "apply_patch", json.RawMessage(`"*** Begin Patch\n*** End Patch"`))
+		assertRejectedSettlementFailedOperationally(t, err)
+		state, stateErr := store.ExecutionState(t.Context(), owner)
+		if stateErr != nil {
+			t.Fatal(stateErr)
+		}
+		if len(state.Processes) != 1 || state.Processes[0].Status != "starting" {
+			t.Fatalf("failed intent journaling was converted into a settled tool rejection: %+v", state.Processes)
+		}
+	})
+
+	t.Run("process settlement", func(t *testing.T) {
+		store, owner := claimedExecutorStore(t)
+		_, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_process ADD CONSTRAINT test_rejected_process_settlement CHECK (
+			status <> 'exited' OR model_session_id IS NULL)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &fakeExecutionClient{}
+		client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+			return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("command rejected")}, nil
+		}
+		e := newFakeExecutor(t, store, owner, client)
+		e.environment = map[string]string{}
+		e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
+		_, err = e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"true"}`))
+		assertRejectedSettlementFailedOperationally(t, err)
+		state, stateErr := store.ExecutionState(t.Context(), owner)
+		if stateErr != nil {
+			t.Fatal(stateErr)
+		}
+		if len(state.Processes) != 1 || state.Processes[0].Status != "starting" {
+			t.Fatalf("failed process settlement was converted into a settled tool rejection: %+v", state.Processes)
+		}
+		assertNoUnresolvedNestedIntents(t, store, owner)
+	})
+}
+
+func assertRejectedSettlementFailedOperationally(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected settlement failure")
+	}
+	if errors.As(err, new(*toolError)) || errors.As(err, new(*executorRejectedError)) {
+		t.Fatalf("failed rejection settlement was exposed as a recoverable tool rejection: %v", err)
+	}
+}
+
+func rejectedExecutionStatus(message string) *executorpb.ExecutionStatus {
+	return &executorpb.ExecutionStatus{
+		Outcome:      executorpb.ExecutionStatus_OUTCOME_REJECTED,
+		UpstreamCode: ptrInt32(-32602),
+		Message:      message,
+	}
+}
+
+func registerRunningModelProcess(t *testing.T, store *Store, owner Owner, id string, sessionID int, after uint64, output string) {
+	t.Helper()
+	if err := store.RegisterModelProcess(t.Context(), owner, id, sessionID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, id, nil, "running", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, id, after, []byte(output), false, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
 	response := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}
 	value, err := responseObject("process/read", response)

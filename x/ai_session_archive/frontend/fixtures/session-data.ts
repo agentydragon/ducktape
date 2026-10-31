@@ -1,5 +1,6 @@
 import type { SessionBrowserApi } from "../api";
 import type { EventRecord, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../schema";
+import { codexWorkRecords } from "./codex-work";
 
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
@@ -75,6 +76,7 @@ const sessions: SessionSummary[] = [
     id: "codex-thread-1",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Compare two captured versions",
     cwd: "/home/example/project",
     started_at: "2026-10-28T16:00:00Z",
@@ -92,6 +94,7 @@ const sessions: SessionSummary[] = [
     id: "claude-session-1",
     machine_id: "atlas",
     harness: "claude",
+    session_kind: "subagent",
     title: "Inspect a local transcript",
     cwd: "/home/example/another-project",
     started_at: "2026-10-27T18:00:00Z",
@@ -106,9 +109,28 @@ const sessions: SessionSummary[] = [
     identity_inferred: false,
   },
   {
+    id: "guardian-session",
+    machine_id: "thinkpad",
+    harness: "codex",
+    session_kind: "guardian",
+    title: "Guardian automation fixture",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
+    parent_session_id: "codex-thread-1",
+    parent_link_kind: "codex_parent_thread_id",
+    parent_native_session_id: "thread-one",
+    identity_inferred: false,
+  },
+  {
     id: "inferred-claude-parent",
     machine_id: "atlas",
     harness: "claude",
+    session_kind: "main",
     title: "Inferred Claude parent · session 12ab",
     cwd: "/home/example/another-project",
     started_at: null,
@@ -122,9 +144,97 @@ const sessions: SessionSummary[] = [
     parent_native_session_id: null,
     identity_inferred: true,
   },
+  {
+    id: "mixed-transcript-fixture",
+    machine_id: "thinkpad",
+    harness: "codex",
+    session_kind: "main",
+    title: "Tools and reasoning fixture",
+    cwd: "/fixture/project",
+    started_at: "2026-10-28T16:00:00Z",
+    last_activity_at: "2026-10-28T16:25:00Z",
+    latest_version_id: "mixed-version",
+    version_count: 1,
+    latest_version_record_count: 9,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
+  {
+    id: "codex-work-fixture",
+    machine_id: "thinkpad",
+    harness: "codex",
+    session_kind: "main",
+    title: "Archive transcript UI work",
+    cwd: "/fixture/project",
+    started_at: "2026-10-31T06:00:00Z",
+    last_activity_at: "2026-10-31T06:30:00Z",
+    latest_version_id: "codex-work-version",
+    version_count: 1,
+    latest_version_record_count: codexWorkRecords.length,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
+  {
+    id: "claude-attachments-fixture",
+    machine_id: "atlas",
+    harness: "claude",
+    session_kind: "main",
+    title: "Claude attachment disclosures",
+    cwd: "/fixture/project",
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: "claude-attachments-version",
+    version_count: 1,
+    latest_version_record_count: 4,
+    transcript_status: "captured",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  },
 ];
 
 const versions: Record<string, SessionVersion[]> = {
+  "claude-attachments-fixture": [
+    {
+      id: "claude-attachments-version",
+      captured_at: "2026-10-31T06:30:00Z",
+      sha256: "a".repeat(64),
+      byte_size: 1000,
+      source_path: "/fixture/claude.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
+  "codex-work-fixture": [
+    {
+      id: "codex-work-version",
+      captured_at: "2026-10-31T06:30:00Z",
+      sha256: "f".repeat(64),
+      byte_size: 5000,
+      source_path: "/fixture/work.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
+  "mixed-transcript-fixture": [
+    {
+      id: "mixed-version",
+      captured_at: "2026-10-28T16:26:00Z",
+      sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      byte_size: 5000,
+      source_path: "/fixture/session.jsonl",
+      complete: true,
+      parse_issue_count: 0,
+    },
+  ],
+
   "codex-thread-1": [
     {
       id: "codex-version-2",
@@ -157,6 +267,91 @@ const versions: Record<string, SessionVersion[]> = {
     },
   ],
 };
+
+const mixedEvents: EventRecord[] = [
+  record(1, { type: "session_meta", payload: { id: "fixture-thread", cwd: "/fixture/project" } }, "session_meta"),
+  record(
+    2,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Inspect the archived build failure and explain the result." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    3,
+    {
+      type: "response_item",
+      payload: {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Check the failing target and its captured log." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    4,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        phase: "commentary",
+        content: [{ type: "output_text", text: "I will inspect the build log." }],
+      },
+    },
+    "response_item"
+  ),
+  record(
+    5,
+    {
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        call_id: "build-log",
+        name: "read_build_log",
+        arguments: '{"target":"//fixture:test"}',
+      },
+    },
+    "response_item"
+  ),
+  record(6, { type: "event_msg", payload: { type: "token_count", info: { total: 128 } } }, "event_msg"),
+  record(
+    7,
+    {
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "build-log",
+        output: "Fixture build output: missing configuration for the test environment.",
+      },
+    },
+    "response_item"
+  ),
+  record(
+    8,
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        phase: "final_answer",
+        content: [
+          {
+            type: "output_text",
+            text: "The archived failure comes from **missing test configuration**.\n\n```yaml\nfixture_enabled: true\n```\n\nThe captured output identifies the missing setting; the transcript does not show a subsequent rerun.",
+          },
+        ],
+      },
+    },
+    "response_item"
+  ),
+  record(9, { type: "event_msg", payload: { type: "task_complete" } }, "event_msg"),
+];
 
 const codexLatestEvents: EventRecord[] = [
   record(
@@ -230,6 +425,37 @@ const claudeEvents: EventRecord[] = [
   ),
 ];
 
+const claudeAttachmentEvents: EventRecord[] = [
+  record(1, { type: "user", message: { content: "Inspect the attached changes." } }, "user"),
+  record(
+    2,
+    {
+      type: "attachment",
+      attachment: {
+        type: "hook_success",
+        hookName: "PostToolUse",
+        stdout: "fixture hook completed",
+        stderr: "",
+        exitCode: 0,
+      },
+    },
+    "attachment"
+  ),
+  record(
+    3,
+    {
+      type: "attachment",
+      attachment: { type: "edited_text_file", filename: "/fixture/config.ts", snippet: "export const enabled = true;" },
+    },
+    "attachment"
+  ),
+  record(
+    4,
+    { type: "assistant", message: { content: "The captured attachment records are available for inspection." } },
+    "assistant"
+  ),
+];
+
 export const sessionFixtureApi: SessionBrowserApi = {
   async listMachines() {
     return machines;
@@ -242,6 +468,7 @@ export const sessionFixtureApi: SessionBrowserApi = {
       (session) =>
         (query.machineId === undefined || session.machine_id === query.machineId) &&
         (query.harness === undefined || session.harness === query.harness) &&
+        (query.kinds === undefined || query.kinds.includes(session.session_kind)) &&
         (query.parentSessionId === undefined || session.parent_session_id === query.parentSessionId)
     );
     return { data: filtered, next_cursor: null };
@@ -257,17 +484,26 @@ export const sessionFixtureApi: SessionBrowserApi = {
   async listEvents(sessionId, versionId, cursor) {
     if (sessionId === "inferred-claude-parent") return { data: [], next_cursor: null };
     const selected =
-      sessionId === "codex-thread-1"
-        ? versionId === "codex-version-1"
-          ? codexOlderEvents
-          : codexLatestEvents
-        : claudeEvents;
-    const after = cursor ?? 0;
-    const data = selected.filter((record) => record.ordinal > after).slice(0, 3);
-    const last = data.at(-1)?.ordinal ?? null;
+      sessionId === "claude-attachments-fixture"
+        ? claudeAttachmentEvents
+        : sessionId === "codex-work-fixture"
+          ? codexWorkRecords
+          : sessionId === "mixed-transcript-fixture"
+            ? mixedEvents
+            : sessionId === "codex-thread-1"
+              ? versionId === "codex-version-1"
+                ? codexOlderEvents
+                : codexLatestEvents
+              : claudeEvents;
+    const data = selected
+      .filter((record) => cursor === undefined || record.ordinal < cursor)
+      .slice(
+        -(["mixed-transcript-fixture", "codex-work-fixture", "claude-attachments-fixture"].includes(sessionId) ? 50 : 3)
+      );
+    const first = data.at(0)?.ordinal ?? null;
     return {
       data,
-      next_cursor: last !== null && selected.some((record) => record.ordinal > last) ? last : null,
+      next_cursor: first !== null && selected.some((record) => record.ordinal < first) ? first : null,
     };
   },
 };
@@ -276,6 +512,7 @@ const longRelatedChildren: SessionSummary[] = Array.from({ length: 63 }, (_unuse
   id: `claude-child-${String(index + 1).padStart(2, "0")}`,
   machine_id: "atlas",
   harness: "claude",
+  session_kind: "subagent",
   title: `Inspect module ${String(index + 1).padStart(2, "0")}`,
   cwd: "/home/example/another-project",
   started_at: "2026-10-27T18:00:00Z",

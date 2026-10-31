@@ -273,50 +273,6 @@ ts_library(
 )
 
 js_library(
-    name = "disclosure_css",
-    srcs = ["disclosure.css"],
-)
-
-ts_library(
-    name = "disclosure",
-    srcs = [
-        "disclosure.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":disclosure_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-# A height-capped block whose clipped bottom shows the rest, and the shell command and output views
-# built on it that the SSH `exec` Action and the thread's shell tool calls share.
-ts_library(
-    name = "clamped_block",
-    srcs = ["clamped_block.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":disclosure",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "clamped_block_test",
-    srcs = ["clamped_block.test.tsx"],
-    deps = [
-        ":clamped_block",
-        "//:node_modules/@types/react",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions/testing:harness",
-    ],
-)
-
-js_library(
     name = "operation_section_css",
     srcs = ["operation_section.css"],
 )
@@ -340,10 +296,10 @@ ts_library(
     srcs = ["text_block.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":clamped_block",
         ":operation_section",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
     ],
 )
@@ -360,14 +316,14 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":argv_text",
-        ":clamped_block",
-        ":disclosure",
         ":json_view",
         ":operation_section",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -757,6 +713,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//util/frontend:code_block",
+        "//util/frontend/transcript:text_block",
     ],
 )
 
@@ -896,10 +853,10 @@ vitest_config(
     # Specs that need a DOM select a suite-specific environment.
     data = [
         "//:node_modules/happy-dom",
-        "//util/frontend:test_intersection_observer",
+        "//util/frontend:test_setup",
     ],
     environment = "node",
-    setup_files = ["//agentplane/app/frontend/testing:setup.js"],
+    setup_files = ["//util/frontend:test_setup.js"],
 )
 
 # Python visual tests mount the app against canned inventory and runner events.
@@ -924,9 +881,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app",
-        ":clamped_block",
         ":client",
-        ":disclosure",
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
@@ -952,10 +907,12 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/threads:client",
-        "//agentplane/app/frontend/threads:history_sizes",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
+        "//util/frontend/transcript:history_sizes",
     ],
 )
 

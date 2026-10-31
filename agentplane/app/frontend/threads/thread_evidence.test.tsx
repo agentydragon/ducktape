@@ -21,26 +21,26 @@ afterEach(async () => {
 function History(): JSX.Element {
   return (
     <div data-testid="history" onClick={revealEvidenceOnTap}>
-      <div className="agentplane-evidence-owner" data-testid="first">
+      <div className="transcript-inspection-owner" data-testid="first">
         <p>First item</p>
         <button type="button">Control</button>
       </div>
-      <div className="agentplane-evidence-owner" data-testid="second">
+      <div className="transcript-inspection-owner" data-testid="second">
         <p>Second item</p>
       </div>
-      <div className="agentplane-user-message-row" data-testid="input-row">
+      <div className="transcript-user-message-row" data-testid="input-row">
         <span data-testid="input-aside">Status</span>
-        <div className="agentplane-evidence-owner" data-testid="input-bubble">
+        <div className="transcript-inspection-owner" data-testid="input-bubble">
           Message
         </div>
       </div>
-      <div className="agentplane-evidence-owner" data-testid="tool-owner">
-        <div className="agentplane-step-details">
-          <button className="agentplane-disclosure-summary" data-testid="tool-summary">
+      <div className="transcript-inspection-owner" data-testid="tool-owner">
+        <div className="transcript-step-details">
+          <button className="ui-disclosure-summary" data-testid="tool-summary">
             Bash
           </button>
         </div>
-        <button className="agentplane-evidence-toggle">Evidence</button>
+        <button className="transcript-inspection-toggle">Evidence</button>
       </div>
       <p data-testid="between">Between items</p>
     </div>
@@ -57,7 +57,7 @@ async function mountHistory(): Promise<(testId: string) => HTMLElement> {
 }
 
 const revealed = (find: (testId: string) => HTMLElement): string[] =>
-  ["first", "second"].filter((testId) => find(testId).hasAttribute("data-evidence-revealed"));
+  ["first", "second"].filter((testId) => find(testId).hasAttribute("data-inspection-revealed"));
 
 const tap = (element: HTMLElement): Promise<void> => act(async () => element.click());
 
@@ -91,13 +91,13 @@ it("reveals the tool inspector when a touch tap opens its disclosure heading", a
 
   await tap(find("tool-summary"));
 
-  expect(find("tool-owner").hasAttribute("data-evidence-revealed")).toBe(true);
+  expect(find("tool-owner").hasAttribute("data-inspection-revealed")).toBe(true);
 });
 
 it("selects a message bubble when the adjacent command gutter is tapped", async () => {
   const find = await mountHistory();
   await tap(find("input-aside"));
-  expect(find("input-bubble").hasAttribute("data-evidence-revealed")).toBe(true);
+  expect(find("input-bubble").hasAttribute("data-inspection-revealed")).toBe(true);
   await tap(find("second"));
-  expect(find("input-bubble").hasAttribute("data-evidence-revealed")).toBe(false);
+  expect(find("input-bubble").hasAttribute("data-inspection-revealed")).toBe(false);
 });

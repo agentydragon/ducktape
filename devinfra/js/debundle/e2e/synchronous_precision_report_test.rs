@@ -528,8 +528,8 @@ fn property_absence_failure_reports_the_cross_chunk_write() {
         vec![],
     ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
     assert_entry_output(&fixture, "3\n");
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let witnesses = graph["native_integrity_witnesses"]
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let witnesses = program_graph["native_integrity_witnesses"]
         .as_array()
         .expect("native mutation witnesses");
     let witness = witnesses
@@ -572,8 +572,11 @@ fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
         .with_extra_chunks(&[("static/mutation", "const object = {}; export function mutate() { object.flag = 1; }")]),
     );
     assert_entry_output(&fixture, "3\n");
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert!(graph.get("native_integrity_witnesses").is_none(), "{graph}");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        program_graph.get("native_integrity_witnesses").is_none(),
+        "{program_graph}"
+    );
     assert!(
         execution(&fixture, "result")
             .get("native_integrity_checks")
@@ -714,9 +717,11 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
         .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.flag = 1; }")]),
     );
     assert_entry_output(&fixture, "2,3\n");
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let witnesses = graph["native_integrity_witnesses"].as_array().unwrap();
-    assert_eq!(witnesses.len(), 1, "{graph}");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let witnesses = program_graph["native_integrity_witnesses"]
+        .as_array()
+        .unwrap();
+    assert_eq!(witnesses.len(), 1, "{program_graph}");
     assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
     assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
     assert_eq!(witnesses[0]["through_local_alias"], false);
@@ -791,9 +796,11 @@ fn mutation_witness_keeps_operation_and_known_native_alias_identity() {
             FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![])
                 .with_extra_chunks(&[("static/mutation", &source)]),
         );
-        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-        let witnesses = graph["native_integrity_witnesses"].as_array().unwrap();
-        assert_eq!(witnesses.len(), 1, "{graph}");
+        let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+        let witnesses = program_graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap();
+        assert_eq!(witnesses.len(), 1, "{program_graph}");
         assert_eq!(witnesses[0]["operation"], operation);
         assert_eq!(witnesses[0]["through_local_alias"], alias);
         assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
@@ -815,7 +822,8 @@ fn refined_global_key_witness_explains_its_cross_chunk_native_dependency() {
             ("static/replacement", replacement),
         ]));
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-        let witnesses = graph["native_integrity_witnesses"]
+        let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+        let witnesses = program_graph["native_integrity_witnesses"]
             .as_array()
             .cloned()
             .unwrap_or_default();

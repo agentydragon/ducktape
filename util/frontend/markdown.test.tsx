@@ -73,8 +73,8 @@ describe("Markdown", () => {
 
   it("appends the streaming cursor inline to the final Markdown paragraph", async () => {
     const rendered = await render("The answer is still being written.", true);
-    const paragraph = rendered.querySelector(".agentplane-markdown p");
-    const cursor = paragraph?.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+    const paragraph = rendered.querySelector(".ui-markdown p");
+    const cursor = paragraph?.querySelector<HTMLElement>(".ui-streaming-cursor");
 
     expect(cursor?.getAttribute("role")).toBe("img");
     expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
@@ -90,7 +90,7 @@ describe("Markdown", () => {
     ["an unrecognized language", '```elixir\nIO.puts("hi")\n```', 'IO.puts("hi")\n'],
     ["no language", "```\n<not a real tag>\n```", "<not a real tag>\n"],
   ])("shows a fenced block's text verbatim in the code widget for %s", async (_case, source, text) => {
-    const code = (await render(source)).querySelector(".agentplane-code-block");
+    const code = (await render(source)).querySelector(".ui-code-block");
 
     expect(code?.querySelector(".cm-editor")).not.toBeNull();
     expect(
@@ -106,12 +106,12 @@ describe("Markdown", () => {
       false,
       true
     );
-    const code = rendered.querySelector<HTMLElement>(".agentplane-markdown--single-line .agentplane-code-inline");
+    const code = rendered.querySelector<HTMLElement>(".ui-markdown--single-line .ui-code-inline");
 
     expect(code).not.toBeNull();
     expect(code?.textContent).toBe('def greet(name: str) -> str: return "hello"');
-    expect(code?.querySelector(".agentplane-tok-keyword")?.textContent).toBe("def");
-    expect(rendered.querySelector(".agentplane-code-block, .cm-editor")).toBeNull();
+    expect(code?.querySelector(".ui-tok-keyword")?.textContent).toBe("def");
+    expect(rendered.querySelector(".ui-code-block, .cm-editor")).toBeNull();
   });
 
   it.each([
@@ -119,17 +119,17 @@ describe("Markdown", () => {
     ["no language", "```\n<not a real tag>\n```", "<not a real tag>"],
   ])("shows %s as safe plain inline code", async (_case, source, text) => {
     const rendered = await render(source, false, true);
-    const code = rendered.querySelector<HTMLElement>(".agentplane-code-inline");
+    const code = rendered.querySelector<HTMLElement>(".ui-code-inline");
 
     expect(code?.textContent).toBe(text);
-    expect(code?.querySelector(".agentplane-tok-keyword")).toBeNull();
-    expect(rendered.querySelector("script, .agentplane-code-block, .cm-editor")).toBeNull();
+    expect(code?.querySelector(".ui-tok-keyword")).toBeNull();
+    expect(rendered.querySelector("script, .ui-code-block, .cm-editor")).toBeNull();
   });
 
   it("keeps the streaming cursor inside an inline fenced-code preview", async () => {
     const rendered = await render("```python\nprint('still streaming')", true, true);
-    const code = rendered.querySelector<HTMLElement>(".agentplane-code-inline");
-    const cursor = code?.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+    const code = rendered.querySelector<HTMLElement>(".ui-code-inline");
+    const cursor = code?.querySelector<HTMLElement>(".ui-streaming-cursor");
 
     expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
     expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
@@ -142,9 +142,9 @@ describe("Markdown", () => {
 
     await rerender(`\`\`\`python\n${initialCode}${"b".repeat(20)}`, true);
 
-    const code = container.querySelector<HTMLElement>(".agentplane-code-block");
+    const code = container.querySelector<HTMLElement>(".ui-code-block");
     const content = code?.querySelector(".cm-content");
-    const cursor = code?.querySelector(".agentplane-streaming-cursor");
+    const cursor = code?.querySelector(".ui-streaming-cursor");
     const range = document.createRange();
     if (content && cursor) {
       range.selectNodeContents(content);
@@ -159,7 +159,7 @@ describe("Markdown", () => {
     const rendered = await render("| Stage | Value |\n| --- | --- |\n| Parsed | 12.3456 |");
     const table = rendered.querySelector("table");
 
-    expect(table?.parentElement?.className).toBe("agentplane-markdown-table-scroll");
+    expect(table?.parentElement?.className).toBe("ui-markdown-table-scroll");
   });
 
   it("keeps list, table, and quote cues in compact previews while expanded Markdown stays semantic", async () => {
@@ -181,7 +181,7 @@ describe("Markdown", () => {
     ].join("\n");
 
     const preview = await render(source, false, true);
-    const previewText = preview.querySelector(".agentplane-markdown--single-line")?.textContent?.replace(/\s+/gu, " ");
+    const previewText = preview.querySelector(".ui-markdown--single-line")?.textContent?.replace(/\s+/gu, " ");
 
     expect(previewText).toContain("> Check");
     expect(previewText).toContain("• Parsed • Ready");

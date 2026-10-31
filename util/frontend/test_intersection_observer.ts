@@ -19,7 +19,7 @@ export class TestIntersectionObserver implements IntersectionObserver {
     this.targets.add(target);
     TestIntersectionObserver.observers.add(this);
     // Existing code-view tests exercise CodeMirror rather than its lazy placeholder.
-    if (target.matches(".agentplane-code-block-placeholder")) this.notify(target, true);
+    if (target.matches(".ui-code-block-placeholder")) this.notify(target, true);
   }
 
   disconnect(): void {

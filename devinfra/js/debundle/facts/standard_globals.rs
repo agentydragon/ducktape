@@ -59,7 +59,7 @@ static NAMES: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
 });
 
 /// Whether a standard host may predefine a global property named `name`.
-pub(crate) fn is_standard_global(name: &str) -> bool {
+pub fn is_standard_global(name: &str) -> bool {
     NAMES.contains(name)
 }
 

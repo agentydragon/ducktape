@@ -1,4 +1,4 @@
-"""The integration app: its Deployment (+ Goose migrate initContainer), RBAC,
+"""The integration app: its Deployment, RBAC,
 HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 """
 
@@ -16,7 +16,6 @@ from cdk8s_plus_34 import (
     CpuResources,
     EnvValue,
     IApiResource,
-    ImagePullPolicy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -41,7 +40,6 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -58,12 +56,10 @@ from util.settings_contract import checked_value, cli_args, env_name, validate_s
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -79,7 +75,7 @@ def oidc_secret(namespace: str) -> SecretRef:
 
 
 class App(Construct):
-    """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
+    """ServiceAccounts, RBAC, the config ConfigMap, Deployment, Service,
     and optional PodDisruptionBudget. The fleet route, network policy, and credential
     resources are added by `add_platform_resources`.
     """
@@ -96,8 +92,6 @@ class App(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         runner_control_target: str | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -107,8 +101,6 @@ class App(Construct):
         self.registry_secret_name = registry_secret_name
         self.runner_control_target = runner_control_target or runner_gateway.control_target(env.namespace)
         self.memory_limit = memory_limit
-        self.migrate_pull_policy = migrate_pull_policy
-        self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
@@ -253,6 +245,9 @@ class App(Construct):
             },
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
+            startup=http_probe(
+                "/healthz", port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
@@ -260,15 +255,6 @@ class App(Construct):
             # The Go HTTP/SSE drain is bounded by --shutdown-timeout (5s by default); the rest
             # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
-            # The Go migrator adopts the verified Alembic baseline and applies the app schema
-            # before the API starts.
-            migrate=migrate_init_container(
-                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
-                name="migrate",
-                env_variables=env,
-                image_pull_policy=self.migrate_pull_policy,
-                memory_limit=self.migrate_memory_limit,
-            ),
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,

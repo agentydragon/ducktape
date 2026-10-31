@@ -115,16 +115,43 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await expect(page.get_by_text("Atlas", exact=True).first).to_be_visible()
 
             transcript = page.locator('[aria-label="Session transcript"]')
+            session_list = page.locator('[aria-label="Session list"]')
+            await expect(page.get_by_role("checkbox", name="Main sessions", exact=True)).to_be_checked()
+            await expect(page.get_by_role("checkbox", name="Unknown", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_have_count(0)
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_have_count(0)
+            await page.get_by_role("checkbox", name="Guardian", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Guardian", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_be_visible()
+            await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_be_visible()
             await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
             await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            history = page.get_by_role("region", name="Conversation records")
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            assert await history.evaluate(
+                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
+            )
+            assert any("direction=backward" in url for url, _status in api_responses)
+            await page.get_by_role("button", name="Load earlier records").click()
+            await expect(page.get_by_role("button", name="Load earlier records")).to_have_count(0)
+            await expect(history).to_have_attribute("data-layout-settled", "true")
+            assert await history.evaluate(
+                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
+            )
 
-            version_picker = page.get_by_label("Captured version")
+            version_menu = page.get_by_role("button", name="Conversation options")
             await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Earlier transcript capture.")
-            await expect(version_picker).to_have_value(str(older_id))
-            await version_picker.select_option(str(latest_id))
+            await version_menu.click()
+            older_capture = page.locator(f'[role="menuitemradio"][data-version-id="{older_id}"]')
+            await expect(older_capture).to_have_attribute("aria-checked", "true")
+            latest_capture = page.locator(f'[role="menuitemradio"][data-version-id="{latest_id}"]')
+            await latest_capture.click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
+            assert page.url == f"{origin}/sessions/{session_id}"
             await page.go_back()
             await expect(transcript).to_contain_text("Earlier transcript capture.")
             await page.go_forward()
@@ -132,15 +159,19 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await page.reload(wait_until="domcontentloaded")
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
             await expect(transcript).to_contain_text("This JSONL line could not be parsed")
-            malformed_record = transcript.locator('[data-event-ordinal="3"]')
-            await malformed_record.locator("details").first.locator("summary").first.click()
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
+            await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
+            related_toggle = page.locator(".session-browser-related-trigger")
+            await related_toggle.click()
             related = page.get_by_role("region", name="Related sessions")
             await expect(related).to_contain_text("Review subagent notes")
             await related.get_by_role("link", name="Review subagent notes").click()
             await expect(transcript.get_by_role("heading", name="Review subagent notes")).to_be_visible()
             await expect(transcript).to_contain_text("Child answer loaded from archived records.")
+            await related_toggle.click()
             await expect(related).to_contain_text("Parent inferred from Claude subagent path")
             await expect(related).to_contain_text("Review archived conversation")
 
@@ -148,6 +179,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await session_list.get_by_role("link", name="Inspect conflicting Codex metadata").click()
             await expect(transcript).to_contain_text("Conflicting native session IDs")
             await expect(transcript).to_contain_text("Native session ID candidates: thread-child-a, thread-child-b")
+            await related_toggle.click()
             await expect(related).to_contain_text("Conflicting Codex parent_thread_id values")
             await expect(related).to_contain_text(
                 "Conflicting native parent ID candidates: thread-parent-a, thread-parent-b"
@@ -156,8 +188,9 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
 
             await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
-            malformed_record = transcript.locator('[data-event-ordinal="3"]')
-            await malformed_record.locator("details").first.locator("summary").first.click()
+            malformed_record = transcript.locator('[data-event-ordinal="104"]')
+            await malformed_record.hover()
+            await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
             assert api_responses
@@ -201,6 +234,16 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
         ),
     ]
     latest_suffix = [
+        *[
+            _jsonl_record(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": f"Archived intermediate answer {index}."}]},
+                },
+                older_time + timedelta(seconds=index + 2),
+            )
+            for index in range(101)
+        ],
         _jsonl_record(
             {
                 "type": "assistant",
@@ -237,6 +280,7 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
                     machine_id="atlas",
                     harness="claude",
                     source_path=root_path,
+                    session_kind="main",
                     source_relative_path="projects/demo/root.jsonl",
                     title="Review archived conversation",
                     cwd="/home/example/project",
@@ -248,11 +292,23 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
                     machine_id="atlas",
                     harness="claude",
                     source_path=child_path,
+                    session_kind="subagent",
                     source_relative_path="projects/demo/subagents/agent-1.jsonl",
                     parent_session_id=session_id,
                     parent_link_kind="claude_path_inferred",
                     title="Review subagent notes",
                     cwd="/home/example/project",
+                    started_at=child_time,
+                    last_activity_at=child_time,
+                ),
+                SessionRow(
+                    id=uuid4(),
+                    machine_id="atlas",
+                    harness="codex",
+                    source_path="/.codex/sessions/guardian-fixture.jsonl",
+                    source_relative_path="sessions/guardian-fixture.jsonl",
+                    session_kind="guardian",
+                    title="Guardian fixture",
                     started_at=child_time,
                     last_activity_at=child_time,
                 ),

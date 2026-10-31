@@ -24,7 +24,7 @@ from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendere
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
-from agentplane.system_tests.vm_configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.x.central_sampler.settings import (
     MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
@@ -73,7 +73,7 @@ def _filled_vm_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
+def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     fixture = _filled_fixture()
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
@@ -111,17 +111,10 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
-    for workload, migration in {
-        "actions": "agentplane-action-service",
-        "app": "agentplane-app-migrate",
-        "notifications": "agentplane-notification-service",
-    }.items():
-        pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")
-        assert init["image"] == f"git.allegedly.works/ducktape-ci/{migration}:unset"
-        assert init["imagePullPolicy"] == "IfNotPresent"
-        if workload == "actions":
-            assert init["command"] == ["/usr/local/bin/actions-migrate"]
+    app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
+    assert not app_pod.get("initContainers")
+    app_container = app_pod["containers"][0]
+    assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     assert (
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"
@@ -132,6 +125,16 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "port": fixture_chart.ACTIONS_SERVICE.pod_port,
         "service": "livez",
     }
+    for workload in ("actions", "notifications"):
+        pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
+        assert not pod.get("initContainers")
+        container = pod["containers"][0]
+        assert container["startupProbe"]["grpc"] == {
+            "port": container["readinessProbe"]["grpc"]["port"],
+            "service": "livez",
+        }
+        assert container["startupProbe"]["periodSeconds"] == 5
+        assert container["startupProbe"]["failureThreshold"] == 60
     edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
     edge_container = edge_pod["containers"][0]
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
@@ -168,7 +171,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert proxy_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        for container in (*pod_spec["containers"], *pod_spec.get("initContainers", [])):
+        for container in pod_spec["containers"]:
             sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
             assert sslmode == "disable", (workload, container["name"])
 
@@ -290,9 +293,11 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
     pod_containers = {container["name"]: container for container in template["spec"]["pod"]["spec"]["containers"]}
     runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["runner"]["env"]}
-    assert runner_env["OTEL_SDK_DISABLED"] == "true"
+    assert "OTEL_SDK_DISABLED" not in runner_env
+    assert runner_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://127.0.0.1:3132"
     sidecar_env = {entry["name"]: entry.get("value") for entry in pod_containers["egress-sidecar"]["env"]}
-    assert sidecar_env["OTEL_SDK_DISABLED"] == "true"
+    assert "OTEL_SDK_DISABLED" not in sidecar_env
+    assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://alloy.monitoring.svc.cluster.local:4317"
     assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
     executor = pod_containers["codex-executor"]
     assert executor["livenessProbe"]["initialDelaySeconds"] == 5
@@ -395,11 +400,20 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
     supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
+    oom_template = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     ordinary_root = next(
         volume["containerDisk"]["image"] for volume in vm_spec["volumes"] if volume["name"] == "rootdisk"
     )
     assert ordinary_root == "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
     assert supervision["volumes"] == vm_spec["volumes"]
+    ordinary_config_volume = next(
+        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "runner-vm-config"
+    )
+    oom_config_volume = next(
+        volume for volume in oom_template["volumes"] if volume["name"] == ordinary_config_volume["name"]
+    )
+    assert oom_config_volume["configMap"]["name"] != ordinary_config_volume["configMap"]["name"]
+    assert oom_template["domain"]["resources"] == vm_spec["domain"]["resources"]
     ordinary_boot = vm_spec["domain"]["firmware"]["kernelBoot"]
     assert supervision["domain"]["firmware"]["kernelBoot"] == {
         **ordinary_boot,
@@ -409,6 +423,17 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert {"port": 9090} in interface["ports"]
     config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
     config = json.loads(config_map["data"]["runner.json"])
+    oom_config_map = _resource(fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
+    oom_config = json.loads(oom_config_map["data"]["runner.json"])
+    oom_resources = oom_config["environment"]["resources"]
+    ordinary_resources = config["environment"]["resources"]
+    oom_executor = oom_resources["executor"]
+    ordinary_executor = ordinary_resources["executor"]
+    assert oom_executor["memory_max_bytes"] < ordinary_executor["memory_max_bytes"]
+    assert {
+        **oom_resources,
+        "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
+    } == ordinary_resources
     assert config["codex_readiness"] == {
         "exec_server_ready_timeout_ms": 60_000,
         "exec_server_probe_timeout_ms": 5_000,

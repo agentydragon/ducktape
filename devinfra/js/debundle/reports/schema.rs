@@ -72,20 +72,14 @@ pub struct BindingReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyGraphReport {
     pub chunk_id: String,
-    /// Exact inputs consumed by the run that produced this graph. Older
-    /// reports remain readable as historical snapshots, but cannot validate edits.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<graph_provenance::GraphProvenance>,
+    /// The run's [`ProgramGraphReport`], relative to this file's directory.
+    /// Resolve with [`graph_provenance::program_graph_path`].
+    pub program_graph: std::path::PathBuf,
     pub nodes: Vec<SourceUnitReport>,
     /// Shared callee verdicts referenced by `purity.reasons[].cause_ref`.
     /// Each cause is emitted once, even when many source units call it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purity_causes: Vec<PurityCauseReport>,
-    /// Whole-program census sites, shared by failed native premise checks.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub native_integrity_witnesses: Vec<NativeMutationWitness>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub native_prototype_mutations: Vec<NativePrototypeMutation>,
     /// Imported callable summaries whose callback-factory capability was used.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_callable_summaries: Vec<ImportedCallableSummaryReport>,
@@ -97,6 +91,22 @@ pub struct DependencyGraphReport {
     #[serde(rename = "module_graph")]
     pub quotient: ModuleQuotientReport,
     pub atomic_graph: AtomicGraphReport,
+}
+
+/// `program_graph.json`: the program-wide sections every chunk's
+/// `dependency_graph.json` shares, written once per run beside the chunk
+/// report directories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgramGraphReport {
+    /// Exact inputs consumed by the run that produced the graphs. Older
+    /// reports remain readable as historical snapshots, but cannot validate edits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<graph_provenance::GraphProvenance>,
+    /// Whole-program census sites, shared by failed native premise checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_integrity_witnesses: Vec<NativeMutationWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_prototype_mutations: Vec<NativePrototypeMutation>,
 }
 
 /// One applied `commuting_statements` premise: the pair's source units
@@ -270,6 +280,10 @@ pub struct NativeMutationWitness {
     /// Identity before unknown-global descendants widen to GlobalObject.
     pub receiver_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     pub through_local_alias: bool,
+    /// The global-object property the receiver is read from, by spelling:
+    /// `location` for `window.location.href = url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_global: Option<String>,
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     /// Target paths and keys retained before family-wide integrity widening.
     /// Unknown paths/keys remain visible but are not source-known slot writes.
@@ -381,12 +395,20 @@ pub enum NativeIntegrityGuard {
     SetIterable,
     LocalClassConstruction,
     ForeignCallSummary,
+    /// `Object.fromEntries` over an Array `map` whose callbacks are retained.
+    MappedFromEntries,
+    /// A private `Object.freeze` module-namespace record.
+    FrozenNamespace,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NativeIntegrityCheck {
     pub guard: NativeIntegrityGuard,
-    /// References to the affected roots in graph-level native_integrity_witnesses.
+    /// Every slot the guard required, as `%Array.prototype%`; absent from
+    /// graphs written before it was recorded.
+    #[serde(default)]
+    pub slots: BTreeSet<String>,
+    /// References to the affected roots in `program_graph.json`'s native_integrity_witnesses.
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 }
 

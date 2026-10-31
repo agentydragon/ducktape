@@ -183,9 +183,9 @@ def _watch(args: argparse.Namespace) -> None:
                         buildbuddy_url=args.buildbuddy_url,
                     )
                     return
-                # BuildBuddy reports DISCONNECTED transiently when the build event
-                # stream drops (bb remote retries and the build continues), so it is
-                # not terminal; `finish` resolves it from the Bazel step outcome.
+                # BuildBuddy can report DISCONNECTED when the build event stream
+                # drops. This is not a terminal Bazel result; `finish` resolves it
+                # from the Bazel step outcome.
                 if status == "DISCONNECTED_INVOCATION_STATUS" and not announced_disconnect:
                     _publish_status(
                         repo=repo,

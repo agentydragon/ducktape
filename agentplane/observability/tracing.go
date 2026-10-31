@@ -52,7 +52,7 @@ func Init(ctx context.Context, serviceName string) (func(), error) {
 		ctx,
 		resource.WithFromEnv(),
 		resource.WithTelemetrySDK(),
-		resource.WithAttributes(attribute.String("service.name", name)),
+		resource.WithAttributes(attribute.String("service.name", name), attribute.Int("process.pid", os.Getpid())),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create trace resource: %w", err)

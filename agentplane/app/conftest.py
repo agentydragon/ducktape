@@ -61,7 +61,7 @@ def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseT
     ensure_electric_role(postgres_admin_url)
     with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_app_test_template") as template:
         migrated = subprocess.run(
-            [get_required_path("_main/agentplane/app/go/migrate/app-migrate_/app-migrate")],
+            [get_required_path("_main/agentplane/app/go/agentplane-app_/agentplane-app"), "--migrate-only"],
             env={
                 "AGENTPLANE_DATABASE_URL": make_url(template.url)
                 .set(drivername="postgresql", query={"sslmode": "disable"})

@@ -27,3 +27,28 @@ The original VM note does not contain a cancellation-acknowledgment timeline.
 This retry observation does not establish failed cancellation, post-cancellation
 dispatch, or the hosted lease duration. It is distinct from the 20:28 UTC
 [continued-action incident](investigation.md#incident-2026-10-27-vm-test).
+
+## Full-suite replay on 2026-10-31
+
+A `bbr --script` benchmark ran a warm build and then fresh full-suite test
+passes with explicit child invocation IDs. The CLI's log observer received
+`RST_STREAM INTERNAL_ERROR` while the first outer runner had already accepted
+and run work. It retried the whole script under a second outer invocation,
+reusing the same child IDs and starting another full-suite pass. Canceling only
+that outer invocation while the local CLI stayed alive triggered a third outer
+attempt (`invocation cancelled` was classified as retryable). The local launcher
+was then stopped before the active outer and child invocations were canceled.
+
+| Attempt                        | Outer runner invocation                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| Original                       | [ab9396a7](https://app.buildbuddy.io/invocation/ab9396a7-c8ef-4d1c-ad96-506c0472d412) |
+| Observer-error retry           | [bed0fc63](https://app.buildbuddy.io/invocation/bed0fc63-54f3-463d-97d8-c77fbcf2e544) |
+| Retry after outer cancellation | [6bd05016](https://app.buildbuddy.io/invocation/6bd05016-b08f-4085-bd6c-6d14f1dcf896) |
+
+The outer invocations above and child [baseline test](https://app.buildbuddy.io/invocation/7ea29197-b0ed-467f-adff-ee1720988897)
+and [candidate test](https://app.buildbuddy.io/invocation/88529384-7bc3-4ce7-b241-1576b288bd9f)
+show the repeated work. After cleanup, both active child IDs had only terminal
+execution records. This establishes the replay mechanism, not a latency
+estimate for normal CI. It is a **bb CLI whole-run retry**, separate from the
+[Bazel Execute RPC retry](rpc_retry_trace.md) controlled by Bazel's
+`--remote_retries`; changing that Bazel option would not prevent this replay.

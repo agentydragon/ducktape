@@ -2,6 +2,8 @@
 #
 # Direct `bb remote` keeps a bootstrap path independent of the pinned bbr wheel.
 # Runner defaults come from the workspace .bbrc, shared with interactive bbr.
+# Disable whole-run CLI retries: a log-stream error can occur after the remote
+# script has already started, and replaying it can duplicate CI work or writes.
 # The action image comes from devinfra/image_pins.json.
 # Centralize --config=rbe here so workflows do not fall back to linux-sandbox
 # on a runner VM lacking action tools such as cpio.
@@ -204,6 +206,7 @@ runs:
           ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_CONTAINER_IMAGE=${RBE_CONTAINER_IMAGE}")
           BB_REMOTE_COMMAND=(
             bb remote
+            --disable_retry=true
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"
@@ -216,6 +219,7 @@ runs:
           INPUT_ARGS_ARRAY=($INPUT_ARGS)
           BB_REMOTE_COMMAND=(
             bb remote
+            --disable_retry=true
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"

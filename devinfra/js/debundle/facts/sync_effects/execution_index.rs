@@ -2100,6 +2100,39 @@ fn receiver_uses_intrinsic_alias(
     }
 }
 
+/// The global-object property whose value the receiver is read from, by
+/// spelling: `location` for `window.location.href = url` or
+/// `location.href = url`.
+fn receiver_global_property(
+    value: &ValueExpr,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    globals: &GlobalNames,
+    declared: &BTreeSet<Id>,
+) -> Option<String> {
+    let global_object = |id: &Id| {
+        (!declared.contains(id) && globals.contains(id.0.as_ref()))
+            || aliases.get(id).is_some_and(|roots| {
+                roots.contains(&NativeReceiverRoot::Intrinsic(
+                    NativeIntrinsic::GlobalObject,
+                ))
+            })
+    };
+    match value {
+        ValueExpr::Binding(id)
+            if !declared.contains(id)
+                && !global_object(id)
+                && globals.binding_root(id.0.as_ref()).is_none() =>
+        {
+            Some(id.0.to_string())
+        }
+        ValueExpr::Member(base, property, _) => match base.as_ref() {
+            ValueExpr::Binding(id) if global_object(id) => property.clone(),
+            base => receiver_global_property(base, aliases, globals, declared),
+        },
+        _ => None,
+    }
+}
+
 fn intrinsic_roots(
     value: &ValueExpr,
     roots: &BTreeMap<Id, NativeReceiverRoots>,
@@ -4354,6 +4387,7 @@ mod native_integrity_closure_tests {
                 operation: NativeMutationOperation::PropertyAssignment,
                 receiver_roots: BTreeSet::new(),
                 through_local_alias: false,
+                receiver_global: None,
                 affected_roots: BTreeSet::new(),
                 target_slots: BTreeSet::new(),
                 key_dependencies: BTreeSet::new(),
@@ -8498,6 +8532,7 @@ impl ExecutionIndex {
                         operation: NativeMutationOperation::BindingAssignment,
                         receiver_roots: BTreeSet::from([root]),
                         through_local_alias: false,
+                        receiver_global: None,
                         affected_roots: BTreeSet::from([root]),
                         target_slots: if root == NativeIntrinsic::GlobalObject {
                             BTreeSet::from([NativeWriteSlot {
@@ -8589,6 +8624,12 @@ impl ExecutionIndex {
                 through_local_alias: receiver_uses_intrinsic_alias(
                     &write.receiver,
                     &intrinsic_aliases,
+                ),
+                receiver_global: receiver_global_property(
+                    &write.receiver,
+                    &intrinsic_aliases,
+                    &index.census_globals,
+                    &declared,
                 ),
                 affected_roots: projection.affected_roots,
                 target_slots,

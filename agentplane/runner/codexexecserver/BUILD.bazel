@@ -15,6 +15,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codexexecserver",
     deps = [
+        "//agentplane/observability",
         "//agentplane/runner/cosi",
         "//agentplane/runner/executor/control",
         "//agentplane/runner/lifecycle",

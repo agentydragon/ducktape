@@ -272,8 +272,12 @@ impl AssignmentAnalysis {
 
     /// High-fidelity node-link view of the fine dependency graph plus
     /// its current module quotient. Written as
-    /// `<chunk_id>/dependency_graph.json` for downstream peel tooling.
-    pub fn dependency_graph_report(&self) -> DependencyGraphReport {
-        build_dependency_graph_report(self)
+    /// `<chunk_id>/dependency_graph.json` for downstream peel tooling;
+    /// `program_graph` is the run's program graph relative to that file.
+    pub fn dependency_graph_report(
+        &self,
+        program_graph: std::path::PathBuf,
+    ) -> DependencyGraphReport {
+        build_dependency_graph_report(self, program_graph)
     }
 }

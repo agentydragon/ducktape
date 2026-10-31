@@ -19,6 +19,7 @@ from uuid import UUID
 
 import httpx
 from google.protobuf.json_format import ParseDict, ParseError
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.models import (
@@ -81,7 +82,12 @@ class Client:
             headers={"Authorization": f"Bearer {token}"},
             timeout=httpx.Timeout(REQUEST_SECONDS),
             follow_redirects=False,
+            event_hooks={"request": [self._inject_trace_context]},
         )
+
+    @staticmethod
+    async def _inject_trace_context(request: httpx.Request) -> None:
+        TraceContextTextMapPropagator().inject(request.headers)
 
     async def __aenter__(self) -> Self:
         return self

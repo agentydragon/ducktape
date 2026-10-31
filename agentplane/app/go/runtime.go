@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historywatch"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
+	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
@@ -39,6 +40,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -70,6 +72,9 @@ func run(ctx context.Context, config Config) error {
 	defer shutdownTracing()
 
 	databaseURL := postgresDriverURL(config.DatabaseURL)
+	if err := dbmigrate.Run(ctx, databaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate app database: %w", err)
+	}
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		return fmt.Errorf("open app PostgreSQL database: %w", err)

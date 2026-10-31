@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, false, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
@@ -20,10 +20,12 @@ from x.ai_session_archive.database import (
 )
 from x.ai_session_archive.models import (
     Event,
+    EventDirection,
     EventPage,
     Harness,
     Machine,
     MachineImportProgress,
+    SessionKind,
     SessionPage,
     SessionSummary,
     SessionVersion,
@@ -189,6 +191,7 @@ def _summary(row: Any) -> SessionSummary:
         id=session_row.id,
         machine_id=session_row.machine_id,
         harness=Harness(session_row.harness),
+        session_kind=SessionKind(session_row.session_kind or SessionKind.UNKNOWN.value),
         title=session_row.title,
         cwd=session_row.cwd,
         parent_session_id=session_row.parent_session_id,
@@ -230,6 +233,7 @@ def list_sessions(
     *,
     machine_id: str | None,
     harness: Harness | None,
+    kinds: list[SessionKind] | None = None,
     parent_session_id: UUID | None = None,
     cursor: str | None,
     limit: int,
@@ -242,6 +246,16 @@ def list_sessions(
         statement = statement.where(SessionRow.machine_id == machine_id)
     if harness is not None:
         statement = statement.where(SessionRow.harness == harness.value)
+    if kinds is not None:
+        kind_values = [kind.value for kind in kinds]
+        if not kind_values:
+            statement = statement.where(false())
+        elif SessionKind.UNKNOWN in kinds:
+            statement = statement.where(
+                or_(SessionRow.session_kind.in_(kind_values), SessionRow.session_kind.is_(None))
+            )
+        else:
+            statement = statement.where(SessionRow.session_kind.in_(kind_values))
     if parent_session_id is not None:
         statement = statement.where(SessionRow.parent_session_id == parent_session_id)
     if cursor is not None:
@@ -324,7 +338,13 @@ def _version_lineage(session: DbSession, version: FileVersionRow) -> list[FileVe
 
 
 def list_events(
-    session: DbSession, *, session_id: UUID, version_id: UUID, cursor: int | None, limit: int
+    session: DbSession,
+    *,
+    session_id: UUID,
+    version_id: UUID,
+    cursor: int | None,
+    limit: int,
+    direction: EventDirection = EventDirection.FORWARD,
 ) -> EventPage | None:
     if not 1 <= limit <= MAX_EVENT_PAGE_SIZE:
         raise ValueError(f"limit must be between 1 and {MAX_EVENT_PAGE_SIZE}")
@@ -336,8 +356,13 @@ def list_events(
 
     if cursor is not None and cursor < 0:
         raise ValueError("cursor must be a non-negative record ordinal")
-    start = 0 if cursor is None else cursor + 1
-    end = min(version.record_count, start + limit + 1)
+
+    if direction is EventDirection.BACKWARD:
+        end = version.record_count if cursor is None else min(cursor, version.record_count)
+        start = max(0, end - limit - 1)
+    else:
+        start = 0 if cursor is None else cursor + 1
+        end = min(version.record_count, start + limit + 1)
     if start >= end:
         return EventPage(data=[], next_cursor=None)
 
@@ -361,12 +386,11 @@ def list_events(
             resolved[record.ordinal] = (rank, record, payload)
 
     result_rows = [resolved[ordinal] for ordinal in range(start, end) if ordinal in resolved]
-    expected_count = min(limit + 1, version.record_count - start)
-    if len(result_rows) != expected_count:
+    if len(result_rows) != end - start:
         raise RuntimeError(f"file version {version_id} is missing stored records in ordinals {start}:{end}")
 
     has_more = len(result_rows) > limit
-    page_rows = result_rows[:limit]
+    page_rows = result_rows[-limit:] if direction is EventDirection.BACKWARD else result_rows[:limit]
     events = []
     for _, record, payload in page_rows:
         parsed = parse_record_json(payload.raw_bytes)
@@ -382,5 +406,8 @@ def list_events(
                 raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
             )
         )
-    next_cursor = events[-1].ordinal if has_more and events else None
+    if has_more and events:
+        next_cursor = events[0].ordinal if direction is EventDirection.BACKWARD else events[-1].ordinal
+    else:
+        next_cursor = None
     return EventPage(data=events, next_cursor=next_cursor)

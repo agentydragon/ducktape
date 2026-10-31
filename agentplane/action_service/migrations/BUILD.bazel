@@ -20,7 +20,7 @@ py_test(
     name = "test_migrations",
     size = "medium",
     srcs = ["test_migrations.py"],
-    data = ["//agentplane/action_service/migrations/cmd:actions-migrate"],
+    data = ["//agentplane/action_service:actions"],
     requires_docker = True,
     deps = [
         "//:conftest",

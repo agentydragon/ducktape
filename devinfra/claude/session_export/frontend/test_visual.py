@@ -144,16 +144,14 @@ async def test_markdown_is_sanitized(visual: VisualHarness, viewport: Viewport, 
         page = view.page
         for selector in (
             '[aria-label="Session history"]',
-            '[data-message-role="user"] .agentplane-markdown ul',
-            '[data-message-role="user"] .agentplane-markdown table',
-            '[data-message-role="assistant"] .agentplane-markdown h2',
-            '[data-message-role="assistant"] .agentplane-markdown a[href^="https://"]',
-            '[data-message-role="assistant"] .agentplane-markdown .agentplane-code-block .cm-editor',
+            '[data-message-role="user"] .ui-markdown ul',
+            '[data-message-role="user"] .ui-markdown table',
+            '[data-message-role="assistant"] .ui-markdown h2',
+            '[data-message-role="assistant"] .ui-markdown a[href^="https://"]',
+            '[data-message-role="assistant"] .ui-markdown .ui-code-block .cm-editor',
         ):
             await expect(page.locator(selector).first).to_be_attached()
-        markdown = page.locator(
-            '[data-message-role="user"] .agentplane-markdown, [data-message-role="assistant"] .agentplane-markdown'
-        )
+        markdown = page.locator('[data-message-role="user"] .ui-markdown, [data-message-role="assistant"] .ui-markdown')
         await expect(markdown.locator("script, img, [onclick], [onerror]")).to_have_count(0)
         assert not await markdown.locator("a").evaluate_all(
             "links => links.some(link => /^(javascript|data):/i.test(link.getAttribute('href') ?? ''))"

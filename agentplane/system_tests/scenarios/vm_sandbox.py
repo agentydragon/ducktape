@@ -17,9 +17,9 @@ from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
-from agentplane.system_tests.sandbox import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm_supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
@@ -209,7 +209,7 @@ async def vm_sandbox_turn(
 
 
 async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str, scripted: ScriptedUpstream) -> None:
-    view = await sandbox("systest-vm-codex-oom", template=VM_TEMPLATE)
+    view = await sandbox("systest-vm-codex-oom", template=OOM_TEMPLATE)
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)

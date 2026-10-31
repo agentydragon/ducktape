@@ -69,7 +69,11 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:code_block",
+        "//util/frontend:disclosure",
         "//util/frontend:markdown",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:text_block",
     ],
 )
 
@@ -97,15 +101,19 @@ ts_library(
 
 ts_library(
     name = "session_viewer",
-    srcs = ["session-viewer.tsx"],
+    srcs = [
+        "session-viewer.tsx",
+        "tabler_icons.d.ts",
+    ],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":api",
-        ":event_content",
         ":import_progress",
         ":schema",
+        ":transcript",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -160,7 +168,10 @@ spa_bundle(
 ts_library(
     name = "session_fixture",
     testonly = True,
-    srcs = ["fixtures/session-data.ts"],
+    srcs = [
+        "fixtures/codex-work.ts",
+        "fixtures/session-data.ts",
+    ],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -171,8 +182,12 @@ ts_library(
 
 vitest_config(
     name = "vitest_config",
-    data = ["//:node_modules/happy-dom"],
+    data = [
+        "//:node_modules/happy-dom",
+        "//util/frontend:test_setup",
+    ],
     environment = "node",
+    setup_files = ["//util/frontend:test_setup.js"],
 )
 
 vitest_test(
@@ -259,6 +274,57 @@ py_visual_test(
     test_module = "x.ai_session_archive.frontend.test_visual",
     test_srcs = ["test_visual.py"],
     title = "Local workstation sessions",
+)
+
+ts_library(
+    name = "transcript_rows",
+    srcs = ["transcript-rows.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "transcript",
+    srcs = ["transcript.tsx"],
+    isolated_typecheck = True,
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":event_content",
+        ":schema",
+        ":transcript_rows",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:disclosure",
+        "//util/frontend:markdown",
+        "//util/frontend/transcript:inspection",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
+        "//util/frontend/transcript:virtualized_history",
+    ],
+)
+
+vitest_test(
+    name = "transcript_rows_test",
+    srcs = ["transcript-rows.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":schema",
+        ":transcript_rows",
+        "//:node_modules/vitest",
+    ],
 )
 
 check_vitest_specs()

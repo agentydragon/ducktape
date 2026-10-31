@@ -11,11 +11,10 @@ token. Check constraints keep a row from holding part of a login. ID tokens are 
 Neither identity nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest
 of the handle.
 
-The table and its expiry index originated in the app's Alembic history. The current Go app's
-embedded Goose migrations carry that schema forward and run through the `agentplane-app-migrate`
-init container before the API starts; the app itself never creates or checks tables. The
-`alembic_version_app` marker remains as a Python rollback bridge until retirement is explicitly
-decided. The Action schema is unchanged.
+The table and its expiry index originated in the app's Alembic history. The Go app runs its
+embedded Goose migrations before workers or HTTP serving begin. The baseline adopts the existing
+schema without changing its rows, and migration 2 removes the retired `alembic_version_app`
+marker. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 
@@ -243,23 +242,24 @@ preserve this source contract or update and revalidate the subject mode.
    Kustomization; it contains only the two verification/federation JSON objects, **no target client
    secret, user list, or shared operator bearer**.
 2. Action Service depends on the Terraform layer and Reflector for the Secrets it consumes. It reads
-   `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the Git-owned ConfigMap; its migration init gate and
-   private Action DB remain in place. The required ConfigMap reference keeps pods from starting until
-   the Actions Kustomization has delivered it. Reloader rolls both consumers when the configuration
-   changes.
+   `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the Git-owned ConfigMap and runs its embedded migrations
+   before serving requests or starting workers. The required ConfigMap reference keeps pods from
+   starting until the Actions Kustomization has delivered it. Reloader rolls both consumers when the
+   configuration changes.
 3. The app depends on the Action Service and retains its existing database, OIDC client, and session
    signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON comes from the same federation ConfigMap.
    The stable ConfigMap name plus reloader annotations rolls both processes when its pins change;
    generated application settings ConfigMaps retain their Kustomize name hashes.
-   No replicas are added by this migration. Runner ingestion supports replicas through database
-   leases and shared event delivery.
-4. Use app, Action Service, and migration images published from `df4a440` (#5820) or a descendant.
-   The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
-   published all three; existing Flux image markers/policies remain enabled. Do not enable this
-   configuration on the previous `5686ff8` app image (it lacks persistent sessions/federation).
-   Existing cookies require a new login. The app's `migrate` init container creates
-   `operator_browser_session` and its expiry index; no separate DB, signing-secret rotation, or
-   session-replica expansion is introduced.
+   This federation configuration does not set replica counts; the control-plane deployment plan
+   handles them separately. Runner ingestion supports replicas through database leases and shared
+   event delivery.
+4. Use app and Action Service serving images that include this implementation; each applies its
+   embedded migrations during startup, before serving. Existing Flux image markers and policies
+   remain enabled. Do not enable this configuration on the previous `5686ff8` app image (it lacks
+   persistent sessions/federation). Existing cookies require a new login. The App's embedded Goose
+   migration creates `operator_browser_session` and its expiry index; no separate DB or
+   signing-secret rotation is introduced. Replica-profile changes are tracked separately in the
+   control-plane deployment plan.
 
 The BFF already reaches Action on the destination Pod port 8080, and Action admits it separately
 from the workload proxy. Both now reach the public Authentik origin on host/remote-node TCP 443,

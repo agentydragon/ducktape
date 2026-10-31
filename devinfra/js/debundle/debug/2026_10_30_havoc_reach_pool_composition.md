@@ -99,6 +99,41 @@ an imported callee. That is the only share per-chunk scoping could act on.
   out of 120. Claude has 4 out of 88; the rest are `borrowed_receiver`,
   `tainted_input` or `unknown_callee`.
 
+## Heap-reachability bound (2026-10-31)
+
+A heap-reachability bound would admit an escaped callback only when its
+holder is reachable from what the opaque statement passes or publishes, from
+globals, or from vendor-held objects. An honest "vendor-held" set includes
+everything ever passed to a vendor call, an unresolved or parameter callee,
+or a global write. Those escapes stay in every pool.
+
+Measured with the same probe, rebased onto devel `5dfe2142`. The input is Tana
+main plus the `runFunc` premise: 4,957 events at 624 statements, 325 distinct
+escapes. Escapes by first-route class:
+
+| First-route class                                         | Escapes |
+| --------------------------------------------------------- | ------: |
+| Local binding (`Fx`, `lV`, `Ci`, …)                       |     171 |
+| Vendor import call                                        |      64 |
+| Native global (`Object`, `window`, `MutationObserver`, …) |      48 |
+| Parameter or unresolved callee                            |      21 |
+| Global-object write                                       |      14 |
+| Other (bounded fallback, unknown, local object write)     |       7 |
+
+The optimistic bound drops every local and native escape, as if
+reachability proved none of them reachable. It keeps the 104 held ones,
+together with the call's own arguments and exports. Result:
+
+- the median pool falls from 341 to 121 (max 187);
+- 1,572 of 4,957 events have 64 members or fewer;
+- every event is at or under 64 for 144 of 624 statements;
+- those statements carry 118,473 of the pool statements' 2,037,837
+  constraining out-edges (5.8%).
+
+The held escapes alone exceed the limit, so no reachability bound can be
+decisive for Tana's 1,805-module SCC. The bound is offline and approximate:
+it uses first-route attribution and matches roots by name.
+
 Caveats: roots are matched by name, so a nested binding that shadows an import
 name is misattributed. Regions are a syntactic closure over top-level
 statements, not a heap analysis.

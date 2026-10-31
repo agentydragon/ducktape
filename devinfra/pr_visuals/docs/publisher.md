@@ -10,7 +10,7 @@ the `//...` devel sweep — a commit can have both a sweep and an affected-set r
 only the sweep carries visual manifests, so the run that triggered the publish is
 often not the one that ran the tests. Fallback: IDs derived from the run's identity
 (<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
-SHA, not the head SHA) or a run cancelled before Bazel started.
+SHA, not the head SHA).
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
@@ -39,27 +39,25 @@ none, which is what lets it advance baseline pointers.
   another fork's CI run doesn't extend to hosting its output in our bucket and
   comments.
 
-## Superseded runs
+## Cancelled runs
 
-A run cancelled as superseded waits for its known BuildBuddy test invocation to
-reach `COMPLETE_INVOCATION_STATUS` before listing artifacts, then publishes its
-immutable commit bundle and posts nothing else (the superseding run brings the
-real review). Cancelling the workflow can precede creation of the remote
-invocation, or BuildBuddy can briefly report it as disconnected, so neither state
-ends the wait. The wait is bounded to five minutes; after that, the cancelled run
-may publish whatever artifacts have arrived but never advances baseline pointers.
+A cancelled upstream CI run cancels any running visual workflow for that same
+run and attempt. The cancellation job completes an announced PR visual check as
+`cancelled`; the check's external ID includes both run ID and attempt so a delayed
+completion cannot overwrite a rerun's check. The job has no BuildBuddy or S3
+credential. It does not wait for a remote invocation or publish artifacts
+already produced by one. An exact-commit bundle from such a run may therefore
+be absent; per-target baseline resolution falls back to the retained pointer
+and marks the review `baseline_fallback`. A direct
+`pr-visuals-publish --ci-conclusion cancelled` invocation likewise closes its
+check without reading BuildBuddy or S3. A later announcement for the same
+attempt leaves an already-completed check terminal.
 
-Damage is bounded to **staleness, never wrongness**, by two properties to preserve:
-
-- Bundles and baseline resolution are per-target, so a partial commit is not a broken
-  baseline: missing targets resolve via the pointer, marked `baseline_fallback`.
-- Only a confirmed complete invocation advances a pointer: `publish_only` never
-  writes pointers, and the other path rejects incomplete invocations before
-  listing artifacts. A successful CI workflow with no test invocation has no
-  visual bundle; `bazel_ci.py` skips `bazel test` when no tests are selected.
-
-If a cancelled invocation runs longer than the bound, the commit bundle may be
-partial. Missing targets resolve via the pointer with a `baseline_fallback` warning.
+Completed CI runs, including runs whose tests failed, still wait for a confirmed
+complete test invocation before listing artifacts. Only their complete bundles
+can advance devel baseline pointers. A successful CI workflow with no test
+invocation has no visual bundle; `bazel_ci.py` skips `bazel test` when no tests
+are selected.
 
 ## Baseline resolution
 

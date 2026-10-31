@@ -245,7 +245,7 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
-    await page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
@@ -261,8 +261,8 @@ async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFix
     await expect(audit_toggle.locator("time")).to_be_visible()
     await view.check(context="fixture ready")
     await audit_toggle.click()
-    audit_item = page.locator(".agentplane-disclosure-item").filter(has=audit_toggle).first
-    audit_body = audit_item.locator(".agentplane-disclosure-body")
+    audit_item = page.locator(".ui-disclosure-item").filter(has=audit_toggle).first
+    audit_body = audit_item.locator(".ui-disclosure-body")
     await expect(audit_body.get_by_text("Requested by agentplane-visual/ready-sandbox", exact=True)).to_be_visible()
     await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000006", exact=True)).to_be_visible()
     await _focus(page, audit_body)
@@ -274,7 +274,7 @@ async def test_actions_history_groups_unavailable(view: VisualPage, app: Agentpl
     await app.set_flag(Flag.ACTION_GROUPS_UNAVAILABLE)
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.page.wait_for_selector('[role="alert"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -284,9 +284,9 @@ async def test_actions_hidden_codepoints(view: VisualPage, app: AgentplaneFixtur
     await app.build(Scene.HIDDEN_CODEPOINTS)
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
-    await view.page.wait_for_selector(".cm-agentplane-special-char-bidi", state="attached")
-    await view.page.wait_for_selector(".cm-agentplane-special-char-ignorable", state="attached")
-    await view.page.wait_for_selector(".cm-agentplane-special-char-control", state="attached")
+    await view.page.wait_for_selector(".cm-ui-special-char-bidi", state="attached")
+    await view.page.wait_for_selector(".cm-ui-special-char-ignorable", state="attached")
+    await view.page.wait_for_selector(".cm-ui-special-char-control", state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -545,7 +545,7 @@ async def test_session_unnamed(view: VisualPage, app: AgentplaneFixture) -> None
 async def test_session_markdown_code_fence(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.MARKDOWN_CODE_FENCE)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-code-block", state="attached")
+    await view.page.wait_for_selector(".ui-code-block", state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -554,7 +554,7 @@ async def test_session_standalone_reasoning(view: VisualPage, app: AgentplaneFix
     await app.standalone_reasoning()
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-preview .agentplane-markdown--single-line', state="attached"
+        '[data-thread-anchor="20"] .transcript-step-preview .ui-markdown--single-line', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -565,8 +565,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
     await app.standalone_reasoning(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-details .agentplane-disclosure-summary:not(:has(a))',
-        state="attached",
+        '[data-thread-anchor="20"] .transcript-step-details .ui-disclosure-summary:not(:has(a))', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -576,7 +575,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
 async def test_session_unfinished_reasoning(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.UNFINISHED_REASONING)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-step-title--streaming", state="attached")
+    await view.page.wait_for_selector(".transcript-step-title--streaming", state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -586,7 +585,7 @@ async def test_session_reasoning_code_fence(view: VisualPage, app: AgentplaneFix
     await app.standalone_reasoning(code_fence=True)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(
-        '[data-thread-anchor="20"] .agentplane-step-preview .agentplane-code-inline', state="attached"
+        '[data-thread-anchor="20"] .transcript-step-preview .ui-code-inline', state="attached"
     )
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -595,8 +594,8 @@ async def test_session_reasoning_code_fence(view: VisualPage, app: AgentplaneFix
 async def test_session_states(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="failed"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="noop"]', state="attached")
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="failed"]', state="attached")
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="noop"]', state="attached")
     await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="running"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
@@ -605,7 +604,7 @@ async def test_session_states(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.STREAMING_INTERLEAVED)
     await app.mount_thread(RUNNING_THREAD)
-    await view.page.wait_for_selector('.agentplane-streaming-cursor[aria-label="Streaming"]', state="attached")
+    await view.page.wait_for_selector('.ui-streaming-cursor[aria-label="Streaming"]', state="attached")
     await view.page.wait_for_selector('[aria-label="Thread history"][data-layout-settled="true"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator(".agentplane-shell-main-content"))
@@ -631,7 +630,7 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-command-id="queued-model"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="local"]', state="attached")
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="local"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -642,7 +641,7 @@ async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixtu
     await app.build(Scene.REMEMBER_INPUT_ECHO)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector(
-        '[data-command-id="locally-retained"] .agentplane-verbatim:has-text("This browser already knows the text it sent.")',
+        '[data-command-id="locally-retained"] .transcript-verbatim:has-text("This browser already knows the text it sent.")',
         state="attached",
     )
     await view.page.wait_for_selector(
@@ -660,8 +659,8 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-stage="unconfirmed"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="local"]', state="attached")
-    await view.page.locator(".agentplane-user-message-aside").get_by_role("button", name="Retry").wait_for()
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="local"]', state="attached")
+    await view.page.locator(".transcript-user-message-aside").get_by_role("button", name="Retry").wait_for()
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -682,8 +681,8 @@ async def test_session_command_outcomes_phone(view: VisualPage, app: AgentplaneF
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-command-id="queued-model"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="failed"]', state="attached")
-    await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="noop"]', state="attached")
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="failed"]', state="attached")
+    await view.page.wait_for_selector('.transcript-user-bubble[data-message-phase="noop"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 

@@ -71,15 +71,7 @@ filegroup(
     srcs = [
         "langfuse_search.ts",
         "model_catalog.ts",
-        "setup.ts",
         "watch.ts",
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],
-)
-
-ts_library(
-    name = "setup",
-    srcs = ["setup.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//util/frontend:test_intersection_observer"],
 )

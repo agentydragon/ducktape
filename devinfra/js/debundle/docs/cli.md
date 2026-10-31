@@ -56,7 +56,8 @@ debundle snapshot verify /tmp/worker-one
 ```
 
 `--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
-returned JSON identifies the copied engine, graph, spec/source roots, complete
+returned JSON identifies the copied engine, graph (with the `program_graph.json`
+it references), spec/source roots, complete
 modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
 graph-backed query or edit in the snapshot, pass each map entry as the global
 `--graph-package-root NAME=DIR` alongside `--spec-root` and
@@ -1364,6 +1365,9 @@ Typical debundle outputs:
   `runtime.json`, `source_assets.json`, `provenance.json`,
   `rename_queue.json`, `vendor_swaps.json` when those outputs are
   configured
+- `reports/tree/program_graph.json`: the program-wide graph sections every
+  chunk's `dependency_graph.json` references (input provenance, native
+  mutation census)
 - per-chunk reports under `reports/tree/<chunk-id>/`: `chunk.json`,
   `modules.json`, `dependency_graph.json`, `export_reentry.json`,
   `selector_diagnostics.json` when any selector did not resolve or resolved
@@ -1399,6 +1403,52 @@ The table preserves asserted and inferred evidence without requiring
 applied. Alias and joined-value calls are not attributed; absence does not
 establish an unused annotation. See the
 [report contract](../SPEC.md#synchronous-execution-diagnostics).
+
+### Native integrity guards
+
+`debundle explain-integrity` reads a saved graph and its `program_graph.json`
+(no reanalysis) and answers why the census leaves an intrinsic slot unknown
+(SPEC.md § Native integrity inputs):
+
+```bash
+# Losses on this line, the units whose execution recorded them, and their failed guards
+debundle explain-integrity --graph output/reports/tree/static/index/dependency_graph.json \
+  --at static/index.js:1234
+# The same for a source unit or a binding it declares
+debundle explain-integrity --id unit:120
+# Every census witness reaching one slot
+debundle explain-integrity --slot '%Array.prototype%'   # or Object.prototype, Object.defineProperty, Set
+```
+
+A source-unit row lists the guards its execution evaluated and, for each
+failed one (`native_integrity_checks`), the slots it required and which of
+them are unknown. Each unknown slot then lists its witnesses with location,
+excerpt, operation and `reach`:
+
+- `named_write`: the write's receiver and key name the slot, or it assigns the
+  slot's global binding.
+- `family_coupling`: a prototype slot is family-level, so any write to its
+  family (`Object.entries = f` for `%Object.prototype%`) makes it unknown.
+- `global_object_coupling`: a global-object write (`window.flag = 1`) makes
+  every prototype slot unknown, even for a bundle-owned property.
+- `unknown_key`: an exact receiver whose key may name the slot.
+- `unknown_receiver`: a receiver that may be any native object.
+
+`receiver_global` names the global property an unknown receiver was read from
+(`location` for `window.location.href = url`). `discharged_by` lists what could
+remove an unknown-receiver witness: for a property the host does not predefine,
+`predefined_globals: standard` bundle ownership, or
+`no_accessor_install_callables` where a computed-key call keeps the property
+from being bundle-owned; for a receiver read through a local binding, a
+`value_inputs` captured ordinary object where that binding qualifies (SPEC.md §
+Captured ordinary-object values). No current premise removes the other reach
+kinds; an exact-site `native_operation_inputs` axiom instead covers one
+consuming call. `--limit`/`--all` bound witness rows; `reach_counts` stay
+complete.
+
+The command does not attribute an individual precision loss to a guard: it
+shows the guards that failed during the same source unit's execution. Callable
+and own-property certificates that need intact slots fail without a check row.
 
 ## Gate discipline
 

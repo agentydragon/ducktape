@@ -31,41 +31,10 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:schema",
-    ],
-)
-
-ts_library(
-    name = "history_sizes",
-    srcs = ["history_sizes.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "history_geometry",
-    srcs = ["history_geometry.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":history_sizes"],
-)
-
-agentplane_vitest_test(
-    name = "history_geometry_test",
-    srcs = ["history_geometry.test.ts"],
-    deps = [
-        ":history_geometry",
-        "//:node_modules/vitest",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "history_sizes_test",
-    srcs = ["history_sizes.test.ts"],
-    deps = [
-        ":history_sizes",
-        "//:node_modules/vitest",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -86,6 +55,7 @@ ts_library(
     name = "thread_view_recorder",
     srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//util/frontend/transcript:history_diagnostics"],
 )
 
 agentplane_vitest_test(
@@ -183,8 +153,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
-        ":retained_disclosures",
-        ":step_line",
         ":thread_cards",
         ":thread_commands",
         ":thread_sync",
@@ -192,29 +160,10 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
+        "//util/frontend:disclosure",
         "//util/frontend:markdown",
-    ],
-)
-
-ts_library(
-    name = "history_viewport",
-    srcs = ["history_viewport.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":history_geometry",
-        ":thread_view_recorder",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "history_viewport_test",
-    srcs = ["history_viewport.test.ts"],
-    deps = [
-        ":history_geometry",
-        ":history_sizes",
-        ":history_viewport",
-        "//:node_modules/vitest",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
     ],
 )
 
@@ -223,20 +172,15 @@ ts_library(
     srcs = ["virtualized_history.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":history_geometry",
         ":history_row_views",
         ":history_rows",
-        ":history_viewport",
         ":thread_evidence",
         ":thread_sync",
         ":thread_view_recorder",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//agentplane/app/frontend:disclosure",
-        "//agentplane/app/frontend:icons",
+        "//util/frontend/transcript:history_diagnostics",
+        "//util/frontend/transcript:virtualized_history",
     ],
 )
 
@@ -274,7 +218,6 @@ ts_library(
         ":composer",
         ":history_rows",
         ":live",
-        ":retained_disclosures",
         ":sandbox_autosuspend",
         ":thread_cards",
         ":thread_commands",
@@ -303,6 +246,7 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -362,7 +306,6 @@ agentplane_vitest_test(
         ":live",
         ":local_commands",
         ":page",
-        ":retained_disclosures",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -390,30 +333,7 @@ agentplane_vitest_test(
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-    ],
-)
-
-ts_library(
-    name = "retained_disclosures",
-    srcs = ["retained_disclosures.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:disclosure",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "retained_disclosures_test",
-    srcs = ["retained_disclosures.test.tsx"],
-    deps = [
-        ":retained_disclosures",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -438,40 +358,29 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "step_line",
-    srcs = ["step_line.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:disclosure",
-    ],
-)
-
-ts_library(
     name = "thread_cards",
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":command_progress",
         ":history_rows",
-        ":retained_disclosures",
         ":shell_calls",
-        ":step_line",
         ":thread_evidence",
         ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:shell_command_view",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
+        "//util/frontend:disclosure",
         "//util/frontend:markdown",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
     ],
 )
 
@@ -479,7 +388,6 @@ agentplane_vitest_test(
     name = "thread_cards_test",
     srcs = ["thread_cards.test.tsx"],
     deps = [
-        ":retained_disclosures",
         ":thread_cards",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
@@ -492,6 +400,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/proto:event_pb",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -558,16 +467,16 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
-        ":retained_disclosures",
         ":thread_evidence_css",
         ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:schema",
+        "//util/frontend/transcript:inspection",
+        "//util/frontend/transcript:retained_disclosures",
     ],
 )
 
@@ -769,11 +678,11 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/proto:runner_pb",
+        "//util/frontend:disclosure",
     ],
 )
 

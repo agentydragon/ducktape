@@ -448,11 +448,22 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 			message = "request rejected"
 		}
 		rejected := map[string]any{"code": statusValue.UpstreamCode, "message": message}
-		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected}); err != nil {
-			return nil, errors.Join(&executorRejectedError{method: method, code: int(statusValue.GetUpstreamCode()), message: message}, frameJournalErr, err)
+		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
+		if frameJournalErr != nil {
+			return nil, errors.Join(frameJournalErr, finishErr)
 		}
-		rejection := &executorRejectedError{method: method, code: int(statusValue.GetUpstreamCode()), message: message}
-		return nil, errors.Join(rejection, frameJournalErr)
+		if finishErr != nil {
+			return nil, fmt.Errorf("record rejected typed execution %s result: %w", method, finishErr)
+		}
+		var afterSequence *uint64
+		if read, ok := params.(executorRead); ok {
+			afterSequence = read.AfterSeq
+		}
+		return nil, &executorRejectedError{
+			method: method, code: int(statusValue.GetUpstreamCode()), message: message,
+			intentID: intent, processID: executorProcessID(params), executionSessionID: e.sessionID,
+			afterSequence: afterSequence, recorded: true,
+		}
 	}
 	if statusValue.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		message := statusValue.Message
@@ -635,10 +646,15 @@ func (e *executorNotDispatchedError) evidence() map[string]any {
 }
 
 type executorRejectedError struct {
-	method   string
-	code     int
-	message  string
-	recorded bool // The semantic result and all native response frames are durably recorded.
+	method             string
+	code               int
+	message            string
+	intentID           string
+	processID          string
+	executionSessionID string
+	afterSequence      *uint64
+	output             *headTailBuffer
+	recorded           bool // The semantic result and all native response frames are durably recorded.
 }
 
 func (e *executorRejectedError) Error() string {

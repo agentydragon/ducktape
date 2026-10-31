@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/operation"
@@ -114,7 +115,9 @@ func (h *Host) Initialize(ctx context.Context) error {
 func (h *Host) URL() string { return h.config.URL }
 
 func (h *Host) startProcess(ctx context.Context) (*supervision.Instance, error) {
+	ctx, span := observability.Start(ctx, "agentplane.codex.exec_server.launch")
 	instance, err := h.start(ctx)
+	observability.End(span, err)
 	var refusal Refusal
 	if errors.As(err, &refusal) {
 		err = &supervision.LaunchRefusal{Reason: refusal.Reason, Cause: err}
@@ -176,7 +179,12 @@ func (h *Host) startProbe(work func(context.Context) error) {
 		&h.mu,
 		func(done bool) error { return h.publishOperation(op, done) },
 		h.onError,
-		work,
+		func(ctx context.Context) error {
+			ctx, span := observability.Start(ctx, "agentplane.codex.exec_server.ready")
+			err := work(ctx)
+			observability.End(span, err)
+			return err
+		},
 		nil,
 		nil,
 	); err != nil {

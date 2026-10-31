@@ -15,7 +15,6 @@ from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch
 from cdk8s_plus_34 import (
     Container,
     ContainerPort,
-    ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     Deployment,
@@ -94,7 +93,6 @@ def add_service_workload(
     replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
-    migrate: ContainerProps | None = None,
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
@@ -142,8 +140,6 @@ def add_service_workload(
             else None
         ),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-        # A migration failure blocks startup; no migration command has a retry loop.
-        init_containers=[migrate] if migrate is not None else None,
     )
     service_environment = (
         {name: EnvValue.from_value(value) for name, value in telemetry.service_environment(env.namespace, name).items()}

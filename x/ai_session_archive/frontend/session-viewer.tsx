@@ -1,26 +1,32 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
   Button,
   Center,
+  Checkbox,
   Group,
   Loader,
+  Menu,
   NativeSelect,
   Paper,
+  Popover,
   ScrollArea,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
-import { recordLabel, RecordContent, rawRecordText } from "./event-content";
+import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
+import type { EventRecord, Harness, Machine, SessionKind, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
 
 const SESSION_PAGE_SIZE = 50;
@@ -29,6 +35,12 @@ const SESSION_SIDEBAR_MAX_WIDTH = 520;
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
 const SESSION_TRANSCRIPT_MIN_WIDTH = 360;
 const SESSION_RESIZE_HANDLE_WIDTH = 8;
+const SESSION_KINDS: { value: SessionKind; label: string }[] = [
+  { value: "main", label: "Main sessions" },
+  { value: "subagent", label: "Subagents" },
+  { value: "guardian", label: "Guardian" },
+  { value: "unknown", label: "Unknown" },
+];
 
 function maxSessionSidebarWidth(layoutWidth: number): number {
   return Math.max(
@@ -82,6 +94,15 @@ function transcriptStatusColor(session: SessionSummary): string {
   }
 }
 
+function TranscriptStatusBadge({ session, size }: { session: SessionSummary; size: "xs" | "sm" }): JSX.Element | null {
+  if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
+  return (
+    <Badge size={size} color={transcriptStatusColor(session)} variant="light">
+      {transcriptStatusLabel(session)}
+    </Badge>
+  );
+}
+
 function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
   switch (status) {
     case "pending":
@@ -95,6 +116,17 @@ function noVersionExplanation(status: SessionSummary["transcript_status"]): stri
   }
 }
 
+function RelatedSessionsIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M6 7v10m0 0h5a7 7 0 0 0 7-7V7" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="6" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="6" cy="19" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
   const { sessionId } = useParams();
   const location = useLocation();
@@ -102,13 +134,17 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const search = new URLSearchParams(location.search);
   const selectedMachineId = search.get("machine") ?? "";
   const selectedHarness = search.get("harness") ?? "";
+  const kindSelection = search.has("kind") ? search.getAll("kind") : ["main", "unknown"];
+  const kindScope = SESSION_KINDS.filter(({ value }) => kindSelection.includes(value))
+    .map(({ value }) => value)
+    .join(",");
+  const selectedKinds = useMemo(() => (kindScope === "" ? [] : (kindScope.split(",") as SessionKind[])), [kindScope]);
   const requestedVersionId = search.get("version");
   const layoutRef = useRef<HTMLDivElement>(null);
   const mobileSessionListRef = useRef<HTMLElement>(null);
-  const relatedSessionsRef = useRef<HTMLElement>(null);
-  const focusRelatedSessionsOnOpenRef = useRef(false);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
+  const [relatedSessionsOpen, setRelatedSessionsOpen] = useState(false);
   const sidebarMaxWidth = maxSessionSidebarWidth(layoutWidth);
   const storedSidebarPane = usePaneSize(
     "ai-session-archive-sidebar-width",
@@ -144,16 +180,19 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const [parentSession, setParentSession] = useState<SessionSummary | null>(null);
   const [childSessions, setChildSessions] = useState<SessionSummary[]>([]);
   const [childSessionCursor, setChildSessionCursor] = useState<string | null>(null);
+  const [parentSessionLoadError, setParentSessionLoadError] = useState<string | null>(null);
+  const [childSessionsLoadError, setChildSessionsLoadError] = useState<string | null>(null);
   const [loadingMachines, setLoadingMachines] = useState(true);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
-  const [loadingRelatedSessions, setLoadingRelatedSessions] = useState(false);
+  const [loadingEarlierEvents, setLoadingEarlierEvents] = useState(false);
+  const [loadingParentSession, setLoadingParentSession] = useState(false);
+  const [loadingChildSessions, setLoadingChildSessions] = useState(false);
   const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}`;
+  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}\u0000${kindScope}`;
   const sessionScopeRef = useRef(sessionScope);
   sessionScopeRef.current = sessionScope;
   const selectedSession =
@@ -185,12 +224,32 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     versionsSessionId === selectedSession?.id
       ? (versions.find((version) => version.id === selectedVersionId) ?? null)
       : null;
+  const selectedVersionIsEarlierCapture =
+    selectedVersion !== null &&
+    selectedSession !== null &&
+    selectedSession.latest_version_id !== null &&
+    selectedVersion.id !== selectedSession.latest_version_id;
+  const hasParentRelation =
+    selectedSession !== null &&
+    (selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null);
+  const hasParentMetadata =
+    hasParentRelation ||
+    (selectedSession !== null &&
+      (selectedSession.parent_native_session_id !== null ||
+        selectedSession.parent_native_session_id_conflict === true ||
+        (selectedSession.parent_native_session_id_candidates?.length ?? 0) > 0));
+  const hasCapturedParentSession = selectedSession !== null && selectedSession.parent_session_id !== null;
+  const relatedSessionCount = childSessions.length + Number(hasCapturedParentSession);
+  const hasMoreRelatedChildren = childSessionCursor !== null;
+  const relatedSessionCountLabel = `${relatedSessionCount}${hasMoreRelatedChildren ? "+" : ""}`;
+  const loadingRelatedSessions = loadingParentSession || loadingChildSessions;
   const hasRelatedSessions =
     selectedSession !== null &&
-    (selectedSession.parent_session_id !== null ||
-      selectedSession.parent_link_kind !== null ||
+    (hasParentMetadata ||
       childSessions.length > 0 ||
-      loadingRelatedSessions);
+      loadingRelatedSessions ||
+      parentSessionLoadError !== null ||
+      childSessionsLoadError !== null);
 
   useEffect(
     () => () => {
@@ -226,13 +285,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       ) ?? []),
     ];
-    if (focusRelatedSessionsOnOpenRef.current && relatedSessionsRef.current !== null) {
-      focusRelatedSessionsOnOpenRef.current = false;
-      relatedSessionsRef.current.scrollIntoView?.({ block: "nearest" });
-      relatedSessionsRef.current.focus();
-    } else {
-      focusableElements()[0]?.focus();
-    }
+    focusableElements()[0]?.focus();
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         setMobileSessionListOpen(false);
@@ -258,6 +311,10 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   }, [mobileSessionListOpen]);
 
   useEffect(() => {
+    setRelatedSessionsOpen(false);
+  }, [selectedSession?.id]);
+
+  useEffect(() => {
     const controller = new AbortController();
     void api
       .listMachines(controller.signal)
@@ -278,11 +335,19 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     setLoadingSessions(true);
     setLoadingMoreSessions(false);
     setError(null);
+    if (kindScope === "") {
+      setSessions([]);
+      setSessionCursor(null);
+      setLoadedSessionScope(sessionScope);
+      setLoadingSessions(false);
+      return () => controller.abort();
+    }
     void api
       .listSessions(
         {
           ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
           ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          kinds: selectedKinds,
           limit: SESSION_PAGE_SIZE,
         },
         controller.signal
@@ -304,7 +369,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       sessionPageRequest.current?.abort();
       sessionPageRequest.current = null;
     };
-  }, [api, selectedMachineId, selectedHarness, sessionListRefreshRequest]);
+  }, [api, selectedMachineId, selectedHarness, kindScope, sessionListRefreshRequest]);
 
   useEffect(() => {
     if (sessionId === undefined && loadedSessionScope === sessionScope && !loadingSessions && sessions[0]) {
@@ -340,7 +405,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null) {
       setVersions([]);
       setVersionsSessionId(null);
@@ -374,7 +439,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
-    setLoadingMoreEvents(false);
+    setLoadingEarlierEvents(false);
     if (selectedSession === null || selectedVersionId === null || versionsSessionId !== selectedSession.id) {
       setEvents([]);
       setEventCursor(null);
@@ -413,33 +478,46 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     setParentSession(null);
     setChildSessions([]);
     setChildSessionCursor(null);
+    setParentSessionLoadError(null);
+    setChildSessionsLoadError(null);
     if (selectedSession === null) {
-      setLoadingRelatedSessions(false);
+      setLoadingParentSession(false);
+      setLoadingChildSessions(false);
       return;
     }
 
     const controller = new AbortController();
-    setLoadingRelatedSessions(true);
+    const parentSessionId = selectedSession.parent_session_id;
+    setLoadingParentSession(parentSessionId !== null);
+    setLoadingChildSessions(true);
     const parent =
-      selectedSession.parent_session_id === null
+      parentSessionId === null
         ? Promise.resolve()
-        : api.getSession(selectedSession.parent_session_id, controller.signal).then((item) => {
-            if (!controller.signal.aborted) setParentSession(item);
-          });
+        : api
+            .getSession(parentSessionId, controller.signal)
+            .then((item) => {
+              if (!controller.signal.aborted) setParentSession(item);
+            })
+            .catch((reason: unknown) => {
+              if (!controller.signal.aborted) setParentSessionLoadError(errorMessage(reason));
+            })
+            .finally(() => {
+              if (!controller.signal.aborted) setLoadingParentSession(false);
+            });
     const children = api
       .listSessions({ parentSessionId: selectedSession.id, limit: SESSION_PAGE_SIZE }, controller.signal)
       .then((page) => {
         if (controller.signal.aborted) return;
         setChildSessions(page.data);
         setChildSessionCursor(page.next_cursor);
-      });
-    void Promise.all([parent, children])
+      })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
+        if (!controller.signal.aborted) setChildSessionsLoadError(errorMessage(reason));
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadingRelatedSessions(false);
+        if (!controller.signal.aborted) setLoadingChildSessions(false);
       });
+    void Promise.all([parent, children]);
     return () => {
       controller.abort();
       relatedPageRequest.current?.abort();
@@ -461,6 +539,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
           ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
           cursor: sessionCursor,
+          kinds: selectedKinds,
           limit: SESSION_PAGE_SIZE,
         },
         controller.signal
@@ -479,13 +558,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   };
 
-  const loadMoreEvents = async (): Promise<void> => {
-    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingMoreEvents) return;
+  const loadEarlierEvents = async (): Promise<void> => {
+    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingEarlierEvents) return;
     const requestedScope = eventScope;
     const controller = new AbortController();
     eventPageRequest.current?.abort();
     eventPageRequest.current = controller;
-    setLoadingMoreEvents(true);
+    setLoadingEarlierEvents(true);
     setError(null);
     try {
       const page = await api.listEvents(selectedSession.id, selectedVersionId, eventCursor, controller.signal);
@@ -498,7 +577,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     } finally {
       if (eventPageRequest.current === controller) {
         eventPageRequest.current = null;
-        setLoadingMoreEvents(false);
+        setLoadingEarlierEvents(false);
       }
     }
   };
@@ -510,6 +589,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     relatedPageRequest.current?.abort();
     relatedPageRequest.current = controller;
     setLoadingMoreRelatedSessions(true);
+    setChildSessionsLoadError(null);
     try {
       const page = await api.listSessions(
         { parentSessionId: requestedSessionId, cursor: childSessionCursor, limit: SESSION_PAGE_SIZE },
@@ -521,7 +601,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       }
     } catch (reason) {
       if (!controller.signal.aborted && requestedSessionId === selectedSessionIdRef.current) {
-        setError(errorMessage(reason));
+        setChildSessionsLoadError(errorMessage(reason));
       }
     } finally {
       if (relatedPageRequest.current === controller) {
@@ -545,20 +625,26 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     navigate(`/?${search.toString()}`);
   };
 
-  const changeVersion = (versionId: string): void => {
-    if (versionId) search.set("version", versionId);
-    else search.delete("version");
+  const changeKinds = (values: string[]): void => {
+    search.delete("kind");
+    for (const { value } of SESSION_KINDS) {
+      if (values.includes(value)) search.append("kind", value);
+    }
+    if (values.length === 0) search.set("kind", "");
     navigate(`${location.pathname}?${search.toString()}`);
   };
 
-  const openMobileRelatedSessions = (): void => {
-    focusRelatedSessionsOnOpenRef.current = true;
-    setMobileSessionListOpen(true);
+  const changeVersion = (versionId: string): void => {
+    if (versionId) search.set("version", versionId);
+    else search.delete("version");
+    const query = search.toString();
+    const nextPath = `${location.pathname}${query ? `?${query}` : ""}`;
+    if (nextPath !== `${location.pathname}${location.search}`) navigate(nextPath);
   };
 
   return (
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
-      <Group justify="space-between" align="end" wrap="wrap">
+      <Box component="header" className="session-browser-header">
         <Box>
           <Title order={1} size="h3">
             Local agent sessions
@@ -567,21 +653,18 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             Captured Claude Code and Codex CLI conversations
           </Text>
         </Box>
-        <Text size="xs" c="dimmed">
-          Sorted by last activity
-        </Text>
-      </Group>
+        <MachineImportProgressSummary
+          progress={importProgress}
+          loading={loadingImportProgress}
+          error={importProgressError}
+          returnTo={`${location.pathname}${location.search}`}
+        />
+      </Box>
       {error !== null && (
         <Alert color="red" title="Session data unavailable">
           {error}
         </Alert>
       )}
-      <MachineImportProgressSummary
-        progress={importProgress}
-        loading={loadingImportProgress}
-        error={importProgressError}
-        returnTo={`${location.pathname}${location.search}`}
-      />
       <Box
         ref={layoutRef}
         className="session-browser-layout"
@@ -640,6 +723,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 { value: "codex", label: "Codex CLI" },
               ]}
             />
+            <Checkbox.Group label="Session kinds" value={selectedKinds} onChange={changeKinds}>
+              <SimpleGrid cols={2} spacing={4} mt={4}>
+                {SESSION_KINDS.map(({ value, label }) => (
+                  <Checkbox key={value} value={value} label={label} size="xs" />
+                ))}
+              </SimpleGrid>
+            </Checkbox.Group>
             <Button
               size="xs"
               variant="default"
@@ -648,19 +738,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             >
               Refresh session list
             </Button>
-            {hasRelatedSessions && (
-              <Button
-                size="xs"
-                variant="subtle"
-                aria-controls="session-browser-related-sessions"
-                onClick={() => {
-                  relatedSessionsRef.current?.scrollIntoView?.({ block: "nearest" });
-                  relatedSessionsRef.current?.focus();
-                }}
-              >
-                Jump to related sessions
-              </Button>
-            )}
             <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
               {loadingSessions ? (
                 <Center h={200}>
@@ -697,118 +774,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   Load more sessions
                 </Button>
               )}
-              {hasRelatedSessions && selectedSession !== null && (
-                <Paper
-                  component="section"
-                  withBorder
-                  radius="sm"
-                  p="xs"
-                  aria-label="Related sessions"
-                  id="session-browser-related-sessions"
-                  tabIndex={0}
-                  ref={relatedSessionsRef}
-                  className="session-browser-related-sessions"
-                >
-                  <Stack gap="xs">
-                    <Text size="sm" fw={600}>
-                      Related sessions
-                    </Text>
-                    {(selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null) && (
-                      <Group gap="xs" wrap="wrap">
-                        <Text size="xs" c="dimmed">
-                          Parent
-                        </Text>
-                        {selectedSession.parent_session_id !== null && parentSession !== null ? (
-                          <Button
-                            component={Link}
-                            to={sessionPath(parentSession.id)}
-                            variant="subtle"
-                            size="xs"
-                            onClick={() => setMobileSessionListOpen(false)}
-                          >
-                            {parentSession.title || "Untitled parent session"}
-                          </Button>
-                        ) : selectedSession.parent_session_id !== null ? (
-                          <Loader size="xs" aria-label="Loading parent session" />
-                        ) : (
-                          <Text size="xs" c="dimmed">
-                            Parent session could not be resolved to a captured session.
-                          </Text>
-                        )}
-                        {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
-                          <Badge color="orange" variant="light">
-                            {parentLinkLabel(selectedSession.parent_link_kind)}
-                          </Badge>
-                        )}
-                        {typeof selectedSession.parent_native_session_id === "string" && (
-                          <Text size="xs" c="dimmed">
-                            Native parent ID: {selectedSession.parent_native_session_id}
-                          </Text>
-                        )}
-                        {selectedSession.parent_native_session_id_conflict && (
-                          <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
-                            Conflicting native parent ID candidates:{" "}
-                            {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") || "unavailable"}
-                          </Text>
-                        )}
-                        {parentSession?.identity_inferred && (
-                          <Text size="xs" c="orange">
-                            Parent transcript is not captured; its identity is inferred.
-                          </Text>
-                        )}
-                      </Group>
-                    )}
-                    {childSessions.length > 0 && (
-                      <Stack gap={2}>
-                        <Text size="xs" c="dimmed">
-                          Child sessions
-                        </Text>
-                        <div
-                          className="session-browser-related-children"
-                          role="region"
-                          aria-label="Child sessions"
-                          tabIndex={0}
-                        >
-                          <Stack gap={2} role="list">
-                            {childSessions.map((child) => (
-                              <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
-                                <Button
-                                  component={Link}
-                                  to={sessionPath(child.id)}
-                                  variant="subtle"
-                                  size="xs"
-                                  onClick={() => setMobileSessionListOpen(false)}
-                                >
-                                  {child.title || "Untitled child session"}
-                                </Button>
-                                {parentLinkLabel(child.parent_link_kind) !== null && (
-                                  <Badge color="orange" variant="light">
-                                    {parentLinkLabel(child.parent_link_kind)}
-                                  </Badge>
-                                )}
-                                <Text size="xs" c="dimmed">
-                                  {formatDateTime(child.last_activity_at)}
-                                </Text>
-                              </Group>
-                            ))}
-                          </Stack>
-                        </div>
-                      </Stack>
-                    )}
-                    {loadingRelatedSessions && <Loader size="xs" aria-label="Loading related sessions" />}
-                    {childSessionCursor !== null && (
-                      <Button
-                        variant="default"
-                        size="xs"
-                        loading={loadingMoreRelatedSessions}
-                        onClick={() => void loadMoreRelatedSessions()}
-                      >
-                        Load more child sessions
-                      </Button>
-                    )}
-                  </Stack>
-                </Paper>
-              )}
             </ScrollArea>
           </Stack>
         </Paper>
@@ -841,19 +806,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             >
               Session list
             </Button>
-            {hasRelatedSessions && (
-              <Button
-                className="session-browser-mobile-related-toggle"
-                variant="default"
-                size="xs"
-                aria-label={`Related sessions (${childSessions.length} child sessions)`}
-                aria-controls="session-browser-sidebar"
-                aria-expanded={mobileSessionListOpen}
-                onClick={openMobileRelatedSessions}
-              >
-                Related sessions{childSessions.length > 0 ? ` (${childSessions.length})` : ""}
-              </Button>
-            )}
           </Group>
           {selectedSession === null ? (
             <Center style={{ flex: 1 }}>
@@ -869,8 +821,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             </Center>
           ) : (
             <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
-              <Group justify="space-between" align="start" wrap="wrap">
-                <Box style={{ minWidth: 240, flex: 1 }}>
+              <Group justify="space-between" align="start" wrap="nowrap">
+                <Box style={{ minWidth: 0, flex: 1 }}>
                   <Group gap="xs" mb={4}>
                     <Badge variant="light">{harnessLabel(selectedSession.harness)}</Badge>
                     <Text size="sm" c="dimmed">
@@ -881,18 +833,194 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         Identity inferred
                       </Badge>
                     )}
-                    <Badge color={transcriptStatusColor(selectedSession)} variant="light">
-                      {transcriptStatusLabel(selectedSession)}
-                    </Badge>
+                    <TranscriptStatusBadge session={selectedSession} size="sm" />
+                    {selectedVersionIsEarlierCapture && (
+                      <Badge size="xs" color="orange" variant="light">
+                        Earlier capture
+                      </Badge>
+                    )}
+                    {selectedVersion !== null && selectedVersion.parse_issue_count > 0 && (
+                      <Badge size="xs" color="orange" variant="light">
+                        {selectedVersion.parse_issue_count} parse warning
+                        {selectedVersion.parse_issue_count === 1 ? "" : "s"}
+                      </Badge>
+                    )}
                     {selectedSession.native_session_id_conflict && (
                       <Badge color="red" variant="light">
                         Conflicting native session IDs
                       </Badge>
                     )}
                   </Group>
-                  <Title order={2} size="h4" style={{ overflowWrap: "anywhere" }}>
-                    {selectedSession.title || "Untitled session"}
-                  </Title>
+                  <Group className="session-browser-title-row" gap="xs" wrap="nowrap" align="center">
+                    <Title order={2} size="h4" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                      {selectedSession.title || "Untitled session"}
+                    </Title>
+                    {hasRelatedSessions && (
+                      <Popover
+                        opened={relatedSessionsOpen}
+                        onChange={setRelatedSessionsOpen}
+                        position={layoutWidth <= 760 ? "top-end" : "bottom-end"}
+                        offset={8}
+                        width="min(440px, calc(100vw - 32px))"
+                        withinPortal
+                        shadow="md"
+                      >
+                        <Popover.Target>
+                          <Button
+                            className="session-browser-related-trigger"
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => setRelatedSessionsOpen((open) => !open)}
+                            aria-label={`Related sessions (${relatedSessionCount} shown${hasMoreRelatedChildren ? ", more available" : ""})`}
+                            aria-controls="session-browser-related-dropdown"
+                            aria-expanded={relatedSessionsOpen}
+                          >
+                            <RelatedSessionsIcon />
+                            <Badge
+                              className="session-browser-related-count"
+                              size="sm"
+                              variant="light"
+                              aria-hidden="true"
+                            >
+                              {relatedSessionCountLabel}
+                            </Badge>
+                          </Button>
+                        </Popover.Target>
+                        <Popover.Dropdown className="session-browser-related-dropdown">
+                          <Paper
+                            component="section"
+                            id="session-browser-related-dropdown"
+                            aria-label="Related sessions"
+                          >
+                            <Stack gap="xs">
+                              <Text size="sm" fw={600}>
+                                Related sessions
+                              </Text>
+                              {hasParentMetadata && (
+                                <Stack gap={4}>
+                                  <Group gap="xs" wrap="wrap">
+                                    <Text size="xs" c="dimmed">
+                                      Parent
+                                    </Text>
+                                    {selectedSession.parent_session_id !== null && parentSession !== null ? (
+                                      <Button
+                                        component={Link}
+                                        to={sessionPath(parentSession.id)}
+                                        variant="subtle"
+                                        size="xs"
+                                        onClick={() => {
+                                          setRelatedSessionsOpen(false);
+                                          setMobileSessionListOpen(false);
+                                        }}
+                                      >
+                                        {parentSession.title || "Untitled parent session"}
+                                      </Button>
+                                    ) : selectedSession.parent_session_id !== null && loadingParentSession ? (
+                                      <Loader size="xs" aria-label="Loading parent session" />
+                                    ) : parentSessionLoadError !== null ? (
+                                      <Text size="xs" c="red" role="alert">
+                                        Could not load parent session: {parentSessionLoadError}
+                                      </Text>
+                                    ) : (
+                                      <Text size="xs" c="dimmed">
+                                        Parent session could not be resolved to a captured session.
+                                      </Text>
+                                    )}
+                                    {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
+                                      <Badge className="session-browser-relation-badge" color="orange" variant="light">
+                                        {parentLinkLabel(selectedSession.parent_link_kind)}
+                                      </Badge>
+                                    )}
+                                    {typeof selectedSession.parent_native_session_id === "string" && (
+                                      <Text size="xs" c="dimmed">
+                                        Native parent ID: {selectedSession.parent_native_session_id}
+                                      </Text>
+                                    )}
+                                    {selectedSession.parent_native_session_id_conflict && (
+                                      <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
+                                        Conflicting native parent ID candidates:{" "}
+                                        {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") ||
+                                          "unavailable"}
+                                      </Text>
+                                    )}
+                                    {parentSession?.identity_inferred && (
+                                      <Text size="xs" c="orange">
+                                        Parent transcript is not captured; its identity is inferred.
+                                      </Text>
+                                    )}
+                                  </Group>
+                                </Stack>
+                              )}
+                              {(childSessions.length > 0 ||
+                                loadingChildSessions ||
+                                childSessionsLoadError !== null) && (
+                                <Stack gap={2}>
+                                  <Text size="xs" c="dimmed">
+                                    Child sessions
+                                  </Text>
+                                  {childSessions.length > 0 && (
+                                    <div
+                                      className="session-browser-related-children"
+                                      role="region"
+                                      aria-label="Child sessions"
+                                      tabIndex={0}
+                                    >
+                                      <Stack gap={2} role="list">
+                                        {childSessions.map((child) => (
+                                          <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
+                                            <Button
+                                              component={Link}
+                                              to={sessionPath(child.id)}
+                                              variant="subtle"
+                                              size="xs"
+                                              onClick={() => {
+                                                setRelatedSessionsOpen(false);
+                                                setMobileSessionListOpen(false);
+                                              }}
+                                            >
+                                              {child.title || "Untitled child session"}
+                                            </Button>
+                                            {parentLinkLabel(child.parent_link_kind) !== null && (
+                                              <Badge
+                                                className="session-browser-relation-badge"
+                                                color="orange"
+                                                variant="light"
+                                              >
+                                                {parentLinkLabel(child.parent_link_kind)}
+                                              </Badge>
+                                            )}
+                                            <Text size="xs" c="dimmed">
+                                              {formatDateTime(child.last_activity_at)}
+                                            </Text>
+                                          </Group>
+                                        ))}
+                                      </Stack>
+                                    </div>
+                                  )}
+                                  {loadingChildSessions && <Loader size="xs" aria-label="Loading child sessions" />}
+                                  {childSessionsLoadError !== null && (
+                                    <Text size="xs" c="red" role="alert">
+                                      Could not load child sessions: {childSessionsLoadError}
+                                    </Text>
+                                  )}
+                                  {childSessionCursor !== null && (
+                                    <Button
+                                      variant="default"
+                                      size="xs"
+                                      loading={loadingMoreRelatedSessions}
+                                      onClick={() => void loadMoreRelatedSessions()}
+                                    >
+                                      Load more child sessions
+                                    </Button>
+                                  )}
+                                </Stack>
+                              )}
+                            </Stack>
+                          </Paper>
+                        </Popover.Dropdown>
+                      </Popover>
+                    )}
+                  </Group>
                   {selectedSession.cwd !== null && (
                     <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
                       {selectedSession.cwd}
@@ -909,37 +1037,65 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                     </Text>
                   )}
                 </Box>
-                <Box style={{ width: "min(100%, 360px)" }}>
-                  <NativeSelect
-                    label="Captured version"
-                    aria-label="Captured version"
-                    value={requestedVersionUnavailable ? (requestedVersionId ?? "") : (selectedVersionId ?? "")}
-                    onChange={(event) => changeVersion(event.currentTarget.value)}
-                    disabled={loadingVersions || (versions.length === 0 && !requestedVersionUnavailable)}
-                    data={
-                      loadingVersions
-                        ? [{ value: "", label: "Loading versions…" }]
-                        : [
-                            ...(requestedVersionUnavailable
-                              ? [{ value: requestedVersionId ?? "", label: "Requested capture unavailable" }]
-                              : []),
-                            ...versions.map((version) => ({
-                              value: version.id,
-                              label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
-                            })),
-                            ...(versions.length === 0 && !requestedVersionUnavailable
-                              ? [{ value: "", label: "No captured versions" }]
-                              : []),
-                          ]
-                    }
-                  />
-                  {selectedVersion !== null && (
-                    <Text size="xs" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
-                      {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"} ·{" "}
-                      {selectedVersion.parse_issue_count} parse issues · SHA-256 {selectedVersion.sha256.slice(0, 12)}
-                    </Text>
-                  )}
-                </Box>
+                <Group gap="xs" wrap="nowrap" style={{ flex: "0 0 auto" }}>
+                  <Menu position="bottom-end" width="min(90vw, 420px)" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        aria-label="Conversation options"
+                        title="Conversation options"
+                      >
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown style={{ maxHeight: "min(70dvh, 480px)", overflowY: "auto" }}>
+                      <Menu.Label>Captured versions</Menu.Label>
+                      {loadingVersions ? (
+                        <Menu.Item disabled>Loading versions…</Menu.Item>
+                      ) : (
+                        <>
+                          {requestedVersionUnavailable && <Menu.Item disabled>Requested capture unavailable</Menu.Item>}
+                          {versions.map((version) => (
+                            <Menu.RadioItem
+                              key={version.id}
+                              value={version.id}
+                              data-version-id={version.id}
+                              checked={selectedVersionId === version.id}
+                              closeMenuOnClick
+                              style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                              onClick={() =>
+                                changeVersion(version.id === selectedSession.latest_version_id ? "" : version.id)
+                              }
+                            >
+                              {`${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`}
+                            </Menu.RadioItem>
+                          ))}
+                          {versions.length === 0 && !requestedVersionUnavailable && (
+                            <Menu.Item disabled>No captured versions</Menu.Item>
+                          )}
+                        </>
+                      )}
+                      {selectedVersion !== null && (
+                        <>
+                          <Menu.Divider />
+                          <Menu.Label>
+                            <Stack gap={2}>
+                              <Text size="xs">
+                                {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {selectedVersion.parse_issue_count} parse issues · SHA-256{" "}
+                                {selectedVersion.sha256.slice(0, 12)}
+                              </Text>
+                            </Stack>
+                          </Menu.Label>
+                        </>
+                      )}
+                    </Menu.Dropdown>
+                  </Menu>
+                </Group>
               </Group>
               {requestedVersionUnavailable ? (
                 <Center h={180}>
@@ -972,23 +1128,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   <Loader size="sm" aria-label="Loading conversation records" />
                 </Center>
               ) : (
-                <ScrollArea className="session-browser-events" type="auto">
-                  <Stack gap="sm" pb="md">
-                    {events.map((record) => (
-                      <EventRow key={`${record.ordinal}`} record={record} />
-                    ))}
-                    {events.length === 0 && !loadingEvents && (
-                      <Text size="sm" c="dimmed">
-                        This captured version contains no JSONL records.
-                      </Text>
-                    )}
-                    {eventCursor !== null && (
-                      <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                        Load more records
-                      </Button>
-                    )}
-                  </Stack>
-                </ScrollArea>
+                <ArchiveTranscript
+                  scopeId={eventScope}
+                  records={events}
+                  earlier={{
+                    available: eventCursor !== null,
+                    loading: loadingEarlierEvents,
+                    load: () => void loadEarlierEvents(),
+                  }}
+                  tail={
+                    <>
+                      {events.length === 0 && !loadingEvents && (
+                        <Text size="sm" c="dimmed">
+                          This captured version contains no JSONL records.
+                        </Text>
+                      )}
+                    </>
+                  }
+                />
               )}
             </Stack>
           )}
@@ -1042,74 +1199,10 @@ function SessionRow({
           <Text size="xs" c="dimmed">
             {harnessLabel(session.harness)}
           </Text>
-          <Group gap={6} wrap="wrap" justify="flex-end">
-            <Badge size="xs" color={transcriptStatusColor(session)} variant="light">
-              {transcriptStatusLabel(session)}
-            </Badge>
-            <Text size="xs" c="dimmed">
-              {session.version_count} {session.version_count === 1 ? "version" : "versions"}
-            </Text>
-          </Group>
+          <TranscriptStatusBadge session={session} size="xs" />
         </Group>
       </Stack>
     </Button>
-  );
-}
-
-function EventRow({ record }: { record: EventRecord }): JSX.Element {
-  return (
-    <Paper withBorder radius="sm" p="sm" data-event-ordinal={record.ordinal}>
-      <Stack gap="xs">
-        <Group justify="space-between" align="start" gap="xs">
-          <Group gap="xs">
-            <Badge variant="light">{recordLabel(record)}</Badge>
-            <Text size="xs" c="dimmed">
-              Line {record.ordinal}
-            </Text>
-            {record.parse_error != null && (
-              <Badge color="orange" variant="light">
-                Malformed JSONL
-              </Badge>
-            )}
-          </Group>
-          <Text size="xs" c="dimmed">
-            {formatDateTime(record.timestamp)}
-          </Text>
-        </Group>
-        <RecordContent record={record} />
-        <details>
-          <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>Raw JSONL record</summary>
-          <Box
-            component="pre"
-            mt="xs"
-            p="xs"
-            style={{
-              background: "var(--mantine-color-default-hover)",
-              borderRadius: "var(--mantine-radius-sm)",
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              fontSize: "var(--mantine-font-size-xs)",
-            }}
-          >
-            {rawRecordText(record.raw_base64)}
-          </Box>
-          <details>
-            <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>
-              Exact line bytes (base64)
-            </summary>
-            <Box
-              component="pre"
-              mt="xs"
-              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--mantine-font-size-xs)" }}
-            >
-              {record.raw_base64}
-            </Box>
-          </details>
-        </details>
-      </Stack>
-    </Paper>
   );
 }
 

@@ -102,6 +102,23 @@ This governs every static analysis the validator runs: purity
 classification, side-effect graph construction, top-level-await
 detection, dependency-graph cycles.
 
+### Refusal is a valid soundness strategy for constructs no supported input needs
+
+A construct the analysis does not model has three sound treatments: model
+it, accept an audited author premise for it, or detect it anywhere in the
+input and refuse with an error naming the construct and its source
+location. Refusal is the cheapest of the three. Choose it when no supported
+input (canonical Tana and Claude) contains the construct, so that no
+modelling cost or pool growth is paid for an input nobody runs.
+
+The first case went the other way. A callable stored through a member chain
+onto an intrinsic (`Array.prototype.forEach = f`) used to be invisible to
+later calls. Refusal was checked first, but Tana's vendor chunk contains
+`Function.prototype.toString = function (...)`, Sentry's function-to-string
+wrapper. The construct is therefore modelled (`store_through_member_chain`):
+a write under a global root or onto an intrinsic publishes its callbacks to
+the escaped pool.
+
 ### Conditionally-correct optimizations
 
 `AnalysisAssumptions` carries author-certified contracts, including declared
@@ -522,11 +539,12 @@ The dependency graph is the right abstraction for tooling:
 Native-integrity diagnostics retain the write census produced during the shared
 AST analysis, including source chunk, statement, operation, and location. The
 receiver roots precede unknown-global-value widening; `through_local_alias`
-distinguishes an alias path from a direct receiver. Graph-level
-`native_integrity_witnesses` stores each census site once. Source units reference
-its affected native families through `synchronous_execution.native_integrity_checks`
-when the ordinary-object-prototype or array-intrinsics guard is evaluated and
-fails. These are failed premises, not claims that a write executed or that it
+distinguishes an alias path from a direct receiver. `program_graph.json`'s
+`native_integrity_witnesses` stores each census site once for the run. Source units reference
+its required slots and affected native families through
+`synchronous_execution.native_integrity_checks` when the interpreter
+evaluates a census guard (`NativeIntegrityGuard`) or a native call identity
+and it fails. These are failed premises, not claims that a write executed or that it
 alone explains lost precision. Other eligibility conditions may also fail.
 `describe` follows affected families and invalidated key dependencies to the
 source witnesses, bounding rows with the same total/emitted/truncated metadata as

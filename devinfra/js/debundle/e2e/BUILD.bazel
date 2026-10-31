@@ -110,6 +110,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:output_layout",
         "//devinfra/js/debundle:spec",
         "@crates//:serde",
@@ -938,6 +939,8 @@ debundle_e2e_test(name = "initializer_placement_test")
 
 debundle_e2e_test(name = "intrinsic_array_iteration_test")
 
+debundle_e2e_test(name = "member_chain_callback_write_test")
+
 debundle_e2e_test(
     name = "source_match_coalescing_cli_test",
     deps = [
@@ -957,3 +960,8 @@ debundle_e2e_test(
 debundle_e2e_test(name = "callback_pool_order_test")
 
 debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
+
+debundle_e2e_test(
+    name = "explain_integrity_cli_test",
+    deps = ["@crates//:serde_json"],
+)

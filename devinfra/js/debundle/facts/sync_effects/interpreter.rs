@@ -805,14 +805,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.record_inference_use(guard, premise.inference_use, &premise.dependencies);
             return true;
         }
+        self.record_failed_native_guard(guard, slots);
+        false
+    }
+
+    /// Every slot census-intact, for a proof that records no inference use.
+    /// A failure records the mutated families like [`Self::native_guard_intact`].
+    fn census_slots_intact(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) -> bool {
+        self.observe_native_prefix(guard, None);
+        let intact = matches!(
+            self.inputs.index.integrity.require(slots, None),
+            Integrity::Intact(_)
+        );
+        if !intact {
+            self.record_failed_native_guard(guard, slots);
+        }
+        intact
+    }
+
+    fn record_failed_native_guard(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
         self.state
             .native_integrity_checks
             .borrow_mut()
             .insert(NativeIntegrityCheck {
                 guard,
-                affected_roots: integrity.mutated_roots(slots),
+                slots: slots.iter().map(ToString::to_string).collect(),
+                affected_roots: self.inputs.index.integrity.mutated_roots(slots),
             });
-        false
     }
 
     fn constructor_field_prototype_absent(&self, class: u32, property: &str) -> bool {
@@ -1164,12 +1183,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ) {
             return None;
         }
-        let premise = native_premise(
+        let Some(premise) = native_premise(
             &self.inputs.index.integrity,
             row.requires,
             Some(site.allocation_id()),
             InferenceRule::NativeCallIdentity,
-        )?;
+        ) else {
+            self.record_failed_native_guard(NativeIntegrityGuard::NativeCallIdentity, row.requires);
+            return None;
+        };
         if !premise.census {
             let evidence = self
                 .inputs
@@ -1974,17 +1996,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.inputs.shadowed.contains("Object")
             || self.inputs.flow.is_declared(&array_intrinsic)
             || self.inputs.shadowed.contains("Array")
-            || !matches!(
-                self.inputs.index.integrity.require(
-                    &[
-                        IntrinsicSlot::Global(NativeIntrinsic::Object),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "fromEntries"),
-                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
-                        IntrinsicSlot::ArrayIteratorPrototype,
-                    ],
-                    None,
-                ),
-                Integrity::Intact(_)
+            || !self.census_slots_intact(
+                NativeIntegrityGuard::MappedFromEntries,
+                &[
+                    IntrinsicSlot::Global(NativeIntrinsic::Object),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "fromEntries"),
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                    IntrinsicSlot::ArrayIteratorPrototype,
+                ],
             )
         {
             return None;
@@ -2287,18 +2306,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !self.inputs.index.top_exported_values[fact.ordinal.0].is_empty()
             || self.inputs.shadowed.contains("Object")
             || self.inputs.shadowed.contains("Symbol")
-            || !matches!(
-                self.inputs.index.integrity.require(
-                    &[
-                        IntrinsicSlot::Global(NativeIntrinsic::Object),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
-                        IntrinsicSlot::Global(NativeIntrinsic::Symbol),
-                        IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
-                    ],
-                    None,
-                ),
-                Integrity::Intact(_)
+            || !self.census_slots_intact(
+                NativeIntegrityGuard::FrozenNamespace,
+                &[
+                    IntrinsicSlot::Global(NativeIntrinsic::Object),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
+                    IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                    IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
+                ],
             )
         {
             return None;
@@ -4148,6 +4164,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 root = receiver;
             }
             let root_values = self.evaluate(root, env, captures);
+            // A bare binding receiver is `apply_member_value_writes`' lane.
+            if !matches!(write.receiver, ValueExpr::Binding(_)) {
+                self.store_through_member_chain(
+                    write,
+                    root,
+                    &receivers,
+                    &root_values,
+                    env,
+                    captures,
+                );
+            }
             let callable_surface = root_values.iter().any(|value| {
                 matches!(
                     value,
@@ -4182,6 +4209,57 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let values = self.evaluate(&write.value, env, captures);
             self.promote_deferred_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[callbacks, values], false, outcome);
+        }
+    }
+
+    /// A value stored through a member chain (`a.b.c = f`) lands where a
+    /// later read of the same chain finds it: in a tracked receiver's
+    /// properties, or, under a global root or intrinsic, in the escaped
+    /// pool every opaque call may invoke.
+    fn store_through_member_chain(
+        &mut self,
+        write: &CallbackResultWrite,
+        root: &ValueExpr,
+        receivers: &Values,
+        root_values: &Values,
+        env: &Context,
+        captures: &Context,
+    ) {
+        let values = self.evaluate(&write.value, env, captures);
+        let global_root = matches!(root, ValueExpr::Binding(id)
+            if !self.inputs.flow.is_declared(id)
+                && !env.contains_key(id)
+                && !captures.contains_key(id))
+            || root_values.iter().chain(receivers.iter()).any(|value| {
+                matches!(
+                    value,
+                    AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic
+                )
+            });
+        let mut changed = false;
+        if global_root {
+            self.taint_objects(&values);
+            let callbacks = self.callback_values(&values);
+            let before = self.state.global_escaped_callbacks.len();
+            self.state.global_escaped_callbacks.extend(callbacks);
+            changed |= self.state.global_escaped_callbacks.len() != before;
+        }
+        for receiver in receivers {
+            if let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver {
+                let stored = self
+                    .state
+                    .prefix_object_properties
+                    .entry(*object)
+                    .or_default()
+                    .entry(write.property.clone())
+                    .or_default();
+                let before = stored.len();
+                stored.extend(values.iter().cloned());
+                changed |= stored.len() != before;
+            }
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -8728,7 +8806,6 @@ impl Executor<'_, '_> {
                 .collect();
         outcome.effects.native_prefix_observations =
             std::mem::take(self.state.native_prefix_observations.get_mut());
-        outcome.effects.native_prototype_mutations = index.native_prototype_mutations.clone();
         outcome.effects.native_integrity_uses =
             std::mem::take(self.state.native_integrity_uses.get_mut())
                 .into_iter()
@@ -8755,7 +8832,6 @@ impl Executor<'_, '_> {
                     dependencies,
                 });
         }
-        outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         self.state.top_env = top_env;
         self.state.top_captures = top_captures;
         self.clear_invocation_memos();
