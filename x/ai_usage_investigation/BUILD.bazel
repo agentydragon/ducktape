@@ -1,0 +1,137 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "analyze",
+    srcs = ["analyze.py"],
+)
+
+py_binary(
+    name = "analyze_bin",
+    main_module = "x.ai_usage_investigation.analyze",
+    deps = [":analyze"],
+)
+
+py_test(
+    name = "test_analyze",
+    srcs = ["test_analyze.py"],
+    deps = [
+        ":analyze",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_archive_usage_sql",
+    srcs = ["test_archive_usage_sql.py"],
+    data = [
+        "archive-partial-records.sql",
+        "archive-token-sample.sql",
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres_fixtures",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "native_accounting",
+    srcs = ["native_accounting.py"],
+)
+
+py_test(
+    name = "test_native_accounting",
+    srcs = ["test_native_accounting.py"],
+    deps = [
+        ":native_accounting",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "estimate_capacity",
+    srcs = ["estimate_capacity.py"],
+    deps = [
+        ":analyze",
+        ":bootstrap",
+        "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
+
+py_binary(
+    name = "estimate_capacity_bin",
+    main_module = "x.ai_usage_investigation.estimate_capacity",
+    deps = [":estimate_capacity"],
+)
+
+py_test(
+    name = "test_estimate_capacity",
+    srcs = ["test_estimate_capacity.py"],
+    deps = [
+        ":analyze",
+        ":bootstrap",
+        ":estimate_capacity",
+        "//:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "report_data_bin",
+    main_module = "x.ai_usage_investigation.report_data",
+    deps = [":report_data"],
+)
+
+py_library(
+    name = "cloud_usage_bundle",
+    srcs = ["cloud_usage_bundle.py"],
+)
+
+py_library(
+    name = "langfuse_usage_extract",
+    srcs = ["langfuse_usage_extract.py"],
+)
+
+py_test(
+    name = "test_langfuse_usage_extract",
+    srcs = ["test_langfuse_usage_extract.py"],
+    deps = [
+        ":langfuse_usage_extract",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "report_data",
+    srcs = ["report_data.py"],
+    deps = [":analyze"],
+)
+
+py_test(
+    name = "test_report_data",
+    srcs = ["test_report_data.py"],
+    deps = [
+        ":report_data",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
