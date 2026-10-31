@@ -200,6 +200,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:vm_tracing",
         "//agentplane/system_tests/k3s:block_storage",
         "//agentplane/system_tests/k3s:guest_logs",
         "//util/testing:undeclared_outputs",

@@ -20,6 +20,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
+from agentplane.system_tests.vm_tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
@@ -141,18 +142,27 @@ async def _suspend(cluster: Cluster, name: str, uid: str) -> None:
     )
 
 
-async def _cleanup(cluster: Cluster, name: str, uid: str, claims: list[str]) -> None:
+async def _cleanup(cluster: Cluster, name: str, uid: str, claims: list[str], *, case: str) -> None:
     errors: list[Exception] = []
     try:
-        await _suspend(cluster, name, uid)
+        with tracer.start_as_current_span(
+            "vm.storage.cleanup_suspend", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
     except Exception as error:
         errors.append(error)
     # Delete remains allowed when bootstrap/startup cannot suspend. It follows the controller's
     # ordinary seal policy; the fixture never removes a finalizer or forces shared state.
     try:
-        await _delete(cluster, "sandboxes", name, uid)
-        for claim in claims:
-            await cluster.kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+        with tracer.start_as_current_span(
+            "vm.storage.cleanup_delete_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _delete(cluster, "sandboxes", name, uid)
+        with tracer.start_as_current_span(
+            "vm.storage.cleanup_delete_claims", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            for claim in claims:
+                await cluster.kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
     except Exception as error:
         errors.append(error)
     if errors:
@@ -273,43 +283,66 @@ async def fresh_workspace_storage_survives_replacement(
 
     save()
     async with AsyncExitStack() as stack:
-        created_template = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "SandboxTemplate",
-                    "metadata": {"name": template, "namespace": cluster.namespace},
-                    "spec": spec,
-                },
+        with tracer.start_as_current_span(
+            "vm.storage.create_template", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            created_template = json.loads(
+                await cluster.kubectl(
+                    "create",
+                    "-f",
+                    "-",
+                    "-o",
+                    "json",
+                    body={
+                        "apiVersion": SANDBOX_API_VERSION,
+                        "kind": "SandboxTemplate",
+                        "metadata": {"name": template, "namespace": cluster.namespace},
+                        "spec": spec,
+                    },
+                )
             )
-        )
-        stack.push_async_callback(_delete, cluster, "sandboxtemplates", template, created_template["metadata"]["uid"])
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": name, "namespace": cluster.namespace},
-                    "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
-                },
+
+        async def delete_template() -> None:
+            with tracer.start_as_current_span(
+                "vm.storage.delete_template", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _delete(cluster, "sandboxtemplates", template, created_template["metadata"]["uid"])
+
+        stack.push_async_callback(delete_template)
+        with tracer.start_as_current_span(
+            "vm.storage.create_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            created = json.loads(
+                await cluster.kubectl(
+                    "create",
+                    "-f",
+                    "-",
+                    "-o",
+                    "json",
+                    body={
+                        "apiVersion": SANDBOX_API_VERSION,
+                        "kind": "Sandbox",
+                        "metadata": {"name": name, "namespace": cluster.namespace},
+                        "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
+                    },
+                )
             )
-        )
         uid = created["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
-        stack.push_async_callback(_cleanup, cluster, name, uid, [f"{name}-state", f"{name}-workspace"])
+
+        async def cleanup_sandbox() -> None:
+            with tracer.start_as_current_span(
+                "vm.storage.cleanup_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _cleanup(cluster, name, uid, [f"{name}-state", f"{name}-workspace"], case=case)
+
+        stack.push_async_callback(cleanup_sandbox)
         save()
         try:
-            await _condition(cluster, name, "Ready")
+            with tracer.start_as_current_span(
+                "vm.storage.ready", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _condition(cluster, name, "Ready")
         except Exception as error:
             evidence["readiness_error"] = str(error)
             try:
@@ -318,7 +351,10 @@ async def fresh_workspace_storage_survives_replacement(
                 evidence["readiness_snapshot_error"] = str(diagnostic_error)
             save()
             raise
-        await _condition(cluster, name, "Bootstrapped")
+        with tracer.start_as_current_span(
+            "vm.storage.bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Bootstrapped")
         old_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         before = await _volumes(cluster, name, uid)
         if vm:
@@ -348,54 +384,84 @@ async def fresh_workspace_storage_survives_replacement(
             old_incarnation=old_incarnation,
             workspace_attachment=attachment,
             original_workload_uid=workload_uid,
-            first_probe=await _probe(client, name, cwd, workspace_dir, marker),
         )
+        with tracer.start_as_current_span(
+            "vm.storage.first_probe", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            evidence["first_probe"] = await _probe(client, name, cwd, workspace_dir, marker)
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
         save()
-        await _suspend(cluster, name, uid)
-        await cluster.kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
+        with tracer.start_as_current_span(
+            "vm.storage.first_suspend", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
+        with tracer.start_as_current_span(
+            "vm.storage.first_workload_delete", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await cluster.kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
         # Ordinary VM suspension halts the VM and removes its VMI/launcher, retaining the VM and
         # all its disks. VM-object replacement is a separate explicit fixture operation below.
         if vm:
             await cluster.kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
-        assert await _volumes(cluster, name, uid) == before
+        with tracer.start_as_current_span(
+            "vm.storage.retained_volumes_after_suspend", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            assert await _volumes(cluster, name, uid) == before
         # Exercise the durable record at the actual resume boundary: an incompatible claim
         # edit must refuse before starting any replacement or changing retained contents.
-        changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
-        changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
-        await cluster.kubectl("replace", "-f", "-", body=changed)
-        await _running(cluster, name, uid, True)
-        await cluster.kubectl(
-            "wait",
-            f"sandboxes.{GROUP}/{name}",
-            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
-            f"--timeout={BOUND_SECONDS}s",
-        )
+        with tracer.start_as_current_span(
+            "vm.storage.incompatible_claim_refusal", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
+            changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
+            await cluster.kubectl("replace", "-f", "-", body=changed)
+            await _running(cluster, name, uid, True)
+            await cluster.kubectl(
+                "wait",
+                f"sandboxes.{GROUP}/{name}",
+                '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
+                f"--timeout={BOUND_SECONDS}s",
+            )
         refused = await _object(cluster, f"sandboxes.{GROUP}", name)
         assert not refused["status"].get("incarnation")
         assert await _volumes(cluster, name, uid) == before
         evidence["incompatible_claim_refused"] = True
         save()
-        await _suspend(cluster, name, uid)
-        changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
-        changed["spec"] = spec
-        await cluster.kubectl("replace", "-f", "-", body=changed)
-        await _running(cluster, name, uid, True)
-        await _condition(cluster, name, "Ready")
-        await _condition(cluster, name, "Bootstrapped")
+        with tracer.start_as_current_span(
+            "vm.storage.suspend_after_refusal", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
+        with tracer.start_as_current_span(
+            "vm.storage.resume_request", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
+            changed["spec"] = spec
+            await cluster.kubectl("replace", "-f", "-", body=changed)
+            await _running(cluster, name, uid, True)
+        with tracer.start_as_current_span(
+            "vm.storage.resumed_ready", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Ready")
+        with tracer.start_as_current_span(
+            "vm.storage.resumed_bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Bootstrapped")
         new_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         assert new_incarnation["uid"] != old_incarnation["uid"]
-        after = await _volumes(cluster, name, uid)
-        assert after["state"] == before["state"]
-        assert after == before
+        with tracer.start_as_current_span(
+            "vm.storage.retained_volumes_after_resume", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            after = await _volumes(cluster, name, uid)
+            assert after["state"] == before["state"]
+            assert after == before
         if vm:
             assert (await _object(cluster, "virtualmachine", name))["metadata"]["uid"] == workload_uid
-        evidence.update(
-            after=after,
-            new_incarnation=new_incarnation,
-            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker),
-        )
+        evidence.update(after=after, new_incarnation=new_incarnation)
+        with tracer.start_as_current_span(
+            "vm.storage.resumed_probe", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            evidence["resumed_probe"] = await _probe(client, name, cwd, workspace_dir, marker)
         save()
         if vm:
             await _suspend(cluster, name, uid)
