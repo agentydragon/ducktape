@@ -84,9 +84,15 @@ jobs:
         with:
           installables: ".#bb .#bbapi .#pr-visuals"
 
+      - name: Record trusted control revision and tool pins
+        run: |
+          git rev-parse HEAD
+          jq '.pins | {bb, bbapi, "pr-visuals": .["pr-visuals"]}' nix/artifact-pins.json
+
       # This republishes that completed run while a fresh test executes against
       # its PR head. It measures overlap and the job's completion barrier; it
       # does not replace normal publication or claim a matched CI speedup.
+      # Re-publication can refresh Before images resolved through fallback pointers.
       - parallel:
           - name: Test on remote runner
             uses: ./.github/actions/bb-remote
