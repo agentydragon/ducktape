@@ -47,7 +47,7 @@ stored application value. A workflow depending on retained JavaScript values wou
 
 ## Cause
 
-The relevant paths are unchanged between deployed `c91f790` and the inspected source:
+The incident image `c91f790` followed this path:
 
 1. [`Runtime.execute`](../runtime.go) returns when no command, live cell or running process remains.
    Its deferred `liveHost.Close` detaches the current binding; `CodeModeHost` retains logical
@@ -71,15 +71,11 @@ healthy replicas therefore invokes the genuine-loss recovery path.
 `role=user` messages. The model's statement that it saw text from the user follows this encoding;
 the operator did not author these two messages.
 
-## Follow-up
+## Runtime contract
 
-Track the focused correction as
-[`CENTRAL_SAMPLER_HOST_AFFINITY`](../../../plans/task_dag.md#central_sampler_host_affinity--preserve-healthy-javascript-state-across-idle-turns).
-Retain the Session's authoritative database ownership lease on the replica holding its JavaScript
-state across idle turns, and invoke loss reconciliation only after the host is actually unavailable.
-Preserve generation fencing and uncertain-effect handling. Transparent restoration after actual
-host death is outside this correction. The approved resident ownership and work-wakeup contract is
-documented in the [sampler specification](../SPEC.md#session-residency-and-work-wakeups).
+The [sampler specification](../SPEC.md#session-residency-and-work-wakeups) defines retained Session
+ownership across idle turns and work wakeups, with generation fencing and uncertain-effect handling.
+Transparent restoration after actual host death is outside that contract.
 
 The investigation used read-only Kubernetes logs/metadata and read-only PostgreSQL queries. No
 Session, command, environment or deployment was changed. Raw captures remain under

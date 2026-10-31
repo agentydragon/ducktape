@@ -139,20 +139,18 @@ owns authenticated routing/fencing. This records ownership, not a new transport 
 
 ### Independently assignable extractions
 
-The [task DAG](task_dag.md#runner_shared_runtime_packages--place-shared-runtime-support-under-env)
-owns status and dependencies. Ready slices are shared environment runtime libraries, Execution
-service, Environment Harness Host plus Environment Runtime, and runtime packaging. Each starts with a
-bounded ownership review of admission, drain, durable-state locks, process generations, fencing and
-failure settlement. Review that contract before moving an effect between processes.
+The [task DAG](task_dag.md#runner-component-restructuring) owns status and dependencies. Remaining
+slices are Environment Harness Host plus Environment Runtime, and runtime packaging. Each starts
+with a bounded ownership review of admission, drain, durable-state locks, process generations,
+fencing and failure settlement. Review that contract before moving an effect between processes.
 There is no global Runner redesign prerequisite; an unresolved question blocks only the slice
-that needs its answer. The preferred execution-then-harness sequence is not a hard dependency when
-the existing execution API suffices. Shared-file conflicts require rebasing, not ordering gates.
+that needs its answer. Shared-file conflicts require rebasing, not ordering gates.
 
-The execution extraction includes both today's `runner/executor` companion (PID-1 supervision of
-Codex exec-server) and `runner/execution` typed gRPC adapter. Renaming only the companion leaves the
-execution endpoint embedded in the wrong owner. Preserve Pod PID-1 and VM/systemd execution modes;
-a standalone execution target must not require a native harness. Future laptop support is a
-capability to preserve room for, not an implementation prerequisite.
+The [Execution service](../env/execution/README.md) owns the typed gRPC adapter, native backend and
+PID-1 companion under `env/execution`; shared libraries live under `env/supervision` and `env/oneoff`.
+Production Runner still embeds the execution adapter and backend lifecycle. Remaining host and
+packaging changes must preserve Pod PID-1 and VM/systemd execution modes and independent execution
+without a native harness. Future laptop support remains a capability to preserve room for.
 
 The host extraction assigns native Session state/journals/ingress to the Environment Harness Host
 and leaves environment lifecycle with the Environment Runtime. Keep native state, authored data,
