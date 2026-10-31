@@ -556,6 +556,7 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
+    AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[Decision, unscheduled: multiple sampler replicas and rolls that preserve agents]
@@ -586,6 +587,31 @@ execution-Sandbox deletion. Decide cardinality, capabilities, lifecycle, authori
 reuse the existing versioned Codex environment API evidence without claiming unsupported modes work.
 Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
 these cases. This authorizes no implementation, deployment or native-state migration.
+
+### `AGENT_AUTHORED_CONVERSATIONS_DESIGN` — conversations agents act on through tools
+
+**Decision, unscheduled; operator requested for later, 2026-10-30 PDT.** Explore a conversation
+that agents participate in through tools such as `send_message` and `edit_message`. Its messages
+need not mirror model context items or expose each reasoning/tool step as a work log. A Session
+could participate in such a thread alongside humans or other agents; a human participant is optional.
+Expose conversation operations through MCP so third-party harnesses can participate without changes
+to their binaries. Treat publishing a message, notifying a participant and waking an agent as
+separate concerns; incoming-message delivery and harness-specific notification support need design.
+
+Recommendation for review: distinguish the authored conversation, harness continuation state and
+retained evidence of harness activity. Today's History conversation view is already a lossy
+projection and cannot resume a rollout; central-sampler evidence and native app-server observations
+also arrive at different levels of detail. Consider adding authored conversations and participant
+relationships alongside existing projected threads, with reasoning, tool calls and raw harness
+evidence accessible through a debug view. Keep the ability to retain harness evidence. Evaluate
+OTel/Langfuse as a possible destination, including fidelity and retention; do not assume ordinary
+telemetry replaces durable evidence or continuation state.
+
+Exit: reviewed conversation/participant/message semantics, send/edit authorization and attribution,
+edit history and delivery/retry behavior, and an incremental migration/UX proposal. Decide whether
+History owns the new entities and whether its name still fits, in coordination with
+`HISTORY_SERVICE_RENAME`. The service owner, storage and trace destination remain open. This design
+does not block current thread work or authorize implementation.
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
 
