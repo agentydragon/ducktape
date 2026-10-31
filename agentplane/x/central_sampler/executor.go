@@ -214,9 +214,69 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
 			}
 		}
-		return &toolOutcomeError{toolError: &toolError{transport.Error()}, evidence: transport.evidence(transport.retainedSession)}
+		message, encodeErr := observedProcessFailureMessage(transport)
+		if encodeErr != nil {
+			return fmt.Errorf("encode observed process failure: %w", encodeErr)
+		}
+		return &toolOutcomeError{toolError: &toolError{message}, evidence: transport.evidence(transport.retainedSession)}
 	}
 	return err
+}
+
+// The pinned code-mode host accepts only a string for a rejected nested promise.
+// Keep small observations machine-readable in that string; the full byte buffer is
+// retained in the tool result BoundaryRecord, whose payload names the executor intent ID.
+type observedProcessOutput struct {
+	Text                string `json:"text"`
+	Encoding            string `json:"encoding"`
+	RetainedBytes       int    `json:"retained_bytes"`
+	OmittedBytes        int    `json:"omitted_bytes"`
+	DisplayOmittedBytes int    `json:"display_omitted_bytes"`
+	ShownHeadBytes      int    `json:"shown_head_bytes"`
+	ShownTailBytes      int    `json:"shown_tail_bytes"`
+	Truncated           bool   `json:"truncated"`
+}
+
+type observedProcessFailure struct {
+	Message         string                `json:"message"`
+	Method          string                `json:"method"`
+	Phase           string                `json:"phase"`
+	IntentID        string                `json:"intent_id"`
+	ProcessID       string                `json:"process_id"`
+	AfterSeq        *uint64               `json:"after_seq,omitempty"`
+	RemoteOutcome   string                `json:"remote_outcome"`
+	AutomaticReplay bool                  `json:"automatic_replay"`
+	ObservedOutput  observedProcessOutput `json:"observed_output"`
+}
+
+func observedProcessFailureMessage(transport *executorTransportError) (string, error) {
+	if transport.method != "process/read" || transport.output == nil || transport.output.totalBytes() == 0 {
+		return transport.Error(), nil
+	}
+	retained := transport.output.retained()
+	const shownBytes = 8 * 1024
+	head, tail := retained, []byte(nil)
+	if len(retained) > shownBytes {
+		head = retained[:shownBytes/2]
+		tail = retained[len(retained)-shownBytes/2:]
+	}
+	displayOmitted := len(retained) - len(head) - len(tail)
+	text := lossyUTF8(head)
+	if displayOmitted > 0 || transport.output.omitted > 0 {
+		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, transport.output.omitted)
+	}
+	text += lossyUTF8(tail)
+	encoded, err := json.Marshal(observedProcessFailure{
+		Message: transport.Error(), Method: transport.method, Phase: transport.phase,
+		IntentID: transport.intentID, ProcessID: transport.processID, AfterSeq: transport.afterSequence,
+		RemoteOutcome: "unknown", AutomaticReplay: false,
+		ObservedOutput: observedProcessOutput{
+			Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: transport.output.omitted,
+			DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),
+			Truncated: displayOmitted > 0 || transport.output.omitted > 0,
+		},
+	})
+	return string(encoded), err
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and

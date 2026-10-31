@@ -70,13 +70,16 @@ class ExecutorProxy:
     sessions: list[tuple[dict[str, Any], dict[str, Any]]] = field(default_factory=list)
     dropped: asyncio.Event = field(default_factory=asyncio.Event)
     effect_observed: asyncio.Event = field(default_factory=asyncio.Event)
+    next_read_after_output: asyncio.Event = field(default_factory=asyncio.Event)
+    prior_output_seen: bool = False
     dropped_request: dict[str, Any] | None = None
     dropped_reply: dict[str, Any] | None = None
+    dropped_count: int = 0
 
 
 @asynccontextmanager
 async def faulting_executor_proxy(
-    execution_target: str, *, drop_method: str, marker: str
+    execution_target: str, *, drop_method: str, marker: str, drop_count: int = 1, prior_output_marker: str | None = None
 ) -> AsyncIterator[ExecutorProxy]:
     """Forward typed RPCs to the real adapter and lose one completed gRPC reply."""
     observed = ExecutorProxy(url="")
@@ -122,12 +125,21 @@ async def faulting_executor_proxy(
         ) -> ResponseT:
             request_value = {"method": name, **as_dict(request)}
             observed.requests.append(request_value)
+            if name == "ReadProcess" and observed.prior_output_seen:
+                observed.next_read_after_output.set()
             response = await upstream_call(request)
             response_value = {"method": name, **as_dict(response)}
             observed.replies.append(response_value)
-            if is_target(request_value, response) and not observed.dropped.is_set():
+            if (
+                isinstance(response, executor_pb2.ReadProcessResponse)
+                and prior_output_marker
+                and any(prior_output_marker.encode() in chunk.data for chunk in response.chunks)
+            ):
+                observed.prior_output_seen = True
+            if is_target(request_value, response) and observed.dropped_count < drop_count:
                 observed.dropped_request = request_value
                 observed.dropped_reply = response_value
+                observed.dropped_count += 1
                 observed.effect_observed.set()
                 observed.dropped.set()
                 await context.abort(
@@ -366,6 +378,136 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
     assert "resume_session_id" not in proxy.sessions[0][0]
     assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
     assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
+    assert all(intent.result is not None for intent in await store.intents())
+
+
+async def test_lost_process_read_after_observed_output_is_catchable_without_replay(
+    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    observed_output = "OBSERVED_BEFORE_FAILURE"
+    lost_output = "FAULT_PAGE_MARKER"
+    command = (
+        "printf x >> fault-marker; printf "
+        + observed_output
+        + "; while [ ! -e release-fault-page ]; do sleep 0.05; done; printf "
+        + lost_output
+    )
+    async with (
+        Endpoint() as endpoint,
+        faulting_executor_proxy(
+            execution_target,
+            drop_method="process/read",
+            marker=lost_output,
+            drop_count=2,
+            prior_output_marker=observed_output,
+        ) as proxy,
+    ):
+        config = settings(
+            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="observed-read-fault", text="Run one command."
+                ),
+                metadata=METADATA,
+            )
+            async with await endpoint.next() as exchange:
+                source = (
+                    "try { await tools.exec_command({cmd: " + json.dumps(command) + ", yield_time_ms: 10000}); } "
+                    "catch (error) { const failure = JSON.parse(String(error)); "
+                    "text(JSON.stringify(failure)); text(failure.observed_output.text); text(failure.message); } "
+                )
+                await exchange.send(
+                    *response_stream([CustomToolCall("observed-read-fault", "exec", source)], model="test-model").events
+                )
+
+            # Release the second page only after the sampler has consumed the first one.
+            async with asyncio.timeout(15):
+                await proxy.next_read_after_output.wait()
+            (tmp_path / "release-fault-page").touch()
+
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                assert len(outputs) == 1
+                failures = [
+                    json.loads(part["text"]) for part in outputs[0]["output"] if part["text"].startswith('{"message":')
+                ]
+                assert len(failures) == 1
+                failure = failures[0]
+                assert failure["observed_output"]["text"] == observed_output
+                assert "remote effect outcome is unknown" in failure["message"]
+                assert failure["remote_outcome"] == "unknown"
+                assert failure["automatic_replay"] is False
+                await exchange.send(
+                    *response_stream(
+                        [
+                            CustomToolCall(
+                                "follow-up-after-read-fault",
+                                "exec",
+                                'text(await tools.exec_command({cmd: "printf y >> continued-marker"}));',
+                            )
+                        ],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                assert "follow-up-after-read-fault" in {item["call_id"] for item in outputs}
+                await exchange.send(
+                    *response_stream([Message("continued after observed read fault")], model="test-model").events
+                )
+            assert (
+                await wait_turn(stub, request.session_id, "observed-read-fault")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            session = await stub.GetSession(
+                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            )
+            assert not session.blocked
+
+            tool_intents = [
+                intent
+                for intent in await store.intents()
+                if intent.result is not None and intent.result.get("buffered_output_base64")
+            ]
+            assert len(tool_intents) == 1
+            result = tool_intents[0].result
+            assert result is not None
+            assert base64.b64decode(result["buffered_output_base64"]) == observed_output.encode()
+            assert result["remote_outcome"] == "unknown"
+            assert result["automatic_replay"] is False
+            assert result["after_seq"] > 0
+            assert failure["after_seq"] == result["after_seq"]
+            assert failure["intent_id"] == result["intent_id"]
+            stream = stub.FollowEvents(
+                sampler_pb2.FollowEventsRequest(session_id=request.session_id), metadata=METADATA
+            )
+            boundaries = [
+                frame.entry.event.boundary_record
+                async for frame in stream
+                if frame.entry.event.HasField("boundary_record")
+                and frame.entry.event.boundary_record.boundary == "tool"
+                and frame.entry.event.boundary_record.direction == "result"
+            ]
+            assert any(
+                json.loads(boundary.payload).get("buffered_output_base64") == result["buffered_output_base64"]
+                for boundary in boundaries
+            )
+
+    assert proxy.dropped_count == 2
+    assert (tmp_path / "fault-marker").read_text() == "x"
+    assert (tmp_path / "continued-marker").read_text() == "y"
+    starts = [
+        call
+        for call in proxy.requests
+        if call.get("method") == "StartProcess" and lost_output in json.dumps(call.get("argv"))
+    ]
+    assert len(starts) == 1
+    process = await store.process(int(starts[0]["process_id"].split("-", maxsplit=1)[0]))
+    assert process is not None
+    assert process.status == "abandoned"
     assert all(intent.result is not None for intent in await store.intents())
 
 
