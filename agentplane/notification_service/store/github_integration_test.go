@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/lease"
 	"github.com/google/uuid"
 )
 
@@ -185,13 +186,13 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.
 func (g githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
 	t.Helper()
-	lease := uuid.New()
-	g.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, inboxID, lease)
+	holder := uuid.New()
+	g.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, inboxID, holder)
 	inbox, err := scanInbox(g.db.QueryRowContext(t.Context(), `SELECT `+inboxColumns+` FROM inbox WHERE id = $1`, inboxID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Claim{Inbox: inbox, lease: lease}
+	return Claim{Inbox: inbox, held: lease.Lease{Key: []any{inboxID}, Holder: holder}}
 }
 
 // validate refreshes the grant as a successful call to GitHub would, unless it is fresh, and returns its fence.
