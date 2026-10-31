@@ -14,6 +14,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DbSession, load_only
 
+from x.ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
 from x.ai_session_archive.codex_metadata import read_codex_titles
 from x.ai_session_archive.database import (
     CodexTitleObservationRow,
@@ -812,8 +813,10 @@ class SnapshotIngestor:
                 self._resolve_codex_parent_link(db, row)
         if row.cwd is None and metadata.get("cwd"):
             row.cwd = str(metadata["cwd"])
-        if row.title is None and metadata.get("title"):
-            row.title = str(metadata["title"])[:500]
+        # An unchanged known version returns no metadata; a parsed version replaces the projection.
+        if row.harness == Harness.CLAUDE.value and metadata:
+            title: ClaudeTitle | None = metadata.get("claude_title")
+            row.title = title.text if title is not None else None
         if row.harness == Harness.CODEX.value:
             self._apply_latest_codex_title(db, row)
         first = metadata.get("first_timestamp")
@@ -1012,22 +1015,7 @@ def _extract_session_metadata(
         last = metadata.get("last_timestamp")
         metadata["first_timestamp"] = timestamp if first is None else min(first, timestamp)
         metadata["last_timestamp"] = timestamp if last is None else max(last, timestamp)
-    if metadata.get("title"):
-        return
-    title = record.get("title") or record.get("summary")
-    if isinstance(title, str) and title.strip():
-        metadata["title"] = title.strip()[:500]
-        return
-    message = record.get("message")
-    if isinstance(message, dict):
-        content = message.get("content")
-        if isinstance(content, str) and content.strip() and record.get("type") == "user":
-            metadata["title"] = content.strip()[:500]
-        elif isinstance(content, list) and record.get("type") == "user":
-            for part in content:
-                if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"].strip():
-                    metadata["title"] = part["text"].strip()[:500]
-                    break
+    metadata["claude_title"] = select_claude_title(metadata.get("claude_title"), record)
 
 
 def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> None:
