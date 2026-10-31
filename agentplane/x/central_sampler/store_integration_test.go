@@ -446,8 +446,166 @@ func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T
 	}
 }
 
-func TestStoreRecoverSessionRejectsProviderAndSetupBoundaries(t *testing.T) {
-	for _, kind := range []string{"sampling", "compaction", "setup"} {
+func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "sample-then-recover"
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+		CommandId: commandID,
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
+	}, "fixture-account", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeCommand := commandID
+	if err := store.FailExecution(t.Context(), owner, session.ID, &activeCommand, errors.New("provider stream interrupted")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || !blocked.Blocked {
+		t.Fatalf("sampling interruption blocked=%v err=%v", blocked.Blocked, err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("recovery ignored active owner: %v", err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor-1, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("stale cursor recovered sampling: %v", err)
+	}
+	competingOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("recovery raced through competing owner: %v", err)
+	}
+	if err := store.Release(t.Context(), competingOwner); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed provider request", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Blocked || recovered.Cursor <= blocked.Cursor {
+		t.Fatalf("recovery did not advance same Session: %+v", recovered)
+	}
+	result, err := intentResultForDB(t, store, intentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "abandoned" || result["remote_outcome"] != "unknown" || result["automatic_replay"] != false ||
+		result["provider_completion_unknown"] != true || result["output_committed"] != false {
+		t.Fatalf("sampling abandonment result=%v", result)
+	}
+	command, err := store.GetCommand(t.Context(), session.ID, commandID)
+	if err != nil || command.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN {
+		t.Fatalf("original command outcome=%v err=%v", command.GetOutcome(), err)
+	}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"late": true}, nil, nil); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("late provider completion wrote after recovery: %v", err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil || conversation.Stopped {
+		t.Fatalf("recovered conversation pending=%v stopped=%v", conversation.Pending, conversation.Stopped)
+	}
+	contextWire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contextWire, []byte("provider may have completed or charged")) || !bytes.Contains(contextWire, []byte("stream prefix was not committed")) {
+		t.Fatalf("provider loss notice missing from context: %s", contextWire)
+	}
+	if err := store.Release(t.Context(), newOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+		CommandId: "continue-after-recovery",
+		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}},
+	}, "fixture-account", nil); err != nil {
+		t.Fatalf("same Session did not accept new input: %v", err)
+	}
+}
+
+func TestStoreRecoverSessionRejectsSamplingWithOtherUnresolvedEffect(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown outcomes")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "provider and executor uncertain", ""); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("mixed sampling and executor uncertainty recovered: %v", err)
+	}
+}
+
+func TestStoreRecoverSessionRejectsSamplingPendingWithWrongIntentKind(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown provider outcome")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt only the fixture request to prove recovery checks the intent kind as well
+	// as the durable pending ID, rather than clearing a mismatched pointer.
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET request=jsonb_set(request,'{kind}','"compaction"') WHERE id=$1`, intentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed mismatched request", ""); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("wrong sampling intent kind recovered: %v", err)
+	}
+}
+
+func TestStoreRecoverSessionRejectsCompactionAndSetupBoundaries(t *testing.T) {
+	for _, kind := range []string{"compaction", "setup"} {
 		t.Run(kind, func(t *testing.T) {
 			setup := ""
 			if kind == "setup" {

@@ -954,10 +954,15 @@ outcome, not a new prerequisite for starting unrelated P1 work.
 recovery path for a provider request interrupted before its durable result, including drain expiry.
 Retain partial response and effect evidence, require authorized review at the current cursor, and
 continue the same Session without replaying the uncertain request. Fence the previous owner and
-tell the model what was abandoned and which volatile state was lost.
+tell the model what was abandoned and which volatile state was lost. Atomically emit
+`ConversationReconciled` with `ABSENT` for the abandoned request's observed items; retain earlier
+committed responses and executed tools, including earlier steps in the same turn.
 
 Exit: reviewed recovery contract and merged implementation with stale-review/owner rejection,
-retained partial evidence and continued useful input after explicit recovery. Update the
+retained partial evidence, correct History context-retention annotations and continued useful input
+after explicit recovery. Provider-specific partial-response retention is deferred in
+[`CENTRAL_SAMPLER_PREFIX_RECOVERY`](task_freezer.md#central_sampler_prefix_recovery--retain-valid-provider-response-prefixes).
+Update the
 [recovery guide](../x/central_sampler/docs/blocked_session_recovery.md); do not clear blocked flags
 or silently retry a provider operation.
 
