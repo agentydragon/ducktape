@@ -47,6 +47,8 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                     return_exceptions=True,
                 )
                 failures = [result for result in results if isinstance(result, BaseException)]
+                if len(failures) == 1:
+                    raise failures[0]
                 if failures:
                     raise BaseExceptionGroup("Sandbox cleanup failed", failures)
 

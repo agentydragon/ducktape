@@ -205,12 +205,59 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
         raise
     assert not closing.done()
     release_peer.set()
-    with pytest.raises(ExceptionGroup, match="Sandbox cleanup failed") as raised:
+    with pytest.raises(RuntimeError, match="test cleanup failure"):
         await closing
     assert started == set(views)
     assert finished == {"owned-0"}
-    assert len(raised.value.exceptions) == 1
-    assert isinstance(raised.value.exceptions[0], RuntimeError)
+
+
+async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = create_autospec(Client, instance=True)
+    views = {name: SimpleNamespace(name=name, uid=uuid4(), pod=None, status={}) for name in ("owned-0", "owned-1")}
+    client.create_sandbox.side_effect = list(views.values())
+
+    async def ready(_client: Client, name: str) -> SimpleNamespace:
+        return views[name]
+
+    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    started: set[str] = set()
+    all_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delete(_cluster: Cluster, _client: Client, name: str, _uid: object) -> None:
+        started.add(name)
+        if started == set(views):
+            all_started.set()
+        await release.wait()
+        failure = RuntimeError(f"{name} cleanup failure")
+        failure.add_note(f"{name} cleanup diagnostic")
+        raise failure
+
+    monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
+
+    async def use_scope() -> None:
+        async with sandbox.sandbox_scope(cluster, client, trace.get_tracer(__name__)) as create:
+            await create("owned-0")
+            await create("owned-1")
+
+    closing = asyncio.create_task(use_scope())
+    try:
+        await asyncio.wait_for(all_started.wait(), timeout=5)
+    except TimeoutError:
+        release.set()
+        await closing
+        raise
+    assert not closing.done()
+    release.set()
+    with pytest.raises(ExceptionGroup, match="Sandbox cleanup failed") as raised:
+        await closing
+    assert started == set(views)
+    assert len(raised.value.exceptions) == 2
+    assert {str(error) for error in raised.value.exceptions} == {"owned-0 cleanup failure", "owned-1 cleanup failure"}
+    assert {note for error in raised.value.exceptions for note in error.__notes__} == {
+        "owned-0 cleanup diagnostic",
+        "owned-1 cleanup diagnostic",
+    }
 
 
 async def test_scope_cleans_failed_boot_and_preserves_its_error(
@@ -294,11 +341,9 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     assert started == set(views)
     assert finished == {"owned-0"}
     cleanup_error = raised.value.__cause__
-    assert isinstance(cleanup_error, BaseExceptionGroup)
-    assert len(cleanup_error.exceptions) == 1
-    failure = cleanup_error.exceptions[0]
-    assert isinstance(failure, RuntimeError)
-    assert failure.__notes__ == ["test cleanup diagnostic"]
+    assert isinstance(cleanup_error, RuntimeError)
+    assert str(cleanup_error) == "test cleanup failure"
+    assert cleanup_error.__notes__ == ["test cleanup diagnostic"]
 
 
 async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
