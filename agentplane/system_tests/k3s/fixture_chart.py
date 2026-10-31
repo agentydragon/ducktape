@@ -488,8 +488,6 @@ def build_chart(
         registry_secret_name=None,
         runner_control_target=control_target,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     mcp_edge_service = mcp_edge.McpEdge(
         chart,

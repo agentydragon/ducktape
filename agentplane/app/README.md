@@ -11,10 +11,10 @@ Actions, operator decisions and Connection consent. The staging instance lives i
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.
-`//agentplane/app:migration_image` runs `//agentplane/app/go/migrate:app-migrate`, which applies the
-embedded Goose migrations before the API starts. The baseline adopts the existing app schema
-without dropping operator sessions or Thread metadata. It retains `alembic_version_app` as a Python
-rollback bridge until retirement is explicitly decided.
+The Go app runs its embedded Goose migrations before opening the HTTP listener or starting
+workers. The baseline adopts the existing app schema without dropping operator sessions or Thread
+metadata; the next migration removes the retired `alembic_version_app` marker. Replicas serialize
+migrations with the app's stable advisory lock while older replicas may still serve.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,

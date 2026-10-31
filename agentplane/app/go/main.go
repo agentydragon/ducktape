@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
+	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -21,14 +23,21 @@ func main() {
 		}
 		return
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := dbmigrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_DATABASE_URL", migrations.Up); handled {
+		if err != nil {
+			slog.Error("migrate Agentplane app database", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	config, err := loadConfigWithArgs(os.Args[1:])
 	if err != nil {
 		slog.Error("invalid Agentplane app configuration", "error", err)
 		os.Exit(1)
 	}
 	configureLogLevels(config.LogLevels)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	if err := run(ctx, config); err != nil && ctx.Err() == nil {
 		slog.Error("Agentplane app stopped", "error", err)
 		os.Exit(1)

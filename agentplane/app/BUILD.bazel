@@ -41,7 +41,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = ["//agentplane/app/go/migrate:app-migrate"],  # keep: subprocess migrator
+    data = ["//agentplane/app/go:agentplane-app"],  # keep: subprocess fixture migration
     deps = [
         "//agentplane:subjects",
         "//agentplane/app/testing:history",
@@ -108,6 +108,7 @@ py_test(
         "//agentplane/app/testing:replication_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//util:net",
+        "//util/testing:postgres",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -213,29 +214,6 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":app_binary_layer",
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//agentplane/system_tests/k3s:__pkg__"],
-    workdir = "/",
-)
-
-# The Go migrator adopts the existing Alembic head without changing application rows.
-pkg_tar(
-    name = "migration_binary_layer",
-    srcs = ["//agentplane/app/go/migrate:app-migrate"],
-    mode = "0755",
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "migration_image",
-    base = "@distroless_static_debian13_linux_amd64",
-    entrypoint = ["/usr/local/bin/app-migrate"],
-    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [
-        ":migration_binary_layer",
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
