@@ -10,14 +10,6 @@ validation, the Policy Controller and gRPC health.
 
 File references are to `devel` at the time of the audit; re-check before starting.
 
-## HTTP
-
-### `APP_PROXY_REVERSE_PROXY`
-
-The app's upstream and Electric proxies (`app/go/proxy/upstream.go`, `electric.go`) copy headers,
-flush and override `Cache-Control` by hand. Express the response-header allowlist in
-`ModifyResponse` on `httputil.ReverseProxy`. Exit: tests prove no header beyond the allowlist leaks.
-
 ## gRPC
 
 ### `GRPC_NATIVE_LISTENER`
@@ -26,8 +18,6 @@ flush and override `Cache-Control` by hand. Express the response-header allowlis
 which `GracefulStop` cannot drain, and which forces the abort-write hook in `grpc/streaming`. Used by
 the Action Service and egress. Serve gRPC on its own listener, as the Runner Gateway does. Exit: drain
 on shutdown covered by a test; the abort-write hook removed if nothing else needs it.
-
-## Kubernetes
 
 ## Work queues
 
@@ -72,14 +62,3 @@ with turns × context. Every streamed provider event is journaled as a `Boundary
 locking transaction, then again inside the intent's result and again in failure evidence. Options:
 store kind plus a conversation reference and journal raw events once; batch per-event writes or keep
 only item-done and terminal events; or keep everything and add retention.
-
-## App
-
-### `APP_LIVE_FRAME_BROADCAST`
-
-Each open `/live/*` stream recomputes its whole snapshot on every Kubernetes event in the namespace,
-rerunning a thread page query, a History `BatchGetSummaries` call and an archived count per tab even
-when only a Pod changed (`app/go/streamapi.go`). The same Sandbox inventory also arrives on two or
-three streams, and the thread page reads the top-bar status and the composer state from different ones.
-Compute each frame once per change and broadcast its bytes (a hub or `singleflight`), re-query threads
-only on thread changes, and give each entity one client-side source.

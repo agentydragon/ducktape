@@ -18,10 +18,10 @@ decision as a later input in its thread.
 
 Standing under it:
 
-- The former Haku Console grants system brokered this for tool calls through `create_grant`,
-  manual approval, and `get_tool_call`. That integration has been retired; this story now needs an
-  active Action Service path for requesting and receiving permission decisions. The agent working
-  on Agentplane lives this story from the agent's side every time it needs a key it does not hold.
+- Agents ask through the Action Service: `request_action` on the MCP edge or
+  [`agentplane actions submit`](../docs/agent_cli.md) records the request, and `get_action_result`,
+  `submit --wait` or the runner-session inbox returns the Decision. The agent working on Agentplane
+  lives this story from the agent's side every time it needs a key it does not hold.
 - The [Action Service](../action_service/SPEC.md): one invariant ActionRequest, a separate human
   Decision, automatic at-most-one Execution, a namespaced Action catalog with MCP executors, and
   Action policies that auto-approve within reviewed scope.
@@ -51,6 +51,8 @@ Standing under it:
 
 Missing:
 
+- **A permission-request Action type** whose approval view shows the account, sets and duration
+  ([`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)).
 - **Standing grants as a separate product.** A `PolicyBinding` represents reusable authority, for
   any rule type, written by the operator in the app; it is not
   another outcome or repeated Execution of one ActionRequest.
