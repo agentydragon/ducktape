@@ -19,6 +19,8 @@ import (
 	invocationstatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func invocationWatchCmd() *cobra.Command {
@@ -167,6 +169,17 @@ func failedTest(c *client, invocationID, groupID string) (string, error) {
 	return "", nil
 }
 
+const firstBuildEventLogChunkID = "0000"
+
+func isRecoverableEventLogReadError(err error) bool {
+	switch status.Code(err) {
+	case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval time.Duration, failFast bool, resultFile string) error {
 	if pollInterval <= 0 {
 		return fmt.Errorf("poll interval must be positive")
@@ -205,6 +218,10 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 	fmt.Fprintf(out, "Watching BuildBuddy invocation %s (https://app.buildbuddy.io/invocation/%s)\n", invocationID, invocationID)
 
 	chunkID := inv.GetLastChunkId()
+	logStartedFromFirstChunk := chunkID == firstBuildEventLogChunkID
+	logBytesWritten := false
+	logReadsDisabled := false
+	var deferredLogErr error
 	lastChunkBuffer := []byte(nil)
 	consoleOffset := 0
 	ticker := time.NewTicker(pollInterval)
@@ -219,18 +236,42 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 		}
 		if chunkID == "" {
 			chunkID = inv.GetLastChunkId()
+			logStartedFromFirstChunk = chunkID == firstBuildEventLogChunkID
 		}
-		if chunkID != "" {
+		var chunk *eventlogpb.GetEventLogChunkResponse
+		if chunkID != "" && !logReadsDisabled {
 			request := &eventlogpb.GetEventLogChunkRequest{
 				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 				InvocationId:   invocationID,
 				ChunkId:        chunkID,
 				Type:           eventlogpb.LogType_BUILD_LOG,
 			}
-			chunk, err := c.rpc.GetEventLogChunk(context.Background(), request)
+			chunk, err = c.rpc.GetEventLogChunk(context.Background(), request)
 			if err != nil {
-				return fmt.Errorf("read BuildBuddy event log: %w", err)
+				logErr := fmt.Errorf("read BuildBuddy event log: %w", err)
+				if isEventLogIndexLimitExceeded(err) && !logStartedFromFirstChunk && !logBytesWritten {
+					// last_chunk_id is only a tail cursor. If the service cannot index
+					// that cursor, restart at the first known chunk and follow the
+					// response's next_chunk_id links instead of assuming a tail token
+					// such as "ffff" has special meaning.
+					chunkID = firstBuildEventLogChunkID
+					logStartedFromFirstChunk = true
+					lastChunkBuffer = nil
+					continue
+				}
+				if !isRecoverableEventLogReadError(err) {
+					return logErr
+				}
+				// Log reads have their own request timeout and bounded gRPC retries.
+				// Stop retrying this stream after the read fails, but keep polling the
+				// invocation so its terminal outcome is still recorded and reported.
+				deferredLogErr = logErr
+				logReadsDisabled = true
+				lastChunkBuffer = nil
+				chunk = nil
 			}
+		}
+		if chunk != nil {
 			buffer := chunk.GetBuffer()
 			if !bytes.HasPrefix(buffer, lastChunkBuffer) {
 				lastChunkBuffer = nil
@@ -239,6 +280,7 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 				if _, err := out.Write(buffer[len(lastChunkBuffer):]); err != nil {
 					return fmt.Errorf("write BuildBuddy log: %w", err)
 				}
+				logBytesWritten = true
 			}
 			lastChunkBuffer = append(lastChunkBuffer[:0], buffer...)
 			if chunk.GetNextChunkId() != "" {
@@ -259,13 +301,14 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 				}
 				continue
 			}
-		} else if !inv.GetHasChunkedEventLogs() {
+		} else if chunkID == "" && !inv.GetHasChunkedEventLogs() {
 			console := []byte(inv.GetConsoleBuffer())
 			if len(console) > consoleOffset {
 				if _, err := out.Write(console[consoleOffset:]); err != nil {
 					return fmt.Errorf("write BuildBuddy console log: %w", err)
 				}
 				consoleOffset = len(console)
+				logBytesWritten = true
 			}
 		}
 
@@ -285,8 +328,14 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 
 		switch inv.GetInvocationStatus() {
 		case invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS:
+			if deferredLogErr != nil {
+				return deferredLogErr
+			}
 			return nil
 		case invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
+			if deferredLogErr != nil {
+				return fmt.Errorf("BuildBuddy invocation %s disconnected before completion; log streaming also failed: %w", invocationID, deferredLogErr)
+			}
 			return fmt.Errorf("BuildBuddy invocation %s disconnected before completion", invocationID)
 		}
 		<-ticker.C

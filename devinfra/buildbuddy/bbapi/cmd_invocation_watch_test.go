@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -238,7 +239,7 @@ func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 	}
 }
 
-func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
+func TestWatchInvocationResultWhenProtocolLogReadFails(t *testing.T) {
 	tests := []struct {
 		name         string
 		status       invocationstatuspb.InvocationStatus
@@ -284,14 +285,14 @@ func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 				test.success,
 				"",
 				nil,
-				grpcstatus.Error(codes.ResourceExhausted, "Log index limit exceeded"),
+				grpcstatus.Error(codes.PermissionDenied, "event-log access denied"),
 			)
 			resultPath := filepath.Join(t.TempDir(), "result.json")
 			var logs bytes.Buffer
 
 			err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, false, resultPath)
-			if err == nil || grpcstatus.Code(err) != codes.ResourceExhausted || !strings.Contains(err.Error(), "Log index limit exceeded") {
-				t.Fatalf("watchInvocation error = %v, want event-log read failure", err)
+			if err == nil || grpcstatus.Code(err) != codes.PermissionDenied || !strings.Contains(err.Error(), "event-log access denied") {
+				t.Fatalf("watchInvocation error = %v, want event-log permission failure", err)
 			}
 			result := readInvocationWatchResult(t, resultPath)
 			if result.State != test.wantState || result.Reason != test.wantReason || result.InvocationComplete != test.wantComplete {
@@ -350,6 +351,109 @@ func TestWatchInvocationStreamsTerminalChunks(t *testing.T) {
 	result := readInvocationWatchResult(t, resultPath)
 	if result.State != "success" || result.Reason != "completed" || !result.InvocationComplete {
 		t.Errorf("terminal result = %+v", result)
+	}
+}
+
+func TestWatchInvocationRecoversFromUnreadableTailAndStreamsHistoryAndLiveCursor(t *testing.T) {
+	const invocationID = "invocation-test"
+	invocationCalls := 0
+	chunkIDs := make([]string, 0, 5)
+	liveChunkCalls := 0
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
+			invocationCalls++
+			status := invocationstatuspb.InvocationStatus_PARTIAL_INVOCATION_STATUS
+			success := false
+			if invocationCalls >= 6 {
+				status = invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
+				success = true
+			}
+			return invocationWatchTestResponse(status, success, "ffff", true), nil
+		},
+		getEventLogChunk: func(_ context.Context, request *eventlogpb.GetEventLogChunkRequest) (*eventlogpb.GetEventLogChunkResponse, error) {
+			chunkID := request.GetChunkId()
+			chunkIDs = append(chunkIDs, chunkID)
+			switch chunkID {
+			case "ffff":
+				return nil, grpcstatus.Error(codes.ResourceExhausted, "Log index limit exceeded")
+			case "0000":
+				return &eventlogpb.GetEventLogChunkResponse{Buffer: []byte("history\n"), NextChunkId: "0001"}, nil
+			case "0001":
+				liveChunkCalls++
+				if liveChunkCalls == 1 {
+					return &eventlogpb.GetEventLogChunkResponse{Buffer: []byte("live"), Live: true}, nil
+				}
+				return &eventlogpb.GetEventLogChunkResponse{Buffer: []byte("live tail\n"), NextChunkId: "0002"}, nil
+			case "0002":
+				return &eventlogpb.GetEventLogChunkResponse{Buffer: []byte("done\n")}, nil
+			default:
+				t.Errorf("unexpected chunk ID %q", chunkID)
+				return nil, grpcstatus.Error(codes.NotFound, "unexpected chunk ID")
+			}
+		},
+		getTarget: func(context.Context, *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
+			return &targetpb.GetTargetResponse{}, nil
+		},
+	}
+	client := &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	var logs bytes.Buffer
+
+	if err := watchInvocation(client, invocationID, &logs, time.Millisecond, false, resultPath); err != nil {
+		t.Fatalf("watchInvocation error = %v", err)
+	}
+	if got, want := chunkIDs, []string{"ffff", "0000", "0001", "0001", "0002"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("requested chunk IDs = %v, want %v", got, want)
+	}
+	if got, want := logs.String(), "Watching BuildBuddy invocation invocation-test (https://app.buildbuddy.io/invocation/invocation-test)\nhistory\nlive tail\ndone\n"; got != want {
+		t.Errorf("streamed logs = %q, want %q", got, want)
+	}
+	result := readInvocationWatchResult(t, resultPath)
+	if result.State != "success" || result.Reason != "completed" || !result.InvocationComplete {
+		t.Errorf("terminal result = %+v", result)
+	}
+}
+
+func TestWatchInvocationContinuesStatusAfterPersistentLogIndexLimit(t *testing.T) {
+	const invocationID = "invocation-test"
+	invocationCalls := 0
+	chunkIDs := make([]string, 0, 2)
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
+			invocationCalls++
+			status := invocationstatuspb.InvocationStatus_PARTIAL_INVOCATION_STATUS
+			success := false
+			if invocationCalls >= 4 {
+				status = invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
+				success = true
+			}
+			return invocationWatchTestResponse(status, success, "ffff", true), nil
+		},
+		getEventLogChunk: func(_ context.Context, request *eventlogpb.GetEventLogChunkRequest) (*eventlogpb.GetEventLogChunkResponse, error) {
+			chunkIDs = append(chunkIDs, request.GetChunkId())
+			return nil, grpcstatus.Error(codes.ResourceExhausted, "Log index limit exceeded")
+		},
+		getTarget: func(context.Context, *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
+			return &targetpb.GetTargetResponse{}, nil
+		},
+	}
+	client := &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	var logs bytes.Buffer
+
+	err := watchInvocation(client, invocationID, &logs, time.Millisecond, false, resultPath)
+	if err == nil || grpcstatus.Code(err) != codes.ResourceExhausted || !strings.Contains(err.Error(), "Log index limit exceeded") {
+		t.Fatalf("watchInvocation error = %v, want the deferred event-log failure", err)
+	}
+	if got, want := chunkIDs, []string{"ffff", "0000"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("requested chunk IDs = %v, want one fallback attempt: %v", got, want)
+	}
+	if invocationCalls != 4 {
+		t.Errorf("GetInvocation calls = %d, want 4 including terminal observation", invocationCalls)
+	}
+	result := readInvocationWatchResult(t, resultPath)
+	if result.State != "success" || result.Reason != "completed" || !result.InvocationComplete {
+		t.Errorf("terminal result after log failure = %+v", result)
 	}
 }
 
