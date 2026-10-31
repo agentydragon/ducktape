@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -24,6 +25,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/state"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -308,7 +311,13 @@ func (c *Host) clearInitializingOwner(owner *Attachment) {
 	c.mu.Unlock()
 }
 
-func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uint64) error {
+func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uint64) (resultErr error) {
+	attributes := []attribute.KeyValue{attribute.Int64("agentplane.codex.generation", int64(generation))}
+	if owner != nil {
+		attributes = append(attributes, attribute.String("session.id", owner.ID))
+	}
+	ctx, span := observability.Start(ctx, "agentplane.codex.app_server.start", trace.WithAttributes(attributes...))
+	defer func() { observability.End(span, resultErr) }()
 	startup, cancel := context.WithTimeout(ctx, c.deps.Readiness.StartupTimeout)
 	defer cancel()
 	command, err := codex.ServerCommand(c.launch)
@@ -330,7 +339,9 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 	if err != nil {
 		return err
 	}
-	process, err := c.deps.Processes.Launch(startup, ControllerName, generation, c.deps.Supervisor, supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
+	launchCtx, launchSpan := observability.Start(startup, "agentplane.codex.app_server.launch")
+	process, err := c.deps.Processes.Launch(launchCtx, ControllerName, generation, c.deps.Supervisor, supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
+	observability.End(launchSpan, err)
 	if err != nil {
 		return err
 	}
@@ -349,7 +360,8 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 	go c.readStderr(p)
 	go c.waitReaders(p)
 	c.notify()
-	err = process.WriteLine(startup, string(initialize))
+	initializeCtx, initializeSpan := observability.Start(startup, "agentplane.codex.app_server.initialize")
+	err = process.WriteLine(initializeCtx, string(initialize))
 	if err == nil {
 		timer := time.NewTimer(c.deps.Readiness.InitializeTimeout)
 		select {
@@ -364,8 +376,9 @@ func (c *Host) initialize(ctx context.Context, owner *Attachment, generation uin
 		timer.Stop()
 	}
 	if err == nil {
-		err = process.WriteLine(startup, string(initialized))
+		err = process.WriteLine(initializeCtx, string(initialized))
 	}
+	observability.End(initializeSpan, err)
 	if err != nil {
 		stopErr := process.Stop(context.WithoutCancel(startup))
 		if stopErr != nil {

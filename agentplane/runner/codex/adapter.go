@@ -8,12 +8,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -77,7 +80,9 @@ func (a *codexAdapter) BlocksCommandDispatch() bool {
 
 // Handshake starts or resumes this Session's thread on the shared app-server, which the Runner has
 // already initialized.
-func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
+func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultErr error) {
+	ctx, span := observability.Start(ctx, "agentplane.codex.thread.handshake")
+	defer func() { observability.End(span, resultErr) }()
 	var response jsonrpc.Message
 	snapshot := a.host.Session()
 	a.mu.Lock()
@@ -162,6 +167,7 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 	a.threadID = nativeThreadID
 	a.historyMode = historyMode
 	a.mu.Unlock()
+	span.SetAttributes(attribute.String("thread.id", nativeThreadID), attribute.String("rpc.method", method))
 	return nativeThreadID, nil
 }
 
@@ -674,10 +680,18 @@ func (a *codexAdapter) projectItemCompleted(ctx context.Context, raw json.RawMes
 	}
 }
 
-func (a *codexAdapter) startItem(ctx context.Context, itemID string, kind eventpb.ItemKind, toolName string, sources []uint64) (bool, error) {
+func (a *codexAdapter) startItem(ctx context.Context, itemID string, kind eventpb.ItemKind, toolName string, sources []uint64) (started bool, resultErr error) {
 	remembered, err := a.host.Journal().RememberAdapterItem(ctx, a.adapterID, itemID)
 	if err != nil || !remembered {
 		return false, err
+	}
+	if kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL {
+		var span trace.Span
+		a.mu.Lock()
+		threadID := a.threadID
+		a.mu.Unlock()
+		ctx, span = observability.Start(ctx, "agentplane.codex.tool.start", trace.WithAttributes(attribute.String("thread.id", threadID)))
+		defer func() { observability.End(span, resultErr) }()
 	}
 	return true, a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
 		ItemId: itemID, Kind: kind, ToolName: toolName,
