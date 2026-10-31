@@ -285,6 +285,7 @@ go_library(
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/linkage",
+        "//agentplane/action_service/migrations",
         "//agentplane/action_service/mcpexec",
         "//agentplane/action_service/orchestration_v1",
         "//agentplane/action_service/policies",
@@ -299,6 +300,7 @@ go_library(
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/migrate",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
@@ -329,10 +331,7 @@ go_binary(
 
 pkg_tar(
     name = "service_binary_layer",
-    srcs = [
-        ":actions",
-        "//agentplane/action_service/migrations/cmd:actions-migrate",
-    ],
+    srcs = [":actions"],
     package_dir = "/usr/local/bin",
 )
 

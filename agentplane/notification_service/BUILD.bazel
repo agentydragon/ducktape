@@ -150,11 +150,13 @@ go_library(
         "//agentplane/notification_service/github/client",
         "//agentplane/notification_service/github/settings",
         "//agentplane/notification_service/inboxaccess",
+        "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/webhook",
         "//agentplane/notification_service/worker",
         "//agentplane/observability",
         "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/migrate",
         "//agentplane/postgres/go/probes",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
@@ -181,10 +183,7 @@ go_binary(
 
 pkg_tar(
     name = "service_binary_layer",
-    srcs = [
-        ":notification-service",
-        "//agentplane/notification_service/migrations/cmd:notifications-migrate",
-    ],
+    srcs = [":notification-service"],
     package_dir = "/usr/local/bin",
 )
 
