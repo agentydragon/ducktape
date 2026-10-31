@@ -541,16 +541,20 @@ fn sweep_unreachable_top_level(
     };
     // Retained state the statement or its callees may mutate in place: a
     // binding they reach that a retained item declares, unless its value is
-    // code or a primitive (shareable `{}` cells are state). Callees follow
+    // code or a primitive (shareable `{}` cells are state) and that some code
+    // could mutate (`ExposedBindings`). Callees follow
     // at-init call promotion: a direct, never-rebound chunk function runs its
     // first-order body; nested closures run only when handed to an unresolved
     // call. What an unresolved call receives, and a chunk callee that is not
     // a direct function, are followed through lexical reads instead.
     let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
+    let mut exposed = ExposedBindings::default();
+    module.visit_with(&mut exposed);
     let shared_roots = |i: usize| -> BTreeSet<Id> {
         let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
+                && (exposed.0.contains(id) || rebound.contains(id))
                 && declarer
                     .get(id)
                     .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
@@ -1321,6 +1325,96 @@ fn run_first_order_body<'a>(
     } {
         reached.extend(&body.reads);
         callees.extend(&body.lazy_calls);
+    }
+}
+
+/// Bindings whose value some code in the chunk could mutate or rebind: every
+/// occurrence except a plain property read (`x.a`, `x.a.b`, `typeof x.a`)
+/// exposes it — a member write or `delete` rooted at it, a method call on it
+/// (the callee gets it as `this`), or any other use that hands the value on.
+/// Names are compared without scope resolution, so a shadowing local only
+/// adds exposures.
+#[derive(Default)]
+struct ExposedBindings(BTreeSet<Id>);
+
+fn member_root(expr: &Expr) -> Option<&Ident> {
+    match expr {
+        Expr::Ident(ident) => Some(ident),
+        Expr::Member(member) => member_root(&member.obj),
+        Expr::Paren(paren) => member_root(&paren.expr),
+        _ => None,
+    }
+}
+
+impl Visit for ExposedBindings {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.0.insert(ident.to_id());
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        self.visit_read_chain(&member.obj);
+        member.prop.visit_with(self);
+    }
+
+    // Declared and rebound names are not values handed on; rebinds are
+    // counted separately (`rebound`).
+    fn visit_binding_ident(&mut self, _: &BindingIdent) {}
+
+    fn visit_member_prop(&mut self, prop: &MemberProp) {
+        if let MemberProp::Computed(computed) = prop {
+            computed.visit_with(self);
+        }
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.0.insert(root.to_id());
+        }
+        call.visit_children_with(self);
+    }
+
+    fn visit_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
+        if let SimpleAssignTarget::Member(member) = target
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.0.insert(root.to_id());
+        }
+        target.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        if let Some(root) = member_root(&update.arg) {
+            self.0.insert(root.to_id());
+        }
+        update.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if unary.op == UnaryOp::Delete
+            && let Some(root) = member_root(&unary.arg)
+        {
+            self.0.insert(root.to_id());
+        }
+        unary.visit_children_with(self);
+    }
+}
+
+impl ExposedBindings {
+    /// The object of a property read: its root binding stays unexposed,
+    /// computed keys along the chain are ordinary uses.
+    fn visit_read_chain(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Ident(_) => {}
+            Expr::Member(member) => {
+                self.visit_read_chain(&member.obj);
+                member.prop.visit_with(self);
+            }
+            Expr::Paren(paren) => self.visit_read_chain(&paren.expr),
+            _ => expr.visit_with(self),
+        }
     }
 }
 
