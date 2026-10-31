@@ -50,34 +50,72 @@ Edge provenance follows SPEC § Realizability cut explanations. Across the
 barrier rule: an opaque call might touch any live tracked array. No concrete
 cell is involved.
 
-## Why 1,800 is not a cycle of its own
+## The 1,800-module SCC is a gate artifact
 
-`EsmImportOrder::build` takes `linker_order` from
-`chunk_linker_order_from_pairs`. That function returns an empty vector when
-the constraining pairs are cyclic, so any Pass-1 cycle empties the linker
-order. With no linker positions, every import list sorts by `ModuleId`, and
-the simulator's TDZ verdict on the I-graph SCC follows that arbitrary order.
-The 1,800-module SCC contains the 963 and is reported because of that
-fallback ordering.
+**Mechanism.** `EsmImportOrder::build` (`esm_import_order.rs`) takes
+`linker_order` from `chunk_linker_order_from_pairs`. That function returns an
+empty vector when the constraining pairs are cyclic, so any Pass-1 cycle
+empties the linker order. Every import list then sorts by `ModuleId`, and the
+Pass-2 simulator checks TDZs against that arbitrary order. Pass 2 runs on
+every multi-module I-graph SCC whose module set is not _equal_ to a reported
+Pass-1 SCC. The 1,800 contains the 963, so it is checked under that order and
+reported with 25,523 TDZ pairs (161,444 edges).
 
-Co-locating the Pass-1 SCCs (963 and 2) gives the simulator a real linker
-order. Pass 2 then rejects 838 modules (95,093 edges). The SCC's size and
-cut, as reported, say nothing about what a valid split needs.
+**With the heap barriers removed.** Remove all heap-barrier `cell_order`
+edges: the 1,051 constraining cross-module ones and 3 that a commuting premise
+made inert. Everything else stays, including all 2.06 M fallback edges. Then:
+
+- Pass 1 is acyclic, and the linker order covers 1,964 modules.
+- Pass 2 reports three SCCs:
+  - **108** modules, 161 TDZ pairs: `app/bootstrap/initbundle/part-3xx`,
+    `features/admin/workspacesetupconstants`, `app/shell/forms/checkbox`, …
+  - **18** modules, 7 TDZ pairs: callers → `app/debug/debug_info`.
+  - **6** modules, 2 TDZ pairs: `app/bootstrap/initbundle/part-568/569` →
+    `features/crm/admin/accountlookupsection`.
+- The 1,800 is gone.
+- 160 of the 161 TDZ pairs in the 108, and all pairs in the 18 and the 6,
+  rest only on fallback edges. Section 3 attributes them.
+
+**Co-locating instead.** Merging the Pass-1 SCCs (963 and 2) into single
+modules also gives a real linker order. Pass 2 then rejects 838 modules
+(95,093 edges): what the fallback edges still require if the heap barriers
+are kept and the cycle is resolved by merging.
+
+**Gate bug.** The verdict is misleading. Pass 2's contract
+(`SccRejection::EsmEvaluationTdz`) says the SCC's constraining subgraph is
+acyclic and the TDZ is real under the materializer's import order. Neither
+holds here:
+
+- the 1,800 contains a constraining cycle;
+- with a cyclic Pass 1 the spec is rejected, so no materializer import order
+  exists for the simulator to describe.
+
+The 1,800's cut flows into `gate cut`, `describe` and
+`spec propose-commutations` as if those 161,444 edges had to be resolved. In
+fact, once Pass 1 is clean, Pass 2 is left with only 170 TDZ pairs across
+three small SCCs.
+
+Any other I-SCC checked in the same run gets the same arbitrary order, so
+excluding only supersets of Pass-1 SCCs is not enough. The fix: when Pass 1
+reports a cycle (equivalently, `linker_order` is empty), skip Pass 2 and
+report only the Pass-1 SCCs. A more useful variant reruns Pass 2 on the
+quotient with each Pass-1 SCC condensed to one node and labels the result
+conditional on resolving Pass 1. That variant would report the 838 here.
 
 ## 1. Observed-only
 
 Keeping only observed constraining edges, plus all lazy and hoisted I-graph
 edges:
 
-| Edge set                                      | Pass 1                 | Pass 2 (TDZ pairs)               |
-| --------------------------------------------- | ---------------------- | -------------------------------- |
-| baseline                                      | 963, 2                 | 1,800 (25,523)                   |
-| observed only                                 | none                   | 26 (1), 18 (1)                   |
-| observed, minus pool-labelled timeline edges  | none                   | 26 (1), 2 (1)                    |
-| observed + heap-barrier `cell_order`          | 717, 13, 5, 5, 5, 2 ×5 | 1,620 (1,370), 2 (1)             |
-| everything except heap-barrier `cell_order`   | none                   | 108 (161), 30 (1), 18 (7), 6 (2) |
-| everything except `eager_use` fallback        | 963, 2                 | 1,800                            |
-| everything except `binding_timeline` fallback | 894, 11, 2, 2, 2       | 1,710, 2                         |
+| Edge set                                      | Pass 1                 | Pass 2 (TDZ pairs)       |
+| --------------------------------------------- | ---------------------- | ------------------------ |
+| baseline                                      | 963, 2                 | 1,800 (25,523)           |
+| observed only                                 | none                   | 26 (1), 18 (1)           |
+| observed, minus pool-labelled timeline edges  | none                   | 26 (1), 2 (1)            |
+| observed + heap-barrier `cell_order`          | 717, 13, 5, 5, 5, 2 ×5 | 1,620 (1,370), 2 (1)     |
+| everything except heap-barrier `cell_order`   | none                   | 108 (161), 18 (7), 6 (2) |
+| everything except `eager_use` fallback        | 963, 2                 | 1,800                    |
+| everything except `binding_timeline` fallback | 894, 11, 2, 2, 2       | 1,710, 2                 |
 
 With observed edges only, the cycles fall apart. Pass 1 is acyclic, and
 Pass 2 keeps one TDZ pair in each of two I-graph SCCs.
@@ -102,22 +140,92 @@ replaces the second arc with another real one,
 (L187550), whose methods lazily reach `_2t` back in `part-7`. A decorate
 application split from its class is a spec issue, fixed by co-location.
 Which of these TDZs fire depends on the import order the remaining edges
-produce, so the Pass-2 residue is not stable across edge sets.
+produce, so the Pass-2 residue is not stable across edge sets. The
+`Rn extends Ye` TDZ appears with observed edges only. It disappears once all
+non-heap edges are present, because the import order changes.
 
-Recommendation for the real core: co-locate `tableviewaccessor` with
-`nodeviewaccessor`, and every `__decorateClass` application with its class.
-Neither needs a premise.
+**Spec fix for the real arc.** `Rn` is `TableViewAccessor`
+(`modules/domains/graph/metanode/TableViewAccessor.yaml`); `Ye` is
+`NodeViewAccessor` (`…/NodeViewAccessor.yaml`).
+
+- The I-graph cycle that closes the TDZ runs `nodeviewaccessor` →
+  `metanodeaccessor` → `asyncaccessors` → … → `donestate` →
+  `schema/attributedefinitions` → `getnonhiddensystemfieldattrids` →
+  `tableviewaccessor`.
+- Move the `TableViewAccessor` `source_match` into `NodeViewAccessor.yaml`, so
+  the superclass read stays inside one module.
+- In the emulated gate this removes the 26-module SCC under observed-only edges
+  and creates no new cycle; the all-but-heap verdict is unchanged.
+- `CalendarViewAccessor` also extends `NodeViewAccessor` but is in no TDZ pair
+  under any edge set measured here.
+- Separately, every `__decorateClass` application belongs with its class
+  (`N2t([Z], P5.prototype, …)` with `P5`). Neither fix needs a premise.
 
 ## 3. Attribution
 
 ### Pass 1: heap barriers
 
-All 1,051 heap-barrier edges join consecutive heap barriers. 777 of them have
-a source statement the engine rates pure, for example `b.forwardRef(...)`,
-`ut.createContext(...)`, `b.memo(...)` and `Se({...})`. SPEC § Dependency-graph
-array ordering keeps such calls as barriers once tracked arrays are live.
-Purity does not prove heap locality (see
-[pure-call heap frontier](2026_10_31_pure_call_heap_frontier.md)).
+**Structure.** 1,335 statements are heap barriers (`heap_frontier`). Every
+barrier's `after_barrier` edge goes to the previous barrier in source order
+(out-degree exactly 1 for all 1,196 such edges). So the barriers form one
+total order over the chunk, and any interleaving of two modules along it
+closes a cycle. A barrier also follows the earlier array allocations it may
+touch (`frontier_after_cell`, 119 edges). Of the 1,051 constraining
+cross-module heap edges, 958 are `after_barrier` and 93 are
+`frontier_after_cell`.
+
+**Why they are barriers.** `graph/build.rs::emit_heap_content_order` treats
+every eager opaque call as a barrier once tracked array contents are live.
+They are live from statement 0, because some callables allocate array
+literals lazily. Lazy allocations are conservatively live (SPEC
+§ Dependency-graph array ordering). `facts/array_content_effects.rs` records
+an imported callee as `record_opaque_call` (`array_content_effects`), and as
+`unresolved_callee` when no source unit resolves. Purity does not exempt a
+call: SPEC says purity does not prove heap locality. The
+[pure-call heap frontier](2026_10_31_pure_call_heap_frontier.md) note
+investigates this. 952 of the 1,335 barrier statements are rated pure.
+
+| Barrier statement shape                                        | Statements | Purity          | Causes                                                              |
+| -------------------------------------------------------------- | ---------: | --------------- | ------------------------------------------------------------------- |
+| `X = B(function …)` (mobx-react `observer`, vendor `o`)        |        520 | pure            | `array_content_effects`, `unresolved_callee`                        |
+| `X = Se({...})`, `ft(...)`, `Zt(...)` (UICommand factories)    |        236 | pure            | `callee_heap_effects` (± `array_content_effects`)                   |
+| `ee({...})`, `Et(...)`, `Ci(...)` (Zod and other vendor calls) |         73 | not pure        | `unresolved_callee`, mostly with `incomplete_synchronous_execution` |
+| React `forwardRef`/`memo`/`lazy`/`createContext`               |         79 | mostly not pure | `array_content_effects`                                             |
+| `new Map(...)`, `new Set(...)`, `Object.freeze`, `RegExp`      |         68 | mostly pure     | `array_content_effects` (± `unresolved_callee`)                     |
+| other                                                          |        359 | mixed           | mixed                                                               |
+
+**Demoting statements does not work.** Removing barrier statements, so that
+the remaining barriers re-chain to each other, barely moves Pass 1:
+
+| Barrier statements demoted (chain rebuilt)                     | Statements | Pass-1 SCCs |
+| -------------------------------------------------------------- | ---------: | ----------- |
+| none (rebuilt chain; the engine's own chain gives 963, 2)      |          0 | 970, 12, 2  |
+| `observer` calls                                               |        521 | 619, 11, 2  |
+| + UICommand factories + React factories + `Map`/`Set`/`freeze` |        928 | 529, 11, 2  |
+| all pure statements                                            |        952 | 305         |
+| every complete statement                                       |      1,032 | 257         |
+| all barriers                                                   |      1,335 | none        |
+
+The order is the problem: any two barriers left in different interleaved
+modules are still ordered. Removing only the 958 `after_barrier` edges and
+keeping `frontier_after_cell` leaves a 159-module Pass-1 SCC.
+
+**Smallest sound change.** Order barriers by the cells they can reach, not
+by a global frontier. A foreign or opaque call can touch only:
+
+- tracked arrays reachable from its arguments and receiver;
+- arrays escaped earlier to foreign code (call and `new` arguments, receivers,
+  member-write values, exports, closure captures).
+
+The escaped-cell set described in the pure-call note gives exactly this. Two
+barriers are ordered only through a shared escaped cell, and a barrier
+follows an allocation only if that array has escaped. Of the barrier calls,
+520 are `observer(function …)` and 236 are UICommand factories. Both kinds
+pass a function or a fresh record literal; their array literals are
+allocated inside callbacks that run later, or inside the fresh record. Most
+should therefore reach no escaped cell, but this is not measured, because
+escapes are not in the graph. The measured upper bound is the experiment
+above: with no barrier ordering, Pass 1 is acyclic.
 
 | Heap-barrier subclass (union of the endpoints' `heap_frontier` causes)     | Edges | Both endpoints pure |
 | -------------------------------------------------------------------------- | ----: | ------------------: |
@@ -126,8 +234,7 @@ Purity does not prove heap locality (see
 | `callee_heap_effects` (a resolved local callee touches arrays)             |   192 |                 185 |
 | `array_content_effects` only                                               |    44 |                   9 |
 
-All fallback edges are kept and only heap-barrier subclasses are removed.
-Results:
+Removing edges by the cause on their endpoints, with all fallback edges kept:
 
 | Removed                                              | Pass-1 SCCs        |
 | ---------------------------------------------------- | ------------------ |
@@ -251,25 +358,27 @@ because the timeline fallback (1.0 M edges, 73% of them
 
 ## Recommendation
 
-1. **Heap locality first.** Pass 1 is a heap-barrier artifact. Give
-   imported calls a heap summary, or build the escaped-cell set, and
-   re-measure. Until Pass 1 is clean, the reported Pass-2 SCC and its cut are
+1. **Gate fix:** skip Pass 2 when Pass 1 reports a cycle (empty linker
+   order), or rerun it on the quotient with the Pass-1 SCCs condensed and
+   label the result conditional. Today the 1,800 SCC and its 161,444-edge cut
+   are reported from a `ModuleId` import order.
+2. **Heap locality.** Pass 1 is a heap-barrier artifact. Build the
+   escaped-cell set, so barriers are ordered only through escaped cells, and
+   re-measure. Demoting individual barrier statements does not help. Until Pass 1 is clean, the reported Pass-2 SCC and its cut are
    noise, because the simulator runs with an empty linker order.
-2. **Two audited premises worth about 1.37 M edges** (66% of fallback
+3. **Two audited premises worth about 1.37 M edges** (66% of fallback
    edges), both on existing mechanisms:
    - `effect: typescript_metadata_decorate_helper` on the 20 unannotated
      `__decorateClass` copies;
    - a Zod fluent/no-reentry premise for the vendor chunk.
-3. **Placement:** keep the late startup statements in the entry module.
-4. **Two modelling fixes:** UICommand `new Fx` construction (in-call record
+4. **Placement:** keep the late startup statements in the entry module.
+5. **Two modelling fixes:** UICommand `new Fx` construction (in-call record
    property tracking) and intrinsic-alias calls.
-5. **Spec co-location for the real core:** `Rn` with `Ye`, and every
+6. **Spec co-location for the real core:** `Rn` with `Ye`, and every
    decorate application with its class (`N2t([Z], P5.prototype, …)`).
-6. **Engine reporting:**
-   - mark effects found by running the escaped-callback pool as `fallback`,
-     not `observed` (21,812 of 23,102 observed timeline edges);
-   - have the gate explain that a Pass-2 verdict computed with a cyclic
-     Pass 1 uses `ModuleId` order.
+7. **Engine reporting:** mark effects found by running the escaped-callback
+   pool as `fallback`, not `observed` (21,812 of 23,102 observed timeline
+   edges).
 
 Everything here is measured on the emulated gate over the saved graph. No
 change was applied to the engine or the spec, and no regenerated run checks
