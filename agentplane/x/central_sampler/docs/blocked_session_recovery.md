@@ -13,7 +13,8 @@ incarnation fence. An abandoned `write_stdin` handle rejects before sending inpu
 possibly completed external effect before asking the model to repeat it.
 
 When a `process/read` transport failure follows observed output, catching JavaScript can inspect
-that output and continue with unrelated work:
+that output and continue with unrelated work. The pinned code-mode host currently rejects with a
+primitive string, so `error.message` and `error.observed_output` are unavailable in the catch block:
 
 ```javascript
 try {

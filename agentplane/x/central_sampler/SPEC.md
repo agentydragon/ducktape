@@ -79,6 +79,11 @@ retained bytes are base64 in the `tool` result `BoundaryRecord` found through `F
 payload `intent_id`. The process remains abandoned and no exit is inferred. Other nested failures
 retain their ordinary string messages. Large result records use the normal `record_id` and
 `fragment_index` reassembly contract.
+
+The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as primitive strings:
+the delegate response has a `message` field but no structured error or cause field. Catching code
+must parse the JSON string for these fields; native `Error` properties require a host protocol change.
+
 Process handles inherit upstream's detached retention limit: pinned Codex 0.162.1 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
