@@ -42,11 +42,11 @@ Lease in the policy namespace.
 - **No finalizer.** The initial list of labeled native bindings enqueues each one's binding, so a
   `PolicyBinding` deleted while the controller was down is reconciled as not found on start, which
   deletes its native bindings. A finalizer would block deletion whenever the controller is down.
-- **Roles are watched by metadata only**, and read uncached. Any Role or ClusterRole change
-  reconciles the bindings whose condition says a role is missing, so a binding to a role created
-  later is granted once it appears.
+- **Roles are watched by metadata only**, and read uncached. A Role or ClusterRole change
+  reconciles the bindings whose `status.missingRoles` names it, so a binding to a role created
+  later is granted once it appears. Condition reasons are informational and nothing branches on them.
 - The CRD types are independent of the controller so every reader can depend on the API package;
   the Python models of the other rule types remain in their owning services;
   the CRD YAML in `agentplane/crds` is the schema both follow.
-- Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which
-  binding is not covered.
+- Most tests drive `Reconcile` directly, against controller-runtime's fake client or a real API
+  server; only role creation is tested through the controller's watches.

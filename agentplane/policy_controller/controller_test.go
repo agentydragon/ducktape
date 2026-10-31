@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -345,12 +346,33 @@ func TestExpiredBindingIsDeletedAndItsGrantsWithIt(t *testing.T) {
 func TestMissingRoleIsReportedAndLeftUnbound(t *testing.T) {
 	r, c := newReconciler(t, nil, namespaceReader)
 	reconcileOnce(t, r)
-	if got := condition(t, c); got.Reason != "ApplyFailed" {
+	if got := condition(t, c); got.Status != metav1.ConditionFalse {
 		t.Fatalf("condition = %+v", got)
+	}
+	var binding policyapi.PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if want := []policyapi.MissingRole{{Kind: "ClusterRole", Name: nodeReader}}; !slices.Equal(binding.Status.MissingRoles, want) {
+		t.Fatalf("missingRoles = %+v, want %+v", binding.Status.MissingRoles, want)
 	}
 	want := map[scope]bool{{"test-team-a", namespaceReader}: true, {"test-team-b", namespaceReader}: true}
 	if got := nativeScopes(t, c); !maps.Equal(got, want) {
 		t.Fatalf("natives = %v", got)
+	}
+
+	if err := c.Create(context.Background(), &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: nodeReader}}); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if got := condition(t, c); got.Status != metav1.ConditionTrue || len(binding.Status.MissingRoles) != 0 {
+		t.Fatalf("after the role appeared: condition = %+v, missingRoles = %+v", got, binding.Status.MissingRoles)
+	}
+	if got := nativeScopes(t, c); !maps.Equal(got, granted) {
+		t.Fatalf("natives after the role appeared = %v", got)
 	}
 }
 

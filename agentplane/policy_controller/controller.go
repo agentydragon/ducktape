@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,6 +25,7 @@ import (
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
+	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
 )
 
 const (
@@ -40,12 +40,9 @@ const (
 	setsIndex          = "spec.policySets"
 	subjectIndex       = "spec.subject"
 	nativeBindingIndex = "metadata.annotations[" + BindingAnnotation + "]"
-	// Bindings told a role is missing; any role change retries them.
-	roleMissingIndex = "status.roleMissing"
+	// Bindings by each role in status.missingRoles; that role's creation retries them.
+	missingRoleIndex = "status.missingRoles"
 )
-
-// Kubernetes accepts a binding to a role that does not exist; this controller does not create one.
-var errRoleMissing = errors.New("role not found")
 
 // Reconciler converges one PolicyBinding at a time: its native RoleBindings and ClusterRoleBindings,
 // and its KubernetesReady condition.
@@ -91,37 +88,46 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (resu
 			return ctrl.Result{}, client.IgnoreNotFound(r.Delete(ctx, &binding, client.Preconditions{UID: &binding.UID}))
 		}
 	}
-	desired, reason, message, err := r.expand(ctx, &binding)
+	e, err := r.expand(ctx, &binding)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.converge(ctx, binding.Name, desired); err != nil {
-		reason, message = "ApplyFailed", err.Error()
-		return ctrl.Result{}, errors.Join(err, r.applyCondition(ctx, &binding, reason, message))
+	if err := r.converge(ctx, binding.Name, e.desired); err != nil {
+		e.reason, e.message = "ApplyFailed", err.Error()
+		return ctrl.Result{}, errors.Join(err, r.applyStatus(ctx, &binding, e))
 	}
-	return ctrl.Result{}, r.applyCondition(ctx, &binding, reason, message)
+	return ctrl.Result{}, r.applyStatus(ctx, &binding, e)
 }
 
-// expand returns the native bindings the binding grants, with the condition reason and message.
-func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (map[native]client.Object, string, string, error) {
+// expansion is what a binding grants and what its status reports.
+//
+// +kubebuilder:object:generate=false
+type expansion struct {
+	desired map[native]client.Object
+	// Sorted by missingRoleKey, so an unchanged expansion writes no status.
+	missingRoles    []policyapi.MissingRole
+	reason, message string
+}
+
+func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBinding) (expansion, error) {
 	spec := binding.Spec
 	if !slices.Contains(r.SubjectNamespaces, spec.Subject.Namespace) {
-		return nil, "SubjectNotWatched", fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace), nil
+		return expansion{reason: "SubjectNotWatched", message: fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace)}, nil
 	}
 	var account corev1.ServiceAccount
 	if err := r.Get(ctx, types.NamespacedName(spec.Subject), &account); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, "SubjectMissing", fmt.Sprintf("ServiceAccount %s/%s not found", spec.Subject.Namespace, spec.Subject.Name), nil
+			return expansion{reason: "SubjectMissing", message: fmt.Sprintf("ServiceAccount %s/%s not found", spec.Subject.Namespace, spec.Subject.Name)}, nil
 		}
-		return nil, "", "", err
+		return expansion{}, err
 	}
-	desired := map[native]client.Object{}
-	var missingSets, missingRoles []string
+	e := expansion{desired: map[native]client.Object{}}
+	var missingSets []string
 	for _, setName := range spec.PolicySets {
 		var set policyapi.PolicySet
 		if err := r.Get(ctx, types.NamespacedName{Namespace: r.PolicyNamespace, Name: setName}, &set); err != nil {
 			if !apierrors.IsNotFound(err) {
-				return nil, "", "", err
+				return expansion{}, err
 			}
 			// The binding's other sets still grant.
 			missingSets = append(missingSets, setName)
@@ -129,24 +135,37 @@ func (r *Reconciler) expand(ctx context.Context, binding *policyapi.PolicyBindin
 		}
 		for _, rule := range set.Spec.Rules {
 			for _, n := range scopes(rule) {
-				if err := r.requireRole(ctx, n); err != nil {
-					if !errors.Is(err, errRoleMissing) {
-						return nil, "", "", err
+				role := requiredRole(n)
+				found, err := r.roleExists(ctx, role)
+				if err != nil {
+					return expansion{}, err
+				}
+				if !found {
+					if !slices.Contains(e.missingRoles, role) {
+						e.missingRoles = append(e.missingRoles, role)
 					}
-					missingRoles = append(missingRoles, err.Error())
 					continue
 				}
-				desired[n] = r.render(binding, &account, n)
+				e.desired[n] = r.render(binding, &account, n)
 			}
 		}
 	}
-	if len(missingRoles) > 0 {
-		return desired, "ApplyFailed", strings.Join(missingRoles, "; "), nil
+	switch {
+	case len(e.missingRoles) > 0:
+		slices.SortFunc(e.missingRoles, func(a, b policyapi.MissingRole) int {
+			return strings.Compare(missingRoleKey(a), missingRoleKey(b))
+		})
+		var names []string
+		for _, role := range e.missingRoles {
+			names = append(names, missingRoleKey(role))
+		}
+		e.reason, e.message = "RoleMissing", "missing roles: "+strings.Join(names, ", ")
+	case len(missingSets) > 0:
+		e.reason, e.message = policyapi.PolicySetUnavailable, "missing PolicySets: "+strings.Join(missingSets, ", ")
+	default:
+		e.reason, e.message = "Applied", fmt.Sprintf("%d native bindings", len(e.desired))
 	}
-	if len(missingSets) > 0 {
-		return desired, policyapi.PolicySetUnavailable, "missing PolicySets: " + strings.Join(missingSets, ", "), nil
-	}
-	return desired, "Applied", fmt.Sprintf("%d native bindings", len(desired)), nil
+	return e, nil
 }
 
 func scopes(rule policyapi.Rule) []native {
@@ -163,17 +182,36 @@ func scopes(rule policyapi.Rule) []native {
 	return nil // Another reader's rule type.
 }
 
-func (r *Reconciler) requireRole(ctx context.Context, n native) error {
-	var err error
+// requiredRole is the role a native binding refers to; a ClusterRole has no namespace even when a
+// RoleBinding grants it.
+func requiredRole(n native) policyapi.MissingRole {
+	role := policyapi.MissingRole{Kind: n.Role.Kind, Name: n.Role.Name}
 	if n.Role.Kind == "Role" {
-		err = r.APIReader.Get(ctx, types.NamespacedName{Namespace: n.Namespace, Name: n.Role.Name}, &rbacv1.Role{})
+		role.Namespace = n.Namespace
+	}
+	return role
+}
+
+// missingRoleKey names a role in missingRoleIndex and in condition messages.
+func missingRoleKey(role policyapi.MissingRole) string {
+	if role.Namespace == "" {
+		return role.Kind + " " + role.Name
+	}
+	return role.Kind + " " + role.Namespace + "/" + role.Name
+}
+
+// Kubernetes accepts a binding to a role that does not exist; this controller does not create one.
+func (r *Reconciler) roleExists(ctx context.Context, role policyapi.MissingRole) (bool, error) {
+	var err error
+	if role.Kind == "Role" {
+		err = r.APIReader.Get(ctx, types.NamespacedName{Namespace: role.Namespace, Name: role.Name}, &rbacv1.Role{})
 	} else {
-		err = r.APIReader.Get(ctx, types.NamespacedName{Name: n.Role.Name}, &rbacv1.ClusterRole{})
+		err = r.APIReader.Get(ctx, types.NamespacedName{Name: role.Name}, &rbacv1.ClusterRole{})
 	}
 	if apierrors.IsNotFound(err) {
-		return fmt.Errorf("%w: %s %s", errRoleMissing, n.Role.Kind, n.Role.Name)
+		return false, nil
 	}
-	return err
+	return err == nil, err
 }
 
 func (r *Reconciler) render(binding *policyapi.PolicyBinding, account *corev1.ServiceAccount, n native) client.Object {
@@ -371,15 +409,23 @@ func matchesIdentity(actual, wanted client.Object) bool {
 	return true
 }
 
-// applyCondition server-side applies only KubernetesReady, so other readers' conditions stay.
-func (r *Reconciler) applyCondition(ctx context.Context, binding *policyapi.PolicyBinding, reason, message string) error {
+// applyStatus server-side applies the status this controller owns, KubernetesReady and
+// missingRoles, in one configuration; other readers' conditions stay.
+func (r *Reconciler) applyStatus(ctx context.Context, binding *policyapi.PolicyBinding, e expansion) error {
 	status := metav1.ConditionFalse
-	if reason == "Applied" {
+	if e.reason == "Applied" {
 		status = metav1.ConditionTrue
 	}
-	configuration := policyapply.PrepareConditionApply(binding, metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
-	if configuration == nil {
+	configuration, changed := policyapply.ConditionApply(binding, metav1.Condition{Type: KubernetesReady, Status: status, Reason: e.reason, Message: e.message})
+	if !changed && slices.Equal(binding.Status.MissingRoles, e.missingRoles) {
 		return nil
+	}
+	for _, role := range e.missingRoles {
+		missing := policyapplyv1.MissingRole().WithKind(role.Kind).WithName(role.Name)
+		if role.Namespace != "" {
+			missing.WithNamespace(role.Namespace)
+		}
+		configuration.Status.WithMissingRoles(missing)
 	}
 	return r.Status().Apply(ctx, configuration,
 		client.FieldOwner(FieldManager), client.ForceOwnership)
@@ -412,12 +458,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, roleMissingIndex, func(obj client.Object) []string {
-		condition := meta.FindStatusCondition(obj.(*policyapi.PolicyBinding).Status.Conditions, KubernetesReady)
-		if condition != nil && condition.Reason == "ApplyFailed" {
-			return []string{"true"}
+	if err := indexer.IndexField(ctx, &policyapi.PolicyBinding{}, missingRoleIndex, func(obj client.Object) []string {
+		var out []string
+		for _, role := range obj.(*policyapi.PolicyBinding).Status.MissingRoles {
+			out = append(out, missingRoleKey(role))
 		}
-		return nil
+		return out
 	}); err != nil {
 		return err
 	}
@@ -452,7 +498,11 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&rbacv1.RoleBinding{}, toBinding).
 		Watches(&rbacv1.ClusterRoleBinding{}, toBinding).
 		// Metadata only: whether a role exists is all a binding depends on.
-		WatchesMetadata(&rbacv1.Role{}, byIndex(roleMissingIndex, func(client.Object) string { return "true" })).
-		WatchesMetadata(&rbacv1.ClusterRole{}, byIndex(roleMissingIndex, func(client.Object) string { return "true" })).
+		WatchesMetadata(&rbacv1.Role{}, byIndex(missingRoleIndex, func(obj client.Object) string {
+			return missingRoleKey(policyapi.MissingRole{Kind: "Role", Namespace: obj.GetNamespace(), Name: obj.GetName()})
+		})).
+		WatchesMetadata(&rbacv1.ClusterRole{}, byIndex(missingRoleIndex, func(obj client.Object) string {
+			return missingRoleKey(policyapi.MissingRole{Kind: "ClusterRole", Name: obj.GetName()})
+		})).
 		Complete(r)
 }

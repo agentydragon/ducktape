@@ -169,6 +169,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              missingRoles:
+                description: 'The roles this binding''s Kubernetes rules name that
+                  do not exist. The Policy Controller writes
+
+                  it with KubernetesReady and binds each role once it appears.'
+                items:
+                  description: MissingRole is a role a Kubernetes rule names that
+                    does not exist.
+                  properties:
+                    kind:
+                      enum:
+                      - Role
+                      - ClusterRole
+                      type: string
+                    name:
+                      minLength: 1
+                      type: string
+                    namespace:
+                      description: The Role's namespace; empty for a ClusterRole.
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         required:
         - spec
