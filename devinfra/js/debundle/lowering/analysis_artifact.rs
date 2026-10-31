@@ -202,7 +202,6 @@ mod tests {
             ),
             CrossModuleAnalysisOptions {
                 graph_provenance: None,
-                explicit_binding_destinations: &BTreeMap::new(),
                 replacement_packages: &BTreeMap::new(),
             },
             None,
