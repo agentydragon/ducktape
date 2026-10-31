@@ -490,6 +490,13 @@ addressable Agentplane child Sessions at the caller's privilege level, using its
 Reusing an environment with a separate working directory is acceptable. Different-privilege
 workers and generic delegation can wait; native harness subagents remain available independently.
 
+**Proposal prepared by `/root`, 2026-10-30 PDT; awaiting stakeholder review:**
+[caller-privilege delegation workflows](session_delegation_workflows.md). It maps existing-target
+and external MCP examples to current operations and proposed additions, including logical
+principal attribution, account-token admission, target discovery, UID fencing and command-correlated
+result reads. Review its explicit authority/interface/read-scope decisions and fresh-environment
+scope before dispatching implementation; replan the remaining sprint for the selected backend work.
+
 Review the bounded API and authority contract: which existing same-account targets may be used,
 defaults/cwd, creation provenance, message/result delivery and caller-visible lifecycle controls.
 Preserve separate Session, environment, process and authority identities. Use Claude/Codex native
