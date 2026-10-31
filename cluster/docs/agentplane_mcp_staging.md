@@ -46,21 +46,6 @@ scope to issue refresh tokens ([provider documentation](https://docs.goauthentik
 The Fernet key uses 32 cryptographically random bytes from Terraform's `random_id`, encoded as
 padded URL-safe base64 ([resource documentation](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id)).
 
-## Action Service configuration rollout
-
-The generated Action Service settings retain `integrated_connection_service: false` and
-`max_wait_seconds: 180` while older pinned images may still parse those keys. The new Action Service
-rejects `integrated_connection_service: true`, defaults the field to false, and registers no
-integrated MCP or Connection endpoints. Its `max_wait_seconds` is only a compatibility tombstone,
-capped at the generated 180-second maximum;
-the MCP edge owns external caller wait limits. Keep `direct_wait_seconds` because Action Service
-orchestration uses it.
-
-Remove the two compatibility keys from generated manifests only after the image containing the
-false-only/no-op parser is observed running. Deploy that config removal before removing the parser
-fields in a later image. This sequence preserves compatibility with an older image during rollout.
-Serving-path and config rollouts do not implicitly move or delete database rows.
-
 ## Acceptance after deployment
 
 Use these deployment acceptance checks after the image and route changes reconcile:

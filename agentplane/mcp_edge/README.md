@@ -68,13 +68,3 @@ inventory.
 
 The operator accepts database-stored secrets without application-level encryption; issued opaque
 tokens are stored only as hashes.
-
-## Configuration rollout sequencing
-
-The generated Action Service settings no longer send the retired `integrated_connection_service`
-and `max_wait_seconds` keys. The Action Service still accepts them (rejecting
-`integrated_connection_service: true` and a `max_wait_seconds` above 180) until that config is
-deployed; then the parser fields go. The MCP edge owns caller wait limits; `direct_wait_seconds`
-remains a live Action Service setting for `orchestration_v1`, separate from the edge's own wait
-settings. Endpoint ownership changes do not transfer or drop database rows or edit landed
-migrations.

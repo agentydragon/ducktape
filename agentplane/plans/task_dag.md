@@ -30,17 +30,13 @@ Each group holds a track's open nodes; cleanup candidates are in
 
 ```mermaid
 flowchart LR
-    subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Candidate: remove Actions' retired compatibility settings]
-    end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
-    ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
-    DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
 ```
 
 ## 2. Service-owned command admission and later notification presentation
@@ -1725,7 +1721,6 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    ACTION_MCP_EDGE_SPLIT[Candidate: remove Actions' retired compatibility settings]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1734,20 +1729,6 @@ flowchart LR
 reads and replace the app's mirror models (`app/go/historydata/historydata.go`) with the generic proxy. `WatchSessionSummaries` says only that something
 changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
-
-### `ACTION_MCP_EDGE_SPLIT` — remove the retired Action Service serving path
-
-**Candidate.** The standalone edge serves external MCP/OAuth and ConnectionService; Actions keeps
-upstream MCP linkage and CIMD. Actions' integrated runtime and API registrations are gone; it still
-accepts the false-only `integrated_connection_service` and no-op `max_wait_seconds` keys its
-manifests generate, under `CLEANUP` markers.
-
-Remaining work: confirm the current image is running, remove the compatibility keys from
-generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
-all database rows and schemas; any later migration needs a separate verified ownership and
-retention plan. Detailed sequence and constraints:
-[the edge's rollout sequence](../mcp_edge/README.md#configuration-rollout-sequencing). The current
-token audience is `agentplane-egress`; a dedicated audience is a separate change.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1831,8 +1812,7 @@ old paths.
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the compatibility
-settings and separately gated schema cleanup in [the edge's rollout sequence](../mcp_edge/README.md#configuration-rollout-sequencing). The overview's graph is in
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 
