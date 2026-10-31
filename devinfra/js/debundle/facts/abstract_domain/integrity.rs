@@ -137,21 +137,19 @@ impl PrototypeWrites {
 /// constructor or namespace that some census write can reach. A write reaches
 /// only the receiver's own property under its key: a setter or Proxy trap it
 /// runs is source code with census writes of its own, and A11 excludes host
-/// code mutating intrinsics. So a key reaches only same-named slots, an exact
-/// global-object receiver only `Global` slots, and an exact constructor
-/// receiver only that constructor's `Static` slots.
+/// code mutating intrinsics. So a key reaches only slots its domain may name,
+/// an exact global-object receiver only `Global` slots, and an exact
+/// constructor receiver only that constructor's `Static` slots. Keys are
+/// string domains (`String`, `Affixed`) or `Unknown`; Symbol keys name no own
+/// slot and are never recorded.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct OwnSlotWrites {
     /// An unknown key on an unknown receiver.
     every_slot: bool,
-    /// An unknown key on the global object.
-    every_global: bool,
-    global_keys: BTreeSet<String>,
-    /// Unknown keys on these constructors.
-    every_static: BTreeSet<NativeIntrinsic>,
-    static_keys: BTreeSet<(NativeIntrinsic, String)>,
+    global_keys: BTreeSet<NativePropertyKey>,
+    static_keys: BTreeSet<(NativeIntrinsic, NativePropertyKey)>,
     /// Keys on a receiver that may be any native object.
-    any_receiver_keys: BTreeSet<String>,
+    any_receiver_keys: BTreeSet<NativePropertyKey>,
 }
 
 impl OwnSlotWrites {
@@ -180,8 +178,9 @@ impl OwnSlotWrites {
         for root in mutated.difference(&witnessed) {
             match root.global_binding() {
                 Some(name) => {
-                    base.global_keys.insert(name.to_owned());
-                    base.every_static.insert(*root);
+                    base.global_keys
+                        .insert(NativePropertyKey::String(name.to_owned()));
+                    base.static_keys.insert((*root, NativePropertyKey::Unknown));
                 }
                 None => base.every_slot = true,
             }
@@ -212,7 +211,8 @@ impl OwnSlotWrites {
             for root in &witness.affected_roots {
                 match root.global_binding() {
                     Some(name) => {
-                        self.global_keys.insert(name.to_owned());
+                        self.global_keys
+                            .insert(NativePropertyKey::String(name.to_owned()));
                     }
                     None => self.every_slot = true,
                 }
@@ -233,40 +233,36 @@ impl OwnSlotWrites {
         });
         for target in &witness.target_slots {
             let key = if derivation_intact {
-                &target.key
+                target.key.clone()
             } else {
-                &NativePropertyKey::Unknown
+                NativePropertyKey::Unknown
             };
-            let key = match key {
-                NativePropertyKey::String(key) => Some(key),
-                NativePropertyKey::Unknown => None,
-                // Every own slot is string-keyed.
-                NativePropertyKey::SymbolIterator | NativePropertyKey::OtherSymbol => continue,
-            };
+            // Every own slot is string-keyed.
+            if matches!(
+                key,
+                NativePropertyKey::SymbolIterator | NativePropertyKey::OtherSymbol
+            ) {
+                continue;
+            }
             match &target.receiver {
-                NativeReceiverPath::GlobalObject => match key {
-                    Some(key) => {
-                        self.global_keys.insert(key.clone());
-                    }
-                    None => self.every_global = true,
-                },
+                NativeReceiverPath::GlobalObject => {
+                    self.global_keys.insert(key);
+                }
                 NativeReceiverPath::Constructor(family)
                     if current.intact(IntrinsicSlot::Global(*family)) =>
                 {
-                    match key {
-                        Some(key) => {
-                            self.static_keys.insert((*family, key.clone()));
-                        }
-                        None => {
-                            self.every_static.insert(*family);
-                            // An update of the binding itself (`Map++`) has
-                            // this path too.
-                            if witness.operation == NativeMutationOperation::Update {
-                                self.global_keys
-                                    .extend(family.global_binding().map(str::to_owned));
-                            }
-                        }
+                    // An update of the binding itself (`Map++`) has this
+                    // keyless path too.
+                    if key == NativePropertyKey::Unknown
+                        && witness.operation == NativeMutationOperation::Update
+                    {
+                        self.global_keys.extend(
+                            family
+                                .global_binding()
+                                .map(|name| NativePropertyKey::String(name.to_owned())),
+                        );
                     }
+                    self.static_keys.insert((*family, key));
                 }
                 // `%F.prototype%` and the iterator prototypes own no
                 // `Global` or `Static` slot.
@@ -275,50 +271,54 @@ impl OwnSlotWrites {
                 NativeReceiverPath::ArrayIteratorPrototype
                 | NativeReceiverPath::SetIteratorPrototype
                     if derivation_intact => {}
-                _ => match key {
-                    Some(key) => {
-                        self.any_receiver_keys.insert(key.clone());
-                    }
-                    None => self.every_slot = true,
-                },
+                _ if key == NativePropertyKey::Unknown => self.every_slot = true,
+                _ => {
+                    self.any_receiver_keys.insert(key);
+                }
             }
         }
     }
 
     /// Whether no write reaches this `Global` or `Static` slot.
     fn intact(&self, slot: IntrinsicSlot) -> bool {
-        if self.every_slot {
-            return false;
-        }
-        match slot {
-            IntrinsicSlot::Global(family) => family.global_binding().is_some_and(|name| {
-                !self.every_global
-                    && !self.global_keys.contains(name)
-                    && !self.any_receiver_keys.contains(name)
-            }),
-            IntrinsicSlot::Static(family, property) => {
-                !self.every_static.contains(&family)
-                    && !self.static_keys.contains(&(family, property.to_owned()))
-                    && !self.any_receiver_keys.contains(property)
-            }
-            _ => unreachable!("own-slot query for {slot:?}"),
-        }
+        !self.every_slot && !self.reached_by_key(slot, true)
     }
 
-    /// Whether the slot is unknown through a write whose receiver may be the
-    /// global object or any native object.
+    /// Whether a recorded key may name `slot`, counting writes on exact
+    /// receivers only with `exact_receivers`.
+    fn reached_by_key(&self, slot: IntrinsicSlot, exact_receivers: bool) -> bool {
+        let (name, exact) = match slot {
+            IntrinsicSlot::Global(family) => {
+                let Some(name) = family.global_binding() else {
+                    return true;
+                };
+                (
+                    name,
+                    self.global_keys.iter().any(|key| key.may_be_string(name)),
+                )
+            }
+            IntrinsicSlot::Static(family, property) => (
+                property,
+                self.static_keys
+                    .iter()
+                    .any(|(owner, key)| *owner == family && key.may_be_string(property)),
+            ),
+            _ => unreachable!("own-slot query for {slot:?}"),
+        };
+        (exact_receivers && exact)
+            || self
+                .any_receiver_keys
+                .iter()
+                .any(|key| key.may_be_string(name))
+    }
+
+    /// Whether the slot is unknown through a write whose receiver may be any
+    /// native object, or an unknown key on the global object.
     fn reached_through_global(&self, slot: IntrinsicSlot) -> bool {
         self.every_slot
-            || match slot {
-                IntrinsicSlot::Global(family) => {
-                    self.every_global
-                        || family
-                            .global_binding()
-                            .is_some_and(|name| self.any_receiver_keys.contains(name))
-                }
-                IntrinsicSlot::Static(_, property) => self.any_receiver_keys.contains(property),
-                _ => false,
-            }
+            || self.reached_by_key(slot, false)
+            || matches!(slot, IntrinsicSlot::Global(_))
+                && self.global_keys.contains(&NativePropertyKey::Unknown)
     }
 }
 
@@ -609,6 +609,34 @@ mod tests {
         );
         assert_eq!(
             intact(&[unknown("Map")], PROBES),
+            [OBJECT, KEYS, ENTRIES, SYMBOL_FOR]
+        );
+    }
+
+    #[test]
+    fn an_affixed_key_reaches_only_slots_it_may_name() {
+        let affixed = |prefix: &str, suffix: &str| {
+            witness(
+                NativeIntrinsic::GlobalObject,
+                NativeReceiverPath::Unknown,
+                NativePropertyKey::Affixed {
+                    prefix: prefix.to_owned(),
+                    suffix: suffix.to_owned(),
+                },
+                &[],
+            )
+        };
+        assert_eq!(
+            intact(&[affixed("migration.", "")], PROBES),
+            [MAP, OBJECT, KEYS, ENTRIES, SYMBOL_FOR]
+        );
+        assert_eq!(
+            intact(&[affixed("", "ys")], PROBES),
+            [MAP, OBJECT, ENTRIES, SYMBOL_FOR]
+        );
+        // `"Ma" + x + "p"` may be `"Map"`.
+        assert_eq!(
+            intact(&[affixed("Ma", "p")], PROBES),
             [OBJECT, KEYS, ENTRIES, SYMBOL_FOR]
         );
     }

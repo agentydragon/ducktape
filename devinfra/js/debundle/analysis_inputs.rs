@@ -303,6 +303,28 @@ pub enum NativeIntrinsic {
 }
 
 impl NativeIntrinsic {
+    /// Every global property name `for_global_binding` recognizes.
+    pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
+        "Error",
+        "Function",
+        "Object",
+        "Array",
+        "Math",
+        "RegExp",
+        "Symbol",
+        "Promise",
+        "Map",
+        "Set",
+        "WeakMap",
+        "WeakSet",
+        "FinalizationRegistry",
+        "globalThis",
+        "window",
+        "self",
+        "frames",
+        "top",
+    ];
+
     pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
         match property {
             "Error" => Some(Self::Error),

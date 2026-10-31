@@ -314,9 +314,30 @@ pub enum NativeReceiverPath {
 #[serde(rename_all = "snake_case")]
 pub enum NativePropertyKey {
     String(String),
+    /// Any string starting with `prefix` and ending with `suffix`.
+    Affixed {
+        prefix: String,
+        suffix: String,
+    },
     SymbolIterator,
     OtherSymbol,
     Unknown,
+}
+
+impl NativePropertyKey {
+    /// Whether a key in this domain may be the string `name`.
+    pub(crate) fn may_be_string(&self, name: &str) -> bool {
+        match self {
+            Self::String(key) => key == name,
+            Self::Affixed { prefix, suffix } => {
+                name.len() >= prefix.len() + suffix.len()
+                    && name.starts_with(prefix.as_str())
+                    && name.ends_with(suffix.as_str())
+            }
+            Self::SymbolIterator | Self::OtherSymbol => false,
+            Self::Unknown => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]

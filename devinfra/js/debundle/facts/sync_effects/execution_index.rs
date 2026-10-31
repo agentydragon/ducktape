@@ -1760,6 +1760,10 @@ fn native_write_slots(
             .cloned()
             .map(NativePropertyKey::String)
             .collect(),
+        PropertyKeyDomain::Affixed { prefix, suffix } => vec![NativePropertyKey::Affixed {
+            prefix: prefix.clone(),
+            suffix: suffix.clone(),
+        }],
         PropertyKeyDomain::SymbolIterator => vec![NativePropertyKey::SymbolIterator],
         PropertyKeyDomain::Symbol => vec![NativePropertyKey::OtherSymbol],
         PropertyKeyDomain::Unknown => vec![NativePropertyKey::Unknown],
@@ -1960,7 +1964,10 @@ fn source_slot_overlap<'a>(
         opaque |= witness.target_slots.iter().any(|candidate| {
             !witness.key_dependencies.is_empty()
                 || candidate.key == slot.key
-                || candidate.key == NativePropertyKey::Unknown
+                || match &slot.key {
+                    NativePropertyKey::String(name) => candidate.key.may_be_string(name),
+                    _ => candidate.key == NativePropertyKey::Unknown,
+                }
         });
     }
     if opaque {
@@ -3654,6 +3661,17 @@ fn outcomes_to_receiver_roots(
 #[derive(Debug, Clone)]
 enum PropertyKeyExpr {
     String(String),
+    /// A canonical array index from a numeric literal: a key, not a string
+    /// operand of `+`.
+    Index(String),
+    /// An untagged template with substitutions: a string between its first
+    /// and last literal parts.
+    Template {
+        prefix: String,
+        suffix: String,
+    },
+    /// `left + right`.
+    Concat(Box<PropertyKeyExpr>, Box<PropertyKeyExpr>),
     SymbolIterator(Id),
     Binding(Id),
     SymbolFor(Id),
@@ -3670,8 +3688,29 @@ impl PropertyKeyExpr {
                     && value.value <= u32::MAX as f64
                     && value.value.fract() == 0.0 =>
             {
-                Self::String((value.value as u32).to_string())
+                Self::Index((value.value as u32).to_string())
             }
+            Expr::Tpl(template) => {
+                let cooked = |index: usize| {
+                    template.quasis[index]
+                        .cooked
+                        .as_ref()
+                        .map(|part| part.to_string_lossy().into_owned())
+                };
+                let (Some(prefix), Some(suffix)) = (cooked(0), cooked(template.quasis.len() - 1))
+                else {
+                    return Self::Unknown;
+                };
+                if template.exprs.is_empty() {
+                    Self::String(prefix)
+                } else {
+                    Self::Template { prefix, suffix }
+                }
+            }
+            Expr::Bin(binary) if binary.op == BinaryOp::Add => Self::Concat(
+                Box::new(Self::from_expr(&binary.left)),
+                Box::new(Self::from_expr(&binary.right)),
+            ),
             // Simple assignment returns its RHS, independent of an inherited
             // setter's return value. Keep coercive and compound forms opaque.
             Expr::Assign(assignment)
@@ -3690,11 +3729,9 @@ impl PropertyKeyExpr {
                 };
                 Self::SymbolIterator(symbol.to_id())
             }
-            Expr::Call(call)
-                if call.args.len() == 1
-                    && call.args[0].spread.is_none()
-                    && matches!(call.args[0].expr.unwrap_parens(), Expr::Lit(Lit::Str(_))) =>
-            {
+            // `Symbol.for(value)` returns a Symbol whatever its argument
+            // converts to; a conversion that throws leaves no key.
+            Expr::Call(call) if call.args.len() == 1 && call.args[0].spread.is_none() => {
                 match &call.callee {
                     Callee::Expr(callee) => match callee.unwrap_parens() {
                         Expr::Member(member)
@@ -3720,6 +3757,11 @@ impl PropertyKeyExpr {
 #[derive(Debug, Clone)]
 enum PropertyKeyDomain {
     FiniteStrings(BTreeSet<String>),
+    /// Strings with this constant prefix and suffix, not both empty.
+    Affixed {
+        prefix: String,
+        suffix: String,
+    },
     SymbolIterator,
     Symbol,
     Unknown,
@@ -3758,9 +3800,22 @@ fn property_key_evidence<'a>(
                     _ => return PropertyKeyEvidence::unknown(),
                 }
             }
-            PropertyKeyExpr::String(key) => {
+            PropertyKeyExpr::String(key) | PropertyKeyExpr::Index(key) => {
                 return PropertyKeyEvidence {
                     domain: PropertyKeyDomain::FiniteStrings(BTreeSet::from([key.clone()])),
+                    dependencies: BTreeSet::new(),
+                };
+            }
+            PropertyKeyExpr::Template { .. } | PropertyKeyExpr::Concat(..) => {
+                let Some((prefix, suffix)) = string_affixes(expression, assignments, &mut seen)
+                else {
+                    return PropertyKeyEvidence::unknown();
+                };
+                if prefix.is_empty() && suffix.is_empty() {
+                    return PropertyKeyEvidence::unknown();
+                }
+                return PropertyKeyEvidence {
+                    domain: PropertyKeyDomain::Affixed { prefix, suffix },
                     dependencies: BTreeSet::new(),
                 };
             }
@@ -3786,6 +3841,43 @@ fn property_key_evidence<'a>(
             }
             _ => return PropertyKeyEvidence::unknown(),
         }
+    }
+}
+
+/// The constant prefix and suffix of a string-valued expression, or `None`
+/// when it may not be a string. A template is a string; `left + right` is a
+/// string concatenation when either operand is, whose result starts with a
+/// string left operand's prefix and ends with a string right operand's suffix
+/// (the other operand's ToPrimitive/ToString may run user code but still
+/// yields the concatenation, or throws before any key exists).
+fn string_affixes<'a>(
+    expression: &'a PropertyKeyExpr,
+    assignments: &'a BTreeMap<Id, Vec<PropertyKeyExpr>>,
+    seen: &mut BTreeSet<&'a Id>,
+) -> Option<(String, String)> {
+    match expression {
+        PropertyKeyExpr::String(value) => Some((value.clone(), value.clone())),
+        PropertyKeyExpr::Template { prefix, suffix } => Some((prefix.clone(), suffix.clone())),
+        PropertyKeyExpr::Binding(binding) if seen.insert(binding) => {
+            let affixes = match assignments.get(binding).map(Vec::as_slice) {
+                Some([value]) => string_affixes(value, assignments, seen),
+                _ => None,
+            };
+            seen.remove(binding);
+            affixes
+        }
+        PropertyKeyExpr::Concat(left, right) => {
+            let left = string_affixes(left, assignments, seen);
+            let right = string_affixes(right, assignments, seen);
+            if left.is_none() && right.is_none() {
+                return None;
+            }
+            Some((
+                left.map(|(prefix, _)| prefix).unwrap_or_default(),
+                right.map(|(_, suffix)| suffix).unwrap_or_default(),
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -7906,6 +7998,18 @@ impl ExecutionIndex {
                         for key in keys {
                             refined.extend(NativeIntrinsic::for_global_binding(key));
                         }
+                    }
+                    PropertyKeyDomain::Affixed { prefix, suffix } => {
+                        let key = NativePropertyKey::Affixed {
+                            prefix: prefix.clone(),
+                            suffix: suffix.clone(),
+                        };
+                        refined.extend(
+                            NativeIntrinsic::GLOBAL_BINDINGS
+                                .iter()
+                                .filter(|name| key.may_be_string(name))
+                                .filter_map(|name| NativeIntrinsic::for_global_binding(name)),
+                        );
                     }
                     PropertyKeyDomain::Symbol | PropertyKeyDomain::SymbolIterator => {}
                     PropertyKeyDomain::Unknown => {
