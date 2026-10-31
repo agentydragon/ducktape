@@ -1088,10 +1088,10 @@ Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
 and later assignments, even when the eager reader's source unit is pure.
 
-Synchronous execution also completes an exact member read from a recognized
-single-initializer TS enum when the shared source index proves the initialized
-binding is stable `PlainData` and the static key is one of that initializer's
-own primitive fields. This proof suppresses only possible getter/callback
+Synchronous execution also completes an exact member read from a TS enum
+object when, at the read, the binding is `PlainData`, no statement but its
+declaration writes it, its initializer has run, and the static key is one of
+the primitive fields that initializer stored into its fresh receiver. This proof suppresses only possible getter/callback
 reentry: the member read and its eager binding dependency remain. Mutation,
 opaque escape, reflective writes, accessors, unknown keys, and reads before the
 initializer keep the conservative member-read path. Purity of the initializer
@@ -1154,8 +1154,8 @@ instance without exposing them during the initializer. The wrapper must have
 one return containing only checked local `new` allocations, simple parameters,
 no other calls or effects, and a unique stable identity. Inputs must be fresh
 plain-data records, inline functions, or primitives. A fresh record may contain
-a dense fresh array of these inputs or initialized, exact own primitive members of a stable,
-single-initializer TS enum object. Enum reads retain their eager dependencies;
+a dense fresh array of these inputs or initialized, exact own primitive members of a
+settled TS enum object. Enum reads retain their eager dependencies;
 mutation, escape, holes, spreads, and unknown keys retain conservative
 reachability. Nested allocations must be inert; constructor
 property reads must resolve to own data or safe missing properties under A11.
@@ -1288,10 +1288,10 @@ and its family as Number and `Symbol.for` as Symbol. A stable direct ESM export
 carries its types to named/default importers and re-exports, so copying one
 through local bindings preserves its callback-free conversion fact;
 reassignment to an object or an unknown alternative restores conservative
-conversion analysis. An exact static own primitive member of a stable
-single-initializer TS enum, used as a computed property key, is primitive too;
-whole-chunk mutation, escape, accessor, rebind and source-order checks still
-apply. A primitive operand omits only conversion callbacks: a Symbol is a safe
+conversion analysis. An exact static own primitive member of a TS enum object
+settled at the statement (as above), used as a computed property key or a
+template substitution, is primitive too; whole-chunk mutation, escape,
+accessor, rebind and source-order checks still apply. A primitive operand omits only conversion callbacks: a Symbol is a safe
 property key but not a string or numeric operand, and mixed BigInt/Number
 arithmetic still throws. No value is folded, and every binding read,
 import-order and TDZ constraint remains.

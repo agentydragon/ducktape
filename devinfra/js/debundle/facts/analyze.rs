@@ -512,7 +512,6 @@ where
             &plain_data_inference_uses,
             &plain_array_bindings,
             &stable_var_number_candidates,
-            Some(&per_statement),
             Some(&mut locate),
         )
     };
@@ -622,7 +621,6 @@ where
     let purities = match synchronous_calls {
         SynchronousCallAnalysis::Include => {
             super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
-                &body,
                 &value_flow,
                 super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
                     set_iterable: &set_iterable_proof,

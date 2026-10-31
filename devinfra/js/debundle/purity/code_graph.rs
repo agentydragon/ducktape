@@ -3,7 +3,7 @@ use crate::facts::abstract_domain::heap;
 use crate::facts::abstract_domain::primitive::{BindingPrims, collect_binding_prims};
 use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
-    SetIterableShapes, StructuralStatementFacts,
+    SetIterableShapes,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -53,11 +53,6 @@ pub struct ChunkCodeGraph {
     /// (`heap::primitive_element_arrays`): their element callbacks receive
     /// only primitives.
     primitive_element_arrays: BTreeSet<String>,
-    /// Candidate own primitive fields of single-init TS enum objects.
-    ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate>,
-    /// Primitive enum fields are safe computed property keys only when the
-    /// enum binding is not rebound outside its recognized initializer.
-    stable_ts_enum_primitive_members: BTreeMap<String, BTreeSet<String>>,
     /// Exact Set-constructor spans with a structurally checked fresh-array
     /// iterable. The same proof is consumed by synchronous effect analysis.
     set_iterable_proof: SetIterableProof,
@@ -109,7 +104,6 @@ pub(crate) struct PurityShapeInputs<'a> {
         &'a BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
     pub(crate) plain_array_bindings: &'a BTreeSet<String>,
     pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
-    pub(crate) structural_facts: Option<&'a [StructuralStatementFacts]>,
 }
 
 /// Source-module identity, policy, and inferred imported function targets for
@@ -274,7 +268,6 @@ impl ChunkCodeGraph {
             &BTreeMap::new(),
             &plain_array_bindings,
             stable_var_number_candidates,
-            None,
             locate,
         )
     }
@@ -301,7 +294,6 @@ impl ChunkCodeGraph {
         >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
-        structural_facts: Option<&[StructuralStatementFacts]>,
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
@@ -318,7 +310,6 @@ impl ChunkCodeGraph {
             plain_data_inference_uses,
             plain_array_bindings,
             stable_var_number_candidates,
-            structural_facts,
         };
         let local_targets = BTreeMap::new();
         let call_context = PurityCallContext {
@@ -450,39 +441,11 @@ impl ChunkCodeGraph {
             .collect();
         let plain_data_dependencies = shape_inputs.plain_data_dependencies.clone();
         let plain_data_inference_uses = shape_inputs.plain_data_inference_uses.clone();
-        let ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate> =
-            collect_ts_enum_named_data_candidates(body, shape_inputs.plain_data_bindings)
-                .into_iter()
-                .filter(|(binding, _)| {
-                    matches!(
-                        bindings.get(binding.0.as_ref()),
-                        Some(ChunkBinding::PlainData)
-                    )
-                })
-                .collect();
         let binding_prims = collect_binding_prims(
             body,
             shape_inputs.shadowed,
             shape_inputs.stable_var_number_candidates,
         );
-        let stable_ts_enum_primitive_members = shape_inputs
-            .structural_facts
-            .map(|facts| {
-                ts_enum_named_data_candidates
-                    .iter()
-                    .filter(|(binding, candidate)| {
-                        !facts.iter().any(|fact| {
-                            fact.ordinal != candidate.initializer_source_unit
-                                && (fact.rebinds.eager.contains(*binding)
-                                    || fact.rebinds.lazy.contains(*binding))
-                        })
-                    })
-                    .map(|(binding, candidate)| {
-                        (binding.0.to_string(), candidate.own_primitive_keys.clone())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
         let primitive_element_arrays =
             heap::primitive_element_arrays(body, shape_inputs.plain_array_bindings, &binding_prims);
         let mut purity_call_targets = call_context.imported_targets.clone();
@@ -507,10 +470,8 @@ impl ChunkCodeGraph {
             binding_prims,
             plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
             primitive_element_arrays,
-            ts_enum_named_data_candidates,
             plain_data_dependencies,
             plain_data_inference_uses,
-            stable_ts_enum_primitive_members,
             set_iterable_proof: shape_inputs.set_iterable_proof.clone(),
             local_class_construction_proof: shape_inputs.local_class_construction_proof.clone(),
             imported_purities: shape_inputs.imported_purities.clone(),
@@ -528,31 +489,6 @@ impl ChunkCodeGraph {
             ChunkBinding::Function { purity } => Some(purity),
             ChunkBinding::PlainData => None,
         }
-    }
-
-    /// A stable recognized enum's named field is known to hold a primitive
-    /// literal. This proves ToPropertyKey cannot invoke user code while
-    /// retaining the ordinary member-read purity and binding-order checks.
-    pub(crate) fn is_stable_ts_enum_primitive_member(
-        &self,
-        expression: &Expr,
-        local_shadowed: &BTreeSet<String>,
-    ) -> bool {
-        let Expr::Member(member) = expression.unwrap_parens() else {
-            return false;
-        };
-        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-            return false;
-        };
-        let MemberProp::Ident(property) = &member.prop else {
-            return false;
-        };
-        let receiver_name = receiver.sym.as_ref();
-        !local_shadowed.contains(receiver_name)
-            && self
-                .stable_ts_enum_primitive_members
-                .get(receiver_name)
-                .is_some_and(|members| members.contains(property.sym.as_ref()))
     }
 
     /// Return and record the inferred target of a direct identifier call when
@@ -608,10 +544,6 @@ impl ChunkCodeGraph {
     /// Whether `name` is a plain array whose elements are all primitives.
     pub(crate) fn is_primitive_element_array(&self, name: &str) -> bool {
         self.primitive_element_arrays.contains(name)
-    }
-
-    pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {
-        &self.ts_enum_named_data_candidates
     }
 
     pub(crate) fn set_iterable_dependencies(&self, span: Span) -> Option<&ProofDependencies> {

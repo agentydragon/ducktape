@@ -154,6 +154,11 @@ let reboundCalls = 0;
 Rebound = { READY: { toString() { reboundCalls++; return "rebound"; } } };
 const rebound = { [Rebound.READY]: true };
 
+var Looped = ((values) => ((values.READY = "ready"), values))(Looped || {});
+let loopedCalls = 0;
+for (Looped of [{ READY: { toString() { loopedCalls++; return "looped"; } } }]) {}
+const looped = { [Looped.READY]: true };
+
 var Mutated = ((values) => ((values.READY = "ready"), values))(Mutated || {});
 Mutated.READY = { toString() { return "mutated"; } };
 const mutated = { [Mutated.READY]: true };
@@ -171,13 +176,15 @@ globalThis.retainEnum = (value) => value;
 globalThis.retainEnum(Escaped);
 const escaped = { [Escaped.READY]: true };
 
-console.log(rebound.rebound, reboundCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
+console.log(rebound.rebound, reboundCalls, looped.looped, loopedCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
 "#;
     let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "true 1 true true true 1 true\n");
+    assert_preserved_entry_output(&fixture, "true 1 true 1 true true true 1 true\n");
 
     let graph = fixture.dependency_graph();
-    for binding in ["rebound", "mutated", "dynamic", "accessor", "escaped"] {
+    for binding in [
+        "rebound", "looped", "mutated", "dynamic", "accessor", "escaped",
+    ] {
         let unit = source_unit_for_binding(&graph, binding);
         let node = graph
             .nodes

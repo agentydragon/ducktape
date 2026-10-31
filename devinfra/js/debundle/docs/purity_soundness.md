@@ -1105,23 +1105,30 @@ mutation); the TS-enum-IIFE shape `var X = ((p) => (p.A = "a", …, p))(X
 || {})` whose IIFE produces a plain object by parameter mutation (see
 `is_ts_enum_iife_init_for_binding`).
 
-The closed local constructor-result proof can also use an exact named
-primitive field from that enum object inside a fresh dense array argument.
-This requires one initializer for the binding, the whole-chunk PlainData
-no-write/no-escape proof, execution of that initializer before the read, and
-the ordinary Object prototype integrity guard. Numeric reverse-mapping writes
-can certify their inner named fields; computed or unknown read keys cannot.
-The member read remains an eager dependency and is evaluated normally. Array
-holes and spreads are outside this proof.
+That IIFE shape is a pre-purity admission shape only: it lets the heap scan
+admit the binding and lets the initializer statement itself classify pure,
+both before synchronous execution runs it. What the enum object holds is
+execution state. Interpreting the call fills the fresh receiver's own fields:
+a parameter-mutation initializer (one simple parameter, no calls, returns
+that parameter, every write a primitive under a primitive key into an
+untainted plain-data object literal) records the exact keys and primitive
+types it stores.
 
-For a computed object-property key, the same initialized exact-member proof
-also establishes that `ToPropertyKey` receives a primitive, so it cannot call
-user code through the enum member value. The candidate additionally requires
-the canonical structural facts to show no eager or lazy enum-binding rebind
-outside its initializer. This removes only the coercion/reentry concern:
-member access and key-expression evaluation remain ordinary eager effects.
-Computed enum member names, member mutation, opaque escape, reflective writes,
-accessors, and unknown receiver forms continue through conservative handling.
+An exact named member of such an object is then known at a later statement's
+program point when the binding is `PlainData` (the whole-chunk no-write,
+no-escape proof), no statement but its declaration writes the binding, the
+initializer has run, and every allocation the binding holds there was filled
+that way. The closed local constructor-result proof can use that member inside
+a fresh dense array argument, under the ordinary Object prototype integrity
+guard. A computed property key (an entry key of a keyed builtin row included)
+or a template substitution that is such a member resolves its coercion
+against the member's settled types: `ToPropertyKey` completes on every
+primitive, `ToString` on every primitive but a Symbol. This removes only the
+coercion/reentry concern: member access and key-expression evaluation remain
+ordinary eager effects. Function bodies run at no fixed program point, so their
+coercions do not resolve this way. Computed enum member names, member
+mutation, opaque escape, reflective writes, accessors, and unknown receiver
+forms continue through conservative handling.
 
 Why member reads on PlainData are pure:
 

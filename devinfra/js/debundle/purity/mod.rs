@@ -17,8 +17,8 @@
 //!   types and the load-bearing-hint detectors.
 //! - `fluent` — the closure of author-trusted fluent roots over chunk-top
 //!   `const` chains.
-//! - `ts_enum_iife` — recognition of the TypeScript-emit enum IIFE
-//!   plain-object shape and its named primitive fields.
+//! - `ts_enum_iife` — the TypeScript-emit enum IIFE as a pre-purity
+//!   admission shape (heap `PlainData` and the initializer's own purity).
 //! - `purity_type` — the `Purity` / `PurityReason` / `PurityRule`
 //!   verdict types.
 //! - `classifier` — `classify_expr_purity` and its expression /

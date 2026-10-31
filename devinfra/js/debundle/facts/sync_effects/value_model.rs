@@ -333,7 +333,9 @@ pub(super) enum ValueExpr {
     Alloc(Kind, u32),
     ObjectLiteral(u32, Vec<(Option<String>, Self)>),
     Undefined,
-    NonCallable,
+    /// A primitive of the given types: a literal, a template, or a value
+    /// known only to be primitive.
+    NonCallable(PrimKinds),
     Member(Box<Self>, Option<String>, MemberKey),
     Call(Box<Self>, Vec<Self>, CallSite),
     New(Box<Self>, Vec<Self>, CallSite),
@@ -646,7 +648,15 @@ impl ValueExpr {
                 .map_or(Self::Unknown, |expr| Self::from_expr(expr)),
             Expr::Assign(assign) => Self::from_expr(&assign.right),
             Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Vec::new()),
-            Expr::Lit(_) | Expr::Tpl(_) => Self::NonCallable,
+            Expr::Lit(literal) => Self::NonCallable(match literal {
+                Lit::Str(_) => PrimKinds::STRING,
+                Lit::Num(_) => PrimKinds::NUMBER,
+                Lit::Bool(_) => PrimKinds::BOOLEAN,
+                Lit::Null(_) => PrimKinds::NULL,
+                Lit::BigInt(_) => PrimKinds::BIGINT,
+                Lit::Regex(_) | Lit::JSXText(_) => PrimKinds::ANY,
+            }),
+            Expr::Tpl(_) => Self::NonCallable(PrimKinds::STRING),
             _ => Self::Unknown,
         }
     }
@@ -681,7 +691,7 @@ impl ValueExpr {
                     value.bindings(result);
                 }
             }
-            Self::Alloc(..) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) | Self::Unknown => {}
         }
     }
 
@@ -722,7 +732,7 @@ impl ValueExpr {
             // namespace. Sinks still handle unknown receivers and
             // publications conservatively below.
             Self::Unknown => false,
-            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 
@@ -930,7 +940,7 @@ impl ValueExpr {
             Self::Alloc(Kind::Class, _) => {
                 facts.class_may_publish(self, id, aliases, visiting_bindings, visiting_classes)
             }
-            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 
@@ -1018,7 +1028,7 @@ impl ValueExpr {
                     || !Self::is_direct_namespace_member_callee(callee, id)
             }
             Self::New(..) | Self::Unknown => true,
-            Self::Alloc(..) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 

@@ -1,5 +1,8 @@
 //! Steps a builtin performs on its operands that can run user code.
 
+use super::value::PrimKinds;
+use swc_ecma_ast::Id;
+
 /// An abstract operation or internal method a builtin applies to one operand.
 /// Each can run user code: a conversion through a `ToPrimitive` hook, an
 /// internal method through a Proxy trap or an accessor. A primitive operand
@@ -89,6 +92,33 @@ pub(crate) enum CoerceSite {
     ArraySpread,
     /// Object spread.
     ObjectSpread,
+}
+
+/// The operands whose values at the program point decide a coercion: it runs
+/// no user code and completes normally when each holds only primitives whose
+/// types are within `admits` (plan § 2.3 `Coerce` resolution). Every other
+/// operand of the step is already a primitive within `admits`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CoerceOperands {
+    pub(crate) operands: Vec<CoerceOperand>,
+    pub(crate) admits: PrimKinds,
+}
+
+/// One operand a coercion's resolution reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CoerceOperand {
+    /// A top-level binding's value.
+    Binding(Id),
+    /// A named own property of a `PlainData` binding's allocations.
+    Member(Id, String),
+}
+
+impl CoerceOperand {
+    pub(crate) fn binding(&self) -> &Id {
+        match self {
+            Self::Binding(binding) | Self::Member(binding, _) => binding,
+        }
+    }
 }
 
 /// What kind of unsummarized code an `Invoke` may run.
