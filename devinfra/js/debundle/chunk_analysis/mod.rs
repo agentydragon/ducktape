@@ -103,7 +103,7 @@ pub fn compute_chunk_analysis<F>(
     source_path: Option<&str>,
     line_range_for_span: F,
     dependency_graph_options: DependencyGraphOptions,
-    export_reentry_policy: ExportReentryPolicy,
+    export_reentry_policy: &ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysisOutput>
 where

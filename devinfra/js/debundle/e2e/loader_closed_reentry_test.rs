@@ -908,3 +908,69 @@ fn sites_outside_the_target_window_do_not_hold_it_open() {
         assert_eq!(report["loader"]["outside_window_sites"], 1, "{sidecar}");
     }
 }
+
+/// `cli`'s shape: the target lazily loads a chunk that imports some of its
+/// exports. Only those exports can be read while the target evaluates.
+fn reentry_provider() -> &'static str {
+    Box::leak(
+        format!(
+            "{PROVIDER}export function loadWindow() {{ return import.meta.require(\"./window.js\"); }}\n"
+        )
+        .into_boxed_str(),
+    )
+}
+
+#[test]
+fn reach_back_reenters_only_through_the_names_the_window_imports() {
+    let window = "import { loadHelper } from \"./provider.js\";\nexport function use() { return loadHelper(); }\n";
+    let extra_chunks = [
+        ("static/helper", HELPER),
+        ("static/provider", reentry_provider()),
+        ("static/window", window),
+    ];
+    let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
+    let fixture = run_fixture(
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&provider_modules)
+            .with_host_behavior(audited_host()),
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(
+        report["policy"],
+        json!({ "reentry_through": ["loadHelper"] })
+    );
+    assert_eq!(report["loader"]["reentry_through"], json!(["loadHelper"]));
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const consumer = await import('./static/consumer/entry.js');\nconsole.log(consumer.readLater());\n",
+        "ready\n",
+    );
+}
+
+#[test]
+fn a_window_importing_the_bound_export_or_the_namespace_keeps_it_bound() {
+    for (window, policy) in [
+        (
+            "import { readLater } from \"./provider.js\";\nexport function use() { return readLater(); }\n",
+            json!({ "reentry_through": ["readLater"] }),
+        ),
+        (
+            "import * as provider from \"./provider.js\";\nexport function use() { return provider.loadHelper(); }\n",
+            json!("conservative"),
+        ),
+    ] {
+        let rejected = run_rejection_fixture(
+            FixtureOpts::new(reentry_provider(), provider_modules())
+                .with_chunk_id(PROVIDER_CHUNK)
+                .with_extra_chunks(&[("static/helper", HELPER), ("static/window", window)])
+                .with_host_behavior(audited_host()),
+        );
+        assert_eq!(
+            export_reentry_report(&rejected.report_root)["policy"],
+            policy,
+            "{window}"
+        );
+    }
+}

@@ -464,6 +464,10 @@ pub(super) struct ExecutionInputs<'source> {
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
     synchronous_owner_reads: Vec<Option<&'source BTreeSet<Id>>>,
     exported_owners: BTreeSet<SourceUnitOrdinal>,
+    /// The exports code that reenters the module during its evaluation can
+    /// read: their bindings, and whether the default export is among them.
+    reentry_bindings: BTreeSet<Id>,
+    reentry_default: bool,
     call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
     var_bindings: BTreeSet<Id>,
@@ -3274,21 +3278,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Exports expose live capabilities only to code that can reenter the
         // module. Builtin iteration without such reentry remains precise.
         if self.inputs.export_reentry_enabled {
-            let mut exported = self.state.exported_runtime_values.clone();
-            exported.extend(
-                self.inputs
-                    .index
-                    .exported_bindings
-                    .iter()
-                    .flat_map(|binding| {
-                        self.state
-                            .prefix_values
-                            .get(binding)
-                            .into_iter()
-                            .flatten()
-                            .cloned()
-                    }),
-            );
+            let mut exported = if self.inputs.reentry_default {
+                self.state.exported_runtime_values.clone()
+            } else {
+                Values::new()
+            };
+            exported.extend(self.inputs.reentry_bindings.iter().flat_map(|binding| {
+                self.state
+                    .prefix_values
+                    .get(binding)
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+            }));
             self.expose_class_capabilities(&exported);
             self.taint_objects(&exported);
         }
@@ -4281,8 +4283,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if self.inputs.index.other_class_uses.contains(binding) {
                 return Err(ConstructionRejection::ClassUsedOutsideConstruction);
             }
-            if self.inputs.export_reentry_enabled
-                && self.inputs.index.exported_bindings.contains(binding)
+            if self.inputs.export_reentry_enabled && self.inputs.reentry_bindings.contains(binding)
             {
                 return Err(ConstructionRejection::ExportedClass);
             }
@@ -4344,8 +4345,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.inputs.export_reentry_enabled {
             let exported: Values = self
                 .inputs
-                .index
-                .exported_bindings
+                .reentry_bindings
                 .iter()
                 .flat_map(|id| {
                     self.state
@@ -4515,7 +4515,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .is_none_or(|binding| {
                     self.inputs.index.other_class_uses.contains(binding)
                         || (self.inputs.export_reentry_enabled
-                            && self.inputs.index.exported_bindings.contains(binding))
+                            && self.inputs.reentry_bindings.contains(binding))
                 })
     }
 
@@ -5102,28 +5102,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !self.inputs.export_reentry_enabled {
             return Values::new();
         }
-        self.export_callback_values()
+        self.export_surface_callback_values(
+            &self.inputs.reentry_bindings,
+            self.inputs.reentry_default,
+        )
     }
 
     fn export_callback_values(&self) -> Values {
+        self.export_surface_callback_values(&self.inputs.index.exported_bindings, true)
+    }
+
+    fn export_surface_callback_values(&self, bindings: &BTreeSet<Id>, default: bool) -> Values {
         // Discover the whole export surface in one traversal. Exported aliases,
         // unknown values, and shared objects must not each re-expand the same
         // escaped callback/capture graph independently.
         let mut values = Values::new();
-        for binding in &self.inputs.index.exported_bindings {
+        for binding in bindings {
             if let Some(exported) = self.state.prefix_values.get(binding) {
                 values.extend(exported.iter().cloned());
             }
         }
-        values.extend(
-            self.inputs
-                .index
-                .exported_hoisted_functions
-                .iter()
-                .copied()
-                .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key))),
-        );
-        values.extend(self.state.exported_runtime_values.iter().cloned());
+        if default {
+            values.extend(
+                self.inputs
+                    .index
+                    .exported_hoisted_functions
+                    .iter()
+                    .copied()
+                    .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key))),
+            );
+            values.extend(self.state.exported_runtime_values.iter().cloned());
+        }
         self.callback_values(&values)
     }
 
@@ -7949,7 +7958,7 @@ pub(crate) fn annotate_synchronous_calls(
     proofs: SynchronousCallProofs<'_>,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
-    export_reentry_policy: ExportReentryPolicy,
+    export_reentry_policy: &ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) -> Vec<crate::facts::SettledPurity> {
     let index = proofs.index.index;
@@ -8124,12 +8133,25 @@ pub(crate) fn annotate_synchronous_calls(
         .collect();
     let synchronous_owner_adjacency =
         source_unit_read_closure.synchronous_adjacency(facts, &prefix_reads);
+    let (reentry_bindings, reentry_default) = match export_reentry_policy {
+        ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
+        ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
+        ExportReentryPolicy::ReentryThrough(names) => (
+            names
+                .iter()
+                .filter_map(|name| index.exported_names.get(name).cloned())
+                .collect(),
+            names.contains("default"),
+        ),
+    };
     let mut exported_owners = BTreeSet::new();
-    if export_reentry_policy == ExportReentryPolicy::Conservative {
+    if *export_reentry_policy == ExportReentryPolicy::Conservative {
         exported_owners.extend(index.exported_declaration_owners.iter().copied());
-        exported_owners
-            .extend(source_unit_read_closure.source_units_for_bindings(&index.exported_bindings));
     }
+    if reentry_default {
+        exported_owners.extend(index.default_export_owners.iter().copied());
+    }
+    exported_owners.extend(source_unit_read_closure.source_units_for_bindings(&reentry_bindings));
     let initial_export_roots = exported_owners
         .intersection(&index.hoisted_function_owners)
         .copied()
@@ -8188,6 +8210,8 @@ pub(crate) fn annotate_synchronous_calls(
         synchronous_owner_adjacency,
         synchronous_owner_reads: prefix_reads,
         exported_owners,
+        reentry_bindings,
+        reentry_default,
         call_site_owners: index
             .top_calls
             .iter()
@@ -8207,7 +8231,8 @@ pub(crate) fn annotate_synchronous_calls(
             .collect(),
         var_bindings,
         changed_member_roots,
-        export_reentry_enabled: export_reentry_policy == ExportReentryPolicy::Conservative,
+        export_reentry_enabled: *export_reentry_policy
+            != ExportReentryPolicy::NoStaticImporterReentry,
         fresh_mutation_callables: fresh_mutation_callables(
             body,
             facts,

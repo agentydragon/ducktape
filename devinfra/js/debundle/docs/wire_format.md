@@ -66,7 +66,7 @@ joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
 `export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
 Its `host_behavior` echoes the spec's typed block as read (SPEC.md § Host
 behavior; omitted keys absent, `synchronous_module_loader` always present),
-and `policy` is `conservative` or `no_static_importer_reentry`. `loader` is
+and `policy` is `conservative`, `no_static_importer_reentry` or `{"reentry_through": [names]}`. `loader` is
 the loader derivation (SPEC.md § Loader-closed derivation), tagged by `rule`:
 `no_synchronous_loader`, `no_host_loader_sites`, or `loader_closure` with
 `closed`, `host_keys` (keys a closed certificate consumed), `requests`

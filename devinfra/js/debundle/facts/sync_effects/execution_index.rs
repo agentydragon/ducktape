@@ -5534,6 +5534,10 @@ struct ExecutionIndex {
     hoisted_function_owners: BTreeSet<SourceUnitOrdinal>,
     exported_declaration_owners: BTreeSet<SourceUnitOrdinal>,
     exported_bindings: BTreeSet<Id>,
+    /// Local binding of each local export name; `default` is not a binding.
+    exported_names: BTreeMap<String, Id>,
+    /// Source units holding `export default`.
+    default_export_owners: BTreeSet<SourceUnitOrdinal>,
     linkage_owners: BTreeSet<SourceUnitOrdinal>,
     dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
     opaque_top: BTreeSet<SourceUnitOrdinal>,
@@ -5698,6 +5702,8 @@ impl Default for ExecutionIndex {
             hoisted_function_owners: BTreeSet::new(),
             exported_declaration_owners: BTreeSet::new(),
             exported_bindings: BTreeSet::new(),
+            exported_names: BTreeMap::new(),
+            default_export_owners: BTreeSet::new(),
             linkage_owners: BTreeSet::new(),
             dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
@@ -9499,13 +9505,17 @@ impl ExecutionIndex {
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
-                self.exported_bindings.extend(collect_declared_names(item));
+                for id in collect_declared_names(item) {
+                    self.exported_names.insert(id.0.to_string(), id.clone());
+                    self.exported_bindings.insert(id);
+                }
                 if matches!(export.decl, Decl::Fn(_)) {
                     self.hoisted_function_owners.insert(self.owner);
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
+                self.default_export_owners.insert(self.owner);
                 if let DefaultDecl::Fn(function) = &export.decl {
                     self.hoisted_function_owners.insert(self.owner);
                     self.exported_hoisted_functions
@@ -9514,6 +9524,7 @@ impl ExecutionIndex {
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
                 self.exported_declaration_owners.insert(self.owner);
+                self.default_export_owners.insert(self.owner);
                 self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
@@ -9523,6 +9534,11 @@ impl ExecutionIndex {
                         if let ExportSpecifier::Named(named) = specifier
                             && let ModuleExportName::Ident(local) = &named.orig
                         {
+                            let exported = match named.exported.as_ref().unwrap_or(&named.orig) {
+                                ModuleExportName::Ident(ident) => ident.sym.to_string(),
+                                ModuleExportName::Str(value) => js_ast::str_value(value),
+                            };
+                            self.exported_names.insert(exported, local.to_id());
                             self.exported_bindings.insert(local.to_id());
                         }
                     }
