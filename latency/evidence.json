@@ -47246,7 +47246,182 @@
     "experimental_patch": "diff --git a/.bazelrc b/.bazelrc\nindex 21ed4be95a..04324c2808 100644\n--- a/.bazelrc\n+++ b/.bazelrc\n@@ -129,7 +129,6 @@ build --@rules_rust//rust/settings:pipelined_compilation=True\n # Run Go tests once with race detection, including local and publication tests.\n # Production builds keep the normal configuration. Explicit pure=\"on\" targets\n # retain their no-cgo mode and cannot use the race detector.\n-test --@io_bazel_rules_go//go/config:race\n \n # CI and AI agent modes both use quiet output.\n common:ci --config=quiet\ndiff --git a/agentplane/runner/harness/BUILD.bazel b/agentplane/runner/harness/BUILD.bazel\nindex c63a484a87..7d38377e26 100644\n--- a/agentplane/runner/harness/BUILD.bazel\n+++ b/agentplane/runner/harness/BUILD.bazel\n@@ -22,6 +22,7 @@ go_library(\n \n go_test(\n     name = \"harness_test\",\n+    race = \"on\",\n     srcs = [\"stdout_framer_test.go\"],\n     embed = [\":harness\"],\n )\n"
   },
   "post_strip_census_unique_test_runner_executions": 1412,
-  "report_validation": {
+  "intervention_followup": {
+    "checked_at_utc": "2026-10-31T06:26:25.744970+00:00",
+    "source_devel_commit": "415f103bc76f4ad1d8c28ec37b8018fdbec58dc2",
+    "measurement_cohort_unchanged": true,
+    "scope": "Pointers and bounded probe results after the original observation window; no new fleet distribution or matched CI treatment effect.",
+    "pull_requests": {
+      "race": {
+        "number": 13216,
+        "url": "https://github.com/agentydragon/ducktape/pull/13216",
+        "state": "MERGED",
+        "head_commit": "b064630864f86eec06f8d7ab120bdb1721157769",
+        "merged_at_utc": "2026-10-31T05:42:03Z",
+        "merge_commit": "42a7870e461177a867d80633aadd979acaafe1ff"
+      },
+      "cleanup": {
+        "number": 13213,
+        "url": "https://github.com/agentydragon/ducktape/pull/13213",
+        "state": "MERGED",
+        "head_commit": "90fe93ce1cd6178b8df32efb1c203ab244b0ad40",
+        "merged_at_utc": "2026-10-31T04:52:58Z",
+        "merge_commit": "4e20d7ad056313ef1a73aaa3183f960c350911da"
+      },
+      "visuals": {
+        "number": 13253,
+        "url": "https://github.com/agentydragon/ducktape/pull/13253",
+        "state": "MERGED",
+        "head_commit": "f654138da1e136c6900ee20fdbf88aa14aeac02a",
+        "merged_at_utc": "2026-10-31T06:21:16Z",
+        "merge_commit": "52f4d41240939114c0bdb87fa812fcdcd0d19218"
+      },
+      "python": {
+        "number": 13251,
+        "url": "https://github.com/agentydragon/ducktape/pull/13251",
+        "state": "MERGED",
+        "head_commit": "3a83a277586d9c29d20df6e3b8271dee143ad1c1",
+        "merged_at_utc": "2026-10-31T06:20:34Z",
+        "merge_commit": "3321f1c8689434355d4f99d5cdb4246a88030a7e"
+      }
+    },
+    "go_race": {
+      "disposition": "merged; analysis reuse verified; elapsed CI saving unmeasured",
+      "configuration": "build --@io_bazel_rules_go//go/config:race, with explicit race=off at ordinary production binary roots; no repository go_test wrapper",
+      "selected_go_tests": {
+        "total": 170,
+        "raced": 166,
+        "pure": 4
+      },
+      "hosted_ci_run_url": "https://github.com/agentydragon/ducktape/actions/runs/41172249675",
+      "tested_synthetic_merge_commit": "6669e53eaafc629f4362fab3c8696ae226ae6aa5",
+      "test_invocation": "da377c33-1b16-5f56-ac90-783f3b53152b",
+      "tests_passed": 1693,
+      "following_build": {
+        "invocation": "5fb4663b-58a1-5e39-9bd5-29761cf5fcaf",
+        "targets": 8758,
+        "packages_loaded": 0,
+        "targets_configured": 0
+      }
+    },
+    "sandbox_cleanup": {
+      "disposition": "merged; focused invariants and real integration suites passed; matched full-gate latency and long-run reliability effects unmeasured",
+      "hosted_test_invocation": "1bfa5913-7808-5808-86cb-9865364384ab",
+      "preserved": [
+        "UID-fenced ownership",
+        "suspend and observed SUSPENDED before delete",
+        "observed deletion and finalizer release",
+        "peer failure drainage",
+        "cleanup shielding through cancellation"
+      ]
+    },
+    "visual_publisher": {
+      "disposition": "source merged; inspected workflow wheel pin predates optimization; release/pin activation and real publication measurement remain",
+      "rbe_test_invocation": "0e4b69eb-2de2-4c81-8aa3-989d11a1cfc1",
+      "rbe_build_invocation": "3f8f4f10-43da-4126-9e31-7e54f0e444c6",
+      "bounded_s3_workers": 8,
+      "reviewed_pr": 13216,
+      "reviewed_head_commit": "b064630864f86eec06f8d7ab120bdb1721157769",
+      "assets": 1216,
+      "exact_candidate_baseline_digest_matches": 1207,
+      "publication_job_url": "https://github.com/agentydragon/ducktape/actions/runs/41172846988/job/124454292680",
+      "publication_step_seconds": 286,
+      "inspected_wheel_pin_url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-bebbef7024f2/pr_visuals-0.1.0-py3-none-any.whl",
+      "limits": "1207 avoided baseline reads/comparisons is a work count, not measured elapsed savings. The publisher is outside the three required checks."
+    },
+    "python_precompile": {
+      "disposition": "findings merged; no bytecode policy enabled",
+      "experiment_record_url": "https://github.com/agentydragon/ducktape/blob/3321f1c8689434355d4f99d5cdb4246a88030a7e/agentplane/system_tests/k3s/debug/pyc_precompilation.md",
+      "source_devel_commit": "3ccae0647205afca4764cf5a9ea0b67b40f95f93",
+      "rules_python_version": "2.4.3",
+      "target_level_collection_passed": true,
+      "old_rbe_stdlib_failure_reproduced": false,
+      "render_first_collection": {
+        "invocation": "372a2a15-9412-4c1c-b2fd-039e40e243bc",
+        "invocation_elapsed_seconds": 145.5,
+        "test_elapsed_seconds": 13.1,
+        "remote_executions": 2787,
+        "remote_cache_hits": 2423
+      },
+      "render_warm_collection": {
+        "invocation": "5128e7e0-dd5b-42e9-a196-1e263c9e0e4a",
+        "invocation_elapsed_seconds": 21.6,
+        "test_elapsed_seconds": 14.4,
+        "code_objects_loaded_from_pyc": 2053,
+        "code_objects_generated_at_runtime": 235
+      },
+      "render_paired_baseline": {
+        "invocation": "3cb6f972-320b-49b7-b94d-c53088db8d74",
+        "invocation_elapsed_seconds": 28.0,
+        "test_elapsed_seconds": 25.7,
+        "code_objects_loaded_from_pyc": 0,
+        "code_objects_generated_at_runtime": 2288
+      },
+      "global_analysis_failures": [
+        "71eb10b9-d9b3-4b63-9ade-f81c9e806f82",
+        "599521d0-e622-4f60-a86e-474ace28a6bb"
+      ],
+      "global_blocker": "rules_python precompile analysis looks up main_py=None for a main_module lint binary with no direct srcs",
+      "limits": "Warm and baseline used different RBE workers and verbose import tracing; no full-suite collection or causal CI saving established. Compare representative full invocations with matched worker/cache conditions."
+    },
+    "pod_start": {
+      "disposition": "diagnosis only; no justified prerequisite removal or global jobs change",
+      "profile_invocation": "87dab0cc-af8e-53e6-8cbb-d96324c9f544",
+      "profile_source_commit": "e744e2cd0bb0faac1db9f005c418171ad17079f8",
+      "aquery_invocation": "9a9c66a6-29a0-430b-8fd5-4521a964c9c7",
+      "aquery_source_commit": "f1523c6c2d0f7126a1025f8f73d3d022d4888fb7",
+      "aquery_command": "bbr aquery --output=text 'mnemonic(\"TestRunner\", //agentplane/system_tests/suites:test_pod)'",
+      "test_runner_inputs": [
+        "test_pod.runfiles",
+        "generate-xml.sh",
+        "test-setup.sh"
+      ],
+      "runfiles_ready_seconds": 58.998057,
+      "test_runner_started_seconds": 126.029499,
+      "bazel_jobs": 50,
+      "action_processing_samples": [
+        {
+          "at_seconds": 59,
+          "active_actions": 45
+        },
+        {
+          "at_seconds": 74,
+          "active_actions": 50
+        },
+        {
+          "at_seconds": 79,
+          "active_actions": 50
+        },
+        {
+          "at_seconds": 96,
+          "active_actions": 50
+        },
+        {
+          "at_seconds": 110,
+          "active_actions": 50
+        },
+        {
+          "at_seconds": 125,
+          "active_actions": 50
+        }
+      ],
+      "new_execution_queue_seconds": 0.062778,
+      "interpretation": "Profile plus aquery point to Bazel scheduling/action-slot contention, not a remaining image/fixture or mypy prerequisite. The scheduler policy and gain from more jobs are unmeasured.",
+      "next_experiment": "Matched full-CI jobs=50 versus jobs=100 runs; preserve selected tests and stack coverage; compare whole-gate elapsed time, cache state, remote compute and contention before changing the default."
+    },
+    "log_retry": {
+      "disposition": "implementation not dispatched; next source lane",
+      "current_pinned_cli_version": "5.0.498",
+      "current_cli_source_url": "https://github.com/buildbuddy-io/buildbuddy/blob/5b4fc7a4ccb0d814ec93f8ed0daae7f0325c7f4f/cli/remotebazel/remotebazel.go#L667",
+      "current_source_observation": "UNAVAILABLE is retried in the log observer; INTERNAL can escape to cancellation and the outer Run retry path.",
+      "limit": "Existing runtime fault injection used 5.0.466. Repeat the control with the current binary before claiming a current runtime reproduction."
+    },
+    "native_startup": {
+      "disposition": "phase trace retained; real process profiling not dispatched",
+      "next_step": "Profile cold native initialization, exec-server readiness, thread/start and first tool handoff; preserve independent cold sessions."
+    }
+  },
+  "prior_report_validation": {
     "html_sha256": "1aa845277ba4a95671480044a04203aec0f3d0ef979699c9a07897a564d225bb",
     "invocation_id": "6b95f013-e868-4c78-a639-ae12f6061df2",
     "target": "//devinfra/ci/reports/x/deep_probe:test_latency",
@@ -47309,5 +47484,68 @@
       }
     ],
     "invocation_scope_note": "This target passed. The shared invocation also contains a prior reliability-report mobile overflow failure, corrected and verified in the separate reliability invocation."
+  },
+  "report_validation": {
+    "html_sha256": "07e901e12a8db9f5a6a2ddcf65222ce2ef6a0f1fdb3d4fce878cf43c6cb9526b",
+    "invocation_id": "333bc53a-4453-4518-bd7e-a56f9876b11a",
+    "target": "//devinfra/ci/reports/x/followup_preview:test_report",
+    "target_result": "PASSED",
+    "browser_cases": 2,
+    "viewport_css_px": [
+      [
+        1280,
+        900
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "checks": [
+      "heading and follow-up readiness",
+      "internal anchor destinations",
+      "no horizontal overflow including open disclosures",
+      "desktop and mobile overview, follow-up and decisions screenshots reviewed",
+      "four merged PR pointers and unchanged original cohort evidence verified"
+    ],
+    "screenshots": [
+      {
+        "name": "decisions-1280.png",
+        "sha256": "4815d47e960b2702af4e46404638b7630563b3755883d9769ce181ade23e6108",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/4815d47e960b2702af4e46404638b7630563b3755883d9769ce181ade23e6108/167914",
+        "visually_reviewed": true
+      },
+      {
+        "name": "decisions-390.png",
+        "sha256": "d0da1a8375bee0518c055cd1ad35b682231f32ee7f366ee9a7c94b368062f31d",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d0da1a8375bee0518c055cd1ad35b682231f32ee7f366ee9a7c94b368062f31d/86804",
+        "visually_reviewed": true
+      },
+      {
+        "name": "followup-1280.png",
+        "sha256": "17f757dd1f595a2035c6673d6817e55f7d3f246ad33203df188174b0c689793b",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/17f757dd1f595a2035c6673d6817e55f7d3f246ad33203df188174b0c689793b/285834",
+        "visually_reviewed": true
+      },
+      {
+        "name": "followup-390.png",
+        "sha256": "7a8b1885487a1274022f83fd67ba28003cde2c9d02ff895b6ae41dd02471d0dd",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/7a8b1885487a1274022f83fd67ba28003cde2c9d02ff895b6ae41dd02471d0dd/303780",
+        "visually_reviewed": true
+      },
+      {
+        "name": "overview-1280.png",
+        "sha256": "c2ffe5da0bc85ade84c7b65e97c61a2da25674ee77baf63cbc44ae58f8d96124",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/c2ffe5da0bc85ade84c7b65e97c61a2da25674ee77baf63cbc44ae58f8d96124/137451",
+        "visually_reviewed": true
+      },
+      {
+        "name": "overview-390.png",
+        "sha256": "fd61b0ae61a0852232f7d7f3308f67e1138a764efe5ac058b3076f798950281e",
+        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/fd61b0ae61a0852232f7d7f3308f67e1138a764efe5ac058b3076f798950281e/76880",
+        "visually_reviewed": true
+      }
+    ],
+    "scope": "Isolated preview target on inspected devel with the exact report HTML supplied as test data; not a CI performance measurement."
   }
 }
