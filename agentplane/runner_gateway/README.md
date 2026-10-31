@@ -63,11 +63,10 @@ For Go parents, `exec.Cmd.ExtraFiles` assigns child descriptors `3+i`; Python's
 startup files or log parsing.
 
 Build `//agentplane/runner_gateway:runner-gateway` or `//agentplane/runner_gateway:image`.
-The migration image is `//agentplane/runner_gateway/migrations:image`. Each new serving Pod
-runs it as an init container before the Gateway starts. Goose's PostgreSQL session lock
-serializes migrations when replicas start together. Restarting only the main container does
-not rerun the init container; another Pod creation is required to apply migrations after a
-database replacement. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
+The same binary embeds Goose migrations and applies them before request handling or workers start.
+`runner-gateway --migrate-only` initializes a database using the same lifecycle and
+`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. PostgreSQL session locks serialize simultaneous
+startup attempts. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
 the direct mTLS connection on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
@@ -77,9 +76,8 @@ consumer tests continue using lightweight gRPC peers.
 
 The environment root owns the stable Services, Dispatcher database and Secret. Its dependent
 delivery Kustomization owns the serving workload and waits for the environment root to become
-Ready. Each Gateway Pod runs the Goose migrator before its server starts. Flux image
-automation advances the Gateway and migrator images independently, so migrations must remain
-compatible with the version still serving during a rollout.
+Ready. Each Gateway process initializes its schema before serving. The binary and migrations
+share one image; schema changes remain compatible with old replicas during rolling updates.
 
 ### Schema changes
 

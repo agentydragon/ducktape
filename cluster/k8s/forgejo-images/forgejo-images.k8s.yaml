@@ -88,11 +88,6 @@ spec:
       name: agentplane-central-sampler
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-egress-history-migrate'
-      kind: ImageRepository
-      name: agentplane-egress-history-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-egress-proxy'
       kind: ImageRepository
       name: agentplane-egress-proxy
@@ -106,11 +101,6 @@ spec:
       filter: req.package.name == 'agentplane-frontend'
       kind: ImageRepository
       name: agentplane-frontend
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-history-migrate'
-      kind: ImageRepository
-      name: agentplane-history-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-history-service'
@@ -133,11 +123,6 @@ spec:
       name: agentplane-mcp-edge
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-mcp-edge-migrate'
-      kind: ImageRepository
-      name: agentplane-mcp-edge-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-notification-service'
       kind: ImageRepository
       name: agentplane-notification-service
@@ -156,11 +141,6 @@ spec:
       filter: req.package.name == 'agentplane-runner-gateway'
       kind: ImageRepository
       name: agentplane-runner-gateway
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-runner-gateway-queue-migrate'
-      kind: ImageRepository
-      name: agentplane-runner-gateway-queue-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-runner-vm'

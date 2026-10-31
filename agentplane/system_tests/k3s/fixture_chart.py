@@ -25,19 +25,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesMethods,
 )
 from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
-from cdk8s_plus_34 import (
-    ConfigMap,
-    ContainerProps,
-    ContainerResources,
-    ContainerSecurityContextProps,
-    Cpu,
-    CpuResources,
-    DeploymentStrategy,
-    EnvValue,
-    ImagePullPolicy,
-    MemoryResources,
-    k8s,
-)
+from cdk8s_plus_34 import ConfigMap, Cpu, DeploymentStrategy, EnvValue, ImagePullPolicy, k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
 from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecUsages
 from constructs import Construct
@@ -126,10 +114,8 @@ POD_TEMPLATE = "runner"
 # runner disk image, as in staging.
 RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
 RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 DISPATCHER_PORT = 8080
 EGRESS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
-EGRESS_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate:unset"
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
@@ -443,9 +429,6 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
-        migrate_env=database_env,
     )
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {
@@ -468,16 +451,6 @@ def build_chart(
         sandbox_controller=(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
             sandbox_controller.pods(NAMESPACE),
-        ),
-        migration=ContainerProps(
-            name="migrate",
-            image=QUEUE_MIGRATOR_IMAGE,
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            env_variables={"DATABASE_URL": dispatcher_database_url, **database_env},
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(25)), memory=MemoryResources(request=Size.mebibytes(64))
-            ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         ),
         registry_secret_name=None,
         placement=None,
@@ -503,10 +476,7 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
-        migrate_env=database_env,
         memory_limit=None,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_memory_limit=None,
     )
     app_service = app_component.App(
         chart,
@@ -529,7 +499,6 @@ def build_chart(
         placement=None,
         registry_secret_name=None,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
     )
     runner_sandbox.RunnerSandbox(
         chart,

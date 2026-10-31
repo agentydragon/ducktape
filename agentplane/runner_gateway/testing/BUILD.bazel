@@ -8,10 +8,7 @@ package(
 py_library(
     name = "gateway_process",
     srcs = ["gateway_process.py"],
-    data = [
-        "//agentplane/runner_gateway:runner-gateway",
-        "//agentplane/runner_gateway/migrations/cmd:runner-gateway-queue-migrate",
-    ],
+    data = ["//agentplane/runner_gateway:runner-gateway"],
     deps = [
         "//agentplane:subjects",
         "//agentplane/grpc:calls",

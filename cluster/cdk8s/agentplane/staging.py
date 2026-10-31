@@ -595,9 +595,6 @@ ENV = Environment(
         ),
     ),
     mcp_edge=McpEdgeProps(
-        replicas=ReplicaProfile(
-            count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
-        ),
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
         mintable_accounts=frozenset({ServiceAccountRef(namespace=STAGING_NAMESPACE, name="claude-ai")}),

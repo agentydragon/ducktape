@@ -98,12 +98,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     }
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
-    migration = one(pod["initContainers"])
-    assert migration["name"] == "migrate"
-    assert migration["image"] == "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
-    assert {entry["name"]: entry["valueFrom"] for entry in migration["env"]} == {
-        "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
-    }
+    assert not pod.get("initContainers")
+    assert container["startupProbe"]["failureThreshold"] == 60
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
     ]
