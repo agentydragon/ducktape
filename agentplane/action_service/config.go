@@ -57,12 +57,6 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
-	// CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once #13179's config is
-	// deployed. A true value is rejected; this binary does not serve the integrated Connection API.
-	IntegratedConnectionService bool `mapstructure:"integrated_connection_service"`
-	// CLEANUP(added 2026-10-27): The manifests no longer send this key (#13179); remove once #13179's config is
-	// deployed. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
-	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
 	// DirectWaitSeconds bounds orchestration_v1 Session operations.
 	DirectWaitSeconds float64 `mapstructure:"direct_wait_seconds"`
 	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
@@ -90,7 +84,7 @@ func defaultConfig() config {
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
-		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
 	}
 }
 
@@ -192,16 +186,8 @@ func (c *config) validate() error {
 	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
 		return err
 	}
-	if c.IntegratedConnectionService {
-		return errors.New("integrated_connection_service is retired")
-	}
-	if c.MaxWaitSeconds > 180 {
-		return errors.New("retired max_wait_seconds must not exceed 180")
-	}
-	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
-		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-			return errors.New("MCP wait seconds must be finite and nonnegative")
-		}
+	if c.DirectWaitSeconds < 0 || math.IsNaN(c.DirectWaitSeconds) || math.IsInf(c.DirectWaitSeconds, 0) {
+		return errors.New("direct_wait_seconds must be finite and nonnegative")
 	}
 	if err := c.validateOrchestration(); err != nil {
 		return err

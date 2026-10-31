@@ -53,7 +53,6 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.IntegratedConnectionService ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
 	}
@@ -303,24 +302,11 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
-func TestRetiredIntegratedConnectionSettingCannotEnableServing(t *testing.T) {
-	for _, file := range []string{"", "integrated_connection_service: false\n"} {
-		c, err := loadTestConfig(t, requiredFile+file)
-		if err != nil || c.IntegratedConnectionService {
-			t.Fatalf("disabled legacy setting: config=%+v err=%v", c, err)
-		}
-	}
-	if _, err := loadTestConfig(t, requiredFile+"integrated_connection_service: true\n"); err == nil || !strings.Contains(err.Error(), "retired") {
-		t.Fatalf("accepted legacy setting enabled: %v", err)
-	}
-}
-
-func TestInvalidMCPWaitsAreRefused(t *testing.T) {
+func TestInvalidDirectWaitsAreRefused(t *testing.T) {
 	for _, file := range []string{
-		"max_wait_seconds: -1\n",
-		"max_wait_seconds: 181\n",
+		"direct_wait_seconds: -1\n",
 		"direct_wait_seconds: .inf\n",
-		"max_wait_seconds: .nan\n",
+		"direct_wait_seconds: .nan\n",
 	} {
 		if _, err := loadTestConfig(t, requiredFile+file); err == nil {
 			t.Fatalf("accepted %s", file)
