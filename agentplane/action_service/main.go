@@ -32,6 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
+	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	orchestrationv1 "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
@@ -47,6 +48,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -63,6 +65,7 @@ import (
 )
 
 const (
+	migrationOnlyDatabaseURLEnv = "AGENTPLANE_ACTIONS_DATABASE_URL"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
 	// service's graceful shutdown does.
 	shutdownGrace = 5 * time.Second
@@ -101,6 +104,9 @@ func inClusterDeps() (deps, error) {
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
 // and reading the cluster's policy objects.
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate Action Service database: %w", err)
+	}
 	cluster, err := inClusterDeps()
 	if err != nil {
 		return err
@@ -529,13 +535,21 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
+	if err != nil {
+		slog.Error("Action Service migration failed", "error", err)
+		os.Exit(1)
+	}
+	if handled {
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Action Service configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "action-service")
 	if err != nil {
 		slog.Error("Action Service tracing setup failed", "error", err)

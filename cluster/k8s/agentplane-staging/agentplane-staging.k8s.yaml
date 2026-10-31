@@ -6672,7 +6672,10 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -6749,6 +6752,13 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8080
+              service: livez
+            initialDelaySeconds: 0
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
@@ -6775,32 +6785,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - /usr/local/bin/actions-migrate
-          env:
-            - name: AGENTPLANE_ACTIONS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-actions
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
@@ -7822,7 +7806,10 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -7900,6 +7887,13 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8080
+              service: livez
+            initialDelaySeconds: 0
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/agentplane-notifications
               name: configmap-notifications-settings
@@ -7911,32 +7905,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - /usr/local/bin/notifications-migrate
-          env:
-            - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-notifications
-          image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always

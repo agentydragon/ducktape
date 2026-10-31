@@ -16,18 +16,19 @@ from cluster.cdk8s.agentplane import (
 )
 
 
-def test_notifications_stop_old_writers_before_migration(staging_manifests: list[dict[str, Any]]) -> None:
+def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
     notifications_deployment = one(
         doc
         for doc in staging_manifests
         if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
     )
-    assert notifications_deployment["spec"]["strategy"] == {"type": "Recreate"}
     pod = notifications_deployment["spec"]["template"]["spec"]
-    migration = one(pod["initContainers"])
-    server = one(pod["containers"])
-    assert migration["image"] == server["image"]
-    assert migration["command"] == ["/usr/local/bin/notifications-migrate"]
+    server = one(item for item in pod["containers"] if item["name"] == "notifications")
+    assert notifications_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert not pod.get("initContainers")
+    assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
+    assert server["startupProbe"]["periodSeconds"] == 5
+    assert server["startupProbe"]["failureThreshold"] == 60
 
     history_deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "history-service"
@@ -77,8 +78,7 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
         if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
     )["spec"]["template"]["spec"]
     prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
-    for container in pod["initContainers"]:
-        assert not any(item["name"].startswith(prefix) for item in container["env"])
+    assert not pod.get("initContainers")
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
     variables = {item["name"].removeprefix(prefix): item for item in server["env"] if item["name"].startswith(prefix)}
     assert set(github) == {"app_id"}
