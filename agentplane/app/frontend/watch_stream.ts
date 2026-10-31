@@ -68,7 +68,9 @@ export function followWatch(url: string, { onOpen, onFrame, onConnection }: Watc
     accept: "application/x-ndjson",
     frames: (body) => body.pipeThrough(results()),
     onOpen,
-    onFrame,
+    onFrame: (frame) => {
+      onFrame(frame);
+    },
     onConnection,
   });
 }
