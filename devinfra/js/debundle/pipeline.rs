@@ -229,6 +229,8 @@ struct PreparedTransform {
     source: SourcePreparation,
     vendor_plan: Arc<VendorResolutionPlan>,
     provenance: GraphProvenance,
+    /// Host loader per embedded input file.
+    embedded_loaders: BTreeMap<String, spec::BunLoader>,
 }
 
 /// One accepted baseline and its immutable input preparation. Only the contract
@@ -341,6 +343,12 @@ fn prepare_transform(
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
+    let embedded_loaders: BTreeMap<String, spec::BunLoader> =
+        match &spec.inputs.embedded_loaders_path {
+            Some(path) => serde_json::from_str(&graph_provenance::read_source_to_string(path)?)
+                .with_context(|| format!("parse embedded loaders {}", path.display()))?,
+            None => BTreeMap::new(),
+        };
     let source = prepare_js_chunks(&spec, artifact)?;
     let source_program = &source.program;
 
@@ -369,6 +377,7 @@ fn prepare_transform(
             source,
             vendor_plan: Arc::new(vendor_plan),
             provenance: graph_provenance,
+            embedded_loaders,
         },
     ))
 }
@@ -383,6 +392,7 @@ fn run_prepared_transform(
         source,
         vendor_plan,
         provenance,
+        embedded_loaders,
     } = prepared;
     let SourcePreparation {
         program: source_program,
@@ -428,6 +438,7 @@ fn run_prepared_transform(
             MaterializeSpecInputs {
                 host_behavior: &spec.host_behavior,
                 program_premises: &spec.program_premises,
+                embedded_loaders: &embedded_loaders,
                 logical_modules: &spec.logical_modules,
                 chunk_renames: &spec.chunk_renames,
                 unassigned_mode: &spec.unassigned_mode,
@@ -781,6 +792,16 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
             );
         }
     }
+    anyhow::ensure!(
+        !spec
+            .host_behavior
+            .reentry_free_embedded_loaders
+            .contains(&spec::EmbeddedLoader::Napi)
+            || spec.program_premises.non_literal_loader_calls
+                == spec::NonLiteralLoaderCalls::NativeAddonsOnly,
+        "host_behavior.reentry_free_embedded_loaders entry napi requires \
+         program_premises.non_literal_loader_calls: native_addons_only"
+    );
     if spec.inputs.input_root.as_os_str().is_empty() {
         bail!("Transform spec inputs.input_root must not be empty");
     }
@@ -1149,6 +1170,7 @@ mod tests {
             spec.inputs = spec::LoadJsChunksArgs {
                 input_root: snapshot.clone(),
                 js_list_path,
+                embedded_loaders_path: None,
             };
             spec.write_js_tree = Some(spec::WriteJsTreeConfig {
                 out_dir: js_out.clone(),
@@ -1220,6 +1242,7 @@ mod tests {
             spec.inputs = spec::LoadJsChunksArgs {
                 input_root: snapshot.clone(),
                 js_list_path,
+                embedded_loaders_path: None,
             };
             spec.write_js_tree = Some(spec::WriteJsTreeConfig {
                 out_dir: js_out.clone(),
@@ -1263,6 +1286,7 @@ mod tests {
             inputs: spec::LoadJsChunksArgs {
                 input_root: PathBuf::from("."),
                 js_list_path: PathBuf::from("js-files.txt"),
+                embedded_loaders_path: None,
             },
             vendor: BTreeMap::new(),
             logical_modules: BTreeMap::new(),

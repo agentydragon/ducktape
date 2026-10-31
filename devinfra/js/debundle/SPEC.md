@@ -620,6 +620,7 @@ host_behavior:
   synchronous_load_drains_microtasks: unknown # never
   reentry_free_builtin_modules: [path, fs/promises]
   reentry_free_bun_modules: [bun:ffi, ws]
+  reentry_free_embedded_loaders: [text]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
   predefined_globals: unknown # standard
   note: "Audited against <executable identity, revision, digest>"
@@ -633,6 +634,7 @@ host_behavior:
 | `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
 | `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
 | `reentry_free_bun_modules`            | empty     | Export-reentry closure and loader requests      |
+| `reentry_free_embedded_loaders`       | empty     | Loader requests for embedded files              |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
 | `predefined_globals`                  | `unknown` | Native census: bundle-owned globals (below)     |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
@@ -722,9 +724,11 @@ all of the following hold:
   (<docs/design.md> § Conditions on the input chunk), which resolves every
   string-literal specifier, parenthesized or not, at any depth.
 - Each literal request names a `reentry_free_builtin_modules` or
-  `reentry_free_bun_modules` entry or resolves
-  to an analyzed chunk's entry file. A request for any other builtin or an
-  unresolved specifier keeps every target open.
+  `reentry_free_bun_modules` entry, resolves to an analyzed chunk's entry
+  file, or names an embedded file whose host loader is a
+  `reentry_free_embedded_loaders` entry (§ Reentry-free embedded files). A
+  request for any other builtin or embedded file, or an unresolved specifier,
+  keeps every target open.
 - For each request resolved to a chunk, that chunk's static and loader closure
   excludes the target, and every chunk in it has only resolved ordinary static
   requests to analyzed chunk entries or reentry-free builtins and no top-level
@@ -852,6 +856,24 @@ with built-in implementations, `undici` and `ws`, each under its exact
 spelling. For a bare package name the author also asserts that every request
 from an analyzed module resolves to the host's replacement, never to an
 installed package.
+
+### Reentry-free embedded files
+
+`inputs.embedded_loaders_path` names a JSON object mapping each embedded file's
+input path to the loader the host applies when it is required, as Bun's
+standalone module graph records it (`bun_standalone_extract.py
+--embedded-loaders`). It is a fact of the input, not an author assertion. An
+absolute literal loader request `/<path>` whose `<path>` the manifest lists is
+a request for that embedded file. `reentry_free_embedded_loaders` lists the
+loaders the author audited as running no application code: `text` returns the
+file's text and `napi` runs only the native addon's initializer. A `file` asset
+is not admissible: Bun's runtime loads it by extension, so a `.mjs` asset
+recorded as `file` runs as code. `napi` therefore also requires
+`program_premises.non_literal_loader_calls: native_addons_only`, whose second
+clause covers every addon initializer, and the spec is rejected without it. A
+`file`, `js` or other loader keeps every target open as
+`non_reentry_free_embedded_file`. Relative requests and static imports of
+embedded files are not resolved.
 
 This leaf rule grants no purity, call safety, return shape, or later callback
 fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and

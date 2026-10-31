@@ -662,6 +662,7 @@ pub fn logical_module_with_anon_comment(
 pub struct FixtureOpts<'a> {
     pub host_behavior: spec::HostBehavior,
     pub program_premises: spec::ProgramPremises,
+    pub embedded_loaders_path: Option<std::path::PathBuf>,
     /// Top-level spec keys written verbatim beside the typed spec, for text the
     /// typed builder cannot express (keys the schema must reject).
     pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
@@ -748,6 +749,7 @@ impl<'a> FixtureOpts<'a> {
         Self {
             host_behavior: spec::HostBehavior::default(),
             program_premises: spec::ProgramPremises::default(),
+            embedded_loaders_path: None,
             raw_spec_keys: Vec::new(),
             source,
             logical_modules,
@@ -856,6 +858,11 @@ impl<'a> FixtureOpts<'a> {
         pairs: Vec<spec::CommutingStatementsContract>,
     ) -> Self {
         self.commuting_statements.push((chunk.into(), pairs));
+        self
+    }
+
+    pub fn with_embedded_loaders_path(mut self, path: std::path::PathBuf) -> Self {
+        self.embedded_loaders_path = Some(path);
         self
     }
 
@@ -1330,6 +1337,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),
+            embedded_loaders_path: opts.embedded_loaders_path.clone(),
         },
         vendor: opts
             .vendor_marks
