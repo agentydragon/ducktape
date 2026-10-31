@@ -169,6 +169,9 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
+        # Exercise the drain-deadline fallback inside go_process's 10-second grace.
+        config.shutdown_drain_seconds = 1
+        config.shutdown_budget_seconds = 16
         request = open_request(tmp_path)
         request.setup_script = dedent(f"""\
             printf x >> attempts

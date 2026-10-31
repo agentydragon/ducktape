@@ -227,8 +227,23 @@ Compaction requests carry the same summary and context but no effort.
 Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
 external shell effect: a dispatched operation with no observed result is uncertain. The persisted
 intent/result journal distinguishes this from an operation known not to have been dispatched.
-Graceful shutdown cancels execution and waits for ownership acquisition and release to finish;
-a restarted replica can claim immediately without waiting for the old lease to expire.
+On service shutdown, the runtime stops new Session claims and lets each active top-level effect
+reach its durable result before releasing ownership. A live JavaScript cell may continue its own
+nested executor calls until that cell settles. The owner keeps renewing its lease during drain;
+the next owner can then claim immediately and resume the retained command from its committed
+conversation. `shutdown_drain_seconds` defaults to 40 and `shutdown_budget_seconds` to 55;
+the latter must fit within the Pod's 60-second termination grace and leave at least 15 seconds
+after the drain deadline for cancellation and cleanup. At the drain deadline, the runtime cancels active work
+and retains any unresolved intent and partial evidence; the next owner blocks rather than
+replaying an uncertain provider or executor operation. Claim, release and every result write
+remain fenced, including late writes from the old generation. During shutdown, lease release has
+a five-second timeout; an unreleased owner remains fenced by lease expiry. Shutdown waits for
+ownership acquisition and release to finish.
+
+A clean drain can still lose process-local `store()` / `load()` values when the old Code Mode host
+exits. Until the host-loss continuation change lands, the successor does not identify that loss
+automatically. This is a known limitation of the drain change, especially when a pending model
+tool call relies on volatile JavaScript state.
 Executor failure leaves continuation and retained conversation outside the failed Sandbox.
 
 Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
