@@ -240,11 +240,19 @@ remain fenced, including late writes from the old generation. During shutdown, l
 a five-second timeout; an unreleased owner remains fenced by lease expiry. Shutdown waits for
 ownership acquisition and release to finish.
 
-A clean drain can still lose process-local `store()` / `load()` values when the old Code Mode host
-exits. Until the host-loss continuation change lands, the successor does not identify that loss
-automatically. This is a known limitation of the drain change, especially when a pending model
-tool call relies on volatile JavaScript state.
 Executor failure leaves continuation and retained conversation outside the failed Sandbox.
+
+The conversation records the actual Code Mode host process generation after its logical Session
+opens. A host restart within one Pod rotates that generation. Before the next model step, a new
+owner compares it under the lease fence. If it differs and no effect is unresolved, the sampler
+advances the durable JavaScript epoch and appends a model-visible notice that prior `store()` /
+`load()` values and live handles were lost. Pending model tool calls proven undispatched receive
+failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
+ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
+the notice. The marker is set again only after a logical Session opens on a real host. With an
+unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
+explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
+and an ordinary same-host reacquisition do not add a notice.
 
 Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
 error text in the matching model tool output without dispatching to the runtime or executor.
@@ -420,9 +428,9 @@ not evidence payloads. Existing History reader authorization continues to govern
 The service and provider/tool loop run in Go; the pinned upstream JavaScript host is a child
 process of the sampler. Production requires no Python interpreter. The existing gRPC API and
 sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
-initializer creates that schema from its Goose SQL baseline. Repeated initialization preserves
+service applies its Goose SQL baseline before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
-Acceptance tests initialize through the actual Go binary and inspect its database separately.
+Acceptance tests start the actual Go binary and inspect its database separately.
 
 `sampler_conversation.api` pins the native protocol. Ordered, immutable native records live in
 `sampler_conversation_item.record`. `sampler_conversation.context` optionally holds the compacted
@@ -431,11 +439,15 @@ restoration for Anthropic). With no replacement context, the archive is the acti
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the archive. New responses append only new records.
 
-The native-format migration preserves Session identities, provider payloads, raw exchange evidence,
-commands, events, and unresolved-effect state. It unwraps legacy Anthropic messages, validates and
-removes their redundant execution projections, and renders old shared inputs into native messages.
-The API is determined from recorded exchanges or an explicit configured model-route mapping;
-ambiguous classification or invalid conversion fails initialization. A live conversation lease
-prevents conversion. The sampler Deployment uses Recreate, so the old writer exits before the new
-initializer changes the schema. Schema rollback requires restoring the pre-migration database
-backup together with the old service image.
+Migration 8 is the final native-schema baseline. A fresh, empty sampler database creates native
+tables directly. An existing database is adopted only with complete Goose version-7 history and
+the native API, status constraints, columns, and indexes already installed. Adoption preserves all
+prior Goose rows, Session identities, provider payloads, raw exchange evidence, commands, events,
+and unresolved-effect state without copying data. It adds a nullable Code Mode host marker to
+the adopted conversation table in the same transaction, which briefly requires a table schema
+lock. Startup migration connections cap DDL lock waits at five seconds; timeout rolls back
+migration 8 so a later startup can retry. A partial version-7 conversion or older database fails
+startup and requires the previous image or explicit repair. Startup no longer classifies or converts
+legacy provider records. Later
+schema changes use new additive Goose migrations. Schema rollback requires restoring the
+pre-migration database backup together with the old service image.

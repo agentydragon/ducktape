@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -173,7 +172,7 @@ def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
 
 @asynccontextmanager
 async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[str]:
-    """Run the same Go binary and initialization path used outside tests."""
+    """Run the Go binary, which migrates before serving."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = get_required_path(own_repo_rlocation("agentplane/x/central_sampler/cmd/main_bin_/main_bin"))
     if config.database_url is None:
@@ -201,17 +200,6 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
                 auth["credential_file"] = str(token_path)
         config_path = directory / "sampler-config.json"
         config_path.write_text(json.dumps(values))
-        migration = await asyncio.to_thread(
-            lambda: subprocess.run(
-                [str(binary), "--config", str(config_path), "--initialize"],
-                capture_output=True,
-                timeout=30,
-                check=False,
-                text=True,
-            )
-        )
-        (directory / "migrate.log").write_text(migration.stdout + migration.stderr)
-        assert migration.returncode == 0, migration.stdout + migration.stderr
         async with go_process(
             binary,
             env={"AGENTPLANE_CENTRAL_SAMPLER_CONFIG": str(config_path)},

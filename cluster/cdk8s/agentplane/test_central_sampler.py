@@ -40,9 +40,12 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     pod = deployment["spec"]["template"]["spec"]
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
+    assert not pod.get("initContainers")
     assert pod["serviceAccountName"] == central_sampler.NAME
 
     container = one(pod["containers"])
+    assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
+    assert container["startupProbe"]["failureThreshold"] == 60
     env = {entry["name"]: entry for entry in container["env"]}
     database = env["AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]
     assert database == {"key": "uri", "name": "postgres-central-sampler"}
@@ -132,10 +135,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         and mount["mountPath"] == "/var/run/secrets/central-sampler-anthropic"
         and mount["readOnly"]
         for mount in container["volumeMounts"]
-    )
-    assert not any(
-        mount.get("mountPath", "").startswith("/var/run/secrets/central-sampler-anthropic")
-        for mount in pod["initContainers"][0]["volumeMounts"]
     )
 
     gateway = yaml.safe_load(

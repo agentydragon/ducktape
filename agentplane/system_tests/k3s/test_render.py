@@ -446,9 +446,13 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
 
         deployment = _resource(docs, "Deployment", central_sampler.NAME)
+        assert deployment["spec"]["replicas"] == 1
+        assert deployment["spec"]["strategy"]["type"] == "Recreate"
         pod = deployment["spec"]["template"]["spec"]
+        assert not pod.get("initContainers")
         assert pod["serviceAccountName"] == central_sampler.NAME
         container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
+        assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
         database_env = next(
             entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
         )
