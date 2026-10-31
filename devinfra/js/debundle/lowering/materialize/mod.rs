@@ -418,7 +418,6 @@ impl ClaimedLogicalChunk<'_> {
     }
 }
 
-/// Analyze, plan and lower a chunk whose selector claims are already resolved.
 /// What resolving a chunk's `commuting_statements` reads besides the chunk:
 /// the spec path its evidence names and the resolved logical-module members a
 /// `resolved_member` endpoint may name.
@@ -427,6 +426,7 @@ pub(super) struct CommutingStatementsContext<'a> {
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
+/// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
