@@ -1056,12 +1056,14 @@ class SnapshotIngestor:
                     batch_ids = _effective_payload_ids(
                         db, version_row, ranks, start, min(start + 500, version_row.record_count)
                     )
-                    raw_by_id = dict(
+                    raw_by_id: dict[UUID, bytes] = dict(
                         db.execute(
                             select(RecordPayloadRow.id, RecordPayloadRow.raw_bytes).where(
                                 RecordPayloadRow.id.in_(batch_ids)
                             )
-                        ).all()
+                        )
+                        .tuples()
+                        .all()
                     )
                     for payload_id in batch_ids:
                         raw_bytes = raw_by_id[payload_id]
