@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/x/central_sampler/protocol"
 )
 
 type ResponseEvidence struct {
@@ -13,7 +14,7 @@ type ResponseEvidence struct {
 	IntentID string
 }
 
-func (e *ResponseEvidence) Record(ctx context.Context, kind string, payload map[string]any, observations ...*eventpb.Event) error {
+func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.ProviderEvidence, observations ...*eventpb.Event) error {
 	return e.Store.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, e.Owner)
 		if err != nil {
@@ -23,7 +24,7 @@ func (e *ResponseEvidence) Record(ctx context.Context, kind string, payload map[
 		if err != nil {
 			return err
 		}
-		sources, err := e.Store.recordEvidenceWithSources(ctx, tx, e.Owner, conversation, session, e.IntentID, kind, "received", payload)
+		sources, err := e.Store.recordEvidenceWithSources(ctx, tx, e.Owner, conversation, session, e.IntentID, string(payload.Kind()), "received", payload)
 		if err != nil {
 			return err
 		}

@@ -1,7 +1,6 @@
 package centralsampler
 
 import (
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -211,6 +210,17 @@ const (
 	IntentResultAbandoned IntentResultStatus = "abandoned"
 )
 
+// NestedOutcome is the "outcome" of a nested executor effect's stored result. The rest of that
+// result is the per-method remote RPC result or its failure evidence.
+type NestedOutcome string
+
+const (
+	NestedCompleted     NestedOutcome = "completed"
+	NestedRejected      NestedOutcome = "rejected"
+	NestedUnknown       NestedOutcome = "unknown"
+	NestedNotDispatched NestedOutcome = "not_dispatched"
+)
+
 // RejectedCellResult is the stored result of a cell intent rejected before dispatch.
 type RejectedCellResult struct {
 	Status     IntentResultStatus `json:"status"`
@@ -267,102 +277,6 @@ func (result TurnResult) finishesCommand() bool {
 	return result.endsTurn() || result == TurnCompact
 }
 
-// ProcessStatus is the lifecycle state of a RemoteProcess.
-type ProcessStatus string
-
-const (
-	ProcessStarting ProcessStatus = "starting"
-	ProcessRunning  ProcessStatus = "running"
-	// ProcessExited has been fully consumed; ProcessExitedUnread still holds unread output.
-	ProcessExited       ProcessStatus = "exited"
-	ProcessExitedUnread ProcessStatus = "exited_unread"
-	ProcessAbandoned    ProcessStatus = "abandoned"
-	// ProcessUnknown is a process whose remote outcome could not be determined.
-	ProcessUnknown ProcessStatus = "unknown"
-)
-
-func (status ProcessStatus) valid() bool {
-	switch status {
-	case ProcessStarting, ProcessRunning, ProcessExited, ProcessExitedUnread, ProcessAbandoned, ProcessUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
-// Scan rejects stored statuses the sampler does not know.
-func (status *ProcessStatus) Scan(src any) error {
-	var value string
-	switch typed := src.(type) {
-	case string:
-		value = typed
-	case []byte:
-		value = string(typed)
-	default:
-		return fmt.Errorf("process status has type %T, expected string", src)
-	}
-	candidate := ProcessStatus(value)
-	if !candidate.valid() {
-		return fmt.Errorf("unknown process status %q", value)
-	}
-	*status = candidate
-	return nil
-}
-
-// Value rejects statuses the sampler does not know, so an unknown one never reaches the database.
-func (status ProcessStatus) Value() (driver.Value, error) {
-	if !status.valid() {
-		return nil, fmt.Errorf("unknown process status %q", string(status))
-	}
-	return string(status), nil
-}
-
-// CellStatus is the lifecycle state of a LiveCell row.
-type CellStatus string
-
-const (
-	CellLive       CellStatus = "live"
-	CellCompleted  CellStatus = "completed"
-	CellTerminated CellStatus = "terminated"
-	CellAbandoned  CellStatus = "abandoned"
-)
-
-func (status CellStatus) valid() bool {
-	switch status {
-	case CellLive, CellCompleted, CellTerminated, CellAbandoned:
-		return true
-	default:
-		return false
-	}
-}
-
-// Scan rejects stored statuses the sampler does not know.
-func (status *CellStatus) Scan(src any) error {
-	var value string
-	switch typed := src.(type) {
-	case string:
-		value = typed
-	case []byte:
-		value = string(typed)
-	default:
-		return fmt.Errorf("cell status has type %T, expected string", src)
-	}
-	candidate := CellStatus(value)
-	if !candidate.valid() {
-		return fmt.Errorf("unknown cell status %q", value)
-	}
-	*status = candidate
-	return nil
-}
-
-// Value rejects statuses the sampler does not know, so an unknown one never reaches the database.
-func (status CellStatus) Value() (driver.Value, error) {
-	if !status.valid() {
-		return nil, fmt.Errorf("unknown cell status %q", string(status))
-	}
-	return string(status), nil
-}
-
 // Command is an admitted session command and its durable execution status.
 type Command struct {
 	SessionID     string
@@ -379,7 +293,7 @@ type RemoteProcess struct {
 	ConversationID string
 	Generation     int
 	AfterSequence  *uint64
-	Status         ProcessStatus
+	Status         protocol.ProcessStatus
 	TTY            bool
 	ExitCode       *int
 	// BufferedOutput is the retained head and tail of unread output; OmittedBytes were dropped
@@ -395,7 +309,7 @@ type LiveCell struct {
 	ID             string
 	ConversationID string
 	Generation     int
-	Status         CellStatus
+	Status         protocol.CellStatus
 }
 
 // ExecutionState is the set of remote handles whose effects may still be live.
@@ -434,10 +348,10 @@ func (state *ExecutionState) protocolState() *protocol.ExecutionState {
 	}
 	result := &protocol.ExecutionState{}
 	for _, cell := range state.Cells {
-		result.Cells = append(result.Cells, protocol.ActiveCell{ID: cell.ID, Status: string(cell.Status)})
+		result.Cells = append(result.Cells, protocol.ActiveCell{ID: cell.ID, Status: cell.Status})
 	}
 	for _, process := range state.Processes {
-		result.Processes = append(result.Processes, protocol.ActiveProcess{ModelSessionID: process.ModelSessionID, Status: string(process.Status), TTY: process.TTY, ExitCode: process.ExitCode})
+		result.Processes = append(result.Processes, protocol.ActiveProcess{ModelSessionID: process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode})
 	}
 	return result
 }

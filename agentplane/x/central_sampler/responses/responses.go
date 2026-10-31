@@ -324,8 +324,14 @@ type Response struct {
 	Events   []Event
 }
 
-func (response Response) Audit() map[string]any {
-	return map[string]any{"response": response.Terminal, "events": response.Events}
+// Audit is the stored result of a Responses sampling or compaction intent.
+type Audit struct {
+	Events   []Event   `json:"events"`
+	Response *Terminal `json:"response"`
+}
+
+func (response Response) Audit() *Audit {
+	return &Audit{Response: response.Terminal, Events: response.Events}
 }
 
 func Message(role, text string) (Item, error) {

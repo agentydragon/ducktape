@@ -224,7 +224,7 @@ func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
-	replacement, err := ValidateCompaction(original, records, map[string]any{"events": []any{}}, "Current environment")
+	replacement, err := ValidateCompaction(original, records, &Audit{Events: []Event{}}, "Current environment")
 	if err != nil {
 		t.Fatal(err)
 	}

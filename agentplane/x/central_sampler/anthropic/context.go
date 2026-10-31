@@ -50,13 +50,7 @@ func (c *Context) WireMessages() ([]json.RawMessage, error) {
 	wire := make([]json.RawMessage, 0, len(records))
 	for index, record := range records {
 		fields := messageFields(record)
-		message := map[string]json.RawMessage{
-			"role":    protocol.CloneJSON(fields["role"]),
-			"content": protocol.CloneJSON(fields["content"]),
-		}
-		if outputConfig, present := fields["output_config"]; present {
-			message["output_config"] = protocol.CloneJSON(outputConfig)
-		}
+		message := wireMessage{Role: fields["role"], Content: fields["content"], OutputConfig: fields["output_config"]}
 		encoded, err := json.Marshal(message)
 		if err != nil {
 			return nil, fmt.Errorf("encode Anthropic wire record %d: %w", index+1, err)
@@ -89,7 +83,7 @@ func (c *Context) AppendUser(parts []protocol.ContentPart) error {
 	if err != nil {
 		return err
 	}
-	record, err := marshalAnthropicMessage("user", blocks)
+	record, err := json.Marshal(inputMessage{Role: RoleUser, Content: blocks})
 	if err != nil {
 		return err
 	}
@@ -115,7 +109,7 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	if err != nil {
 		return err
 	}
-	record, err := marshalAnthropicMessage("user", blocks)
+	record, err := json.Marshal(inputMessage{Role: RoleUser, Content: blocks})
 	if err != nil {
 		return err
 	}
@@ -149,16 +143,7 @@ func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protoco
 		text := "Asynchronous output from exec call " + call.CallID + ":\n" + string(encoded)
 		return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}})
 	}
-	result := map[string]any{
-		"type":        "tool_result",
-		"tool_use_id": call.CallID,
-		"content":     blocks,
-	}
-	content, err := json.Marshal([]any{result})
-	if err != nil {
-		return err
-	}
-	record, err := json.Marshal(map[string]any{"role": "user", "content": json.RawMessage(content)})
+	record, err := json.Marshal(inputMessage{Role: RoleUser, Content: []inputBlock{newToolResultBlock(call.CallID, blocks)}})
 	if err != nil {
 		return err
 	}
@@ -184,11 +169,7 @@ func (c *Context) appendEffortControl(effort string) error {
 	if strings.TrimSpace(effort) == "" {
 		return errors.New("Anthropic effort must be non-empty")
 	}
-	record, err := json.Marshal(map[string]any{
-		"role":          "system",
-		"content":       []any{},
-		"output_config": map[string]any{"effort": effort},
-	})
+	record, err := json.Marshal(inputMessage{Role: RoleSystem, Content: []inputBlock{}, OutputConfig: &OutputConfig{Effort: effort}})
 	if err != nil {
 		return err
 	}
@@ -240,21 +221,21 @@ type anthropicExecutionState struct {
 }
 
 type anthropicActiveCell struct {
-	CellID string `json:"cell_id"`
-	Status string `json:"status"`
+	CellID string              `json:"cell_id"`
+	Status protocol.CellStatus `json:"status"`
 }
 
 type anthropicActiveProcess struct {
-	SessionID int    `json:"session_id"`
-	Status    string `json:"status"`
-	TTY       bool   `json:"tty"`
-	ExitCode  *int   `json:"exit_code"`
+	SessionID int                    `json:"session_id"`
+	Status    protocol.ProcessStatus `json:"status"`
+	TTY       bool                   `json:"tty"`
+	ExitCode  *int                   `json:"exit_code"`
 }
 
 func (c *Context) lastExecutionState() (json.RawMessage, bool, error) {
 	for i := len(c.Messages) - 1; i >= 0; i-- {
 		fields := messageFields(c.Messages[i])
-		if rawString(fields, "role") != "user" {
+		if roleOf(fields) != RoleUser {
 			continue
 		}
 		content, err := anthropicContentBlocks(fields["content"])
@@ -264,14 +245,11 @@ func (c *Context) lastExecutionState() (json.RawMessage, bool, error) {
 		if len(content) != 1 {
 			continue
 		}
-		var textBlock struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}
-		if err := json.Unmarshal(content[0], &textBlock); err != nil || textBlock.Type != "text" || !strings.HasPrefix(textBlock.Text, executionStatePrefix) {
+		var text textBlock
+		if err := json.Unmarshal(content[0], &text); err != nil || text.Type != BlockText || !strings.HasPrefix(text.Text, executionStatePrefix) {
 			continue
 		}
-		return json.RawMessage(strings.TrimPrefix(textBlock.Text, executionStatePrefix)), true, nil
+		return json.RawMessage(strings.TrimPrefix(text.Text, executionStatePrefix)), true, nil
 	}
 	return nil, false, nil
 }
@@ -336,7 +314,7 @@ func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
 		}
-		if rawString(fields, "role") != "assistant" {
+		if roleOf(fields) != RoleAssistant {
 			continue
 		}
 		content, err := anthropicContentBlocks(fields["content"])
@@ -348,7 +326,7 @@ func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
 			if err := json.Unmarshal(blockRaw, &block); err != nil {
 				return nil, fmt.Errorf("decode Anthropic content block: %w", err)
 			}
-			if rawString(block, "type") != "tool_use" {
+			if blockTypeOf(block) != BlockToolUse {
 				continue
 			}
 			callID, name := rawString(block, "id"), rawString(block, "name")
@@ -384,7 +362,7 @@ func (c *Context) answeredCalls() (map[string]bool, error) {
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
 		}
-		if rawString(fields, "role") != "user" {
+		if roleOf(fields) != RoleUser {
 			continue
 		}
 		content, err := anthropicContentBlocks(fields["content"])
@@ -396,7 +374,7 @@ func (c *Context) answeredCalls() (map[string]bool, error) {
 			if err := json.Unmarshal(blockRaw, &block); err != nil {
 				return nil, fmt.Errorf("decode Anthropic content block: %w", err)
 			}
-			if rawString(block, "type") != "tool_result" {
+			if blockTypeOf(block) != BlockToolResult {
 				continue
 			}
 			var callID string
@@ -430,13 +408,13 @@ func (c *Context) TurnComplete() bool {
 		return false
 	}
 	var message struct {
-		Role       string `json:"role"`
-		StopReason string `json:"stop_reason"`
+		Role       Role       `json:"role"`
+		StopReason StopReason `json:"stop_reason"`
 	}
 	if json.Unmarshal(c.Messages[len(c.Messages)-1], &message) != nil {
 		return false
 	}
-	return message.Role == "assistant" && message.StopReason == "end_turn"
+	return message.Role == RoleAssistant && message.StopReason == StopEndTurn
 }
 
 func (c *Context) MarshalJSON() ([]byte, error) {
@@ -508,12 +486,12 @@ func validateAnthropicMessage(raw json.RawMessage) error {
 	if len(raw) == 0 || json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return errors.New("message must be an object")
 	}
-	var role string
+	var role Role
 	if err := json.Unmarshal(fields["role"], &role); err != nil {
 		return errors.New("message role is required")
 	}
 	switch role {
-	case "user", "assistant":
+	case RoleUser, RoleAssistant:
 		if len(fields["content"]) == 0 || bytes.Equal(bytes.TrimSpace(fields["content"]), []byte("null")) {
 			return errors.New("message content is required")
 		}
@@ -526,45 +504,45 @@ func validateAnthropicMessage(raw json.RawMessage) error {
 			if err := json.Unmarshal(blockRaw, &block); err != nil || block == nil {
 				return fmt.Errorf("content block %d must be an object", index+1)
 			}
-			kind := rawString(block, "type")
+			kind := blockTypeOf(block)
 			switch kind {
-			case "text":
+			case BlockText:
 				if _, ok := block["text"]; !ok {
 					return fmt.Errorf("content block %d text block has no text", index+1)
 				}
-			case "image":
-				if role != "user" {
+			case BlockImage:
+				if role != RoleUser {
 					return fmt.Errorf("content block %d image is only valid on a user message", index+1)
 				}
-			case "tool_use":
-				if role != "assistant" || rawString(block, "id") == "" || rawString(block, "name") == "" {
+			case BlockToolUse:
+				if role != RoleAssistant || rawString(block, "id") == "" || rawString(block, "name") == "" {
 					return fmt.Errorf("content block %d has invalid tool_use identity", index+1)
 				}
 				var input map[string]json.RawMessage
 				if err := json.Unmarshal(block["input"], &input); err != nil || input == nil {
 					return fmt.Errorf("content block %d tool_use input must be an object", index+1)
 				}
-			case "tool_result":
-				if role != "user" || rawString(block, "tool_use_id") == "" || len(block["content"]) == 0 {
+			case BlockToolResult:
+				if role != RoleUser || rawString(block, "tool_use_id") == "" || len(block["content"]) == 0 {
 					return fmt.Errorf("content block %d has invalid tool_result", index+1)
 				}
-			case "thinking":
-				if role != "assistant" || rawString(block, "signature") == "" {
+			case BlockThinking:
+				if role != RoleAssistant || rawString(block, "signature") == "" {
 					return fmt.Errorf("content block %d has invalid or unsigned thinking", index+1)
 				}
-			case "redacted_thinking":
-				if role != "assistant" {
+			case BlockRedactedThinking:
+				if role != RoleAssistant {
 					return fmt.Errorf("content block %d redacted thinking is only valid on an assistant message", index+1)
 				}
-			case "compaction":
-				if role != "assistant" || rawString(block, "content") == "" || rawString(block, "signature") == "" {
+			case BlockCompaction:
+				if role != RoleAssistant || rawString(block, "content") == "" || rawString(block, "signature") == "" {
 					return fmt.Errorf("content block %d has invalid or unsigned compaction", index+1)
 				}
 			default:
 				return fmt.Errorf("content block %d has unsupported Anthropic type %q", index+1, kind)
 			}
 		}
-	case "system":
+	case RoleSystem:
 		var content []json.RawMessage
 		if err := json.Unmarshal(fields["content"], &content); err != nil || len(content) != 0 {
 			return errors.New("system effort control must have empty content")
@@ -577,9 +555,4 @@ func validateAnthropicMessage(raw json.RawMessage) error {
 		return fmt.Errorf("unsupported message role %q", role)
 	}
 	return nil
-}
-
-func marshalAnthropicMessage(role string, content any) (json.RawMessage, error) {
-	encoded, err := json.Marshal(map[string]any{"role": role, "content": content})
-	return encoded, err
 }

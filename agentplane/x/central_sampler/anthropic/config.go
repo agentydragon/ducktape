@@ -16,18 +16,40 @@ type Config struct {
 	Compaction          *CompactionConfig  `json:"compaction,omitempty"`
 }
 
+type ThinkingType string
+
+const (
+	ThinkingAdaptive ThinkingType = "adaptive"
+	ThinkingDisabled ThinkingType = "disabled"
+	ThinkingEnabled  ThinkingType = "enabled"
+)
+
 type ThinkingConfig struct {
-	Type         string              `json:"type"`
+	Type         ThinkingType        `json:"type"`
 	BudgetTokens *int                `json:"budget_tokens,omitempty"`
 	BlockBinding *BlockBindingConfig `json:"block_binding,omitempty"`
 }
 
+type PrefixMismatchBehavior string
+
+const (
+	PrefixMismatchError     PrefixMismatchBehavior = "error"
+	PrefixMismatchDropBlock PrefixMismatchBehavior = "drop_block"
+)
+
 type BlockBindingConfig struct {
-	PrefixMismatchBehavior string `json:"prefix_mismatch_behavior"`
+	PrefixMismatchBehavior PrefixMismatchBehavior `json:"prefix_mismatch_behavior"`
 }
 
+type PromptCacheTTL string
+
+const (
+	PromptCache5m PromptCacheTTL = "5m"
+	PromptCache1h PromptCacheTTL = "1h"
+)
+
 type PromptCacheConfig struct {
-	TTL string `json:"ttl"`
+	TTL PromptCacheTTL `json:"ttl"`
 }
 
 type CompactionConfig struct {
@@ -42,11 +64,11 @@ func (c Config) Validate() error {
 	}
 	if c.Thinking != nil {
 		switch c.Thinking.Type {
-		case "adaptive", "disabled":
+		case ThinkingAdaptive, ThinkingDisabled:
 			if c.Thinking.BudgetTokens != nil {
 				return errors.New("thinking.budget_tokens is only valid with thinking.type enabled")
 			}
-		case "enabled":
+		case ThinkingEnabled:
 			if c.Thinking.BudgetTokens == nil || *c.Thinking.BudgetTokens <= 0 || *c.Thinking.BudgetTokens >= c.MaxTokens {
 				return errors.New("thinking.type enabled requires budget_tokens between zero and max_tokens")
 			}
@@ -54,18 +76,18 @@ func (c Config) Validate() error {
 			return errors.New("thinking.type must be adaptive, disabled, or enabled")
 		}
 		if c.Thinking.BlockBinding != nil {
-			if c.Thinking.Type != "adaptive" {
+			if c.Thinking.Type != ThinkingAdaptive {
 				return errors.New("thinking.block_binding requires thinking.type adaptive")
 			}
-			if !slices.Contains([]string{"error", "drop_block"}, c.Thinking.BlockBinding.PrefixMismatchBehavior) {
+			if !slices.Contains([]PrefixMismatchBehavior{PrefixMismatchError, PrefixMismatchDropBlock}, c.Thinking.BlockBinding.PrefixMismatchBehavior) {
 				return errors.New("thinking.block_binding.prefix_mismatch_behavior must be error or drop_block")
 			}
 		}
 	}
-	if c.PerMessageEffort && (c.Thinking == nil || c.Thinking.Type != "adaptive") {
+	if c.PerMessageEffort && (c.Thinking == nil || c.Thinking.Type != ThinkingAdaptive) {
 		return errors.New("per_message_effort requires thinking.type adaptive")
 	}
-	if c.PromptCache != nil && c.PromptCache.TTL != "5m" && c.PromptCache.TTL != "1h" {
+	if c.PromptCache != nil && c.PromptCache.TTL != PromptCache5m && c.PromptCache.TTL != PromptCache1h {
 		return errors.New("prompt_cache.ttl must be 5m or 1h")
 	}
 	if c.Compaction != nil {

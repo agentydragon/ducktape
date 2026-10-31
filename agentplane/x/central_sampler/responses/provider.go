@@ -174,15 +174,15 @@ type executionState struct {
 }
 
 type activeCell struct {
-	CellID string `json:"cell_id"`
-	Status string `json:"status"`
+	CellID string              `json:"cell_id"`
+	Status protocol.CellStatus `json:"status"`
 }
 
 type activeProcess struct {
-	SessionID int    `json:"session_id"`
-	Status    string `json:"status"`
-	TTY       bool   `json:"tty"`
-	ExitCode  *int   `json:"exit_code"`
+	SessionID int                    `json:"session_id"`
+	Status    protocol.ProcessStatus `json:"status"`
+	TTY       bool                   `json:"tty"`
+	ExitCode  *int                   `json:"exit_code"`
 }
 
 // Headers returns the exact non-authentication headers sent for this wire request.
@@ -226,9 +226,8 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
 	providerRequestID := response.Header.Get("x-request-id")
 	if evidence != nil {
-		if err := evidence.Record(ctx, "provider_http", map[string]any{
-			"http_status": response.StatusCode, "provider_request_id": providerRequestID,
-			"content_type": response.Header.Get("content-type"),
+		if err := evidence.Record(ctx, protocol.HTTPResponseHead{
+			HTTPStatus: response.StatusCode, ProviderRequestID: providerRequestID, ContentType: response.Header.Get("content-type"),
 		}); err != nil {
 			return nil, err
 		}
@@ -272,7 +271,7 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if err != nil {
 				return err
 			}
-			if err := evidence.Record(ctx, "provider", payload, observations...); err != nil {
+			if err := evidence.Record(ctx, payload, observations...); err != nil {
 				return err
 			}
 		}
@@ -335,22 +334,28 @@ func decodeProviderEvent(data string) (Event, error) {
 	return event, nil
 }
 
-func eventPayload(event Event) (map[string]any, error) {
+// streamEvent is the evidence of one Responses SSE event, recorded in its canonical JSON form.
+type streamEvent struct{ value any }
+
+func (streamEvent) Kind() protocol.ProviderEvidenceKind { return protocol.EvidenceResponsesEvent }
+
+func (event streamEvent) MarshalJSON() ([]byte, error) { return json.Marshal(event.value) }
+
+func eventPayload(event Event) (streamEvent, error) {
 	data := event.Raw
 	if len(data) == 0 {
 		var err error
 		data, err = json.Marshal(event)
 		if err != nil {
-			return nil, err
+			return streamEvent{}, err
 		}
 	}
 	value, err := protocol.DecodeJSONValue(data)
 	if err != nil {
-		return nil, err
+		return streamEvent{}, err
 	}
-	payload, ok := value.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("provider event must be an object: %w", protocol.ErrInvalid)
+	if _, ok := value.(map[string]any); !ok {
+		return streamEvent{}, fmt.Errorf("provider event must be an object: %w", protocol.ErrInvalid)
 	}
-	return payload, nil
+	return streamEvent{value: value}, nil
 }

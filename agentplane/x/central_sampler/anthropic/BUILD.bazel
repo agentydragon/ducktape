@@ -10,6 +10,7 @@ go_library(
         "config.go",
         "context.go",
         "observations.go",
+        "wire.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/anthropic",
     deps = [

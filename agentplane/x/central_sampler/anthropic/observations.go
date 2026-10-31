@@ -9,7 +9,7 @@ import (
 )
 
 func anthropicHistoryItemID(message map[string]json.RawMessage, index int, block map[string]json.RawMessage) string {
-	if rawString(block, "type") == "tool_use" {
+	if blockTypeOf(block) == BlockToolUse {
 		return rawString(block, "id")
 	}
 	messageID := rawString(message, "id")
@@ -26,12 +26,12 @@ func anthropicItemStarted(message map[string]json.RawMessage, index int, block m
 	}
 	var kind eventpb.ItemKind
 	var toolName string
-	switch rawString(block, "type") {
-	case "text":
+	switch blockTypeOf(block) {
+	case BlockText:
 		kind = eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT
-	case "thinking":
+	case BlockThinking:
 		kind = eventpb.ItemKind_ITEM_KIND_REASONING
-	case "tool_use":
+	case BlockToolUse:
 		kind, toolName = eventpb.ItemKind_ITEM_KIND_TOOL_CALL, rawString(block, "name")
 	default:
 		return nil
@@ -41,21 +41,17 @@ func anthropicItemStarted(message map[string]json.RawMessage, index int, block m
 	}}}
 }
 
-func anthropicBlockDelta(message map[string]json.RawMessage, index int, block map[string]json.RawMessage, deltaType, delta string) *eventpb.Event {
+func anthropicBlockDelta(message map[string]json.RawMessage, index int, block map[string]json.RawMessage, deltaType DeltaType, delta string) *eventpb.Event {
 	itemID := anthropicHistoryItemID(message, index, block)
 	if itemID == "" || delta == "" {
 		return nil
 	}
 	switch deltaType {
-	case "text_delta":
+	case DeltaText, DeltaThinking:
 		return &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{
 			ItemId: itemID, Text: protocol.DisplayText(delta),
 		}}}
-	case "thinking_delta":
-		return &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{
-			ItemId: itemID, Text: protocol.DisplayText(delta),
-		}}}
-	case "input_json_delta":
+	case DeltaInputJSON:
 		return &eventpb.Event{Observation: &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{
 			ItemId: itemID, PartialJson: protocol.DisplayText(delta),
 		}}}
@@ -70,10 +66,10 @@ func anthropicBlockCompleted(message map[string]json.RawMessage, index int, bloc
 		return nil
 	}
 	var text string
-	switch rawString(block, "type") {
-	case "text":
+	switch blockTypeOf(block) {
+	case BlockText:
 		text = rawString(block, "text")
-	case "thinking":
+	case BlockThinking:
 		text = rawString(block, "thinking")
 	default:
 		return nil

@@ -23,7 +23,7 @@ func messageFields(record json.RawMessage) map[string]json.RawMessage {
 
 func endTurn(record json.RawMessage) bool {
 	fields := messageFields(record)
-	return rawString(fields, "role") == "assistant" && rawString(fields, "stop_reason") == "end_turn"
+	return roleOf(fields) == RoleAssistant && stopReasonOf(fields) == StopEndTurn
 }
 
 func PreviousMessageID(context *Context) string {
@@ -32,7 +32,7 @@ func PreviousMessageID(context *Context) string {
 	}
 	for i := len(context.Messages) - 1; i >= 0; i-- {
 		fields := messageFields(context.Messages[i])
-		if rawString(fields, "role") == "assistant" && rawString(fields, "stop_reason") != "compaction" {
+		if roleOf(fields) == RoleAssistant && stopReasonOf(fields) != StopCompaction {
 			return rawString(fields, "id")
 		}
 	}
@@ -60,15 +60,15 @@ func suffixStart(records []json.RawMessage, keep int) int {
 func isEffortControl(record json.RawMessage) bool {
 	fields := messageFields(record)
 	_, hasOutputConfig := fields["output_config"]
-	return rawString(fields, "role") == "system" && hasOutputConfig
+	return roleOf(fields) == RoleSystem && hasOutputConfig
 }
 
-func anthropicParts(parts []protocol.ContentPart) ([]any, error) {
-	result := make([]any, 0, len(parts))
+func anthropicParts(parts []protocol.ContentPart) ([]inputBlock, error) {
+	result := make([]inputBlock, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
 		case "input_text", "output_text", "text":
-			result = append(result, map[string]any{"type": "text", "text": part.Text})
+			result = append(result, newTextBlock(part.Text))
 		case "input_image":
 			var image map[string]json.RawMessage
 			if err := json.Unmarshal(part.Raw, &image); err != nil {
@@ -84,7 +84,7 @@ func anthropicParts(parts []protocol.ContentPart) ([]any, error) {
 				if !ok || !base64 || !protocol.IsOneOf(media, "image/png", "image/jpeg", "image/gif", "image/webp") {
 					return nil, errors.New("unsupported Anthropic image data URL")
 				}
-				result = append(result, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": media, "data": data}})
+				result = append(result, newImageBlock(media, data))
 			} else {
 				return nil, errors.New("Anthropic image input requires a base64 data URL")
 			}
@@ -103,34 +103,19 @@ type RequestParams struct {
 	Tools        protocol.ToolSurface
 }
 
-func BuildRequest(params RequestParams, config Config, previousMessageID string) (map[string]any, error) {
+func BuildRequest(params RequestParams, config Config, previousMessageID string) (Request, error) {
 	if err := config.Validate(); err != nil {
-		return nil, err
+		return Request{}, err
 	}
 	if params.Model == "" {
-		return nil, errors.New("Anthropic request model is required")
+		return Request{}, errors.New("Anthropic request model is required")
 	}
 	if params.Tools.Description == "" {
-		return nil, errors.New("Anthropic exec tool description is required")
+		return Request{}, errors.New("Anthropic exec tool description is required")
 	}
-	var err error
-	var schema map[string]any
-	if err := json.Unmarshal(params.Tools.Parameters, &schema); err != nil {
-		return nil, err
-	}
-	if schema == nil {
-		return nil, errors.New("Anthropic exec tool parameters must be an object")
-	}
-	delete(schema, "$schema")
-	// The wire schema has one object shape; the host enforces code XOR cell_id and numeric bounds.
-	// Strict decoding accepts optional properties, but not JSON Schema minimum/maximum keywords.
-	if properties, ok := schema["properties"].(map[string]any); ok {
-		for _, value := range properties {
-			if property, ok := value.(map[string]any); ok {
-				delete(property, "minimum")
-				delete(property, "maximum")
-			}
-		}
+	schema, err := decodeToolInputSchema(params.Tools.Parameters)
+	if err != nil {
+		return Request{}, err
 	}
 	context := params.Context
 	if context == nil {
@@ -138,31 +123,28 @@ func BuildRequest(params RequestParams, config Config, previousMessageID string)
 	}
 	messages, err := context.WireMessages()
 	if err != nil {
-		return nil, err
+		return Request{}, err
 	}
 	system := protocol.BaseInstructions
 	if params.Instructions != nil && *params.Instructions != "" {
 		system += "\n\n" + *params.Instructions
 	}
-	body := map[string]any{
-		"model": params.Model, "max_tokens": config.MaxTokens, "system": system, "messages": messages, "stream": true,
-		"tools": []any{map[string]any{"name": "exec", "description": params.Tools.Description, "input_schema": schema, "strict": config.StrictToolInput, "eager_input_streaming": config.EagerInputStreaming}},
-	}
-	if config.Thinking != nil {
-		body["thinking"] = config.Thinking
+	body := Request{
+		Model: params.Model, MaxTokens: config.MaxTokens, System: system, Messages: messages, Stream: true, Thinking: config.Thinking,
+		Tools: []Tool{{Name: "exec", Description: params.Tools.Description, InputSchema: schema, Strict: config.StrictToolInput, EagerInputStreaming: config.EagerInputStreaming}},
 	}
 	if params.Effort != "" {
-		body["output_config"] = map[string]any{"effort": params.Effort}
+		body.OutputConfig = &OutputConfig{Effort: params.Effort}
 	}
 	if config.PromptCache != nil {
-		body["cache_control"] = map[string]any{"type": "ephemeral", "ttl": config.PromptCache.TTL}
+		body.CacheControl = &CacheControl{Type: "ephemeral", TTL: config.PromptCache.TTL}
 	}
 	if config.CacheDiagnostics {
-		var previous any
+		var previous *string
 		if previousMessageID != "" {
-			previous = previousMessageID
+			previous = &previousMessageID
 		}
-		body["diagnostics"] = map[string]any{"previous_message_id": previous}
+		body.Diagnostics = &Diagnostics{PreviousMessageID: previous}
 	}
 	return body, nil
 }
@@ -201,11 +183,8 @@ type Response struct {
 
 var errProviderComplete = errors.New("provider response complete")
 
-func (r Response) Audit() map[string]any {
-	return map[string]any{
-		"response": r.Message, "events": r.Events, "context_tokens": r.ContextTokens,
-		"http_status": r.HTTPStatus, "provider_request_id": r.ProviderRequestID,
-	}
+func (r Response) Audit() *Audit {
+	return &Audit{Response: r.Message, Events: r.Events, ContextTokens: r.ContextTokens, HTTPStatus: r.HTTPStatus, ProviderRequestID: r.ProviderRequestID}
 }
 
 func Sample(ctx context.Context, client *http.Client, baseURL, credential string, config Config, wire []byte, evidence protocol.EvidenceSink, compaction bool) (*Response, error) {
@@ -223,9 +202,9 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
-	metadata := map[string]any{"http_status": response.StatusCode, "provider_request_id": response.Header.Get("request-id"), "content_type": response.Header.Get("content-type")}
+	head := protocol.HTTPResponseHead{HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("request-id"), ContentType: response.Header.Get("content-type")}
 	if evidence != nil {
-		if err := evidence.Record(ctx, "provider_http", metadata); err != nil {
+		if err := evidence.Record(ctx, head); err != nil {
 			return nil, err
 		}
 	}
@@ -234,8 +213,9 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 		if err != nil {
 			return nil, err
 		}
-		metadata["body"] = string(body)
-		return nil, &protocol.KnownFailureError{Evidence: metadata}
+		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
+			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
+		}}
 	}
 	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction)
 	if result != nil {
@@ -270,20 +250,20 @@ func stringField(fields map[string]json.RawMessage, key string) (string, bool) {
 }
 
 func validateAnthropicOutputBlock(fields map[string]json.RawMessage) error {
-	switch rawString(fields, "type") {
-	case "text":
+	switch blockTypeOf(fields) {
+	case BlockText:
 		if _, ok := stringField(fields, "text"); !ok {
 			return errors.New("text block requires a string text field")
 		}
 		return nil
-	case "thinking":
+	case BlockThinking:
 		if _, ok := stringField(fields, "thinking"); !ok {
 			return errors.New("thinking block requires a string thinking field")
 		}
 		return nil
-	case "redacted_thinking", "compaction":
+	case BlockRedactedThinking, BlockCompaction:
 		return nil
-	case "tool_use":
+	case BlockToolUse:
 		if rawString(fields, "id") == "" || rawString(fields, "name") == "" {
 			return errors.New("tool_use requires an id and name")
 		}
@@ -293,7 +273,7 @@ func validateAnthropicOutputBlock(fields map[string]json.RawMessage) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unsupported Anthropic output block %q", rawString(fields, "type"))
+		return fmt.Errorf("unsupported Anthropic output block %q", blockTypeOf(fields))
 	}
 }
 
@@ -319,7 +299,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		// Even malformed/unsupported events are durable before the parser returns to the runtime.
 		defer func() {
 			if evidence != nil {
-				if err := evidence.Record(ctx, "provider_anthropic", map[string]any{"wire_event": data}, observations...); err != nil {
+				if err := evidence.Record(ctx, streamEvent{WireEvent: data}, observations...); err != nil {
 					eventErr = err
 				}
 			}
@@ -341,7 +321,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			}
 			started = true
 			message = event.Message
-			if rawString(message, "id") == "" || rawString(message, "role") != "assistant" {
+			if rawString(message, "id") == "" || roleOf(message) != RoleAssistant {
 				return fail("invalid Anthropic message identity")
 			}
 			if err := json.Unmarshal(message["usage"], &usage); err != nil || usage == nil {
@@ -371,42 +351,42 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 				return fail("invalid content delta ordering")
 			}
 			block := blocks[*event.Index]
-			kind := rawString(event.Delta, "type")
+			kind := DeltaType(rawString(event.Delta, "type"))
 			field := ""
 			delta := ""
 			switch kind {
-			case "text_delta":
+			case DeltaText:
 				field = "text"
 				var ok bool
 				delta, ok = stringField(event.Delta, "text")
 				if !ok {
 					return fail("text_delta requires a string text field")
 				}
-			case "thinking_delta":
+			case DeltaThinking:
 				field = "thinking"
 				var ok bool
 				delta, ok = stringField(event.Delta, "thinking")
 				if !ok {
 					return fail("thinking_delta requires a string thinking field")
 				}
-			case "signature_delta":
+			case DeltaSignature:
 				field = "signature"
 				var ok bool
 				delta, ok = stringField(event.Delta, "signature")
 				if !ok {
 					return fail("signature_delta requires a string signature field")
 				}
-			case "input_json_delta":
+			case DeltaInputJSON:
 				partial, ok := stringField(event.Delta, "partial_json")
 				if !ok {
 					return fail("input_json_delta requires a string partial_json field")
 				}
 				block.input.WriteString(partial)
 			default:
-				return fail("unsupported Anthropic delta " + kind)
+				return fail("unsupported Anthropic delta " + string(kind))
 			}
-			expected := map[string]string{"text_delta": "text", "thinking_delta": "thinking", "signature_delta": "thinking", "input_json_delta": "tool_use"}
-			if rawString(block.fields, "type") != expected[kind] {
+			expected := map[DeltaType]BlockType{DeltaText: BlockText, DeltaThinking: BlockThinking, DeltaSignature: BlockThinking, DeltaInputJSON: BlockToolUse}
+			if blockTypeOf(block.fields) != expected[kind] {
 				return fail("delta does not match content block")
 			}
 			if field != "" {
@@ -425,10 +405,10 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			}
 			block := blocks[*event.Index]
 			block.stopped = true
-			if rawString(block.fields, "type") == "tool_use" && block.input.Len() > 0 {
+			if blockTypeOf(block.fields) == BlockToolUse && block.input.Len() > 0 {
 				block.fields["input"] = json.RawMessage(block.input.String())
 			}
-			if rawString(block.fields, "type") == "tool_use" {
+			if blockTypeOf(block.fields) == BlockToolUse {
 				var input map[string]json.RawMessage
 				if err := json.Unmarshal(block.fields["input"], &input); err != nil || input == nil {
 					return fail("tool input is not a complete JSON object")
@@ -459,7 +439,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if !started || !deltaSeen {
 				return fail("message_stop without message delta")
 			}
-			stop := rawString(message, "stop_reason")
+			stop := stopReasonOf(message)
 			tools, compactions := 0, 0
 			content := make([]json.RawMessage, 0, len(blocks))
 			seen := map[string]bool{}
@@ -467,20 +447,20 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 				if !block.stopped {
 					return fail("message_stop before content stop")
 				}
-				switch rawString(block.fields, "type") {
-				case "tool_use":
+				switch blockTypeOf(block.fields) {
+				case BlockToolUse:
 					tools++
 					id := rawString(block.fields, "id")
 					if id == "" || seen[id] || rawString(block.fields, "name") == "" {
 						return fail("invalid or duplicate tool identity")
 					}
 					seen[id] = true
-				case "compaction":
+				case BlockCompaction:
 					compactions++
 					if rawString(block.fields, "signature") == "" || rawString(block.fields, "content") == "" {
 						return fail("empty or unsigned compaction block")
 					}
-				case "thinking":
+				case BlockThinking:
 					if rawString(block.fields, "signature") == "" {
 						return fail("unsigned thinking block")
 					}
@@ -492,11 +472,11 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 				content = append(content, encoded)
 			}
 			if compaction {
-				if stop != "compaction" || compactions != 1 || len(blocks) != 1 {
+				if stop != StopCompaction || compactions != 1 || len(blocks) != 1 {
 					return fail("compaction must return one signed compaction block")
 				}
-			} else if !((stop == "end_turn" && tools == 0 && compactions == 0) || (stop == "tool_use" && tools > 0 && compactions == 0)) {
-				return fail("unsupported Anthropic stop reason or inconsistent output: " + stop)
+			} else if !((stop == StopEndTurn && tools == 0 && compactions == 0) || (stop == StopToolUse && tools > 0 && compactions == 0)) {
+				return fail("unsupported Anthropic stop reason or inconsistent output: " + string(stop))
 			}
 			encoded, err := json.Marshal(content)
 			if err != nil {

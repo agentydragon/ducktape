@@ -1181,7 +1181,7 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest) (
 	return id, err
 }
 
-func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result map[string]any, records []json.RawMessage, contextTokens *int) error {
+func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
 	return s.finish(ctx, owner, intentID, result, contextTokens, func(c *Conversation) error {
 		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
 	})
@@ -1193,7 +1193,7 @@ func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, re
 	})
 }
 
-func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result map[string]any, contextTokens *int, appendResult func(*Conversation) error) error {
+func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result any, contextTokens *int, appendResult func(*Conversation) error) error {
 	resultWire, err := marshal(result)
 	if err != nil {
 		return err
@@ -1372,7 +1372,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 	return id, err
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit map[string]any, original, replacement protocol.Context) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -2556,8 +2556,8 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	return &process, nil
 }
 
-func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status ProcessStatus, exitCode *int, consumeOutput bool) error {
-	if !status.valid() {
+func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status protocol.ProcessStatus, exitCode *int, consumeOutput bool) error {
+	if !status.Valid() {
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
@@ -2574,7 +2574,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		// Consuming an observed terminal result is local; it remains readable after takeover.
-		if process.Generation != owner.Generation && !(consumeOutput && process.Status == ProcessExitedUnread && status == ProcessExited) {
+		if process.Generation != owner.Generation && !(consumeOutput && process.Status == protocol.ProcessExitedUnread && status == protocol.ProcessExited) {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
 		var sequence any
@@ -2628,10 +2628,10 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		if process.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
-		if process.Status == ProcessAbandoned {
+		if process.Status == protocol.ProcessAbandoned {
 			return nil
 		}
-		if process.Status == ProcessExited {
+		if process.Status == protocol.ProcessExited {
 			return protocol.ErrPrecondition
 		}
 		if afterSequence == nil {
@@ -2691,7 +2691,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			code = *exitCode
 		}
 		if exited {
-			status = ProcessExitedUnread
+			status = protocol.ProcessExitedUnread
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
 			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.omitted); err != nil {
@@ -2706,8 +2706,8 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 	})
 }
 
-func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, status CellStatus) error {
-	if cellID == "" || !status.valid() {
+func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, status protocol.CellStatus) error {
+	if cellID == "" || !status.Valid() {
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {

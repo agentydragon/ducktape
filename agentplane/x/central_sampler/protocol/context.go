@@ -40,11 +40,11 @@ type ExecutionState struct {
 type (
 	ActiveCell struct {
 		ID     string
-		Status string
+		Status CellStatus
 	}
 	ActiveProcess struct {
 		ModelSessionID *int
-		Status         string
+		Status         ProcessStatus
 		TTY            bool
 		ExitCode       *int
 	}

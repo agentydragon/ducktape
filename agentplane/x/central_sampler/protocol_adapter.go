@@ -13,12 +13,14 @@ import (
 )
 
 type sampleResult struct {
-	Records       []json.RawMessage
-	Audit         map[string]any
+	Records []json.RawMessage
+	// Audit is the adapter's stored intent result: *responses.Audit or *anthropic.Audit.
+	Audit         any
 	ContextTokens *int
 }
 
 type compactionPlan struct {
+	// Body is the adapter's request: responses.Request or anthropic.Request.
 	Body  any
 	Apply func(*sampleResult) (protocol.Context, error)
 }
@@ -142,7 +144,7 @@ func (a responsesAdapter) PrepareCompaction(c *Conversation, s *Session, state *
 		return nil, err
 	}
 	return &compactionPlan{Body: body, Apply: func(result *sampleResult) (protocol.Context, error) {
-		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit, environment)
+		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), environment)
 	}}, nil
 }
 
@@ -155,5 +157,7 @@ func (a anthropicAdapter) PrepareCompaction(c *Conversation, s *Session, _ *Exec
 	if err != nil {
 		return nil, err
 	}
-	return &compactionPlan{Body: plan.Body, Apply: func(result *sampleResult) (protocol.Context, error) { return plan.Apply(result.Records, result.Audit) }}, nil
+	return &compactionPlan{Body: plan.Body, Apply: func(result *sampleResult) (protocol.Context, error) {
+		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit))
+	}}, nil
 }

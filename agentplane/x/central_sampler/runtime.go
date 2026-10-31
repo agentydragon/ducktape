@@ -272,7 +272,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 			}
 			runningProcess := false
 			for _, process := range state.Processes {
-				if process.Status != ProcessExitedUnread && process.Status != ProcessExited {
+				if process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessExited {
 					runningProcess = true
 					break
 				}
@@ -609,7 +609,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	}
 	if stateErr == nil {
 		for _, process := range state.Processes {
-			if process.Status != ProcessExited && process.Status != ProcessExitedUnread {
+			if process.Status != protocol.ProcessExited && process.Status != protocol.ProcessExitedUnread {
 				complete = false
 			}
 		}

@@ -8,7 +8,7 @@ import (
 )
 
 type CompactionPlan struct {
-	Body map[string]any
+	Body Request
 
 	original      *Context
 	suffix        []json.RawMessage
@@ -47,8 +47,8 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	if err != nil {
 		return nil, err
 	}
-	body["compaction"] = map[string]any{"type": "summarize"}
-	body["max_tokens"] = config.Compaction.MaxTokens
+	body.Compaction = &CompactionDirective{Type: "summarize"}
+	body.MaxTokens = config.Compaction.MaxTokens
 	var restore *string
 	if config.PerMessageEffort {
 		restore = &restoreEffort
@@ -56,7 +56,7 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	return &CompactionPlan{Body: body, original: originalContext, suffix: cloneRecords(records[cut:]), restoreEffort: restore}, nil
 }
 
-func (p *CompactionPlan) Apply(records []json.RawMessage, audit map[string]any) (*Context, error) {
+func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit) (*Context, error) {
 	if p == nil || p.original == nil {
 		return nil, errors.New("Anthropic compaction plan is unavailable")
 	}
@@ -70,7 +70,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit map[string]any) 
 		return reject("compaction response is not a valid native message")
 	}
 	fields := messageFields(records[0])
-	if rawString(fields, "role") != "assistant" || rawString(fields, "stop_reason") != "compaction" {
+	if roleOf(fields) != RoleAssistant || stopReasonOf(fields) != StopCompaction {
 		return reject("compaction must produce exactly one signed compaction message")
 	}
 	blocks, err := anthropicContentBlocks(fields["content"])
@@ -78,7 +78,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit map[string]any) 
 		return reject("compaction must produce exactly one signed compaction block")
 	}
 	var block map[string]json.RawMessage
-	if err := json.Unmarshal(blocks[0], &block); err != nil || rawString(block, "type") != "compaction" || rawString(block, "content") == "" || rawString(block, "signature") == "" {
+	if err := json.Unmarshal(blocks[0], &block); err != nil || blockTypeOf(block) != BlockCompaction || rawString(block, "content") == "" || rawString(block, "signature") == "" {
 		return reject("compaction must produce exactly one signed compaction block")
 	}
 	replacement := &Context{Messages: []json.RawMessage{protocol.CloneJSON(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
@@ -98,7 +98,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit map[string]any) 
 		return reject("compaction did not reduce serialized model context")
 	}
 	if audit != nil {
-		audit["replacement"] = replacement
+		audit.Replacement = replacement
 	}
 	return replacement, nil
 }
