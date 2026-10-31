@@ -914,9 +914,10 @@ replacement prerequisite for the current fixes. See the [runtime direction](sess
 ### `CONTROL_PLANE_ROLLING_SERVICES` — rolling Agentplane control-plane deployments
 
 **In-flight review; `/root`, operator direction, 2026-10-30 PDT.** Use rolling updates with at least
-two replicas as the control-plane deployment target. Treat that as deployment policy, not an
-intrinsic minimum in service or environment APIs. Select component changes after reviewing their
-coordination, state, migration overlap and client reconnect behavior; preserve data and identities.
+two replicas as the control-plane deployment target, except for Electric's accepted single-replica
+`Recreate` deployment. Treat that as deployment policy, not an intrinsic minimum in service or environment APIs.
+Select component changes after reviewing their coordination, state, migration overlap and client
+reconnect behavior; preserve data and identities.
 
 Source and committed staging manifests currently show singleton `Recreate` deployments for the
 sampler, MCP edge and Electric. Actions and Notifications already have two replicas but still use
@@ -925,12 +926,13 @@ updates, and egress uses three. These are configuration observations, not a live
 
 The sampler belongs to `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; keep the other service changes independent.
 For Actions and Notifications, resolve old/new writer migration overlap before removing the
-`Recreate` policy. Electric is an explicit exception pending independent HA work: its fixed
+`Recreate` policy. Electric is an accepted single-replica exception: its fixed
 replication stream permits one active writer, while each current Pod has its own empty shape store
-and the App proxy has no stable backend routing. A second Pod on the same stream would be a waiting
-replica that cannot serve that store's shapes. The [Electric HA audit](electric_ha.md) records the
-separate-stream/store option, required routing and slot lifecycle, and acceptance work; do not
-count a replica-setting change as completion. Other singleton exceptions need an owner and reason.
+and the App proxy has no stable backend routing. The operator accepts a brief sync interruption,
+refetch, or page reload during replacement; the current `Recreate` strategy may stay. The
+[Electric audit](electric_ha.md) records why a replica-setting change alone is unsound and the
+optional, unscheduled rolling and multi-active HA designs. Other singleton exceptions need an owner
+and reason.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 

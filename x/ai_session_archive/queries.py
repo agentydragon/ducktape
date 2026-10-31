@@ -30,6 +30,7 @@ from x.ai_session_archive.models import (
     SnapshotImportState,
     TranscriptStatus,
 )
+from x.ai_session_archive.record_json import parse_record_json
 
 MAX_EVENT_PAGE_SIZE = 500
 MAX_DELTA_DEPTH = 63
@@ -366,18 +367,20 @@ def list_events(
 
     has_more = len(result_rows) > limit
     page_rows = result_rows[:limit]
-    events = [
-        Event(
-            ordinal=record.ordinal,
-            byte_offset=record.byte_offset,
-            timestamp=payload.timestamp,
-            kind=payload.kind,
-            parsed=payload.parsed,
-            parse_error=payload.parse_error,
-            raw=payload.raw_bytes.decode("utf-8", errors="replace").rstrip("\r\n"),
-            raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
+    events = []
+    for _, record, payload in page_rows:
+        parsed = parse_record_json(payload.raw_bytes)
+        events.append(
+            Event(
+                ordinal=record.ordinal,
+                byte_offset=record.byte_offset,
+                timestamp=payload.timestamp,
+                kind=payload.kind,
+                parsed=parsed.parsed,
+                parse_error=parsed.parse_error,
+                raw=payload.raw_bytes.decode("utf-8", errors="replace").rstrip("\r\n"),
+                raw_base64=base64.b64encode(payload.raw_bytes).decode("ascii"),
+            )
         )
-        for _, record, payload in page_rows
-    ]
     next_cursor = events[-1].ordinal if has_more and events else None
     return EventPage(data=events, next_cursor=next_cursor)
