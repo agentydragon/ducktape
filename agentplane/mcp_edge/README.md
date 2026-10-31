@@ -53,8 +53,7 @@ verified data handoff and retention decision. The operator command
 - `oauth_registered_client`, `oauth_authorization`, `oauth_token`
 
 Set `AGENTPLANE_ACTIONS_DATABASE_URL` and `AGENTPLANE_MCP_EDGE_DATABASE_URL` in the operator's
-environment and pass `--confirm-single-writer-cutover`. Stop legacy Actions and its migrators, and
-keep destination writers stopped throughout the copy. The command requires an empty destination
+environment and pass `--confirm-single-writer-cutover`. Stop legacy Actions and keep destination edge writers stopped throughout the copy. The command requires an empty destination
 and recognized schema histories, holds source table `SHARE` locks, copies and compares every
 supported field inside one destination transaction, and prints only row counts. Lock waits fail
 after five seconds; SIGINT/SIGTERM cancels the operation. Failures before commit roll back the

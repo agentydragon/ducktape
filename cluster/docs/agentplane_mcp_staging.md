@@ -50,8 +50,8 @@ padded URL-safe base64 ([resource documentation](https://registry.terraform.io/p
 
 Use these deployment acceptance checks after the image and route changes reconcile:
 
-1. Check Terraform/Reflector delivery, Flux readiness, the intended app, Actions, edge and migrator
-   revisions, successful migration, and Secret references without printing Secret contents. Confirm
+1. Check Terraform/Reflector delivery, Flux readiness, the intended app, Actions and edge serving
+   image revisions, successful startup migrations and Secret references without printing Secret contents. Confirm
    the public route resolves to the edge and private REST/operator paths are not routed publicly.
 2. Add the MCP URL in Claude.ai. Complete DCR, log into the integration app, name the Connection,
    choose `agentplane-staging/claude-ai`, and authorize. Confirm upstream login returns through the
