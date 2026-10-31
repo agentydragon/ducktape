@@ -883,15 +883,10 @@ def _forbid(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
         monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{name}", forbidden(name))
 
 
-def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize("pull_request_head", [None, PR_HEAD_REF])
+def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pull_request_head: str | None
 ) -> None:
-    """Cancellation kills the workflow, not the Bazel invocation, so a superseded run
-    often holds a complete set of manifests — those get published, since the commit
-    bundle is immutable and is what lets a PR on this commit resolve an exact baseline.
-    It still says nothing: the comment is a singleton, and speaking here would replace
-    the previous run's real review with a warning about an abandoned build. Pointers are
-    left alone because they are mutable and unordered across concurrent publishes."""
     checks: list[dict[str, object]] = []
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
     _forbid(
@@ -899,42 +894,34 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
         "find_reviewable_pull_request",
         "upsert_pull_request_comment",
         "refresh_stale_pull_request_comment",
+        "wait_for_test_invocations",
+        "download_visual_tests",
+        "build_bundle",
+        "upload_bundle",
         "write_baseline_pointers",
+        "_invocations_for",
     )
-    downloaded: list[list[str]] = []
-
-    def record(invocations: list[str], _destination: Path, **_kwargs: object) -> list[object]:
-        downloaded.append(invocations)
-        return []
-
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", record)
-    # BuildBuddy holds nothing under this commit — a PR run records the merge SHA — so
-    # the lookup falls through to the IDs derived from the run.
-    monkeypatch.setattr(
-        "devinfra.pr_visuals.publisher.subprocess.run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, '{"invocation": []}', ""),
-    )
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", lambda *_a, **_k: pytest.fail("Bazel read"))
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_a, **_k: pytest.fail("S3 client"))
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setattr(
         "sys.argv",
-        _publisher_argv(tmp_path / "work", "--ci-conclusion", "cancelled", "--pull-request-head", PR_HEAD_REF),
+        _publisher_argv(
+            tmp_path / "work",
+            "--ci-conclusion",
+            "cancelled",
+            *(["--pull-request-head", pull_request_head] if pull_request_head else []),
+        ),
     )
 
     main()
 
-    assert downloaded == [
-        [
-            str(invocation_id(run_id="33060467222", attempt="1", role="test")),
-            str(invocation_id(run_id="33060467222", attempt="1", role="build")),
-        ]
-    ], "a superseded run must still look for the artifacts its Bazel invocation left behind"
-    assert len(checks) == 1, "the announced in-progress check must still be terminated"
-    assert checks[0]["conclusion"] == "neutral"
+    assert len(checks) == 1
+    assert checks[0]["conclusion"] == "cancelled"
     assert checks[0]["commit_sha"] == HEAD_SHA
 
 
-PR_CHECK_ID = "pr-visual-review:33060467222"
+PR_CHECK_ID = "pr-visual-review:33060467222:1"
 
 
 @dataclass
