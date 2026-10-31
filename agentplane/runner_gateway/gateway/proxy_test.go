@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
@@ -93,6 +94,47 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	))
 	if _, err := client.GetStatus(staleContext, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.NotFound {
 		t.Fatalf("proxy accepted a stale Sandbox UID: %v", err)
+	}
+
+	// The controller can still seal a live Runner while a held suspend is visible in the
+	// Gateway's cache. Other proxy methods remain unavailable in that phase.
+	f.sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	f.sandbox.Status.StopStage = ""
+	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetStatus(f.callerContext(f.appToken), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("GetStatus in held suspend = %v, want Unavailable", err)
+	}
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); err != nil {
+		t.Fatalf("controller Quiesce in held suspend did not reach Runner: %v", err)
+	}
+	if got := runner.quiesceCalls.Load(); got != 1 {
+		t.Fatalf("Runner received %d Quiesce calls, want 1", got)
+	}
+	if _, err := client.Quiesce(f.callerContext(f.appToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("app Quiesce in held suspend = %v, want PermissionDenied", err)
+	}
+	f.sandbox.Status.Incarnation.UID = "replaced-runner-uid"
+	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Quiesce for a replaced Runner = %v, want Unavailable", err)
+	}
+	f.sandbox.Status.Incarnation.UID = string(f.pod.UID)
+	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	f.pod.Status.Conditions[0].Status = corev1.ConditionFalse
+	if err := f.objects.Status().Update(t.Context(), f.pod); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &runnerpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Quiesce with an unready Pod = %v, want Unavailable", err)
+	}
+	if got := runner.quiesceCalls.Load(); got != 1 {
+		t.Fatalf("unready Pod sent a second Quiesce to Runner: %d", got)
 	}
 
 	stopObserver()

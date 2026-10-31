@@ -38,7 +38,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
   nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
-  UID in `status.quiesceAttempt`, so watch events and controller restarts cannot bypass its one-minute
+  UID in `status.quiesceAttempt` together with `status.stopStage: Quiescing` before calling the runner,
+  so watch events and controller restarts cannot bypass its one-minute
   retry deadline; Lease facts can complete the seal sooner. Applies only to a controller configured
   to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
@@ -191,8 +192,13 @@ starts: `Quiescing` while it seals the current incarnation's Sessions before sto
 `Deleting` while a deleted Sandbox with nothing left to seal has its workload and runner credentials
 removed, and `Stopped` once no Pod or VM runs and the state volume is kept. Credential and certificate pending
 reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
-keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
-suspend never interrupts it; a delete does not wait. While a scheduled Pod is Pending, the reason is
+keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap
+or a Session's setup is still running, so the suspend never interrupts it; a delete does not wait.
+This hold has `status.operatingMode: Suspended` with no stop stage. When the hold ends, the controller
+publishes `Quiescing` with the attempt before its Quiesce RPC. The Gateway admits that RPC from the
+controller through an informer snapshot that still shows the held suspend, but denies other Runner
+proxy methods there; incarnation, Pod readiness, connection epoch, and caller checks still apply.
+While a scheduled Pod is Pending, the reason is
 `PullingImage` when its latest Event is an image pull, and the message carries that latest Event;
 when no Event can be read the message says only that the Pod is not running yet.
 

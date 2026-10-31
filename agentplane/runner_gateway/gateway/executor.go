@@ -31,7 +31,7 @@ func (s *executorServer) executionConnection(
 	resolveCtx, cancel := context.WithTimeout(ctx, g.config.ControlTiming.LivenessTimeout)
 	// Only OpenSession is new admission. Existing-session unary operations remain valid through
 	// quiescing and are fenced when Runner drains the held session.
-	view, err := g.sandboxes.destination(resolveCtx, scope.GetDestination(), newSession)
+	view, err := g.sandboxes.destination(resolveCtx, scope.GetDestination(), newSession, false)
 	cancel()
 	if err != nil {
 		return nil, nil, nil, unavailable(err)
