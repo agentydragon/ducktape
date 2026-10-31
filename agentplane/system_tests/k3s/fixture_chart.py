@@ -184,6 +184,7 @@ def environment(
     central_sampler_props = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
+            replicas=_ONE_REPLICA,
             models={
                 GPT6_LUNA_RESPONSES.id: ModelConfig(
                     connection="llm-ingress",
