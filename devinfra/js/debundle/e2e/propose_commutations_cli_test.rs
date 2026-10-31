@@ -535,3 +535,53 @@ fn print_invocation_classifies_read_only_analysis_with_a_draft_write() {
         "{record:#}"
     );
 }
+
+/// A conditional entry (Pass 2 after collapsing the Pass-1 SCCs) is listed
+/// apart from the blockers: `propose-commutations` draws no candidate from
+/// it, and `gate list`/`gate cut` label it as not a current blocker.
+#[test]
+fn conditional_sccs_are_listed_apart_from_blockers() {
+    let rejected = run_rejection_fixture(opaque_split(vec![]));
+    let mut cycles: Vec<Value> = read_json(&rejected.report_path("cycles.json"));
+    let mut conditional = cycles[0].clone();
+    conditional["id"] = 1.into();
+    conditional["rejection"] = "tdz_after_collapsing_pass_one".into();
+    let (modules, cut) = (
+        array(&conditional, "modules").len(),
+        array(&conditional, "cut").len(),
+    );
+    cycles.push(conditional);
+    let edited = rejected.report_root.join("cycles-with-conditional.json");
+    fs::write(&edited, serde_json::to_string(&cycles).unwrap()).unwrap();
+
+    let baseline = propose_rejected(&rejected, &[]);
+    let report = propose_rejected(&rejected, &["--cycles", edited.to_str().unwrap()]);
+    assert_eq!(report["sccs"], baseline["sccs"]);
+    assert_eq!(report["proposals"], baseline["proposals"]);
+    assert_eq!(
+        report["conditional_sccs"],
+        serde_json::json!([{ "scc_id": 1, "modules": modules, "cut": cut }]),
+    );
+
+    let edited = edited.to_str().unwrap();
+    let list = run_debundle(&["gate", "list", "--cycles", edited, "--format", "json"]);
+    assert!(list.status.success(), "{list:?}");
+    let list = parse_stdout_json(&list);
+    let ids = |key: &str| -> Vec<u64> {
+        array(&list, key)
+            .iter()
+            .map(|row| row["id"].as_u64().unwrap())
+            .collect()
+    };
+    assert_eq!(ids("blocking_sccs"), [0]);
+    assert_eq!(ids("conditional_sccs"), [1]);
+    let cut_text = run_debundle(&["gate", "cut", "1", "--cycles", edited, "--format", "text"]);
+    assert!(cut_text.status.success(), "{cut_text:?}");
+    assert!(
+        String::from_utf8_lossy(&cut_text.stdout).starts_with(
+            "conditional SCC #1 (after the Pass-1 cycles are fixed; not a current blocker)"
+        ),
+        "{}",
+        String::from_utf8_lossy(&cut_text.stdout)
+    );
+}

@@ -225,7 +225,12 @@ pub struct GateListEntry {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GateListReport {
+    /// Current blockers: every entry except conditional ones.
     pub blocking_sccs: Vec<GateListEntry>,
+    /// Pass-2 SCCs that remain after the Pass-1 cycles are fixed; not
+    /// current blockers.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditional_sccs: Vec<GateListEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -252,6 +257,9 @@ pub struct GateDescribeReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct GateCutReport {
     pub id: usize,
+    /// The stored [`BlockingSccEntry::rejection`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<BlockingRejection>,
     pub cut: Vec<CycleEdge>,
     /// The stored [`BlockingSccEntry::inert_commuting_edges`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -929,16 +937,17 @@ pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
 
 fn run_list(args: GateListArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
+    let row = |e: &BlockingSccEntry| GateListEntry {
+        id: e.id,
+        module_count: e.modules.len(),
+        cut_count: e.cut.len(),
+        rejection: e.rejection,
+    };
+    let (conditional, blocking): (Vec<_>, Vec<_>) =
+        entries.iter().partition(|e| e.is_conditional());
     let report = GateListReport {
-        blocking_sccs: entries
-            .iter()
-            .map(|e| GateListEntry {
-                id: e.id,
-                module_count: e.modules.len(),
-                cut_count: e.cut.len(),
-                rejection: e.rejection,
-            })
-            .collect(),
+        blocking_sccs: blocking.into_iter().map(row).collect(),
+        conditional_sccs: conditional.into_iter().map(row).collect(),
     };
     let format = peel::OutputFormat::resolve(args.format);
     if peel::print_ndjson_list(&report.blocking_sccs, format)? {
@@ -957,6 +966,18 @@ fn render_list_text(report: &GateListReport, out: &mut String) {
             entry.cut_count,
             rejection_label(entry.rejection),
         ));
+    }
+    if !report.conditional_sccs.is_empty() {
+        out.push_str(&format!(
+            "{} conditional SCC(s) after the Pass-1 cycles are fixed (not current blockers)\n",
+            report.conditional_sccs.len()
+        ));
+        for entry in &report.conditional_sccs {
+            out.push_str(&format!(
+                "  {}  modules={}  cut={}\n",
+                entry.id, entry.module_count, entry.cut_count,
+            ));
+        }
     }
 }
 
@@ -1098,6 +1119,7 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
     let entry = find_entry(&entries, args.id)?;
     let report = GateCutReport {
         id: entry.id,
+        rejection: entry.rejection,
         cut: entry.cut.clone(),
         inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
@@ -1109,11 +1131,20 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
 }
 
 fn render_cut_text(report: &GateCutReport, out: &mut String) {
-    out.push_str(&format!(
-        "blocking SCC #{}: cut of {}\n",
-        report.id,
-        report.cut.len(),
-    ));
+    if report.rejection == Some(BlockingRejection::TdzAfterCollapsingPassOne) {
+        out.push_str(&format!(
+            "conditional SCC #{} (after the Pass-1 cycles are fixed; not a current blocker): cut of {}\n",
+            report.id,
+            report.cut.len(),
+        ));
+    } else {
+        out.push_str(&format!(
+            "blocking SCC #{}: cut of {}{}\n",
+            report.id,
+            report.cut.len(),
+            rejection_label(report.rejection),
+        ));
+    }
     for edge in &report.cut {
         render_edge(edge, out);
     }

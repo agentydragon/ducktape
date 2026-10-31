@@ -108,6 +108,14 @@ impl ProposeCommutationsArgs {
     }
 }
 
+/// A `cycles.json` entry listed only for after the Pass-1 cycles are fixed.
+#[derive(Debug, Serialize)]
+pub struct ConditionalScc {
+    pub scc_id: usize,
+    pub modules: usize,
+    pub cut: usize,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ProposeCommutationsReport {
     pub chunk: String,
@@ -116,6 +124,10 @@ pub struct ProposeCommutationsReport {
     /// One row per blocking SCC: whether its proposals together break it,
     /// and, when they cannot, the edges that keep it cyclic. Never limited.
     pub sccs: Vec<SccOutcome>,
+    /// Pass-2 SCCs that remain after the Pass-1 cycles are fixed. Not
+    /// current blockers, so no candidate is drawn from them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditional_sccs: Vec<ConditionalScc>,
     /// Size of each list before `--limit` cut it.
     pub totals: ReportTotals,
     /// Ranked best first; `rank` is the 1-based position.
@@ -323,7 +335,18 @@ pub(super) fn run(
     context: &VerifiedGraphSourceContext,
 ) -> Result<()> {
     let cycles_path = args.resolved_cycles_path();
-    let sccs = crate::gate::load_blocking_sccs(&cycles_path)?;
+    let (conditional, sccs): (Vec<BlockingSccEntry>, Vec<BlockingSccEntry>) =
+        crate::gate::load_blocking_sccs(&cycles_path)?
+            .into_iter()
+            .partition(BlockingSccEntry::is_conditional);
+    let conditional_sccs = conditional
+        .iter()
+        .map(|entry| ConditionalScc {
+            scc_id: entry.id,
+            modules: entry.modules.len(),
+            cut: entry.cut.len(),
+        })
+        .collect();
     let report = crate::load_dependency_graph_report(&args.graph)?;
     let authored_modules = match &args.modules {
         Some(root) => Some(authored_module_paths(root)?),
@@ -364,6 +387,7 @@ pub(super) fn run(
         graph: args.graph.clone(),
         cycles: cycles_path,
         sccs: scc_outcomes,
+        conditional_sccs,
         totals,
         proposals,
         needs_co_location,
@@ -1339,6 +1363,12 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
         report.rejected.len(),
         report.totals.rejected,
     ));
+    for scc in &report.conditional_sccs {
+        out.push_str(&format!(
+            "  SCC {} ({} modules, cut {}): conditional, after the Pass-1 cycles are fixed; not a current blocker, no candidates drawn\n",
+            scc.scc_id, scc.modules, scc.cut
+        ));
+    }
     for scc in &report.sccs {
         if scc.unproven_endpoints > 0 {
             out.push_str(&format!(

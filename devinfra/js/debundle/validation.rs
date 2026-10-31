@@ -157,6 +157,12 @@ impl BlockingRejection {
 }
 
 impl BlockingSccEntry {
+    /// A Pass-2 SCC reported only for after the Pass-1 cycles are fixed;
+    /// not a current blocker.
+    pub fn is_conditional(&self) -> bool {
+        self.rejection == Some(BlockingRejection::TdzAfterCollapsingPassOne)
+    }
+
     /// Project a rich [`CycleReport`] onto the trimmed wire shape.
     /// `id` is the entry's index in the `cycles.json` array.
     pub fn from_cycle_report(id: usize, cycle: &CycleReport) -> Self {
