@@ -69,8 +69,11 @@ executor-session loss. None covers this sampling boundary. The rollout's
 [#13138](https://github.com/agentydragon/ducktape/pull/13138) drains inbound gRPC; active sampler
 drivers have a separate lifetime and remain canceled on shutdown.
 
-Track the ownership and rollout problem as
-[`CENTRAL_SAMPLER_REPLICA_ROLLOUT`](../plans/task_dag.md#central_sampler_replica_rollout--multiple-replicas-and-rolls-that-preserve-active-agents).
+The current [runtime contract](../x/central_sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../x/central_sampler/docs/blocked_session_recovery.md) own the supported recovery
+behavior. Dedicated rollout acceptance is deferred; revisit
+[a focused follow-up](../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
+if normal use exposes continued instability.
 Scratch captures and the offline protobuf decoder are under `/tmp/sampling-faa8637e/` and
 are ephemeral. The ingress stream can be located in Loki by the request ID above, using
 `namespace="agentplane-staging", app="llm-ingress"` and `01:49:55Z`–`01:50:30Z`.

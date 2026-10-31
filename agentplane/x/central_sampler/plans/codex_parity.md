@@ -8,8 +8,10 @@ are in the [README](../README.md#codex-features-left-out).
 ## Selected workflow work
 
 The [stakeholder priorities](../../../plans/task_dag.md#stakeholder-priorities-2026-10-30-pdt)
-select resilience against rolls and JS/exec faults first, followed by caller-privilege
-Agentplane-level Session spawning and communication for a daily CI-maintenance agent.
+prioritize concrete reliability regressions, followed by caller-privilege Agentplane-level Session
+spawning and communication for a daily CI-maintenance agent. The operator deferred dedicated
+disruption/continuation acceptance pending normal use; revisit it only on
+[observed instability](../../../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use).
 Use Codex multi-agent v2, its agent message board and Claude Code subagents as reference designs;
 implement the Agentplane Session workflow rather than porting a native child model wholesale.
 Agent discovery/use and sound domain contracts are acceptance criteria. The gaps below are

@@ -269,6 +269,18 @@ or access policy. Multiagent authority decisions can use the evidence without re
 
 On a selected model/effort capability gap. [Runtime control contract](../docs/runtime_control.md); admission is not native effect.
 
+## Sampler reliability follow-ups
+
+### `CENTRAL_SAMPLER_RELIABILITY_FOLLOWUP` — investigate instability observed in normal use
+
+Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes sampler or JS/exec
+instability. The dedicated continuation/disruption exercise, coverage audit and additional acceptance
+tests are not scheduled and do not gate the sprint or daily CI agent. On a concrete failure, retain
+the Session's evidence, reproduce the affected boundary and select proportional regression coverage.
+Existing tests and the [runtime/recovery contracts](../x/central_sampler/SPEC.md#runtime-and-effects)
+remain authoritative; the [deployed evidence](../x/central_sampler/docs/rollout_acceptance.md)
+records what was actually exercised.
+
 ## Runtime redesign and offline acceptance
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.

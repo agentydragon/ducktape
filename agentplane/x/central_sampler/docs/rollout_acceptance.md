@@ -51,3 +51,12 @@ migration and History-delivery convergence; it does not demonstrate an active pr
 JavaScript cell surviving the roll, or subsequent model-driven continuation. The existing blocked
 Sessions retain their original evidence and require their supported, explicitly authorized recovery
 paths. No live agent turn or fault-injection scenario was run for this reconciliation.
+
+## Follow-up policy
+
+Operator decision, 2026-10-31: evaluate reliability through normal use and defer dedicated
+continuation/disruption acceptance, its coverage audit and additional tests. These checks do not
+gate the sprint or daily CI agent. Revisit a
+[focused follow-up](../../../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
+only if normal use exposes continued instability. This decision does not extend the evidence above
+to unexercised scenarios.
