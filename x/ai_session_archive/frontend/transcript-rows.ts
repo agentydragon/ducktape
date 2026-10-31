@@ -220,7 +220,6 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   if (parsed.type === "response_item" && payload) {
     const type = string(payload.type);
     if (type !== null && (TOOL_CALL_TYPES.has(type) || TOOL_OUTPUT_TYPES.has(type))) return "activity";
-    if (payload.is_error === true) return "record";
     if (type === "message") {
       if (payload.role === "user") return "user";
       if (payload.role === "assistant") return "assistant";
@@ -499,33 +498,36 @@ function codexToolStep(event: ToolEvent, call: ToolEvent | null, records: EventR
   const callPayload = call?.payload ?? event.payload;
   const outputPayload = event.kind === "output" ? event.payload : null;
   const callType = string(callPayload.type);
-  const failed =
-    callPayload.is_error === true ||
-    callPayload.error != null ||
-    outputPayload?.is_error === true ||
-    outputPayload?.error != null;
   return {
     key: event.key,
     kind: "tool",
     records,
     name: missingCall
-      ? (nonemptyString(outputPayload?.name) ?? "Tool result")
+      ? "Tool result"
       : (nonemptyString(callPayload.name) ?? (callType === "custom_tool_call" ? "Custom tool" : "Tool call")),
-    input: missingCall ? null : displayFields(callPayload, ["arguments", "input"]),
-    output:
-      outputPayload === null ? null : displayFields(outputPayload, ["output", "content", "stdout", "stderr", "error"]),
-    failed,
+    input: missingCall ? null : codexToolInput(callPayload),
+    output: outputPayload === null ? null : codexToolOutput(outputPayload.output),
+    // Codex's typed tool-output record has no failure flag. Keep error-like extra fields in Raw JSONL.
+    failed: false,
     missingCall,
   };
 }
 
-function displayFields(value: ObjectValue, keys: readonly string[]): string | null {
-  const fields = keys.flatMap((key) =>
-    value[key] === undefined || value[key] === null ? [] : [[key, value[key]] as const]
-  );
-  if (fields.length === 0) return null;
-  if (fields.length === 1) return displayValue(fields[0][1]);
-  return displayValue(Object.fromEntries(fields));
+function codexToolInput(payload: ObjectValue): string | null {
+  if (payload.type === "function_call") return displayValue(payload.arguments);
+  if (payload.type === "custom_tool_call") return displayValue(payload.input);
+  return null;
+}
+
+function codexToolOutput(value: unknown): string | null {
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => object(item)?.type === "input_text" && typeof object(item)?.text === "string")
+  ) {
+    return value.map((item) => object(item)!.text as string).join("\n");
+  }
+  return displayValue(value);
 }
 
 function displayValue(value: unknown): string | null {
@@ -550,7 +552,13 @@ function claudeThinkingEntries(record: EventRecord): Array<{ blockIndex: number;
 }
 
 function reasoningText(payload: ObjectValue): string | null {
-  return plaintext(payload.summary);
+  if (!Array.isArray(payload.summary)) return null;
+  const chunks = payload.summary.flatMap((value) => {
+    const part = object(value);
+    if (part?.type !== "summary_text" || typeof part.text !== "string" || part.text.trim().length === 0) return [];
+    return [part.text];
+  });
+  return chunks.length === 0 ? null : chunks.join("\n");
 }
 
 function agentMessageContent(payload: ObjectValue): AgentMessageContent | null {
@@ -574,32 +582,9 @@ function agentMessageContent(payload: ObjectValue): AgentMessageContent | null {
   return text === null ? null : { kind: "text", text };
 }
 
-const ENCRYPTED_TEXT_TYPES = new Set([
-  "encrypted",
-  "encrypted_content",
-  "redacted",
-  "redacted_text",
-  "redacted_thinking",
-]);
-// Codex archives can store the Agentplane routing header as text before encrypted message content.
+// Codex archives can store the agent-routing header as text before encrypted message content.
 const AGENT_ROUTING_PREAMBLE =
   /^Message Type: MESSAGE\r?\nTask name: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nSender: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nPayload:\r?\n/;
-
-/** Reads ordinary text fields and deliberately never inspects encrypted-content fields. */
-function plaintext(value: unknown): string | null {
-  if (typeof value === "string") return value.trim().length === 0 ? null : value;
-  if (Array.isArray(value)) {
-    const chunks = value.flatMap((item) => {
-      const text = plaintext(item);
-      return text === null ? [] : [text];
-    });
-    return chunks.length === 0 ? null : chunks.join("\n");
-  }
-  const item = object(value);
-  if (item === null || ENCRYPTED_TEXT_TYPES.has(String(item.type))) return null;
-  if (typeof item.text === "string" && item.text.trim().length > 0) return item.text;
-  return plaintext(item.content) ?? plaintext(item.message);
-}
 
 function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {
   const byOrdinal = new Map<number, EventRecord>();

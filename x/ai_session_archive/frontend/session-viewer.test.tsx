@@ -1146,6 +1146,56 @@ it("keeps records without readable content compact and inspectable", async () =>
   }
 });
 
+it("keeps unsupported payload fields and envelopes in source inspection", async () => {
+  const records = [
+    {
+      parsed: {
+        type: "response_item",
+        payload: {
+          type: "future_response_item",
+          message: "Do not render this guessed message as prose.",
+          summary: "Do not render this guessed summary as prose.",
+          output: "Do not render this guessed output as prose.",
+        },
+      },
+      hiddenText: "Do not render this guessed",
+    },
+    {
+      parsed: {
+        type: "event_msg",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Do not infer Codex payload content from another envelope." }],
+        },
+      },
+      hiddenText: "Do not infer Codex payload content from another envelope.",
+    },
+  ];
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listEvents() {
+      return {
+        data: records.map(({ parsed }, index) => ({
+          ordinal: index + 1,
+          parsed,
+          kind: null,
+          timestamp: null,
+          raw_base64: btoa(JSON.stringify(parsed)),
+        })),
+        next_cursor: null,
+      };
+    },
+  };
+  const view = await renderViewer(api);
+  for (const [index, { hiddenText }] of records.entries()) {
+    const row = view.querySelector<HTMLElement>(`[data-event-ordinal="${index + 1}"]`)!;
+    expect(row.textContent).not.toContain(hiddenText);
+    await act(async () => findControl(row, "Raw JSONL record").click());
+    expect(row.textContent).toContain(hiddenText);
+  }
+});
+
 it("renders Claude attachments as individually expandable widgets", async () => {
   const view = await renderViewer(sessionFixtureApi, "/sessions/claude-attachments-fixture");
   expect(view.textContent).not.toContain("fixture hook completed");

@@ -93,7 +93,7 @@ describe("archive transcript grouping", () => {
   it("does not pair Claude results with Codex calls that share an ID", () => {
     const codexCall = record(1, {
       type: "response_item",
-      payload: { type: "function_call", call_id: "shared-id", name: "shell", arguments: { command: "true" } },
+      payload: { type: "function_call", call_id: "shared-id", name: "shell", arguments: '{"command":"true"}' },
     });
     const claudeResult = record(2, {
       type: "user",
@@ -266,7 +266,7 @@ describe("archive transcript grouping", () => {
   it("pairs Codex calls at result positions across metadata and commentary", () => {
     const firstCall = record(1, {
       type: "response_item",
-      payload: { type: "function_call", call_id: "same-id", name: "read", arguments: { path: "fixture.txt" } },
+      payload: { type: "function_call", call_id: "same-id", name: "read", arguments: '{"path":"fixture.txt"}' },
     });
     const bookkeeping = record(2, { type: "event_msg", payload: { type: "token_count" } });
     const commentary = record(3, {
@@ -287,12 +287,22 @@ describe("archive transcript grouping", () => {
       payload: {
         type: "function_call_output",
         call_id: "same-id",
-        output: { stdout: "first", stderr: "warning" },
+        output: [
+          { type: "input_text", text: "first output" },
+          { type: "input_text", text: "warning" },
+        ],
       },
     });
     const secondOutput = record(6, {
       type: "response_item",
-      payload: { type: "custom_tool_call_output", call_id: "same-id", output: ["second", "detail"] },
+      payload: {
+        type: "custom_tool_call_output",
+        call_id: "same-id",
+        output: [
+          { type: "input_text", text: "second output" },
+          { type: "input_image", image_url: "data:image/png;base64,c2FuaXRpemVk", detail: "low" },
+        ],
+      },
     });
     const events = [firstCall, bookkeeping, commentary, secondCall, firstOutput, secondOutput];
     const rows = transcriptRows(events);
@@ -311,7 +321,7 @@ describe("archive transcript grouping", () => {
         records: [firstCall, firstOutput],
         name: "read",
         input: '{"path":"fixture.txt"}',
-        output: '{"stdout":"first","stderr":"warning"}',
+        output: "first output\nwarning",
         failed: false,
         missingCall: false,
       },
@@ -321,7 +331,8 @@ describe("archive transcript grouping", () => {
         records: [secondCall, secondOutput],
         name: "write",
         input: '{"value":2}',
-        output: '["second","detail"]',
+        output:
+          '[{"type":"input_text","text":"second output"},{"type":"input_image","image_url":"data:image/png;base64,c2FuaXRpemVk","detail":"low"}]',
         failed: false,
         missingCall: false,
       },
@@ -337,7 +348,7 @@ describe("archive transcript grouping", () => {
     });
     const secondReasoning = record(2, {
       type: "response_item",
-      payload: { type: "reasoning", summary: "The values differ." },
+      payload: { type: "reasoning", summary: [], encrypted_content: "[omitted]" },
     });
     const agentMessage = record(3, {
       type: "response_item",
@@ -373,7 +384,6 @@ describe("archive transcript grouping", () => {
 
     expect(activity.steps).toEqual([
       { key: "1", kind: "reasoning", records: [firstReasoning], text: "Compare the two values." },
-      { key: "2", kind: "reasoning", records: [secondReasoning], text: "The values differ." },
       {
         key: "3",
         kind: "subagent",
@@ -391,13 +401,23 @@ describe("archive transcript grouping", () => {
         content: { kind: "encrypted", text: null },
       },
     ]);
-    expect(summarizeActivity(activity.steps)).toBe("2 reasoning steps, 2 agent messages");
+    expect(summarizeActivity(activity.steps)).toBe("1 reasoning step, 2 agent messages");
     expect(
       activity.steps.find((step) => step.kind === "subagent" && step.records[0] === encryptedMessage)
     ).toMatchObject({
       kind: "subagent",
       content: { kind: "encrypted", text: null },
     });
+  });
+
+  it("does not treat a scalar Codex reasoning summary as plaintext", () => {
+    const reasoning = record(1, {
+      type: "response_item",
+      payload: { type: "reasoning", summary: "untyped summary" },
+    });
+
+    expect(recordPresentation(reasoning)).toBe("metadata");
+    expect(transcriptRows([reasoning])).toEqual([{ key: "metadata:1", kind: "metadata", records: [reasoning] }]);
   });
 
   it("preserves readable content alongside encrypted agent-message blocks", () => {
@@ -438,10 +458,13 @@ describe("archive transcript grouping", () => {
   });
 
   it("keeps encrypted-only reasoning uncounted and shows orphan Codex results", () => {
-    const emptyReasoning = record(1, { type: "response_item", payload: { type: "reasoning", summary: [] } });
+    const emptyReasoning = record(1, {
+      type: "response_item",
+      payload: { type: "reasoning", summary: [], encrypted_content: "[omitted]" },
+    });
     const encryptedReasoning = record(2, {
       type: "response_item",
-      payload: { type: "reasoning", summary: [{ type: "encrypted", text: "ciphertext" }] },
+      payload: { type: "reasoning", summary: [], encrypted_content: "[omitted]" },
     });
     const orphan = record(3, {
       type: "response_item",
@@ -517,16 +540,37 @@ describe("archive transcript grouping", () => {
       missingCall: false,
     });
     expect(summarizeActivity(callOnly.steps)).toBe("1 tool call");
+
+    const unknownOutput = record(12, {
+      type: "response_item",
+      payload: {
+        type: "custom_tool_call_output",
+        call_id: "unknown-output",
+        output: [{ type: "future_output_block", text: "keep structured" }],
+      },
+    });
+    expect(toolSteps(activityRow(transcriptRows([unknownOutput])[0]).steps)[0].output).toBe(
+      '[{"type":"future_output_block","text":"keep structured"}]'
+    );
   });
 
-  it("surfaces Codex errors and keeps malformed or unknown source records inspectable", () => {
+  it("does not infer Codex tool failure from extra fields and preserves Claude error handling", () => {
     const call = record(1, {
       type: "response_item",
       payload: { type: "custom_tool_call", call_id: "failed", name: "run", input: "{}" },
     });
     const failed = record(2, {
       type: "response_item",
-      payload: { type: "custom_tool_call_output", call_id: "failed", is_error: true, error: "command failed" },
+      payload: {
+        type: "custom_tool_call_output",
+        call_id: "failed",
+        name: "guessed tool name",
+        is_error: true,
+        error: "guessed error text",
+        stdout: "guessed stdout",
+        stderr: "guessed stderr",
+        content: "guessed content",
+      },
     });
     const unknown = record(3, { type: "future_record_type" });
     const malformed = { ...record(4, null), parse_error: "invalid JSON" };
@@ -540,8 +584,8 @@ describe("archive transcript grouping", () => {
     expect(toolSteps(activityRow(rows[0]).steps)[0]).toMatchObject({
       key: "2",
       name: "run",
-      output: "command failed",
-      failed: true,
+      output: null,
+      failed: false,
       missingCall: false,
     });
     expect(rows.slice(1)).toEqual([
