@@ -35,9 +35,9 @@ type SystemdOwner struct {
 	ScopeID           SystemdScopeID
 }
 
-// SystemdPolicy describes systemd-owned containment, independently of a launch.
+// SystemdLauncher describes systemd-owned containment, independently of a launch.
 // Prepare assigns scope from durable owner identity before any Session store opens.
-type SystemdPolicy struct {
+type SystemdLauncher struct {
 	Slice                          string
 	AgentUID, AgentGID             uint32
 	BlockDevices                   []string
@@ -50,7 +50,7 @@ type SystemdPolicy struct {
 }
 
 // ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
-func (p *SystemdPolicy) ValidateProcessLimits(limits ResourceLimits) error {
+func (p *SystemdLauncher) ValidateProcessLimits(limits ResourceLimits) error {
 	if err := limits.Validate(); err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func property(name string, value any) systemd.Property {
 	return systemd.Property{Name: name, Value: dbus.MakeVariant(value)}
 }
 
-func (p *SystemdPolicy) properties(limits ResourceLimits) ([]systemd.Property, error) {
+func (p *SystemdLauncher) properties(limits ResourceLimits) ([]systemd.Property, error) {
 	if err := p.ValidateProcessLimits(limits); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func systemdMissing(err error) bool {
 }
 
 // Prepare preserves the Runner's systemd owner and lifetime directory.
-func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
+func (p *SystemdLauncher) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
 	return p.PrepareForOwner(stateDir, sandboxUID, SystemdOwner{
 		Unit: runnerUnit, LifetimeDirectory: runnerLifetimeDirectory, ScopeID: SystemdRunnerScopeID,
 	})
@@ -145,9 +145,9 @@ func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error
 
 // PrepareForOwner validates and applies the owner scope, fences units left by a
 // prior owner incarnation, and returns a factory for processes in that scope.
-func (p *SystemdPolicy) PrepareForOwner(stateDir, sandboxUID string, owner SystemdOwner) (*Supervisor, error) {
+func (p *SystemdLauncher) PrepareForOwner(stateDir, sandboxUID string, owner SystemdOwner) (*Supervisor, error) {
 	if p == nil {
-		return nil, errors.New("VM process policy is required")
+		return nil, errors.New("VM process launcher is required")
 	}
 	if err := owner.validate(); err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (owner SystemdOwner) validate() error {
 	return nil
 }
 
-func (p *SystemdPolicy) prepareOwner(owner SystemdOwner) error {
+func (p *SystemdLauncher) prepareOwner(owner SystemdOwner) error {
 	marker, err := prepareSystemdLifetime(owner.LifetimeDirectory)
 	if err != nil {
 		return err
@@ -238,14 +238,14 @@ func (p *SystemdPolicy) prepareOwner(owner SystemdOwner) error {
 	return nil
 }
 
-// newSupervisor creates a factory from an immutable snapshot of prepared policy state.
-func (p *SystemdPolicy) newSupervisor() *Supervisor {
+// newSupervisor creates a factory from an immutable snapshot of prepared launcher state.
+func (p *SystemdLauncher) newSupervisor() *Supervisor {
 	prepared := *p
 	prepared.BlockDevices = append([]string(nil), p.BlockDevices...)
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
-		policy := prepared
-		policy.BlockDevices = append([]string(nil), prepared.BlockDevices...)
-		return &systemdBackend{config: config, policy: &policy}
+		launcher := prepared
+		launcher.BlockDevices = append([]string(nil), prepared.BlockDevices...)
+		return &systemdBackend{config: config, launcher: &launcher}
 	}}
 }
 
@@ -358,11 +358,11 @@ func systemdGroupEmpty(group string) (bool, error) {
 	return false, errors.New("native cgroup.events has no populated state")
 }
 
-func (p *SystemdPolicy) identityProperties() []systemd.Property {
+func (p *SystemdLauncher) identityProperties() []systemd.Property {
 	return []systemd.Property{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
 }
 
-func (p *SystemdPolicy) parentUnit() string {
+func (p *SystemdLauncher) parentUnit() string {
 	if p.lifetimeUnit != "" {
 		return p.lifetimeUnit
 	}

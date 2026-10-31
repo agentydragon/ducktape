@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -52,7 +52,7 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 		t.Error("operation became consumable before its completion was published")
 	}
 	type consumeResult struct {
-		op   *operation.Operation
+		op   *oneoff.Operation
 		done bool
 	}
 	consumed := make(chan consumeResult, 1)

@@ -44,7 +44,7 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   dependencies and owns no Runner lifecycle coordinator.
 - `lifecycle/`: the narrow shared COSI contract for Runner desired state and aggregate status. The root
   Runner controller and independent component controllers use its typed readers and writers.
-- `operation/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
+- `../env/oneoff/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
   ordering and worker joins. Session, bootstrap and Codex app-server retain their typed COSI result
   publication and deletion adapters.
 - `executor/`: the PID-1 companion mode for Pod Codex execution, its Unix control protocol and reaper.
@@ -73,7 +73,7 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
   lock, and filesystem durability helpers. SQLite remains the separate journal authority.
 - `workspace/`: workspace path containment and creation. Runner supplies the configured helper
   launcher at the composition boundary, keeping process ownership and generation policy in Runner.
-- `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
+- `../env/supervision/`: the shared native-process API, COSI process resources and controller, host registry,
   and private systemd, PID1 and subprocess backends. Runner wires its `Host` and controller into the same COSI
   engine as its lifecycle controllers; the package owns streams, exit observation and
   execution-domain cleanup. `systemd/` contains the static guest units. See

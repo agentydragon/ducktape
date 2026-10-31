@@ -3,7 +3,7 @@
 COSI controllers own demand, readiness, restart backoff, quiesce and sealing. They schedule
 asynchronous operations whose completion wakes reconciliation. Harness and server code builds
 `supervision.ProcessConfig` values containing command, working directory and explicit environment.
-The reusable process-lifetime controller, its resources and `Host` registry live in `supervision/`.
+The reusable process-lifetime controller, its resources and `Host` registry live in `agentplane/env/supervision/`.
 Runner injects the lifecycle context, state, namespace, shared worker tracking and error callback into
 the host, then registers `Host.Controller()` in the same COSI engine as its other lifecycle
 controllers. The host does not start a second runtime. Runner's `launchProcess` adapter in

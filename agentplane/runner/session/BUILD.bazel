@@ -12,7 +12,7 @@ go_library(
         "//agentplane/runner/configuration:__pkg__",
     ],
     deps = [
-        "//agentplane/env/operation",
+        "//agentplane/env/oneoff",
         "//agentplane/env/supervision",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
@@ -54,7 +54,7 @@ go_test(
     embed = [":session"],
     race = "on",
     deps = [
-        "//agentplane/env/operation",
+        "//agentplane/env/oneoff",
         "//agentplane/env/supervision",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

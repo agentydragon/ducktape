@@ -8,7 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -101,7 +101,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			preparing := make(chan context.Context, 1)
 			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 			defer cancel()
-			var op *operation.Operation
+			var op *oneoff.Operation
 			withSessionControllerGate(t, s, &gate, func() {
 				setSessionPhase(t, s, Preparing)
 				s.connection.readers.Add(2)
@@ -268,7 +268,7 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		op := operation.New(m.ctx)
+		op := oneoff.New(m.ctx)
 		op.Register(&s.work)
 		s.mu.Lock()
 		s.preparation = op

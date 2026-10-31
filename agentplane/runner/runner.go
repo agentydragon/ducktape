@@ -75,7 +75,7 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		if config.Codex == nil {
 			return nil, errors.New("Codex exec-server requires a configured Codex harness")
 		}
-		if err := config.CodexExecServer.Validate(config.VMProcessPolicy); err != nil {
+		if err := config.CodexExecServer.Validate(config.VMProcessLauncher); err != nil {
 			return nil, err
 		}
 		if adapters != nil && (adapters.Start == nil || adapters.Probe == nil) {
@@ -87,7 +87,7 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 	if _, present := config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
 		return nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
 	}
-	if config.PodPID1 && config.VMProcessPolicy != nil {
+	if config.PodPID1 && config.VMProcessLauncher != nil {
 		return nil, errors.New("Pod PID1 and VM systemd supervision are mutually exclusive")
 	}
 	owner, err := retained.OpenOwner(config.StateDir)
@@ -103,16 +103,16 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		}
 	}
 	var workspaceSupervisor, executorSupervisor *supervision.Supervisor
-	if config.VMProcessPolicy != nil {
-		supervisor, err = config.VMProcessPolicy.Prepare(config.StateDir, config.Launch.Sandbox.UID)
+	if config.VMProcessLauncher != nil {
+		supervisor, err = config.VMProcessLauncher.Prepare(config.StateDir, config.Launch.Sandbox.UID)
 		if err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
 		workspaceSupervisor = supervisor
 	}
-	if config.CodexExecServer != nil && config.CodexExecServer.Isolation != nil {
-		executorSupervisor, err = config.CodexExecServer.Isolation.Prepare(config.StateDir, config.Launch.Sandbox.UID)
+	if config.CodexExecServer != nil && config.CodexExecServer.Launcher != nil {
+		executorSupervisor, err = config.CodexExecServer.Launcher.Prepare(config.StateDir, config.Launch.Sandbox.UID)
 		if err != nil {
 			_ = owner.Close()
 			return nil, err

@@ -40,12 +40,12 @@ func TestProcessResourceLimitsMustFitAggregate(t *testing.T) {
 		CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32,
 		ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1,
 	}
-	groups := &SystemdPolicy{AggregateLimits: aggregate}
-	if err := groups.ValidateProcessLimits(process); err != nil {
+	launcher := &SystemdLauncher{AggregateLimits: aggregate}
+	if err := launcher.ValidateProcessLimits(process); err != nil {
 		t.Fatalf("valid process limits rejected: %v", err)
 	}
 	process.MemoryMaxBytes = aggregate.MemoryMaxBytes + 1
-	if err := groups.ValidateProcessLimits(process); err == nil {
+	if err := launcher.ValidateProcessLimits(process); err == nil {
 		t.Fatal("process memory max larger than aggregate accepted")
 	}
 }

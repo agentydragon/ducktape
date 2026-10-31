@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -86,7 +86,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		return err
 	}
 	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
-		for _, slot := range []**operation.Operation{&s.halting, &s.sealing} {
+		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.manager.forgetOperation(op)
 			}

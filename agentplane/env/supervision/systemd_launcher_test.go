@@ -45,16 +45,16 @@ func TestPrepareSystemdOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := SystemdOwner{Unit: "agentplane-execution-service.service", LifetimeDirectory: directory, ScopeID: "execution-service"}
-	policy := &SystemdPolicy{}
-	if err := policy.prepareOwner(owner); err != nil {
+	launcher := &SystemdLauncher{}
+	if err := launcher.prepareOwner(owner); err != nil {
 		t.Fatal(err)
 	}
-	if policy.parentUnit() != owner.Unit {
-		t.Fatalf("parent unit = %q, want %q", policy.parentUnit(), owner.Unit)
+	if launcher.parentUnit() != owner.Unit {
+		t.Fatalf("parent unit = %q, want %q", launcher.parentUnit(), owner.Unit)
 	}
 	wantMarker := filepath.Join(directory, invocationID)
-	if policy.lifetimeMarker != wantMarker {
-		t.Fatalf("lifetime marker = %q, want %q", policy.lifetimeMarker, wantMarker)
+	if launcher.lifetimeMarker != wantMarker {
+		t.Fatalf("lifetime marker = %q, want %q", launcher.lifetimeMarker, wantMarker)
 	}
 	info, err := os.Stat(wantMarker)
 	if err != nil {

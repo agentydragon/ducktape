@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
@@ -82,7 +82,7 @@ type Host struct {
 
 	inputMu sync.Mutex
 	mu      sync.Mutex
-	probeOp *operation.Operation
+	probeOp *oneoff.Operation
 }
 
 func NewHost(config Config, deps Dependencies, adapters Adapters) (*Host, error) {
@@ -170,7 +170,7 @@ func (h *Host) startProbe(work func(context.Context) error) {
 		h.mu.Unlock()
 		return
 	}
-	op := operation.New(h.ctx)
+	op := oneoff.New(h.ctx)
 	h.probeOp = op
 	op.Register(h.workers)
 	h.mu.Unlock()
@@ -211,8 +211,8 @@ func (h *Host) cancelProbe() {
 	}
 }
 
-func (h *Host) takeProbe() (*operation.Operation, bool) {
-	op, done := operation.Consume(&h.mu, &h.probeOp)
+func (h *Host) takeProbe() (*oneoff.Operation, bool) {
+	op, done := oneoff.Consume(&h.mu, &h.probeOp)
 	if !done {
 		return nil, false
 	}
@@ -224,7 +224,7 @@ func (h *Host) takeProbe() (*operation.Operation, bool) {
 	return op, true
 }
 
-func (h *Host) publishOperation(op *operation.Operation, done bool) error {
+func (h *Host) publishOperation(op *oneoff.Operation, done bool) error {
 	value := operationResult{Controller: ControllerName, Done: done}
 	return cosi.Publish(h.ctx, h.state, componentResource(op.ID(), value), value, HostOwner)
 }

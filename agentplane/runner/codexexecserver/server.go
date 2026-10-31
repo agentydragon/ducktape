@@ -31,11 +31,11 @@ const (
 type Config struct {
 	URL             string
 	ContainerSocket string
-	Isolation       *supervision.SystemdPolicy
+	Launcher        *supervision.SystemdLauncher
 	Readiness       Readiness
 }
 
-func (c Config) Validate(harnessIsolation *supervision.SystemdPolicy) error {
+func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
 	if err := validateURL(c.URL); err != nil {
 		return err
 	}
@@ -43,22 +43,22 @@ func (c Config) Validate(harnessIsolation *supervision.SystemdPolicy) error {
 		return err
 	}
 	if c.ContainerSocket != "" {
-		if !filepath.IsAbs(c.ContainerSocket) || c.Isolation != nil || harnessIsolation != nil {
+		if !filepath.IsAbs(c.ContainerSocket) || c.Launcher != nil || harnessLauncher != nil {
 			return errors.New("container executor requires an absolute control socket and container-owned limits")
 		}
 		return nil
 	}
-	if harnessIsolation == nil || c.Isolation == nil {
-		return errors.New("supervised executor requires cgroup isolation and explicit leaf limits")
+	if harnessLauncher == nil || c.Launcher == nil {
+		return errors.New("supervised executor requires distinct workload and executor launchers with explicit leaf limits")
 	}
-	if harnessIsolation.Slice != supervision.WorkloadSlice || c.Isolation.Slice != supervision.ExecutorSlice {
-		return errors.New("executor and harness policies require their distinct systemd slices")
+	if harnessLauncher.Slice != supervision.WorkloadSlice || c.Launcher.Slice != supervision.ExecutorSlice {
+		return errors.New("executor and harness launchers require their distinct systemd slices")
 	}
-	for _, groups := range []*supervision.SystemdPolicy{harnessIsolation, c.Isolation} {
-		if err := groups.AggregateLimits.Validate(); err != nil {
+	for _, launcher := range []*supervision.SystemdLauncher{harnessLauncher, c.Launcher} {
+		if err := launcher.AggregateLimits.Validate(); err != nil {
 			return err
 		}
-		if err := groups.ValidateProcessLimits(groups.ProcessLimits); err != nil {
+		if err := launcher.ValidateProcessLimits(launcher.ProcessLimits); err != nil {
 			return err
 		}
 	}

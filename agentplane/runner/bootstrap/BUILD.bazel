@@ -14,7 +14,7 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
-        "//agentplane/env/operation",
+        "//agentplane/env/oneoff",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/cosi",
         "//agentplane/runner/lifecycle",

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -221,7 +221,7 @@ func TestDesiredChangeWakesHostWithoutRuntimeWrite(t *testing.T) {
 		t.Fatal("initial app-server runtime was not observed")
 	}
 	f.host.mu.Lock()
-	f.host.initializing = operation.New(f.ctx)
+	f.host.initializing = oneoff.New(f.ctx)
 	f.host.initializing.Cancel()
 	f.host.mu.Unlock()
 	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)

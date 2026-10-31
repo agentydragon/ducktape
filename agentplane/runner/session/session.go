@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/supervision"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -43,14 +43,14 @@ type Session struct {
 	processID                                              string
 	processState                                           runnerpb.ProcessState
 	nativeStop                                             stopReason
-	preparation, dispatching, inspection, halting, sealing *operation.Operation
+	preparation, dispatching, inspection, halting, sealing *oneoff.Operation
 	controlDispatches                                      map[string]chan struct{}
 	reconciliations                                        []*pendingReconciliation
 	activeTurn                                             string
 	setup                                                  runnerpb.SetupState
 	launch                                                 runnerpb.LaunchOutcome
 	failure                                                *uint64
-	setupJob, stopping                                     *operation.Operation
+	setupJob, stopping                                     *oneoff.Operation
 	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
 	operationStartFailed                                   bool

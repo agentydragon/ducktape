@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/env/operation"
+	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
@@ -65,7 +65,7 @@ type Host struct {
 
 	requestMu sync.Mutex
 	mu        sync.Mutex
-	operation *operation.Operation
+	operation *oneoff.Operation
 	logMu     sync.Mutex
 	log       *Log
 }
@@ -271,7 +271,7 @@ func (h *Host) startOperation(work func(context.Context) error) error {
 		h.mu.Unlock()
 		return nil
 	}
-	op := operation.New(h.ctx)
+	op := oneoff.New(h.ctx)
 	op.Register(h.workers)
 	h.operation = op
 	h.mu.Unlock()
@@ -294,11 +294,11 @@ func (h *Host) startOperation(work func(context.Context) error) error {
 	return err
 }
 
-func (h *Host) publishOperation(op *operation.Operation, done bool) error {
+func (h *Host) publishOperation(op *oneoff.Operation, done bool) error {
 	return publish(h.ctx, h.state, op.ID(), operationResult{Done: done})
 }
 
-func (h *Host) forgetOperation(ctx context.Context, op *operation.Operation) error {
+func (h *Host) forgetOperation(ctx context.Context, op *oneoff.Operation) error {
 	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if state.IsNotFoundError(err) {
 		return nil
@@ -306,7 +306,7 @@ func (h *Host) forgetOperation(ctx context.Context, op *operation.Operation) err
 	return err
 }
 
-func (h *Host) takeOperation(ctx context.Context) (*operation.Operation, bool, error) {
+func (h *Host) takeOperation(ctx context.Context) (*oneoff.Operation, bool, error) {
 	h.mu.Lock()
 	op := h.operation
 	if op == nil {

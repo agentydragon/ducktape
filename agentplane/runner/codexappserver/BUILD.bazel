@@ -15,7 +15,7 @@ go_library(
         "//agentplane/runner/session:__pkg__",
     ],
     deps = [
-        "//agentplane/env/operation",
+        "//agentplane/env/oneoff",
         "//agentplane/env/supervision",
         "//agentplane/observability",
         "//agentplane/proto:runner_go_proto",
@@ -43,7 +43,7 @@ go_test(
     embed = [":codexappserver"],
     race = "on",
     deps = [
-        "//agentplane/env/operation",
+        "//agentplane/env/oneoff",
         "//agentplane/env/supervision",
         "//agentplane/runner/harness",
         "//agentplane/runner/lifecycle",

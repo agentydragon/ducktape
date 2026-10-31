@@ -37,18 +37,18 @@ func TestSystemdKernelFixture(t *testing.T) {
 	if config.Environment.Kind != "vm" {
 		t.Fatal("systemd proof requires VM configuration")
 	}
-	policy := &SystemdPolicy{
+	launcher := &SystemdLauncher{
 		Slice: WorkloadSlice, AgentUID: config.Environment.AgentUID, AgentGID: config.Environment.AgentGID,
 		BlockDevices: config.Environment.BlockDevices, AggregateLimits: config.Environment.Resources.Aggregate,
 		ProcessLimits: config.Environment.Resources.Process,
 	}
-	policy.startTransient = func(c context.Context, bus *systemd.Conn, name string, props []systemd.Property, completion chan<- string) (int, error) {
+	launcher.startTransient = func(c context.Context, bus *systemd.Conn, name string, props []systemd.Property, completion chan<- string) (int, error) {
 		job, err := bus.StartTransientUnitContext(c, name, "fail", props, completion)
 		t.Logf("native launch enqueue: unit=%s job=%d error=%v kind=%s", name, job, err, systemdErrorKind(err))
 		return job, err
 	}
 	stateDir := "/state/.supervision-proof"
-	supervisor, err := policy.Prepare(stateDir, sandboxUID)
+	supervisor, err := launcher.Prepare(stateDir, sandboxUID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 	defer conn.Close()
 
 	t.Run("stale_runner_invocation_cannot_execute", func(t *testing.T) {
-		stale := *policy
+		stale := *launcher
 		stale.lifetimeMarker = filepath.Join(runnerLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
 		effect := filepath.Join(dir, "stale-runner-effect")
 		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}})
@@ -107,7 +107,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if err != nil || code != 0 {
 			t.Fatalf("wait code=%d err=%v", code, err)
 		}
-		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", policy.AgentUID, policy.AgentGID, dir)
+		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", launcher.AgentUID, launcher.AgentGID, dir)
 		if got := <-stdout; got != want {
 			t.Fatalf("stdout=%q want %q", got, want)
 		}
@@ -159,7 +159,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 	})
 	t.Run("lost_reply_and_canceled_start", func(t *testing.T) {
 		for _, cancelStart := range []bool{false, true} {
-			owned := *policy
+			owned := *launcher
 			launchCtx, launchCancel := context.WithCancel(ctx)
 			var launchName string
 			launches := 0
@@ -194,7 +194,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		}
 	})
 	t.Run("startup_fences_owner_scope_only", func(t *testing.T) {
-		ownedName := policy.scope + uuid.NewString() + ".service"
+		ownedName := launcher.scope + uuid.NewString() + ".service"
 		unrelatedName := "agentplane-proof-unrelated-" + uuid.NewString() + ".service"
 		for _, name := range []string{ownedName, unrelatedName} {
 			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), nil); err != nil {
@@ -202,7 +202,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			}
 			defer fenceSystemdUnit(context.Background(), conn, name, true, "")
 		}
-		recovered := *policy
+		recovered := *launcher
 		if _, err := recovered.Prepare(stateDir, sandboxUID); err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +221,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer fenceSystemdUnit(context.Background(), conn, parent, true, "")
-		owned := *policy
+		owned := *launcher
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
 		ownedSupervisor := owned.newSupervisor()
@@ -284,7 +284,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		assertSystemdProofEmpty(t, ctx, conn, systemdProofUnitName(t, p))
 	})
 	t.Run("reap_retries_property_deadline_on_connected_manager", func(t *testing.T) {
-		owned := *policy
+		owned := *launcher
 		authoritativePID := make(chan uint32, 1)
 		propertyReads := 0 // Only this process's reaper calls the hook.
 		owned.reapServiceProperties = func(readCtx context.Context, bus *systemd.Conn, name string) (map[string]any, error) {
