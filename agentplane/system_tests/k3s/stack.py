@@ -12,6 +12,7 @@ their plain HTTP URLs satisfy the OAuth endpoint contract.
 """
 
 import contextlib
+import contextvars
 import io
 import json
 import logging
@@ -26,7 +27,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -45,6 +46,7 @@ from agentplane.system_tests.k3s import (
 )
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -94,6 +96,7 @@ def _shadow_kernel_sysctls() -> None:
     run("mount", "--bind", str(fake), "/proc/sys/kernel")
 
 
+@tracer.start_as_current_span("system_test.k3s.reset")
 def _reset_previous_stack(data_dir: Path) -> None:
     """The RBE platform recycles runners, so the VM may still hold the last test's stack, whose Pods its
     teardown removed. Keep containerd's store, whose images are addressed by digest, and k3s's unpacked
@@ -130,38 +133,6 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
     archive.addfile(entry, io.BytesIO(encoded))
 
 
-@dataclass
-class Timeline:
-    """When each step of bringing the stack up finished, in seconds after the timeline began, and how
-    long each image took to import. Each entry is also appended to `k3s-timeline.jsonl` in the test's
-    undeclared outputs as it happens, so a run that hangs shows how far it got."""
-
-    started: float = field(default_factory=time.monotonic)
-    steps: list[tuple[str, float]] = field(default_factory=list)
-    imports: list[tuple[str, float]] = field(default_factory=list)
-    _write_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-
-    def mark(self, step: str) -> None:
-        at = round(time.monotonic() - self.started, 1)
-        self.steps.append((step, at))
-        self._record({"step": step, "at": at})
-
-    def image_imported(self, image: str, seconds: float) -> None:
-        # `git.allegedly.works/ducktape-ci/agentplane-app:unset` or `quay.io/kubevirt/virt-api@sha256:…`
-        name = image.rsplit("/", 1)[-1].partition("@")[0].partition(":")[0]
-        self.imports.append((name, round(seconds, 1)))
-        self._record({"image": name, "seconds": round(seconds, 1), "at": round(time.monotonic() - self.started, 1)})
-
-    def summary(self) -> str:
-        steps = ", ".join(f"{step} {at}" for step, at in self.steps)
-        imports = ", ".join(f"{name} {seconds}" for name, seconds in sorted(self.imports, key=lambda i: -i[1]))
-        return f"seconds after start: {steps}\nimage imports, seconds, slowest first: {imports}"
-
-    def _record(self, entry: dict[str, str | float]) -> None:
-        with self._write_lock, (undeclared_outputs_dir() / "k3s-timeline.jsonl").open("a") as out:
-            out.write(json.dumps(entry) + "\n")
-
-
 def node_ip() -> str:
     """The address Pods use to reach host-side processes: the apiserver, the cluster DNS, a test's
     scripted model."""
@@ -183,6 +154,7 @@ class K3s:
             str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
         )
 
+    @tracer.start_as_current_span("system_test.k3s.start")
     def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
@@ -305,6 +277,7 @@ class K3s:
                 if code or destination.stat().st_size == 0:
                     raise RuntimeError(f"containerd {kind} profiler failed ({code}); see {log.name}")
 
+    @tracer.start_as_current_span("system_test.k3s.stop")
     def stop(self, process: subprocess.Popen[bytes]) -> None:
         """End k3s, then remove every Pod, so the next stack on a recycled runner finds only images.
 
@@ -340,20 +313,19 @@ class K3s:
                     run(*crictl, "pods")
             run(*crictl, "rmp", "--all", "--force")
 
-    def import_images(self, images: dict[str, Path], timeline: Timeline) -> None:
+    def import_images(self, images: dict[str, Path]) -> None:
         """Import Bazel OCI layouts (`.rloc` files, keyed by the image reference each loads as) into
-        containerd one image at a time, timing each. Blob digests are preserved, and a blob containerd
+        containerd one image at a time. Blob digests are preserved, and a blob containerd
         already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
         for image, rloc in images.items():
-            started = time.monotonic()
-            layout = get_required_path(rloc.read_text().strip())
-            index = json.loads((layout / "index.json").read_text())
-            for descriptor in index["manifests"]:
-                descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
-            blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
-            stored = self._stored_blobs()
-            self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - stored})
-            timeline.image_imported(image, time.monotonic() - started)
+            with tracer.start_as_current_span("system_test.image.import", attributes={"image": image}):
+                layout = get_required_path(rloc.read_text().strip())
+                index = json.loads((layout / "index.json").read_text())
+                for descriptor in index["manifests"]:
+                    descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = image
+                blobs = {blob.relative_to(layout).as_posix(): blob for blob in (layout / "blobs").glob("*/*")}
+                stored = self._stored_blobs()
+                self._import_layout(index["manifests"], {name: blobs[name] for name in blobs.keys() - stored})
 
     def _stored_blobs(self) -> set[str]:
         """The OCI layout paths (`blobs/sha256/<hex>`) of the blobs containerd holds."""
@@ -414,6 +386,7 @@ class K3s:
         return "\n".join(parts)
 
 
+@tracer.start_as_current_span("system_test.pki.fixture_ca")
 def _openssl_ca(work: Path) -> tuple[str, str]:
     key, cert = work / "ca.key", work / "ca.crt"
     run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key))
@@ -505,6 +478,7 @@ def _port_forward(k3s: K3s, namespace: str, service: str, origin: str, port: int
             forward.terminate()
 
 
+@tracer.start_as_current_span("system_test.network.resolve")
 def _resolve_on_node(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None:
     """Resolve the Services a browser reaches by name for this process, as the cluster DNS does for Pods,
     replacing what the last stack on a recycled runner wrote."""
@@ -540,17 +514,9 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 @contextlib.contextmanager
 def running_stack(
-    inputs: StackInputs,
-    *,
-    models: rendered_fixture.Models,
-    timeline: Timeline,
-    validate_vm_shutdown: Callable[[], bool],
+    inputs: StackInputs, *, models: rendered_fixture.Models, validate_vm_shutdown: Callable[[], bool]
 ) -> Iterator[Stack]:
-    """The stack with every Deployment Available, LLM ingress forwarding to `models`, each step of
-    bringing it up marked on `timeline`.
-
-    All deployment and image inputs are resolved once by the suite's session fixture.
-    """
+    """The stack with every Deployment Available and LLM ingress forwarding to `models`."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
@@ -565,162 +531,176 @@ def running_stack(
         contextlib.ExitStack() as block_cleanup,
         contextlib.ExitStack() as cleanup,
     ):
-        traces = trace_cleanup.enter_context(
-            process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
-        )
-        # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
-        process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
-        cleanup.callback(k3s.stop, process)
-        timeline.mark("node Ready")
-        cluster = Cluster(
-            kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
-        )
-        raw_block = block_storage.BlockStorage(work)
+        with tracer.start_as_current_span("system_test.stack.setup") as setup:
+            traces = trace_cleanup.enter_context(
+                process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
+            )
+            # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
+            process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+            cleanup.callback(k3s.stop, process)
+            setup.add_event("node Ready")
+            cluster = Cluster(
+                kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
+            )
+            raw_block = block_storage.BlockStorage(work)
 
-        def remove_work() -> None:
-            if raw_block.closed:
-                shutil.rmtree(work, ignore_errors=True)
-            else:
-                logger.error("preserving %s because a fixture loop device did not detach", work)
+            def remove_work() -> None:
+                if raw_block.closed:
+                    shutil.rmtree(work, ignore_errors=True)
+                else:
+                    logger.error("preserving %s because a fixture loop device did not detach", work)
 
-        block_cleanup.callback(remove_work)
-        block_cleanup.enter_context(raw_block)
-        k3s.kubectl(
-            "apply", "-f", "-", input_text=yaml.safe_dump_all(process_traces.collector_objects(k3s.node_ip, traces))
-        )
-        timeline.mark("trace collector ready")
-        ca_cert, ca_key = _openssl_ca(work)
-        cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
-        system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
-        mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
-        fixture = rendered_fixture.fill(
-            fixture,
-            rendered_fixture.RuntimeInputs(
-                ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca
-            ),
-            models,
-            mcp,
-        )
-        deployment_images = _deployment_images(fixture.objects)
-        if used := deployment_images & guest_images.keys():
-            raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
-        if missing := deployment_images - fixture_images.keys():
-            raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
-        if fixture.vm_sandboxes:
-            releases = vm_sandboxes.releases()
-            infrastructure_images = vm_sandboxes.images(releases)
-            k3s.import_images(infrastructure_images, timeline)
-        cert_manager, trust_manager = certificates.releases()
-        cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
-        # Import the next group's images during apply/readiness work for the preceding group. A single
-        # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
-        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
-            pki_import = importing.submit(
-                k3s.import_images, certificates.images(cert_manager + trust_manager), timeline
-            )
+            block_cleanup.callback(remove_work)
+            block_cleanup.enter_context(raw_block)
+            with tracer.start_as_current_span("system_test.collector.expose"):
+                k3s.kubectl(
+                    "apply",
+                    "-f",
+                    "-",
+                    input_text=yaml.safe_dump_all(process_traces.collector_objects(k3s.node_ip, traces)),
+                )
+            setup.add_event("trace collector ready")
+            ca_cert, ca_key = _openssl_ca(work)
+            cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
+            system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
+            mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
+            with tracer.start_as_current_span("system_test.fixture.configure"):
+                fixture = rendered_fixture.fill(
+                    fixture,
+                    rendered_fixture.RuntimeInputs(
+                        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca
+                    ),
+                    models,
+                    mcp,
+                )
+            deployment_images = _deployment_images(fixture.objects)
+            if used := deployment_images & guest_images.keys():
+                raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
+            if missing := deployment_images - fixture_images.keys():
+                raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
             if fixture.vm_sandboxes:
-                vm_sandboxes.install(k3s.kubectl, releases)
-                timeline.mark("KubeVirt and Kyverno applied")
-            # Applying a workload before its image is imported would pull it from the registry.
-            pki_import.result()
-            fixture_import = importing.submit(k3s.import_images, fixture_images, timeline)
-            certificates.install(k3s.kubectl, cert_manager, trust_manager)
-            timeline.mark("cert-manager and trust-manager ready")
-            fixture_import.result()
-            timeline.mark("fixture images imported" if guest_images else "images imported")
-            if guest_images:
-                # The VM root image is this stack's largest cold import. Sampling proceeds while
-                # the importer and the rest of setup work; joining happens at fixture teardown.
-                outputs = undeclared_outputs_dir()
-                cleanup.enter_context(k3s.profile_containerd("profile", 15, outputs / "containerd-import.cpu.pprof"))
-                cleanup.enter_context(k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace"))
-            guest_import = importing.submit(k3s.import_images, guest_images, timeline)
-            for crd in crds:
-                k3s.kubectl("apply", "-f", str(crd))
-            if fixture.vm_sandboxes:
-                vm_sandboxes.wait_for_apis(k3s.kubectl)
-            timeline.mark("CRDs applied")
-            # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
-            namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
-            rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
-            k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-            if fixture.vm_sandboxes:
-                cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))
-                timeline.mark("workspace provisioner ready")
-            print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
-            logger.info("applied %s objects", len(rest))
-            timeline.mark("manifests applied")
-            certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
-            timeline.mark("runner certificates issued and trust distributed")
-            # Guest images serve Sandboxes created after stack readiness, so they can import during apply.
-            guest_import.result()
-            if guest_images:
-                timeline.mark("images imported")
+                releases = vm_sandboxes.releases()
+                infrastructure_images = vm_sandboxes.images(releases)
+                k3s.import_images(infrastructure_images)
+            cert_manager, trust_manager = certificates.releases()
+            cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)
+            # Import the next group's images during apply/readiness work for the preceding group. A single
+            # worker preserves blob deduplication and joins before k3s teardown, including on setup failure.
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="image-import") as importing:
+                pki_import = importing.submit(
+                    contextvars.copy_context().run, k3s.import_images, certificates.images(cert_manager + trust_manager)
+                )
+                if fixture.vm_sandboxes:
+                    vm_sandboxes.install(k3s.kubectl, releases)
+                    setup.add_event("KubeVirt and Kyverno applied")
+                # Applying a workload before its image is imported would pull it from the registry.
+                pki_import.result()
+                fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
+                certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                setup.add_event("cert-manager and trust-manager ready")
+                fixture_import.result()
+                setup.add_event("fixture images imported" if guest_images else "images imported")
+                if guest_images:
+                    # The VM root image is this stack's largest cold import. Sampling proceeds while
+                    # the importer and the rest of setup work; joining happens at fixture teardown.
+                    outputs = undeclared_outputs_dir()
+                    cleanup.enter_context(
+                        k3s.profile_containerd("profile", 15, outputs / "containerd-import.cpu.pprof")
+                    )
+                    cleanup.enter_context(
+                        k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace")
+                    )
+                guest_import = importing.submit(contextvars.copy_context().run, k3s.import_images, guest_images)
+                with tracer.start_as_current_span("system_test.crds.apply"):
+                    for crd in crds:
+                        k3s.kubectl("apply", "-f", str(crd))
+                if fixture.vm_sandboxes:
+                    vm_sandboxes.wait_for_apis(k3s.kubectl)
+                setup.add_event("CRDs applied")
+                # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
+                namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
+                rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
+                with tracer.start_as_current_span("system_test.manifests.apply"):
+                    k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
+                    if fixture.vm_sandboxes:
+                        cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))
+                        setup.add_event("workspace provisioner ready")
+                    print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
+                    logger.info("applied %s objects", len(rest))
+                    setup.add_event("manifests applied")
+                certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
+                setup.add_event("runner certificates issued and trust distributed")
+                # Guest images serve Sandboxes created after stack readiness, so they can import during apply.
+                guest_import.result()
+                if guest_images:
+                    setup.add_event("images imported")
 
-        failed: list[str] = []
-        deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
-        deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
-        for name in deployments:
-            remaining = max(5, int(deadline - time.monotonic()))
-            out = k3s.kubectl(
-                "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture.namespace,
-                f"--timeout={remaining}s", check=False,
-            )  # fmt: skip
-            if "condition met" not in out:
-                failed.append(name)
-        if failed:
-            print(k3s.report(fixture.namespace))
-            raise RuntimeError(f"Deployments not Available: {failed}")
-        timeline.mark("Deployments Available")
-        if fixture.vm_sandboxes:
-            vm_sandboxes.wait_until_ready(k3s.kubectl)
-            timeline.mark("KubeVirt and Kyverno ready")
-        _resolve_on_node(k3s, fixture)
-        access = None
-        if mcp is not None and fixture.mcp_fixtures is not None:
-            ca_bundle = work / "ca-certificates.crt"
-            ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
-            cleanup.enter_context(
-                _port_forward(
-                    k3s,
-                    fixture.namespace,
-                    fixture.mcp_fixtures.mcp_edge_service,
-                    mcp.mcp_edge_origin,
-                    fixture.mcp_fixtures.mcp_edge_port,
+            failed: list[str] = []
+            deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
+            deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
+            for name in deployments:
+                remaining = max(5, int(deadline - time.monotonic()))
+                with tracer.start_as_current_span("system_test.deployment.ready", attributes={"deployment.name": name}):
+                    out = k3s.kubectl(
+                        "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture.namespace,
+                        f"--timeout={remaining}s", check=False,
+                    )  # fmt: skip
+                    if "condition met" not in out:
+                        failed.append(name)
+            if failed:
+                print(k3s.report(fixture.namespace))
+                raise RuntimeError(f"Deployments not Available: {failed}")
+            setup.add_event("Deployments Available")
+            if fixture.vm_sandboxes:
+                vm_sandboxes.wait_until_ready(k3s.kubectl)
+                setup.add_event("KubeVirt and Kyverno ready")
+            _resolve_on_node(k3s, fixture)
+            access = None
+            if mcp is not None and fixture.mcp_fixtures is not None:
+                ca_bundle = work / "ca-certificates.crt"
+                ca_bundle.write_text(system_roots + mcp.dex_ca_cert)
+                cleanup.enter_context(
+                    _port_forward(
+                        k3s,
+                        fixture.namespace,
+                        fixture.mcp_fixtures.mcp_edge_service,
+                        mcp.mcp_edge_origin,
+                        fixture.mcp_fixtures.mcp_edge_port,
+                    )
                 )
-            )
-            cleanup.enter_context(
-                _port_forward(
-                    k3s,
-                    fixture.namespace,
-                    fixture.mcp_fixtures.app_service,
-                    mcp.app_origin,
-                    fixture.mcp_fixtures.app_port,
+                cleanup.enter_context(
+                    _port_forward(
+                        k3s,
+                        fixture.namespace,
+                        fixture.mcp_fixtures.app_service,
+                        mcp.app_origin,
+                        fixture.mcp_fixtures.app_port,
+                    )
                 )
-            )
-            access = McpFixtureAccess(
-                ca_bundle=ca_bundle,
-                operator_secret=fixture.mcp_fixtures.operator_secret,
-                mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
-            )
-        token = k3s.kubectl(
-            "-n", fixture.namespace, "create", "token", AGENT_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
-        ).strip()
-        print("memory:", run("free", "-m"))
-        timeline.mark("stack ready")
-        if fixture.vm_sandboxes:
-            cleanup.enter_context(
-                guest_logs.capture(
-                    log_root=Path("/var/log/pods"),
-                    namespace=fixture.namespace,
-                    kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
-                    destination=undeclared_outputs_dir() / "vm-artifacts",
-                    validate_shutdown=validate_vm_shutdown,
+                access = McpFixtureAccess(
+                    ca_bundle=ca_bundle,
+                    operator_secret=fixture.mcp_fixtures.operator_secret,
+                    mcp_edge_url=f"{mcp.mcp_edge_origin}/mcp",
                 )
-            )
+            token = k3s.kubectl(
+                "-n", fixture.namespace, "create", "token", AGENT_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            ).strip()
+            print("memory:", run("free", "-m"))
+            setup.add_event("stack ready")
+            if fixture.vm_sandboxes:
+                cleanup.enter_context(
+                    guest_logs.capture(
+                        log_root=Path("/var/log/pods"),
+                        namespace=fixture.namespace,
+                        kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
+                        destination=undeclared_outputs_dir() / "vm-artifacts",
+                        validate_shutdown=validate_vm_shutdown,
+                    )
+                )
         yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
-        print(k3s.report(fixture.namespace))
-        if fixture.vm_sandboxes:
-            (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
-                vm_sandboxes.report(k3s.kubectl, fixture.namespace)
-            )
+        with tracer.start_as_current_span("system_test.stack.diagnostics"):
+            print(k3s.report(fixture.namespace))
+            if fixture.vm_sandboxes:
+                (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(
+                    vm_sandboxes.report(k3s.kubectl, fixture.namespace)
+                )

@@ -18,7 +18,7 @@ from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_re
 from agentplane.crd_group import GROUP
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.vm_tracing import tracer
+from agentplane.system_tests.tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "runner"
@@ -94,7 +94,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             if template is None:
                 template = POD_TEMPLATE
             with phase_tracer.start_as_current_span(
-                "vm.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
+                "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
                 view = await client.create_sandbox(
                     NewSandbox(
@@ -109,7 +109,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             # Register before readiness so failed boots are released too.
             owned.append((view.name, view.uid))
             with phase_tracer.start_as_current_span(
-                "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
+                "system_test.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
             ) as ready_span:
                 ready = await wait_until_running(client, view.name, expected_uid=view.uid)
                 record_launch_transitions(ready_span, ready)
@@ -178,7 +178,7 @@ async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -
 
 async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
     with tracer.start_as_current_span(
-        "vm.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
     ) as cleanup:
         await client.suspend_sandbox(name)
         cleanup.add_event("suspend.accepted")

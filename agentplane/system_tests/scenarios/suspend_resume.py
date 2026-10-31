@@ -22,6 +22,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -172,50 +173,55 @@ class _ResumeRun:
 
     async def suspend_and_resume(self) -> None:
         """Suspend until the old Pod is gone, resume, and check what the new runner holds."""
-        assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
-        await self.client.suspend_sandbox(self.view.name)
-        await _wait_until_suspended_without_pod(self.client, self.view.name)
-        assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
-        for harness, agent in self.agents.items():
-            self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
-            _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
-            # A lost response is retried from the archive: no runner answers while the Sandbox is suspended.
-            (seed,) = [entry for entry in self.seeded_history[harness] if entry.event.HasField("command_admitted")]
-            command = seed.event.command_admitted.command
-            assert (
-                await self.client.submit_input(agent.thread_id, command.command_id, command.submit_input.text) == seed
+        with tracer.start_as_current_span(
+            "system_test.sandbox.suspend_resume",
+            attributes={"sandbox.name": self.view.name, "sandbox.uid": str(self.view.uid)},
+        ):
+            assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
+            await self.client.suspend_sandbox(self.view.name)
+            await _wait_until_suspended_without_pod(self.client, self.view.name)
+            assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
+            for harness, agent in self.agents.items():
+                self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
+                _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
+                # A lost response is retried from the archive: no runner answers while the Sandbox is suspended.
+                (seed,) = [entry for entry in self.seeded_history[harness] if entry.event.HasField("command_admitted")]
+                command = seed.event.command_admitted.command
+                assert (
+                    await self.client.submit_input(agent.thread_id, command.command_id, command.submit_input.text)
+                    == seed
+                )
+            self.checks.extend(
+                [
+                    "seed_turns_completed",
+                    "storage_volumes_retained_during_suspend",
+                    "seed_history_prefix_retained",
+                    "seed_input_retry_answered_from_archive",
+                ]
             )
-        self.checks.extend(
-            [
-                "seed_turns_completed",
-                "storage_volumes_retained_during_suspend",
-                "seed_history_prefix_retained",
-                "seed_input_retry_answered_from_archive",
-            ]
-        )
-        self.save()
-        await self.client.resume_sandbox(self.view.name)
+            self.save()
+            await self.client.resume_sandbox(self.view.name)
 
-        resumed = await wait_until_running(self.client, self.view.name, expected_uid=self.view.uid)
-        assert resumed.uid == self.view.uid
-        assert resumed.pod is not None
-        assert resumed.pod.uid != self.original_incarnation
-        assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
-        self.view = resumed
-        self.resumed_incarnation = resumed.pod.uid
-        self.checks.append("same_sandbox_new_incarnation_same_volumes")
-        async for attempt in runner_startup_retries():
-            with attempt:
-                snapshot = await self.client.runner_status(self.view.name)
-        assert snapshot.runner_boot_id != self.initial_boot_id
-        assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
-        for row in snapshot.sessions:
-            if row.session_id in self.native_session_ids:
-                assert row.execution_state == "SESSION_EXECUTION_STATE_DORMANT"
-                assert row.process_id is None
-                assert row.native_session_id == self.native_session_ids[row.session_id]
-        self.checks.append("new_runner_retains_dormant_sessions_without_native_processes")
-        self.save()
+            resumed = await wait_until_running(self.client, self.view.name, expected_uid=self.view.uid)
+            assert resumed.uid == self.view.uid
+            assert resumed.pod is not None
+            assert resumed.pod.uid != self.original_incarnation
+            assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
+            self.view = resumed
+            self.resumed_incarnation = resumed.pod.uid
+            self.checks.append("same_sandbox_new_incarnation_same_volumes")
+            async for attempt in runner_startup_retries():
+                with attempt:
+                    snapshot = await self.client.runner_status(self.view.name)
+            assert snapshot.runner_boot_id != self.initial_boot_id
+            assert {row.session_id for row in snapshot.sessions} == set(self.native_session_ids)
+            for row in snapshot.sessions:
+                if row.session_id in self.native_session_ids:
+                    assert row.execution_state == "SESSION_EXECUTION_STATE_DORMANT"
+                    assert row.process_id is None
+                    assert row.native_session_id == self.native_session_ids[row.session_id]
+            self.checks.append("new_runner_retains_dormant_sessions_without_native_processes")
+            self.save()
 
     async def continued(self, harness: runner_pb2.Harness, turn: Turn) -> None:
         """Check the first turn after the resume: the native session resumed and the journal continued."""

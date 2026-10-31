@@ -27,6 +27,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_f
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
@@ -135,17 +136,21 @@ class Agent:
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
         """
-        spec = runner_pb2.SessionSpec(
-            harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
-        )
-        # Retry the same desired session even if an earlier Open reached the runner.
-        session_id = uuid4()
-        async for attempt in runner_startup_retries():
-            with attempt:
-                await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
-                thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
-                return cls(client, thread_id=thread.id, cursor=0)
-        raise AssertionError("unreachable: reraise=True either returns an agent or raises")
+        with tracer.start_as_current_span(
+            "system_test.session.open",
+            attributes={"sandbox.name": sandbox, "harness": runner_pb2.Harness.Name(harness)},
+        ):
+            spec = runner_pb2.SessionSpec(
+                harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
+            )
+            # Retry the same desired session even if an earlier Open reached the runner.
+            session_id = uuid4()
+            async for attempt in runner_startup_retries():
+                with attempt:
+                    await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
+                    thread = await client.wait_for_thread_projection(session_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+                    return cls(client, thread_id=thread.id, cursor=0)
+            raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
@@ -171,49 +176,50 @@ class Agent:
         return await self._collect(after=self._cursor, awaiting_command_id=awaiting_command_id)
 
     async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
-        turn = Turn(accepted=time.monotonic())
-        command_admitted = awaiting_command_id is None
-        async with (
-            asyncio.timeout(TURN_SECONDS),
-            aclosing(
-                self._client.events(
-                    self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=awaiting_command_id
-                )
-            ) as entries,
-        ):
-            async for entry in entries:
-                self._cursor = entry.cursor
-                event = entry.event
-                match event.WhichOneof("observation"):
-                    case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
-                        command_admitted = True
-                    case "command_failed" if (
-                        awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
-                    ):
-                        failed = event.command_failed
-                        raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
-                    case "harness_launch_failed" if command_admitted:
-                        raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
-                    case "harness_started":
-                        turn.resumed = event.harness_started.resumed
-                    case "harness_user_message_confirmed":
-                        turn.input_confirmed = True
-                    case "item_completed":
-                        _completed(event.item_completed, turn)
-                    case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
-                        turn.native.append(event.native.line)
-                    case "turn_completed":
-                        completed = event.turn_completed
-                        turn.status = completed.status
-                        if turn.status != event_pb2.TURN_STATUS_COMPLETED:
-                            raise AssertionError(
-                                f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
-                                f"{completed.error=}"
-                            )
-                        return turn
-                    case _:
-                        continue
-        raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
+        with tracer.start_as_current_span("system_test.turn.wait", attributes={"thread.id": str(self._thread_id)}):
+            turn = Turn(accepted=time.monotonic())
+            command_admitted = awaiting_command_id is None
+            async with (
+                asyncio.timeout(TURN_SECONDS),
+                aclosing(
+                    self._client.events(
+                        self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=awaiting_command_id
+                    )
+                ) as entries,
+            ):
+                async for entry in entries:
+                    self._cursor = entry.cursor
+                    event = entry.event
+                    match event.WhichOneof("observation"):
+                        case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
+                            command_admitted = True
+                        case "command_failed" if (
+                            awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
+                        ):
+                            failed = event.command_failed
+                            raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
+                        case "harness_launch_failed" if command_admitted:
+                            raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
+                        case "harness_started":
+                            turn.resumed = event.harness_started.resumed
+                        case "harness_user_message_confirmed":
+                            turn.input_confirmed = True
+                        case "item_completed":
+                            _completed(event.item_completed, turn)
+                        case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
+                            turn.native.append(event.native.line)
+                        case "turn_completed":
+                            completed = event.turn_completed
+                            turn.status = completed.status
+                            if turn.status != event_pb2.TURN_STATUS_COMPLETED:
+                                raise AssertionError(
+                                    f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
+                                    f"{completed.error=}"
+                                )
+                            return turn
+                        case _:
+                            continue
+            raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
 
 
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:

@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 from more_itertools import one
 
+from agentplane.system_tests.tracing import tracer
 from util.bazel.runfiles import get_required_path
 
 # The stack's `K3s.kubectl`: the stack calls this module while it starts.
@@ -97,6 +98,7 @@ def images(objects: list[dict[str, Any]]) -> dict[str, Path]:
     }
 
 
+@tracer.start_as_current_span("system_test.virtualization.install")
 def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
     """Start installing the `releases` objects, once their `images` are in containerd."""
     # virt-handler mounts the kubelet's Pod directory Bidirectional, which needs a shared root mount.
@@ -107,6 +109,7 @@ def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
     kubectl("apply", "-f", "-", input_text=yaml.safe_dump(_kubevirt()))
 
 
+@tracer.start_as_current_span("system_test.virtualization.apis")
 def wait_for_apis(kubectl: Kubectl) -> None:
     """Wait for the CRDs and Kyverno webhook before applying resources that invoke admission."""
     crds = ["crd/virtualmachines.kubevirt.io", "crd/clusterpolicies.kyverno.io"]
@@ -124,6 +127,7 @@ def wait_for_apis(kubectl: Kubectl) -> None:
     )  # fmt: skip
 
 
+@tracer.start_as_current_span("system_test.virtualization.ready")
 def wait_until_ready(kubectl: Kubectl) -> None:
     """KubeVirt serves VMs, and Kyverno enforces every ClusterPolicy, the launcher relay's among them."""
     kubectl(

@@ -231,6 +231,7 @@ py_library(
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:tracing",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -478,6 +479,7 @@ py_library(
     name = "vm_sandboxes",
     srcs = ["vm_sandboxes.py"],
     deps = [
+        "//agentplane/system_tests:tracing",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
@@ -590,6 +592,7 @@ py_library(
     testonly = True,
     srcs = ["certificates.py"],
     deps = [
+        "//agentplane/system_tests:tracing",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",

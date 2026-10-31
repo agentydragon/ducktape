@@ -11,19 +11,10 @@ import pytest
 
 from agentplane.system_tests.k3s import guest_logs, rendered_fixture
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
-from agentplane.system_tests.k3s.stack import Stack, StackInputs, Timeline, node_ip, running_stack
+from agentplane.system_tests.k3s.stack import Stack, StackInputs, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-TIMELINE = pytest.StashKey[Timeline]()
-
-
-def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
-    # Absent when no scenario was collected, so the stack never started.
-    if (timeline := config.stash.get(TIMELINE, None)) is not None:
-        terminalreporter.write_sep("-", "k3s stack setup")
-        terminalreporter.write_line(timeline.summary())
 
 
 @pytest.fixture(scope="session")
@@ -51,21 +42,17 @@ def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def deployment(
-    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener
-) -> Iterator[Stack]:
+def deployment(request: pytest.FixtureRequest, scripted_listener: Listener) -> Iterator[Stack]:
     inputs = load_stack_inputs()
     required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
     incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
     for item in request.session.items:
         if item.get_closest_marker(incompatible) is not None:
             raise pytest.UsageError(f"{item.nodeid} requires {incompatible}; suite stack serves {required_backend}")
-    timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
         running_stack(
             inputs,
             models=_models(inputs, scripted_listener),
-            timeline=timeline,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
         ) as stack,
         pytest.MonkeyPatch.context() as environment,

@@ -25,6 +25,7 @@ from agentplane.system_tests.sandbox import (
     wait_until_running,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
@@ -102,42 +103,46 @@ async def _identity(cluster: Cluster, pod_name: str) -> tuple[str, str]:
 async def _ready_certificate(
     cluster: Cluster, name: str, sandbox_name: str, sandbox_uid: str, credential_id: str, namespace: str
 ) -> None:
-    certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
-    spec = certificate["spec"]
-    assert spec["secretName"] == f"runner-{credential_id}"
-    assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
-    assert set(spec["usages"]) == {"digital signature", "server auth"}
-    assert any(
-        condition["type"] == "Ready" and condition["status"] == "True"
-        for condition in certificate["status"]["conditions"]
-    )
-    secret = json.loads(await cluster.kubectl("get", "secret", f"runner-{credential_id}", "-o", "json"))
-    assert secret["metadata"]["annotations"]["cert-manager.io/certificate-name"] == name
-    assert secret["metadata"]["labels"][_SANDBOX_LABEL] == sandbox_name
-    assert secret["metadata"]["labels"][_RUNNER_CREDENTIAL_LABEL] == credential_id
-    requests = json.loads(await cluster.kubectl("get", "certificaterequests", "-o", "json"))["items"]
-    issued = [
-        request
-        for request in requests
-        if any(owner["uid"] == certificate["metadata"]["uid"] for owner in request["metadata"]["ownerReferences"])
-        and any(c["type"] == "Ready" and c["status"] == "True" for c in request.get("status", {}).get("conditions", []))
-    ]
-    assert len(issued) == 1
-    assert any(c["type"] == "Approved" and c["status"] == "True" for c in issued[0]["status"]["conditions"])
-    assert base64.b64decode(issued[0]["status"]["certificate"]) == base64.b64decode(secret["data"]["tls.crt"])
+    with tracer.start_as_current_span("system_test.pki.runner_certificate"):
+        certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
+        spec = certificate["spec"]
+        assert spec["secretName"] == f"runner-{credential_id}"
+        assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
+        assert set(spec["usages"]) == {"digital signature", "server auth"}
+        assert any(
+            condition["type"] == "Ready" and condition["status"] == "True"
+            for condition in certificate["status"]["conditions"]
+        )
+        secret = json.loads(await cluster.kubectl("get", "secret", f"runner-{credential_id}", "-o", "json"))
+        assert secret["metadata"]["annotations"]["cert-manager.io/certificate-name"] == name
+        assert secret["metadata"]["labels"][_SANDBOX_LABEL] == sandbox_name
+        assert secret["metadata"]["labels"][_RUNNER_CREDENTIAL_LABEL] == credential_id
+        requests = json.loads(await cluster.kubectl("get", "certificaterequests", "-o", "json"))["items"]
+        issued = [
+            request
+            for request in requests
+            if any(owner["uid"] == certificate["metadata"]["uid"] for owner in request["metadata"]["ownerReferences"])
+            and any(
+                c["type"] == "Ready" and c["status"] == "True" for c in request.get("status", {}).get("conditions", [])
+            )
+        ]
+        assert len(issued) == 1
+        assert any(c["type"] == "Approved" and c["status"] == "True" for c in issued[0]["status"]["conditions"])
+        assert base64.b64decode(issued[0]["status"]["certificate"]) == base64.b64decode(secret["data"]["tls.crt"])
 
 
 async def _wait_suspended(client: Client, name: str) -> None:
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(REQUEST_SECONDS),
-        wait=wait_fixed(1),
-        retry=retry_if_exception_type(AssertionError),
-        reraise=True,
-    ):
-        with attempt:
-            view = await client.sandbox(name)
-            assert view.operating_mode is OperatingMode.SUSPENDED
-            assert view.pod is None
+    with tracer.start_as_current_span("system_test.sandbox.suspend"):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(REQUEST_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(AssertionError),
+            reraise=True,
+        ):
+            with attempt:
+                view = await client.sandbox(name)
+                assert view.operating_mode is OperatingMode.SUSPENDED
+                assert view.pod is None
 
 
 async def _open_agent(

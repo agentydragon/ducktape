@@ -15,20 +15,16 @@ node, and streams only the blobs containerd lacks ([measurements](debug/stack_ti
 VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
 tmpfs layers keep separate image stores.
 
-Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
-step finished and how long each image took to import, written as it happens, so a hung run shows how far
-it got. A k3s target's test log ends with the same timeline.
-The fixture starts an OTLP/gRPC and OTLP/HTTP receiver before k3s, then publishes it through a
-test-only `monitoring/alloy` Service and Endpoints once the node is Ready. It passes the receiver's
-endpoint to the deployed services and Runner processes. Their spans are written to
-`process-spans.jsonl`; the receiver stops after the stack. The bundled containerd does not register
-its upstream tracing plugin, so image imports have only driver-side timings in `k3s-timeline.jsonl`.
-For VM stacks it also samples containerd during guest image import through its root-only
-debug socket, retaining `containerd-import.cpu.pprof` and
-`containerd-import.runtime.trace` in test outputs. Sampling overlaps the import; the
-fixture joins the bounded profilers at teardown. The fixture also retains `containerd.log`
-for process startup and failure diagnosis. See
-[phase tracing](../README.md#phase-tracing) for the fields and propagation limits.
+Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
+writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints
+a summary derived from these spans. See [trace artifacts](../README.md) for stage coverage.
+
+Every stack exposes the fixture-owned OTLP receiver at the production Alloy service name, so
+service and Runner spans are collected in `process-spans.jsonl`. Driver spans write directly to disk
+so setup can be traced before the cluster/receiver exists. The two transports retain trace/parent IDs;
+the process receiver filters attributes to keep credentials and request content out of artifacts.
+The bundled containerd does not register its upstream tracing plugin; imports have driver OTel spans
+and the existing Go CPU/runtime profiles.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
@@ -96,7 +92,7 @@ Certificate. trust-manager distributes the root through a Bundle into the worklo
 startup waits for certificate readiness and Bundle synchronization. Controller logs and PKI resource
 status are retained under `certificates/` in undeclared test outputs. Optional insecure transport is
 limited to standalone behavior fixtures; k3s has no insecure provisioning profile.
-`k3s-timeline.jsonl` records controller readiness and certificate/trust readiness for startup-cost analysis.
+`test-spans.jsonl` records controller readiness and certificate/trust readiness for startup-cost analysis.
 
 Node readiness and the appearance of the bundled DNS/storage Deployments share a 180-second
 bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;

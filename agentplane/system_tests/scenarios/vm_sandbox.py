@@ -106,7 +106,7 @@ def _assert_native_service_cgroup(cgroup: str, slice_name: str) -> None:
 async def _command(
     agent: Agent, model: CodexModel, *, call_id: str, command: str, exit_code: int
 ) -> tuple[Turn, _ExecResult]:
-    with tracer.start_as_current_span("vm.command", attributes={"command.id": call_id}):
+    with tracer.start_as_current_span("system_test.command", attributes={"command.id": call_id}):
         async with asyncio.timeout(TURN_SECONDS), asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run("Run the requested shell command and report its result."))
             request = await model.request()
@@ -174,9 +174,11 @@ async def vm_sandbox_turn(
                 check_boot()
                 assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
-    with tracer.start_as_current_span("vm.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}):
+    with tracer.start_as_current_span(
+        "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}
+    ):
         agent = await session_setup_is_supervised(client, view.name, harness, offered_model)
-    with tracer.start_as_current_span("vm.turn"):
+    with tracer.start_as_current_span("system_test.turn"):
         async with asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run(PING))
             await model.reply(await model.request(), ShellCall("vm-supervision", VM_SUPERVISION_PROBE))
@@ -213,7 +215,7 @@ async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str,
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
-    with tracer.start_as_current_span("vm.session.open", attributes={"harness": "HARNESS_CODEX"}):
+    with tracer.start_as_current_span("system_test.session.open", attributes={"harness": "HARNESS_CODEX"}):
         agent = await Agent.open(
             client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
         )
