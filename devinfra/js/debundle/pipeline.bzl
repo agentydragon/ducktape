@@ -10,14 +10,25 @@ into the source tree.
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 
+# Sync: `GATE_REJECTED_EXIT_CODE` in `pipeline.rs`.
+_GATE_REJECTED_EXIT_CODE = 3
+
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
+    if ctx.attr.emit_on_rejection:
+        # Only the gate-rejected status passes; every other failure fails the action.
+        run = "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
+            command = plan.command,
+            gate = _GATE_REJECTED_EXIT_CODE,
+        )
+    else:
+        run = "exec " + plan.command
     ctx.actions.run_shell(
         inputs = plan.inputs,
         tools = [ctx.executable.debundler],
         outputs = [out_dir],
-        command = "cd \"${{BAZEL_BINDIR}}\" && exec {command}".format(command = plan.command),
+        command = "cd \"${{BAZEL_BINDIR}}\" && {run}".format(run = run),
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
@@ -51,6 +62,8 @@ def _debundle_pipeline_plan(ctx, out_root):
     argv = ["run"]
     if ctx.attr.fail_fast:
         argv.append("--fail-fast")
+    if ctx.attr.emit_on_rejection:
+        argv.append("--emit-on-rejection")
     if has_flat:
         argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
     else:
@@ -186,6 +199,16 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
+    ),
+    "emit_on_rejection": attr.bool(
+        default = False,
+        doc = (
+            "Pass --emit-on-rejection and succeed when the realizability gate's " +
+            "rejection is the run's only failure: the output is then a " +
+            "reading-only tree marked by a `GATE_REJECTED` file at its " +
+            "`write_js_tree` root, never a runnable bundle. Name such a target " +
+            "for that (`debundle_readable`)."
+        ),
     ),
     "fail_fast": attr.bool(
         default = False,

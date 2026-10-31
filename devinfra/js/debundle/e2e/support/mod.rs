@@ -270,14 +270,21 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
 }
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &[])
+    run_rejection_fixture_with_args(opts, &[], 1)
 }
 
-/// Like [`run_rejection_fixture`] but with `debundle run --emit-on-rejection`:
-/// the gate rejection still fails the run, and the logical-module tree is
-/// written under [`RejectedFixture::app_root`] marked unrunnable.
+/// Like [`run_rejection_fixture`] but with `debundle run --emit-on-rejection`,
+/// for a spec whose only failure is the gate's rejection: the run exits with
+/// the gate-rejected status, and the logical-module tree is written under
+/// [`RejectedFixture::app_root`] marked unrunnable.
 pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"])
+    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
+}
+
+/// `debundle run --emit-on-rejection` over a spec that fails for more than
+/// the gate's rejection: the run exits 1 like any other refusal.
+pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 1)
 }
 
 /// Asserts `entry_path` is a parseable module that opens with the
@@ -310,13 +317,13 @@ pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
 /// `cycles.json` / `atomic_group_conflicts.json`) under the standard
 /// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run"])
+    run_rejection_fixture_with_args(opts, &["--dry-run"], 1)
 }
 
 /// Like [`run_dry_run_rejection_fixture`] but opts out of the default
 /// keep-going diagnostics and stops at the first supported failure.
 fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
+    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"], 1)
 }
 
 /// Runs `fixture` keep-going and with `--fail-fast`, both dry. Keep-going
@@ -375,14 +382,19 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
     }
 }
 
-fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
+/// `exit_code` is 1 for a refused spec, or the gate-rejected status of an
+/// `--emit-on-rejection` run; a panic exits 101 and is no refusal.
+fn run_rejection_fixture_with_args(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
     let result = spawn_transform_with_args(&setup.spec_path, extra_args);
-    // `debundle` exits 1 when it refuses a spec; a panic exits 101 and is no refusal.
     assert_eq!(
         result.status.code(),
-        Some(1),
+        Some(exit_code),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
         result.stdout,
         result.stderr,

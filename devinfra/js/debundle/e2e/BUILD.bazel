@@ -528,7 +528,10 @@ debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
 
 debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
 
-debundle_e2e_test(name = "emit_on_rejection_test")
+debundle_e2e_test(
+    name = "emit_on_rejection_test",
+    deps = ["@crates//:serde_json"],
+)
 
 debundle_e2e_test(
     name = "pass_two_tdz_cut_diagnosis_test",
