@@ -514,6 +514,9 @@ async def test_restart_never_replays_unresolved_provider_intent(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
+        # Exercise the forced drain deadline within this fixture's 10-second process grace.
+        config.shutdown_drain_seconds = 1
+        config.shutdown_budget_seconds = 16
         async with AsyncExitStack() as active:
             stub = await active.enter_async_context(service(config))
             request = open_request(tmp_path)
