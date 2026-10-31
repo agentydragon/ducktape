@@ -316,8 +316,9 @@
         <strong
           >491 seconds of its 524-second critical path in the VM suite</strong
         >. Browser shards consume more aggregate test CPU but finish six minutes
-        earlier. Profile guest boot and first native startup; keep those latency
-        and compute objectives separate.
+        earlier. Follow-up profiles now narrow the VM investigation to boot
+        device discovery and startup time outside sampled userspace CPU. Keep
+        those latency and compute objectives separate.
       </p>
       <p class="scope">
         Run arrivals: 31 October 2026, 08:30–12:30 UTC. Collected
@@ -361,39 +362,41 @@
     <main>
       <section id="decisions">
         <div class="eyebrow">Selected investigation batch</div>
-        <h2>Measure the remaining work before changing policy.</h2>
+        <h2>Use the collected profiles to narrow the remaining work.</h2>
         <ol>
           <li>
-            <strong>Native startup CPU profile.</strong> Capture the actual
-            app-server cold launch and initialization inside the VM, preserving
-            independent sessions and the OOM leaf-cgroup assertions. All six
-            retained launchers use QEMU TCG software emulation; its share of
-            startup cost remains unmeasured.
+            <strong>Native startup: attribute the unsampled interval.</strong>
+            A passing manual profile captured about 2.2 sampled user-CPU seconds
+            during the OOM app-server's 20.1-second startup. Kernel CPU,
+            scheduling, TCG effects and waits remain unresolved. Sparse function
+            samples identify no dominant individual CPU hotspot.
           </li>
           <li>
-            <strong>Guest boot critical chain.</strong> Collect systemd unit
-            ordering and profile the blocking device/filesystem/service work.
-            Earlier guest kernel-to-workspace spans were roughly 33–41 seconds.
-            The test-only Debian/EROFS guest is not the production NixOS image.
+            <strong>Guest boot: explain device discovery.</strong> The retained
+            systemd chain reaches the workspace device at 15.3 seconds, then
+            spends 2.4 seconds creating its filesystem and 1.1 seconds mounting
+            it. Attribute the earlier kernel/device interval; these activation
+            timings are not CPU time. The guest is test-only Debian/EROFS.
           </li>
           <li>
-            <strong>Reliable guest span attribution.</strong> Put stable Sandbox
-            UID on the existing Runner OTel resource and verify exported stages
-            for all six guests. Five explicit Sandbox-ready spans omit the
-            central sampler’s indirectly created guest; presence of five
-            identities is not complete coverage.
+            <strong>Guest span coverage is now checked.</strong> Merged resource
+            identity and stage/parentage checks cover all six guests, including
+            the central sampler. The final uncached proof attributed all 249
+            Runner spans to Sandbox resources. Use the existing OTel artifacts
+            for subsequent measurements.
           </li>
           <li value="5">
-            <strong>Browser worker compute profile.</strong> Profile expensive
-            case/fixture work while retaining every case. Repeated session setup
-            occurs on each shard. A new full-target diagnostic passed all 16
-            shards; its browser-only profile starts after dependency setup and
-            cannot attribute that earlier CPU.
+            <strong>Browser: finish child-process CPU attribution.</strong>
+            The full 16-shard diagnostic passed. First-case setup took 33–67
+            seconds per shard; the selected Python worker profile used 7.1 CPU
+            seconds and excludes earlier imports and PostgreSQL/Electric child
+            CPU. Backend attribution remains open; no shard policy changed.
           </li>
           <li value="7">
-            <strong>Refresh this report.</strong> Publish current adoption,
-            critical paths and retry evidence. Keep the historical experiments
-            below with their original limits.
+            <strong>Report refresh completed.</strong> The 121-head snapshot,
+            adoption pointers and retry diagnoses are retained below. Subsequent
+            investigations refine the next work without changing this frozen
+            cohort or its historical experiments.
           </li>
         </ol>
         <div class="callout">
@@ -404,7 +407,7 @@
           feedback tail.
         </div>
         <p class="small">
-          Current investigation pointers:
+          Subsequent investigation pointers:
           <a href="https://github.com/agentydragon/ducktape/pull/13351"
             >#13351</a
           >
@@ -412,10 +415,28 @@
           <a href="https://github.com/agentydragon/ducktape/pull/13352"
             >#13352</a
           >
-          carries the Runner identity and six-guest trace contract. These
-          follow-up PRs are separate from this measurement cohort. The trace
-          candidate passed its real VM run with 290/290 Runner spans
-          resource-attributed; hosted review is still in progress.
+          carries the Runner identity and six-guest trace contract;
+          <a href="https://github.com/agentydragon/ducktape/pull/13359"
+            >#13359</a
+          >
+          retains the repeatable boot probe. Those three PRs merged.
+          <a href="https://github.com/agentydragon/ducktape/pull/13364"
+            >#13364</a
+          >
+          adds manual native profiling and durable raw artifacts. Its
+          <a
+            href="https://app.buildbuddy.io/invocation/44d682a7-5b89-4544-ae8e-259557148aa6"
+            >profile</a
+          >
+          and
+          <a
+            href="https://app.buildbuddy.io/invocation/83f4fdd3-3722-4987-8f57-b68f8ee421c3"
+            >unprofiled control</a
+          >
+          passed, with different source snapshots and unverified image-byte
+          identity. They establish no causal latency saving. These follow-ups
+          are outside the measurement cohort; current PR checks are linked
+          separately from the recorded experimental results.
         </p>
       </section>
       <section id="feedback">
@@ -1689,10 +1710,12 @@
                   diagnostics and containerd profiles.
                 </td>
                 <td data-label="Remaining limit or decision">
-                  Stage collection is shipped. Consistent Runner resource
-                  identity and all-six-guest exported-stage checks are the
-                  selected next change. Shutdown warnings alone do not establish
-                  lost earlier spans.
+                  Stage collection is shipped. Resource identity and
+                  all-six-guest stage checks subsequently merged in
+                  <a href="https://github.com/agentydragon/ducktape/pull/13352"
+                    >#13352</a
+                  >; its final uncached proof attributed 249/249 Runner spans.
+                  Shutdown warnings alone do not establish lost earlier spans.
                 </td>
               </tr>
               <tr>
@@ -1717,7 +1740,15 @@
                 <td data-label="Remaining limit or decision">
                   Different workers/source/cache states prevent a whole-CI
                   saving or CPU non-regression claim. Current work profiles
-                  actual guest boot/native startup.
+                  actual guest boot/native startup; the resulting
+                  <a href="https://github.com/agentydragon/ducktape/pull/13359"
+                    >boot probe</a
+                  >
+                  and
+                  <a href="https://github.com/agentydragon/ducktape/pull/13364"
+                    >native profiles</a
+                  >
+                  now retain evidence for the next attribution step.
                 </td>
               </tr>
               <tr>
