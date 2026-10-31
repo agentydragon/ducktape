@@ -128,7 +128,10 @@ class LauncherRelayPolicy(ClusterPolicy):
         self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any], settings_config_map: str
     ) -> None:
         pod_spec = runner_pod["spec"]
-        relay = dict(one(c for c in pod_spec["containers"] if c["name"] == sidecar_config.CONTAINER_NAME))
+        relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
+        # The launcher mutation adds this as a regular container, whose per-container restart
+        # policy is not enabled on the pinned cluster. Its lifetime is owned by KubeVirt.
+        relay.pop("restartPolicy")
         token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}

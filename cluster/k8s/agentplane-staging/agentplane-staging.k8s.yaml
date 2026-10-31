@@ -4955,6 +4955,9 @@ spec:
               name: buildbuddy-api-key
               readOnly: true
           workingDir: /state
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
               value: /etc/agentplane-egress-sidecar/settings.yaml
@@ -4986,6 +4989,7 @@ spec:
             requests:
               cpu: 10m
               memory: 32Mi
+          restartPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -4998,8 +5002,6 @@ spec:
             - mountPath: /etc/agentplane-egress-sidecar
               name: egress-sidecar-settings
               readOnly: true
-      imagePullSecrets:
-        - name: forgejo-images-creds
       restartPolicy: Always
       securityContext:
         fsGroup: 1000

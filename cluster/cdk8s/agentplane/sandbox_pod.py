@@ -257,6 +257,7 @@ def _egress_sidecar(
     *,
     telemetry_enabled: bool,
     disable_otel_sdk: bool,
+    restart_policy: str | None = None,
 ) -> k8s.Container:
     telemetry_env = (
         [
@@ -268,6 +269,7 @@ def _egress_sidecar(
     )
     return k8s.Container(
         name=sidecar_config.CONTAINER_NAME,
+        restart_policy=restart_policy,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
         env=[
             settings.path_env,
@@ -336,38 +338,39 @@ def pod_spec(
     image_pull_secret_name: str | None = SECRET_NAME,
     enable_telemetry: bool = False,
     disable_otel_sdk: bool = False,
+    keep_sidecar_until_workload_exit: bool = False,
 ) -> k8s.PodSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     A box names no account of its own: whoever creates one from this shape sets the identity it runs
     as (the Sandbox controller the Sandbox's own, the sandbox Actions the caller's).
-    `additional_workloads` are other workload containers, before the egress sidecar. `sidecar_settings`
-    is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
+    `additional_workloads` are other workload containers. `sidecar_settings` is the sidecar's
+    settings file (`add_sidecar_settings`), and `workload_volumes`
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
     placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
-    hermetic fixture with no collector."""
+    hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
+    tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
+    )
+    sidecar = _egress_sidecar(
+        env,
+        settings,
+        sidecar_resources
+        or k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
+        ),
+        telemetry_enabled=enable_telemetry,
+        disable_otel_sdk=disable_otel_sdk,
+        restart_policy="Always" if keep_sidecar_until_workload_exit else None,
     )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[
-            workload,
-            *additional_workloads,
-            _egress_sidecar(
-                env,
-                settings,
-                sidecar_resources
-                or k8s.ResourceRequirements(
-                    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-                    limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-                ),
-                telemetry_enabled=enable_telemetry,
-                disable_otel_sdk=disable_otel_sdk,
-            ),
-        ],
+        containers=[workload, *additional_workloads, *([] if keep_sidecar_until_workload_exit else [sidecar])],
+        init_containers=[sidecar] if keep_sidecar_until_workload_exit else None,
         automount_service_account_token=False,
         # Container restarts create a fresh PID namespace for the isolated Codex executor.
         restart_policy="Always",

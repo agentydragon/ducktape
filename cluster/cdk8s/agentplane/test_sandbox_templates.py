@@ -87,7 +87,9 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert pod["restartPolicy"] == "Always"
     assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
     assert executor["securityContext"] == runner["securityContext"]
-    assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor", "egress-sidecar"]
+    assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor"]
+    assert [container["name"] for container in pod["initContainers"]] == ["egress-sidecar"]
+    assert pod["initContainers"][0]["restartPolicy"] == "Always"
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
     assert config["environment"] == {
@@ -296,7 +298,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
         assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
         key_file = next(env for env in containers[name]["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
         assert key_file["value"] == "/run/buildbuddy/api-key"
-    sidecar = containers["egress-sidecar"]
+    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
     assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
     assert all(env["name"] != "BBR_BUILDBUDDY_API_KEY_FILE" for env in sidecar.get("env", []))
     config = _runner_configuration(staging_manifests, pod)

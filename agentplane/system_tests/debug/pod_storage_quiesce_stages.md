@@ -48,3 +48,26 @@ Focused checks passed on RBE in [invocation `b4d634d8`](https://app.buildbuddy.i
 `//agentplane/runner/control:control_test`, `//agentplane/runner_gateway/gateway:gateway_test`,
 `//agentplane/sandbox_controller:sandbox_controller_test`, and
 `//agentplane/system_tests/k3s:test_process_traces` (4/4). Pre-commit passed on the changed files.
+
+## Why the late Runner spans were not collected
+
+The same run's `containerd.log` identifies the replacement Pod's Runner container as
+`24470f2d...` and its egress sidecar as `c31f8ea0...`. At 09:45:34.185 UTC kubelet sent
+SIGTERM to both. The egress sidecar exited at 09:45:34.231, while Runner remained alive until
+09:45:39.238. The successful Quiesce RPC was at 09:45:34.060–34.068, and Gateway received and
+published `draining`, `flushing`, and `quiesced` before 09:45:34.185. Runner's
+`forwardWatchState` records a completed child span for each stage before sending it to Gateway.
+The collector retained Runner's earlier `none` span but none of those later spans; it continued
+receiving Gateway spans during this interval.
+
+Runner's configured OTLP endpoint is `127.0.0.1:3132`, the egress sidecar's telemetry route to
+Alloy. Its SDK batches exports and flushes during process shutdown with a five-second bound.
+Kubelet removed that route about 46 ms after signaling Runner, while Runner still had late
+spans to export. The exact exporter error is not retained in this run, so the artifacts do not
+prove which individual export attempt failed. They do establish that ordinary concurrent Pod
+container termination cannot guarantee collection of shutdown-adjacent Runner spans. The
+Runner Pod template therefore makes the egress relay a Kubernetes-native sidecar: an
+`initContainer` with `restartPolicy: Always`, which kubelet terminates only after ordinary
+containers have exited. This keeps the existing protected telemetry route available through
+Runner's SDK shutdown; no sampling policy, deadline, or application lifecycle barrier changes.
+The earlier `UNAVAILABLE` at 09:44:34.643 remains a separate unresolved RPC failure.

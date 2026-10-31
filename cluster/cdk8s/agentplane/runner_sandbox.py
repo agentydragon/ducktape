@@ -556,6 +556,7 @@ class RunnerTemplate(Construct):
                 image_pull_secret_name=self.image_pull_secret_name,
                 enable_telemetry=True,
                 disable_otel_sdk=self.disable_otel_sdk,
+                keep_sidecar_until_workload_exit=True,
             ),
         )
         state_volume = {
