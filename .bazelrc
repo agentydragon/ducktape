@@ -121,10 +121,18 @@ common --incompatible_default_to_explicit_init_py
 common:quiet --curses=no
 common:quiet --show_progress_rate_limit=30
 
-# rustc emits .rmeta first so dependent crates start before codegen finishes. Measured
-# 2026-10-29 on the debundle chain: cold critical path 610 -> 536 s, elapsed 682 -> 653 s,
-# +14% actions; devinfra/debug/2026_10_29_rust_pipelined_compilation.md.
-build --@rules_rust//rust/settings:pipelined_compilation=True
+# Pipelined compilation (rustc emits .rmeta first so dependents start before codegen
+# finishes) was enabled repo-wide on 2026-10-30 and reverted the same day: under it
+# `@aw_server_rust//:aw_server_bin` fails with E0463 "can't find crate for `aw_server`",
+# so `@ducktape_activitywatch//importer:aw_importer_test` fails to build and every
+# aw-importer / aw-server release and image push fails. The flag is a single build
+# setting, so it cannot be scoped away from that nested module, and
+# `disable_pipelining = True` on the aw libraries did not help (measured; see
+# devinfra/debug/2026_10_29_rust_pipelined_compilation.md). Measured benefit was
+# ~10-20 s per debundle PR against 14% more actions, so the loss is small.
+# Re-adopt only with a check that builds the nested-module Rust targets, e.g.
+#   bbr build @ducktape_activitywatch//importer:aw_importer_test
+# and devinfra/debug/2026_10_29_rust_pipelined_compilation.md updated.
 
 # Run Go tests once with race detection, including local and publication tests.
 # Production builds keep the normal configuration. Explicit pure="on" targets
