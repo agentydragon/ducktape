@@ -53,8 +53,8 @@ browser on desktop and phone.
 - **An appended message, reader scrolled up**: nothing moves. The reader keeps reading exactly
   where they were.
 - **A message actively streaming, reader following, it is the last message**: the view tracks its
-  growth so the growing edge stays visible — the message's own start must never scroll off the top
-  of the screen while it is still generating.
+  growth so the growing edge stays visible. When the message is taller than the viewport, its
+  growing tail takes priority over keeping its start visible.
 - **A message actively streaming or otherwise resizing anywhere else** — off-screen above or below
   the viewport, or while the reader is not following — must not move the reader's scroll position,
   even by a pixel.

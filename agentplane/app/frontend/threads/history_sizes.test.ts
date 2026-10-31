@@ -11,9 +11,9 @@ describe("row heights", () => {
     expect(rememberedRowHeight("thread-a", 412, "item:2")).toBeUndefined();
   });
 
-  it("are looked up at the last width read when the history has no width yet", () => {
+  it("do not infer an unknown width from another observation", () => {
     rememberRowHeight("thread-c", 1008, "item:1", 40);
-    expect(rememberedRowHeight("thread-c", 0, "item:1")).toBe(40);
+    expect(rememberedRowHeight("thread-c", 0, "item:1")).toBeUndefined();
   });
 
   it("ignore a reading from an element that is not laid out", () => {

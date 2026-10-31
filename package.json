@@ -36,7 +36,6 @@
     "@opentelemetry/resources": "^2.0.0",
     "@opentelemetry/sdk-trace-web": "^2.0.0",
     "@tabler/icons-react": "^3.46.0",
-    "@tanstack/react-virtual": "3.13.12",
     "@uiw/react-codemirror": "^4.25.11",
     "@uiw/react-json-view": "2.0.0-alpha.43",
     "chart.js": "^4.4.8",

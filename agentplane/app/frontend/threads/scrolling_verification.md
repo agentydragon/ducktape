@@ -3,8 +3,11 @@
 The reader-facing contract is [`../SPEC.md`](../SPEC.md). This document records
 implementation context and how to assess changes against that contract.
 
-`VirtualizedHistory` in `virtualized_history.tsx` currently uses a scroll-anchor layer over
-`@tanstack/react-virtual` and reads paginated rows from the Electric-backed store.
+`VirtualizedHistory` in `virtualized_history.tsx` renders immutable plans from `history_geometry.ts`
+and reads paginated rows from the Electric-backed store. `history_viewport.ts` owns the DOM boundary:
+it reads current mounted boxes after commit, promotes observations separately from estimates,
+and reconciles reader intent only after those boxes agree with the committed plan. Its reconciler
+is the only scroll-position writer. A stable scrollbar gutter keeps overflow from changing width.
 Issue #7841 evaluated `react-virtuoso` and rejected it; another spike is evaluating
 `content-visibility` plus native `overflow-anchor`. A candidate is judged against the
 contract, not against a smaller diff or bundle. Prior scroll regressions: #7784 and #7829.
@@ -14,12 +17,12 @@ contract, not against a smaller diff or bundle. Prior scroll regressions: #7784 
 The history publishes what a test or an investigation needs, so neither has to guess from
 timing:
 
-- `data-scroll-mode` on the "Thread history" region: `following` the tail, `reading` where the
-  reader is, or `restoring` the reader's row after a layout change.
-- `data-layout-settled`: `true` once the layout has stayed put for a few frames, no correction is in
-  flight and no row is still loading its text (`aria-busy="true"`, which grows the row when the text
-  arrives); `false` while rows are still being measured. A test that needs a line's resting position
-  waits for it (`holding_still` does) rather than counting frames.
+- `data-scroll-mode` on the "Thread history" region: `following` the tail or `reading` where the
+  reader is. Anchor restoration reconciles the current reading intent within the verified commit.
+- `data-layout-settled`: `true` once the mounted boxes agree with their committed plan, its position
+  correction has run and no row is still loading its text (`aria-busy="true"`); `false` while another
+  plan or measurement is needed. A test that needs a line's resting position waits for it
+  (`holding_still` does) rather than counting frames.
 - In browser tests, `thread_view_marks.js` enables Agentplane User Timing marks before the app loads
   and observes the last 2,000 scroll and layout decisions. It exposes
   `window.__threadViewTiming.events()` **in tests only**. A failing test prints the relevant slice;
@@ -29,7 +32,7 @@ timing:
   entries. Stop and download writes JSON for analysis, **not** an importable Chrome profile.
   Version 3 also records bounded layout snapshots at virtual-size changes, React commits, before
   and after component scroll writes, and animation frames whose geometry changed. Each snapshot
-  identifies the Thread and mounted view, compares planned row keys with virtualizer positions,
+  identifies the Thread and mounted view, compares planned row keys with planned positions,
   estimates and measurements, and captures mounted row rectangles plus viewport/content geometry.
   Snapshot arrays retain the first 128 rows, with `rowCount` identifying larger histories. Capture
   stops adding layouts at 1,000 snapshots; `droppedLayouts` reports skipped snapshot attempts.
@@ -43,8 +46,8 @@ undeclared outputs. Unlike the lightweight mark collector, this per-frame probe 
 installed by default: it scans each visible row on every frame. It reports overlapping or
 separated rows (layout not yet caught up with measurement), content that moved on screen more than
 scrolling explains, browser layout-instability and long-frame entries, and when `/sync/` reads
-finished. Rows are positioned with `transform`, which the layout-instability API does not count;
-hence the per-frame comparison. Set
+finished. Rows are absolutely positioned; the per-frame comparison also attributes movement to
+scrolling. Set
 `--test_env=AGENTPLANE_CPU_THROTTLE=4` to run the page that many times slower, which makes timing
 races show up in one run instead of one in thirty.
 
@@ -63,9 +66,11 @@ Existing coverage, all Playwright against a real backend:
 | Resume/reload preserves position and draft                                                                                                                                                 | `test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draft`, `test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_window` (`test_thread_browser.py`)                                      |
 | Lazy pagination elsewhere in the transcript UI                                                                                                                                             | `test_chronological_debug_is_lazy_paged_and_keeps_the_thread` (`test_thread_browser.py`)                                                                                                                              |
 
-No test yet isolates the streaming/idle-resize guarantee in general — only the specific case
-`test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place` exercises. A
-candidate spike adds a regression test for the general case before it can claim to satisfy it.
+`test_streaming_message_taller_than_the_viewport_keeps_its_growing_tail_visible` covers following
+one growing message past the viewport height on desktop and phone.
+`test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place` covers a mounted row growing
+above the reader during an upward gesture; `test_small_upward_scroll_stays_detached_when_tail_streams`
+covers a streaming update during a small upward gesture.
 
 A candidate implementation is evaluated the way agentydragon/ducktape#7841 evaluated
 `react-virtuoso`: each variant run 3× against the tests above plus
@@ -78,6 +83,12 @@ Performance: no regression against today's baseline at 500 and 2,000 rows, measu
 profiler (a Playwright trace or Chrome's performance timeline) — not ad hoc timers. 2,000 rows is
 a placeholder past any thread length observed so far; revisit against real staging data if it
 turns out to matter.
+
+`bbr test //agentplane/app/frontend:profile_history --runs_per_test=3 --nocache_test_results`
+explicitly runs the Chromium CPU profiler at both sizes. It loads the entire window through
+pagination, traverses to the actual head and tail, checks bounded mounted rows, and saves
+`.cpuprofile` files and sampled-time summaries in undeclared outputs. The target is manual so
+routine visual review does not pay for profiling every unchanged scene.
 
 Report, for any candidate: lines changed in `virtualized_history.tsx`, ref/state count before and
 after, and the bundled JS size delta — the same shape agentydragon/ducktape#7841 reported for

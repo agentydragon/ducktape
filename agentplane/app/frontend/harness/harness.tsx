@@ -66,6 +66,7 @@ import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
+import { rememberRowHeight } from "../threads/history_sizes";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
@@ -1944,6 +1945,89 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
+  if (threadId !== IDLE_THREAD && threadId !== UNNAMED_STOPPED_THREAD) {
+    return [{ ...viewState(80, null), thread_id: threadId }];
+  }
+  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
+    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
+  const rekey = (row: Record<string, unknown>, id: string) => ({ ...row, entity_id: id });
+  return [
+    { ...viewState(80, null), thread_id: threadId },
+    rekey(lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId), "visual-setup"),
+    rekey(
+      lifecycle(
+        2,
+        "setup_output",
+        event({
+          case: "setupOutput",
+          value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace sync complete\n") } },
+        }),
+        threadId
+      ),
+      "visual-setup-output"
+    ),
+    rekey(
+      lifecycle(3, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+      "visual-setup-finished"
+    ),
+    rekey(
+      lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "visual-turn" } }), threadId),
+      "visual-lifecycle-before"
+    ),
+    rekey(
+      lifecycle(11, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+      "visual-harness-before"
+    ),
+    entity(
+      "confirmed_input",
+      "visual-input",
+      20,
+      { harness_message_id: "visual-input", origin_command_ids: [] },
+      {
+        thread_id: threadId,
+        input_ref: payload(20, "visual-input", "confirmed_input", "Check the short thread after switching."),
+      }
+    ),
+    rekey(
+      lifecycle(
+        30,
+        "turn_completed",
+        event({ case: "turnCompleted", value: { turnId: "visual-turn", status: TurnStatus.COMPLETED } }),
+        threadId
+      ),
+      "visual-lifecycle-after"
+    ),
+    rekey(
+      lifecycle(31, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+      "visual-harness-after"
+    ),
+    item(40, "visual-reasoning", ItemKind.REASONING, "The history has seven compact rows.", { threadId }),
+    item(50, "visual-answer", ItemKind.ASSISTANT_TEXT, "The short thread is ready.", { threadId }),
+    item(60, "visual-tool", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"notes.txt"}',
+      output: "No additional history is needed.",
+    }),
+  ];
+}
+
+function historyProfileRows(threadId: string, rowCount: number): Record<string, unknown>[] {
+  if (!Number.isInteger(rowCount) || rowCount < 1 || rowCount > 5000) {
+    throw new RangeError(`History profile row count must be between 1 and 5000: ${rowCount}`);
+  }
+  return [
+    { ...viewState(rowCount, null), thread_id: threadId },
+    ...Array.from({ length: rowCount }, (_, index) =>
+      item(index + 1, `profile-row-${index}`, ItemKind.ASSISTANT_TEXT, `Profile history row ${index}.`, {
+        threadId,
+        turn: `profile-turn-${index}`,
+      })
+    ),
+  ];
+}
+
 function setupRows(threadId: string, running = false): Record<string, unknown>[] {
   const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
     toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
@@ -3524,6 +3608,24 @@ const visualHarness = {
   },
   interleavedEvents(): void {
     threadEntityRows = interleavedRows;
+  },
+  shortThreadSwitchHistory(): void {
+    mapThread = (thread) => (thread.id === IDLE_THREAD ? { ...thread, name: "Short thread arriving" } : thread);
+    threadEntityRows = shortThreadSwitchRows;
+  },
+  historyProfile(rowCount: number): void {
+    const rowsByThread = new Map<string, Record<string, unknown>[]>();
+    threadEntityRows = (threadId) => {
+      let rows = rowsByThread.get(threadId);
+      if (!rows) {
+        rows = historyProfileRows(threadId, rowCount);
+        rowsByThread.set(threadId, rows);
+      }
+      return rows;
+    };
+  },
+  rememberHistoryRowHeight(threadId: string, width: number, key: string, height: number): void {
+    rememberRowHeight(threadId, width, key, height);
   },
   lifecycleGroup(): void {
     threadEntityRows = lifecycleGroupRows;

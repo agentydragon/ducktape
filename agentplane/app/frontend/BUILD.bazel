@@ -6,6 +6,7 @@
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 # gazelle:exclude test_visual_operation_presentation.py
+# gazelle:exclude test_history_profile.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -64,7 +65,6 @@ filegroup(
         "//:node_modules/@opentelemetry/resources",
         "//:node_modules/@opentelemetry/sdk-trace-web",
         "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/node",
         "//:node_modules/date-fns",
         "//:node_modules/happy-dom",
@@ -952,6 +952,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:history_sizes",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
@@ -985,6 +986,13 @@ filegroup(
     name = "visual_bundle_css",
     testonly = True,
     srcs = ["harness/bundle.css"],
+)
+
+agentplane_visual_test(
+    name = "profile_history",
+    src = "test_history_profile.py",
+    tags = ["manual"],
+    title = "Agentplane: history CPU profiles",
 )
 
 agentplane_visual_test(
