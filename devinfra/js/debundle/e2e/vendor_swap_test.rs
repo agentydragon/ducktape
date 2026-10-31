@@ -966,6 +966,30 @@ fn partial_swap_rejects_island_internals_handed_to_chunk_code() {
     );
 }
 
+/// An island call that only compares retained state by identity (the
+/// `t instanceof mh` / `x === K` shape) cannot mutate it.
+#[test]
+fn partial_swap_drops_island_call_comparing_retained_state_by_identity() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set();\n\
+         function isRegistry(value) { return value === registry || typeof registry === value; }\n\
+         function register(name) { if (!isRegistry(name)) all.add(name); }\n\
+         register(\"mouseout\");\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
 /// One run reports every refused side effect, not only the first.
 #[test]
 fn partial_swap_reports_every_refused_registration() {
