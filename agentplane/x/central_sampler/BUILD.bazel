@@ -381,9 +381,13 @@ go_library(
         "codex/legacy_image_helper.txt",
         "codex/wait_description.txt",
         "schema/0008_final_schema.sql",
+        "schema/0009_export_snapshot_checkpoint.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
-    visibility = ["//agentplane/x/central_sampler/cmd:__pkg__"],
+    visibility = [
+        "//agentplane/history_service/ingress:__pkg__",  # real ingress exporter integration test
+        "//agentplane/x/central_sampler/cmd:__pkg__",
+    ],
     deps = [
         ":sampler_go_proto",
         "//agentplane/executor:executor_go_proto",

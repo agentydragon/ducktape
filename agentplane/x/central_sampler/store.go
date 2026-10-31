@@ -1002,6 +1002,7 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 	return entries, rows.Err()
 }
 
+// Checkpoint is the last snapshot whose entries and metadata completed export to target.
 func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, error) {
 	var cursor int64
 	err := s.db.QueryRowContext(ctx, `SELECT cursor FROM sampler_export_checkpoint WHERE session_id=$1 AND destination=$2`, id, target).Scan(&cursor)

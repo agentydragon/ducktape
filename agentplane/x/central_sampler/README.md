@@ -36,7 +36,11 @@ Build `//agentplane/x/central_sampler:main_bin`. Supply a JSON file matching
 (`postgresql://`). Startup applies Goose migrations before opening the service database connection
 or starting workers. Migration 8 creates a dedicated empty database's native schema or adopts a
 completed native version-7 database and adds the nullable Code Mode host marker. Repeated startup
-retains Session identities, conversation state, evidence and outbox.
+retains Session identities, conversation state, evidence and outbox. Migration 9 clears only the
+rebuildable export markers: the older exporter could mark entries delivered before Session metadata
+finished committing. The next export reconciles History's retained cursor and completes that
+snapshot. Replace the old singleton exporter before enabling multiple rolling replicas, so an old
+exporter cannot repopulate markers using the former semantics.
 For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` and pass
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.

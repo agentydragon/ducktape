@@ -169,6 +169,33 @@ type exportOutcome struct {
 	err      error
 }
 
+func TestExportAcknowledgementValidatesTheSessionJournal(t *testing.T) {
+	store := newTestStore(t)
+	session := exportFixtureSession(t, store)
+	if err := admitExportEvent(t.Context(), store, session.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		previous uint64
+		ack      *ingresspb.Acknowledgement
+		invalid  bool
+	}{
+		{"unchanged", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor}, false},
+		{"newer source commit", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor + 1}, false},
+		{"backwards", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor - 1}, true},
+		{"beyond journal", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor + 2}, true},
+		{"sealed", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor, Sealed: true}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := checkExportAcknowledgement(t.Context(), store, session.ID, test.ack, test.previous, session.Cursor)
+			if (err != nil) != test.invalid {
+				t.Fatalf("ack=%v err=%v invalid=%v", test.ack, err, test.invalid)
+			}
+		})
+	}
+}
+
 func TestExportQueueBacksOffFailuresAndResetsAfterProgress(t *testing.T) {
 	delaying := &recordingDelayingQueue{TypedDelayingInterface: workqueue.NewTypedDelayingQueue[string]()}
 	unavailable := errors.New("History unavailable")
@@ -326,6 +353,19 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
+	if err := ExportSession(ctx, store, session.ID, target, token); err != nil {
+		t.Fatal(err)
+	}
+	// The first quantum makes durable remote progress without finishing the
+	// announced snapshot. A replacement process must still find this Session.
+	checkpoint, err := store.Checkpoint(ctx, session.ID, target)
+	if err != nil || checkpoint != nil {
+		t.Fatalf("partial quantum checkpoint=%v err=%v", checkpoint, err)
+	}
+	pending, err := store.PendingSessionIDs(ctx, target, "", 16)
+	if err != nil || len(pending) != 1 || pending[0] != session.ID {
+		t.Fatalf("partial quantum pending=%v err=%v", pending, err)
+	}
 	hub, err := wakeups.Listen(ctx, databaseURL, OutboxChannel)
 	if err != nil {
 		t.Fatal(err)
