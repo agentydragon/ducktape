@@ -68,6 +68,47 @@ This observation establishes rollout and configuration. It did not submit a new 
 conversation or measure staging cache reuse. The automated tests above run separate service
 instances on BuildBuddy.
 
+## Unpadded staging cache reuse
+
+On 2026-10-31 at approximately 00:27 UTC, a disposable Sandbox and Session exercised the
+staging Dispatcher → Gateway → central sampler → direct organization Anthropic API path.
+The sampler ran `devel-20261030233921-7c9aa1f`; the model was `claude-haiku-5-5`.
+Session `bdc24ec2-bef4-4423-9120-961f16582cb9` retains the native requests, responses and usage
+in the sampler database.
+
+The Session used no custom instructions or padding: the system text exactly matched the
+21,757-character bundled base instructions, with the ordinary generated `exec` tool definition
+and environment context. Three short prompts asked the model to remember and recall a phrase;
+no model tool calls were requested. All three turns completed; both recall replies returned the
+correct phrase, `amber heron`.
+The following counts came from persisted provider response usage:
+
+| Turn | Effort | Cache created | Cache read | Uncached input | Output |
+| ---- | ------ | ------------: | ---------: | -------------: | -----: |
+| 1    | low    |         9,870 |          0 |              4 |      4 |
+| 2    | low    |            35 |      9,870 |              4 |      6 |
+| 3    | high   |            45 |      9,905 |              4 |      6 |
+
+Stored wire requests matched their decoded request bodies. System text, tool definitions and
+headers remained identical, and each request retained the preceding request's message prefix.
+The effort change appended an empty system control message with `output_config.effort: high`;
+the top-level effort stayed `low`, preserving the cached prefix. The request's
+`diagnostics.previous_message_id` linked each continuation to its preceding provider response.
+Provider `message_start` diagnostics were null; positive usage counts establish the reads.
+All three HTTP responses were 200 and retained terminal `message_stop` events. The Session
+finished idle, unblocked and at high effort.
+
+Provider request IDs, in turn order:
+
+- `req_011CgZNDvDnWNyc1fWjtJPX5`
+- `req_011CgZNE1PbF3JEQPCPa7j61`
+- `req_011CgZNE8XDF3W3H23oEZ4LK`
+
+The disposable Sandbox was stopped and deleted after inspection; retained sampler evidence
+was preserved. This demonstrates reuse for this ordinary unpadded staging conversation,
+including across an effort change. It does not measure a fleet-wide hit rate, long-idle expiry,
+changed tool definitions or compaction effects on the cache.
+
 ## Credentials and remaining work
 
 Bounded live acceptance used the operator-authorized organization key through per-invocation
