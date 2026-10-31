@@ -1,11 +1,124 @@
-# AI Subscription Comparison — Apples-to-Apples (2026-08-23)
+# AI Subscription Comparison
 
-**Historical analysis.** Model rankings, costs, and subscription terms below are
-dated August 2026, not current recommendations. The refreshed September AA dataset,
-including GPT-6, is in <../../docs/artificial_analysis/README.md>. Its index methodology differs;
-the August CSV is retained so this document's calculations remain reproducible.
+## Current refresh (2026-10-31)
 
-## Goal
+This refresh updates model scores, API benchmark costs, and subscription terms. The
+dated analysis below remains an August 2026 snapshot. Artificial Analysis v5.0
+changed the evaluation mix, so its scores and costs are not directly comparable to
+v4.3.2 or earlier; a change between snapshots is not evidence that a model improved
+or regressed. The selected v5 rows and provenance are in
+<../../docs/artificial_analysis/cited_models_2026_10_31.csv> and
+<../../docs/artificial_analysis/README.md>.
+
+### OpenAI and Anthropic models
+
+The table uses each model's highest listed reasoning setting (usually `max`) on
+Artificial Analysis's Intelligence Index v5.0. Task cost is the API list-price cost
+of one weighted benchmark run. It is not a subscription cost, a successful-task
+cost, or a forecast for our repositories. The run's output volume is shown because
+it materially affects the cost.
+
+| Model / setting                                                                   | Index v5.0 | API cost / index task | API input / output per MTok | Output tokens in index run |
+| --------------------------------------------------------------------------------- | ---------: | --------------------: | --------------------------: | -------------------------: |
+| [Claude Opus 5.5 (max)](https://artificialanalysis.ai/models/claude-opus-5-5)     |         58 |                $10.04 |                    $4 / $20 |                       220M |
+| [GPT-6 Astra (max)](https://artificialanalysis.ai/models/gpt-6-astra)             |         57 |                 $6.24 |                   $10 / $50 |                        54M |
+| [GPT-6.1 Sol (max)](https://artificialanalysis.ai/models/gpt-6-1-sol)             |         55 |                 $1.27 |                    $2 / $10 |                        64M |
+| [Claude Sonnet 5.5 (max)](https://artificialanalysis.ai/models/claude-sonnet-5-5) |         54 |                $10.02 |                    $2 / $10 |                       340M |
+| [GPT-6.1 Terra (max)](https://artificialanalysis.ai/models/gpt-6-1-terra)         |         51 |                 $0.96 |                     $1 / $5 |                        99M |
+| [Claude Fable 5.1 (max)](https://artificialanalysis.ai/models/claude-fable-5-1)   |         49 |                $12.99 |                   $10 / $50 |                       160M |
+| [Claude Haiku 5.5 (max)](https://artificialanalysis.ai/models/claude-haiku-5-5)   |         36 |                 $0.41 |               $0.10 / $0.50 |                       300M |
+| [GPT-6 Luna (max)](https://artificialanalysis.ai/models/gpt-6-luna)               |         28 |                 $0.15 |               $0.10 / $0.50 |                       110M |
+
+On this index, GPT-6.1 Sol is 3 points below Opus 5.5 and costs about 7.9 times
+less per benchmark run. Sol and Sonnet 5.5 are one point apart, while Sonnet's
+measured run costs about 7.9 times as much. Those cost gaps partly reflect output
+volume: Sonnet generated 340M output tokens and Opus 220M, versus Sol's 64M.
+GPT-6.1 Terra is the lowest-cost model among the top ten scores in the v5
+announcement, at $0.96 per run. These are benchmark workload results; subscription
+allowances still need to be compared separately.
+
+The v5 suite has nine evaluations: AA-Briefcase, AutomationBench-AA, GDP.pdf,
+FrontierCode 2.0, Terminal-Bench 4.0, AA-Omniscience v1.1, HLE-Diamond, CritPt v2
+hard subset, and Terminal-Bench-Science. It removed GDPval-AA v2.1, SciCode, and
+AA-LCR v1.1. That is a material method change from v4.3.2.
+
+### Other providers checked
+
+| Provider | Current scored model                                                                   | Index v5.0 | API cost / index task | What changed for buying capacity                                                                                                                                                                                                                                                      |
+| -------- | -------------------------------------------------------------------------------------- | ---------: | --------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Google   | [Gemini 4 Carbon (high)](https://artificialanalysis.ai/models/gemini-4-carbon)         |         59 |                 $7.76 | Highest score in the v5 snapshot, but currently restricted to selected cyber defenders and trusted partners. Google says general developer, business, and consumer access is still to come. AA's task cost uses $4/$20 per MTok; Google's announced introductory API price is $2/$10. |
+| Google   | [Gemini 4 Argon (high)](https://artificialanalysis.ai/models/gemini-4-argon)           |         50 |                 $7.68 | New frontier model; keep its API score separate from the quota limits of Gemini subscriptions and CLI.                                                                                                                                                                                |
+| Meta     | [Muse Wonder Full (max)](https://artificialanalysis.ai/models/muse-wonder-full)        |         50 |                     — | New subscription-only coding model; AA does not publish API task pricing for it. Muse Code Power is $50/month and Maximum is $200/month; both include Wonder Full.                                                                                                                    |
+| Kimi     | [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro)                    |         46 |                 $3.68 | New model across Kimi Code and other products. Kimi says full weights are scheduled for Nov 4, so it is not open-weight as of this refresh.                                                                                                                                           |
+| xAI      | [Grok 4.7 (xhigh)](https://artificialanalysis.ai/models/grok-4-7)                      |         34 |                 $7.51 | New scored model; no subscription quota change found in this refresh.                                                                                                                                                                                                                 |
+| Alibaba  | [Qwen3.8 Max (0902)](https://artificialanalysis.ai/models/qwen3-8-max)                 |         34 |                $10.02 | New scored model; no subscription quota change found in this refresh.                                                                                                                                                                                                                 |
+| Z.ai     | [GLM-5.3 (max)](https://artificialanalysis.ai/models/glm-5-3)                          |         32 |                 $5.01 | v5 score replaces the old v4.3.2 comparison for current ranking purposes. It does not validate Z.ai's published coding-plan subsidy multiple.                                                                                                                                         |
+| DeepSeek | [V4.1 Flash 1017 (max)](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) |         32 |                 $0.60 | New open-weight model; among released weights it ties GLM-5.3 on v5 score at a much lower measured API task cost.                                                                                                                                                                     |
+| MiniMax  | [M3.1-Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash)                  |         29 |                 $0.49 | New open-weight model; no subscription quota change found in this refresh.                                                                                                                                                                                                            |
+| Mistral  | [Large 4 (high)](https://artificialanalysis.ai/models/mistral-large-4)                 |         26 |                 $2.06 | New open-weight model; no subscription quota change found in this refresh.                                                                                                                                                                                                            |
+
+These selected provider rows are not the whole leaderboard. Kimi K3.1 Pro's 46
+currently leads models with weights announced but not yet released; among weights
+already released, DeepSeek V4.1 Flash and GLM-5.3 lead at 32. Haiku 5.5 scores 36,
+above either. Kimi's membership rollout and the new Meta plan are the material
+subscription additions found in this pass; the other model releases do not by
+themselves change the old plan-quota measurements.
+
+### Subscription and product changes since the August analysis
+
+- **Anthropic:** Max 20x is now called **Ultra**, still $200/month. Anthropic says
+  Ultra provides 10x Pro usage per week and, for verified accounts, removes the
+  five-hour limit. This supersedes the old claim that the plan's five-hour window
+  absorbs the fleet. Max 5x remains $100/month. Ultra also includes $200 in monthly
+  Claude Platform API credits ($100 for Max); these must be claimed, expire monthly,
+  and do not increase interactive Claude or Claude Code limits. Haiku 5.5 added a
+  $0.10/$0.50-per-MTok API model for high-volume work, and Anthropic halved Sonnet
+  5.5 cache-read pricing, which it says lowers cost on most agentic work by about
+  20%.
+- **OpenAI:** Pro 500 is now available for $500/month with the highest included Pro
+  usage and Ultrafast for Astra and Sol. New Pro 200 subscriptions have a lower
+  included allowance than the earlier Pro 200; the grandfathered higher allowance
+  ended Oct 29. Eligible Pro 100/200/500 subscriptions can separately claim $100/
+  $200/$500 in monthly API credits. Those credits fund API calls and do not add
+  ChatGPT or signed-in Codex usage. GPT-6.1 Terra, the latest general model release
+  in this snapshot, is available in Work and Codex and by API, but not in Chat.
+- **Kimi:** New membership plans renamed the tiers and now include Kimi Code from
+  Plus upward. For new plans, the weekly quota is removed, but a rolling five-hour
+  rate window and monthly total quota remain. Legacy subscribers keep the weekly
+  window. Optional Extra Usage provides a separate paid fallback when a quota is
+  reached; it is priced near API rates.
+- **Meta:** Muse Code is a new flat-rate CLI subscription. Power ($50/month) and
+  Maximum ($200/month) include Muse Wonder Full, scored 50 by AA but without a
+  published task cost. The subscription's default Contributor mode shares prompts,
+  code, files, context, and responses for model training; it can be turned off.
+- **Google:** Gemini 4 Carbon is not yet a general developer or consumer purchase;
+  its score is useful as a frontier reference, not an available subscription
+  alternative today.
+
+Primary plan details: [Anthropic Ultra](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan),
+[Anthropic API credits](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-ultra-and-team-plans),
+[OpenAI Pro tiers](https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers),
+[OpenAI API credits](https://help.openai.com/en/articles/20001626-api-credits-benefit-for-eligible-chatgpt-subscriptions),
+[GPT-6.1 Terra release](https://openai.com/index/introducing-gpt-6-1-terra/),
+[Kimi Code membership terms](https://www.kimi.ai/help/kimi-code/benefits),
+[Meta Muse Code plans](https://dev.meta.ai/help/subscriptions/what-is-a-muse-code-subscription),
+the [Claude Haiku 5.5 launch](https://www.anthropic.com/claude-haiku-5-5), and
+[Google's Carbon announcement](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-carbon/).
+
+The current v5 scores also invalidate several ranking statements in the August
+analysis if read as present-day conclusions. For example, GPT-6 Luna (max) is now
+28/$0.15, while GLM-5.3 and DeepSeek V4.1 Flash score 32; GLM-5.3's v5 task cost
+is $5.01. These are not like-for-like changes against the older index. The earlier
+claim that Luna owns the full cheap half of the frontier and the old GLM score of
+59.5 belong to earlier v4.x methodologies and are retained below only as history.
+
+## Historical analysis (2026-08-23)
+
+The following sections preserve the original August analysis and its calculations.
+Its scores, API costs, measured quota observations, and plan terms describe that
+retrieval period. Use the refresh above for current model rankings and plan changes.
+
+### Goal
 
 Find AI capacity that complements an existing **Claude Max 20x + ChatGPT Pro** loadout for heavy agentic coding. That loadout is already at the ceiling of what either frontier vendor sells one person: Max 20x is the top individual Claude tier and ChatGPT Pro $200 the top consumer OpenAI tier, with nothing above either short of per-seat Team/Enterprise plans.
 
@@ -17,7 +130,7 @@ Three axes decide what to add, and they are independent:
 
 Optimizing any one alone gives the wrong answer. Axis 1 alone recommends list-price API, which is the bill being escaped. Axis 2 alone recommends the cheapest coding plan on offer, which is how the GLM Coding Plan looked good on paper and disappointed in practice.
 
-## The landscape
+### The landscape
 
 Five structurally different ways to buy AI capacity. The category predicts the failure mode better than the vendor does.
 
@@ -33,7 +146,7 @@ Five structurally different ways to buy AI capacity. The category predicts the f
 
 Only the inference hosts sell anything other than a windowed quota, and they serve open weights only. That is the structural reason a fleet has no good subscription answer: the vendors with frontier models all meter in windows, and the vendors that do not have no frontier models.
 
-### Concurrency pricing — a fourth meter, and why it does not help here
+#### Concurrency pricing — a fourth meter, and why it does not help here
 
 [Featherless](https://featherless.ai/) charges for **in-flight request slots** rather than tokens: unlimited tokens, capped concurrency, $10 / $25 / $75+ tiers. That sounds built for a parallel fleet until the unit math lands — a 70B-class model costs **4 concurrency units per in-flight request**, so the $75 Scale tier's 8 units buys two simultaneous large-model requests. The category rule holds generally: flat-rate concurrency suits high-volume, low-concurrency work, and pay-per-token wins for highly parallel traffic.
 
@@ -41,7 +154,7 @@ Only the inference hosts sell anything other than a windowed quota, and they ser
 
 [Chutes](https://chutes.ai/pricing) is a hybrid rather than a flat plan — the subscription buys queue priority and frontier access, per-token billing still applies underneath, and total usage is capped at 5x the pay-as-you-go value. A far thinner subsidy than Z.ai's stated 15-30x.
 
-## How to compare plans at all
+### How to compare plans at all
 
 No standard unit exists. Four published approaches, and what each cannot see:
 
@@ -62,7 +175,7 @@ Quality-adjusted tokens per dollar is the strongest single number available, and
 
 Hence the three axes this document uses. Cost per intelligence and subsidy multiple are the field's existing tools; **failure mode is the third axis they omit**, and for a parallel fleet it dominates the other two.
 
-## The cost-per-intelligence source
+### The cost-per-intelligence source
 
 [**Artificial Analysis**](https://artificialanalysis.ai/) publishes the _Intelligence Index vs. Cost per Intelligence Index Task_ scatter with a Pareto frontier line — the chart that circulates on Twitter. The [Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) aggregates nine evals: GDPval-AA v2, τ³-Banking, Terminal-Bench v2.1, SciCode, Humanity's Last Exam, GPQA Diamond, CritPt, AA-Omniscience, AA-LCR.
 
@@ -72,7 +185,7 @@ Models are scored per reasoning-effort setting, so one model appears several tim
 
 OpenAI's current generation is a size ladder — **Luna (small), Terra (medium), Sol (large)** — so GPT-5.6 rows are three different models, not three settings of one. Luna is the interesting end: index 52 at $0.20/$1.20 after an 80% price cut on 2026-07-30, and it turns out to dominate the whole cheap half of the frontier.
 
-### Intelligence Index vs. cost per task (2026-08)
+#### Intelligence Index vs. cost per task (2026-08)
 
 The rows this document quotes are committed at
 <../../docs/artificial_analysis/cited_models_2026_08_23.csv> — 53 rows across the 24 models named
@@ -82,7 +195,7 @@ Artificial Analysis licenses redistribution of the full set, so the population-l
 findings state their result and the recipe to reproduce it instead of shipping the
 corpus. Provenance, columns and that recipe: <../../docs/artificial_analysis/README.md>.
 
-#### The frontier
+##### The frontier
 
 The cheapest model at each new index high — the Pareto line of the chart, in full.
 Nothing off this list is worth buying for capability per dollar, because something
@@ -166,7 +279,7 @@ $0.3586/task at index 34.5. Gemini 3.7 Flash (medium) is 19 index points better 
 $0.2629 — cheaper _and_ far smarter. GLM-4.7 is not a budget choice; it is simply
 dominated.
 
-#### What a "task" is, and what the cost figure does not include
+##### What a "task" is, and what the cost figure does not include
 
 **A task is one benchmark item** — one HLE question, one Terminal-Bench episode, one
 GDPval work product — not a unit of anyone's actual work. The headline figure is a
@@ -222,7 +335,7 @@ almost nothing to spend. GPQA Diamond is 0.2-1.3% of cost and a ninth of the sco
 So Index/$ divides an agentic-weighted numerator by a knowledge-diluted denominator,
 which is another reason to read the coding and agentic columns instead.
 
-#### What the index actually measures, and why it is the wrong column here
+##### What the index actually measures, and why it is the wrong column here
 
 Worth being precise, because the number invites a reading it does not support.
 
@@ -300,7 +413,7 @@ are what the plan would be bought for.
 codebase. They rank models; they do not tell you whether index 71.5 of coding clears
 your bar on ducktape. Only running it does.
 
-#### Worked example: Haiku 4.5 costs more than Luna and is far worse in a loop
+##### Worked example: Haiku 4.5 costs more than Luna and is far worse in a loop
 
 A concrete case where the headline figures mislead and the sub-indices do not. Both
 are "the cheap model" in their vendor's lineup, so intuition puts them in the same
@@ -362,7 +475,7 @@ So the surprise is not that the cost figures disagree with lived experience. It 
 that the general index and cost per task were the wrong two columns to compare on, and
 the dataset had the right one all along.
 
-#### Off-frontier models worth naming
+##### Off-frontier models worth naming
 
 Included because they come up in plan comparisons, not because they compete on ratio.
 
@@ -391,11 +504,11 @@ scores 53 and fails your task costs a full retry, so the ratio systematically
 flatters cheap models. The frontier view above is the honest one — the question is
 not "best ratio" but "cheapest model that clears my quality bar."
 
-### Effort setting is a bigger lever than model choice
+#### Effort setting is a bigger lever than model choice
 
 Opus 5 spans $0.72 → $2.34 per task (medium → max) for 59 → 63 index points. Dropping `max` to `medium` costs 4 index points and saves 69% of spend — a larger swing than switching vendors. Same for GPT-5.6 Sol: $0.37 at medium vs $1.23 at max.
 
-## Quota shape, parallelism, and failure mode
+### Quota shape, parallelism, and failure mode
 
 The relevant variable is not how big a quota is but **how fast a parallel agent fleet drains it, and what happens at the wall.** A fleet of 5-10 concurrent agents burns 5-10x the tokens per wall-clock hour, which turns a short rolling window from a formality into a hard stop reached mid-session. It also pushes per-minute request ceilings — normally invisible — into the binding position.
 
@@ -406,7 +519,7 @@ That is what separates two plans with nominally identical 5h+weekly shapes:
 
 So the earlier "undersized tier" reading is wrong. GLM Max is Z.ai's largest plan, and its 5h ceiling is simply low in absolute terms against a parallel fleet. Buying a bigger Z.ai tier is not available as a fix, because that was already the biggest one.
 
-### Failure mode is a first-class criterion
+#### Failure mode is a first-class criterion
 
 What the limit does when reached matters as much as where it sits:
 
@@ -420,7 +533,7 @@ What the limit does when reached matters as much as where it sits:
 
 **The 5h lockout costs more than the hours it blocks.** An unpredictable multi-hour stop in the middle of five parallel agents does not merely delay that work — it teaches you not to start work you might not be able to finish, so the plan gets used well below its nominal quota. Realized value falls far short of purchased value, and the gap never shows up in a tokens-per-dollar table. A plan that throttles gracefully at 80% of another's headline quota is worth more than the one that locks out.
 
-### Parallelism has its own ceilings
+#### Parallelism has its own ceilings
 
 Per-minute limits, not just per-window quotas, decide whether a fleet runs. [Cerebras Code](https://support.cerebras.net/articles/9996007307-cerebras-code-faq) publishes both:
 
@@ -435,7 +548,7 @@ Per-minute limits, not just per-window quotas, decide whether a fleet runs. [Cer
 
 Both are numbers to size against rather than verdicts — request cadence varies enormously with task shape, and a fleet-hour of real measurement beats this arithmetic.
 
-### What Cerebras actually serves
+#### What Cerebras actually serves
 
 Three separate surfaces, and only one of them is a coding plan:
 
@@ -481,7 +594,7 @@ a launch announcement will not tell you. GLM-5.3's weights are due roughly two w
 
 Two pools are easy to confuse: interactive sessions draw subscription first, then extra usage; unattended Agent SDK work draws its own monthly pool that does not roll over.
 
-## Converting between API prices and subscriptions
+### Converting between API prices and subscriptions
 
 The two are only comparable through one number: **tokens consumed per month.** With it, API cost is arithmetic and a subscription's worth is the API price of the tokens it covers, divided by its fee. Without it, the comparison cannot be made at all — which is why most published analyses quietly compare models instead of plans.
 
@@ -519,7 +632,7 @@ growing prefix while benchmark tasks start fresh, plus a different output share 
 factor under two, not the order of magnitude implied by comparing against an uncached
 blend.
 
-### What 100M tokens/month costs at API rates
+#### What 100M tokens/month costs at API rates
 
 Blended 80/20 input/output, **no cache hits** — so these are worst-case rates, useful for ranking models against each other rather than for predicting a bill. Real agentic traffic runs far under them, per the measurement above.
 
@@ -549,7 +662,7 @@ reproduce the derived columns (<../../docs/artificial_analysis/README.md>).
 
 Two things move these numbers materially. **Prompt caching** bills reads at roughly a tenth, and agent work re-sends large stable prefixes, so a well-cached loop can land far under the table. **Reasoning effort** moves spend several-fold on the models that expose it, in the same direction.
 
-## Subscriptions, side by side
+### Subscriptions, side by side
 
 Every plan below is agent-usable; chat-only products are omitted. Blank cells are unpublished, which is itself a finding — a plan whose capacity cannot be stated cannot be compared, only tried.
 
@@ -580,7 +693,7 @@ Every plan below is agent-usable; chat-only products are omitted. Blank cells ar
 | Cursor      | Ultra                 |        200 | multi-frontier routing                 | 10k requests/month                  | 8 agents                | Cursor-bound         | US     |
 | GitHub      | Copilot Pro+          |         39 | multi-frontier routing                 | 1.5k premium req/month              | —                       | Copilot-bound        | US     |
 
-### What running many agents at once actually changes
+#### What running many agents at once actually changes
 
 Almost nothing, on most of these plans — and it is worth being precise about that,
 because "sized for a fleet" is easy to say and mostly means nothing.
@@ -622,7 +735,7 @@ Two readings the table supports:
 - **Qwen Pro is the closest published match to a 5-10 agent workload** at roughly $68, and it routes Qwen3.8-Max, DeepSeek-V4-Pro _and_ GLM behind one plan — vendor diversity inside a single subscription.
 - **Z.ai is unremarkable on this table.** Comparable price, comparable models, no published concurrency, and the only plan that charges a 3x peak multiplier. Its distinguishing feature was an Anthropic-compatible endpoint, which Kimi and Synthetic also have.
 
-## What a subscription is actually worth
+### What a subscription is actually worth
 
 Subscriptions beat the API because they are sold below API cost. The size of that discount is the whole game, and it varies by an order of magnitude between vendors.
 
@@ -653,7 +766,7 @@ Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so the
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
-### How many tasks does a plan actually buy
+#### How many tasks does a plan actually buy
 
 Tokens per dollar is still the wrong unit, because a token buys different amounts of
 work at different models. The AA dataset closes that gap: it publishes **tokens
@@ -716,7 +829,7 @@ imputing the split from its siblings (below) puts GLM-4.7 nearer **$0.16-$0.28/M
 which makes it \_cheaper* per token than GLM-5.3's $0.4026/M — the opposite of what the
 artifact suggested, and the ordering one would expect from the sticker prices.
 
-#### Where capacity is published or measured
+##### Where capacity is published or measured
 
 | Plan              | $/mo | Capacity      |    Tasks/mo |        **$/task** | API $/task | Subsidy |
 | ----------------- | ---: | ------------- | ----------: | ----------------: | ---------: | ------: |
@@ -785,7 +898,7 @@ The measurement that would fix the Z.ai row is small and local: run a week of re
 through the plan, count tasks completed, divide. Everything else about that row is
 inference stacked on inference.
 
-#### Where only requests are published
+##### Where only requests are published
 
 These meter calls, not tokens. Converting that into tasks needs a calls-per-task
 figure, and **no such figure exists for the unit this document costs in.**
@@ -821,7 +934,7 @@ ceiling independent of how much work each request does, so a plan like Copilot P
 1,500 requests a month runs out on call count long before token volume becomes the
 constraint.
 
-#### Measured: what a ChatGPT Pro subscription actually delivers
+##### Measured: what a ChatGPT Pro subscription actually delivers
 
 **This is the only measured subscription figure in the document**, and it comes from
 this cluster's own Langfuse instance rather than from any vendor. The LiteLLM proxy at
@@ -987,7 +1100,7 @@ Until one is pinned to the other, "how much of what I bought am I using" stays
 unanswered for ChatGPT exactly as it does for Claude — the difference being that for
 ChatGPT the numerator is now known.
 
-#### Where it still cannot be derived: Claude
+##### Where it still cannot be derived: Claude
 
 ChatGPT is measured above; Claude is not, because Claude Code talks to Anthropic
 directly rather than through the instrumented proxy. Both expose a usage API, and both
@@ -1056,7 +1169,7 @@ not derived from any published number and, where checkable, are wrong by orders 
 magnitude. Until the calibration is actually run, the two rows here stay blank rather
 than estimated.
 
-#### What the table is not
+##### What the table is not
 
 **Every figure above is a ceiling that assumes saturation, and no one saturates.** The
 constraint that stops you is window shape, not monthly capacity: Cerebras Code Max's
@@ -1071,7 +1184,7 @@ subsidy realized at 25% is still 11x, and better than a 2x subsidy realized in f
 Pair it with the failure-mode table: capacity says how much is theoretically bought,
 window shape says how much survives contact with a fleet.
 
-## API pricing (per 1M tokens, 2026-08)
+### API pricing (per 1M tokens, 2026-08)
 
 | Model                | Input                | Output                 | Notes                                         |
 | -------------------- | -------------------- | ---------------------- | --------------------------------------------- |
@@ -1094,7 +1207,7 @@ window shape says how much survives contact with a fleet.
 ² DeepSeek peak hours are 01:00–04:00 and 06:00–10:00 UTC.
 ³ OpenRouter advertises Gemma 4 31B's native 262K, but Cerebras's own model page serves it at [65K free / 131K paid](https://inference-docs.cerebras.ai/models/gemma-4-31b). The served window is the one that binds.
 
-## Subscription comparison
+### Subscription comparison
 
 Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
@@ -1121,7 +1234,7 @@ Throughput figures are order-of-magnitude. Treat them as ±2× ranges.
 
 ³ Claude's own windows are 5h + weekly. Extra-usage credits remove the ceiling on demand, but at list API rates — availability, not capacity. Rated ●●○ on that basis, not ●●●.
 
-## Bottom line: what actually measures up
+### Bottom line: what actually measures up
 
 Everything above, reduced to one table. Cost per delivered task, ranked by agentic
 capability per dollar, because agentic is the column that decides whether a loop
@@ -1161,7 +1274,7 @@ here the plan runs well under saturation and its realised rate lands at $0.11-0.
 does. So the buy question has two parts, not one: is agentic ~47 enough, and if not,
 would you actually consume enough of the plan for its ceiling rate to mean anything?
 
-### Does the plan ever beat pay-per-token?
+#### Does the plan ever beat pay-per-token?
 
 **Undetermined — and the honest answer spans the decision boundary.** An earlier
 revision answered "never", from a break-even against a 2,940-task ceiling that has
@@ -1224,7 +1337,7 @@ plan included. Comparing a metered rate against a flat plan is a category error 
 whole document has been quietly performing, and the honest form of the comparison is
 capacity against volume, not dollars against dollars.
 
-### Two caveats that could move the ranking
+#### Two caveats that could move the ranking
 
 **Saturation.** Every plan figure is a ceiling; every pay-per-token figure is what you
 actually pay. Z.ai's $0.023-$0.046 assumes the plan is consumed to its claimed capacity,
@@ -1239,7 +1352,7 @@ capability is lowest. A model that needs supervision on long autonomous runs may
 more in attention than it saves in dollars — and attention is the resource this whole
 document is nominally optimising. The table ranks dollars; it cannot rank that.
 
-## Recommendation
+### Recommendation
 
 The loadout is at the ceiling of subsidized frontier capacity. Max 20x is the top individual Claude tier — nothing above it short of per-seat Team/Enterprise — and ChatGPT Pro $200 is likewise OpenAI's top consumer tier. Neither vendor sells more subsidized capacity to one person.
 
@@ -1252,7 +1365,7 @@ So the target is a big pool whose _failure mode_ is a 429 or a predictable daily
 
 **Consumer subscriptions are priced for one human at a keyboard.** A 5-10 agent fleet is an order of magnitude outside that design point, which is why every plan surveyed binds _somewhere_ — 5h window, weekly cap, RPM ceiling, or daily quota. No amount of tier shopping escapes that; the tiers are all drawn against single-operator assumptions. The realistic shape is a **base plus a metered layer**: keep the frontier subscriptions for interactive work, and put fleet-scale bulk on pay-per-token capacity where the only ceiling is the bill. Expect the metered layer to be a real line item rather than a rounding error, and size the cheap-model routing to keep it small.
 
-### The subsidy is real — a window is only fatal without an overflow path
+#### The subsidy is real — a window is only fatal without an overflow path
 
 Subscriptions are sold well below API cost, and that holds even when badly utilized. A GLM Max plan at $168 delivering only a quarter of its nominal quota before the walls deter you still works out near $0.42/M against GLM-5.3's $2.00/M blended list — roughly 5x cheaper per _delivered_ token than the API, despite three quarters of the plan going unspent. Giving up a 15-30x subsidy to escape a window is an expensive way to solve a scheduling problem.
 
@@ -1269,7 +1382,7 @@ Burn the subsidized quota first; on exhaustion, spill to per-token at $1.40/$4.4
 
 **Why not Google, given it has frontier models and no jurisdiction problem.** Because it fails the binding constraint harder than anyone. [AI Ultra](https://gemini.google/subscriptions/) ($99.99 for 5x Pro, $199.99 for 20x) caps Gemini CLI at **2,000 requests/day and 120 RPM** — at 10-20 RPM per agent a ten-agent fleet exceeds the rate limit outright and burns the daily allowance inside an hour, and Google's own docs note agent mode turns one prompt into several requests while Code Assist and the CLI share the pool. [Issue #12859](https://github.com/google-gemini/gemini-cli/issues/12859) has been open since the quota was raised and still reports single developers exhausting Ultra in 2-3 hours. Google also retired the free CLI login path on 2026-06-18, routing consumer terminal use through Antigravity. Gemini is worth buying **as API** — Gemini 3.7 Flash is index 56 at $0.40/task, the cheapest non-PRC point on the frontier — but the subscription is the wrong instrument for a fleet. Ultra's bundled $100/mo of Google Cloud credit is the one unexplored angle, if it turns out to buy Vertex inference outside the CLI quota.
 
-### Where to buy more, ranked
+#### Where to buy more, ranked
 
 The committed frontier data reorders this. The cheapest useful capacity is not a
 subscription at all, and it is testable this week for the price of a coffee.
@@ -1339,13 +1452,13 @@ subscription at all, and it is testable this week for the price of a coffee.
    the same way until their short-window ceilings are checked against a fleet. Kimi K3
    matches GLM-5.3 on quality (index 59.7); verify the ceiling before the model.
 
-### Stretching what is already bought
+#### Stretching what is already bought
 
 Routing traffic to cheaper models is the other half and is free. Since Max is metered in tokens, cutting tokens per task raises tasks per weekly window one-for-one: Opus 5 at `medium` costs 69% less than at `max` for 4 index points, and prompt caching bills reads at ~0.1x, so a silently invalidated cache is a multiple on weekly burn rather than only on money. Parallelism makes both levers worth more, since every agent in the fleet pays the same multiplier. <../../aiquota/README.md> already polls Claude, Codex, and Z.ai and reports which window binds — worth reading before and after any purchase.
 
 **Do not enable Claude extra usage as a capacity strategy.** It is list API pricing wearing a subscription's clothes, and it is the mechanism that produces four-figure months.
 
-## Skip
+### Skip
 
 - **A 5h-rolling-window plan with no overflow path** — that combination, not the window itself, is what produced the GLM Max result. Paired with per-token spill on the same key the subsidy is worth having; unpaired, a fleet drains the window several times faster than tier sizing assumes and the lockout suppresses use well beyond the hours it blocks.
 - **SuperGrok Heavy ($300)** — Grok 4.6 is a strong model (index 61) but at $2/$6 the API is the sane way to buy it.
@@ -1354,7 +1467,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **Claude extra usage as a capacity plan** — list API pricing by another name; see above. Cap it and treat it as an emergency valve.
 - **Discounted-credit resale marketplaces** — both Anthropic and OpenAI prohibit reselling API access, so credits bought at "40–60% off" carry termination risk on an account that matters.
 
-## TOS notes
+### TOS notes
 
 - **Z.ai / Kimi / Qwen coding plans**: Anthropic-compatible endpoints and agent-harness integration are the documented, marketed use case.
 - **DeepSeek**: standard pay-per-token API, no agent restrictions.
@@ -1362,7 +1475,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **Claude Max**: use through Claude Code (first-party). Piping the Max consumer endpoint into _other_ third-party harnesses violates Anthropic's TOS — use the API for that. Extra-usage credits and the Agent SDK pool are the sanctioned paths for overflow and unattended work respectively.
 - **GitHub Copilot**: bound to Copilot clients. No raw API key for harness reuse.
 
-## Caveats
+### Caveats
 
 - **Index/$ flatters cheap models, and the dataset proves it rather than merely suggesting it.** AA's cost per task is one attempt, priced whether or not it succeeded — the eval prompt set goes out once regardless of score. A failed task costs a retry plus the operator attention to notice, and none of that is in the figure. Weight the frontier position, not the ratio.
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
@@ -1376,9 +1489,9 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **AA prices peak-rate models at their peak rate.** DeepSeek V4-Pro 0813's $1.32/$3.96 in the committed data is the peak tariff; off-peak halves it, and any cost-per-task or Index/$ figure for a DeepSeek row is correspondingly a ceiling. Comparisons that straddle a peak-priced and a flat-priced vendor need this checked before the ratio means anything.
 - **Peak-hour multipliers are easy to miss** in both directions: Z.ai's 3× peak on GLM-5.3 (14:00–18:00 SGT) and DeepSeek's 2× peak (01:00–04:00, 06:00–10:00 UTC) can double or triple an expected bill.
 
-## Sources
+### Sources
 
-### Cost-per-intelligence analysis
+#### Cost-per-intelligence analysis
 
 - <../../docs/artificial_analysis/cited_models_2026_08_23.csv> — **the rows behind every per-model index and cost-per-task figure quoted here** (53 rows, 24 models, from a 169-model snapshot fetched 2026-08-23); provenance, the full-population recipe and why only the cited rows are committed: <../../docs/artificial_analysis/README.md>
 - [Artificial Analysis](https://artificialanalysis.ai/) — Intelligence Index vs. Cost per Task chart with Pareto frontier
@@ -1388,7 +1501,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [AA Gemma 4 31B vs gpt-oss-120b](https://artificialanalysis.ai/models/comparisons/gemma-4-31b-vs-gpt-oss-120b) — index 30 vs 24
 - [BenchLM AA leaderboard mirror](https://benchlm.ai/benchmarks/artificialanalysis)
 
-### Quota structures and rate limits
+#### Quota structures and rate limits
 
 - [Z.ai plan update announcement](https://docs.z.ai/devpack/notice/usage-revision) — 2026-07-30 credits migration, peak multipliers
 - [Anthropic: what is the Max plan](https://support.claude.com/en/articles/11049741-what-is-the-max-plan)
@@ -1402,7 +1515,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [Coding plan comparison](https://codingplan.org/en), [AI deals roundup](https://tokenmonopoly.com/ai-deals)
 - [ChatGPT subscription tiers](https://www.aipricing.guru/chatgpt-subscription-pricing/)
 
-### Model pricing and benchmarks
+#### Model pricing and benchmarks
 
 - [GLM-5.3 API pricing](https://venturebeat.com/technology/glm-5-3-hits-the-api-at-1-4-4-4-per-million-tokens), [GLM-5.3 vs Claude Opus 5](https://codingfleet.com/blog/glm-5-3-vs-claude-opus-5/), [GLM-5.3 benchmarks](https://atoms.dev/blog/glm-5-3-benchmarks-api-coding-open-weights)
 - [DeepSeek pricing](https://deepseek.ai/pricing), [V4-Pro-0813 rates](https://benchlm.ai/deepseek/api-pricing)
@@ -1411,7 +1524,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - [xAI API pricing](https://benchlm.ai/xai/api-pricing)
 - [Gemini pricing](https://felloai.com/gemini-pricing/)
 
-### Z.ai company / risk
+#### Z.ai company / risk
 
 - [Z.ai Wikipedia](https://en.wikipedia.org/wiki/Z.ai), [Entity List addition (SCMP)](https://www.scmp.com/tech/tech-war/article/3295002/tech-war-us-adds-chinese-ai-unicorn-zhipu-trade-blacklist-bidens-exit)
 - [Z.ai Terms of Use](https://docs.z.ai/legal-agreement/terms-of-use)
