@@ -18,8 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use spec::{
-    HostBehavior, LoaderResultForEvaluatingModule, NodeBuiltinModule,
-    SynchronousLoadRunsAppCallbacks,
+    HostBehavior, HostModule, LoaderResultForEvaluatingModule, SynchronousLoadRunsAppCallbacks,
 };
 
 use crate::analysis_inputs::{HostBehaviorKey, ProofDependencies};
@@ -42,8 +41,8 @@ pub enum LoaderClosureFailureKind {
     /// A literal loader request that names no analyzed chunk entry and no
     /// recognized builtin.
     UnresolvableLoaderRequest,
-    /// A literal loader request for a builtin absent from
-    /// `reentry_free_builtin_modules`.
+    /// A literal loader request for a host module absent from
+    /// `reentry_free_builtin_modules` and `reentry_free_bun_modules`.
     NonReentryFreeBuiltinRequest,
     /// A literal loader request whose loaded closure contains the target.
     LoaderRequestReachesTarget,
@@ -55,7 +54,7 @@ pub enum LoaderClosureFailureKind {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum LoaderRequestTarget {
-    ReentryFreeBuiltin(NodeBuiltinModule),
+    ReentryFreeBuiltin(HostModule),
     Chunk(ChunkId),
 }
 
@@ -318,7 +317,7 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                     LoaderRequestTarget::ReentryFreeBuiltin(builtin) => {
                         dependencies
                             .host_behavior
-                            .insert(HostBehaviorKey::ReentryFreeBuiltinModule(builtin));
+                            .insert(HostBehaviorKey::reentry_free_module(builtin));
                         continue;
                     }
                     LoaderRequestTarget::Chunk(loaded) => loaded,
@@ -395,6 +394,7 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spec::NodeBuiltinModule;
 
     fn surface(
         static_targets: &[usize],
@@ -470,7 +470,9 @@ mod tests {
                     &[
                         (LoaderRequestTarget::Chunk(ChunkId(2)), "0->2"),
                         (
-                            LoaderRequestTarget::ReentryFreeBuiltin(NodeBuiltinModule::Path),
+                            LoaderRequestTarget::ReentryFreeBuiltin(HostModule::Node(
+                                NodeBuiltinModule::Path,
+                            )),
                             "0->path",
                         ),
                     ],

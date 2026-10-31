@@ -153,7 +153,7 @@ pub struct ExportReentryReport {
 pub struct ExportReentryHostBuiltinLeaf {
     pub source_chunk: String,
     pub specifier: String,
-    pub builtin: spec::NodeBuiltinModule,
+    pub builtin: spec::HostModule,
     pub request_count: usize,
 }
 
@@ -632,8 +632,7 @@ fn collect_closure_blockers(
     let mut closure = BTreeSet::from([target]);
     let mut pending = vec![target];
     let mut blockers = Vec::new();
-    let mut host_builtin_leaf_counts =
-        BTreeMap::<(String, String, spec::NodeBuiltinModule), usize>::new();
+    let mut host_builtin_leaf_counts = BTreeMap::<(String, String, spec::HostModule), usize>::new();
     while let Some(source) = pending.pop() {
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
@@ -674,8 +673,7 @@ fn collect_closure_blockers(
                 &artifact.chunk_table,
             ) else {
                 if request.mode == StaticModuleRequestMode::OrdinaryEsm
-                    && let Some(builtin) =
-                        selected_host_builtin_leaf(&request.specifier, host_behavior)
+                    && let Some(builtin) = host_behavior.reentry_free_module(&request.specifier)
                 {
                     *host_builtin_leaf_counts
                         .entry((source_name.clone(), request.specifier.clone(), builtin))
@@ -767,17 +765,6 @@ fn collect_closure_blockers(
             })
             .collect(),
     })
-}
-
-fn selected_host_builtin_leaf(
-    specifier: &str,
-    host_behavior: &spec::HostBehavior,
-) -> Option<spec::NodeBuiltinModule> {
-    let builtin = spec::NodeBuiltinModule::from_static_specifier(specifier)?;
-    host_behavior
-        .reentry_free_builtin_modules
-        .contains(&builtin)
-        .then_some(builtin)
 }
 
 fn resolve_report_target(

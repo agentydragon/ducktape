@@ -82,6 +82,43 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
 }
 
 #[test]
+fn declared_bun_modules_and_node_builtins_are_static_leaves() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import 'ws';\nimport 'undici';\nimport 'node:querystring';\nimport 'assert';\nexport const value = 1;\n",
+            vec![],
+        )
+        .with_chunk_id(CHUNK_ID)
+        .with_host_behavior(HostBehavior {
+            reentry_free_bun_modules: [BunModule::Ws, BunModule::Undici].into_iter().collect(),
+            ..builtin_policy(&[NodeBuiltinModule::Querystring, NodeBuiltinModule::Assert])
+        }),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert_eq!(report["policy"], "no_static_importer_reentry");
+    let leaves: Vec<_> = report["host_builtin_leaves"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|leaf| {
+            (
+                leaf["specifier"].as_str().unwrap(),
+                leaf["builtin"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        leaves,
+        [
+            ("assert", "assert"),
+            ("node:querystring", "querystring"),
+            ("undici", "undici"),
+            ("ws", "ws"),
+        ]
+    );
+}
+
+#[test]
 fn unselected_bare_and_replacement_packages_remain_unresolved() {
     let fixture = run_fixture(
         FixtureOpts::new(

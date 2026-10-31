@@ -619,6 +619,7 @@ host_behavior:
   synchronous_load_runs_app_callbacks: unknown # never
   synchronous_load_drains_microtasks: unknown # never
   reentry_free_builtin_modules: [path, fs/promises]
+  reentry_free_bun_modules: [bun:ffi, ws]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
   predefined_globals: unknown # standard
   note: "Audited against <executable identity, revision, digest>"
@@ -631,6 +632,7 @@ host_behavior:
 | `synchronous_load_runs_app_callbacks` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
 | `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
+| `reentry_free_bun_modules`            | empty     | Export-reentry closure and loader requests      |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
 | `predefined_globals`                  | `unknown` | Native census: bundle-owned globals (below)     |
 | `note`                                | absent    | None: YAML-only provenance, like other `note:`s |
@@ -715,7 +717,8 @@ all of the following hold:
   a debundled internal module stays the A3 admission check
   (<docs/design.md> § Conditions on the input chunk), which resolves every
   string-literal specifier, parenthesized or not, at any depth.
-- Each literal request names a `reentry_free_builtin_modules` entry or resolves
+- Each literal request names a `reentry_free_builtin_modules` or
+  `reentry_free_bun_modules` entry or resolves
   to an analyzed chunk's entry file. A request for any other builtin or an
   unresolved specifier keeps every target open.
 - For each request resolved to a chunk, that chunk's static and loader closure
@@ -817,8 +820,16 @@ synchronously reenter an application chunk during module evaluation. Only
 ordinary static ESM requests that the artifact resolver did not resolve may use
 the closed Node builtin list, and literal `import.meta.require` requests in the
 loader-closed derivation. The export-reentry report records each consumed
-static source chunk, specifier, builtin ID, and request count. Unselected names,
-unknown bare packages, and package replacements such as `ws` stay unresolved.
+static source chunk, specifier, builtin ID, and request count. Unselected names
+and unknown bare packages stay unresolved.
+
+`reentry_free_bun_modules` applies the same leaf rule to the closed list of
+host modules outside Node's namespace: `bun:ffi` and the packages Bun replaces
+with built-in implementations, `undici` and `ws`, each under its exact
+spelling. For a bare package name the author also asserts that every request
+from an analyzed module resolves to the host's replacement, never to an
+installed package.
+
 This leaf rule grants no purity, call safety, return shape, or later callback
 fact; CommonJS/application loader, non-ESM, vendor, unsupported-request, and
 cycle blockers retain their normal rules. The closed set is specific to the

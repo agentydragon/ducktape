@@ -377,6 +377,13 @@ fn suspension_needs_the_microtask_key_and_an_await_on_every_path() {
 }
 
 fn accepted_provider_report(extra: &[(&'static str, &'static str)]) -> Value {
+    accepted_provider_report_under(extra, audited_host())
+}
+
+fn accepted_provider_report_under(
+    extra: &[(&'static str, &'static str)],
+    host: HostBehavior,
+) -> Value {
     let mut extra_chunks = vec![("static/helper", HELPER), ("static/provider", PROVIDER)];
     extra_chunks.extend_from_slice(extra);
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
@@ -385,7 +392,7 @@ fn accepted_provider_report(extra: &[(&'static str, &'static str)]) -> Value {
             .with_chunk_id("static/consumer")
             .with_extra_chunks(&extra_chunks)
             .with_extra_chunk_logical_modules(&provider_modules)
-            .with_host_behavior(audited_host()),
+            .with_host_behavior(host),
     );
     let report = export_reentry_report(&fixture.report_root);
     assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
@@ -488,4 +495,43 @@ fn unclassifiable_uses_of_an_exported_loader_keep_the_target_open() {
         assert_eq!(first["source_chunk"], "static/user", "{user}");
         assert_eq!(first["form"], form, "{user}");
     }
+}
+
+/// Bun's own modules and the Node builtins added to the closed list are
+/// admitted only through their declared lists.
+#[test]
+fn declared_bun_modules_and_node_builtins_are_loader_leaves() {
+    let sidecar = r#"export function ffi() { return import.meta.require("bun:ffi"); }
+export function proxy() { return import.meta.require("undici"); }
+export function legacy() { return import.meta.require("constants"); }
+"#;
+    let report = accepted_provider_report_under(
+        &[("static/sidecar", sidecar)],
+        HostBehavior {
+            reentry_free_builtin_modules: [NodeBuiltinModule::Constants].into_iter().collect(),
+            reentry_free_bun_modules: [BunModule::BunFfi, BunModule::Undici].into_iter().collect(),
+            ..audited_host()
+        },
+    );
+    let targets: Vec<_> = report["loader"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|request| request["source_chunk"] == "static/sidecar")
+        .map(|request| request["target"]["builtin"].as_str().unwrap())
+        .collect();
+    assert_eq!(targets, ["bun:ffi", "constants", "undici"]);
+    let host_keys = report["loader"]["host_keys"].as_array().unwrap();
+    assert!(host_keys.contains(&json!({ "reentry_free_bun_module": "bun:ffi" })));
+    assert!(host_keys.contains(&json!({ "reentry_free_builtin_module": "constants" })));
+
+    let derivation = rejected_loader_derivation(
+        PROVIDER,
+        &[("static/helper", HELPER), ("static/sidecar", sidecar)],
+        audited_host(),
+    );
+    assert_eq!(
+        failure(&derivation, "non_reentry_free_builtin_request")["occurrences"],
+        3
+    );
 }
