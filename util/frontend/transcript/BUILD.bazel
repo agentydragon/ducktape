@@ -209,6 +209,7 @@ ts_library(
     tsconfig = "//util/frontend:tsconfig",
     visibility = [
         "//agentplane:__subpackages__",
+        "//util/frontend:__pkg__",
         "//x/ai_session_archive/frontend:__pkg__",
     ],
     deps = [

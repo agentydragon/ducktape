@@ -6,7 +6,7 @@ import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
 import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
-import { HighlightedText } from "../json_view";
+import { HighlightedText } from "../../../../util/frontend/json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { TextBlock } from "../../../../util/frontend/transcript/text_block";

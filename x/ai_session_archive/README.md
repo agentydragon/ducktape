@@ -96,7 +96,10 @@ without a loaded result does not claim to be running or successful. Older prepen
 can supply a missing call without resetting the result's expansion. Consecutive
 readable reasoning summaries form a nested step. Encrypted-only reasoning adds no
 placeholder step; its original record remains under Session details. Subagent
-messages show their sender and readable content, or an unavailable-content label.
+messages read Codex `content` arrays of `input_text` and `encrypted_content` blocks.
+They show the sender, any readable body after the routing header, and an explicit
+label when the source contains encrypted content. Unrecognized message shapes
+remain generic record disclosures instead of claiming the content is unavailable.
 Compaction is a compact marker with source inspection.
 
 Claude tool-use blocks pair with tool-result blocks by ID, including multiple tools
@@ -110,8 +113,8 @@ and filename or hook name, with bounded structured details. Consecutive attachme
 can share an activity group. Unknown record types and parse failures remain standalone;
 records without readable content show only their label and source inspection. Explicit
 tool errors stay visible or mark the enclosing tool group as failed. Every original
-record remains accessible through a compact inspection button and its exact-byte
-view. Assistant replies use plain Markdown; user inputs use the shared right-aligned
+record remains accessible through a compact inspection button with pretty-printed
+JSON and a separate exact-byte view. Assistant replies use plain Markdown; user inputs use the shared right-aligned
 bubble. Inspection actions appear on hover, keyboard focus or touch selection
 without reserving a separate disclosure row.
 
@@ -126,6 +129,6 @@ bounded and opt-in. The JSON includes session/version and row identifiers, but n
 text, tool arguments, output or resource URLs. Review its identifiers before sharing.
 
 The conversation opens at the latest captured records. Scrolling upward loads older
-pages while retaining the reading position; “Load earlier records” also supports
-keyboard navigation. Event API requests default to forward pagination;
+pages automatically while retaining the reading position, including when scrolling
+with the keyboard. Event API requests default to forward pagination;
 `direction=backward` returns records before the exclusive cursor in ascending order.

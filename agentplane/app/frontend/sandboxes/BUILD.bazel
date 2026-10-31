@@ -92,7 +92,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
@@ -100,6 +99,7 @@ ts_library(
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:client",
         "//util/frontend:help_tooltip",
+        "//util/frontend:json_view",
     ],
 )
 

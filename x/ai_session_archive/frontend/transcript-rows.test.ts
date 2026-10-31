@@ -364,7 +364,7 @@ describe("archive transcript grouping", () => {
             type: "input_text",
             text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n",
           },
-          { type: "encrypted_content", data: "ciphertext" },
+          { type: "encrypted_content", encrypted_content: "ciphertext" },
         ],
       },
     });
@@ -380,7 +380,7 @@ describe("archive transcript grouping", () => {
         records: [agentMessage],
         author: "reviewer",
         recipient: "parent",
-        text: "Found a mismatch.",
+        content: { kind: "text", text: "Found a mismatch." },
       },
       {
         key: "4",
@@ -388,7 +388,7 @@ describe("archive transcript grouping", () => {
         records: [encryptedMessage],
         author: "private-agent",
         recipient: "parent",
-        text: "Message content unavailable",
+        content: { kind: "encrypted", text: null },
       },
     ]);
     expect(summarizeActivity(activity.steps)).toBe("2 reasoning steps, 2 agent messages");
@@ -396,8 +396,45 @@ describe("archive transcript grouping", () => {
       activity.steps.find((step) => step.kind === "subagent" && step.records[0] === encryptedMessage)
     ).toMatchObject({
       kind: "subagent",
-      text: "Message content unavailable",
+      content: { kind: "encrypted", text: null },
     });
+  });
+
+  it("preserves readable content alongside encrypted agent-message blocks", () => {
+    const message = record(1, {
+      type: "response_item",
+      payload: {
+        type: "agent_message",
+        author: "/root/reviewer",
+        recipient: "/root",
+        content: [
+          {
+            type: "input_text",
+            text: "Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\nReadable portion.",
+          },
+          { type: "encrypted_content", encrypted_content: "ciphertext" },
+        ],
+      },
+    });
+    expect(activityRow(transcriptRows([message])[0]).steps[0]).toMatchObject({
+      kind: "subagent",
+      content: { kind: "encrypted", text: "Readable portion." },
+    });
+  });
+
+  it.each([
+    { message: "speculative message field", text: "speculative text field" },
+    { content: "unexpected string" },
+    { content: [{ type: "future_block", text: "unrecognized content" }] },
+    { content: [{ type: "input_text", text: "readable" }, { type: "future_block" }] },
+    { content: [{ type: "encrypted_content", data: "wrong field" }] },
+    { content: [] },
+  ])("keeps unrecognized agent-message shapes as inspectable records: %j", (fields) => {
+    const message = record(1, {
+      type: "response_item",
+      payload: { type: "agent_message", author: "/root/reviewer", recipient: "/root", ...fields },
+    });
+    expect(activityRow(transcriptRows([message])[0]).steps).toEqual([{ key: "1", kind: "record", records: [message] }]);
   });
 
   it("keeps encrypted-only reasoning uncounted and shows orphan Codex results", () => {

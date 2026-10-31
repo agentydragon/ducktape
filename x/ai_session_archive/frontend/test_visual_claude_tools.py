@@ -55,8 +55,8 @@ async def test_claude_paired_steps(visual: VisualHarness, capture_name: str, wid
         await failed.get_by_role("button", name="Raw JSONL record", exact=True).click()
         raw = failed.get_by_role("region", name="Raw JSONL record")
         await expect(raw).to_have_count(2)
-        await raw.first.scroll_into_view_if_needed()
-        await expect(failed).to_contain_text('"tool_use_id":"run-check"')
+        await raw.last.scroll_into_view_if_needed()
+        await expect(failed).to_contain_text('"tool_use_id": "run-check"')
         await view.capture(name=f"{capture_name}_sources")
 
 

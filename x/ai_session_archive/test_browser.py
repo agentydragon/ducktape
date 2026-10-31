@@ -135,12 +135,15 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
                 "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
             )
             assert any("direction=backward" in url for url, _status in api_responses)
-            await page.get_by_role("button", name="Load earlier records").click()
-            await expect(page.get_by_role("button", name="Load earlier records")).to_have_count(0)
+            await history.hover()
+            async with page.expect_response(
+                lambda response: f"/versions/{latest_id}/events?" in response.url and "cursor=" in response.url
+            ) as earlier_page:
+                await page.mouse.wheel(0, -(await history.evaluate("element => element.scrollHeight")))
+            earlier_response = await earlier_page.value
+            assert earlier_response.ok
+            assert (await earlier_response.json())["data"][0]["ordinal"] == 0
             await expect(history).to_have_attribute("data-layout-settled", "true")
-            assert await history.evaluate(
-                "element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop) <= 1"
-            )
 
             version_menu = page.get_by_role("button", name="Conversation options")
             await page.goto(f"{origin}/sessions/{session_id}?version={older_id}", wait_until="domcontentloaded")
@@ -162,6 +165,9 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             malformed_record = transcript.locator('[data-event-ordinal="104"]')
             await malformed_record.hover()
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
+            await malformed_record.get_by_role(
+                "region", name="Raw JSONL record", exact=True
+            ).scroll_into_view_if_needed()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
             related_toggle = page.locator(".session-browser-related-trigger")
@@ -191,6 +197,9 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             malformed_record = transcript.locator('[data-event-ordinal="104"]')
             await malformed_record.hover()
             await malformed_record.get_by_role("button", name="Raw JSONL record", exact=True).click()
+            await malformed_record.get_by_role(
+                "region", name="Raw JSONL record", exact=True
+            ).scroll_into_view_if_needed()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
             assert api_responses

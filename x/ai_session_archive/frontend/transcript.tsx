@@ -12,6 +12,8 @@ import { UserMessage } from "../../../util/frontend/transcript/message";
 import { StepLine } from "../../../util/frontend/transcript/step_line";
 import { TextBlock } from "../../../util/frontend/transcript/text_block";
 import { Markdown } from "../../../util/frontend/markdown";
+import { JsonView } from "../../../util/frontend/json_view";
+import { CodeBlock } from "../../../util/frontend/code_block";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
 import {
   recordPresentation,
@@ -42,11 +44,6 @@ export function ArchiveTranscript({
 }): JSX.Element {
   return (
     <RetainedDisclosureProvider key={scopeId}>
-      {earlier.available && (
-        <Button variant="subtle" size="compact-sm" loading={earlier.loading} onClick={earlier.load}>
-          Load earlier records
-        </Button>
-      )}
       <VirtualizedHistory
         scopeId={`archive:${scopeId}`}
         earlier={earlier}
@@ -195,7 +192,7 @@ function ActivityStepView({
       : step.kind === "reasoning"
         ? reasoning
         : step.kind === "subagent"
-          ? step.text
+          ? (step.content.text ?? "Encrypted message")
           : step.kind === "attachment"
             ? step.preview
             : "";
@@ -279,7 +276,12 @@ function ActivityStepView({
                   To {step.recipient}
                 </Text>
               )}
-              <Markdown source={step.text} />
+              {step.content.text !== null && <Markdown source={step.content.text} />}
+              {step.content.kind === "encrypted" && (
+                <Text size="xs" c="dimmed">
+                  Message body is encrypted in the archive.
+                </Text>
+              )}
             </DisclosureBody>
           ) : (
             <RecordContent record={records[0]} />
@@ -369,7 +371,11 @@ function RawRecordPanel({ record, panelId }: { record: EventRecord; panelId: str
   const bytesId = useId();
   return (
     <Box id={panelId} role="region" aria-label="Raw JSONL record" className="archive-raw-record">
-      <Box component="pre">{rawRecordText(record.raw_base64)}</Box>
+      {record.parse_error == null ? (
+        <JsonView value={record.parsed} surface="plain" />
+      ) : (
+        <CodeBlock text={rawRecordText(record.raw_base64)} language="json" surface="plain" />
+      )}
       <Button
         variant="subtle"
         color="gray"

@@ -8,7 +8,7 @@ import { argvText } from "./argv_text";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../util/frontend/clamped_block";
 import { CodeBlock, type CodeBlockSurface, InlineCode } from "../../../util/frontend/code_block";
 import { Disclosure, DisclosureBody } from "../../../util/frontend/disclosure";
-import { HighlightedText } from "./json_view";
+import { HighlightedText } from "../../../util/frontend/json_view";
 import { OperationSection } from "./operation_section";
 
 export const SHELL_COMMAND_MAX_HEIGHT_REM = 10;

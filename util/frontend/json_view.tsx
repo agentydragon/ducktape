@@ -1,7 +1,7 @@
 import { type JSX, useMemo } from "react";
 
-import { looksLikeJson } from "../../../util/frontend/transcript/text_block";
-import { CodeBlock, type CodeBlockSurface } from "../../../util/frontend/code_block";
+import { looksLikeJson } from "./transcript/text_block";
+import { CodeBlock, type CodeBlockSurface } from "./code_block";
 
 /** A JSON-serializable value, rendered by the shared read-only code widget. */
 export function JsonView({ value, surface = "framed" }: { value: unknown; surface?: CodeBlockSurface }): JSX.Element {

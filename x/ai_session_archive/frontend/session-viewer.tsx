@@ -96,10 +96,18 @@ function transcriptStatusColor(session: SessionSummary): string {
   }
 }
 
-function TranscriptStatusBadge({ session, size }: { session: SessionSummary; size: "xs" | "sm" }): JSX.Element | null {
+function TranscriptStatusBadge({
+  session,
+  size,
+  className,
+}: {
+  session: SessionSummary;
+  size: "xs" | "sm";
+  className?: string;
+}): JSX.Element | null {
   if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
   return (
-    <Badge size={size} color={transcriptStatusColor(session)} variant="light">
+    <Badge className={className} size={size} color={transcriptStatusColor(session)} variant="light">
       {transcriptStatusLabel(session)}
     </Badge>
   );
@@ -1031,15 +1039,17 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                       </Popover>
                     )}
                   </Group>
-                  {selectedSession.cwd !== null && (
-                    <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-                      {selectedSession.cwd}
+                  <Group gap="xs" align="baseline">
+                    {selectedSession.cwd !== null && (
+                      <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                        {selectedSession.cwd}
+                      </Text>
+                    )}
+                    <Text size="xs" c="dimmed">
+                      Started {formatDateTime(selectedSession.started_at)} · Last active{" "}
+                      {formatDateTime(selectedSession.last_activity_at)}
                     </Text>
-                  )}
-                  <Text size="xs" c="dimmed" mt={4}>
-                    Started {formatDateTime(selectedSession.started_at)} · Last active{" "}
-                    {formatDateTime(selectedSession.last_activity_at)}
-                  </Text>
+                  </Group>
                   {selectedSession.native_session_id_conflict && (
                     <Text size="xs" c="red" mt={4} style={{ overflowWrap: "anywhere" }}>
                       Native session ID candidates:{" "}
@@ -1187,31 +1197,28 @@ function SessionRow({
       color={selected ? "blue" : "gray"}
       fullWidth
       justify="flex-start"
+      className="session-browser-session-row"
       aria-current={selected ? "page" : undefined}
       styles={{
         root: { height: "auto", padding: "8px", textAlign: "left" },
         label: { display: "block", width: "100%" },
       }}
     >
-      <Stack gap={2} style={{ width: "100%", alignItems: "stretch" }}>
-        <Group justify="space-between" gap="xs" wrap="nowrap">
-          <Text size="xs" fw={600} truncate>
-            {machineName}
-          </Text>
-          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-            {formatDateTime(session.last_activity_at)}
-          </Text>
-        </Group>
-        <Text size="sm" fw={500} lineClamp={2} style={{ whiteSpace: "normal" }}>
+      <Box className="session-browser-session-row-content">
+        <Text className="session-row-machine" size="xs" fw={600} truncate>
+          {machineName}
+        </Text>
+        <Text className="session-row-harness" size="xs" c="dimmed">
+          {harnessLabel(session.harness)}
+        </Text>
+        <Text className="session-row-time" size="xs" c="dimmed">
+          {formatDateTime(session.last_activity_at)}
+        </Text>
+        <Text className="session-row-title" size="sm" fw={500} lineClamp={2} style={{ whiteSpace: "normal" }}>
           {session.title || "Untitled session"}
         </Text>
-        <Group justify="space-between" gap="xs">
-          <Text size="xs" c="dimmed">
-            {harnessLabel(session.harness)}
-          </Text>
-          <TranscriptStatusBadge session={session} size="xs" />
-        </Group>
-      </Stack>
+        <TranscriptStatusBadge className="session-row-status" session={session} size="xs" />
+      </Box>
     </Button>
   );
 }

@@ -5,7 +5,7 @@ import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEven
 import { displayableError } from "../client";
 import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
-import { JsonView } from "../json_view";
+import { JsonView } from "../../../../util/frontend/json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { InspectionToggle } from "../../../../util/frontend/transcript/inspection";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
