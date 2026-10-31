@@ -27,12 +27,13 @@ passed all three cases of
 The tests inspect provider usage and native request/response records persisted in PostgreSQL.
 They do not infer cache hits from latency or merely from sending `cache_control`.
 
-**Cache coverage:** the cache case uses the real sampler request builder, including base
-instructions, tools and messages, with an additional stable instruction prefix of `"copper "`
-repeated 3,072 times. It asserts positive `cache_creation_input_tokens` on the first turn and
-positive `cache_read_input_tokens` on the next two turns, including after the effort change.
-This establishes cache reuse for those generated, padded inputs. It does not establish cache
-reuse or a hit rate for ordinary, unpadded staging conversations.
+**Cache coverage:** that historical run added a stable instruction prefix of `"copper "`
+repeated 3,072 times, establishing reuse for padded inputs. The current cache case uses the
+ordinary sampler instructions and tools with no custom instructions or padding. It retains
+positive `cache_creation_input_tokens` on the first turn and positive `cache_read_input_tokens`
+on the next two turns, including after the effort change, and checks unchanged system/tool
+input and preserved message prefixes. The separate staging evidence below uses unpadded input;
+neither case establishes a fleet-wide hit rate.
 
 The [recursive sampler run](https://app.buildbuddy.io/invocation/89794c99-f6f1-4c7c-b5a5-e5dedce11344)
 passed both native Go suites and all five Python service integration suites. That run exposed

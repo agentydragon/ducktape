@@ -113,9 +113,9 @@ on-demand compaction; choose a supporting model. The manual
 API access, strict JSON exec, signed thinking and compaction across restart, and Haiku cache
 creation/reads through an effort change. BuildBuddy must supply `ANTHROPIC_API_KEY` securely;
 [persistent provisioning remains a follow-up](https://github.com/agentydragon/ducktape/issues/13063).
-The automated cache test adds a long stable instruction prefix to the sampler's real request
-builder and asserts positive provider-reported cache counts. A separate staging canary verified
-cache reuse on ordinary, unpadded inputs, including after an effort change.
+The automated cache test uses ordinary sampler instructions and tools without padding, and
+asserts positive provider-reported cache counts plus stable system, tool and message prefixes.
+A separate staging canary also verified reuse on unpadded inputs after an effort change.
 See the [Anthropic acceptance record](docs/anthropic_acceptance.md)
 for the test scope and observed rollout, and the [v1 validation evidence](../../debug/central_sampler_v1.md)
 for earlier fixture diagnosis.
