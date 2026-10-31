@@ -849,6 +849,12 @@ on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_ab
 The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
 excludes sampling uncertainty, and draining inbound gRPC does not drain the independent agent loop.
 
+Before enabling two sampler replicas, resolve exporter concurrency. Exporters have no cross-replica
+claim. History deduplicates records and checkpoints cannot regress, but one copier can advance the
+remote acknowledgement beyond another stream's page `through`. Prove concurrent page convergence or
+establish shared export ownership before enabling the two-replica profile. This gate applies only to
+the sampler rollout; it does not block the other seven PostgreSQL service conversions.
+
 Design how multiple sampler replicas admit and own Sessions, transfer or drain ownership during
 rolls, and survive replica loss without duplicate sampling or executor effects. Include provider
 streams and durable completion, JavaScript host/cell state, retained executor bindings, lease renewal
