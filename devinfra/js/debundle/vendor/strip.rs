@@ -547,7 +547,8 @@ fn sweep_unreachable_top_level(
     // call. What an unresolved call receives, and a chunk callee that is not
     // a direct function, are followed through lexical reads instead.
     let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
-    let shared_roots = |an: &ItemAnalysis| -> BTreeSet<Id> {
+    let shared_roots = |i: usize| -> BTreeSet<Id> {
+        let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
                 && declarer
@@ -557,9 +558,16 @@ fn sweep_unreachable_top_level(
         let mut reached: Vec<&Id> = an.eager_bindings.iter().collect();
         let mut lexical: Vec<&Id> = an.at_init.unresolved_sources.iter().collect();
         let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
+        // A closure handed to an unresolved call at init (an IIFE among them)
+        // runs this statement's own first-order body.
         if an.at_init.unresolved_inline_fn {
-            reached.extend(&an.reads);
-            callees.extend(&an.lazy_calls);
+            run_first_order_body(
+                an,
+                &module.body[i],
+                &mut reached,
+                &mut lexical,
+                &mut callees,
+            );
         }
         let mut entered = BTreeSet::new();
         while let Some(callee) = callees.pop() {
@@ -571,16 +579,14 @@ fn sweep_unreachable_top_level(
                 lexical.push(callee);
                 continue;
             }
-            if !entered.insert(j) {
-                continue;
-            }
-            let first_order = &body.first_order;
-            reached.extend(&body.first_order_bindings);
-            lexical.extend(&first_order.unresolved_sources);
-            callees.extend(&first_order.calls);
-            if first_order.unresolved_inline_fn {
-                reached.extend(&body.reads);
-                callees.extend(&body.lazy_calls);
+            if entered.insert(j) {
+                run_first_order_body(
+                    body,
+                    &module.body[j],
+                    &mut reached,
+                    &mut lexical,
+                    &mut callees,
+                );
             }
         }
         let mut roots: BTreeSet<Id> = reached
@@ -605,7 +611,7 @@ fn sweep_unreachable_top_level(
         let an = &analyses[i];
         an.effects_summarizable
             && an.observable_writes.iter().all(private_cell)
-            && shared_roots(an).is_empty()
+            && shared_roots(i).is_empty()
     };
     for i in 0..analyses.len() {
         if live[i]
@@ -637,7 +643,7 @@ fn sweep_unreachable_top_level(
         } else {
             "unsummarizable".to_string()
         };
-        let shared = shared_roots(&analyses[i])
+        let shared = shared_roots(i)
             .iter()
             .map(|id| {
                 format!(
@@ -1281,6 +1287,71 @@ fn item_is_shareable_helper(item: &ModuleItem) -> bool {
                 || is_shareable_global_object_fallback_var(var)
         }
         _ => false,
+    }
+}
+
+/// One synchronous run of `body`'s declared function, class constructor or
+/// at-init closure: its first-order bindings, callees and unresolved-call
+/// arguments. Everything lexically inside it counts when it hands a closure to
+/// an unresolved call or calls a function declared inside itself, whose body
+/// the first-order view does not cover.
+fn run_first_order_body<'a>(
+    body: &'a ItemAnalysis,
+    item: &ModuleItem,
+    reached: &mut Vec<&'a Id>,
+    lexical: &mut Vec<&'a Id>,
+    callees: &mut Vec<&'a Id>,
+) {
+    reached.extend(&body.first_order_bindings);
+    lexical.extend(&body.first_order.unresolved_sources);
+    callees.extend(&body.first_order.calls);
+    if body.first_order.unresolved_inline_fn || {
+        let mut nested = NestedFunctionNames::default();
+        item.visit_children_with(&mut nested);
+        body.first_order
+            .calls
+            .iter()
+            .any(|callee| nested.0.contains(callee))
+    } {
+        reached.extend(&body.reads);
+        callees.extend(&body.lazy_calls);
+    }
+}
+
+/// Function names declared inside an item's own bodies.
+#[derive(Default)]
+struct NestedFunctionNames(BTreeSet<Id>);
+
+impl Visit for NestedFunctionNames {
+    fn visit_function(&mut self, function: &Function) {
+        let mut inner = NestedFunctionDecls(&mut self.0);
+        function.body.visit_with(&mut inner);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        let mut inner = NestedFunctionDecls(&mut self.0);
+        arrow.body.visit_with(&mut inner);
+    }
+}
+
+struct NestedFunctionDecls<'a>(&'a mut BTreeSet<Id>);
+
+impl Visit for NestedFunctionDecls<'_> {
+    fn visit_fn_decl(&mut self, decl: &FnDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.function.visit_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Pat::Ident(name) = &declarator.name
+            && matches!(
+                declarator.init.as_deref(),
+                Some(Expr::Fn(_) | Expr::Arrow(_))
+            )
+        {
+            self.0.insert(name.id.to_id());
+        }
+        declarator.visit_children_with(self);
     }
 }
 
