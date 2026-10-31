@@ -147,9 +147,7 @@
     "rows": [
       {
         "sha": "03e7d7eda96ff27d3772cb3fbb3660c64701ab45",
-        "prs": [
-          13296
-        ],
+        "prs": [13296],
         "class": "unknown",
         "start_utc": "2026-10-31T09:27:52Z",
         "outcome": "cancelled/superseded",
@@ -183,9 +181,7 @@
       },
       {
         "sha": "0c5aa3e3b4a2745573f5eb4bb793a974be97f528",
-        "prs": [
-          13327
-        ],
+        "prs": [13327],
         "class": "unknown",
         "start_utc": "2026-10-31T10:20:00Z",
         "outcome": "cancelled/superseded",
@@ -219,9 +215,7 @@
       },
       {
         "sha": "0c72f764f7c7bfb09f5c288a66e10328a87835e3",
-        "prs": [
-          13339
-        ],
+        "prs": [13339],
         "class": "unknown",
         "start_utc": "2026-10-31T11:53:05Z",
         "outcome": "cancelled/superseded",
@@ -255,9 +249,7 @@
       },
       {
         "sha": "0df2089506e98ab539844738324cfc5a3129580a",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "unknown",
         "start_utc": "2026-10-31T09:40:47Z",
         "outcome": "green",
@@ -291,9 +283,7 @@
       },
       {
         "sha": "158c12265dd6225e3d61ed62e818692760cf6ab9",
-        "prs": [
-          13331
-        ],
+        "prs": [13331],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:47:19Z",
         "outcome": "green",
@@ -327,9 +317,7 @@
       },
       {
         "sha": "17f70b6f5fc7e8f0b394c3c3ae34c9371da5cde0",
-        "prs": [
-          13323
-        ],
+        "prs": [13323],
         "class": "debundle",
         "start_utc": "2026-10-31T10:11:15Z",
         "outcome": "green",
@@ -363,9 +351,7 @@
       },
       {
         "sha": "19f2cea9f2dec0fce30eb03da98bb516d418b1ba",
-        "prs": [
-          13317
-        ],
+        "prs": [13317],
         "class": "unknown",
         "start_utc": "2026-10-31T10:00:14Z",
         "outcome": "failed",
@@ -399,9 +385,7 @@
       },
       {
         "sha": "1af5d6c01f519c567125a0067d84d5724e8cbf30",
-        "prs": [
-          13292
-        ],
+        "prs": [13292],
         "class": "debundle",
         "start_utc": "2026-10-31T09:09:09Z",
         "outcome": "green",
@@ -435,9 +419,7 @@
       },
       {
         "sha": "1b3e51ff5d4f8acb5f7514a72e83fc0d7365dfc5",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T09:54:08Z",
         "outcome": "failed",
@@ -471,9 +453,7 @@
       },
       {
         "sha": "1b41d4816a06ed2b9fd0e01aafa38b9a16cd8ec6",
-        "prs": [
-          13301
-        ],
+        "prs": [13301],
         "class": "unknown",
         "start_utc": "2026-10-31T09:28:52Z",
         "outcome": "failed",
@@ -507,9 +487,7 @@
       },
       {
         "sha": "1bfb539e0447bed60a989829c9db1cc81f61fdf7",
-        "prs": [
-          13305
-        ],
+        "prs": [13305],
         "class": "unknown",
         "start_utc": "2026-10-31T09:44:12Z",
         "outcome": "green",
@@ -543,9 +521,7 @@
       },
       {
         "sha": "1d3a7da9d2f06a60e40a187f32d9791865d39403",
-        "prs": [
-          13304
-        ],
+        "prs": [13304],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:40:26Z",
         "outcome": "green",
@@ -579,9 +555,7 @@
       },
       {
         "sha": "1e27f3b52d373e019a0c4d32ab71318402ab102d",
-        "prs": [
-          13182
-        ],
+        "prs": [13182],
         "class": "unknown",
         "start_utc": "2026-10-31T09:45:00Z",
         "outcome": "failed",
@@ -615,9 +589,7 @@
       },
       {
         "sha": "1e401669300215bb157080c36c2cb3df126a5895",
-        "prs": [
-          13306
-        ],
+        "prs": [13306],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:46:29Z",
         "outcome": "green",
@@ -651,9 +623,7 @@
       },
       {
         "sha": "22ca65e17ef569bae3eb3378389335e2207fbbfa",
-        "prs": [
-          13328
-        ],
+        "prs": [13328],
         "class": "unknown",
         "start_utc": "2026-10-31T10:22:45Z",
         "outcome": "cancelled/superseded",
@@ -687,9 +657,7 @@
       },
       {
         "sha": "25df2ca725513ab0ab318ed91a55d4ca6df86829",
-        "prs": [
-          13335
-        ],
+        "prs": [13335],
         "class": "unknown",
         "start_utc": "2026-10-31T11:40:23Z",
         "outcome": "cancelled/superseded",
@@ -723,9 +691,7 @@
       },
       {
         "sha": "2bf17146791f5c3f98621f9228b0a9838e3d2ef1",
-        "prs": [
-          13315
-        ],
+        "prs": [13315],
         "class": "unknown",
         "start_utc": "2026-10-31T09:59:44Z",
         "outcome": "green",
@@ -759,9 +725,7 @@
       },
       {
         "sha": "2f13255eeb8977ff86f23f9674cafe4e63c419d1",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "frontend",
         "start_utc": "2026-10-31T09:47:19Z",
         "outcome": "green",
@@ -795,9 +759,7 @@
       },
       {
         "sha": "2f61d8f212317142f346b5e3d1fb10ca0c29f3af",
-        "prs": [
-          13296
-        ],
+        "prs": [13296],
         "class": "debundle",
         "start_utc": "2026-10-31T09:29:11Z",
         "outcome": "green",
@@ -831,9 +793,7 @@
       },
       {
         "sha": "30c58e42e0b256c7b55138f56b2c1158b54f74e6",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T11:11:09Z",
         "outcome": "green",
@@ -867,9 +827,7 @@
       },
       {
         "sha": "32c3dec01ff1d026ad7a596f2bc215d0ae7c4f8a",
-        "prs": [
-          13328
-        ],
+        "prs": [13328],
         "class": "system/runtime",
         "start_utc": "2026-10-31T10:29:45Z",
         "outcome": "green",
@@ -903,9 +861,7 @@
       },
       {
         "sha": "3651a795607e87fdccecfaf7a1f852ff330738e9",
-        "prs": [
-          13303
-        ],
+        "prs": [13303],
         "class": "unknown",
         "start_utc": "2026-10-31T09:45:14Z",
         "outcome": "cancelled/superseded",
@@ -939,9 +895,7 @@
       },
       {
         "sha": "37e7cb3da19a594878a13d14b88ec830fe5551be",
-        "prs": [
-          13321
-        ],
+        "prs": [13321],
         "class": "unknown",
         "start_utc": "2026-10-31T10:47:47Z",
         "outcome": "cancelled/superseded",
@@ -1009,9 +963,7 @@
       },
       {
         "sha": "38d79303ba17038127fea5718e81d4b66dac661a",
-        "prs": [
-          13346
-        ],
+        "prs": [13346],
         "class": "debundle",
         "start_utc": "2026-10-31T12:17:35Z",
         "outcome": "failed",
@@ -1045,9 +997,7 @@
       },
       {
         "sha": "3b1a31b3ef10367154e33cd8e7b973566d99eb05",
-        "prs": [
-          13314
-        ],
+        "prs": [13314],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:37Z",
         "outcome": "green",
@@ -1081,9 +1031,7 @@
       },
       {
         "sha": "3b94a8f4e67bfce8555712458a4507d16abdf51b",
-        "prs": [
-          13337
-        ],
+        "prs": [13337],
         "class": "unknown",
         "start_utc": "2026-10-31T11:20:33Z",
         "outcome": "cancelled/superseded",
@@ -1117,9 +1065,7 @@
       },
       {
         "sha": "3bd865a1b18db0f66fe74bd8f0bcd61c12ba4239",
-        "prs": [
-          13338
-        ],
+        "prs": [13338],
         "class": "unknown",
         "start_utc": "2026-10-31T11:21:32Z",
         "outcome": "cancelled/superseded",
@@ -1153,9 +1099,7 @@
       },
       {
         "sha": "3d585780d7522ae1c639360e98a384f3b0e1957f",
-        "prs": [
-          13217
-        ],
+        "prs": [13217],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T12:10:52Z",
         "outcome": "green",
@@ -1189,9 +1133,7 @@
       },
       {
         "sha": "3e7ea10b9058aa6e188d0d6def4163b05ba5ee73",
-        "prs": [
-          13312
-        ],
+        "prs": [13312],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:16Z",
         "outcome": "green",
@@ -1225,9 +1167,7 @@
       },
       {
         "sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
-        "prs": [
-          13319
-        ],
+        "prs": [13319],
         "class": "system/runtime",
         "start_utc": "2026-10-31T10:08:03Z",
         "outcome": "green",
@@ -1261,9 +1201,7 @@
       },
       {
         "sha": "46b7627acc956804a1f1e6637a599894837b2ff7",
-        "prs": [
-          13340
-        ],
+        "prs": [13340],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:39:52Z",
         "outcome": "green",
@@ -1297,9 +1235,7 @@
       },
       {
         "sha": "488020156531ce1404f6b5413c2d447ea1ed0b07",
-        "prs": [
-          13342
-        ],
+        "prs": [13342],
         "class": "debundle",
         "start_utc": "2026-10-31T11:43:49Z",
         "outcome": "green",
@@ -1333,9 +1269,7 @@
       },
       {
         "sha": "48ffa2354a30a9bd528c74aaa4904b8c63918458",
-        "prs": [
-          13300
-        ],
+        "prs": [13300],
         "class": "unknown",
         "start_utc": "2026-10-31T09:28:46Z",
         "outcome": "cancelled/superseded",
@@ -1369,9 +1303,7 @@
       },
       {
         "sha": "495082c4db815cff67fc2b7453cf8d49ef94a779",
-        "prs": [
-          13301
-        ],
+        "prs": [13301],
         "class": "other code/config",
         "start_utc": "2026-10-31T09:37:41Z",
         "outcome": "green",
@@ -1405,9 +1337,7 @@
       },
       {
         "sha": "495a69e4818fb8d9e38050cd5d522c0c6310de11",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T10:04:24Z",
         "outcome": "green",
@@ -1441,9 +1371,7 @@
       },
       {
         "sha": "4ba6471800ebe363d284ac30f0e06c94ec6d23f0",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T10:41:36Z",
         "outcome": "green",
@@ -1477,9 +1405,7 @@
       },
       {
         "sha": "4f9ed8df449c0d14dc451868d775c48a67ab6458",
-        "prs": [
-          13281
-        ],
+        "prs": [13281],
         "class": "other code/config",
         "start_utc": "2026-10-31T08:57:36Z",
         "outcome": "green",
@@ -1513,9 +1439,7 @@
       },
       {
         "sha": "4fd72b9ef7d7777c716854cd00acff47177d6a59",
-        "prs": [
-          13287
-        ],
+        "prs": [13287],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T09:16:46Z",
         "outcome": "green",
@@ -1549,9 +1473,7 @@
       },
       {
         "sha": "4fe48e571c3b9d67b252d4cd954aedf1282f5b30",
-        "prs": [
-          13321
-        ],
+        "prs": [13321],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:11Z",
         "outcome": "green",
@@ -1585,9 +1507,7 @@
       },
       {
         "sha": "52671d1e2b4f6a493b76126fa632c49ca8a77204",
-        "prs": [
-          13283
-        ],
+        "prs": [13283],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T08:31:00Z",
         "outcome": "green",
@@ -1621,9 +1541,7 @@
       },
       {
         "sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
-        "prs": [
-          13313
-        ],
+        "prs": [13313],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:32Z",
         "outcome": "green",
@@ -1657,9 +1575,7 @@
       },
       {
         "sha": "5a43729d46152b17f70d9d89d39f9bcabb051372",
-        "prs": [
-          13345
-        ],
+        "prs": [13345],
         "class": "debundle",
         "start_utc": "2026-10-31T11:59:38Z",
         "outcome": "failed",
@@ -1693,9 +1609,7 @@
       },
       {
         "sha": "5dae35f81d40bfb34babdfde7925af2b1a8a5861",
-        "prs": [
-          13329
-        ],
+        "prs": [13329],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:30:04Z",
         "outcome": "green",
@@ -1729,9 +1643,7 @@
       },
       {
         "sha": "5e572e01c4d9093d02104f50e337779100526584",
-        "prs": [
-          13291
-        ],
+        "prs": [13291],
         "class": "frontend",
         "start_utc": "2026-10-31T09:09:01Z",
         "outcome": "green",
@@ -1765,9 +1677,7 @@
       },
       {
         "sha": "5f2a768bdfdc154e2643edf523c1317f42920ebd",
-        "prs": [
-          13321
-        ],
+        "prs": [13321],
         "class": "debundle",
         "start_utc": "2026-10-31T10:54:25Z",
         "outcome": "green",
@@ -1801,9 +1711,7 @@
       },
       {
         "sha": "61d64972fb6a9b3d57f56f594e13b3964471585f",
-        "prs": [
-          13289
-        ],
+        "prs": [13289],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:02:43Z",
         "outcome": "green",
@@ -1837,9 +1745,7 @@
       },
       {
         "sha": "62e29f24af0e0aa98ee1ae76a021cd60fae958c0",
-        "prs": [
-          13332
-        ],
+        "prs": [13332],
         "class": "unknown",
         "start_utc": "2026-10-31T11:15:13Z",
         "outcome": "green",
@@ -1873,9 +1779,7 @@
       },
       {
         "sha": "63ba4c1e95dd828e7aef7b222178bb4c492aa797",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T11:38:50Z",
         "outcome": "green",
@@ -1909,9 +1813,7 @@
       },
       {
         "sha": "63fb178a720ab9e312058d516a382d8a086bace8",
-        "prs": [
-          13326
-        ],
+        "prs": [13326],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:20:45Z",
         "outcome": "green",
@@ -1945,9 +1847,7 @@
       },
       {
         "sha": "69cb736b524d4d472238815f92dba757f5f58965",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "other code/config",
         "start_utc": "2026-10-31T11:54:31Z",
         "outcome": "green",
@@ -1981,9 +1881,7 @@
       },
       {
         "sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
-        "prs": [
-          13339
-        ],
+        "prs": [13339],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T11:59:57Z",
         "outcome": "green",
@@ -2017,9 +1915,7 @@
       },
       {
         "sha": "6fa1e25b987ac82f4c0ed6a218240b6a75613652",
-        "prs": [
-          13333
-        ],
+        "prs": [13333],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:11:10Z",
         "outcome": "green",
@@ -2053,9 +1949,7 @@
       },
       {
         "sha": "70ef0086178401f972fa7a1a7ed73cb8dccbc65e",
-        "prs": [
-          13319
-        ],
+        "prs": [13319],
         "class": "unknown",
         "start_utc": "2026-10-31T10:01:54Z",
         "outcome": "cancelled/superseded",
@@ -2089,9 +1983,7 @@
       },
       {
         "sha": "765255f6ae5095f0df6b74edebea8da9eecd1a89",
-        "prs": [
-          13309
-        ],
+        "prs": [13309],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:49:33Z",
         "outcome": "green",
@@ -2125,9 +2017,7 @@
       },
       {
         "sha": "792e7c561ebc8268a401ef66df122899d52a700d",
-        "prs": [
-          13243
-        ],
+        "prs": [13243],
         "class": "unknown",
         "start_utc": "2026-10-31T08:32:03Z",
         "outcome": "failed",
@@ -2161,9 +2051,7 @@
       },
       {
         "sha": "7d25f269687573154e9e573bdcf901d015d7c983",
-        "prs": [
-          13182
-        ],
+        "prs": [13182],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:19Z",
         "outcome": "failed",
@@ -2197,9 +2085,7 @@
       },
       {
         "sha": "8011d5005758cde2b7cee7bfe5b903c7e071d034",
-        "prs": [
-          13319
-        ],
+        "prs": [13319],
         "class": "unknown",
         "start_utc": "2026-10-31T10:05:54Z",
         "outcome": "cancelled/superseded",
@@ -2233,9 +2119,7 @@
       },
       {
         "sha": "80224ccd8b0fa094455b65c8674e22610cb226e5",
-        "prs": [
-          13284
-        ],
+        "prs": [13284],
         "class": "debundle",
         "start_utc": "2026-10-31T08:31:13Z",
         "outcome": "green",
@@ -2269,9 +2153,7 @@
       },
       {
         "sha": "81851d7360904abb2d1a78ca16494e61f19a083f",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T11:24:17Z",
         "outcome": "green",
@@ -2305,9 +2187,7 @@
       },
       {
         "sha": "82466b447042115341c2c82e6e8fb3919371e443",
-        "prs": [
-          13299
-        ],
+        "prs": [13299],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:30:17Z",
         "outcome": "green",
@@ -2341,9 +2221,7 @@
       },
       {
         "sha": "841b449fb87a36efeba97a3257633468a84befef",
-        "prs": [
-          13336
-        ],
+        "prs": [13336],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T11:19:37Z",
         "outcome": "green",
@@ -2377,9 +2255,7 @@
       },
       {
         "sha": "848b137f87f2ff9850681134ae70d0e0a32c3a9e",
-        "prs": [
-          13325
-        ],
+        "prs": [13325],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:36Z",
         "outcome": "green",
@@ -2413,9 +2289,7 @@
       },
       {
         "sha": "84e0124dda3c28dd7ed880ce17b622f9379515b5",
-        "prs": [
-          13310
-        ],
+        "prs": [13310],
         "class": "debundle",
         "start_utc": "2026-10-31T10:56:20Z",
         "outcome": "green",
@@ -2449,9 +2323,7 @@
       },
       {
         "sha": "85042c8b7332e45b1c4e01338de2da748b2b21bc",
-        "prs": [
-          13300
-        ],
+        "prs": [13300],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:32:12Z",
         "outcome": "green",
@@ -2485,9 +2357,7 @@
       },
       {
         "sha": "873893dde01e782cfb41e5dda4554271607a8534",
-        "prs": [
-          13288
-        ],
+        "prs": [13288],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T09:02:09Z",
         "outcome": "green",
@@ -2521,9 +2391,7 @@
       },
       {
         "sha": "89fbf0674754be42b9525f4a5db6eb6d466fabd0",
-        "prs": [
-          13182
-        ],
+        "prs": [13182],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T10:45:46Z",
         "outcome": "green",
@@ -2557,9 +2425,7 @@
       },
       {
         "sha": "8c544e49ee102abd20d571de736e6a8e68a13b41",
-        "prs": [
-          13327
-        ],
+        "prs": [13327],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T10:24:13Z",
         "outcome": "green",
@@ -2593,9 +2459,7 @@
       },
       {
         "sha": "8ee3def617d6026a5485b8c53bae24f68275c892",
-        "prs": [
-          13303
-        ],
+        "prs": [13303],
         "class": "unknown",
         "start_utc": "2026-10-31T09:40:05Z",
         "outcome": "failed",
@@ -2629,9 +2493,7 @@
       },
       {
         "sha": "9366f999a241606181ef51628ea9e1f5d284166b",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T08:33:15Z",
         "outcome": "green",
@@ -2665,9 +2527,7 @@
       },
       {
         "sha": "936ddb807de2402d84ef3605df2e93da6384d112",
-        "prs": [
-          13182
-        ],
+        "prs": [13182],
         "class": "unknown",
         "start_utc": "2026-10-31T10:33:24Z",
         "outcome": "cancelled/superseded",
@@ -2701,9 +2561,7 @@
       },
       {
         "sha": "940e06d56c1c316ed57000491d93daee50110c5e",
-        "prs": [
-          13297
-        ],
+        "prs": [13297],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:15:59Z",
         "outcome": "green",
@@ -2737,9 +2595,7 @@
       },
       {
         "sha": "98d605d8f3c69c569dd175cacdf916032b12bacd",
-        "prs": [
-          13321
-        ],
+        "prs": [13321],
         "class": "unknown",
         "start_utc": "2026-10-31T10:05:38Z",
         "outcome": "green",
@@ -2773,9 +2629,7 @@
       },
       {
         "sha": "99fffc24c06986003d01cb8f2e5ce20b85f1b7c9",
-        "prs": [
-          13315
-        ],
+        "prs": [13315],
         "class": "debundle",
         "start_utc": "2026-10-31T11:08:08Z",
         "outcome": "green",
@@ -2809,9 +2663,7 @@
       },
       {
         "sha": "9ac4b6501a5161ab081777ebeed45a66002d2ed4",
-        "prs": [
-          13326
-        ],
+        "prs": [13326],
         "class": "unknown",
         "start_utc": "2026-10-31T10:17:54Z",
         "outcome": "failed",
@@ -2845,9 +2697,7 @@
       },
       {
         "sha": "9c022dc71b6c24ecb4600c1f164ab59e92453b62",
-        "prs": [
-          13339
-        ],
+        "prs": [13339],
         "class": "unknown",
         "start_utc": "2026-10-31T11:26:53Z",
         "outcome": "green",
@@ -2881,9 +2731,7 @@
       },
       {
         "sha": "9de3abaa28c662f1d72be1933bb4994f365af037",
-        "prs": [
-          13321
-        ],
+        "prs": [13321],
         "class": "unknown",
         "start_utc": "2026-10-31T10:32:31Z",
         "outcome": "green",
@@ -2917,9 +2765,7 @@
       },
       {
         "sha": "9ec812cd7d7af31b7d2537631e36b5c7aab8114d",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T10:40:51Z",
         "outcome": "cancelled/superseded",
@@ -2953,9 +2799,7 @@
       },
       {
         "sha": "a00c2536deeef3f1b783820528dca966095354d6",
-        "prs": [
-          13290
-        ],
+        "prs": [13290],
         "class": "debundle",
         "start_utc": "2026-10-31T10:47:45Z",
         "outcome": "green",
@@ -2989,9 +2833,7 @@
       },
       {
         "sha": "a2cc66c1a6aec1559b9fd55e1ba36d8506b1a99e",
-        "prs": [
-          13243
-        ],
+        "prs": [13243],
         "class": "system/runtime",
         "start_utc": "2026-10-31T08:33:26Z",
         "outcome": "green",
@@ -3025,9 +2867,7 @@
       },
       {
         "sha": "a5bb20192531d2586a2d84aa947c56db1dc66842",
-        "prs": [
-          13317
-        ],
+        "prs": [13317],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:06:44Z",
         "outcome": "green",
@@ -3061,9 +2901,7 @@
       },
       {
         "sha": "a8663bcdd2af7bd8f9463a3dd653e975adfee583",
-        "prs": [
-          13286
-        ],
+        "prs": [13286],
         "class": "debundle",
         "start_utc": "2026-10-31T08:54:52Z",
         "outcome": "green",
@@ -3097,9 +2935,7 @@
       },
       {
         "sha": "ac56d36ef10c6aeebc344af167d040a6c886b709",
-        "prs": [
-          13307
-        ],
+        "prs": [13307],
         "class": "debundle",
         "start_utc": "2026-10-31T09:47:05Z",
         "outcome": "green",
@@ -3133,9 +2969,7 @@
       },
       {
         "sha": "aece84cb356fc69582b06e9f55cb606de9e1d3df",
-        "prs": [
-          13182
-        ],
+        "prs": [13182],
         "class": "unknown",
         "start_utc": "2026-10-31T10:15:06Z",
         "outcome": "failed",
@@ -3169,9 +3003,7 @@
       },
       {
         "sha": "b0033de7a81f4ffbeab14f498681c9435fe4ffa8",
-        "prs": [
-          13334
-        ],
+        "prs": [13334],
         "class": "debundle",
         "start_utc": "2026-10-31T11:17:31Z",
         "outcome": "green",
@@ -3205,9 +3037,7 @@
       },
       {
         "sha": "b15f58f91cf060fbf06f3c6821537ce4832bc9b2",
-        "prs": [
-          13332
-        ],
+        "prs": [13332],
         "class": "unknown",
         "start_utc": "2026-10-31T11:03:07Z",
         "outcome": "green",
@@ -3241,9 +3071,7 @@
       },
       {
         "sha": "b6b0d0d114b9f2df4b0b2132a40b884c135d1b65",
-        "prs": [
-          13287
-        ],
+        "prs": [13287],
         "class": "unknown",
         "start_utc": "2026-10-31T09:01:27Z",
         "outcome": "green",
@@ -3277,9 +3105,7 @@
       },
       {
         "sha": "b92011c3b0a33f2d5b7868e0a51924c38eefd832",
-        "prs": [
-          13335
-        ],
+        "prs": [13335],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:46:55Z",
         "outcome": "green",
@@ -3313,9 +3139,7 @@
       },
       {
         "sha": "b964964d8b60b414bcff3d0cfc3575722d02867e",
-        "prs": [
-          13344
-        ],
+        "prs": [13344],
         "class": "Agentplane backend",
         "start_utc": "2026-10-31T11:55:59Z",
         "outcome": "green",
@@ -3349,9 +3173,7 @@
       },
       {
         "sha": "bc59d787f10b9cafeba8d721aaae0c5e62c56e0b",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T11:29:09Z",
         "outcome": "green",
@@ -3385,9 +3207,7 @@
       },
       {
         "sha": "bd4cab8ee0306e82e62dc82da7d647ed3beaa87b",
-        "prs": [
-          13303
-        ],
+        "prs": [13303],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:51:44Z",
         "outcome": "green",
@@ -3421,9 +3241,7 @@
       },
       {
         "sha": "bef982cd9ce4e8a71051bfa6a8411b59692d141f",
-        "prs": [
-          13290
-        ],
+        "prs": [13290],
         "class": "unknown",
         "start_utc": "2026-10-31T10:13:11Z",
         "outcome": "green",
@@ -3457,9 +3275,7 @@
       },
       {
         "sha": "c356950950208bc1389262fd3d6feba7f4508116",
-        "prs": [
-          13332
-        ],
+        "prs": [13332],
         "class": "unknown",
         "start_utc": "2026-10-31T11:30:52Z",
         "outcome": "green",
@@ -3493,9 +3309,7 @@
       },
       {
         "sha": "c474bdf761c6094b0afe3bc9b5c2d9e70d7f12c5",
-        "prs": [
-          13316
-        ],
+        "prs": [13316],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:46Z",
         "outcome": "green",
@@ -3529,9 +3343,7 @@
       },
       {
         "sha": "c4f6bd1deed912b30ebcb03ff90a7869917411dd",
-        "prs": [
-          13298
-        ],
+        "prs": [13298],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:19:35Z",
         "outcome": "green",
@@ -3565,9 +3377,7 @@
       },
       {
         "sha": "c739e52b6e523006a8769f2e2534831bbffd0642",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "unknown",
         "start_utc": "2026-10-31T09:32:21Z",
         "outcome": "cancelled/superseded",
@@ -3635,9 +3445,7 @@
       },
       {
         "sha": "c755ac134a6581c53e029d18b8acb93c1f212722",
-        "prs": [
-          13293
-        ],
+        "prs": [13293],
         "class": "debundle",
         "start_utc": "2026-10-31T09:59:37Z",
         "outcome": "green",
@@ -3671,9 +3479,7 @@
       },
       {
         "sha": "ca115da8303236a8c80255e6998730230d9e98e7",
-        "prs": [
-          13285
-        ],
+        "prs": [13285],
         "class": "docs-only",
         "start_utc": "2026-10-31T08:50:38Z",
         "outcome": "green",
@@ -3707,9 +3513,7 @@
       },
       {
         "sha": "cc0be6630712d3728445f6569a4a8c58df67c92e",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "unknown",
         "start_utc": "2026-10-31T09:33:21Z",
         "outcome": "failed",
@@ -3743,9 +3547,7 @@
       },
       {
         "sha": "cfea77d416c7d3e6eac18bb8ba2e92e18656fc85",
-        "prs": [
-          13327
-        ],
+        "prs": [13327],
         "class": "unknown",
         "start_utc": "2026-10-31T10:18:11Z",
         "outcome": "cancelled/superseded",
@@ -3779,9 +3581,7 @@
       },
       {
         "sha": "d1972226d3cb8821fe9ba35fcbbcca23eb08e5cc",
-        "prs": [
-          13207
-        ],
+        "prs": [13207],
         "class": "unknown",
         "start_utc": "2026-10-31T09:59:06Z",
         "outcome": "green",
@@ -3815,9 +3615,7 @@
       },
       {
         "sha": "d1d4436f6c34e7384f37d26813a98405629adf82",
-        "prs": [
-          13328
-        ],
+        "prs": [13328],
         "class": "unknown",
         "start_utc": "2026-10-31T10:19:59Z",
         "outcome": "cancelled/superseded",
@@ -3851,9 +3649,7 @@
       },
       {
         "sha": "d28a93976d526c34ff864e4cc21162fd01b38103",
-        "prs": [
-          13324
-        ],
+        "prs": [13324],
         "class": "docs-only",
         "start_utc": "2026-10-31T10:12:05Z",
         "outcome": "green",
@@ -3887,9 +3683,7 @@
       },
       {
         "sha": "d317a1db17cffb47a01c0c961cf248c1e04c793a",
-        "prs": [
-          13295
-        ],
+        "prs": [13295],
         "class": "docs-only",
         "start_utc": "2026-10-31T09:11:55Z",
         "outcome": "green",
@@ -3923,9 +3717,7 @@
       },
       {
         "sha": "db730bd448162adcaf1bb52ac33bd0bb9a60f948",
-        "prs": [
-          13325
-        ],
+        "prs": [13325],
         "class": "other code/config",
         "start_utc": "2026-10-31T10:23:23Z",
         "outcome": "green",
@@ -3959,9 +3751,7 @@
       },
       {
         "sha": "dc2b703c077170b3ef36418517af6fcfee6af1d6",
-        "prs": [
-          13347
-        ],
+        "prs": [13347],
         "class": "docs-only",
         "start_utc": "2026-10-31T12:28:25Z",
         "outcome": "green",
@@ -3995,9 +3785,7 @@
       },
       {
         "sha": "de9acaa7813943ce45b0811b6bf679dabe568586",
-        "prs": [
-          13310
-        ],
+        "prs": [13310],
         "class": "unknown",
         "start_utc": "2026-10-31T10:52:15Z",
         "outcome": "green",
@@ -4031,9 +3819,7 @@
       },
       {
         "sha": "e191c281c0971ba69c865ac65ec87523dcd906e9",
-        "prs": [
-          13343
-        ],
+        "prs": [13343],
         "class": "build/CI/tooling",
         "start_utc": "2026-10-31T11:49:49Z",
         "outcome": "green",
@@ -4067,9 +3853,7 @@
       },
       {
         "sha": "e2cce3d98bbb19fd85cc6c8f3c3c07f36464627a",
-        "prs": [
-          13307
-        ],
+        "prs": [13307],
         "class": "unknown",
         "start_utc": "2026-10-31T09:46:33Z",
         "outcome": "cancelled/superseded",
@@ -4137,9 +3921,7 @@
       },
       {
         "sha": "e71a4c6f67b4bcf7b7c6462587aad8504c8d550a",
-        "prs": [
-          13332
-        ],
+        "prs": [13332],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:33:50Z",
         "outcome": "green",
@@ -4173,9 +3955,7 @@
       },
       {
         "sha": "f09479ac38774565b9c4c5d2ce974100368638bd",
-        "prs": [
-          13337
-        ],
+        "prs": [13337],
         "class": "docs-only",
         "start_utc": "2026-10-31T11:23:13Z",
         "outcome": "green",
@@ -4209,9 +3989,7 @@
       },
       {
         "sha": "f2b9b153174f0a4ce7fbf231d43704568b789d68",
-        "prs": [
-          13341
-        ],
+        "prs": [13341],
         "class": "debundle",
         "start_utc": "2026-10-31T11:41:08Z",
         "outcome": "failed",
@@ -4245,9 +4023,7 @@
       },
       {
         "sha": "f65113b34e269f1456756a5230868ab08b88922b",
-        "prs": [
-          13246
-        ],
+        "prs": [13246],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:24:52Z",
         "outcome": "failed",
@@ -4281,9 +4057,7 @@
       },
       {
         "sha": "f654bfc163d74d89025d22b418e7af3e077022a0",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "unknown",
         "start_utc": "2026-10-31T09:30:03Z",
         "outcome": "cancelled/superseded",
@@ -4317,9 +4091,7 @@
       },
       {
         "sha": "f6ff17ae9b20252622266109e404ca93231372cf",
-        "prs": [
-          13302
-        ],
+        "prs": [13302],
         "class": "unknown",
         "start_utc": "2026-10-31T09:46:29Z",
         "outcome": "cancelled/superseded",
@@ -4353,9 +4125,7 @@
       },
       {
         "sha": "f73050eafc4dca5838c02a57fc8f2f6d3b9db106",
-        "prs": [
-          13305
-        ],
+        "prs": [13305],
         "class": "system/runtime",
         "start_utc": "2026-10-31T09:48:05Z",
         "outcome": "green",
@@ -4389,9 +4159,7 @@
       },
       {
         "sha": "f785adb41658b0695e36a7e2601ef3e810cee1f1",
-        "prs": [
-          13333
-        ],
+        "prs": [13333],
         "class": "unknown",
         "start_utc": "2026-10-31T11:05:41Z",
         "outcome": "green",
@@ -4425,9 +4193,7 @@
       },
       {
         "sha": "fdcc6e7e209c7330fac93f2392bb987485538f54",
-        "prs": [
-          13338
-        ],
+        "prs": [13338],
         "class": "system/runtime",
         "start_utc": "2026-10-31T11:22:35Z",
         "outcome": "green",
@@ -4461,9 +4227,7 @@
       },
       {
         "sha": "feba21a611a4382f9559bf56b3223d6d0554530b",
-        "prs": [
-          13333
-        ],
+        "prs": [13333],
         "class": "unknown",
         "start_utc": "2026-10-31T11:08:41Z",
         "outcome": "cancelled/superseded",
@@ -4655,9 +4419,7 @@
   "representatives": [
     {
       "sha": "1e401669300215bb157080c36c2cb3df126a5895",
-      "prs": [
-        13306
-      ],
+      "prs": [13306],
       "class": "docs-only",
       "start_utc": "2026-10-31T09:46:29Z",
       "outcome": "green",
@@ -4692,9 +4454,7 @@
     },
     {
       "sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
-      "prs": [
-        13313
-      ],
+      "prs": [13313],
       "class": "debundle",
       "start_utc": "2026-10-31T09:59:32Z",
       "outcome": "green",
@@ -4729,9 +4489,7 @@
     },
     {
       "sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
-      "prs": [
-        13319
-      ],
+      "prs": [13319],
       "class": "system/runtime",
       "start_utc": "2026-10-31T10:08:03Z",
       "outcome": "green",
@@ -4766,9 +4524,7 @@
     },
     {
       "sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
-      "prs": [
-        13339
-      ],
+      "prs": [13339],
       "class": "Agentplane backend",
       "start_utc": "2026-10-31T11:59:57Z",
       "outcome": "green",
@@ -4803,9 +4559,7 @@
     },
     {
       "sha": "873893dde01e782cfb41e5dda4554271607a8534",
-      "prs": [
-        13288
-      ],
+      "prs": [13288],
       "class": "build/CI/tooling",
       "start_utc": "2026-10-31T09:02:09Z",
       "outcome": "green",
@@ -4881,9 +4635,7 @@
   },
   "timelines": [
     {
-      "pr_numbers": [
-        13306
-      ],
+      "pr_numbers": [13306],
       "head_sha": "1e401669300215bb157080c36c2cb3df126a5895",
       "class": "docs-only",
       "head_proxy_s": 108.0,
@@ -4904,9 +4656,7 @@
       "mechanism": "Zero affected targets; runner log explicitly skips test/build. Selection/setup still occupies the Bazel job."
     },
     {
-      "pr_numbers": [
-        13313
-      ],
+      "pr_numbers": [13313],
       "head_sha": "535da16ac6ad984ff2464fb40f7c4112c7abbb58",
       "class": "debundle",
       "head_proxy_s": 322.0,
@@ -4927,9 +4677,7 @@
       "mechanism": "155.39s dependency chain: Rust metadata/link/compile work plus31.58s isolated-edit test; not a VM-tail workload."
     },
     {
-      "pr_numbers": [
-        13319
-      ],
+      "pr_numbers": [13319],
       "head_sha": "3fef546a824da980c91ac5058fff5118eb9bf48b",
       "class": "system/runtime",
       "head_proxy_s": 652.0,
@@ -4950,9 +4698,7 @@
       "mechanism": "VM-target dependency path543.06s; following artifact build3.147s. This older tested tree is a separate source."
     },
     {
-      "pr_numbers": [
-        13339
-      ],
+      "pr_numbers": [13339],
       "head_sha": "6b783c8b8bb5de46b59b6a8114a840b8ff1dd737",
       "class": "Agentplane backend",
       "head_proxy_s": 647.0,
@@ -4973,9 +4719,7 @@
       "mechanism": "VM-critical affected-target integration run; following artifact build5.047s with0.04s path."
     },
     {
-      "pr_numbers": [
-        13288
-      ],
+      "pr_numbers": [13288],
       "head_sha": "873893dde01e782cfb41e5dda4554271607a8534",
       "class": "build/CI/tooling",
       "head_proxy_s": 149.0,
@@ -5025,11 +4769,7 @@
           "require_last_push_approval": false,
           "required_review_thread_resolution": false,
           "require_extra_approval_for_unattributed_changes": true,
-          "allowed_merge_methods": [
-            "merge",
-            "squash",
-            "rebase"
-          ]
+          "allowed_merge_methods": ["merge", "squash", "rebase"]
         },
         "ruleset_source_type": "Repository",
         "ruleset_source": "agentydragon/ducktape",
@@ -5439,20 +5179,9 @@
   },
   "retry_diagnosis": {
     "workflow_runs": 4,
-    "timeout_runs": [
-      41184917810,
-      41194638696
-    ],
-    "execute_unavailable_runs": [
-      41196601793,
-      41196890323
-    ],
-    "failed_job_end_to_retry_create_s": [
-      512,
-      1107,
-      457,
-      445
-    ],
+    "timeout_runs": [41184917810, 41194638696],
+    "execute_unavailable_runs": [41196601793, 41196890323],
+    "failed_job_end_to_retry_create_s": [512, 1107, 457, 445],
     "vm_oom_first_command_timeout": {
       "run": 41194638696,
       "ready_s": 71.993,
@@ -9609,14 +9338,8 @@
     "result": "PASSED",
     "browser_cases": 2,
     "viewports_css_px": [
-      [
-        1280,
-        900
-      ],
-      [
-        390,
-        844
-      ]
+      [1280, 900],
+      [390, 844]
     ],
     "checks": [
       "all ten images visually reviewed",
