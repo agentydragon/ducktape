@@ -1,0 +1,58 @@
+#!/usr/bin/busybox sh
+set -u
+
+echo "AGENTPLANE_NATIVE_PERF_BEGIN policy=$(cat /proc/sys/kernel/perf_event_paranoid) capabilities=$(sed -n 's/^CapEff:[[:space:]]*//p' /proc/self/status)" >/dev/ttyS0
+if ! /usr/bin/perf stat -e cpu-clock -- /usr/bin/busybox true >/dev/ttyS0 2>&1; then
+    echo AGENTPLANE_NATIVE_PERF_EVENT_UNAVAILABLE >/dev/ttyS0
+    exit 0
+fi
+
+# System-wide sampling starts before Runner. It stays in this separate systemd service, outside
+# the 96 MiB native executor leaf, and leaves the Codex app-server command and PID unchanged.
+# The state virtiofs is shared with the launcher's virtiofs-state sidecar, which the test uses
+# to retain the raw file before deleting this Sandbox.
+profile=/state/.agentplane-native-startup.perf.data
+(
+    read uptime idle </proc/uptime
+    echo "AGENTPLANE_NATIVE_PERF_CLOCK_BEGIN unix_seconds=$(/usr/bin/busybox date -u +%s) uptime_seconds=$uptime" >/dev/ttyS0
+    /usr/bin/perf record -a --all-user -e cpu-clock -F 49 -g --call-graph dwarf,2048 \
+        -o "$profile.partial" -- /usr/bin/busybox sleep 60 >/dev/ttyS0 2>&1
+    result=$?
+    read uptime idle </proc/uptime
+    echo "AGENTPLANE_NATIVE_PERF_CLOCK_END unix_seconds=$(/usr/bin/busybox date -u +%s) uptime_seconds=$uptime" >/dev/ttyS0
+    echo "AGENTPLANE_NATIVE_PERF_RECORD_EXIT $result" >/dev/ttyS0
+    if [ "$result" -eq 0 ]; then
+        if ! /usr/bin/busybox chmod 0644 "$profile.partial" || ! /usr/bin/busybox mv "$profile.partial" "$profile"; then
+            echo AGENTPLANE_NATIVE_PERF_PUBLISH_FAILED >/dev/ttyS0
+            exit 0
+        fi
+        echo AGENTPLANE_NATIVE_PERF_PUBLISHED >/dev/ttyS0
+        echo AGENTPLANE_NATIVE_PERF_COMM_BEGIN >/dev/ttyS0
+        /usr/bin/perf report --stdio -f -i "$profile" \
+            --sort comm --percent-limit 0.5 >/dev/ttyS0 2>&1
+        app_pid=
+        for cmdline in /proc/[0-9]*/cmdline; do
+            [ -r "$cmdline" ] || continue
+            command=$(/usr/bin/busybox tr '\000' ' ' <"$cmdline" 2>/dev/null) || continue
+            case "$command" in
+                *" app-server --listen stdio://"*)
+                    app_pid=${cmdline%/cmdline}
+                    app_pid=${app_pid##*/}
+                    break
+                    ;;
+            esac
+        done
+        if [ -n "$app_pid" ]; then
+            echo "AGENTPLANE_NATIVE_PERF_APP_SERVER_PID $app_pid" >/dev/ttyS0
+            echo AGENTPLANE_NATIVE_PERF_APP_SERVER_REPORT_BEGIN >/dev/ttyS0
+            /usr/bin/perf report --stdio -f -i "$profile" --pid "$app_pid" \
+                --sort comm --percent-limit 0 >/dev/ttyS0 2>&1
+            echo AGENTPLANE_NATIVE_PERF_APP_SERVER_SCRIPT_BEGIN >/dev/ttyS0
+            /usr/bin/perf script -f -i "$profile" --pid "$app_pid" \
+                -F comm,pid,tid,time,event,ip,sym,dso >/dev/ttyS0 2>&1
+        else
+            echo AGENTPLANE_NATIVE_PERF_APP_SERVER_PID_MISSING >/dev/ttyS0
+        fi
+    fi
+    echo AGENTPLANE_NATIVE_PERF_END >/dev/ttyS0
+) &

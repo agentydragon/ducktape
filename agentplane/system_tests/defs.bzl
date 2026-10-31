@@ -26,10 +26,12 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
+    if profile_guest and stack != "vm":
+        fail("profile_guest requires the VM stack")
     config = _STACKS[stack]
     layouts = K3S_SERVICE_LAYOUTS + config.images
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
@@ -49,10 +51,13 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         properties["EstimatedComputeUnits"] = "8"
         guests = [
             "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
-            "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
+            "//agentplane/system_tests/k3s/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
         ]
         data += K3S_VM_DATA + guests
-        env |= K3S_VM_ENV | {"K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests])}
+        env |= K3S_VM_ENV | {
+            "K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests]),
+            "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
+        }
 
         # VM layers stay on disk; Pod runners use a different tmpfs image store.
         properties["test.runner-recycling-key"] = "k3s-vm"
@@ -63,6 +68,7 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         name = name,
         size = "enormous",
         srcs = srcs,
+        main = srcs[0],
         data = data,
         env = env,
         exec_properties = K3S_EXEC_PROPERTIES | properties,

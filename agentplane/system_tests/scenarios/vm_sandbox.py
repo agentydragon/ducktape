@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
+import sys
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -15,6 +18,7 @@ from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -208,19 +212,53 @@ async def vm_sandbox_turn(
         assert "PING" in turn.result().answer, turn.result().transcript
 
 
-async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str, scripted: ScriptedUpstream) -> None:
+async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_uid: str) -> Path:
+    """Copy the selected guest's perf.data from its local-path state PVC before Sandbox teardown."""
+    claim = json.loads(await cluster.kubectl("get", "pvc", f"{sandbox_name}-state", "-o", "json"))
+    assert claim["metadata"]["labels"]["agentplane.allegedly.works/sandbox"] == sandbox_name
+    assert any(
+        owner["kind"] == "Sandbox" and owner["name"] == sandbox_name and owner["uid"] == sandbox_uid
+        for owner in claim["metadata"]["ownerReferences"]
+    )
+    volume = json.loads(await cluster.kubectl("get", "pv", claim["spec"]["volumeName"], "-o", "json"))
+    assert volume["spec"]["claimRef"]["uid"] == claim["metadata"]["uid"]
+    assert volume["spec"]["claimRef"]["namespace"] == cluster.namespace
+    assert volume["spec"]["claimRef"]["name"] == claim["metadata"]["name"]
+    source = Path((volume["spec"].get("hostPath") or volume["spec"]["local"])["path"])
+    output = undeclared_outputs_dir() / "vm-artifacts" / "profiles" / f"{sandbox_uid}.perf.data"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source / ".agentplane-native-startup.perf.data", output)
+    assert output.stat().st_size > 1024
+    with output.open("rb") as profile:
+        assert profile.read(8) == b"PERFILE2"
+    return output
+
+
+async def codex_tool_oom(
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+    *,
+    native_profile: bool,
+) -> None:
     view = await sandbox("systest-vm-codex-oom", template=OOM_TEMPLATE)
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
-    with tracer.start_as_current_span(
-        "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.name}
-    ):
-        agent = await Agent.open(
-            client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
-        )
     evidence: dict[str, Any] = {}
     try:
+        with tracer.start_as_current_span(
+            "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.name}
+        ):
+            agent = await Agent.open(
+                client,
+                sandbox=view.name,
+                harness=runner_pb2.HARNESS_CODEX,
+                model=offered_model,
+                cwd=VM_WORKING_DIRECTORY,
+            )
         with tracer.start_as_current_span(
             "system_test.vm_oom.baseline", record_exception=False, set_status_on_exception=False
         ):
@@ -298,7 +336,16 @@ async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str,
             assert current.pod.uid == view.pod.uid
             evidence["passed"] = True
     finally:
-        (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        scenario_failed = sys.exc_info()[0] is not None
+        try:
+            if native_profile:
+                evidence["native_profile"] = str(await _capture_native_profile(cluster, view.name, str(view.uid)))
+        except Exception as error:
+            evidence["native_profile_error"] = repr(error)
+            if not scenario_failed:
+                raise
+        finally:
+            (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
 
 
 # gazelle:include_dep @pypi//protobuf

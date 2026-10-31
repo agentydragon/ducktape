@@ -389,6 +389,32 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     }
 
 
+def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
+    selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
+    other = _resource(fixture.objects, "SandboxTemplate", "runner-vm")
+    selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert selected_args == other_args + " agentplane.native-profile=1"
+    selected_volumes = selected["spec"]["vm"]["template"]["spec"]["volumes"]
+    other_volumes = other["spec"]["vm"]["template"]["spec"]["volumes"]
+    assert next(volume for volume in selected_volumes if volume["name"] == "rootdisk")["containerDisk"][
+        "image"
+    ].endswith("/agentplane-vm-guest-root-profile:unset")
+    assert next(volume for volume in other_volumes if volume["name"] == "rootdisk")["containerDisk"]["image"].endswith(
+        "/agentplane-vm-guest-root-profile:unset"
+    )
+    control = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    vm_sandboxes.select_native_profile(control.objects, enabled=False, profile_root=True)
+    control_oom = _resource(control.objects, "SandboxTemplate", OOM_TEMPLATE)
+    control_spec = control_oom["spec"]["vm"]["template"]["spec"]
+    assert "agentplane.native-profile=1" not in control_spec["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert next(volume for volume in control_spec["volumes"] if volume["name"] == "rootdisk")["containerDisk"][
+        "image"
+    ].endswith("/agentplane-vm-guest-root-profile:unset")
+
+
 def test_vm_boot_probe_selects_only_oom_guest_at_runtime() -> None:
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     vm_sandboxes.select_boot_probe(fixture.objects, enabled=True)

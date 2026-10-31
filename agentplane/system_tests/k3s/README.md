@@ -153,6 +153,9 @@ and Kyverno's admission controller, which adds the egress relay to each launcher
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
 looks for it only at start. The stack writes KubeVirt's and Kyverno's view of the VMs, each guest's
 serial console and any image a Pod pulled from a registry to `test.outputs/vm-sandboxes.txt`.
+The manual `test_vm_profile` variant adds a perf-capable guest root for native app-server
+startup profiling; its runtime opt-in, repeat commands, and artifact path are in the
+[native startup profile note](../../debug/2026_10_31_vm_native_startup_profile.md).
 
 The template boots the [test guest](guest/BUILD.bazel) instead of production's NixOS image, which sits
 in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots

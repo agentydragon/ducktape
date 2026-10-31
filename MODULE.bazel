@@ -684,6 +684,18 @@ apt.install(
     ],
 )
 
+# Manual VM startup profiling supplies perf as a separate guest-root variant. Ordinary VM tests
+# retain their smaller root image and do not import a profiler they never execute.
+apt.install(
+    dependency_set = "trixie_vm_perf",
+    packages = ["linux-perf"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # Budget exporter image: git + ca-certificates on debian:trixie-slim so the
 # export_ledger CronJob can clone/commit/push the Beancount ledger repo.
 apt.install(
@@ -722,7 +734,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
