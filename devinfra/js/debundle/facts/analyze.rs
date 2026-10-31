@@ -2,14 +2,20 @@ use super::*;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
-/// Controls only whether the source module's export surface contributes
-/// synthetic execution roots to unknown-call fallback.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+/// Controls only which of the source module's exports contribute synthetic
+/// execution roots and exposed capabilities to unknown-call fallback.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportReentryPolicy {
+    /// Every export.
     #[default]
     Conservative,
+    /// None: no code can obtain the module's bindings while it evaluates.
     NoStaticImporterReentry,
+    /// Only these export names (`default` for the default export): the only
+    /// code that can obtain the module's bindings while it evaluates imports
+    /// exactly these.
+    ReentryThrough(BTreeSet<String>),
 }
 
 /// Finds an `await` outside lazy scopes: function, arrow, method and
@@ -399,7 +405,7 @@ fn stable_top_level_var_candidates(
 pub fn analyze_chunk_with_policy<F>(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
-    export_reentry_policy: ExportReentryPolicy,
+    export_reentry_policy: &ExportReentryPolicy,
     source_path: Option<&str>,
     line_range_for_span: F,
 ) -> ChunkFactAnalysis
@@ -425,7 +431,7 @@ enum SynchronousCallAnalysis {
 fn analyze_chunk_with_policy_and_sync<F>(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
-    export_reentry_policy: ExportReentryPolicy,
+    export_reentry_policy: &ExportReentryPolicy,
     source_path: Option<&str>,
     mut line_range_for_span: F,
     synchronous_calls: SynchronousCallAnalysis,
@@ -783,7 +789,7 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
     analyze_chunk_with_policy_and_sync(
         structural,
         &hints,
-        ExportReentryPolicy::Conservative,
+        &ExportReentryPolicy::Conservative,
         None,
         |_| None,
         SynchronousCallAnalysis::Omit,
@@ -816,7 +822,7 @@ where
     analyze_chunk_with_policy(
         structural,
         hints,
-        ExportReentryPolicy::Conservative,
+        &ExportReentryPolicy::Conservative,
         source_path,
         line_range_for_span,
     )

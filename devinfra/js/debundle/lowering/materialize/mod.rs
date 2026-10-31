@@ -692,8 +692,7 @@ pub(super) fn finish_logical_chunk(
         dependency_graph_options,
         export_reentry_policies
             .get(&chunk_id_interned)
-            .copied()
-            .unwrap_or_default(),
+            .unwrap_or(&ExportReentryPolicy::Conservative),
         &resolve_dynamic_import,
     ) {
         Ok(chunk_analysis) => chunk_analysis,

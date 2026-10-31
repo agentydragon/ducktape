@@ -815,6 +815,45 @@ counted in `outside_window_sites`. A site the census does not see, such as a
 computed `globalThis` read, `process.mainModule` or `Function`/indirect `eval`
 code, is outside this proof, as it is outside the census.
 
+### Reentry through imported names
+
+When the only failure is `loader_request_reaches_target`, with no global or
+static-closure blocker, the policy is `reentry_through` with a set of export
+names, instead of conservative. The reentry window is the union of the
+closures of the counted requests that contain the target. The set is every
+name the window's chunks import from the target by named or default import.
+
+The policy stays conservative when:
+
+- a window chunk takes a namespace import of the target;
+- a window chunk re-exports from the target (`export *`, `export { … } from`);
+- a window chunk requests the target through a loader;
+- a reach-back request loads the target itself.
+
+Each of these hands out the whole namespace. Under `reentry_through`, only the
+named exports (`default` for the default export) are synthetic execution
+roots and exposed capabilities for unknown-call fallback.
+
+Soundness: while the target evaluates, its bindings are reachable only from
+the target itself, from chunks that evaluated before it (which cannot import
+it), and from chunks a load evaluates inside the window. A window chunk's
+module code reads the target only through its own import bindings. That
+holds for its body, for every function it creates, and for anything those
+functions later run, however they are reached: by the load itself, by a
+callback an opaque target statement invokes after the load, or by an escaped
+value. An imported exported function runs with its own reads, which its root as an
+execution root covers. So no top-level-only or synchronous-closure bound on
+the load is taken.
+
+A window evaluation that does not complete (it throws, or calls code the
+analysis cannot follow) changes nothing: the bound rests on what the window's
+code can name, not on what it runs. Code reachable only through a namespace is
+excluded by the conservative fallback above. A re-export from another window
+chunk names the target's binding in that chunk's own request, so it is
+counted there. Every incomplete statement of the target still gets ordering
+edges to the named exports; the analysis does not decide whether a load runs
+before it.
+
 The derivation is a judgment of the shared inference (<docs/inference.md>);
 `export_reentry.json` names its rule, the keys a closed certificate consumed,
 the resolved requests and loaded chunks, and the first witness and count of

@@ -10,8 +10,8 @@ use analysis::loader_closure::{
 };
 use anyhow::Result;
 use artifact::reports::{
-    InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer, SitePhase,
-    StaticModuleRequestMode,
+    ImportSpecifierKind, InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer,
+    SitePhase, StaticModuleRequestMode,
 };
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, ResolvedImportReference};
 use serde::Serialize;
@@ -55,6 +55,11 @@ pub enum ExportReentryLoaderDerivation {
         /// The first witness and occurrence count of each failure kind.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         failures: Vec<ExportReentryLoaderFailure>,
+        /// When reach-back is the only failure: the target's export names that
+        /// the chunks it can evaluate import (SPEC.md § Reentry through
+        /// imported names).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reentry_through: Option<BTreeSet<String>>,
     },
 }
 
@@ -66,12 +71,25 @@ impl ExportReentryLoaderDerivation {
         }
     }
 
+    pub fn reentry_through(&self) -> Option<&BTreeSet<String>> {
+        match self {
+            Self::LoaderClosure {
+                reentry_through, ..
+            } => reentry_through.as_ref(),
+            Self::NoSynchronousLoader | Self::NoHostLoaderSites => None,
+        }
+    }
+
     pub(super) fn from_closure(
+        target: ChunkId,
         closure: &LoaderClosure<LoaderSiteWitness>,
         surfaces: &LoaderSurfaces,
         artifact: &ChunkBundle,
-    ) -> Self {
-        Self::LoaderClosure {
+        indexes: &ArtifactIndexes,
+    ) -> Result<Self> {
+        let reentry_through = reentry_names(target, closure, surfaces, artifact, indexes)?;
+        Ok(Self::LoaderClosure {
+            reentry_through,
             closed: closure.is_closed(),
             host_keys: closure.dependencies.host_behavior.clone(),
             premise_keys: closure.dependencies.program_premises.clone(),
@@ -94,8 +112,78 @@ impl ExportReentryLoaderDerivation {
                     first: failure.first.clone(),
                 })
                 .collect(),
+        })
+    }
+}
+
+/// The target's export names the reach-back windows import, or `None` when a
+/// window can obtain its whole namespace or reach-back is not the only
+/// failure. A window chunk that finishes evaluating while the target evaluates
+/// keeps live bindings to exactly what it imports: its body and every later
+/// call of its functions read only those.
+fn reentry_names(
+    target: ChunkId,
+    closure: &LoaderClosure<LoaderSiteWitness>,
+    surfaces: &LoaderSurfaces,
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+) -> Result<Option<BTreeSet<String>>> {
+    if closure.target_requested
+        || closure.failures.keys().copied().collect::<Vec<_>>()
+            != [LoaderClosureFailureKind::LoaderRequestReachesTarget]
+    {
+        return Ok(None);
+    }
+    let resolves_to_target = |specifier: &str, from: ChunkId, entry_file: &str| {
+        indexes
+            .resolve_runtime_import_reference(specifier, from, entry_file, &artifact.chunk_table)
+            .is_some_and(|reference| reference.target_chunk_id == target)
+    };
+    let mut names = BTreeSet::new();
+    for &chunk in &closure.reentry_window {
+        if chunk == target {
+            continue;
+        }
+        if surfaces.chunks.get(&chunk).is_some_and(|surface| {
+            surface
+                .requests
+                .iter()
+                .any(|request| request.target == LoaderRequestTarget::Chunk(target))
+        }) {
+            return Ok(None);
+        }
+        let analysis = &artifact.chunk(chunk)?.analysis;
+        if analysis
+            .runtime_facts
+            .namespace_requests
+            .iter()
+            .any(|request| resolves_to_target(&request.specifier, chunk, &analysis.entry_file))
+        {
+            return Ok(None);
+        }
+        for import in &analysis.imports {
+            if !resolves_to_target(&import.source, chunk, &analysis.entry_file) {
+                continue;
+            }
+            for specifier in &import.specifiers {
+                match specifier.kind {
+                    ImportSpecifierKind::Named => {
+                        names.insert(
+                            specifier
+                                .imported
+                                .clone()
+                                .unwrap_or_else(|| specifier.local.clone()),
+                        );
+                    }
+                    ImportSpecifierKind::Default => {
+                        names.insert("default".to_string());
+                    }
+                    ImportSpecifierKind::Namespace => return Ok(None),
+                }
+            }
         }
     }
+    Ok(Some(names))
 }
 
 fn is_zero(count: &usize) -> bool {

@@ -352,7 +352,7 @@ pub fn materialize_logical_modules(
     )?;
     let export_reentry_policies = export_reentry_reports
         .iter()
-        .map(|(chunk_id, report)| (*chunk_id, report.policy))
+        .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
         .collect();
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
@@ -580,13 +580,15 @@ fn export_reentry_reports(
         let loader = loader_derivations
             .remove(&target)
             .expect("every selected target has a loader derivation");
-        let policy = if !global_proof_is_blocked
-            && closure.blockers.is_empty()
-            && loader.permits_export_reentry_proof()
-        {
-            ExportReentryPolicy::NoStaticImporterReentry
-        } else {
-            ExportReentryPolicy::Conservative
+        let policy = match loader.reentry_through() {
+            _ if global_proof_is_blocked || !closure.blockers.is_empty() => {
+                ExportReentryPolicy::Conservative
+            }
+            _ if loader.permits_export_reentry_proof() => {
+                ExportReentryPolicy::NoStaticImporterReentry
+            }
+            Some(names) => ExportReentryPolicy::ReentryThrough(names.clone()),
+            None => ExportReentryPolicy::Conservative,
         };
         reports.insert(
             target,
@@ -625,17 +627,17 @@ fn loader_derivations(
     if !surfaces.has_loader_sites() {
         return Ok(uniform(ExportReentryLoaderDerivation::NoHostLoaderSites));
     }
-    Ok(
-        analysis::loader_closure::solve_loader_closure(&surfaces.chunks, host_behavior, targets)
-            .into_iter()
-            .map(|(target, closure)| {
-                (
-                    target,
-                    ExportReentryLoaderDerivation::from_closure(&closure, &surfaces, artifact),
-                )
-            })
-            .collect(),
-    )
+    analysis::loader_closure::solve_loader_closure(&surfaces.chunks, host_behavior, targets)
+        .into_iter()
+        .map(|(target, closure)| {
+            Ok((
+                target,
+                ExportReentryLoaderDerivation::from_closure(
+                    target, &closure, &surfaces, artifact, indexes,
+                )?,
+            ))
+        })
+        .collect()
 }
 
 fn is_default_premises(premises: &spec::ProgramPremises) -> bool {

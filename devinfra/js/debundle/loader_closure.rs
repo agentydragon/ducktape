@@ -147,6 +147,12 @@ pub struct LoaderClosure<W> {
     pub premised_sites: usize,
     /// Requests and failing sites that cannot run in the target's window.
     pub outside_window_sites: usize,
+    /// Closures of counted requests that contain the target: the chunks that
+    /// can evaluate against the target's live bindings while it evaluates.
+    pub reentry_window: BTreeSet<ChunkId>,
+    /// Whether a counted request loads the target itself, returning its
+    /// namespace.
+    pub target_requested: bool,
     /// Host keys the certificate consumed; empty unless closed.
     pub dependencies: ProofDependencies,
 }
@@ -199,6 +205,8 @@ pub fn solve_loader_closure<W: Clone + Ord>(
                     suspended_sites: verdict.suspended_sites,
                     premised_sites: verdict.premised_sites,
                     outside_window_sites: verdict.outside_window_sites,
+                    reentry_window: verdict.reentry_window.clone(),
+                    target_requested: verdict.target_requested,
                     dependencies: judgment.dependencies().clone(),
                 },
             )
@@ -231,6 +239,8 @@ struct Verdict<W> {
     suspended_sites: usize,
     premised_sites: usize,
     outside_window_sites: usize,
+    reentry_window: BTreeSet<ChunkId>,
+    target_requested: bool,
 }
 
 impl<W: Ord> Verdict<W> {
@@ -241,6 +251,8 @@ impl<W: Ord> Verdict<W> {
             suspended_sites: 0,
             premised_sites: 0,
             outside_window_sites: 0,
+            reentry_window: BTreeSet::new(),
+            target_requested: false,
         }
     }
 
@@ -475,6 +487,8 @@ impl<W: Clone + Ord> LoaderClosureRules<'_, W> {
                 };
                 let closure = Self::loaded_closure(loaded, context);
                 if closure.contains(&target) {
+                    verdict.target_requested |= loaded == target;
+                    verdict.reentry_window.extend(closure.iter().copied());
                     verdict.add(
                         LoaderClosureFailureKind::LoaderRequestReachesTarget,
                         LoaderClosureWitness::Site(request.witness.clone()),
@@ -541,6 +555,13 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
                 // A diagnostic count that shrinks as the window grows; the
                 // latest evaluation is the most complete.
                 current.outside_window_sites = contribution.outside_window_sites;
+                let before = current.reentry_window.len();
+                current.reentry_window.extend(contribution.reentry_window);
+                changed |= current.reentry_window.len() != before;
+                if contribution.target_requested && !current.target_requested {
+                    current.target_requested = true;
+                    changed = true;
+                }
                 for (kind, failure) in contribution.failures {
                     changed |= current.join_failure(kind, failure, usize::max);
                 }
