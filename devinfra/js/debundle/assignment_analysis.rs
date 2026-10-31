@@ -277,7 +277,8 @@ impl AssignmentAnalysis {
     pub fn dependency_graph_report(
         &self,
         program_graph: std::path::PathBuf,
+        author_inputs: &analysis::reports::author_inputs::AuthorInputLocations<'_>,
     ) -> DependencyGraphReport {
-        build_dependency_graph_report(self, program_graph)
+        build_dependency_graph_report(self, program_graph, author_inputs)
     }
 }

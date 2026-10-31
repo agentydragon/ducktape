@@ -99,13 +99,12 @@ that selector, so renaming the module still changes S2's output. Cut: with C6,
 evidence names the premise by id; optionally a codemod rewrites
 `resolved_member` to `source_match` and retires the variant.
 
-**C6 — spec paths and whole-spec provenance in analysis output.** S2 evidence
-embeds `author_input_spec_path(provenance)`; `spec_location` strings and
-`ProofDependencies` flow into S3 results; `GraphProvenance` records every
-authored YAML. Any artifact embedding them is keyed by the whole spec. Cut:
-evidence names a premise by a path-independent id (premise kind, chunk,
-index); report writers in S4/S5 render the location. The artifact header
-carries only its own key.
+**C6 — whole-spec provenance read by S2.** Author-input evidence names its
+premise by its path inside the spec; report writers add the spec file, parser
+input path and note (`reports/author_inputs.rs`). Still path-dependent: S2's
+`GraphProvenance` parameter, read for each input chunk's source digest and
+path. Cut: the projection carries the source digests;
+`GraphProvenance` stays a report-writer input.
 
 **C7 — the analysed chunk set comes from assignment key sets.** Cut: the
 projection file (step 7) lists the analysed chunks and `prune_other_chunks`
@@ -293,7 +292,7 @@ A stage may read only what its key covers. Enforced, not documented:
 Each PR is byte-identical on the e2e suite and both canonical inputs unless
 it says otherwise.
 
-5. **Path-independent evidence (C6).**
+5. Path-independent evidence (C6): landed; numbering kept for references.
 6. **Serializable artifact.** Serde derives, `rmp-serde` (new dependency)
    and `zstd` (already in `Cargo.Bazel.lock` transitively), context and
    span canonicalization, round-trip and determinism tests.
@@ -305,7 +304,7 @@ it says otherwise.
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.
 
-PRs 5 and 6 are independent of each other; 7 needs all before it.
+PR 6 is independent of the landed PRs; 7 needs all before it.
 
 ## Interaction with other work
 

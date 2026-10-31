@@ -524,6 +524,9 @@ pub struct InferenceUse {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_author_refs: BTreeSet<crate::analysis_inputs::DescriptorCopyAuthorRef>,
     pub argument_input_refs: BTreeSet<crate::analysis_inputs::ArgumentInputRef>,
+    /// Report-only: the spec locations of `argument_input_refs`, rendered by
+    /// [`crate::reports::author_inputs::AuthorInputLocations`]; empty in
+    /// analysis output.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub argument_input_spec_locations: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]

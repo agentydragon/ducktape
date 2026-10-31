@@ -611,6 +611,23 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
 }
 
 impl GraphProvenance {
+    /// The authored flat-spec or tree-config path recorded when the graph was
+    /// captured. Flat specs do not populate `config_path`; their canonical
+    /// `--spec` argument is retained in the generation command and is already
+    /// the source of truth for replay.
+    pub fn author_spec_path(&self) -> Result<PathBuf> {
+        if let Some(config_path) = &self.config_path {
+            return Ok(self.roots.spec.join(config_path));
+        }
+        let spec_arg = self
+            .generation_command
+            .iter()
+            .position(|argument| argument == "--spec")
+            .and_then(|index| self.generation_command.get(index + 1))
+            .context("graph provenance has no recorded flat spec path for author input evidence")?;
+        Ok(PathBuf::from(spec_arg))
+    }
+
     fn classify_package(&self, name: &str, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
         let (root_name, root) = self

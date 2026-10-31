@@ -1,5 +1,6 @@
 use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
+use analysis::reports::author_inputs::AuthorInputLocations;
 use anyhow::{Result, bail};
 use artifact::{ChunkBundle, ChunkId};
 use graph_provenance::GraphProvenance;
@@ -52,6 +53,7 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
 pub(super) struct ProgramGraphOutput<'a> {
     provenance: Option<&'a GraphProvenance>,
     native_integrity: Option<&'a NativeIntegrity>,
+    author_inputs: AuthorInputLocations<'a>,
     written: Mutex<bool>,
 }
 
@@ -59,12 +61,19 @@ impl<'a> ProgramGraphOutput<'a> {
     pub(super) fn new(
         provenance: Option<&'a GraphProvenance>,
         native_integrity: Option<&'a NativeIntegrity>,
+        author_inputs: AuthorInputLocations<'a>,
     ) -> Self {
         Self {
             provenance,
             native_integrity,
+            author_inputs,
             written: Mutex::new(false),
         }
+    }
+
+    /// Renders author input locations into this run's reports.
+    pub(super) fn author_inputs(&self) -> &AuthorInputLocations<'a> {
+        &self.author_inputs
     }
 
     /// Ensure `program_graph.json` exists under `report_out_dir` and return
@@ -80,7 +89,13 @@ impl<'a> ProgramGraphOutput<'a> {
                 provenance: self.provenance.cloned(),
                 native_integrity_witnesses: self
                     .native_integrity
-                    .map(|integrity| integrity.witnesses.as_ref().clone())
+                    .map(|integrity| {
+                        let mut witnesses = integrity.witnesses.as_ref().clone();
+                        for witness in &mut witnesses {
+                            self.author_inputs.render_native_mutation_witness(witness);
+                        }
+                        witnesses
+                    })
                     .unwrap_or_default(),
                 native_prototype_mutations: self
                     .native_integrity

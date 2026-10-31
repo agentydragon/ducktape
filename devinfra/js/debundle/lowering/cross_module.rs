@@ -4,8 +4,7 @@
 //! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
@@ -31,7 +30,7 @@ use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
-use graph_provenance::{CurrentRoots, GraphProvenance};
+use graph_provenance::GraphProvenance;
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
@@ -777,7 +776,6 @@ fn resolve_value_inputs(
                     "chunk_analysis_options.{chunk_name}.value_inputs requires explicit graph parser-input provenance"
                 )
             })?;
-        let spec_path = author_input_spec_path(provenance)?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -870,28 +868,23 @@ fn resolve_value_inputs(
                     format!("{request_id}.source_match selected a missing module item")
                 })?
                 .span();
-            let parser_input_file = provenance.resolve(
-                &source.input_file.root,
-                &source.input_file.path,
-                &CurrentRoots::default(),
-            )?;
             let reference = ValueInputRef {
                 defining_chunk: chunk_name.clone(),
                 input_index,
             };
             let evidence = ValueInputEvidence {
                 reference,
-                spec_location: format!("{}:{request_id}", spec_path.display()),
+                spec_location: request_id,
                 source_match: contract.source_match.clone(),
                 value_kind: contract.value.kind,
                 source_path: source.source_path.to_string_lossy().into_owned(),
-                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
+                parser_input_file: None,
                 audited_source_sha256: contract.audited_source_sha256.clone(),
                 selected_binding: selected_binding.clone(),
                 declaration_location: None,
                 initializer_location: None,
                 expected_export: contract.expected_export.clone(),
-                note: contract.note.clone(),
+                note: None,
             };
             chunk_inputs.push(SelectedBindingValueInput {
                 evidence,
@@ -953,7 +946,6 @@ fn resolve_native_operation_inputs(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs requires explicit graph parser-input provenance"
                 )
             })?;
-        let spec_path = author_input_spec_path(provenance)?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -961,11 +953,6 @@ fn resolve_native_operation_inputs(
         };
         let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
-        let parser_input_file = provenance.resolve(
-            &source.input_file.root,
-            &source.input_file.path,
-            &CurrentRoots::default(),
-        )?;
         let contracts = options
             .native_operation_inputs
             .iter()
@@ -976,7 +963,6 @@ fn resolve_native_operation_inputs(
                     format!("chunk_analysis_options.{chunk_name}.native_operation_inputs[{index}]"),
                     contract.selector.clone(),
                     &contract.audited_source_sha256,
-                    contract.note.clone(),
                     NativeInputKind::Operation(contract.operation),
                 )
             })
@@ -987,7 +973,6 @@ fn resolve_native_operation_inputs(
                         format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]"),
                         SourceUnitSelector::SourceMatch(contract.source_match.clone()),
                         &contract.audited_source_sha256,
-                        contract.note.clone(),
                         NativeInputKind::CallIdentity(contract.callee),
                     )
                 },
@@ -995,8 +980,7 @@ fn resolve_native_operation_inputs(
         let mut chunk_inputs = Vec::with_capacity(
             options.native_operation_inputs.len() + options.native_call_identity_inputs.len(),
         );
-        for (input_index, request_id, selector, audited_source_sha256, note, operation) in contracts
-        {
+        for (input_index, request_id, selector, audited_source_sha256, operation) in contracts {
             ensure!(
                 audited_source_sha256.len() == 64
                     && audited_source_sha256
@@ -1063,16 +1047,16 @@ fn resolve_native_operation_inputs(
             };
             let evidence = NativeOperationInputEvidence {
                 reference,
-                spec_location: format!("{}:{request_id}", spec_path.display()),
+                spec_location: request_id,
                 selector: selector_provenance,
                 operation,
                 source_path: source.source_path.to_string_lossy().into_owned(),
-                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
+                parser_input_file: None,
                 audited_source_sha256: audited_source_sha256.clone(),
                 selected_binding: selected_binding.clone(),
                 declaration_location: None,
                 initializer_location: None,
-                note,
+                note: None,
             };
             chunk_inputs.push(SelectedNativeOperationInput {
                 evidence,
@@ -1121,7 +1105,6 @@ fn resolve_argument_inputs(
             .iter()
             .find(|entry| entry.chunk_id == *chunk_name)
             .with_context(|| format!("{prefix} has no parser-input provenance"))?;
-        let spec_path = author_input_spec_path(provenance)?;
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -1130,11 +1113,6 @@ fn resolve_argument_inputs(
         let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let source_contradictions = source_facts.per_statement.clone();
         let selector_chunk = SelectorChunk::new(chunk_name, &module, source_facts);
-        let parser_input_file = provenance.resolve(
-            &source.input_file.root,
-            &source.input_file.path,
-            &CurrentRoots::default(),
-        )?;
         let mut selected = Vec::new();
         for (input_index, contract) in options.argument_inputs.iter().enumerate() {
             let request_id = format!("{prefix}[{input_index}]");
@@ -1206,16 +1184,14 @@ fn resolve_argument_inputs(
                     defining_chunk: chunk_name.clone(),
                     input_index,
                 },
-                spec_location: format!("{}:{request_id}", spec_path.display()),
+                spec_location: request_id.clone(),
                 source_match: contract.source_match.clone(),
                 source_path: source.source_path.to_string_lossy().into_owned(),
-                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
                 audited_source_sha256: contract.audited_source_sha256.clone(),
                 selected_binding: selected_binding.clone(),
                 parameter_index: contract.parameter_index,
                 exact_arity: contract.exact_arity,
                 declaration_location: None,
-                note: contract.note.clone(),
             };
             selected.push(ResolvedArgumentInput {
                 evidence,
@@ -1345,23 +1321,6 @@ impl Visit for SelectedCallables {
         }
         call.visit_children_with(self);
     }
-}
-
-/// Return the original authored flat-spec or tree-config path recorded when
-/// the graph was captured. Flat specs do not populate `config_path`; their
-/// canonical `--spec` argument is retained in the provenance generation
-/// command and is already the source of truth for replay.
-pub(super) fn author_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
-    if let Some(config_path) = &provenance.config_path {
-        return Ok(provenance.roots.spec.join(config_path));
-    }
-    let spec_arg = provenance
-        .generation_command
-        .iter()
-        .position(|argument| argument == "--spec")
-        .and_then(|index| provenance.generation_command.get(index + 1))
-        .context("graph provenance has no recorded flat spec path for author input evidence")?;
-    Ok(PathBuf::from(spec_arg))
 }
 
 #[cfg(test)]
