@@ -133,15 +133,13 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
 
 ## NixOS rollout
 
-- [ ] **Other NixOS hosts:** after Wyrm2 (above), enable the same host module and
-      admit hosts individually. Do not assume compatibility with rugged's last-known
-      7.2 kernel. Inventory laptops online and test suspend/disconnect behavior
-      before admission.
-- [ ] **Laptop pools:** give each admitted laptop (iguana, rugged) an LVM
-      physical volume as a Piraeus pool, so laptops work symmetrically with
-      Wyrm2. Rugged first, as an interim partition behind its shrunk root
-      ([procedure](../../../nix/nixos/hosts/rugged/plans/piraeus_partition.md));
-      full LVM layouts wait for each laptop's reinstall.
+Rugged, done 2026-10-30: its interim LUKS partition is active as `piraeus-ssd`,
+and its `LVM_THIN` pool is configured and online with DRBD 9.3.3 on kernel
+7.2.9. The pool has no volumes yet. Its full LVM layout remains for the next
+reinstall.
+
+- [ ] **Iguana:** enable the same host module and admit it individually after
+      confirming kernel/DRBD compatibility and testing suspend/disconnect behavior.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.
