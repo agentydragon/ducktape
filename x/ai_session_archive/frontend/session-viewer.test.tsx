@@ -1050,3 +1050,36 @@ it("renders session-shaped Codex work without bookkeeping or unavailable reasoni
   expect(reasoning.textContent).toContain("Pair tool calls by their recorded call ID.");
   expect(reasoning.textContent).toContain("Keep commentary outside the work group");
 });
+
+it("keeps records without readable content compact and inspectable", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listEvents() {
+      return {
+        data: [
+          { ordinal: 1, parsed: null, kind: "Null record", timestamp: null, raw_base64: btoa("null") },
+          {
+            ordinal: 2,
+            parsed: { type: "future_record", opaque: [1, 2] },
+            kind: null,
+            timestamp: null,
+            raw_base64: btoa('{"type":"future_record","opaque":[1,2]}'),
+          },
+        ],
+        next_cursor: null,
+      };
+    },
+  };
+  const view = await renderViewer(api);
+  expect(view.textContent).not.toContain("Structured record;");
+  for (const [ordinal, label, raw] of [
+    [1, "Null record", "null"],
+    [2, "future_record", '{"type":"future_record","opaque":[1,2]}'],
+  ] as const) {
+    const record = view.querySelector<HTMLElement>(`[data-event-ordinal="${ordinal}"]`)!;
+    expect(record.textContent).toContain(label);
+    const inspect = findControl(record, "Raw JSONL record");
+    await act(async () => inspect.click());
+    expect(record.querySelector("pre")?.textContent).toBe(raw);
+  }
+});
