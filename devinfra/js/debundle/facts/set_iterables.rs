@@ -14,16 +14,15 @@ use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use anyhow::{Result, bail};
 use source_identity::SourceUnitOrdinal;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Certify the one-way source/schedule premise before value-flow inference.
 /// The input constructor and every intervening source unit are independently
-/// selected primitive-Set operations in the same original declaration and
-/// explicit output. No graph result or flow identity is consulted here.
+/// selected primitive-Set operations in the same original declaration. No
+/// graph result, flow identity or assignment is consulted here; the interval
+/// must stay in one output module, which the gate stage enforces.
 pub fn certify_stable_set_spreads(
     inputs: &[ResolvedNativeOperationInput],
-    explicit_destinations: &HashMap<Id, usize>,
 ) -> Result<BTreeMap<u32, StableSetIterableUse>> {
     let by_ordinal: BTreeMap<_, _> = inputs
         .iter()
@@ -44,21 +43,14 @@ pub fn certify_stable_set_spreads(
                 spread.evidence.spec_location
             );
         };
-        let Some(destination) = explicit_destinations.get(&spread.binding) else {
-            bail!(
-                "{} has no explicit output destination",
-                spread.evidence.spec_location
-            );
-        };
         let seed = by_ordinal.values().find(|input| {
             input.binding == *source
                 && input.initializer_ordinal < spread.initializer_ordinal
                 && input.selected_statement_span == spread.selected_statement_span
-                && explicit_destinations.get(&input.binding) == Some(destination)
         });
         let Some(seed) = seed else {
             bail!(
-                "{} requires an earlier certified fresh primitive Set in the same original declaration and output",
+                "{} requires an earlier certified fresh primitive Set in the same original declaration",
                 spread.evidence.spec_location
             );
         };
@@ -74,11 +66,9 @@ pub fn certify_stable_set_spreads(
                     spread.evidence.spec_location
                 );
             };
-            if input.selected_statement_span != spread.selected_statement_span
-                || explicit_destinations.get(&input.binding) != Some(destination)
-            {
+            if input.selected_statement_span != spread.selected_statement_span {
                 bail!(
-                    "{} has an intervening Set constructor outside its original declaration or output",
+                    "{} has an intervening Set constructor outside its original declaration",
                     spread.evidence.spec_location
                 );
             }
@@ -97,7 +87,6 @@ pub fn certify_stable_set_spreads(
                 spread_token_span: spread
                     .spread_token_span
                     .expect("validated spread has token span"),
-                destination: *destination,
                 interval_bindings,
                 dependencies,
             },

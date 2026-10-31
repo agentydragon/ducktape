@@ -451,11 +451,6 @@ pub fn materialize_logical_modules(
         .iter_mut()
         .map(ClaimedLogicalChunk::take_declared_assumptions)
         .collect();
-    let explicit_binding_destinations: BTreeMap<_, _> = claimed
-        .iter()
-        .map(|chunk| chunk.explicit_binding_destinations())
-        .map(|(chunk, destinations)| (chunk.to_owned(), destinations))
-        .collect();
     let mut resolved_member_sites = BTreeMap::new();
     for chunk in &claimed {
         for site in chunk.resolved_member_sites() {
@@ -478,7 +473,6 @@ pub fn materialize_logical_modules(
         &projection,
         cross_module::CrossModuleAnalysisOptions {
             graph_provenance: options.graph_provenance.as_ref(),
-            explicit_binding_destinations: &explicit_binding_destinations,
             replacement_packages: &vendor_plan.replacement_packages(),
         },
         Some(&cross_module_chunk_closure),

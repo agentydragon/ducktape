@@ -272,7 +272,7 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
 }
 
 #[test]
-fn set_spread_requires_every_intervening_constructor_and_one_explicit_output() {
+fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
     const DECLARATION: &str =
         "var seed = new Set([1]), sibling = new Set([2]), merged = new Set([...seed, 3]);";
     let source = format!("{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n");
@@ -321,7 +321,7 @@ fn set_spread_requires_every_intervening_constructor_and_one_explicit_output() {
             ],
         )
         .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
-        &["same original declaration and output"],
+        &["spans several output modules"],
     );
 }
 

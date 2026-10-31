@@ -25,13 +25,13 @@
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Span};
-use swc_ecma_ast::{Id, ModuleItem};
+use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
@@ -668,7 +668,6 @@ pub struct CallableSummaryInputs<'a> {
     pub selected_value_inputs: &'a BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
         &'a BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
-    pub explicit_binding_destinations: &'a BTreeMap<ModuleKey, HashMap<Id, usize>>,
     pub argument_inputs:
         &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
@@ -688,7 +687,6 @@ pub fn resolve_imported_callable_summaries(
     let CallableSummaryInputs {
         selected_value_inputs,
         selected_native_operation_inputs,
-        explicit_binding_destinations,
         argument_inputs,
         predefined_globals,
         no_accessor_install_callables,
@@ -954,12 +952,8 @@ pub fn resolve_imported_callable_summaries(
     }
     let mut stable_set_spreads = BTreeMap::new();
     let no_spreads = BTreeMap::new();
-    let empty_destinations = HashMap::new();
     for (module, inputs) in &resolved_native_operation_inputs {
-        let destinations = explicit_binding_destinations
-            .get(module)
-            .unwrap_or(&empty_destinations);
-        let uses = crate::facts::certify_stable_set_spreads(inputs, destinations)?;
+        let uses = crate::facts::certify_stable_set_spreads(inputs)?;
         if !uses.is_empty() {
             stable_set_spreads.insert(module.clone(), uses);
         }
@@ -2128,7 +2122,6 @@ mod tests {
             CallableSummaryInputs {
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
-                explicit_binding_destinations: &BTreeMap::new(),
                 argument_inputs: &BTreeMap::new(),
                 predefined_globals: spec::PredefinedGlobals::Unknown,
                 no_accessor_install_callables: &BTreeMap::new(),

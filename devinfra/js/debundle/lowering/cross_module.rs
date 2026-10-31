@@ -4,7 +4,7 @@
 //! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -40,7 +40,7 @@ use source_match::source_match_claim_member_selectors;
 use spec::{DependencyGraphOptions, SourceUnitSelector};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
+    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
     ModuleDecl, ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
@@ -274,7 +274,6 @@ fn resolved_target_is_entry(
 /// (SPEC.md § Vendor swap equivalence).
 pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
-    pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
     pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
@@ -289,7 +288,6 @@ pub(super) fn collect_cross_module_imported_purities(
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
         graph_provenance,
-        explicit_binding_destinations,
         replacement_packages,
     } = options;
     let chunk_export_purity = projection.chunk_export_purity;
@@ -640,7 +638,6 @@ pub(super) fn collect_cross_module_imported_purities(
         CallableSummaryInputs {
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
-            explicit_binding_destinations,
             argument_inputs: &argument_inputs,
             predefined_globals,
             no_accessor_install_callables: &no_accessor_install_callables,
@@ -1528,7 +1525,6 @@ mod tests {
                 ),
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
-                    explicit_binding_destinations: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
@@ -1589,7 +1585,6 @@ mod tests {
                 ),
                 CrossModuleAnalysisOptions {
                     graph_provenance: None,
-                    explicit_binding_destinations: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
