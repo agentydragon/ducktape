@@ -192,7 +192,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
         ValueExpr::Binding(_)
         | ValueExpr::Primitive(_)
         | ValueExpr::Undefined
-        | ValueExpr::NonCallable
+        | ValueExpr::NonCallable(_)
         | ValueExpr::Unknown
         | ValueExpr::Alloc(..) => {}
     }

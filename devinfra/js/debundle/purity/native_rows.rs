@@ -421,10 +421,17 @@ pub(crate) fn iterable_element(
             &graph.symbol_const_bindings,
         )
     {
-        purity = purity.then(Effects::of_detail(
-            Effect::Coerce(CoerceSite::PropertyKey),
+        purity = purity.then(Effects::coerce(
+            CoerceSite::PropertyKey,
             key.expr.span(),
             format!("{spelling} runs ToPropertyKey on a possibly-object entry key"),
+            coerce_operands(
+                &[&key.expr],
+                PrimKinds::ANY,
+                OperandBindings::Included,
+                graph,
+                local_shadowed,
+            ),
         ));
     }
     Some(purity)

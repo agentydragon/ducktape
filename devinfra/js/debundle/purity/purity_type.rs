@@ -1,5 +1,6 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
@@ -177,6 +178,8 @@ enum EffectEvent {
         effect: Effect,
         span: Span,
         detail: Option<String>,
+        /// For a `Coerce`, the bindings whose settled values can resolve it.
+        operands: Option<CoerceOperands>,
     },
     /// A call of a function whose own effects are already projected. Pure
     /// callees contribute their dependencies; an impure callee is one
@@ -207,6 +210,26 @@ impl Effects {
                 effect,
                 span,
                 detail,
+                operands: None,
+            }],
+            dependencies: ProofDependencies::default(),
+        }
+    }
+
+    /// A coercion at `span` that `operands`, when present, can resolve
+    /// against the values settled at the statement's program point.
+    pub(crate) fn coerce(
+        site: CoerceSite,
+        span: Span,
+        detail: String,
+        operands: Option<CoerceOperands>,
+    ) -> Self {
+        Self {
+            events: vec![EffectEvent::Effect {
+                effect: Effect::Coerce(site),
+                span,
+                detail: Some(detail),
+                operands,
             }],
             dependencies: ProofDependencies::default(),
         }
@@ -250,6 +273,45 @@ impl Effects {
         self
     }
 
+    /// Every binding a coercion's resolution reads.
+    pub(crate) fn coerce_bindings(&self, bindings: &mut BTreeSet<Id>) {
+        for event in &self.events {
+            if let EffectEvent::Effect {
+                operands: Some(operands),
+                ..
+            } = event
+            {
+                bindings.extend(
+                    operands
+                        .operands
+                        .iter()
+                        .map(|operand| operand.binding().clone()),
+                );
+            }
+        }
+    }
+
+    /// Resolve each coercion whose operands `settled` proves hold only
+    /// admitted primitives: the step runs no user code and cannot throw, so
+    /// it is no effect. `settled` answers for the program point these effects
+    /// start at, and only for operands the evaluation itself cannot change
+    /// before the coercion without another effect.
+    pub(crate) fn resolve_coercions(
+        mut self,
+        settled: impl Fn(&CoerceOperand) -> Option<PrimKinds>,
+    ) -> Self {
+        self.events.retain(|event| match event {
+            EffectEvent::Effect {
+                operands: Some(operands),
+                ..
+            } => !operands.operands.iter().all(|operand| {
+                settled(operand).is_some_and(|kinds| kinds.is_only(operands.admits))
+            }),
+            _ => true,
+        });
+        self
+    }
+
     pub(crate) fn is_pure(&self) -> bool {
         self.events.iter().all(|event| match event {
             EffectEvent::Effect { .. } => false,
@@ -266,6 +328,7 @@ impl Effects {
                     effect,
                     span,
                     detail,
+                    ..
                 } => reasons.push(PurityReason::new(rule(effect), span, detail)),
                 EffectEvent::Call { callee, name, span } => match callee.as_ref() {
                     Purity::Pure {
@@ -287,6 +350,23 @@ impl Effects {
         } else {
             Purity::NotPure { reasons }
         }
+    }
+}
+
+#[cfg(test)]
+impl Effects {
+    /// The effects in evaluation order, as unit tests assert them; a call of an
+    /// impure function appears as `Invoke(Call)` and a call of a pure one not at all.
+    pub(crate) fn kinds(&self) -> Vec<Effect> {
+        self.events
+            .iter()
+            .filter_map(|event| match event {
+                EffectEvent::Effect { effect, .. } => Some(*effect),
+                EffectEvent::Call { callee, .. } => {
+                    (!callee.is_pure()).then_some(Effect::Invoke(InvokeSite::Call))
+                }
+            })
+            .collect()
     }
 }
 

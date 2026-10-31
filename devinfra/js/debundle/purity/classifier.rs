@@ -1,4 +1,5 @@
 use super::*;
+use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
 
 pub(crate) fn classify_var_decl_purity(
     var: &VarDecl,
@@ -80,16 +81,21 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|e| {
                 let p = classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph);
-                if is_result_primitive(e, &graph.primitive_bindings, local_shadowed)
-                    || graph.is_stable_ts_enum_primitive_member(e, local_shadowed)
-                {
+                if is_result_primitive(e, &graph.primitive_bindings, local_shadowed) {
                     p
                 } else {
-                    p.then(Effects::of_detail(
-                        Effect::Coerce(CoerceSite::Operator),
+                    p.then(Effects::coerce(
+                        CoerceSite::Operator,
                         e.span(),
                         "template interpolation runs ToString on a possibly-object value"
                             .to_string(),
+                        coerce_operands(
+                            &[e],
+                            PrimKinds::ANY.without(PrimKinds::SYMBOL),
+                            OperandBindings::Excluded,
+                            graph,
+                            local_shadowed,
+                        ),
                     ))
                 }
             })
@@ -475,14 +481,20 @@ fn classify_member_purity(
                     local_shadowed,
                     &graph.primitive_bindings,
                     &graph.symbol_const_bindings,
-                ) || graph.is_stable_ts_enum_primitive_member(&computed.expr, local_shadowed)
-                {
+                ) {
                     key_purity
                 } else {
-                    key_purity.then(Effects::of_detail(
-                        Effect::Coerce(CoerceSite::PropertyKey),
+                    key_purity.then(Effects::coerce(
+                        CoerceSite::PropertyKey,
                         computed.span,
                         "computed key runs ToPropertyKey on a possibly-object value".to_string(),
+                        coerce_operands(
+                            &[&computed.expr],
+                            PrimKinds::ANY,
+                            OperandBindings::Included,
+                            graph,
+                            local_shadowed,
+                        ),
                     ))
                 }
             }
@@ -897,14 +909,20 @@ fn classify_propname_purity(
                 local_shadowed,
                 &graph.primitive_bindings,
                 &graph.symbol_const_bindings,
-            ) || graph.is_stable_ts_enum_primitive_member(&c.expr, local_shadowed)
-            {
+            ) {
                 key_purity
             } else {
-                key_purity.then(Effects::of_detail(
-                    Effect::Coerce(CoerceSite::PropertyKey),
+                key_purity.then(Effects::coerce(
+                    CoerceSite::PropertyKey,
                     c.span,
                     "computed key runs ToPropertyKey on a possibly-object value".to_string(),
+                    coerce_operands(
+                        &[&c.expr],
+                        PrimKinds::ANY,
+                        OperandBindings::Included,
+                        graph,
+                        local_shadowed,
+                    ),
                 ))
             }
         }
@@ -1434,6 +1452,64 @@ pub(crate) fn is_result_primitive(
         }
         _ => false,
     }
+}
+
+/// Whether a coercion resolves against a plain top-level binding's value.
+/// Operator and template coercions resolve only against a `PlainData`
+/// member's settled primitive fields; a binding's value resolves only
+/// `ToPropertyKey`, which completes on every primitive.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperandBindings {
+    Included,
+    Excluded,
+}
+
+/// The operands deciding a coercion of `operands`: `None` unless every
+/// operand is a primitive within `admits` here, or a top-level binding or a
+/// `PlainData` binding's named member whose value at the statement's program
+/// point can prove it is.
+pub(crate) fn coerce_operands(
+    operands: &[&Expr],
+    admits: PrimKinds,
+    bindings: OperandBindings,
+    graph: &ChunkCodeGraph,
+    local_shadowed: &BTreeSet<String>,
+) -> Option<CoerceOperands> {
+    let scope = graph.binding_prims.scope(local_shadowed);
+    let mut resolved = Vec::new();
+    for operand in operands {
+        if evaluate(operand, &scope).is_some_and(|kinds| kinds.is_only(admits)) {
+            continue;
+        }
+        resolved.push(match operand.unwrap_parens() {
+            Expr::Ident(ident)
+                if bindings == OperandBindings::Included
+                    && !local_shadowed.contains(ident.sym.as_ref()) =>
+            {
+                CoerceOperand::Binding(ident.to_id())
+            }
+            Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(property),
+                ..
+            }) => {
+                let Expr::Ident(receiver) = obj.unwrap_parens() else {
+                    return None;
+                };
+                if local_shadowed.contains(receiver.sym.as_ref())
+                    || !graph.is_plain_data(receiver.sym.as_ref())
+                {
+                    return None;
+                }
+                CoerceOperand::Member(receiver.to_id(), property.sym.to_string())
+            }
+            _ => return None,
+        });
+    }
+    (!resolved.is_empty()).then_some(CoerceOperands {
+        operands: resolved,
+        admits,
+    })
 }
 
 /// Whether `key` is a safe computed property key: ToPropertyKey on

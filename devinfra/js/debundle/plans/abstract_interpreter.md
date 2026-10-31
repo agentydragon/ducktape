@@ -62,7 +62,7 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 | --- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | 23  | Whitelists (landed, step 4a)      | `facts/abstract_domain/builtins.rs` rows and `DATA_PROPERTIES`; `purity/native_rows.rs` projects them | Rows with `assumed_intact`; purity admits a row when its listed steps are silent for the syntactic operands                                                     | ECMA-262 citation per row; receiver unshadowed; A11                   | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness § Admission rule: builtin summary rows                          |
 | 24  | Expression classifier             | `purity/classifier.rs`, `purity_type.rs`                                                              | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads        | Syntactic; result-primitive gate for coercion                         | `purity`, `initializer_purity`, `export_default_purity`, `dependency_graph_purity_reason`, `impure_call_reason_growth`, `repeated_var_purity` | purity_soundness § Declared purity — spec trust contracts                        |
-| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `facts/abstract_domain/heap.rs` (step 4b), `ts_enum_iife.rs`                  | `ChunkBinding` kinds; PlainData as heap `escape`/`taint` projection; TS enum IIFE; exact enum member reads and computed keys                                    | Name-based write scan plus value-flow alias check                     | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
+| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `facts/abstract_domain/heap.rs` (step 4b), `ts_enum_iife.rs`                  | `ChunkBinding` kinds; PlainData as heap `escape`/`taint` projection; TS enum IIFE admission shape                                                               | Name-based write scan plus value-flow alias check                     | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
 | 26  | Value classes                     | `facts/abstract_domain/primitive.rs` (`collect_binding_prims`), `heap.rs`, `purity/fluent.rs`         | Primitive types of chunk-top `const` and stable Number `var` bindings (projected to result-primitive and Symbol classes); fluent and plain-array alias closures | Whole-chunk write/escape gates in #25; written or shadowed intrinsics | `purity`, `captured_value_input`                                                                                                              | purity_soundness § Immutable Symbol computed keys                                |
 | 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`                                                | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                                  | Resolved import graph; absent export stays `unknown_call`             | `cross_module_purity_scale`, `pure_members`, `purity`                                                                                         | inference § Scheduling                                                           |
 | 28  | Cross-module primitive values     | `program_analysis.rs`, `cross_module_purity.rs::resolve_export_values`                                | Exported `Value` sets projected onto importers through the import resolver                                                                                      | Provider ESM without CJS surface, `eval`, `with`                      | `imported_primitive`                                                                                                                          | purity_soundness § Imported primitive coercion timing                            |
@@ -400,15 +400,36 @@ atomic group or loss there.
   layers. Landed: statement purity is a runtime-store fact at its program
   point; the classifier returns effects that `purity_type.rs` projects; the
   checked local record factory discharge is part of the settled projection,
-  reading its certificate from the runtime store. Remaining: `Coerce` resolves
-  against the settled `Prefix(n)` values; the enum IIFE is interpreted; the
-  unit tests are rewritten against effect sets. The heap's "no later write"
-  premise stays whole-chunk (design.md § Purity and synchronous execution
-  share one context).
+  reading its certificate from the runtime store. Also landed: a `Coerce`
+  event names its operands (a top-level binding, or a named member of a
+  `PlainData` binding) and resolves against the values settled at its
+  statement's program point; a binding resolves only `ToPropertyKey`, and
+  only when no other statement writes it (prefix values do not model every
+  write). Enum members are execution state: a parameter-mutation initializer
+  records the primitive fields it stores, and member reads and coercions read
+  them (`ts_enum_iife.rs`'s named-field and stable-member facts and
+  `fresh_receiver.rs` are deleted). The interpreter's literal values carry
+  their primitive types. The heap's "no later write" premise stays
+  whole-chunk (design.md § Purity and synchronous execution share one
+  context). Remaining, in order:
+  1. Kind-precise operator and template coercions: a binding's settled types
+     resolve a `Coerce` only when they make that operator non-throwing (no
+     BigInt/Number mix, no unary `+` on a BigInt, no Symbol to number or
+     string). This makes imported primitives a purity fact; purity_soundness
+     § Imported primitive coercion timing changes with it.
+  2. Purity from execution: statement _n_'s purity is projected from
+     executing it, after an audit of what each `statement_is_pure` reader in
+     `interpreter.rs` assumes. `ts_enum_iife.rs` stays until then as the
+     pre-purity admission shape for the heap scan and the initializer's own
+     purity, both of which run before execution evaluates the IIFE; it is
+     deleted in that layer.
 - TODO: revisit one least fixpoint over growing prefix states (the
   alternative that design section rejects) if per-prefix heap state would
   make enough statements pure on the canonical inputs to matter for
-  acceptance; the `Coerce` layer reports the count.
+  acceptance. On the public e2e suite, settled-prefix resolution changes 4
+  statements' effects and makes 3 pure, all enum-member reads the deleted
+  stable-member fact proved before; the canonical inputs are not measured
+  yet.
 - Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
   `initializer_purity`, `export_default_purity`, `pure_members`,
   `cross_module_purity_scale`, `dependency_graph_purity_reason`,

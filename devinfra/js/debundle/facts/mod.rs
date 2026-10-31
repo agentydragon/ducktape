@@ -52,7 +52,6 @@ mod at_init_fallback;
 mod callable_inference;
 mod collector;
 mod dynamic_scope;
-mod fresh_receiver;
 mod global_object;
 mod heap_contents;
 mod item_views;

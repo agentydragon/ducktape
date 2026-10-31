@@ -1174,14 +1174,12 @@ Its assignment and execution-order effects remain. Callable-body writes and
 writes after deletion, descriptor replacement, or an intervening statement
 still use the accessor fallback.
 
-A closed inline mutation IIFE can also prove its receiver fresh at that call,
-independently of whether the returned object escapes later. The shared enum-IIFE
-recognizer requires a synchronous ordinary callable, one identifier parameter,
-primitive property writes with safe keys, and return of that same parameter.
-An empty object argument is fresh directly. A self short-circuit argument also
-requires the sole declaration/writer of a `var` binding and no dynamic lexical
-scope in the chunk. Only generic accessor promotion for that body's writes is
-omitted; argument reads, assignments, returned values, and callback effects at
+A parameter-mutation initializer can also prove its receiver fresh at that
+call, independently of whether the returned object escapes later: at the
+invocation, the callable has one simple parameter, calls nothing, returns that
+parameter, and every property write stores a primitive under a primitive key
+into it while it holds only untainted plain-data object literals. Only generic
+accessor promotion for that body's writes is omitted; argument reads, assignments, returned values, and callback effects at
 other calls remain. Async/generator bodies, prototype keys (including keys
 produced by nested assignments), other writers, and custom receivers retain the
 conservative path.
@@ -1235,8 +1233,9 @@ classes, and the wrapper's indexed calls must be exactly those allocations.
 The wrapper accepts only simple parameters bound to inline functions, primitive
 values, or fresh plain-data records. A record may contain a dense fresh array
 of the same inputs. An exact named member read from a single-initializer TS
-enum IIFE is admitted only after initialization when its binding is stable
-PlainData and that member is an own primitive data property. The ordinary
+enum object is admitted only after initialization when its binding is
+PlainData with a single writer and that member is a primitive field its
+parameter-mutation initializer stored. The ordinary
 prototype guard also applies. Array holes and spreads, enum mutation or
 escape, and unknown member keys retain conservative reachability. Admitted
 member reads still contribute their ordinary eager dependencies and execution

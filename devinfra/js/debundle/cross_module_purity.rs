@@ -249,7 +249,6 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.plain_data_inference_uses,
             &prepared.plain_array_bindings,
             &BTreeSet::new(),
-            None,
             Some(&mut locate),
         )
     }
@@ -475,7 +474,6 @@ pub fn resolve_imported_purities(
             plain_data_inference_uses: &prepared_facts.plain_data_inference_uses,
             plain_array_bindings: &prepared_facts.plain_array_bindings,
             stable_var_number_candidates: &BTreeSet::new(),
-            structural_facts: None,
         };
         let call_context = crate::purity::PurityCallContext {
             module,

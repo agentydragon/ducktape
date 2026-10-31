@@ -9,7 +9,7 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
-    NativeIntrinsic, NativePointEffects, RetainedCallbackCall, native_call_identity_key,
+    NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall, native_call_identity_key,
     object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
@@ -18,11 +18,11 @@ use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, IterationResult, Return, Row,
 };
+use crate::facts::abstract_domain::effect::CoerceOperand;
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::callable_inference::CallableInferenceInputs;
-use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::semantic_inference::{
@@ -456,15 +456,15 @@ pub(super) struct ExecutionInputs<'source> {
     index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
     facts: &'source [StatementFacts],
-    purity: &'source StatementPurityContext<'source>,
+    /// Each statement's source-only purity transfer, before its coercions
+    /// resolve against the values settled at its program point.
+    statement_effects: Vec<Effects>,
     flow: &'source ChunkValueFlow,
     set_iterable_proof: &'source SetIterableProof,
     shadowed: &'source BTreeSet<&'static str>,
     imported_values: &'source BTreeMap<String, Value>,
     /// First-order pre-await body cells of each callable.
     callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
-    /// Stable own primitive fields, admitted using canonical rebind facts.
-    enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     /// Hashed: effect promotion tests every lazy read of every promoted
     /// callable against it. `binding_owner` holds the same bindings in order.
     top_bindings: FxHashSet<Id>,
@@ -482,8 +482,12 @@ pub(super) struct ExecutionInputs<'source> {
     var_bindings: BTreeSet<Id>,
     changed_member_roots: BTreeSet<Id>,
     export_reentry_enabled: bool,
-    fresh_mutation_callables: BTreeSet<u32>,
     needed_bindings: BTreeSet<Id>,
+    /// Top-level bindings no statement but their declaring one writes. The
+    /// prefix values of other bindings may miss a write the index does not
+    /// model (a `for-of` head, an update), so coercions never resolve
+    /// against them.
+    single_writer_bindings: BTreeSet<Id>,
     /// Source units whose own code may call a callee the source does not name.
     unknown_callee_owners: BTreeSet<SourceUnitOrdinal>,
     /// Per source unit: its synchronous read closure contains one of
@@ -500,9 +504,111 @@ pub(super) struct OwnPropertyQuery {
 }
 
 impl ExecutionInputs<'_> {
-    /// The purity transfer at `owner`'s program point.
-    pub(super) fn statement_effects(&self, owner: SourceUnitOrdinal) -> Effects {
-        self.purity.statement_effects(&self.facts[owner.0])
+    /// The purity transfer at `owner`'s program point, `state` being the
+    /// settled `Prefix(owner)`.
+    pub(super) fn statement_effects(
+        &self,
+        owner: SourceUnitOrdinal,
+        state: &ExecutionState,
+    ) -> Effects {
+        let fact = &self.facts[owner.0];
+        self.statement_effects[owner.0]
+            .clone()
+            // A binding the statement rebinds may hold another value at the
+            // coercion; any such rebind is itself an effect.
+            .resolve_coercions(|operand| match operand {
+                CoerceOperand::Binding(binding) => (!fact.rebinds.eager.contains(binding))
+                    .then(|| self.settled_prims(state, binding))
+                    .flatten(),
+                CoerceOperand::Member(binding, property) => self
+                    .plain_data_member(state, binding, property)?
+                    .iter()
+                    .try_fold(PrimKinds::NONE, |kinds, value| match value {
+                        AbstractValue::Value(Value::Prim(value)) => Some(kinds.union(*value)),
+                        _ => None,
+                    }),
+            })
+    }
+
+    /// The values of `binding.property` in `state` when they are all
+    /// primitive, every allocation `binding` holds was filled by a
+    /// parameter-mutation initializer (a TS enum), and `binding` is
+    /// `PlainData`: no write or escape reaches those allocations after their
+    /// initializer, so the settled own properties are the ones any later read
+    /// sees. A primitive value of
+    /// the binding (a `var` before its initializer) makes the read throw
+    /// before any coercion and is skipped.
+    pub(super) fn plain_data_member(
+        &self,
+        state: &ExecutionState,
+        binding: &Id,
+        property: &str,
+    ) -> Option<Values> {
+        if !self.graph.is_plain_data(binding.0.as_ref())
+            || !self.top_bindings.contains(binding)
+            || !self.needed_bindings.contains(binding)
+            || !self.single_writer_bindings.contains(binding)
+            || !state.initialized_bindings.contains(binding)
+        {
+            return None;
+        }
+        let mut values = Values::new();
+        let mut objects = 0;
+        for value in state.prefix_values.get(binding)? {
+            match value {
+                AbstractValue::Value(Value::Prim(_)) => {}
+                AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                    if state.parameter_initialized_objects.contains(object) =>
+                {
+                    let properties = state.prefix_object_properties.get(object)?;
+                    values.extend(properties.get(&Some(property.to_string()))?.iter().cloned());
+                    // A computed-key write may have stored under this key.
+                    if let Some(dynamic) = properties.get(&None) {
+                        values.extend(dynamic.iter().cloned());
+                    }
+                    objects += 1;
+                }
+                _ => return None,
+            }
+        }
+        (objects > 0 && values.iter().all(AbstractValue::is_primitive)).then_some(values)
+    }
+
+    /// The primitive types `binding` holds in `state`; `None` when it may
+    /// hold an object, may be in its temporal dead zone, or is not tracked.
+    /// Only bindings in `needed_bindings` have every assignment applied to
+    /// the prefix values.
+    fn settled_prims(&self, state: &ExecutionState, binding: &Id) -> Option<PrimKinds> {
+        let values = if self.index.imported_bindings.contains(binding) {
+            Values::from([AbstractValue::Value(
+                *self.imported_values.get(binding.0.as_ref())?,
+            )])
+        } else if self.top_bindings.contains(binding)
+            && self.needed_bindings.contains(binding)
+            && self.single_writer_bindings.contains(binding)
+        {
+            let mut values = state
+                .prefix_values
+                .get(binding)
+                .cloned()
+                .unwrap_or_default();
+            if !state.initialized_bindings.contains(binding) {
+                values.insert(if self.var_bindings.contains(binding) {
+                    AbstractValue::UNDEFINED
+                } else {
+                    AbstractValue::Value(Value::Unavailable)
+                });
+            }
+            values
+        } else {
+            return None;
+        };
+        values
+            .iter()
+            .try_fold(PrimKinds::NONE, |kinds, value| match value {
+                AbstractValue::Value(Value::Prim(value)) => Some(kinds.union(*value)),
+                _ => None,
+            })
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
@@ -550,6 +656,9 @@ pub(super) struct ExecutionState {
     /// Callables run so far by the current top-level owner; joins
     /// `prior_effect_owners` when it finishes.
     statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
+    /// Fresh object literals a parameter-mutation initializer filled with
+    /// primitive data properties (`fresh_data_writes`).
+    parameter_initialized_objects: BTreeSet<u32>,
     /// Callables the current top-level owner invoked, memoized invocations
     /// included; their bodies' heap-content cells are the statement's.
     statement_invoked_callables: BTreeSet<u32>,
@@ -747,31 +856,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ValueExpr::Member(receiver, Some(property), _) = value else {
             return false;
         };
-        self.closed_enum_member_parts(receiver, property)
+        self.closed_enum_member_parts(receiver, property).is_some()
     }
 
-    fn closed_enum_member_parts(&self, receiver: &ValueExpr, property: &str) -> bool {
+    /// The primitive values of `receiver.property` when `receiver` is a
+    /// settled `PlainData` binding holding the key as own data. The read
+    /// keeps its ordinary eager dependency, but cannot retrieve a getter or a
+    /// callable value.
+    fn closed_enum_member_parts(&self, receiver: &ValueExpr, property: &str) -> Option<Values> {
         let ValueExpr::Binding(binding) = receiver else {
-            return false;
+            return None;
         };
-        let admitted = self.state.initialized_bindings.contains(binding)
-            && self
-                .inputs
-                .enum_data_members
-                .get(binding)
-                .is_some_and(|keys| keys.contains(property));
-        if admitted
-            && let Some(uses) = self
-                .inputs
-                .graph
-                .plain_data_inference_uses(binding.0.as_ref())
+        let values = self
+            .inputs
+            .plain_data_member(&self.state, binding, property)?;
+        if let Some(uses) = self
+            .inputs
+            .graph
+            .plain_data_inference_uses(binding.0.as_ref())
         {
             self.state
                 .inference_uses
                 .borrow_mut()
                 .extend(uses.iter().cloned());
         }
-        admitted
+        Some(values)
     }
 
     fn record_returned_record_use(
@@ -2609,7 +2718,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.inputs.flow.is_declared(symbol)
             || !self.inputs.index.null_proto_data_objects.contains(object)
             || !self.inputs.index.plain_data_objects.contains(descriptor)
-            || !matches!(descriptor_fields.as_slice(), [(Some(name), ValueExpr::NonCallable)] if name == "value")
+            || !matches!(descriptor_fields.as_slice(), [(Some(name), ValueExpr::NonCallable(_))] if name == "value")
             || !self
                 .inputs
                 .index
@@ -2624,7 +2733,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let Some(name) = name else {
                 if self.inputs.index.null_proto_data_objects.contains(object)
                     && !names.contains("__proto__")
-                    && matches!(value, ValueExpr::NonCallable)
+                    && matches!(value, ValueExpr::NonCallable(_))
                 {
                     names.insert("__proto__".to_owned());
                     continue;
@@ -2636,7 +2745,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if name == "__proto__" {
                 if !self.inputs.index.null_proto_data_objects.contains(object)
-                    || !matches!(value, ValueExpr::NonCallable)
+                    || !matches!(value, ValueExpr::NonCallable(_))
                 {
                     return None;
                 }
@@ -2652,7 +2761,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         stored_bindings.insert(id.clone());
                     }
-                    ValueExpr::NonCallable
+                    ValueExpr::NonCallable(_)
                         if self
                             .inputs
                             .index
@@ -2835,7 +2944,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !args.iter().all(|arg| {
                 matches!(
                     arg,
-                    ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable
+                    ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable(_)
                 )
             })
         {
@@ -2940,9 +3049,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     })
             }
             ValueExpr::Binding(id) => allowed.contains(id),
-            ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable | ValueExpr::Undefined => {
-                true
-            }
+            ValueExpr::Alloc(Kind::Function, _)
+            | ValueExpr::NonCallable(_)
+            | ValueExpr::Undefined => true,
             _ => false,
         }
     }
@@ -3245,10 +3354,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             ValueExpr::Primitive(operands) => operands
                 .iter()
-                .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
-            ValueExpr::Alloc(Kind::Function, _) | ValueExpr::NonCallable | ValueExpr::Undefined => {
-                true
-            }
+                .all(|operand| matches!(operand, ValueExpr::NonCallable(_) | ValueExpr::Undefined)),
+            ValueExpr::Alloc(Kind::Function, _)
+            | ValueExpr::NonCallable(_)
+            | ValueExpr::Undefined => true,
             _ => false,
         }
     }
@@ -3270,7 +3379,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .contains(binding)
             && self.state.initialized_bindings.contains(binding)
             && self.state.prefix_values.get(binding).is_some_and(|values| {
-                values.len() == 1 && values.contains(&AbstractValue::PRIMITIVE)
+                !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
             })
     }
 
@@ -4275,6 +4384,74 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         objects
     }
 
+    /// Whether `callable` is a parameter-mutation initializer of a fresh
+    /// object: it calls nothing, returns its one parameter, and every
+    /// property write stores a primitive under a primitive key into that
+    /// parameter, which holds only untainted plain-data object literals. Such
+    /// a write creates or overwrites a data property of an object no accessor
+    /// or callback can reach (A11 covers `%Object.prototype%`), so it
+    /// publishes nothing. A primitive receiver throws before writing.
+    fn fresh_data_writes(&mut self, callable: &Callable, env: &Context) -> Option<BTreeSet<u32>> {
+        let writes = &callable.callback_result_writes;
+        let [
+            Parameter {
+                binding: Some(parameter),
+                default: None,
+            },
+        ] = callable.params.as_slice()
+        else {
+            return None;
+        };
+        if callable.opaque
+            || !callable.calls.is_empty()
+            || !matches!(callable.returns.as_slice(), [ValueExpr::Binding(returned)] if returned == parameter)
+            || writes.is_empty()
+            || writes.len() != callable.member_value_writes.len()
+            || writes.len()
+                != callable.member_writes.len() + callable.dynamic_property_receivers.len()
+            || writes.iter().any(
+                |write| !matches!(&write.receiver, ValueExpr::Binding(receiver) if receiver == parameter),
+            )
+        {
+            return None;
+        }
+        let primitive = |executor: &mut Self, expression: &ValueExpr| {
+            let values = executor.evaluate(expression, env, env);
+            !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
+        };
+        let mut objects = BTreeSet::new();
+        let mut fresh_receiver = |executor: &mut Self, expression: &ValueExpr| {
+            let receivers = executor.evaluate(expression, env, env);
+            let mut any_object = false;
+            receivers.iter().all(|receiver| match receiver {
+                AbstractValue::Value(Value::Prim(_)) => true,
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    any_object = true;
+                    objects.insert(*object);
+                    executor.inputs.index.plain_data_objects.contains(object)
+                        && !executor.state.tainted_objects.contains(object)
+                        && !executor.state.dense_arrays.contains_key(object)
+                }
+                _ => false,
+            }) && any_object
+        };
+        for write in writes {
+            if !write.simple_assignment
+                || !primitive(self, &write.property_key)
+                || !primitive(self, &write.value)
+                || !fresh_receiver(self, &write.receiver)
+            {
+                return None;
+            }
+        }
+        for receiver in &callable.dynamic_property_receivers {
+            if !fresh_receiver(self, receiver) {
+                return None;
+            }
+        }
+        Some(objects)
+    }
+
     fn apply_member_value_writes(
         &mut self,
         writes: &[(Id, Option<String>, ValueExpr)],
@@ -4432,7 +4609,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .property
                 .as_deref()
                 .is_some_and(|property| property != "__proto__")
-                && matches!(write.value, ValueExpr::NonCallable | ValueExpr::Undefined)
+                && matches!(
+                    write.value,
+                    ValueExpr::NonCallable(_) | ValueExpr::Undefined
+                )
             {
                 continue;
             }
@@ -6239,17 +6419,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 result
             }
             ValueExpr::Undefined => Values::from([AbstractValue::UNDEFINED]),
-            ValueExpr::NonCallable => Values::from([AbstractValue::PRIMITIVE]),
+            ValueExpr::NonCallable(kinds) => {
+                Values::from([AbstractValue::Value(Value::Prim(*kinds))])
+            }
             ValueExpr::Member(object, property, is_static_identifier) => {
-                if property
+                if let Some(values) = property
                     .as_deref()
-                    .is_some_and(|property| self.closed_enum_member_parts(object, property))
+                    .and_then(|property| self.closed_enum_member_parts(object, property))
                 {
-                    // The indexed PlainData enum proof establishes this exact
-                    // key as an own primitive field on the current initialized
-                    // binding. The read keeps its ordinary eager dependency,
-                    // but cannot retrieve a getter or callable value.
-                    return Values::from([AbstractValue::PRIMITIVE]);
+                    return values;
                 }
                 if let ValueExpr::Binding(id) = object.as_ref()
                     && is_static_identifier.is_static()
@@ -6933,6 +7111,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
         // a conservative callback possibility.
+        let fresh_data_writes = self.fresh_data_writes(callable, &env);
+        if let Some(objects) = &fresh_data_writes {
+            self.state
+                .parameter_initialized_objects
+                .extend(objects.iter().copied());
+        }
         let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, &env);
         let fresh_record_receiver = self.fresh_local_record_receiver(key, callable);
         if let Some(object) = fresh_record_receiver {
@@ -6999,7 +7183,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             writes.push((None, None));
         }
         if !fresh_checked_constructor
-            && !self.inputs.fresh_mutation_callables.contains(&key)
+            && fresh_data_writes.is_none()
             && certified_data_receivers.is_empty()
         {
             self.promote_property_writes(&writes, callable.owner, &mut outcome);
@@ -8261,10 +8445,7 @@ fn close_prefix_needed_bindings(
         .collect()
 }
 
-/// Finalize enum own-key candidates with the already collected binding-write
-/// facts. The recognized initializer may contain its own `X || (X = {})`
 pub(crate) fn annotate_synchronous_calls(
-    body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
     proofs: SynchronousCallProofs<'_>,
     shadowed: &BTreeSet<&'static str>,
@@ -8427,8 +8608,42 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
+    // A coercion resolves against the values of its operand bindings at the
+    // statement's program point.
+    let statement_effects: Vec<Effects> = facts
+        .iter()
+        .map(|fact| proofs.purity.statement_effects(fact))
+        .collect();
+    for effects in &statement_effects {
+        effects.coerce_bindings(&mut needed);
+    }
+    // Member reads of a `PlainData` binding resolve against its settled
+    // allocations' own properties.
+    needed.extend(
+        facts
+            .iter()
+            .flat_map(|fact| fact.declared.iter())
+            .filter(|binding| proofs.graph.is_plain_data(binding.0.as_ref()))
+            .cloned(),
+    );
     let needed =
         close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
+    let mut writers = BTreeMap::<&Id, BTreeSet<SourceUnitOrdinal>>::new();
+    for fact in facts.iter() {
+        for binding in fact
+            .declared
+            .iter()
+            .chain(&fact.rebinds.eager)
+            .chain(&fact.rebinds.lazy)
+        {
+            writers.entry(binding).or_default().insert(fact.ordinal);
+        }
+    }
+    let single_writer_bindings: BTreeSet<Id> = writers
+        .into_iter()
+        .filter(|(_, owners)| owners.len() == 1)
+        .map(|(binding, _)| binding.clone())
+        .collect();
     let source_unit_read_closure = SourceUnitReadClosure::new(facts);
     let prefix_reads: Vec<_> = facts
         .iter()
@@ -8501,18 +8716,16 @@ pub(crate) fn annotate_synchronous_calls(
         );
         initialized_bindings.insert(binding.clone());
     }
-    let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let inputs = ExecutionInputs {
         index: &index,
         graph: proofs.graph,
         facts,
-        purity: proofs.purity,
+        statement_effects,
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
         imported_values: &hints.imported_values,
         callable_heap_contents: proofs.callable_heap_contents,
-        enum_data_members,
         top_bindings,
         binding_owner: facts
             .iter()
@@ -8545,12 +8758,8 @@ pub(crate) fn annotate_synchronous_calls(
         changed_member_roots,
         export_reentry_enabled: *export_reentry_policy
             != ExportReentryPolicy::NoStaticImporterReentry,
-        fresh_mutation_callables: fresh_mutation_callables(
-            body,
-            facts,
-            !index.dynamic_scope_owners.is_empty(),
-        ),
         needed_bindings: needed,
+        single_writer_bindings,
         unknown_callee_owners: unknown_callee_owners(&index, flow),
         reaches_unknown_callee: std::sync::OnceLock::new(),
     };
@@ -8579,6 +8788,7 @@ pub(crate) fn annotate_synchronous_calls(
         prior_effect_owners: BTreeSet::new(),
         statement_executed_owners: BTreeSet::new(),
         statement_invoked_callables: BTreeSet::new(),
+        parameter_initialized_objects: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
         frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),

@@ -22,7 +22,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -40,7 +40,7 @@ use crate::facts::semantic_inference::{
 };
 use crate::facts::standard_globals::is_predefined_global;
 use crate::facts::statement_facts::{
-    CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
+    CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
 };
 use crate::facts::value_flow::ChunkValueFlow;
 use crate::facts::{
@@ -48,7 +48,6 @@ use crate::facts::{
     StableArraySpreadShapes,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
@@ -2294,7 +2293,7 @@ fn intrinsic_roots(
                 if option_roots.is_empty()
                     && !matches!(
                         option,
-                        ValueExpr::Undefined | ValueExpr::NonCallable | ValueExpr::Primitive(_)
+                        ValueExpr::Undefined | ValueExpr::NonCallable(_) | ValueExpr::Primitive(_)
                     )
                 {
                     unknown_arm = true;
@@ -2977,7 +2976,7 @@ fn evaluate_receiver_value(
                 result.fact.opaque = true;
             }
         }
-        ValueExpr::Undefined | ValueExpr::NonCallable => {
+        ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
             result.fact.safe = true;
             result.fact.complete = true;
         }
@@ -5110,7 +5109,7 @@ fn call_exposes_global_receiver(
     // the protocol call itself for ordinary effect and reentry analysis.
     if call.kind == CallKind::InProtocol
         && matches!(call.args.as_slice(),
-            [ValueExpr::Binding(receiver), ValueExpr::NonCallable]
+            [ValueExpr::Binding(receiver), ValueExpr::NonCallable(_)]
                 if names.contains(receiver.0.as_ref())
                     && certified_root_ids.contains(receiver))
     {
@@ -5184,7 +5183,7 @@ fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool
         ValueExpr::Alternatives(options) => options
             .iter()
             .all(|value| same_property_or_fresh(value, alias, property)),
-        ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_) => true,
+        ValueExpr::NonCallable(_) | ValueExpr::Undefined | ValueExpr::Primitive(_) => true,
         _ => false,
     }
 }
@@ -5277,7 +5276,7 @@ fn confined_prepublication_alias(
             // finishes before publication. Only primitive writes can survive.
             matches!(
                 write.value,
-                ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_)
+                ValueExpr::NonCallable(_) | ValueExpr::Undefined | ValueExpr::Primitive(_)
             )
         } else {
             !uses_any_binding(&write.value, &derived)
@@ -5978,7 +5977,7 @@ impl BundleGlobalContext<'_> {
             ValueExpr::ObjectLiteral(..)
             | ValueExpr::Primitive(_)
             | ValueExpr::Undefined
-            | ValueExpr::NonCallable => true,
+            | ValueExpr::NonCallable(_) => true,
             ValueExpr::Alternatives(options) => {
                 options.iter().all(|option| self.keeps(option, slot))
             }
@@ -6201,7 +6200,7 @@ impl ExecutionIndex {
             ValueExpr::Binding(_)
             | ValueExpr::Alloc(..)
             | ValueExpr::Undefined
-            | ValueExpr::NonCallable
+            | ValueExpr::NonCallable(_)
             | ValueExpr::Unknown => {}
         }
     }
@@ -11604,7 +11603,7 @@ impl Visit for ExecutionIndex {
                 receiver: ValueExpr::from_expr(&member.obj),
                 property_key: match &member.prop {
                     MemberProp::Computed(key) => ValueExpr::from_expr(&key.expr),
-                    _ => ValueExpr::NonCallable,
+                    _ => ValueExpr::NonCallable(PrimKinds::STRING),
                 },
                 simple_assignment: assignment.op == AssignOp::Assign,
                 data_read_operands: data_read_operand(&assignment.right)
@@ -13090,32 +13089,6 @@ fn infer_namespace_wrappers(
         })
         .collect()
 }
-pub(crate) fn stable_ts_enum_named_data_members(
-    graph: &ChunkCodeGraph,
-    facts: &[StatementFacts],
-) -> BTreeMap<Id, BTreeSet<String>> {
-    let candidates = graph.ts_enum_named_data_candidates();
-    if candidates.is_empty() {
-        return BTreeMap::new();
-    }
-    let mut unstable = BTreeSet::new();
-    for fact in facts {
-        for binding in fact.rebinds.eager.iter().chain(&fact.rebinds.lazy) {
-            if candidates
-                .get(binding)
-                .is_some_and(|candidate| candidate.initializer_source_unit != fact.ordinal)
-            {
-                unstable.insert(binding.clone());
-            }
-        }
-    }
-    candidates
-        .iter()
-        .filter(|(binding, _)| !unstable.contains(*binding))
-        .map(|(binding, candidate)| (binding.clone(), candidate.own_primitive_keys.clone()))
-        .collect()
-}
-
 #[path = "interpreter.rs"]
 pub(crate) mod interpreter;
 

@@ -518,7 +518,6 @@ rust_library(
         "facts/callable_inference.rs",
         "facts/collector.rs",
         "facts/dynamic_scope.rs",
-        "facts/fresh_receiver.rs",
         "facts/global_object.rs",
         "facts/heap_contents.rs",
         "facts/item_views.rs",

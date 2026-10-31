@@ -22,7 +22,7 @@ fn local_class_construction_before_declaration_is_not_pure() {
         .iter()
         .find(|fact| fact.declared.contains(&test_id("instance")))
         .expect("instance declaration");
-    assert!(!instance.purity.is_pure());
+    assert_eq!(rules_of(&instance.purity), [PurityRule::UnknownNew]);
 }
 
 #[test]
@@ -35,40 +35,48 @@ fn direct_eval_disables_local_class_construction_proof() {
         .iter()
         .find(|fact| fact.declared.contains(&test_id("instance")))
         .expect("instance declaration");
-    assert!(!instance.purity.is_pure());
+    assert_eq!(rules_of(&instance.purity), [PurityRule::UnknownNew]);
 }
 
 use raw_js_test_support::parse;
 
 // --- ChunkCodeGraph: function-body purity inference --------------------
 
-/// Build a `ChunkCodeGraph` for `src` and return whether the
-/// named function is classified as Pure. `None` means the
+/// The rules of the reasons a verdict projects its effects to, in evaluation
+/// order; empty for a pure verdict. Function verdicts are stored projected, so
+/// the rule list is the finest view of their effects the graph keeps.
+fn rules_of(purity: &Purity) -> Vec<PurityRule> {
+    match purity {
+        Purity::Pure { .. } => Vec::new(),
+        Purity::NotPure { reasons } => reasons.iter().map(|reason| reason.rule).collect(),
+    }
+}
+
+/// Build a `ChunkCodeGraph` for `src` and return the rules of the
+/// named function's verdict (`Some(vec![])` is pure). `None` means the
 /// function isn't tracked in the chunk's purity graph (only
 /// `const`-bound function/arrow initializers are cached).
 /// Tests the full pipeline: chunk parsing → function
 /// collection → fixed-point.
-fn fn_purity(src: &str, name: &str) -> Option<bool> {
+fn fn_rules(src: &str, name: &str) -> Option<Vec<PurityRule>> {
     let module = parse(src);
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    graph.function_purity(name).map(|p| p.is_pure())
+    graph.function_purity(name).map(|p| rules_of(p))
 }
 
 #[test]
-fn enum_named_data_fact_requires_stable_single_initializer() {
+fn enum_member_reads_need_plain_data_after_the_initializer() {
+    // An enum member resolves against its settled own fields only while no
+    // write or escape reaches the object after its initializer; a binding
+    // another statement rebinds never resolves.
     let initializer =
         "var Flags = ((values) => ((values[(values.FIRST = 1)] = 'FIRST'), values))(Flags || {});";
     for (suffix, admitted) in [
         ("", true),
-        ("Flags = { FIRST: 1 };", false),
-        ("function replace() { Flags = { FIRST: () => 1 }; }", false),
         ("[Flags] = [{ FIRST: () => 1 }];", false),
         ("({ Flags } = { Flags: { FIRST: () => 1 } });", false),
-        ("for (Flags of [{ FIRST: () => 1 }]) {}", false),
-        ("Flags++;", false),
-        ("var { Flags } = { Flags: { FIRST: () => 1 } };", false),
         (
             "Object.defineProperty(Flags, 'FIRST', { get() { return 1; } });",
             false,
@@ -80,15 +88,10 @@ fn enum_named_data_fact_requires_stable_single_initializer() {
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-        let facts = analyze_facts(&module);
         assert_eq!(
-            crate::facts::sync_effects::execution_index::stable_ts_enum_named_data_members(
-                &graph, &facts,
-            )
-            .get(&test_id("Flags"))
-            .is_some_and(|keys| keys.contains("FIRST")),
+            graph.is_plain_data("Flags"),
             admitted,
-            "incorrect enum own-field fact after {suffix:?}"
+            "incorrect enum plain-data fact after {suffix:?}"
         );
     }
     let module =
@@ -96,13 +99,8 @@ fn enum_named_data_fact_requires_stable_single_initializer() {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    let facts = analyze_facts(&module);
     assert!(
-        crate::facts::sync_effects::execution_index::stable_ts_enum_named_data_members(
-            &graph, &facts,
-        )
-        .get(&test_id("Flags"))
-        .is_some_and(|keys| keys.contains("FIRST")),
+        graph.is_plain_data("Flags"),
         "the recognized initializer self-write must remain admitted"
     );
 }
@@ -120,8 +118,8 @@ fn fn_purity_mutual_recursion_converges_pure() {
     function even(n) { return n === 0 ? true : odd(n); }
     function odd(n) { return n === 0 ? false : even(n); }
 "#;
-    assert_eq!(fn_purity(src, "even"), Some(true));
-    assert_eq!(fn_purity(src, "odd"), Some(true));
+    assert_eq!(fn_rules(src, "even"), Some(vec![]));
+    assert_eq!(fn_rules(src, "odd"), Some(vec![]));
 }
 
 #[test]
@@ -130,8 +128,8 @@ fn fn_purity_param_arithmetic_is_not_pure() {
     // an object whose `valueOf` fires arbitrary code, so a body
     // coercing an opaque param is not pure-callable.
     assert_eq!(
-        fn_purity("function dec(n) { return n - 1; }", "dec"),
-        Some(false)
+        fn_rules("function dec(n) { return n - 1; }", "dec"),
+        Some(vec![PurityRule::CoercingOperator])
     );
 }
 
@@ -141,8 +139,8 @@ fn fn_purity_arrow_const_init() {
     // initializer. Concise-arrow body classifies the single
     // return expression.
     assert_eq!(
-        fn_purity("const wrap = (x) => ({ val: x });", "wrap"),
-        Some(true)
+        fn_rules("const wrap = (x) => ({ val: x });", "wrap"),
+        Some(vec![])
     );
 }
 
@@ -161,9 +159,9 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     };
     let init = var.decls[0].init.as_deref().expect("init");
     assert!(
-        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
-            .project())
-        .is_pure()
+        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+            .kinds()
+            .is_empty()
     );
 }
 
@@ -187,7 +185,7 @@ fn new_map_fresh_spread_registry_entries_with_plain_data_members_is_pure() {
         .find(|f| f.declared.contains(&test_id("registry")))
         .expect("registry fact missing");
     assert!(
-        registry_fact.purity.is_pure(),
+        rules_of(&registry_fact.purity).is_empty(),
         "fresh-spread registry literal should classify pure: {:?}",
         registry_fact.purity
     );
@@ -206,8 +204,9 @@ fn new_map_fresh_spread_registry_does_not_bless_unknown_members() {
         .iter()
         .find(|f| f.declared.contains(&test_id("registry")))
         .expect("registry fact missing");
-    assert!(
-        !registry_fact.purity.is_pure(),
+    assert_eq!(
+        rules_of(&registry_fact.purity),
+        [PurityRule::UnknownNew, PurityRule::UnknownMember],
         "unknown member read must still block: {:?}",
         registry_fact.purity
     );
@@ -221,17 +220,17 @@ fn fn_purity_let_var_bound_arrows_are_not_cached() {
     // construction and the call site. Restrict graph entries
     // to `const`-bound function/arrow initializers.
     assert_eq!(
-        fn_purity("let f = () => 1;", "f"),
+        fn_rules("let f = () => 1;", "f"),
         None,
         "`let`-bound arrow must not be in the function-purity graph"
     );
     assert_eq!(
-        fn_purity("var f = function () { return 1; };", "f"),
+        fn_rules("var f = function () { return 1; };", "f"),
         None,
         "`var`-bound function expr must not be in the function-purity graph"
     );
     // Sanity: `const` still works.
-    assert_eq!(fn_purity("const f = () => 1;", "f"), Some(true));
+    assert_eq!(fn_rules("const f = () => 1;", "f"), Some(vec![]));
 }
 
 #[test]
@@ -240,14 +239,14 @@ fn fn_purity_throw_makes_function_impure_even_with_pure_arg() {
     // whether `e` itself is pure. A function that always
     // throws must not classify as Pure.
     assert_eq!(
-        fn_purity(r#"function f() { throw "boom"; }"#, "f"),
-        Some(false)
+        fn_rules(r#"function f() { throw "boom"; }"#, "f"),
+        Some(vec![PurityRule::ThrowStmt])
     );
     // Conditional throw is still Impure (we don't reason
     // about reachability — soundness-first).
     assert_eq!(
-        fn_purity(r#"function f(x) { if (x) throw "boom"; return x; }"#, "f"),
-        Some(false)
+        fn_rules(r#"function f(x) { if (x) throw "boom"; return x; }"#, "f"),
+        Some(vec![PurityRule::ThrowStmt])
     );
 }
 
@@ -256,8 +255,8 @@ fn fn_purity_debugger_makes_function_impure() {
     // `debugger` pauses execution observably to a host
     // attached to the process — not Pure.
     assert_eq!(
-        fn_purity("function f() { debugger; return 1; }", "f"),
-        Some(false)
+        fn_rules("function f() { debugger; return 1; }", "f"),
+        Some(vec![PurityRule::DebuggerStmt])
     );
 }
 
@@ -460,7 +459,7 @@ fn plain_data_var_nested_block_reinitializer_disqualifies_value_inference() {
 "#;
 
     assert!(!is_plain_data(src, "X"));
-    assert_eq!(fn_purity(src, "read"), Some(false));
+    assert_eq!(fn_rules(src, "read"), Some(vec![PurityRule::UnknownMember]));
 }
 
 #[test]
@@ -472,7 +471,7 @@ fn plain_data_var_for_of_rebind_disqualifies_value_inference() {
 "#;
 
     assert!(!is_plain_data(src, "X"));
-    assert_eq!(fn_purity(src, "read"), Some(false));
+    assert_eq!(fn_rules(src, "read"), Some(vec![PurityRule::UnknownMember]));
 }
 
 #[test]
@@ -514,7 +513,7 @@ fn plain_data_var_unblocks_embedded_build_env_config_shape() {
     const isEmulatorEnv = () => mr.FUNCTIONS_EMULATOR;
 "#;
     assert!(is_plain_data(src, "mr"));
-    assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(true));
+    assert_eq!(fn_rules(src, "isEmulatorEnv"), Some(vec![]));
 }
 
 // --- TS-enum IIFE PlainData admission ---------------------------------
@@ -591,7 +590,7 @@ fn plain_data_ts_enum_iife_member_reads_classify_pure() {
     const isRed = (c) => c === Color.RED;
 "#;
     assert!(is_plain_data(src, "Color"));
-    assert_eq!(fn_purity(src, "isRed"), Some(true));
+    assert_eq!(fn_rules(src, "isRed"), Some(vec![]));
 }
 
 #[test]
@@ -787,8 +786,8 @@ fn plain_data_default_param_write_to_shadowed_m_keeps_system_ids_plain() {
     const readDataTypeUrlId = () => m.dataTypeUrlId;
 "#;
     assert!(is_plain_data(src, "m"));
-    assert_eq!(fn_purity(src, "readSystemToolId"), Some(true));
-    assert_eq!(fn_purity(src, "readDataTypeUrlId"), Some(true));
+    assert_eq!(fn_rules(src, "readSystemToolId"), Some(vec![]));
+    assert_eq!(fn_rules(src, "readDataTypeUrlId"), Some(vec![]));
 }
 
 #[test]
@@ -801,7 +800,7 @@ fn plain_data_rest_and_destructuring_param_writes_shadow_top_level_candidate() {
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
     assert!(is_plain_data(src, "m"));
-    assert_eq!(fn_purity(src, "readSystemToolId"), Some(true));
+    assert_eq!(fn_rules(src, "readSystemToolId"), Some(vec![]));
 }
 
 #[test]
@@ -822,9 +821,9 @@ fn plain_data_member_read_on_param_shadowed_name_is_not_pure() {
     // targets the local binding, not the const).
     assert!(is_plain_data(src, "X"));
     // A genuine chunk-top read stays pure.
-    assert_eq!(fn_purity(src, "readReal"), Some(true));
+    assert_eq!(fn_rules(src, "readReal"), Some(vec![]));
     // The shadowed read must be impure.
-    assert_eq!(fn_purity(src, "f"), Some(false));
+    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownMember]));
 }
 
 #[test]
@@ -838,8 +837,8 @@ fn plain_data_object_keys_arg_on_param_shadowed_name_is_not_pure() {
     const readReal = () => Object.keys(X);
 "#;
     assert!(is_plain_data(src, "X"));
-    assert_eq!(fn_purity(src, "readReal"), Some(true));
-    assert_eq!(fn_purity(src, "f"), Some(false));
+    assert_eq!(fn_rules(src, "readReal"), Some(vec![]));
+    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownCall]));
 }
 
 #[test]
@@ -851,7 +850,10 @@ fn plain_data_real_top_level_m_write_still_disqualifies_after_vite_helper() {
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
     assert!(!is_plain_data(src, "m"));
-    assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
+    assert_eq!(
+        fn_rules(src, "readSystemToolId"),
+        Some(vec![PurityRule::UnknownMember])
+    );
 }
 
 #[test]
@@ -862,7 +864,10 @@ fn plain_data_unshadowed_default_param_write_disqualifies_top_level_candidate() 
     const readSystemToolId = () => m.systemToolWebSearchId;
 "#;
     assert!(!is_plain_data(src, "m"));
-    assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
+    assert_eq!(
+        fn_rules(src, "readSystemToolId"),
+        Some(vec![PurityRule::UnknownMember])
+    );
 }
 
 #[test]
@@ -884,7 +889,10 @@ fn plain_data_let_with_plain_literal_replacement_is_tracked() {
     // `getEnv` is no longer inferred pure: `envConfig[k]` runs
     // ToPropertyKey on the opaque key `k` (user `toString` on an
     // object key) — see `plain_data_computed_read_with_opaque_key_is_not_pure`.
-    assert_eq!(fn_purity(src, "getEnv"), Some(false));
+    assert_eq!(
+        fn_rules(src, "getEnv"),
+        Some(vec![PurityRule::ToPropertyKeyCoercion])
+    );
 }
 
 #[test]
@@ -1054,7 +1062,10 @@ fn plain_data_computed_read_with_opaque_key_is_not_pure() {
     const Me = (n) => TA[n];
 "#;
     assert!(is_plain_data(src, "TA"));
-    assert_eq!(fn_purity(src, "Me"), Some(false));
+    assert_eq!(
+        fn_rules(src, "Me"),
+        Some(vec![PurityRule::ToPropertyKeyCoercion])
+    );
 }
 
 #[test]
@@ -1068,8 +1079,8 @@ fn plain_data_computed_read_with_primitive_key_is_pure() {
     const readZero = () => TA[0];
 "#;
     assert!(is_plain_data(src, "TA"));
-    assert_eq!(fn_purity(src, "readFoo"), Some(true));
-    assert_eq!(fn_purity(src, "readZero"), Some(true));
+    assert_eq!(fn_rules(src, "readFoo"), Some(vec![]));
+    assert_eq!(fn_rules(src, "readZero"), Some(vec![]));
 }
 
 #[test]
@@ -1082,7 +1093,7 @@ fn plain_data_read_with_static_property_is_pure() {
     const mr = { FUNCTIONS_EMULATOR: false, FOO: 1 };
     const check = () => mr.FUNCTIONS_EMULATOR;
 "#;
-    assert_eq!(fn_purity(src, "check"), Some(true));
+    assert_eq!(fn_rules(src, "check"), Some(vec![]));
 }
 
 // --- Call-graph topology: deep chains, isolated nodes ------------------
@@ -1102,8 +1113,8 @@ fn fn_purity_deep_pure_chain_propagates_in_one_pass() {
     "#;
     for name in ["a", "b", "c", "d", "e"] {
         assert_eq!(
-            fn_purity(src, name),
-            Some(true),
+            fn_rules(src, name),
+            Some(vec![]),
             "expected {name} to classify Pure"
         );
     }
@@ -1121,10 +1132,11 @@ fn fn_purity_deep_chain_propagates_impurity_to_root() {
         function b() { return c(); }
         function a() { return b(); }
     "#;
-    for name in ["a", "b", "c", "d", "e"] {
+    assert_eq!(fn_rules(src, "e"), Some(vec![PurityRule::AssignOrUpdate]));
+    for name in ["a", "b", "c", "d"] {
         assert_eq!(
-            fn_purity(src, name),
-            Some(false),
+            fn_rules(src, name),
+            Some(vec![PurityRule::ImpureFunctionCall]),
             "expected {name} to inherit Impure from `e`"
         );
     }
@@ -1143,9 +1155,22 @@ fn fn_purity_mutual_recursion_with_external_impure_callee() {
         function a(n) { return n === 0 ? c() : b(n - 1); }
         function b(n) { return n === 0 ? 0 : a(n - 1); }
     "#;
-    assert_eq!(fn_purity(src, "c"), Some(false));
-    assert_eq!(fn_purity(src, "a"), Some(false));
-    assert_eq!(fn_purity(src, "b"), Some(false));
+    assert_eq!(fn_rules(src, "c"), Some(vec![PurityRule::AssignOrUpdate]));
+    assert_eq!(
+        fn_rules(src, "a"),
+        Some(vec![
+            PurityRule::ImpureFunctionCall,
+            PurityRule::ImpureFunctionCall,
+            PurityRule::CoercingOperator
+        ])
+    );
+    assert_eq!(
+        fn_rules(src, "b"),
+        Some(vec![
+            PurityRule::ImpureFunctionCall,
+            PurityRule::CoercingOperator
+        ])
+    );
 }
 
 #[test]
@@ -1160,7 +1185,7 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
     const value = read();
 "#,
     );
-    let value_is_pure = |declared_pure: BTreeSet<String>| {
+    let value_rules = |declared_pure: BTreeSet<String>| {
         analyze_chunk(
             &module,
             &AnalysisInputs {
@@ -1178,22 +1203,29 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
         .find(|f| f.declared.contains(&test_id("value")))
         .expect("value fact missing")
         .purity
-        .is_pure()
+        .clone()
     };
-    assert!(value_is_pure(BTreeSet::from(["io".to_string()])));
-    assert!(!value_is_pure(BTreeSet::new()));
+    assert!(rules_of(&value_rules(BTreeSet::from(["io".to_string()]))).is_empty());
+    assert_eq!(
+        rules_of(&value_rules(BTreeSet::new())),
+        [PurityRule::ImpureFunctionCall]
+    );
 }
 
 // --- Body-level shadowing of global tables / chunk graph / annotations --
 
-/// `fn_purity` with an explicit declared-pure set.
-fn fn_purity_with_declared_pure(src: &str, name: &str, declared: &[&str]) -> Option<bool> {
+/// `fn_rules` with an explicit declared-pure set.
+fn fn_rules_with_declared_pure(
+    src: &str,
+    name: &str,
+    declared: &[&str],
+) -> Option<Vec<PurityRule>> {
     let module = parse(src);
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
     let graph = ChunkCodeGraph::build(&body, &shadowed, &declared_pure);
-    graph.function_purity(name).map(|p| p.is_pure())
+    graph.function_purity(name).map(|p| rules_of(p))
 }
 
 #[test]
@@ -1206,8 +1238,8 @@ fn body_shadowed_chunk_function_call_is_not_pure() {
     function outer(helper) { return helper(); }
     function control() { return helper(); }
 "#;
-    assert_eq!(fn_purity(src, "outer"), Some(false));
-    assert_eq!(fn_purity(src, "control"), Some(true));
+    assert_eq!(fn_rules(src, "outer"), Some(vec![PurityRule::UnknownCall]));
+    assert_eq!(fn_rules(src, "control"), Some(vec![]));
 }
 
 #[test]
@@ -1219,9 +1251,9 @@ fn body_shadowed_whitelist_receiver_is_not_pure() {
     function g() { return Math.PI; }
     function h(Array) { return Array.isArray([]); }
 "#;
-    assert_eq!(fn_purity(src, "f"), Some(false));
-    assert_eq!(fn_purity(src, "g"), Some(true));
-    assert_eq!(fn_purity(src, "h"), Some(false));
+    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownMember]));
+    assert_eq!(fn_rules(src, "g"), Some(vec![]));
+    assert_eq!(fn_rules(src, "h"), Some(vec![PurityRule::UnknownCall]));
 }
 
 #[test]
@@ -1232,8 +1264,8 @@ fn body_shadowed_builtin_new_is_not_pure() {
     function f(Map) { return new Map(); }
     function g() { return new Map(); }
 "#;
-    assert_eq!(fn_purity(src, "f"), Some(false));
-    assert_eq!(fn_purity(src, "g"), Some(true));
+    assert_eq!(fn_rules(src, "f"), Some(vec![PurityRule::UnknownNew]));
+    assert_eq!(fn_rules(src, "g"), Some(vec![]));
 }
 
 #[test]
@@ -1245,8 +1277,11 @@ fn body_shadowed_declared_pure_binding_is_not_pure() {
     function f(dp) { return dp(); }
     function g() { return dp(); }
 "#;
-    assert_eq!(fn_purity_with_declared_pure(src, "f", &["dp"]), Some(false));
-    assert_eq!(fn_purity_with_declared_pure(src, "g", &["dp"]), Some(true));
+    assert_eq!(
+        fn_rules_with_declared_pure(src, "f", &["dp"]),
+        Some(vec![PurityRule::UnknownCall])
+    );
+    assert_eq!(fn_rules_with_declared_pure(src, "g", &["dp"]), Some(vec![]));
 }
 
 #[test]
@@ -1272,8 +1307,14 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         &BTreeMap::new(),
         &BTreeSet::new(),
     );
-    assert_eq!(graph.function_purity("f").map(|p| p.is_pure()), Some(false));
-    assert_eq!(graph.function_purity("g").map(|p| p.is_pure()), Some(true));
+    assert_eq!(
+        graph.function_purity("f").map(|p| rules_of(p)),
+        Some(vec![PurityRule::UnknownCall])
+    );
+    assert_eq!(
+        graph.function_purity("g").map(|p| rules_of(p)),
+        Some(vec![])
+    );
 }
 
 // --- Parameter evaluation (defaults / destructuring) --------------------
@@ -1283,30 +1324,36 @@ fn fn_purity_impure_param_default_makes_function_not_pure() {
     // Default-value expressions evaluate at call time, exactly
     // like body code.
     assert_eq!(
-        fn_purity("const f = (x = (globalThis.boom = 1)) => 1;", "f"),
-        Some(false)
+        fn_rules("const f = (x = (globalThis.boom = 1)) => 1;", "f"),
+        Some(vec![PurityRule::AssignOrUpdate])
     );
     assert_eq!(
-        fn_purity("function g(x = io()) { return 1; }", "g"),
-        Some(false)
+        fn_rules("function g(x = io()) { return 1; }", "g"),
+        Some(vec![PurityRule::UnknownCall])
     );
 }
 
 #[test]
 fn fn_purity_pure_param_default_stays_pure() {
-    assert_eq!(fn_purity("const f = (x = 1) => x;", "f"), Some(true));
-    assert_eq!(fn_purity("const g = (x = []) => x;", "g"), Some(true));
+    assert_eq!(fn_rules("const f = (x = 1) => x;", "f"), Some(vec![]));
+    assert_eq!(fn_rules("const g = (x = []) => x;", "g"), Some(vec![]));
 }
 
 #[test]
 fn fn_purity_destructuring_param_makes_function_not_pure() {
     // Destructuring a parameter fires getters (object pattern) or
     // the iterator protocol (array pattern) on the argument.
-    assert_eq!(fn_purity("const f = ({ a }) => a;", "f"), Some(false));
-    assert_eq!(fn_purity("const g = ([x]) => x;", "g"), Some(false));
     assert_eq!(
-        fn_purity("function h({ a } = {}) { return a; }", "h"),
-        Some(false)
+        fn_rules("const f = ({ a }) => a;", "f"),
+        Some(vec![PurityRule::DestructuringPattern])
+    );
+    assert_eq!(
+        fn_rules("const g = ([x]) => x;", "g"),
+        Some(vec![PurityRule::DestructuringPattern])
+    );
+    assert_eq!(
+        fn_rules("function h({ a } = {}) { return a; }", "h"),
+        Some(vec![PurityRule::DestructuringPattern])
     );
 }
 
@@ -1314,7 +1361,7 @@ fn fn_purity_destructuring_param_makes_function_not_pure() {
 fn fn_purity_rest_param_stays_pure() {
     // A rest param builds a fresh array from the arguments list —
     // no user-code path.
-    assert_eq!(fn_purity("const f = (...xs) => xs;", "f"), Some(true));
+    assert_eq!(fn_rules("const f = (...xs) => xs;", "f"), Some(vec![]));
 }
 
 // --- Iteration statements / destructuring declarators in bodies ---------
@@ -1323,8 +1370,8 @@ fn fn_purity_rest_param_stays_pure() {
 fn fn_purity_for_of_makes_function_not_pure() {
     // for-of fires the iterated value's `[Symbol.iterator]`.
     assert_eq!(
-        fn_purity("function f(xs) { for (const x of xs) {} return 1; }", "f"),
-        Some(false)
+        fn_rules("function f(xs) { for (const x of xs) {} return 1; }", "f"),
+        Some(vec![PurityRule::IterationProtocol])
     );
 }
 
@@ -1333,8 +1380,8 @@ fn fn_purity_for_in_makes_function_not_pure() {
     // for-in enumeration fires proxy ownKeys/getOwnPropertyDescriptor
     // traps on the enumerated value.
     assert_eq!(
-        fn_purity("function f(o) { for (const k in o) {} return 1; }", "f"),
-        Some(false)
+        fn_rules("function f(o) { for (const k in o) {} return 1; }", "f"),
+        Some(vec![PurityRule::IterationProtocol])
     );
 }
 
@@ -1343,15 +1390,15 @@ fn fn_purity_plain_loops_stay_pure() {
     // Plain `while` / C-style `for` introduce no protocol firing
     // beyond their (independently classified) sub-expressions.
     assert_eq!(
-        fn_purity(
+        fn_rules(
             "function f(flag) { while (flag) { flag = false; } return 1; }",
             "f"
         ),
-        Some(false) // the assign is impure — control for the loop itself below
+        Some(vec![PurityRule::AssignOrUpdate]) // the assign is impure — control for the loop itself below
     );
     assert_eq!(
-        fn_purity("function g(flag) { while (flag) {} return 1; }", "g"),
-        Some(true)
+        fn_rules("function g(flag) { while (flag) {} return 1; }", "g"),
+        Some(vec![])
     );
 }
 
@@ -1360,16 +1407,16 @@ fn fn_purity_destructuring_declarator_makes_function_not_pure() {
     // `const {a} = o` fires o's getters; `const [x] = o` fires the
     // iterator protocol.
     assert_eq!(
-        fn_purity("function f(o) { const { a } = o; return a; }", "f"),
-        Some(false)
+        fn_rules("function f(o) { const { a } = o; return a; }", "f"),
+        Some(vec![PurityRule::DestructuringPattern])
     );
     assert_eq!(
-        fn_purity("function g(o) { const [x] = o; return x; }", "g"),
-        Some(false)
+        fn_rules("function g(o) { const [x] = o; return x; }", "g"),
+        Some(vec![PurityRule::DestructuringPattern])
     );
     assert_eq!(
-        fn_purity("function h(o) { const a = o; return a; }", "h"),
-        Some(true)
+        fn_rules("function h(o) { const a = o; return a; }", "h"),
+        Some(vec![])
     );
 }
 

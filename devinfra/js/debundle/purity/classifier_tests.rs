@@ -14,7 +14,7 @@ use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
 use raw_js_test_support::parse;
 
-fn classify(src: &str) -> Purity {
+fn classify(src: &str) -> Vec<Effect> {
     // Wrap the expression in a const so we can parse a module.
     let module = parse(&format!("const _ = {src};"));
     let var = match &module.body[0] {
@@ -29,7 +29,7 @@ fn classify(src: &str) -> Purity {
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
-    .project()
+    .kinds()
 }
 
 /// Parse `{prefix}\nconst _ = {expr_src};` and hand `classify` the chunk-top item
@@ -38,8 +38,16 @@ fn classify(src: &str) -> Purity {
 fn classify_last_const(
     prefix: &str,
     expr_src: &str,
-    classify: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>, &Expr) -> Purity,
-) -> Purity {
+    classify: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>, &Expr) -> Effects,
+) -> Vec<Effect> {
+    classify_last_const_effects(prefix, expr_src, classify).kinds()
+}
+
+fn classify_last_const_effects(
+    prefix: &str,
+    expr_src: &str,
+    classify: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>, &Expr) -> Effects,
+) -> Effects {
     let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
@@ -57,10 +65,10 @@ fn classify_with_graph(
     prefix: &str,
     expr_src: &str,
     build: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>) -> ChunkCodeGraph,
-) -> Purity {
+) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |body, shadowed, init| {
         let graph = build(body, shadowed);
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).project()
+        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
     })
 }
 
@@ -137,14 +145,13 @@ fn graph_with_conditioned_set_proof(
         &plain_arrays,
         &BTreeSet::new(),
         None,
-        None,
     )
 }
 
 /// Run the classifier against `src` after computing the
 /// chunk-top-level shadowed-globals set from a wrapping
 /// module. Lets tests check the shadowing fallback.
-fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
+fn classify_with_module(prefix: &str, expr_src: &str) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
             init,
@@ -153,13 +160,12 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
-        .project()
     })
 }
 
 /// Run the classifier against `src` with both shadowing and an
 /// explicit declared-pure binding set.
-fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
+fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) -> Vec<Effect> {
     let declared_pure = string_set(declared);
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
@@ -169,11 +175,10 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
             &declared_pure,
             &ChunkCodeGraph::default(),
         )
-        .project()
     })
 }
 
-fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
+fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&str]) -> Vec<Effect> {
     classify_with_graph(prefix, expr_src, |body, shadowed| {
         ChunkCodeGraph::build_with_declared_pure_new(
             body,
@@ -189,7 +194,7 @@ fn classify_with_declared_pure_members(
     expr_src: &str,
     binding: &str,
     props: &[&str],
-) -> Purity {
+) -> Vec<Effect> {
     let declared_pure_members = BTreeMap::from([(binding.to_string(), string_set(props))]);
     classify_with_graph(prefix, expr_src, |body, shadowed| {
         ChunkCodeGraph::build_full(
@@ -206,7 +211,7 @@ fn classify_with_declared_pure_members(
 
 /// Classify `expr_src` (appearing after `prefix` at chunk top) with
 /// `fluent` as the author-asserted fluent root bindings.
-fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) -> Purity {
+fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) -> Vec<Effect> {
     classify_with_graph(prefix, expr_src, |body, shadowed| {
         ChunkCodeGraph::build_full(
             body,
@@ -220,503 +225,397 @@ fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) 
     })
 }
 
-#[test]
-fn classify_pure_unary_and_binary() {
-    assert!((classify("-1")).is_pure());
-    assert!((classify("!FOO")).is_pure());
-    assert!((classify("typeof FOO")).is_pure());
-    assert!((classify("void FOO")).is_pure());
-    assert!((classify("A && B")).is_pure());
-    assert!((classify("A || B")).is_pure());
-    assert!((classify("A ?? B")).is_pure());
-    assert!((classify("A === B")).is_pure());
-    assert!((classify("A !== B")).is_pure());
-    assert!((classify("A ? B : C")).is_pure());
-    // Coercing operators on statically-primitive operands stay
-    // pure: the engine's ToPrimitive of a primitive runs no user
-    // code. Nested coercing results are themselves primitive.
-    assert!((classify("1 + 2")).is_pure());
-    assert!((classify("'a' + 1")).is_pure());
-    assert!((classify("1 + 2 + 3")).is_pure());
-    assert!((classify("1e3 * 60 * 60")).is_pure());
-    assert!((classify("-(1 + 2)")).is_pure());
-    assert!((classify("~0")).is_pure());
-    assert!((classify("(typeof A) + '!'")).is_pure());
-    assert!((classify("(A === B) | 0")).is_pure());
+const NONE: [Effect; 0] = [];
+const CALL: Effect = Effect::Invoke(InvokeSite::Call);
+const CONSTRUCT: Effect = Effect::Invoke(InvokeSite::Construct);
+const TAGGED_TEMPLATE: Effect = Effect::Invoke(InvokeSite::TaggedTemplate);
+const MEMBER_READ: Effect = Effect::Invoke(InvokeSite::MemberRead);
+const CLASS_DEFINITION: Effect = Effect::Invoke(InvokeSite::ClassDefinition);
+const COERCE_OPERAND: Effect = Effect::Coerce(CoerceSite::Operator);
+const COERCE_KEY: Effect = Effect::Coerce(CoerceSite::PropertyKey);
+const ARRAY_SPREAD: Effect = Effect::Coerce(CoerceSite::ArraySpread);
+const OBJECT_SPREAD: Effect = Effect::Coerce(CoerceSite::ObjectSpread);
+
+fn assert_no_effects(srcs: &[&str]) {
+    for src in srcs {
+        assert_eq!(classify(src), NONE, "{src}");
+    }
+}
+
+fn assert_each_has_effects(srcs: &[&str], expected: &[Effect]) {
+    for src in srcs {
+        assert_eq!(classify(src), expected, "{src}");
+    }
 }
 
 #[test]
-fn classify_coercing_operators_on_possibly_object_operands_are_not_pure() {
-    // SOUNDNESS: ToPrimitive / ToNumber / ToString on an object
-    // operand fires user `valueOf` / `toString` /
-    // `[Symbol.toPrimitive]`. An opaque Ident can hold an object,
-    // so coercing operators only classify pure when every coerced
-    // operand is statically primitive-valued. (`A + 1` was
-    // previously pinned pure — deliberate conservative shift.)
-    assert!(!(classify("A + 1")).is_pure());
-    assert!(!(classify("A - 1")).is_pure());
-    assert!(!(classify("A * B")).is_pure());
-    assert!(!(classify("A < 10")).is_pure());
-    assert!(!(classify("A >= B")).is_pure());
-    assert!(!(classify("A == null")).is_pure());
-    assert!(!(classify("A != B")).is_pure());
-    assert!(!(classify("A & 1")).is_pure());
-    assert!(!(classify("A << 2")).is_pure());
-    assert!(!(classify("+A")).is_pure());
-    assert!(!(classify("-A")).is_pure());
-    assert!(!(classify("~A")).is_pure());
-    // The shadowable global `undefined` is an ordinary binding the
-    // shadow pass doesn't track — deliberately NOT admitted as a
-    // primitive operand.
-    assert!(!(classify("A == undefined")).is_pure());
-    assert!(!(classify("undefined + 1")).is_pure());
+fn pure_unary_and_binary_have_no_effects() {
+    assert_no_effects(&[
+        "-1",
+        "!FOO",
+        "typeof FOO",
+        "void FOO",
+        "A && B",
+        "A || B",
+        "A ?? B",
+        "A === B",
+        "A !== B",
+        "A ? B : C",
+        // Coercing operators on statically-primitive operands: the engine's
+        // ToPrimitive of a primitive runs no user code. Nested coercing
+        // results are themselves primitive.
+        "1 + 2",
+        "'a' + 1",
+        "1 + 2 + 3",
+        "1e3 * 60 * 60",
+        "-(1 + 2)",
+        "~0",
+        "(typeof A) + '!'",
+        "(A === B) | 0",
+    ]);
 }
 
 #[test]
-fn classify_in_and_instanceof_are_not_pure() {
-    // `in` fires the proxy `has` trap on its RHS; `instanceof`
-    // fires `@@hasInstance` / reads `.prototype` on its RHS. The
-    // interesting RHS is always an object, so no primitive-operand
-    // gate can admit these.
-    assert!(!(classify("'k' in o")).is_pure());
-    assert!(!(classify("x instanceof C")).is_pure());
-    assert!(!(classify("'k' in { k: 1 }")).is_pure());
-}
-
-#[test]
-fn classify_assignment_and_update_are_impure() {
-    assert!(!(classify("(x = 1)")).is_pure());
-    assert!(!(classify("x++")).is_pure());
-}
-
-#[test]
-fn classify_call_new_tagged_template_are_unknown() {
-    assert!(!(classify("foo()")).is_pure());
-    assert!(!(classify("new Foo()")).is_pure());
-    assert!(!(classify("tag`hi ${x}`")).is_pure());
-}
-
-#[test]
-fn classify_member_access_is_unknown() {
-    assert!(!(classify("o.x")).is_pure());
-    assert!(!(classify("o[k]")).is_pure());
-    assert!(!(classify("o?.x")).is_pure());
-}
-
-#[test]
-fn classify_object_literal_pure_when_props_pure() {
-    assert!((classify("({ a: 1, b: 'x' })")).is_pure());
-    // Computed keys run ToPropertyKey on the key VALUE — an opaque
-    // Ident can hold an object whose `toString` fires. Pure only
-    // for statically-primitive keys and well-known symbols.
-    assert!((classify("({ ['k']: 1 })")).is_pure());
-    assert!((classify("({ [1 + 2]: 1 })")).is_pure());
-    assert!((classify("({ [Symbol.iterator]: 1 })")).is_pure());
-    assert!(!(classify("({ [k]: 1 })")).is_pure());
-    // Computed key with member access — getter could fire.
-    assert!(!(classify("({ [k.x]: 1 })")).is_pure());
-    // Spread of an arbitrary expr — iterator could fire.
-    assert!(!(classify("({ ...other })")).is_pure());
-    // Method definitions are pure (defining, not calling).
-    assert!((classify("({ m() { return io(); } })")).is_pure());
-}
-
-#[test]
-fn classify_array_literal_pure_when_elements_pure() {
-    assert!((classify("[1, 2, 'x']")).is_pure());
-    assert!((classify("[A, B]")).is_pure());
-    assert!(!(classify("[1, foo()]")).is_pure());
-    // Arbitrary iterable spread stays Unknown: it can call a
-    // user-defined `[Symbol.iterator]`.
-    assert!(!(classify("[...other]")).is_pure());
-}
-
-#[test]
-fn classify_fresh_array_spread_sources_are_pure() {
-    assert!((classify("[...[1, 2, 'x']]")).is_pure());
-    assert!((classify("[...(flag ? ['a'] : [])]")).is_pure());
-    assert!((classify("[...[() => io(), function () { globalThis.x = 1; }]]")).is_pure());
-    assert!(!(classify("[...[io()]]")).is_pure());
-    assert!(!(classify("[...(flag ? ['a'] : other)]")).is_pure());
-}
-
-#[test]
-fn classify_callbacks_inside_literals_are_values_not_init_calls() {
-    assert!(
-        (classify("({ cb: () => io(), nested: [function () { console.log('x'); }] })")).is_pure()
+fn coercing_operators_on_possibly_object_operands_coerce() {
+    // SOUNDNESS: ToPrimitive / ToNumber / ToString on an object operand fires
+    // user `valueOf` / `toString` / `[Symbol.toPrimitive]`, and an opaque
+    // identifier can hold an object. The shadowable global `undefined` is an
+    // ordinary binding the shadow pass doesn't track, so it is not admitted as
+    // a primitive operand either.
+    assert_each_has_effects(
+        &[
+            "A + 1",
+            "A - 1",
+            "A * B",
+            "A < 10",
+            "A >= B",
+            "A == null",
+            "A != B",
+            "A & 1",
+            "A << 2",
+            "+A",
+            "-A",
+            "~A",
+            "A == undefined",
+            "undefined + 1",
+        ],
+        &[COERCE_OPERAND],
     );
-    assert!((classify("[() => io(), function () { globalThis.touched = true; }]")).is_pure());
 }
 
 #[test]
-fn classify_function_and_arrow_are_pure() {
-    assert!((classify("function () { return io(); }")).is_pure());
-    assert!((classify("() => io()")).is_pure());
+fn in_and_instanceof_coerce_their_operands() {
+    // `in` fires the proxy `has` trap on its RHS; `instanceof` fires
+    // `@@hasInstance` / reads `.prototype` on its RHS. The interesting RHS is
+    // always an object, so no primitive-operand gate can admit these.
+    assert_each_has_effects(
+        &["'k' in o", "x instanceof C", "'k' in { k: 1 }"],
+        &[COERCE_OPERAND],
+    );
 }
 
 #[test]
-fn classify_class_expr_pure_without_static_init() {
-    assert!((classify("class { m() { return io(); } }")).is_pure());
-    assert!((classify("class { static x = 1 }")).is_pure());
-    assert!(!(classify("class { static x = io() }")).is_pure());
-    assert!(!(classify("class { static {} }")).is_pure());
+fn assignment_and_update_write() {
+    assert_each_has_effects(&["(x = 1)", "x++"], &[Effect::Write]);
 }
 
 #[test]
-fn classify_template_interpolation_requires_primitive_values() {
-    // Interpolation runs ToString on the value — pure only when
-    // the interpolated expression is statically primitive-valued.
-    assert!((classify("`a${1 + 2}b${'x'}c`")).is_pure());
-    assert!((classify("`a${`inner${1}`}b`")).is_pure());
-    assert!((classify("`a${typeof A}b`")).is_pure());
+fn call_new_tagged_template_invoke_unknown_code() {
+    assert_eq!(classify("foo()"), [CALL]);
+    assert_eq!(classify("new Foo()"), [CONSTRUCT]);
+    assert_eq!(classify("tag`hi ${x}`"), [TAGGED_TEMPLATE]);
+}
+
+#[test]
+fn member_access_may_run_a_getter() {
+    assert_each_has_effects(&["o.x", "o[k]", "o?.x"], &[MEMBER_READ]);
+}
+
+#[test]
+fn object_literal_effects_come_from_its_parts() {
+    assert_no_effects(&[
+        "({ a: 1, b: 'x' })",
+        // Computed keys run ToPropertyKey on the key VALUE; pure only for
+        // statically-primitive keys and well-known symbols.
+        "({ ['k']: 1 })",
+        "({ [1 + 2]: 1 })",
+        "({ [Symbol.iterator]: 1 })",
+        // Method definitions define, not call.
+        "({ m() { return io(); } })",
+    ]);
     // An opaque Ident can hold an object whose `toString` fires.
-    assert!(!(classify("`a${A}b`")).is_pure());
-    assert!(!(classify("`a${foo()}`")).is_pure());
+    assert_eq!(classify("({ [k]: 1 })"), [COERCE_KEY]);
+    assert_eq!(classify("({ [k.x]: 1 })"), [MEMBER_READ, COERCE_KEY]);
+    // Spread of an arbitrary expr: a getter could fire.
+    assert_eq!(classify("({ ...other })"), [OBJECT_SPREAD]);
 }
 
 #[test]
-fn classify_strict_equality_inherits_operand_impurity() {
-    assert!(!(classify("foo() === 1")).is_pure());
-    assert!(!(classify("1 !== foo()")).is_pure());
+fn array_literal_effects_come_from_its_elements() {
+    assert_no_effects(&["[1, 2, 'x']", "[A, B]"]);
+    assert_eq!(classify("[1, foo()]"), [CALL]);
+    // Arbitrary iterable spread can call a user-defined `[Symbol.iterator]`.
+    assert_eq!(classify("[...other]"), [ARRAY_SPREAD]);
 }
 
 #[test]
-fn classify_sequence_takes_worst() {
-    assert!((classify("(A, B, C)")).is_pure());
-    assert!(!(classify("(A, foo(), C)")).is_pure());
-    assert!(!(classify("(A, x = 1, C)")).is_pure());
-}
-
-// --- Builtin table: intrinsic data property reads ------------------------
-
-#[test]
-fn intrinsic_data_property_reads_are_pure() {
-    // Every data property in the table, primitive- or function-valued, is a
-    // non-accessor own property: reading it runs no getter.
-    for property in builtins::DATA_PROPERTIES {
-        let src = format!("{}.{}", property.global, property.name);
-        assert!(
-            classify(&src).is_pure(),
-            "expected static read `{src}` to classify Pure"
-        );
-    }
+fn spreading_a_fresh_array_literal_has_no_effects() {
+    assert_no_effects(&[
+        "[...[1, 2, 'x']]",
+        "[...(flag ? ['a'] : [])]",
+        "[...[() => io(), function () { globalThis.x = 1; }]]",
+    ]);
+    assert_eq!(classify("[...[io()]]"), [CALL]);
+    assert_eq!(classify("[...(flag ? ['a'] : other)]"), [ARRAY_SPREAD]);
 }
 
 #[test]
-fn unlisted_properties_fall_back_to_unknown() {
-    // Same receivers, properties that aren't in the table:
-    // could be a getter / a coercing call. Stays Unknown.
-    assert!(!(classify("Math.unknownProp")).is_pure());
-    assert!(!(classify("Number.unknownProp")).is_pure());
-    assert!(!(classify("Symbol.unknownProp")).is_pure());
-}
-
-// --- Builtin table: calls -----------------------------------------------
-
-#[test]
-fn rows_admitting_any_operands_are_pure_regardless_of_arg() {
-    // Type predicates, `Object.is` and `Boolean` neither coerce nor read
-    // user props on the argument, so any Pure-classified args (an
-    // identifier and an array literal here, two arguments to cover
-    // `Object.is`) keep the call Pure.
-    let mut checked = 0;
-    for row in builtins::ROWS {
-        if !row.invocation.contains(&Invocation::Call) || !admits_any_operands(row) {
-            continue;
-        }
-        let src = match row.op.callee() {
-            (global, Some(member)) => format!("{global}.{member}(x, [1, 2, 3])"),
-            (global, None) => format!("{global}(x, [1, 2, 3])"),
-        };
-        assert!(
-            classify(&src).is_pure(),
-            "expected call `{src}` to classify Pure"
-        );
-        checked += 1;
-    }
-    assert!(checked > 0, "some row admits any operands");
+fn callbacks_inside_literals_are_values_not_init_calls() {
+    assert_no_effects(&[
+        "({ cb: () => io(), nested: [function () { console.log('x'); }] })",
+        "[() => io(), function () { globalThis.touched = true; }]",
+    ]);
 }
 
 #[test]
-fn builtin_calls_unknown_arg_infects() {
-    // An argument whose evaluation may itself fire user code
-    // poisons the whole call: even though `Array.isArray` is
-    // a pure operation, evaluating `io()` first is not.
-    assert!(!(classify("Array.isArray(io())")).is_pure());
-    assert!(!(classify("Number.isNaN(o.x)")).is_pure());
+fn function_and_arrow_definitions_have_no_effects() {
+    assert_no_effects(&["function () { return io(); }", "() => io()"]);
 }
 
-// --- Function-valued data properties: read-vs-call distinction ----------
+#[test]
+fn class_expr_static_initializers_are_class_definition_effects() {
+    assert_no_effects(&["class { m() { return io(); } }", "class { static x = 1 }"]);
+    assert_each_has_effects(
+        &["class { static x = io() }", "class { static {} }"],
+        &[CLASS_DEFINITION],
+    );
+}
 
 #[test]
-fn function_valued_property_calls_remain_unknown() {
+fn template_interpolation_requires_primitive_values() {
+    // Interpolation runs ToString on the value.
+    assert_no_effects(&[
+        "`a${1 + 2}b${'x'}c`",
+        "`a${`inner${1}`}b`",
+        "`a${typeof A}b`",
+    ]);
+    assert_eq!(classify("`a${A}b`"), [COERCE_OPERAND]);
+    assert_eq!(classify("`a${foo()}`"), [CALL, COERCE_OPERAND]);
+}
+
+#[test]
+fn strict_equality_keeps_operand_effects() {
+    assert_eq!(classify("foo() === 1"), [CALL]);
+    assert_eq!(classify("1 !== foo()"), [CALL]);
+}
+
+#[test]
+fn sequence_keeps_every_operand_effect() {
+    assert_no_effects(&["(A, B, C)"]);
+    assert_eq!(classify("(A, foo(), C)"), [CALL]);
+    assert_eq!(classify("(A, x = 1, C)"), [Effect::Write]);
+}
+
+#[test]
+fn builtin_call_arguments_keep_their_effects() {
+    // Evaluating the argument fires user code even though `Array.isArray`
+    // itself is a pure operation.
+    assert_eq!(classify("Array.isArray(io())"), [CALL]);
+    assert_eq!(classify("Number.isNaN(o.x)"), [MEMBER_READ]);
+}
+
+#[test]
+fn function_valued_property_calls_with_opaque_arguments_invoke() {
     // Reading a function-valued data property is pure; calling it is
-    // summarized only by its row. Every such function whose row does not
-    // admit any operands (or that has no row) must stay Unknown on opaque
-    // args. Some rows (`Object.{keys, values, entries, freeze, fromEntries}`)
-    // admit a syntactically plain-data argument — pinned in the `object_*`
-    // tests below; the opaque-Ident args used here fall outside that shape.
-    for property in builtins::DATA_PROPERTIES {
-        if property.value != builtins::PropertyValue::Function
-            || builtins::lookup(property.global, Some(property.name), Invocation::Call)
-                .is_some_and(admits_any_operands)
-        {
-            continue;
-        }
-        let src = format!("{}.{}(o, p)", property.global, property.name);
-        assert!(
-            !classify(&src).is_pure(),
-            "expected function-ref CALL `{src}` to stay Unknown"
-        );
-    }
-    // Representative shapes with literal extra args, pinning that
-    // arg purity alone never admits the call.
-    assert!(!(classify("Object.defineProperty(t, 'k', { value: 1 })")).is_pure());
-    assert!(!(classify("Object.freeze(o)")).is_pure());
-    assert!(!(classify("Object.values(o)")).is_pure());
-    assert!(!(classify("Object.keys(o)")).is_pure());
+    // summarized only by its row, and argument purity alone never admits it.
+    assert_each_has_effects(
+        &[
+            "Object.defineProperty(t, 'k', { value: 1 })",
+            "Object.freeze(o)",
+            "Object.values(o)",
+            "Object.keys(o)",
+        ],
+        &[CALL],
+    );
 }
 
 #[test]
-fn static_function_ref_object_shadowed_falls_back_to_unknown() {
-    // If the chunk shadows `Object` (via a top-level decl OR an import
-    // specifier per A8), the function-ref read must fall back to
-    // Unknown — `Object.X` then resolves through the user-bound value.
-    assert!(!(classify_with_module("const Object = userland;", "Object.defineProperty")).is_pure());
-    assert!(
-        !(classify_with_module(
+fn shadowed_object_function_ref_read_is_a_member_read() {
+    // A top-level decl or import specifier (A8) shadowing `Object` makes
+    // `Object.X` resolve through the user-bound value.
+    assert_eq!(
+        classify_with_module("const Object = userland;", "Object.defineProperty"),
+        [MEMBER_READ]
+    );
+    assert_eq!(
+        classify_with_module(
             r#"import { Object } from "./userland.js";"#,
             "Object.freeze"
-        ))
-        .is_pure()
+        ),
+        [MEMBER_READ]
     );
 }
 
 #[test]
 fn boolean_is_pure_on_any_value() {
-    // ToBoolean fires no user code on any value: an identifier, a
-    // primitive and an object literal all stay Pure.
-    for arg in ["x", "0", "{}"] {
-        let src = format!("Boolean({arg})");
-        assert!(
-            classify(&src).is_pure(),
-            "expected global call `{src}` to classify Pure"
-        );
-    }
+    // ToBoolean fires no user code on any value.
+    assert_no_effects(&["Boolean(x)", "Boolean(0)", "Boolean({})"]);
 }
 
 #[test]
-fn to_string_rows_admit_only_result_primitive_operands() {
-    // `ToString` completes without user code on any result-primitive
-    // operand; other operands keep a coercion reason.
-    for src in [
+fn string_conversion_operands_must_be_primitive() {
+    // `ToString` completes without user code on any result-primitive operand.
+    assert_no_effects(&[
         "Symbol(`description`)",
         "Symbol(1 + 2)",
         "new URLSearchParams(`a=1`)",
-    ] {
-        assert!(classify(src).is_pure(), "expected `{src}` to classify Pure");
-    }
-    for src in ["Symbol(x)", "Symbol({})", "new URLSearchParams(q)"] {
-        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
-    }
-}
-
-#[test]
-fn rows_without_assumed_identity_stay_unknown() {
-    // These callees' identities need the census or an author input
-    // (`native_operation_inputs`), which syntactic purity does not consult.
-    for src in [
-        "Symbol.for('key')",
-        "Math.round(1.5)",
-        "Object.getOwnPropertyNames({ a: 1 })",
-        "new RegExp('a+')",
-        "new FinalizationRegistry(() => {})",
-        "Object.defineProperties({}, {})",
-    ] {
-        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
-    }
-}
-
-#[test]
-fn unsafe_global_callables_stay_unknown() {
-    // `Number(x)` runs ToNumber, so a user `valueOf` can fire; `Symbol(x)`
-    // is admitted only for primitive-literal args (the non-literal gate).
-    for src in ["Number(x)", "Symbol(x)"] {
-        assert!(
-            !classify(src).is_pure(),
-            "expected {src} to stay Unknown (would fire user code)"
-        );
-    }
-}
-
-#[test]
-fn unsafe_static_calls_stay_unknown() {
-    // One representative per way an unlisted call fires user code:
-    // coercion (`Math.abs`), iteration (`Array.from`), `toJSON`
-    // (`JSON.stringify`, a receiver outside the table). `Object.*` calls
-    // are covered by `function_valued_property_calls_remain_unknown`.
-    for src in ["Math.abs(x)", "Array.from(x)", "JSON.stringify(x)"] {
-        assert!(
-            !classify(src).is_pure(),
-            "expected {src} to stay Unknown (would fire user code)"
-        );
-    }
+    ]);
+    assert_eq!(classify("Symbol(x)"), [COERCE_OPERAND]);
+    assert_eq!(classify("Symbol({})"), [COERCE_OPERAND]);
+    assert_eq!(
+        classify("new URLSearchParams(q)"),
+        [CONSTRUCT, COERCE_OPERAND]
+    );
 }
 
 // --- Builtin table: shadowing fallback ----------------------------------
 
 #[test]
 fn shadowed_receiver_disables_builtin_rows() {
-    // A chunk-top-level binding for `Math` makes `Math.PI` no
-    // longer reach the global; its rows must fall back to
-    // Unknown.
-    assert!(!(classify_with_module("const Math = userland;", "Math.PI")).is_pure());
-    assert!(!(classify_with_module("function Math() {}", "Math.E")).is_pure());
-    assert!(!(classify_with_module("const Array = X;", "Array.isArray(x)")).is_pure());
-    assert!(!(classify_with_module("let Number = X;", "Number.isNaN(x)")).is_pure());
-    assert!(!(classify_with_module("const Boolean = X;", "Boolean(x)")).is_pure());
+    // A chunk-top binding for `Math` makes `Math.PI` no longer reach the
+    // global; its rows fall back to the generic member read / call.
+    assert_eq!(
+        classify_with_module("const Math = userland;", "Math.PI"),
+        [MEMBER_READ]
+    );
+    assert_eq!(
+        classify_with_module("function Math() {}", "Math.E"),
+        [MEMBER_READ]
+    );
+    assert_eq!(
+        classify_with_module("const Array = X;", "Array.isArray(x)"),
+        [CALL]
+    );
+    assert_eq!(
+        classify_with_module("let Number = X;", "Number.isNaN(x)"),
+        [CALL]
+    );
+    assert_eq!(
+        classify_with_module("const Boolean = X;", "Boolean(x)"),
+        [CALL]
+    );
 }
 
 #[test]
 fn unshadowed_receiver_keeps_builtin_rows() {
-    // A chunk that declares an unrelated binding leaves the
-    // rows active — only same-named shadowing disables.
-    assert!((classify_with_module("const other = userland;", "Math.PI")).is_pure());
+    // Only same-named shadowing disables the rows.
+    assert_eq!(
+        classify_with_module("const other = userland;", "Math.PI"),
+        NONE
+    );
+    assert_eq!(classify("Math.unknownProp"), [MEMBER_READ]);
 }
 
 #[test]
 fn import_specifier_locals_shadow_builtin_rows() {
-    // Import bindings are top-level lexical decls and shadow
-    // the global the same way `const Math = …` does. The
-    // classifier must reach the same Unknown fallback. (Soundness
-    // matters: the imported value can be anything, so
-    // `<imported>.<prop>` is a property read that may fire a
-    // user-defined getter.)
-    assert!(
-        !(classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI")).is_pure()
+    // Import bindings are top-level lexical decls and shadow the global the
+    // same way `const Math = …` does. SOUNDNESS: the imported value can be
+    // anything, so `<imported>.<prop>` may fire a user-defined getter.
+    assert_eq!(
+        classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI"),
+        [MEMBER_READ]
     );
-    assert!(
-        !(classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)")).is_pure()
+    assert_eq!(
+        classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)"),
+        [CALL]
     );
-    assert!(
-        !(classify_with_module(
+    assert_eq!(
+        classify_with_module(
             r#"import * as Number from "./userland.js";"#,
             "Number.isNaN(x)"
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
-    assert!(
-        !(classify_with_module(
+    assert_eq!(
+        classify_with_module(
             r#"import { something as Array } from "./userland.js";"#,
             "Array.isArray(x)"
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
-// --- Builtin table: shadow tracking covers every global ------------------
-
 #[test]
-fn builtin_constructors_without_args_are_pure() {
-    for name in [
-        "Map",
-        "Set",
-        "WeakMap",
-        "WeakSet",
-        "Array",
-        "TextDecoder",
-        "TextEncoder",
-        "URLSearchParams",
-    ] {
-        let src = format!("new {name}()");
-        assert!(
-            classify(&src).is_pure(),
-            "expected `{src}` to classify Pure"
-        );
-    }
-}
-
-#[test]
-fn url_search_params_string_literal_arg_is_pure() {
-    // The string branch of `new URLSearchParams(init)` parses
-    // application/x-www-form-urlencoded, which is total over
-    // arbitrary strings (never throws) and fires no user code.
-    assert!((classify(r#"new URLSearchParams("a=1&b=2")"#)).is_pure());
-}
-
-#[test]
-fn url_search_params_non_literal_args_stay_unknown() {
-    // A non-literal string-valued expression would need value-class
-    // tracking to prove it can't be an object whose ToString fires
-    // user code; the record/iterable form fires [[Get]]/iterator
-    // protocol on user values.
-    assert!(!(classify("new URLSearchParams(q)")).is_pure());
-    assert!(!(classify("new URLSearchParams({ a: 1 })")).is_pure());
-    assert!(!(classify("new URLSearchParams(`a=${x}`)")).is_pure());
-}
-
-#[test]
-fn fresh_proxy_object_literals_are_pure() {
-    assert!(classify("new Proxy({}, {})").is_pure());
-    assert!(
-        classify("new Proxy({ value: 1 }, { get(target, key) { return target[key]; } })").is_pure()
-    );
-    assert!(classify("new Proxy({ nested: { [1]() {} } }, {})").is_pure());
+fn fresh_proxy_object_literals_have_no_effects() {
+    assert_no_effects(&[
+        "new Proxy({}, {})",
+        "new Proxy({ value: 1 }, { get(target, key) { return target[key]; } })",
+        "new Proxy({ nested: { [1]() {} } }, {})",
+    ]);
 }
 
 #[test]
 fn proxy_constructor_rejects_unproved_args() {
     // ProxyCreate requires both arguments to be Objects. The narrow
-    // constructor rule accepts only two syntactically fresh literals,
-    // and argument evaluation remains subject to the ordinary checks.
-    for src in [
-        "new Proxy()",
-        "new Proxy({})",
-        "new Proxy(null, {})",
-        "new Proxy({}, null)",
-        "new Proxy(target, {})",
-        "new Proxy({}, {}, {})",
-        "new Proxy(...[{}, {}])",
-        "new Proxy({ value: effect() }, {})",
-        "new Proxy({}, { [effect()]() {} })",
-        "new Proxy({ nested: { [effect()]() {} } }, {})",
-        "new Proxy({ nested: { get [effect()]() {} } }, {})",
-        "new Proxy({ nested: { set [effect()](value) {} } }, {})",
-    ] {
-        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
-    }
+    // constructor rule accepts only two syntactically fresh literals, and
+    // argument evaluation remains subject to the ordinary checks.
+    assert_each_has_effects(
+        &[
+            "new Proxy()",
+            "new Proxy({})",
+            "new Proxy(null, {})",
+            "new Proxy({}, null)",
+            "new Proxy(target, {})",
+            "new Proxy({}, {}, {})",
+            "new Proxy(...[{}, {}])",
+        ],
+        &[CONSTRUCT],
+    );
+    assert_eq!(
+        classify("new Proxy({ value: effect() }, {})"),
+        [CONSTRUCT, CALL]
+    );
+    assert_each_has_effects(
+        &[
+            "new Proxy({}, { [effect()]() {} })",
+            "new Proxy({ nested: { [effect()]() {} } }, {})",
+            "new Proxy({ nested: { get [effect()]() {} } }, {})",
+            "new Proxy({ nested: { set [effect()](value) {} } }, {})",
+        ],
+        &[CONSTRUCT, CALL, COERCE_KEY],
+    );
 }
 
 #[test]
 fn computed_method_and_accessor_keys_are_evaluated() {
-    // Computed names run when the object literal is created, even though
-    // the method/accessor body is deferred until a later operation.
-    for src in [
-        "({ [effect()]() {} })",
-        "({ get [effect()]() {} })",
-        "({ set [effect()](value) {} })",
-    ] {
-        assert!(!classify(src).is_pure(), "expected `{src}` to stay unknown");
-    }
+    // Computed names run when the object literal is created, even though the
+    // method/accessor body is deferred until a later operation.
+    assert_each_has_effects(
+        &[
+            "({ [effect()]() {} })",
+            "({ get [effect()]() {} })",
+            "({ set [effect()](value) {} })",
+        ],
+        &[CALL, COERCE_KEY],
+    );
 }
 
 #[test]
-fn shadowed_proxy_constructor_falls_back_to_unknown() {
-    // Proxy is in `builtins::GLOBALS`, so all
-    // chunk-top binding forms suppress the intrinsic rule.
+fn shadowed_proxy_constructor_constructs_the_user_binding() {
     for prefix in [
         "const Proxy = userland;",
         "function Proxy() {}",
         r#"import Proxy from "userland";"#,
     ] {
-        assert!(
-            !classify_with_module(prefix, "new Proxy({}, {})").is_pure(),
-            "expected a chunk-top Proxy binding in `{prefix}` to shadow the intrinsic"
+        assert_eq!(
+            classify_with_module(prefix, "new Proxy({}, {})"),
+            [CONSTRUCT],
+            "a chunk-top Proxy binding in `{prefix}` must shadow the intrinsic"
         );
     }
 
     let local_shadowed = BTreeSet::from(["Proxy".to_string()]);
-    let purity = classify_last_const("", "new Proxy({}, {})", |_, shadowed, init| {
+    let effects = classify_last_const("", "new Proxy({}, {})", |_, shadowed, init| {
         classify_expr_purity(
             init,
             shadowed,
@@ -724,122 +623,122 @@ fn shadowed_proxy_constructor_falls_back_to_unknown() {
             &BTreeSet::new(),
             &ChunkCodeGraph::default(),
         )
-        .project()
     });
-    assert!(
-        !purity.is_pure(),
+    assert_eq!(
+        effects,
+        [CONSTRUCT],
         "a body-local Proxy binding must shadow the intrinsic"
     );
 }
 
 #[test]
-fn shadowed_whatwg_constructor_falls_back_to_unknown() {
-    // Host constructors join `builtins::GLOBALS`, so a chunk-top rebind
-    // disables their rows.
-    assert!(
-        !(classify_with_module(
-            "const TextDecoder = class { constructor() { globalThis.boom = 1; } };",
-            "new TextDecoder()"
-        ))
-        .is_pure()
-    );
-    assert!(
-        !(classify_with_module(
-            "function URLSearchParams() {}",
-            r#"new URLSearchParams("a=1")"#
-        ))
-        .is_pure()
-    );
-}
-
-#[test]
-fn shadowed_builtin_new_falls_back_to_unknown() {
-    // SOUNDNESS: `compute_shadowed_globals` must track every global a
-    // builtin row names (`builtins::GLOBALS`), not just member receivers.
-    // A chunk-top
-    // `const Map = class { … }` rebinds the name; `new Map()` then
-    // constructs the user class, which can run arbitrary code.
-    assert!(
-        !(classify_with_module(
+fn shadowed_builtin_new_constructs_the_user_binding() {
+    // SOUNDNESS: `compute_shadowed_globals` must track every global a builtin
+    // row names, not just member receivers. A chunk-top
+    // `const Map = class { … }` rebinds the name; `new Map()` then constructs
+    // the user class, which can run arbitrary code.
+    assert_no_effects(&["new Map()"]);
+    assert_eq!(
+        classify_with_module(
             "const Map = class { constructor() { globalThis.boom = 1; } };",
             "new Map()"
-        ))
-        .is_pure()
+        ),
+        [CONSTRUCT]
     );
-    assert!(!(classify_with_module("function Set() {}", "new Set()")).is_pure());
-    assert!(
-        !(classify_with_module(
+    assert_eq!(
+        classify_with_module("function Set() {}", "new Set()"),
+        [CONSTRUCT]
+    );
+    assert_eq!(
+        classify_with_module(
             r#"import { Map } from "./userland.js";"#,
             "new Map([['k', 1]])"
-        ))
-        .is_pure()
+        ),
+        [CONSTRUCT]
     );
     // Shadowed global callables fall back the same way.
-    assert!(!(classify_with_module("const Symbol = userland;", "Symbol('x')")).is_pure());
+    assert_eq!(
+        classify_with_module("const Symbol = userland;", "Symbol('x')"),
+        [CALL]
+    );
 }
 
 // --- Class definition eager-evaluation effects ---------------------------
 
 #[test]
-fn classify_class_extends_expr_effects_propagate() {
-    // `extends <expr>` evaluates at class-definition time.
-    assert!(!(classify("class extends io() {}")).is_pure());
-    // A plain Ident superclass is admitted (reading `.prototype`
-    // off an ordinary constructor fires no user code; A11 covers
-    // the exotic-object case).
-    assert!((classify("class extends B {}")).is_pure());
+fn class_extends_expr_effects_propagate() {
+    assert_eq!(classify("class extends io() {}"), [CLASS_DEFINITION]);
+    // A plain Ident superclass is admitted: reading `.prototype` off an
+    // ordinary constructor fires no user code (A11 covers the exotic-object
+    // case).
+    assert_no_effects(&["class extends B {}"]);
 }
 
 #[test]
-fn classify_class_computed_keys_require_safe_primitive_keys() {
-    // Computed member keys evaluate eagerly AND run ToPropertyKey
-    // on the value — any member kind, static or not.
-    assert!(!(classify("class { [io()]() {} }")).is_pure());
-    assert!(!(classify("class { [k]() {} }")).is_pure());
-    assert!(!(classify("class { [k] = 1; }")).is_pure());
-    assert!(!(classify("class { static [k] = 1; }")).is_pure());
+fn class_computed_keys_require_safe_primitive_keys() {
+    // Computed member keys evaluate eagerly AND run ToPropertyKey on the value.
+    assert_eq!(classify("class { [io()]() {} }"), [CALL, COERCE_KEY]);
+    assert_eq!(classify("class { [k]() {} }"), [COERCE_KEY]);
+    assert_each_has_effects(
+        &["class { [k] = 1; }", "class { static [k] = 1; }"],
+        &[CLASS_DEFINITION],
+    );
     // Primitive and well-known-symbol keys are safe.
-    assert!((classify("class { ['m']() {} }")).is_pure());
-    assert!((classify("class { [Symbol.iterator]() {} }")).is_pure());
-    assert!((classify("class { [Symbol.dispose]() {} }")).is_pure());
-    assert!((classify("class { [Symbol.asyncDispose]() {} }")).is_pure());
-    assert!(
-        !(classify_with_module(
+    assert_no_effects(&[
+        "class { ['m']() {} }",
+        "class { [Symbol.iterator]() {} }",
+        "class { [Symbol.dispose]() {} }",
+        "class { [Symbol.asyncDispose]() {} }",
+        "class { ['x'] = io(); }", // instance init is lazy
+    ]);
+    assert_eq!(
+        classify_with_module(
             "const Symbol = { dispose: io() };",
             "class { [Symbol.dispose]() {} }"
-        ))
-        .is_pure()
+        ),
+        [MEMBER_READ, COERCE_KEY]
     );
-    assert!((classify("class { ['x'] = io(); }")).is_pure()); // instance init is lazy
 }
 
 #[test]
 fn immutable_symbol_const_is_safe_only_as_a_computed_key() {
-    let classify_key: fn(&str, &str) -> Purity = classify_built;
-    assert!(classify_key("const brand = Symbol('brand');", "class { [brand]() {} }").is_pure());
-    assert!(
+    let classify_key: fn(&str, &str) -> Vec<Effect> = classify_built;
+    assert_eq!(
+        classify_key("const brand = Symbol('brand');", "class { [brand]() {} }"),
+        NONE
+    );
+    assert_eq!(
         classify_key(
             "const brand = Symbol('brand'); const alias = brand;",
             "class { [alias]() {} }"
-        )
-        .is_pure()
+        ),
+        NONE
     );
-    assert!(!classify_key("const brand = Symbol('brand');", "`${brand}`").is_pure());
-    assert!(!classify_key("let brand = Symbol('brand');", "class { [brand]() {} }").is_pure());
-    assert!(!classify_key("const brand = Symbol(value);", "class { [brand]() {} }").is_pure());
-    assert!(
-        !classify_key(
+    assert_eq!(
+        classify_key("const brand = Symbol('brand');", "`${brand}`"),
+        [COERCE_OPERAND]
+    );
+    assert_eq!(
+        classify_key("let brand = Symbol('brand');", "class { [brand]() {} }"),
+        [COERCE_KEY]
+    );
+    assert_eq!(
+        classify_key("const brand = Symbol(value);", "class { [brand]() {} }"),
+        [COERCE_KEY]
+    );
+    assert_eq!(
+        classify_key(
             "const Symbol = () => ({ toString() { return 'x'; } }); const brand = Symbol('brand');",
             "class { [brand]() {} }"
-        )
-        .is_pure()
+        ),
+        [COERCE_KEY]
     );
-    assert!(
-        !classify_key(
+    assert_eq!(
+        classify_key(
             "Symbol = make; const brand = Symbol('brand');",
             "class { [brand]() {} }"
-        )
-        .is_pure()
+        ),
+        [COERCE_KEY]
     );
     for mutation in [
         "({ Symbol } = provider);",
@@ -849,17 +748,18 @@ fn immutable_symbol_const_is_safe_only_as_a_computed_key() {
         "Reflect.set(globalThis, 'Symbol', make);",
     ] {
         let source = format!("{mutation} const brand = Symbol('brand');");
-        assert!(
-            !classify_key(&source, "class { [brand]() {} }").is_pure(),
+        assert_eq!(
+            classify_key(&source, "class { [brand]() {} }"),
+            [COERCE_KEY],
             "visible Symbol replacement must disable the key proof: {mutation}"
         );
     }
 }
 
 /// Parse a single class declaration with decorators /
-/// auto-accessors enabled and run `classify_class_static_purity`
-/// on it with empty shadow/annotation context.
-fn class_observable(src: &str) -> bool {
+/// auto-accessors enabled and return `classify_class_static_purity`'s effects
+/// for it with empty shadow/annotation context.
+fn class_effects(src: &str) -> Vec<Effect> {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
     let fm = cm.new_source_file(FileName::Custom("test.js".into()).into(), src.to_string());
     let lexer = Lexer::new(
@@ -881,300 +781,286 @@ fn class_observable(src: &str) -> bool {
             _ => None,
         })
         .expect("expected a class declaration");
-    !classify_class_static_purity(
+    classify_class_static_purity(
         class,
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
-    .project()
-    .is_pure()
+    .kinds()
 }
 
 #[test]
 fn class_decorators_are_observable() {
-    // Decorator application CALLS the decorator function at
-    // class-definition time — any decorator (class-level or
-    // member-level) is observable.
-    assert!(class_observable("@dec class C {}"));
-    assert!(class_observable("class C { @dec m() {} }"));
-    assert!(class_observable("class C { @dec x = 1; }"));
-    assert!(class_observable("class C { @dec accessor x = 1; }"));
+    // Decorator application CALLS the decorator function at class-definition
+    // time: any decorator (class-level or member-level) is observable.
+    for src in [
+        "@dec class C {}",
+        "class C { @dec m() {} }",
+        "class C { @dec x = 1; }",
+        "class C { @dec accessor x = 1; }",
+    ] {
+        assert_eq!(class_effects(src), [CLASS_DEFINITION], "{src}");
+    }
     // Positive control: same members without decorators.
-    assert!(!class_observable("class C { m() {} x = 1; }"));
+    assert_eq!(class_effects("class C { m() {} x = 1; }"), NONE);
 }
 
 #[test]
 fn class_static_auto_accessor_initializer_is_observable() {
-    // `static accessor x = <expr>` runs the initializer at
-    // class-definition time, like a static field.
-    assert!(class_observable("class C { static accessor x = io(); }"));
-    assert!(!class_observable("class C { static accessor x = 1; }"));
+    // `static accessor x = <expr>` runs the initializer at class-definition
+    // time, like a static field.
+    assert_eq!(
+        class_effects("class C { static accessor x = io(); }"),
+        [CLASS_DEFINITION]
+    );
+    assert_eq!(class_effects("class C { static accessor x = 1; }"), NONE);
     // Instance auto-accessor initializers are lazy.
-    assert!(!class_observable("class C { accessor x = io(); }"));
+    assert_eq!(class_effects("class C { accessor x = io(); }"), NONE);
 }
 
 // --- Declared purity (spec annotation) ---------------------------------
 
 #[test]
-fn declared_pure_ident_call_classifies_pure() {
-    // A spec member with `purity: "pure"` populates the
-    // declared-pure set. A call whose callee is the bound
-    // Ident classifies Pure regardless of the body content
-    // (the validator does not re-verify; author trust). Args
-    // are still evaluated normally — pure args here, so the
-    // whole call is Pure.
-    assert!(
-        (classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"])).is_pure()
+fn declared_pure_ident_call_has_no_effects() {
+    // A spec member with `purity: "pure"` populates the declared-pure set. A
+    // call whose callee is the bound Ident has no effects regardless of the
+    // body (author trust; the validator does not re-verify). Args are still
+    // evaluated normally.
+    assert_eq!(
+        classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"]),
+        NONE
     );
-    assert!(
-        (classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]))
-            .is_pure()
+    assert_eq!(
+        classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]),
+        NONE
     );
 }
 
 #[test]
-fn declared_pure_call_with_impure_arg_inherits_arg_purity() {
-    // The declared-purity contract covers the function value;
-    // arg evaluation is independent. An impure arg makes the
-    // whole call Unknown.
-    assert!(
-        !(classify_with_declared_pure(
+fn declared_pure_call_keeps_argument_effects() {
+    // The declared-purity contract covers the function value; argument
+    // evaluation is independent.
+    assert_eq!(
+        classify_with_declared_pure(
             "function f(x) { return x; } function io() { return 1; }",
             "f(io())",
             &["f"]
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
 fn declared_pure_overrides_global_shadowing() {
-    // Author trust contract: a declared-pure annotation wins
-    // over both the builtin rows' shadowing fallback and the
-    // body's actual contents. The validator does not
-    // second-guess.
-    assert!(
-        (classify_with_declared_pure(
+    // Author trust: a declared-pure annotation wins over the builtin rows'
+    // shadowing fallback and the body's actual contents.
+    assert_eq!(
+        classify_with_declared_pure(
             r#"import { Boolean } from "./userland.js";"#,
             "Boolean(x)",
             &["Boolean"]
-        ))
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
-fn declared_pure_new_ident_new_classifies_pure_with_pure_args() {
-    assert!(
-        (classify_with_declared_pure_new(
+fn declared_pure_new_constructs_without_effects_given_pure_args() {
+    assert_eq!(
+        classify_with_declared_pure_new(
             "class PureBox { constructor(value) { globalThis.notAnalyzed = value; } }",
             "new PureBox({ value: 1, later() { globalThis.later = true; } })",
             &["PureBox"]
-        ))
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
 fn declared_pure_new_does_not_apply_to_plain_call() {
-    assert!(
-        !(classify_with_declared_pure_new(
+    assert_eq!(
+        classify_with_declared_pure_new(
             "function PureBox(value) { globalThis.value = value; return { value }; }",
             "PureBox(1)",
             &["PureBox"]
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 // --- Declared pure members (`pure_members`) ----------------------------
 
 #[test]
-fn declared_pure_member_call_classifies_pure() {
-    // A spec member with `pure_members: [forwardRef]` admits
-    // `<binding>.forwardRef(args)` as pure with pure args, even
-    // though the binding's body is unknown to the analyzer
-    // (the vendor namespace shape we target). Args still
-    // classified independently.
-    assert!(
-        (classify_with_declared_pure_members(
+fn declared_pure_member_call_has_no_effects() {
+    // `pure_members: [forwardRef]` admits `<binding>.forwardRef(args)` even
+    // though the binding's body is unknown (the vendor namespace shape).
+    // Args are still classified independently.
+    assert_eq!(
+        classify_with_declared_pure_members(
             r#"import * as b from "vendor";"#,
             "b.forwardRef(function () {})",
             "b",
             &["forwardRef"]
-        ))
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
 fn declared_pure_member_does_not_bleed_to_other_props() {
-    // Only the listed property is treated pure. A sibling
-    // property call stays Unknown.
-    assert!(
-        !(classify_with_declared_pure_members(
+    assert_eq!(
+        classify_with_declared_pure_members(
             r#"import * as b from "vendor";"#,
             "b.unknownMethod(1)",
             "b",
             &["forwardRef"]
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
 fn declared_pure_member_does_not_bleed_to_other_bindings() {
-    // Only the listed binding is treated pure. A call on a
-    // different binding stays Unknown.
-    assert!(
-        !(classify_with_declared_pure_members(
+    assert_eq!(
+        classify_with_declared_pure_members(
             r#"import * as b from "vendor"; import * as c from "other";"#,
             "c.forwardRef(1)",
             "b",
             &["forwardRef"]
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
-fn declared_pure_member_computed_access_falls_back_to_unknown() {
-    // Computed access (`b[expr]`) is intentionally not
-    // admitted — `expr` may evaluate to a different property
-    // at runtime, breaking the spec author's trust contract.
-    assert!(
-        !(classify_with_declared_pure_members(
+fn declared_pure_member_computed_access_is_not_admitted() {
+    // `b[expr]` may evaluate to a different property at runtime, breaking the
+    // spec author's trust contract.
+    assert_eq!(
+        classify_with_declared_pure_members(
             r#"import * as b from "vendor"; const key = "forwardRef";"#,
             "b[key](1)",
             "b",
             &["forwardRef"]
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
-fn declared_pure_member_optional_chain_call_classifies_pure() {
-    // Optional chaining (`b?.forwardRef(...)`) only adds a
-    // null/undefined short-circuit — the call itself still
-    // qualifies under the same admission rule.
-    assert!(
-        (classify_with_declared_pure_members(
+fn declared_pure_member_optional_chain_call_has_no_effects() {
+    // `?.` only adds a null/undefined short-circuit; the call still qualifies.
+    assert_eq!(
+        classify_with_declared_pure_members(
             r#"import * as b from "vendor";"#,
             "b?.forwardRef(1)",
             "b",
             &["forwardRef"]
-        ))
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 // --- Fluent-trusted chains (`fluent_exports`) ---------------------------
 
 #[test]
-fn fluent_root_direct_call_classifies_pure() {
+fn fluent_root_direct_call_has_no_effects() {
     // The root itself is callable under the deep-purity contract
-    // (`k({...})` — zod-style builders are invoked directly too).
-    assert!(
+    // (`k({...})`: zod-style builders are invoked directly too).
+    assert_eq!(
         classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor";"#,
             "k({ a: 1 })",
             &["k"]
-        )
-        .is_pure()
+        ),
+        NONE
     );
-    // Without the assertion the same call is an unknown imported
-    // callee.
-    assert!(
-        !classify_with_fluent_bindings(r#"import { e4 as k } from "vendor";"#, "k({ a: 1 })", &[])
-            .is_pure()
+    // Without the assertion the same call is an unknown imported callee.
+    assert_eq!(
+        classify_with_fluent_bindings(r#"import { e4 as k } from "vendor";"#, "k({ a: 1 })", &[]),
+        [CALL]
     );
 }
 
 #[test]
-fn fluent_chain_method_calls_classify_pure() {
-    // The receivers of `.optional()` / `.describe()` are call
-    // RESULTS, not bindings — no binding-keyed arm
-    // (`pure_members`, `imported_purities`) can ever admit them.
-    // The fluent contract follows the chain through arbitrary
-    // depth.
-    assert!(
+fn fluent_chain_method_calls_have_no_effects() {
+    // The receivers of `.optional()` / `.describe()` are call RESULTS, not
+    // bindings, so no binding-keyed arm (`pure_members`, `imported_purities`)
+    // can admit them. The fluent contract follows the chain to any depth.
+    assert_eq!(
         classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor";"#,
             r#"k.object({ a: 1 }).optional().describe("docs")"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
 fn fluent_chain_impure_inner_argument_surfaces() {
-    // Soundness pin: the assertion covers the API's own functions
-    // and their results, NOT caller-supplied argument evaluation.
-    // An impure argument to an INNER chain link must keep the whole
-    // expression impure even though the outer call's args are pure.
-    assert!(
-        !classify_with_fluent_bindings(
+    // SOUNDNESS: the assertion covers the API's own functions and their
+    // results, NOT caller-supplied argument evaluation. An impure argument to
+    // an INNER chain link must surface even though the outer call's args are
+    // pure.
+    assert_eq!(
+        classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor"; function io() { globalThis.x = 1; return {}; }"#,
             r#"k.object(io()).describe("docs")"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
-fn fluent_chain_member_read_classifies_pure() {
-    // Reading a property off a derived value (`.description` on a
-    // schema) is covered by the same deep contract.
-    assert!(
+fn fluent_chain_member_read_has_no_effects() {
+    // Reading a property off a derived value (`.description` on a schema) is
+    // covered by the same deep contract.
+    assert_eq!(
         classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor";"#,
             r#"k.string().description"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
 fn fluent_chain_computed_member_breaks_the_chain() {
-    // Computed access would additionally require a
-    // ToPropertyKey-safe key; the chain conservatively stops there.
-    assert!(
-        !classify_with_fluent_bindings(
+    // Computed access would additionally require a ToPropertyKey-safe key;
+    // the chain conservatively stops there.
+    assert_eq!(
+        classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor"; const key = "object";"#,
             r#"k[key]({ a: 1 })"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
-fn fluent_chain_optional_chaining_classifies_pure() {
-    // `?.` only adds a null/undefined short-circuit on top of the
-    // member/call evaluation the contract already covers.
-    assert!(
+fn fluent_chain_optional_chaining_has_no_effects() {
+    assert_eq!(
         classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor";"#,
             r#"k.object({ a: 1 })?.describe?.("docs")"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        NONE
     );
 }
 
 #[test]
 fn fluent_root_body_local_shadow_defeats_trust() {
-    // A body-local binding of the same name is a different value
-    // than the annotated import — the trust contract doesn't cover
-    // it (same rule as every other author-trust arm).
+    // A body-local binding of the same name is a different value than the
+    // annotated import; the trust contract doesn't cover it.
     let local_shadowed = BTreeSet::from(["k".to_string()]);
-    let purity = classify_last_const(
+    let effects = classify_last_const(
         r#"import { e4 as k } from "vendor";"#,
         "k.object({ a: 1 })",
         |body, shadowed, init| {
@@ -1188,24 +1074,22 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &string_set(&["k"]),
             );
             classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
-                .project()
         },
     );
-    assert!(!purity.is_pure());
+    assert_eq!(effects, [CALL]);
 }
 
 #[test]
 fn fluent_trust_propagates_through_const_derivations() {
-    // `const S = k.object({...})` makes `S` a fluent root too —
-    // `S.extend({...})` downstream is the standard zod base-schema
-    // reuse pattern.
-    assert!(
+    // `const S = k.object({...})` makes `S` a fluent root too:
+    // `S.extend({...})` downstream is the standard zod base-schema reuse.
+    assert_eq!(
         classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor"; const S = k.object({ a: 1 });"#,
             r#"S.extend({ b: 2 })"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        NONE
     );
 }
 
@@ -1213,158 +1097,144 @@ fn fluent_trust_propagates_through_const_derivations() {
 fn fluent_trust_does_not_propagate_through_let_rebindable_cells() {
     // A `let` cell can be rebound to an untrusted value later, so
     // derivation-closure is `const`-only.
-    assert!(
-        !classify_with_fluent_bindings(
+    assert_eq!(
+        classify_with_fluent_bindings(
             r#"import { e4 as k } from "vendor"; let S = k.object({ a: 1 });"#,
             r#"S.extend({ b: 2 })"#,
             &["k"]
-        )
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 // --- Object.{entries,keys,values,freeze,fromEntries} on plain data -----
 
 #[test]
-fn object_keys_on_plain_object_literal_classifies_pure() {
-    // `Object.keys({a: 1, b: 2})` — fresh plain object literal,
-    // no accessors. Spec: §20.1.2.17 calls
-    // `EnumerableOwnPropertyNames(O, "key")` which only does
-    // `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]` — no
-    // user code fires.
-    assert!((classify(r#"Object.keys({a: 1, b: 2})"#)).is_pure());
+fn object_keys_and_values_on_plain_object_literal_have_no_effects() {
+    // `EnumerableOwnPropertyNames` only does `[[OwnPropertyKeys]]`,
+    // `[[GetOwnProperty]]` and (for values) `[[Get]]`; a plain literal has only
+    // data properties, so no accessor fires.
+    assert_no_effects(&["Object.keys({a: 1, b: 2})", "Object.values({a: 1, b: 2})"]);
 }
 
 #[test]
-fn object_values_on_plain_object_literal_classifies_pure() {
-    // `Object.values({a: 1, b: 2})` — same as keys, plus
-    // `[[Get]]` on each own key. Plain literal has only data
-    // properties, so no accessor fires.
-    assert!((classify(r#"Object.values({a: 1, b: 2})"#)).is_pure());
-}
-
-#[test]
-fn object_freeze_on_vite_namespace_facade_classifies_pure() {
-    assert!(
-        (classify(
-            r#"Object.freeze(Object.defineProperty(
+fn object_freeze_on_vite_namespace_facade_has_no_effects() {
+    assert_no_effects(&[r#"Object.freeze(Object.defineProperty(
                 { __proto__: null, run: handler },
                 Symbol.toStringTag,
                 { value: "Module" }
-            ))"#,
-        ))
-        .is_pure()
-    );
+            ))"#]);
 }
 
 #[test]
 fn object_define_property_namespace_facade_requires_fresh_target() {
-    assert!(
-        !(classify(r#"Object.defineProperty(target, Symbol.toStringTag, { value: "Module" })"#))
-            .is_pure()
+    assert_eq!(
+        classify(r#"Object.defineProperty(target, Symbol.toStringTag, { value: "Module" })"#),
+        [CALL]
     );
 }
 
 #[test]
 fn object_define_property_namespace_facade_rejects_accessor_descriptor() {
-    assert!(
-        !(classify(
+    assert_eq!(
+        classify(
             r#"Object.defineProperty(
                 { __proto__: null, run: handler },
                 Symbol.toStringTag,
                 { get: () => handler }
             )"#,
-        ))
-        .is_pure()
+        ),
+        [CALL]
     );
 }
 
 #[test]
-fn object_values_on_object_with_method_stays_unknown() {
-    // A method property (`{m() {}}`) is also rejected by the
-    // strict shape predicate — admission requires
-    // `Prop::KeyValue` / `Prop::Shorthand` only.
-    assert!(!(classify(r#"Object.values({ m() { return 1; } })"#)).is_pure());
+fn object_values_on_object_with_method_invokes() {
+    // Admission requires `Prop::KeyValue` / `Prop::Shorthand` only.
+    assert_eq!(classify(r#"Object.values({ m() { return 1; } })"#), [CALL]);
 }
 
 #[test]
-fn object_entries_on_non_literal_arg_stays_unknown() {
-    // Arbitrary expression: could be a Proxy or carry user
-    // accessors. Stay Unknown.
-    assert!(!(classify("Object.entries(somefn())")).is_pure());
-    assert!(!(classify("Object.entries(x)")).is_pure());
+fn object_entries_on_non_literal_arg_invokes() {
+    // An arbitrary expression could be a Proxy or carry user accessors.
+    assert_eq!(classify("Object.entries(somefn())"), [CALL]);
+    assert_eq!(classify("Object.entries(x)"), [CALL]);
 }
 
 #[test]
-fn object_freeze_on_object_with_proto_stays_unknown() {
-    // `{__proto__: …}` in an object literal sets the
-    // prototype — rejected by `is_plain_data_prop`.
-    assert!(!(classify(r#"Object.freeze({ __proto__: x, a: 1 })"#)).is_pure());
+fn object_freeze_on_object_with_proto_invokes() {
+    // `{__proto__: …}` in an object literal sets the prototype, which
+    // `is_plain_data_prop` rejects.
+    assert_eq!(classify(r#"Object.freeze({ __proto__: x, a: 1 })"#), [CALL]);
 }
 
 #[test]
-fn object_freeze_on_object_with_spread_falls_back_to_unknown() {
-    // Object spread in an object literal is classified
-    // `ObjectSpread`-impure by the existing classifier (it
-    // doesn't track "fresh-literal source ⇒ pure" for spreads),
-    // so a literal carrying a spread doesn't classify pure
-    // overall. The plain-data call rule gates on the overall
-    // literal being pure, so the spread form falls back to
-    // Unknown until the existing spread classifier is
-    // refined.
-    assert!(!(classify(r#"Object.freeze({ ...{a: 1}, b: 2 })"#)).is_pure());
-    assert!(!(classify(r#"Object.freeze({ ...src, b: 2 })"#)).is_pure());
+fn object_freeze_on_object_with_spread_keeps_the_spread_effect() {
+    // The plain-data call rule gates on the whole literal having no effects,
+    // and the classifier does not track "fresh-literal source => pure" for
+    // spreads.
+    assert_each_has_effects(
+        &[
+            r#"Object.freeze({ ...{a: 1}, b: 2 })"#,
+            r#"Object.freeze({ ...src, b: 2 })"#,
+        ],
+        &[OBJECT_SPREAD],
+    );
 }
 
 #[test]
-fn object_keys_on_plain_data_binding_classifies_pure() {
-    // `Object.keys(plain)` where `plain` is a chunk-top
-    // `const plain = {…}` bound to a plain-data shape —
-    // accessor-free because its allocation stays private and
-    // clean (`ChunkHeap`). Same admission as a fresh literal.
-    assert!(classify_built("const plain = { a: 1 };", "Object.keys(plain)").is_pure());
+fn object_keys_on_plain_data_binding_has_no_effects() {
+    // `plain` is a chunk-top `const plain = {…}` bound to a plain-data shape:
+    // accessor-free because its allocation stays private and clean
+    // (`ChunkHeap`). Same admission as a fresh literal.
+    assert_eq!(
+        classify_built("const plain = { a: 1 };", "Object.keys(plain)"),
+        NONE
+    );
 }
 
 #[test]
-fn object_from_entries_on_object_literal_stays_unknown() {
-    // `Object.fromEntries({...})` is a TypeError at runtime
-    // (objects aren't iterable). Stay Unknown to avoid the
-    // observable throw.
-    assert!(!(classify(r#"Object.fromEntries({a: 1})"#)).is_pure());
+fn object_from_entries_requires_pair_array_entries() {
+    // `Object.fromEntries({...})` is a TypeError at runtime (objects aren't
+    // iterable); entries that aren't 2-element Array literals don't qualify
+    // since the indexed [0]/[1] reads must be own data properties.
+    assert_each_has_effects(
+        &[
+            r#"Object.fromEntries({a: 1})"#,
+            r#"Object.fromEntries([{ "0": "k", "1": "v" }])"#,
+            r#"Object.fromEntries([["a", 1, "extra"]])"#,
+        ],
+        &[CALL],
+    );
 }
 
 #[test]
-fn object_from_entries_on_non_pair_entries_stays_unknown() {
-    // Entries that aren't 2-element Array literals don't
-    // qualify — Map/fromEntries semantics rely on indexed
-    // [0]/[1] reads on the entry being own data properties.
-    assert!(!(classify(r#"Object.fromEntries([{ "0": "k", "1": "v" }])"#)).is_pure());
-    assert!(!(classify(r#"Object.fromEntries([["a", 1, "extra"]])"#)).is_pure());
+fn object_calls_with_too_many_args_invoke() {
+    // Single-argument form only; an accidental extra argument falls back
+    // rather than being silently admitted.
+    assert_each_has_effects(
+        &[
+            r#"Object.freeze({a: 1}, true)"#,
+            r#"Object.keys({a: 1}, "extra")"#,
+        ],
+        &[CALL],
+    );
 }
 
 #[test]
-fn object_calls_with_too_many_args_stay_unknown() {
-    // Single-argument form only. Multi-arg call (e.g. an
-    // accidental third arg) falls back to Unknown rather than
-    // silently admitting.
-    assert!(!(classify(r#"Object.freeze({a: 1}, true)"#)).is_pure());
-    assert!(!(classify(r#"Object.keys({a: 1}, "extra")"#)).is_pure());
-}
-
-#[test]
-fn object_calls_shadowed_receiver_stays_unknown() {
-    // A chunk-top local `Object` re-bind shadows the global
-    // and the rule must fall back to Unknown — the resolved
-    // value isn't the built-in.
-    assert!(
-        !(classify_with_module("const Object = userland;", "Object.entries({a: 1})")).is_pure()
+fn object_calls_shadowed_receiver_invoke() {
+    // A chunk-top `Object` re-bind shadows the global, so the resolved value
+    // isn't the built-in.
+    assert_eq!(
+        classify_with_module("const Object = userland;", "Object.entries({a: 1})"),
+        [CALL]
     );
 }
 
 /// Classify `expr_src` against a fully built `ChunkCodeGraph` for the
 /// wrapping `prefix` module, so chunk-top binding facts — including the
 /// primitive binding facts — are populated.
-fn classify_built(prefix: &str, expr_src: &str) -> Purity {
+fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
     let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
     let structural = analyze_chunk_structural(&module, None, |_| None);
     let body = &structural.body;
@@ -1390,7 +1260,7 @@ fn classify_built(prefix: &str, expr_src: &str) -> Purity {
         &BTreeSet::new(),
         &graph,
     )
-    .project()
+    .kinds()
 }
 
 #[test]
@@ -1398,24 +1268,34 @@ fn coercion_of_primitive_const_binding_is_pure() {
     // A chunk-top `const` bound to a primitive is immutable and carries
     // no user accessors, so ToString / ToNumber on a reference fires no
     // user code — the coercion is pure.
-    assert!(classify_built("const s = \"x\";", "`v=${s}`").is_pure());
-    assert!(classify_built("const n = 5;", "-n").is_pure());
-    assert!(classify_built("const a = 1; const b = 2;", "a + b").is_pure());
-    // Transitive through another primitive const, and a computed key.
-    assert!(classify_built("const a = \"x\"; const b = `${a}!`;", "`${b}`").is_pure());
-    assert!(classify_built("const k = \"id\";", "({ [k]: 1 })").is_pure());
+    for (prefix, src) in [
+        ("const s = \"x\";", "`v=${s}`"),
+        ("const n = 5;", "-n"),
+        ("const a = 1; const b = 2;", "a + b"),
+        // Transitive through another primitive const, and a computed key.
+        ("const a = \"x\"; const b = `${a}!`;", "`${b}`"),
+        ("const k = \"id\";", "({ [k]: 1 })"),
+    ] {
+        assert_eq!(classify_built(prefix, src), NONE, "{prefix} {src}");
+    }
 }
 
 #[test]
 fn const_value_inference_does_not_resolve_aliases_from_later_declarations() {
-    assert!(classify_built("const value = 1; const alias = value;", "`${alias}`").is_pure());
-    assert!(!classify_built("const alias = value; const value = 1;", "`${alias}`").is_pure());
-    assert!(
-        !classify_built(
+    assert_eq!(
+        classify_built("const value = 1; const alias = value;", "`${alias}`"),
+        NONE
+    );
+    assert_eq!(
+        classify_built("const alias = value; const value = 1;", "`${alias}`"),
+        [COERCE_OPERAND]
+    );
+    assert_eq!(
+        classify_built(
             "const alias = brand; const brand = Symbol('brand');",
             "class { [alias]() {} }"
-        )
-        .is_pure()
+        ),
+        [COERCE_KEY]
     );
 }
 
@@ -1423,19 +1303,25 @@ fn const_value_inference_does_not_resolve_aliases_from_later_declarations() {
 fn coercion_of_let_or_var_binding_stays_unknown() {
     // `let` / `var` can be rebound to an object later, so the binding is
     // not provably primitive and the coercion stays conservative.
-    assert!(!classify_built("let s = \"x\";", "`${s}`").is_pure());
-    assert!(!classify_built("var s = \"x\";", "`${s}`").is_pure());
+    assert_eq!(classify_built("let s = \"x\";", "`${s}`"), [COERCE_OPERAND]);
+    assert_eq!(classify_built("var s = \"x\";", "`${s}`"), [COERCE_OPERAND]);
 }
 
 #[test]
 fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown() {
     let numeric_chain = "var retry = 20000, delay = 15000, base = 5000, period = base, total = delay + period + 2 * retry;";
-    assert!(classify_built(numeric_chain, "total + 1").is_pure());
-    assert!(classify_built("var base = 2;", "base + 2 * base").is_pure());
-    assert!(classify_built("var value = 1;", "`${value}`").is_pure());
-    assert!(classify_built("var value = 1;", "value + 'x'").is_pure());
-    assert!(!classify_built("var value = 1;", "value + object").is_pure());
-    assert!(!classify_built("var value = 1;", "value + (flag ? 1n : 2)").is_pure());
+    assert_eq!(classify_built(numeric_chain, "total + 1"), NONE);
+    assert_eq!(classify_built("var base = 2;", "base + 2 * base"), NONE);
+    assert_eq!(classify_built("var value = 1;", "`${value}`"), NONE);
+    assert_eq!(classify_built("var value = 1;", "value + 'x'"), NONE);
+    assert_eq!(
+        classify_built("var value = 1;", "value + object"),
+        [COERCE_OPERAND]
+    );
+    assert_eq!(
+        classify_built("var value = 1;", "value + (flag ? 1n : 2)"),
+        [Effect::Throws]
+    );
 
     let module = parse("var value = 1;");
     let structural = analyze_chunk_structural(&module, None, |_| None);
@@ -1472,25 +1358,31 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
     );
     assert!(!redeclared_graph.primitive_bindings.contains("value"));
 
-    assert!(!classify_built("var value = 1; value = object;", "value + 1").is_pure());
-    assert!(
-        !classify_built(
-            "var value = 1; function replace() { value = object; }",
-            "value + 1"
-        )
-        .is_pure()
+    for prefix in [
+        "var value = 1; value = object;",
+        "var value = 1; function replace() { value = object; }",
+        "var value = 1; eval('value = object');",
+        "var value = 1; var value;",
+        "var value = 1n + 1;",
+    ] {
+        assert_eq!(
+            classify_built(prefix, "value + 1"),
+            [COERCE_OPERAND],
+            "{prefix}"
+        );
+    }
+    // A BigInt operand makes numeric arithmetic throw rather than coerce.
+    assert_eq!(
+        classify_built("var value = 1;", "value + 1n"),
+        [Effect::Throws]
     );
-    assert!(!classify_built("var value = 1; eval('value = object');", "value + 1").is_pure());
-    assert!(!classify_built("var value = 1; var value;", "value + 1").is_pure());
-    assert!(!classify_built("var value = 1;", "value + 1n").is_pure());
-    assert!(
-        !classify_built(
+    assert_eq!(
+        classify_built(
             "var value = 1; const bigint = 1n; const alias = bigint;",
             "value + alias"
-        )
-        .is_pure()
+        ),
+        [Effect::Throws]
     );
-    assert!(!classify_built("var value = 1n + 1;", "value + 1").is_pure());
 }
 
 #[test]
@@ -1519,10 +1411,13 @@ fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
 fn coercion_of_non_primitive_const_stays_unknown() {
     // `const o = {}` is a const but not primitive — interpolating it runs
     // user `toString` / `[Symbol.toPrimitive]`.
-    assert!(!classify_built("const o = {};", "`${o}`").is_pure());
+    assert_eq!(classify_built("const o = {};", "`${o}`"), [COERCE_OPERAND]);
     // A const whose init is not statically result-primitive (a bare
     // import/member read) is not admitted either.
-    assert!(!classify_built("const o = globalThis.x;", "`${o}`").is_pure());
+    assert_eq!(
+        classify_built("const o = globalThis.x;", "`${o}`"),
+        [COERCE_OPERAND]
+    );
 }
 
 /// Classify `expr_src` with a populated cross-module imported-purity
@@ -1532,13 +1427,17 @@ fn classify_with_imported_purities(
     prefix: &str,
     expr_src: &str,
     imports: &[(&str, Purity)],
-) -> Purity {
+) -> Vec<Effect> {
+    imported_purity_effects(prefix, expr_src, imports).kinds()
+}
+
+fn imported_purity_effects(prefix: &str, expr_src: &str, imports: &[(&str, Purity)]) -> Effects {
     let imported_purities: BTreeMap<String, std::sync::Arc<Purity>> = imports
         .iter()
         .map(|(name, purity)| ((*name).to_string(), std::sync::Arc::new(purity.clone())))
         .collect();
-    classify_with_graph(prefix, expr_src, |body, shadowed| {
-        ChunkCodeGraph::build_full(
+    classify_last_const_effects(prefix, expr_src, |body, shadowed, init| {
+        let graph = ChunkCodeGraph::build_full(
             body,
             shadowed,
             &BTreeSet::new(),
@@ -1546,7 +1445,8 @@ fn classify_with_imported_purities(
             &BTreeMap::new(),
             &imported_purities,
             &BTreeSet::new(),
-        )
+        );
+        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
     })
 }
 
@@ -1558,10 +1458,13 @@ fn impure_verdict() -> Purity {
 fn imported_pure_callee_makes_call_pure() {
     // The oracle resolved `memo` (an imported function) as pure, so
     // `memo(arg)` classifies pure when the args are pure.
-    assert!(classify_with_imported_purities("", "memo(x)", &[("memo", Purity::pure())]).is_pure());
-    assert!(
-        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::pure())])
-            .is_pure()
+    assert_eq!(
+        classify_with_imported_purities("", "memo(x)", &[("memo", Purity::pure())]),
+        NONE
+    );
+    assert_eq!(
+        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::pure())]),
+        NONE
     );
 }
 
@@ -1709,14 +1612,14 @@ fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
         "Object.defineProperty({ __proto__: null, value: make() }, Symbol.toStringTag, { value: make() })",
         "new Container(make())",
     ] {
-        let purity = classify_last_const(
+        let purity = classify_last_const_effects(
             "const values = [1]; function make() { return new Set(values); }",
             expression,
             |_, _, init| {
                 classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
-                    .project()
             },
-        );
+        )
+        .project();
         assert!(purity.is_pure(), "{expression} remains pure");
         assert_eq!(purity.dependencies(), Some(&dependencies), "{expression}");
     }
@@ -1772,7 +1675,6 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &plain_arrays,
         &BTreeSet::new(),
         None,
-        None,
     );
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
         panic!("expected final initializer");
@@ -1792,37 +1694,50 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
 #[test]
 fn imported_pure_callee_preserves_conditioned_dependencies() {
     let dependencies = value_input_dependencies("static/provider.js", 4);
-    let purity = classify_with_imported_purities(
+    let purity = imported_purity_effects(
         "",
         "memo(x)",
         &[("memo", Purity::pure().with_dependencies(&dependencies))],
-    );
+    )
+    .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
 }
 
 #[test]
 fn imported_impure_callee_keeps_call_impure() {
-    assert!(!classify_with_imported_purities("", "run(x)", &[("run", impure_verdict())]).is_pure());
+    assert_eq!(
+        classify_with_imported_purities("", "run(x)", &[("run", impure_verdict())]),
+        [CALL]
+    );
 }
 
 #[test]
 fn imported_pure_callee_still_classifies_arguments() {
     // `memo` is pure, but a possibly-object operand coerced in the arg
     // keeps the whole call impure — args are classified independently.
-    assert!(
-        !classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::pure())]).is_pure()
+    assert_eq!(
+        classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::pure())]),
+        [COERCE_OPERAND]
     );
 }
 
 #[test]
 fn string_raw_tagged_templates_require_global_tag_and_primitive_substitutions() {
-    assert!(classify("String.raw`plain`").is_pure());
-    assert!(classify("String.raw`value: ${1}`").is_pure());
-    assert!(classify_built("const value = 1;", "String.raw`${value}`").is_pure());
-    assert!(!(classify("String.raw`${{ toString() { return 'x'; } }}`")).is_pure());
-    assert!(!(classify("String.raw`${unknown}`")).is_pure());
-    assert!(!(classify("String.raw`${io()}`")).is_pure());
-    assert!(!(classify("other`plain`")).is_pure());
-    assert!(!(classify("String['raw']`plain`")).is_pure());
-    assert!(!(classify_with_module("const String = local;", "String.raw`plain`")).is_pure());
+    assert_no_effects(&["String.raw`plain`", "String.raw`value: ${1}`"]);
+    assert_eq!(
+        classify_built("const value = 1;", "String.raw`${value}`"),
+        NONE
+    );
+    assert_eq!(
+        classify("String.raw`${{ toString() { return 'x'; } }}`"),
+        [COERCE_OPERAND]
+    );
+    assert_eq!(classify("String.raw`${unknown}`"), [COERCE_OPERAND]);
+    assert_eq!(classify("String.raw`${io()}`"), [CALL, COERCE_OPERAND]);
+    assert_eq!(classify("other`plain`"), [TAGGED_TEMPLATE]);
+    assert_eq!(classify("String['raw']`plain`"), [TAGGED_TEMPLATE]);
+    assert_eq!(
+        classify_with_module("const String = local;", "String.raw`plain`"),
+        [TAGGED_TEMPLATE]
+    );
 }

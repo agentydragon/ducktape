@@ -336,7 +336,7 @@ impl RuntimeRules<'_, '_> {
         // matter for acceptance.
         context.propose(
             RuntimeKey::Purity(owner),
-            RuntimeFact::Purity(Box::new(self.inputs.statement_effects(owner))),
+            RuntimeFact::Purity(Box::new(self.inputs.statement_effects(owner, &state))),
         );
         let queries = RuntimeQueries {
             inputs: self.inputs,
