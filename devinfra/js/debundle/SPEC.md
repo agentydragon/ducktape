@@ -1572,8 +1572,9 @@ all chunks share one global object: a write through a bundle-owned value is not
 itself a store into a global or prototype. Every property is dropped if any
 global-chain write has an unknown key or may name `__proto__`, if a keyless
 reflective write (`Object.assign`, `Object.setPrototypeOf`) reaches such a
-receiver, or if a legacy accessor method (`__defineGetter__`) named by its key
-is called on one. A sloppy assignment to an undeclared `g` is a store into `g`;
+receiver, or if a call on one has a method key whose domain may spell
+`__defineGetter__`, `__defineSetter__` or `__lookupGetter__` (an unknown
+computed key included). A sloppy assignment to an undeclared `g` is a store into `g`;
 updates, destructuring and reflective writes naming `g` drop it, as does a
 `delete` that may name `g` on the global object. A `delete` on a prototype
 stores nothing.
@@ -1587,8 +1588,8 @@ Writes through `g`'s value land on non-intrinsic objects, so they cannot store
 into `g` on the global chain either. Setters and Proxy traps a write runs are
 analyzed source with census writes of their own; A11 excludes host code
 changing intrinsics or adding globals, and covers hidden native-alias paths as
-for every census fact: an aliased or computed descriptor method, or a write
-through a parameter or container field that holds the global object. Analyzed
+for every census fact: an aliased descriptor method, or a write through a
+parameter or container field that holds the global object. Analyzed
 chunks are ES modules, so top-level declarations create no global property,
 and dynamic scope leaves the census open. A descendant of `g`'s value stays
 unknown. Proofs that use the discharge record `predefined_globals` among their

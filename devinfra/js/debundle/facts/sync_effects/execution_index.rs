@@ -5753,6 +5753,9 @@ fn key_domain_may_name(domain: &PropertyKeyDomain, name: &str) -> bool {
 
 const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
 
+const LEGACY_ACCESSOR_METHODS: [&str; 3] =
+    ["__defineGetter__", "__defineSetter__", "__lookupGetter__"];
+
 /// One global data property a bundle-owned value may sit in: a name, or any
 /// property keyed by a `Symbol.for` symbol.
 #[derive(Clone, Copy)]
@@ -6032,22 +6035,30 @@ impl ExecutionIndex {
                     next.fresh_collections = false;
                 }
             }
-            // A legacy accessor install can run any getter on a read. A method
-            // named through an unknown key is a hidden descriptor path (A11),
-            // as for `Object.defineProperty` reached through an alias.
+            // A legacy accessor method can install or expose a getter that runs
+            // on a later read. A computed method key counts whenever its domain
+            // may spell one.
             let installs_accessor = |property: &Option<String>, key: &MemberKey| {
                 let domain = match (property, key) {
                     (Some(name), _) => {
                         PropertyKeyDomain::FiniteStrings(BTreeSet::from([name.clone()]))
                     }
                     (None, MemberKey::Computed(Some(binding))) => {
-                        evidence(&PropertyKeyExpr::Binding(binding.clone())).domain
+                        let evidence = evidence(&PropertyKeyExpr::Binding(binding.clone()));
+                        if evidence.dependencies.is_empty()
+                            || evidence.dependencies == BTreeSet::from([NativeIntrinsic::Symbol])
+                                && symbol_for_intact
+                        {
+                            evidence.domain
+                        } else {
+                            PropertyKeyDomain::Unknown
+                        }
                     }
-                    (None, _) => return false,
+                    (None, _) => PropertyKeyDomain::Unknown,
                 };
-                !matches!(domain, PropertyKeyDomain::Unknown)
-                    && (key_domain_may_name(&domain, "__defineGetter__")
-                        || key_domain_may_name(&domain, "__defineSetter__"))
+                LEGACY_ACCESSOR_METHODS
+                    .iter()
+                    .any(|method| key_domain_may_name(&domain, method))
             };
             if self.prototype_calls.iter().any(|call| {
                 call.kind == CallKind::Call

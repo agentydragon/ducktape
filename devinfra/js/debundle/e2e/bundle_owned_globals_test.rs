@@ -84,7 +84,7 @@ fn without_the_host_claim_bundle_globals_stay_unknown() {
 }
 
 #[test]
-fn non_fresh_predefined_or_unknown_key_stores_stay_unknown() {
+fn non_fresh_predefined_unknown_key_or_accessor_stores_stay_unknown() {
     for (bundle, members) in [
         // The slot can hold the global object, whose `Map` the write replaces.
         (
@@ -100,6 +100,11 @@ fn non_fresh_predefined_or_unknown_key_stores_stay_unknown() {
         (
             "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction set(key, value) { root[key] = value; }",
             vec!["root", "install", "set"],
+        ),
+        // `method` may be `__defineGetter__`, installing a getter for the slot.
+        (
+            "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }",
+            vec!["root", "install", "call"],
         ),
     ] {
         let source = source(bundle);
