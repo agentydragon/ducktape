@@ -197,6 +197,7 @@ mod tests {
                 &no_options,
                 &assertions,
                 &host_behavior,
+                None,
                 BTreeMap::new(),
                 &BTreeMap::new(),
             ),
