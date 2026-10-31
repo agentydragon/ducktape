@@ -542,8 +542,33 @@ fn sweep_unreachable_top_level(
             .map(id_name)
             .collect::<Vec<_>>()
             .join(",");
+        let public_writes = if analyses[i].effects_summarizable {
+            analyses[i]
+                .observable_writes
+                .iter()
+                .filter(|cell| match cell {
+                    EffectCell::Binding(id) => {
+                        !replacement_import_locals.contains(id) && live_reads.contains(id)
+                    }
+                    EffectCell::GlobalProp(_)
+                    | EffectCell::ArrayContents(_)
+                    | EffectCell::SetContents(_) => true,
+                })
+                .map(format_effect_cell)
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            "unsummarizable".to_string()
+        };
+        let swapped_paths = swapped_reachability[i]
+            .iter()
+            .map(|package| {
+                format_swapped_trace(i, package, &analyses, &module.body, &swapped_reasons)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
         bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s)",
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s); writes not private: [{public_writes}]; swapped path: {swapped_paths}",
         );
     }
 
@@ -917,6 +942,15 @@ fn format_live_trace(
 
     trace.reverse();
     trace.join(" -> ")
+}
+
+fn format_effect_cell(cell: &EffectCell) -> String {
+    match cell {
+        EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
+        EffectCell::GlobalProp(key) => format!("global `{key}`"),
+        EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),
+        EffectCell::SetContents(origin) => format!("set contents #{origin}"),
+    }
 }
 
 fn format_item_summary(i: usize, analysis: &ItemAnalysis, item: &ModuleItem) -> String {
