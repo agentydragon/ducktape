@@ -92,11 +92,17 @@ expired owner lease and the current attached cursor, so a stale review cannot cl
 It supports unresolved cell, nested tool, and executor intents, and lost live cells or process
 handles. Existing blocked Sessions are not cleared automatically by the executor uncertainty
 contract; this explicit review remains available for older blocked executor boundaries and other
-supported failures. It also repairs older rejected cell calls that retained a pending pointer: the
+supported failures. One unresolved provider-sampling intent is also supported when it exactly matches the
+pending pointer and no other unresolved intent, live cell/process, or unanswered model call exists.
+The operator must inspect the retained provider request and stream evidence first. The provider
+may have completed or charged for the request. Recovery records that outcome as unknown, abandons
+the response without replay, and adds a model-visible notice. A streamed prefix is evidence, not
+committed model output; no sampler tool call from it was dispatched before the atomic provider
+`Finish`. The original command remains `UNKNOWN`, and a new user input continues the same Session
+from its last committed context. It also repairs older rejected cell calls that retained a pending pointer: the
 known rejected result is preserved, and the missing model output reports that no runtime operation
 was dispatched for that call. Other live handles are still abandoned under the same operator review.
-Pending provider sampling, compaction, and required one-shot setup failures remain blocked and
-require a new Session.
+Compaction and required one-shot setup failures remain blocked and require a new Session.
 
 If the Sandbox's Pod was replaced, the operator may also provide
 `replacement_incarnation_uid` after verifying the new Pod belongs to the same Sandbox and retains

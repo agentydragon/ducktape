@@ -559,8 +559,8 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 	return changed, err
 }
 
-// RecoverSession abandons one blocked cell/runtime boundary after an operator has inspected the
-// recorded evidence. It never retries the provider request or any executor operation.
+// RecoverSession abandons one blocked runtime or sampling boundary after an operator has inspected
+// the recorded evidence. It never retries the provider request or any executor operation.
 func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {
 	note := strings.TrimSpace(operatorNote)
 	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 || len(replacementIncarnationUID) > 128 || strings.TrimSpace(replacementIncarnationUID) != replacementIncarnationUID {
@@ -592,9 +592,10 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if session.ActiveCommand != nil || session.ActiveTurn != nil {
 			return protocol.ErrPrecondition
 		}
-		if conversation.Pending != nil && conversation.Pending.Kind != PendingIntentCell {
+		if conversation.Pending != nil && conversation.Pending.Kind != PendingIntentCell && conversation.Pending.Kind != PendingIntentSampling {
 			return protocol.ErrPrecondition
 		}
+		pendingSampling := conversation.Pending != nil && conversation.Pending.Kind == PendingIntentSampling
 
 		type unresolvedIntent struct {
 			id   string
@@ -620,12 +621,13 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return err
 			}
 			kind := request.Kind
-			if kind != IntentCell && kind != IntentTool && kind != IntentExecutor {
+			if kind != IntentCell && kind != IntentTool && kind != IntentExecutor && kind != IntentSampling {
 				rows.Close()
 				return protocol.ErrPrecondition
 			}
-			if kind == IntentCell {
-				if conversation.Pending == nil || intentID != conversation.Pending.ID || pendingIntentFound {
+			if kind == IntentCell || kind == IntentSampling {
+				if conversation.Pending == nil || intentID != conversation.Pending.ID ||
+					conversation.Pending.Kind != PendingIntentKind(kind) || pendingIntentFound {
 					rows.Close()
 					return protocol.ErrPrecondition
 				}
@@ -676,10 +678,28 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
 			return protocol.ErrPrecondition
 		}
+		if pendingSampling {
+			// A provider response is not a model turn until Finish atomically appends its
+			// output. Do not infer that it completed, or that an unrelated live effect is safe.
+			if len(unresolved) != 1 || unresolved[0].kind != IntentSampling || liveCell || liveProcess {
+				return protocol.ErrPrecondition
+			}
+			calls, err := conversation.Archive.PendingCalls()
+			if err != nil {
+				return err
+			}
+			if len(calls) != 0 {
+				return protocol.ErrPrecondition
+			}
+		}
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
 			abandonedIntent := map[string]any{"status": IntentResultAbandoned, "remote_outcome": "unknown", "automatic_replay": false}
+			if intent.kind == IntentSampling {
+				abandonedIntent["provider_completion_unknown"] = true
+				abandonedIntent["output_committed"] = false
+			}
 			wire, err := marshal(abandonedIntent)
 			if err != nil {
 				return err
@@ -725,8 +745,12 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				return err
 			}
 		}
+		notice := "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."
+		if pendingSampling {
+			notice = "An operator abandoned an interrupted provider response after reviewing its retained request and stream evidence. The provider may have completed or charged for the request; its completion and external effects are unknown. The observed stream prefix was not committed as model output, and no sampler tool call from this response was dispatched. The response will not be replayed. Continue from the last committed conversation after new user input. This recovery starts a fresh JavaScript session; prior store()/load() values are unavailable."
+		}
 		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."}})
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
 		}); err != nil {
 			return err
 		}
@@ -771,6 +795,10 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 			"status": "recovered", "operator_note": note, "javascript_state_reset": true,
 			"remote_outcome": "unknown", "automatic_replay": false,
 			"abandoned_intent_ids": abandonedIntentIDs,
+		}
+		if pendingSampling {
+			recoveryEvidence["provider_completion_unknown"] = true
+			recoveryEvidence["output_committed"] = false
 		}
 		if replacementIncarnationUID != "" {
 			recoveryEvidence["previous_incarnation_uid"] = previousIncarnationUID
