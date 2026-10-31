@@ -50,7 +50,8 @@ already produced by one. An exact-commit bundle from such a run may therefore
 be absent; per-target baseline resolution falls back to the retained pointer
 and marks the review `baseline_fallback`. A direct
 `pr-visuals-publish --ci-conclusion cancelled` invocation likewise closes its
-check without reading BuildBuddy or S3.
+check without reading BuildBuddy or S3. A later announcement for the same
+attempt leaves an already-completed check terminal.
 
 Completed CI runs, including runs whose tests failed, still wait for a confirmed
 complete test invocation before listing artifacts. Only their complete bundles

@@ -9,8 +9,9 @@ from devinfra.pr_visuals import check_run
 
 
 class FakeCheckRun:
-    def __init__(self, external_id: str | None) -> None:
+    def __init__(self, external_id: str | None, *, status: str = "in_progress") -> None:
         self.external_id = external_id
+        self.status = status
         self.edits: list[dict[str, Any]] = []
 
     def edit(self, **kwargs: Any) -> None:
@@ -138,6 +139,24 @@ def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatc
             "external_id": "pr-visual-review:123:1",
         }
     ]
+
+
+def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    cancelled = FakeCheckRun("pr-visual-review:123:1", status="completed")
+    repo = FakeRepo([cancelled])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="in_progress",
+        summary="Bazel CI is running.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert repo.created == []
+    assert cancelled.edits == []
 
 
 @pytest.mark.parametrize(("status", "conclusion"), [("in_progress", "success"), ("completed", None)])

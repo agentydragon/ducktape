@@ -60,6 +60,8 @@ def upsert_check_run(
             ]
         if len(existing) > 1:
             raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
+        if status == "in_progress" and existing and existing[0].status == "completed":
+            return
 
         output = CheckRunOutput(title=name, summary=summary[:65000]).api_payload()
         optional: dict[str, Any] = {
