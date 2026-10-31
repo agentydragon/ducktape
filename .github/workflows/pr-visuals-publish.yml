@@ -15,10 +15,10 @@ on:
     types: [in_progress, completed]
 
 concurrency:
-  # Per triggering workflow too: one PR head is the `head_sha` of both a `CI` run and a
-  # `Trusted fork PR CI` run (skipped, for a same-repo PR), and a sibling's events must
-  # not cancel this one's.
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.workflow_id }}-${{ github.event.workflow_run.head_sha }}
+  # A completed event supersedes the announcement or publication for the same CI
+  # attempt, including when CI was cancelled. A rerun or another CI workflow for
+  # the same head must not cancel this attempt's publication.
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: true
 
 permissions:
@@ -62,17 +62,14 @@ jobs:
             --status in_progress \
             --summary "Bazel CI is running; visual publication will follow." \
             --details-url "${{ github.event.workflow_run.html_url }}" \
-            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}"
+            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
 
-  # Runs on every conclusion, cancelled included: cancellation kills the workflow,
-  # not the Bazel invocation, which has often already streamed a full set of
-  # manifests. A flaky non-visual test must not leave the base commit without a
-  # visual bundle either. The publisher only advances pointers for manifests it
-  # actually receives — and never from a superseded run at all — so an incomplete
-  # run cannot manufacture one.
+  # A cancelled CI run has no visual publication. Other completed runs still
+  # publish their available artifacts, including when unrelated tests failed.
   publish:
     if: >-
       github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
       (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.head_repository.full_name == github.repository) ||
@@ -128,6 +125,45 @@ jobs:
           )
           if [ -n "$PR_HEAD_REF" ]; then
             args+=(--pull-request-head "$PR_HEAD_REF")
-            args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}")
+            args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}")
           fi
           pr-visuals-publish "${args[@]}"
+
+  # Close the announcement, if one was posted before the upstream cancellation.
+  # This job has no BuildBuddy or S3 credential and never downloads visual assets.
+  cancel:
+    if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'cancelled' &&
+      (
+        (github.event.workflow_run.event == 'pull_request' &&
+         github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event.workflow_run.event == 'pull_request_target' &&
+         github.event.workflow_run.head_repository.owner.login == 'agentydragon-agent')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: devel
+
+      - name: Record visual publisher artifact
+        run: jq -e '.pins["pr-visuals"]' nix/artifact-pins.json
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#pr-visuals"
+
+      - name: Complete cancelled visual review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          pr-visuals-announce \
+            --repository "$GITHUB_REPOSITORY" \
+            --sha "$HEAD_SHA" \
+            --status completed \
+            --conclusion cancelled \
+            --summary "Bazel CI was cancelled; visual publication stopped." \
+            --details-url "${{ github.event.workflow_run.html_url }}" \
+            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
