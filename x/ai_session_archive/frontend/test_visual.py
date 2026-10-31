@@ -365,8 +365,8 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await tool.hover()
         await tool.get_by_role("button", name="Raw JSONL record", exact=True).click()
         await expect(tool.get_by_role("region", name="Raw JSONL record")).to_have_count(2)
-        await expect(tool).to_contain_text('"call_id":"check"')
         await tool.get_by_role("region", name="Raw JSONL record").first.scroll_into_view_if_needed()
+        await expect(tool).to_contain_text('"call_id": "check"')
         await expect(history).to_have_attribute("data-layout-settled", "true")
         await view.capture(name=f"{capture_name}_source")
 
