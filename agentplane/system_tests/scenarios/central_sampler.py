@@ -622,7 +622,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
         await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
 
-        assert "The execution Sandbox changed incarnation" in model_context, model_context
+        assert "The execution Sandbox changed incarnation" in model_context, "resumed request omitted the notice"
         (result_output,) = resumed_tool_outputs
         result = json.loads(result_output)
         assert result["exit_code"] == 0, result
