@@ -34,6 +34,7 @@ class Base(DeclarativeBase):
 
 
 JsonType = JSON().with_variant(JSONB(), "postgresql")
+ParsedJsonType = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 
 class MachineRow(Base):
@@ -208,7 +209,8 @@ class RecordPayloadRow(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     parser_version: Mapped[str] = mapped_column(String(50), nullable=False)
     raw_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    parsed: Mapped[Any | None] = mapped_column(JsonType)
+    parsed: Mapped[Any | None] = mapped_column(ParsedJsonType)
+    parsed_from_raw: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     parse_error: Mapped[str | None] = mapped_column(String)
     timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     kind: Mapped[str | None] = mapped_column(String)

@@ -1,10 +1,12 @@
 """Owner-authenticated read API and browser for archived workstation sessions."""
 
+import json
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -43,6 +45,25 @@ class Versions(BaseModel):
 
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
+
+
+def _event_page_response(page: EventPage) -> Response:
+    event_documents = []
+    for event in page.data:
+        if event._parsed_json_fragment is None:
+            event_document = json.dumps(
+                jsonable_encoder(event), ensure_ascii=True, allow_nan=False, separators=(",", ":")
+            )
+        else:
+            fields = jsonable_encoder(event, exclude={"parsed"})
+            event_document = json.dumps(fields, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+            event_document = f'{event_document[:-1]},"parsed":{event._parsed_json_fragment}}}'
+        event_documents.append(event_document)
+    next_cursor = json.dumps(page.next_cursor, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+    body = f'{{"data":[{",".join(event_documents)}],"next_cursor":{next_cursor}}}'
+    response = Response(content=body.encode("utf-8"), media_type="application/json")
+    _no_store(response)
+    return response
 
 
 def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | None = None) -> FastAPI:
@@ -100,18 +121,18 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
             return Versions(data=queries.list_versions(db, session_id=session_id))
 
-    @api.get("/sessions/{session_id}/versions/{version_id}/events")
+    @api.get("/sessions/{session_id}/versions/{version_id}/events", response_model=EventPage)
     def events(
         session_id: UUID,
         version_id: UUID,
         cursor: Annotated[int | None, Query(ge=0)] = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    ) -> EventPage:
+    ) -> Response:
         with factory() as db:
             page = queries.list_events(db, session_id=session_id, version_id=version_id, cursor=cursor, limit=limit)
             if page is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Session version not found")
-            return page
+            return _event_page_response(page)
 
     app.include_router(api)
     install_login(

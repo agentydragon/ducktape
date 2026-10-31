@@ -4,6 +4,7 @@ exports_files(
     [
         "0001_initial_archive.py",
         "0002_codex_titles.py",
+        "0003_raw_json_fallback.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
 )
@@ -13,8 +14,18 @@ filegroup(
     srcs = [
         "0001_initial_archive.py",
         "0002_codex_titles.py",
+        "0003_raw_json_fallback.py",
     ],
     visibility = ["//x/ai_session_archive/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0003_raw_json_fallback",
+    srcs = ["0003_raw_json_fallback.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_library(

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class Harness(StrEnum):
@@ -97,6 +97,7 @@ class Event(BaseModel):
     parse_error: str | None
     raw: str
     raw_base64: str
+    _parsed_json_fragment: str | None = PrivateAttr(default=None)
 
 
 class SessionPage(BaseModel):
