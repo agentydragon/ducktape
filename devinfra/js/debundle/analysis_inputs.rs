@@ -400,6 +400,8 @@ pub struct ProofDependencies {
     pub host_behavior: BTreeSet<HostBehaviorKey>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub program_premises: BTreeSet<ProgramPremiseKey>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
 }
 
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
@@ -421,6 +423,24 @@ pub struct BundleGlobalNames {
     /// No analyzed write may replace `Map`, `Set`, `WeakMap` or `WeakSet`,
     /// so constructing one allocates a fresh object.
     pub fresh_collections: bool,
+    /// Premises that discharged a computed call which could otherwise
+    /// install an accessor on the global chain. Every proof using the set
+    /// depends on them.
+    pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+}
+
+/// Stable reference to one `no_accessor_install_callables` entry.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NoAccessorInstallRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// A `no_accessor_install_callables` entry resolved to its one function.
+#[derive(Debug, Clone)]
+pub struct ResolvedNoAccessorInstall {
+    pub reference: NoAccessorInstallRef,
+    pub function_span: Span,
 }
 
 /// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
@@ -456,6 +476,7 @@ impl ProofDependencies {
             && self.argument_inputs.is_empty()
             && self.host_behavior.is_empty()
             && self.program_premises.is_empty()
+            && self.no_accessor_install_callables.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -470,6 +491,8 @@ impl ProofDependencies {
             .extend(other.host_behavior.iter().copied());
         self.program_premises
             .extend(other.program_premises.iter().copied());
+        self.no_accessor_install_callables
+            .extend(other.no_accessor_install_callables.iter().cloned());
     }
 }
 

@@ -102,10 +102,7 @@ fn non_fresh_predefined_unknown_key_or_accessor_stores_stay_unknown() {
             vec!["root", "install", "set"],
         ),
         // `method` may be `__defineGetter__`, installing a getter for the slot.
-        (
-            "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }",
-            vec!["root", "install", "call"],
-        ),
+        (ACCESSOR_CALL, vec!["root", "install", "call", "other"]),
     ] {
         let source = source(bundle);
         expect_atomic_conflict_rejection(
@@ -153,4 +150,130 @@ fn a_store_in_another_chunk_keeps_the_slot_unknown() {
     let fixture =
         run_fixture(opts(&source, &["root", "install"], &[], true).with_extra_chunks(&clean));
     assert_preserved_entry_output(&fixture, "0 42\n");
+}
+
+const ACCESSOR_CALL: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }\nfunction other(target, key) { target[key](); }";
+
+fn no_accessor_install(declaration: &str, binding: &str) -> NoAccessorInstallCallableContract {
+    NoAccessorInstallCallableContract {
+        source_match: serde_yaml::from_str(&format!(
+            "match: {declaration:?}\nbindings: [{binding}]\n"
+        ))
+        .expect("source selector"),
+        note: Some("Every caller passes a primitive value.".into()),
+    }
+}
+
+fn accessor_opts<'a>(
+    source: &'a str,
+    premise: NoAccessorInstallCallableContract,
+) -> FixtureOpts<'a> {
+    opts(source, &["root", "install", "call", "other"], &[], true)
+        .with_no_accessor_install_callables("static/app", vec![premise])
+}
+
+#[test]
+fn a_premise_on_the_calling_function_keeps_the_slot() {
+    const DIRECT: &str = "function call(method, key, value) { root[method](key, value); }";
+    // A nested closure is part of the selected function.
+    const NESTED: &str =
+        "function call(method, key, value) { const run = () => root[method](key, value); run(); }";
+    for declaration in [DIRECT, NESTED] {
+        let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
+        let fixture = run_fixture(accessor_opts(
+            &source,
+            no_accessor_install(declaration, "call"),
+        ));
+        assert_preserved_entry_output(&fixture, "0 42\n");
+        assert_all_emitted_js_checks(&fixture);
+        // `new Map()` consumes the census the premise kept intact.
+        let graph = fixture.dependency_graph();
+        let node_id = source_unit_for_binding(&graph, "collection");
+        let node = graph.nodes.iter().find(|node| node.id == node_id).unwrap();
+        let report = serde_json::to_value(node).unwrap();
+        assert_eq!(
+            report["synchronous_execution"]["native_integrity_uses"][0]["no_accessor_install_refs"],
+            serde_json::json!([{ "defining_chunk": "static/app", "input_index": 0 }]),
+            "{report}"
+        );
+    }
+}
+
+#[test]
+fn a_premise_on_another_function_keeps_the_slot_unknown() {
+    let source = source(ACCESSOR_CALL);
+    expect_atomic_conflict_rejection(
+        accessor_opts(
+            &source,
+            no_accessor_install("function other(target, key) { target[key](); }", "other"),
+        ),
+        &["values/native", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn a_premise_needs_one_function_with_a_computed_call() {
+    let source = source(ACCESSOR_CALL);
+    expect_rejection_containing_all(
+        accessor_opts(
+            &source,
+            no_accessor_install(
+                "function install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }",
+                "install",
+            ),
+        ),
+        &[
+            "no_accessor_install_callables[0]",
+            "no computed-key method call",
+        ],
+    );
+    let pair = source.replace(
+        "function other(target, key) { target[key](); }",
+        "const other = [(target, key) => target[key](), () => 0];",
+    );
+    expect_rejection_containing_all(
+        accessor_opts(
+            &pair,
+            no_accessor_install(
+                "const other = [(target, key) => target[key](), () => 0];",
+                "other",
+            ),
+        ),
+        &[
+            "no_accessor_install_callables[0]",
+            "exactly one outermost function",
+        ],
+    );
+}
+
+/// `componentHandler` is never stored by analyzed code, so under the host
+/// claim it is absent or a named element, never the global object.
+const COMPONENT_HANDLER: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction upgrade(element, method) { window.componentHandler && window.componentHandler[method](element); }";
+
+#[test]
+fn a_global_no_write_names_is_never_the_global_object() {
+    let source = source(COMPONENT_HANDLER);
+    let fixture = run_fixture(opts(&source, &["root", "install", "upgrade"], &[], true));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_all_emitted_js_checks(&fixture);
+}
+
+#[test]
+fn a_write_that_may_name_a_read_global_keeps_it_unknown() {
+    for (write, member) in [
+        ("function set(key, value) { window[key] = value; }", "set"),
+        (
+            "function alias() { Object.defineProperty(window, \"componentHandler\", { value: window }); }",
+            "alias",
+        ),
+        ("function alias() { componentHandler = window; }", "alias"),
+    ] {
+        let source = source(&format!("{COMPONENT_HANDLER}\n{write}"));
+        expect_atomic_conflict_rejection(
+            opts(&source, &["root", "install", "upgrade", member], &[], true),
+            &["values/native", "values/later"],
+            &[],
+        );
+    }
 }

@@ -672,6 +672,8 @@ pub struct CallableSummaryInputs<'a> {
     pub argument_inputs:
         &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
+    pub no_accessor_install_callables:
+        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
 }
 
 pub fn resolve_imported_callable_summaries(
@@ -689,6 +691,7 @@ pub fn resolve_imported_callable_summaries(
         explicit_binding_destinations,
         argument_inputs,
         predefined_globals,
+        no_accessor_install_callables,
     } = inputs;
     let required: BTreeSet<_> = modules
         .values()
@@ -815,11 +818,19 @@ pub fn resolve_imported_callable_summaries(
         }
         loop {
             let mut next = bundle_globals.clone();
-            for module in prepared.values() {
-                let survivors = module.bundle_global_survivors(&bundle_globals);
+            next.no_accessor_install_callables.clear();
+            for (module, facts) in &prepared {
+                let survivors = facts.bundle_global_survivors(
+                    &bundle_globals,
+                    no_accessor_install_callables
+                        .get(*module)
+                        .map_or(&[], Vec::as_slice),
+                );
                 next.names.retain(|name| survivors.names.contains(name));
                 next.registered_symbols &= survivors.registered_symbols;
                 next.fresh_collections &= survivors.fresh_collections;
+                next.no_accessor_install_callables
+                    .extend(survivors.no_accessor_install_callables);
             }
             if next == bundle_globals {
                 break;
@@ -2120,6 +2131,7 @@ mod tests {
                 explicit_binding_destinations: &BTreeMap::new(),
                 argument_inputs: &BTreeMap::new(),
                 predefined_globals: spec::PredefinedGlobals::Unknown,
+                no_accessor_install_callables: &BTreeMap::new(),
             },
         )
         .unwrap()

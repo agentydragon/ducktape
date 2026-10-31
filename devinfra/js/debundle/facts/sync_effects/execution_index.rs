@@ -12,9 +12,10 @@ use super::value_model::{
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind,
-    NativeIntegrity, NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies,
-    ResolvedBindingValueInput, ResolvedNativeOperationInput, SelectedBindingValueInput,
-    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    NativeIntegrity, NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef,
+    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
 use crate::facts::abstract_domain::integrity::{
@@ -1581,6 +1582,8 @@ pub(super) struct BundleGlobals {
     symbol_keys: BTreeSet<Id>,
     /// `new Map()` and its kin allocate fresh objects.
     fresh_collections: bool,
+    /// Premises the set depends on.
+    no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
 }
 
 impl BundleGlobals {
@@ -5753,8 +5756,7 @@ fn key_domain_may_name(domain: &PropertyKeyDomain, name: &str) -> bool {
 
 const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
 
-const LEGACY_ACCESSOR_METHODS: [&str; 3] =
-    ["__defineGetter__", "__defineSetter__", "__lookupGetter__"];
+const LEGACY_ACCESSOR_METHODS: [&str; 2] = ["__defineGetter__", "__defineSetter__"];
 
 /// One global data property a bundle-owned value may sit in: a name, or any
 /// property keyed by a `Symbol.for` symbol.
@@ -5861,6 +5863,7 @@ impl ExecutionIndex {
             registered_symbols: names.registered_symbols,
             symbol_keys: self.symbol_key_bindings(declared),
             fresh_collections: names.fresh_collections,
+            no_accessor_install_callables: names.no_accessor_install_callables.clone(),
         }
     }
 
@@ -5907,7 +5910,68 @@ impl ExecutionIndex {
                 _ => {}
             }
         }
+        // A non-standard property only read here is a candidate too: with no
+        // store it stays absent or a named property.
+        let mut reads = BTreeSet::new();
+        for expr in self
+            .intrinsic_writes
+            .iter()
+            .flat_map(|write| std::iter::once(&write.receiver).chain(&write.value))
+            .chain(self.prototype_calls.iter().map(|call| &call.callee))
+            .chain(assignments.iter().map(|(_, value)| value))
+        {
+            self.global_property_reads(expr, &context, &mut reads);
+        }
+        candidates.names.extend(reads);
         candidates
+    }
+
+    /// Non-standard property names `expr` reads from the global object.
+    fn global_property_reads(
+        &self,
+        expr: &ValueExpr,
+        context: &BundleGlobalContext<'_>,
+        reads: &mut BTreeSet<String>,
+    ) {
+        match expr {
+            ValueExpr::Member(base, property, _) => {
+                if let Some(name) = property
+                    && !reads.contains(name)
+                    && !is_standard_global(name)
+                    && self.census_globals.binding_root(name).is_none()
+                    && context.roots(base).contains(&NativeReceiverRoot::Intrinsic(
+                        NativeIntrinsic::GlobalObject,
+                    ))
+                {
+                    reads.insert(name.clone());
+                }
+                self.global_property_reads(base, context, reads);
+            }
+            ValueExpr::Call(callee, arguments, _) | ValueExpr::New(callee, arguments, _) => {
+                self.global_property_reads(callee, context, reads);
+                for argument in arguments {
+                    self.global_property_reads(argument, context, reads);
+                }
+            }
+            ValueExpr::ObjectLiteral(_, properties) => {
+                for (_, value) in properties {
+                    self.global_property_reads(value, context, reads);
+                }
+            }
+            ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
+                self.global_property_reads(inner, context, reads);
+            }
+            ValueExpr::Primitive(values) | ValueExpr::Alternatives(values) => {
+                for value in values {
+                    self.global_property_reads(value, context, reads);
+                }
+            }
+            ValueExpr::Binding(_)
+            | ValueExpr::Alloc(..)
+            | ValueExpr::Undefined
+            | ValueExpr::NonCallable
+            | ValueExpr::Unknown => {}
+        }
     }
 
     /// The `candidates` this module's writes keep bundle-owned: a greatest
@@ -5918,6 +5982,7 @@ impl ExecutionIndex {
     pub(crate) fn bundle_global_survivors(
         &self,
         candidates: &BundleGlobalNames,
+        premises: &[ResolvedNoAccessorInstall],
     ) -> BundleGlobalNames {
         if !self.census_globals.standard_host {
             return BundleGlobalNames::default();
@@ -5939,6 +6004,7 @@ impl ExecutionIndex {
                 declared: &declared,
             };
             let mut next = current.clone();
+            next.no_accessor_install_callables.clear();
             let mut next_symbol_for_intact = true;
             for write in &self.intrinsic_writes {
                 let roots = context.roots(&write.receiver);
@@ -6035,9 +6101,9 @@ impl ExecutionIndex {
                     next.fresh_collections = false;
                 }
             }
-            // A legacy accessor method can install or expose a getter that runs
-            // on a later read. A computed method key counts whenever its domain
-            // may spell one.
+            // A legacy accessor method can install a getter that runs on a later
+            // read. A computed method key counts whenever its domain may spell
+            // one, unless an author premise covers its callable.
             let installs_accessor = |property: &Option<String>, key: &MemberKey| {
                 let domain = match (property, key) {
                     (Some(name), _) => {
@@ -6060,15 +6126,27 @@ impl ExecutionIndex {
                     .iter()
                     .any(|method| key_domain_may_name(&domain, method))
             };
-            if self.prototype_calls.iter().any(|call| {
-                call.kind == CallKind::Call
-                    && matches!(&call.callee, ValueExpr::Member(base, property, key)
-                        if installs_accessor(property, key) && !context
-                            .roots(base)
-                            .iter()
-                            .all(|root| *root == NativeReceiverRoot::BundleGlobal))
-            }) {
-                return BundleGlobalNames::default();
+            for call in &self.prototype_calls {
+                let ValueExpr::Member(base, property, key) = &call.callee else {
+                    continue;
+                };
+                if call.kind != CallKind::Call
+                    || !installs_accessor(property, key)
+                    || context
+                        .roots(base)
+                        .iter()
+                        .all(|root| *root == NativeReceiverRoot::BundleGlobal)
+                {
+                    continue;
+                }
+                let premise = premises.iter().find(|premise| {
+                    property.is_none() && premise.function_span.contains(call.span)
+                });
+                let Some(premise) = premise else {
+                    return BundleGlobalNames::default();
+                };
+                next.no_accessor_install_callables
+                    .insert(premise.reference.clone());
             }
             if !next_symbol_for_intact {
                 next.registered_symbols = false;
@@ -6119,6 +6197,26 @@ impl ExecutionIndex {
         }
     }
 
+    /// The author and host premises the completed census consumed.
+    pub(super) fn native_integrity_dependencies(&self) -> ProofDependencies {
+        let bundle_globals = self
+            .native_integrity_host_behavior
+            .contains(&HostBehaviorKey::PredefinedGlobals);
+        ProofDependencies {
+            value_inputs: self.native_integrity_value_input_refs.clone(),
+            host_behavior: self.native_integrity_host_behavior.clone(),
+            no_accessor_install_callables: if bundle_globals {
+                self.census_globals
+                    .bundle
+                    .no_accessor_install_callables
+                    .clone()
+            } else {
+                BTreeSet::new()
+            },
+            ..Default::default()
+        }
+    }
+
     /// The completed census as slot flags, with the `IntrinsicIntact` axioms
     /// of every validated native input.
     pub(super) fn integrity_flags(&self) -> IntegrityFlags {
@@ -6126,11 +6224,7 @@ impl ExecutionIndex {
             self.dynamic_scope_owners.is_empty(),
             self.mutated_intrinsic_roots.clone(),
             &self.native_integrity_witnesses,
-            crate::analysis_inputs::ProofDependencies {
-                value_inputs: self.native_integrity_value_input_refs.clone(),
-                host_behavior: self.native_integrity_host_behavior.clone(),
-                ..Default::default()
-            },
+            self.native_integrity_dependencies(),
             self.intrinsic_axioms(),
             PrototypeWrites::new(
                 self.native_prototype_mutations
@@ -12055,8 +12149,9 @@ impl PreparedCallableCapabilities {
     pub(crate) fn bundle_global_survivors(
         &self,
         candidates: &BundleGlobalNames,
+        premises: &[ResolvedNoAccessorInstall],
     ) -> BundleGlobalNames {
-        self.index.bundle_global_survivors(candidates)
+        self.index.bundle_global_survivors(candidates, premises)
     }
 
     pub(crate) fn value_input_errors(&self) -> &[String] {
