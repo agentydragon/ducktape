@@ -37,7 +37,7 @@ use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_match::source_match_claim_member_selectors;
-use spec::{ChunkExportPurity, DependencyGraphOptions, SourceUnitSelector};
+use spec::{DependencyGraphOptions, SourceUnitSelector};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
@@ -45,6 +45,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::analysis_projection::AnalysisProjection;
 use super::materialize::ResolvedMemberSite;
 
 /// Resolve a one-binding `source_match` through the selector engine and
@@ -272,33 +273,30 @@ fn resolved_target_is_entry(
 /// from its bundled body: the swap promises the replacement behaves like it
 /// (SPEC.md § Vendor swap equivalence).
 pub(super) struct CrossModuleAnalysisOptions<'a> {
-    pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
-    pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
-    pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
     pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
-    pub(super) predefined_globals: spec::PredefinedGlobals,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
+    projection: &AnalysisProjection<'_>,
     options: CrossModuleAnalysisOptions<'_>,
-    declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<CrossModulePurities> {
     let CrossModuleAnalysisOptions {
-        chunk_export_purity,
-        chunk_analysis_options,
         graph_provenance,
         explicit_binding_destinations,
-        resolved_member_sites,
         replacement_packages,
-        predefined_globals,
     } = options;
+    let chunk_export_purity = projection.chunk_export_purity;
+    let chunk_analysis_options = projection.chunk_analysis_options;
+    let resolved_member_sites = &projection.premise_members;
+    let predefined_globals = projection.host_behavior.predefined_globals;
+    let declared_pure_new_bindings = &projection.declared_pure_new();
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
     // refinement, and an unparseable chunk degrades to today's conservative
@@ -1377,6 +1375,7 @@ mod tests {
         ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata, FileRole, JsChunk,
         JsFile, JsFileBody,
     };
+    use spec::ChunkExportPurity;
 
     fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {
         js_ast::with_swc_globals(|| {
@@ -1514,19 +1513,24 @@ mod tests {
                 "export const value = {};",
             );
             let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+            let no_options = BTreeMap::new();
+            let no_export_purity = BTreeMap::new();
+            let host_behavior = spec::HostBehavior::default();
             let facts = collect_cross_module_imported_purities(
                 &artifact,
                 &indexes,
+                &AnalysisProjection::new(
+                    &no_options,
+                    &no_export_purity,
+                    &host_behavior,
+                    BTreeMap::new(),
+                    &BTreeMap::new(),
+                ),
                 CrossModuleAnalysisOptions {
-                    chunk_export_purity: &BTreeMap::new(),
-                    chunk_analysis_options: &BTreeMap::new(),
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
-                    resolved_member_sites: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
-                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
-                &BTreeMap::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");
@@ -1571,19 +1575,23 @@ mod tests {
                 .insert("factory".to_string());
             let assertions = BTreeMap::from([("static/peer".to_string(), assertion)]);
             let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+            let no_options = BTreeMap::new();
+            let host_behavior = spec::HostBehavior::default();
             let facts = collect_cross_module_imported_purities(
                 &artifact,
                 &indexes,
+                &AnalysisProjection::new(
+                    &no_options,
+                    &assertions,
+                    &host_behavior,
+                    BTreeMap::new(),
+                    &BTreeMap::new(),
+                ),
                 CrossModuleAnalysisOptions {
-                    chunk_export_purity: &assertions,
-                    chunk_analysis_options: &BTreeMap::new(),
                     graph_provenance: None,
                     explicit_binding_destinations: &BTreeMap::new(),
-                    resolved_member_sites: &BTreeMap::new(),
                     replacement_packages: &BTreeMap::new(),
-                    predefined_globals: spec::PredefinedGlobals::Unknown,
                 },
-                &BTreeMap::new(),
                 None,
             )
             .expect("cross-module analysis succeeds");

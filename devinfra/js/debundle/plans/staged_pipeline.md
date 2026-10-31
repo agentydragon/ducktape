@@ -24,14 +24,14 @@ Stage names follow the code, not the original proposal. "Selector solve" is
 `prepare_logical_chunk` → `solve_projected_chunks` → `claim_prepared_chunk`
 (`lowering/mod.rs`).
 
-| Stage                          | Code                                                                                                                                                                                                           | Reads                                                                                                                               | Tana                         | Claude                        |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------- |
-| S0 prepare                     | `pipeline.rs::prepare_transform`: parse every chunk, `build_vendor_resolution_plan`                                                                                                                            | sources, `inputs`, vendor marks, package roots                                                                                      | 1.6 s                        | 3.8 s                         |
-| S1 structural + selector solve | `collect_chunk_source_facts`, selector solve                                                                                                                                                                   | source; all module YAML (anchors couple modules)                                                                                    | 3.4 s                        | 1.3 s                         |
-| S2 program-wide                | `export_policies`, `export_reentry_reports` (loader derivation, closure blockers), `cross_module::collect_cross_module_imported_purities` (provider execution indexes, callable summaries, premise resolution) | sources, `host_behavior`, `program_premises`, `chunk_export_purity`, premise lists, vendor plan; today also assignment (C1, C3, C4) | 0.2 s + 77 s                 | 7.5 s + 38–40 s               |
-| S3 per-chunk analysis          | `finish_logical_chunk` → `complete_chunk_structural_with_inputs` → `analyze_chunk_with_policy` (one `IterativeInference` context: interpreter and purity)                                                      | chunk source, S2 output, annotation premises, analysis half of `chunk_analysis_options`                                             | 43 s                         | 26 s wall, 55–58 s CPU        |
-| S4 graph and gate              | `compute_dependency_graph_and_atomic_groups_with`, rebind folds, `builder.finalize`, `AssignmentAnalysis`, `validate_and_emit_reports`                                                                         | S3 facts, `commuting_statements`, `dataflow_aware_s_chain`, assignment                                                              | 3.8–4.7 s graph + 4.0 s gate | 5.4–7.4 s + 1.8–3.3 s (`cli`) |
-| S5 lower and emit              | `lower_chunk`, naturalize, emission rewrites (including vendor strip), prune, `ReconstructionPlan`, `write_js_tree`                                                                                            | S4 placement, `chunk_renames`, output config                                                                                        | 5.0 s lower; emit see below  | 0.3 s + 5.2 s                 |
+| Stage                          | Code                                                                                                                                                                                                           | Reads                                                                                                                           | Tana                         | Claude                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------- |
+| S0 prepare                     | `pipeline.rs::prepare_transform`: parse every chunk, `build_vendor_resolution_plan`                                                                                                                            | sources, `inputs`, vendor marks, package roots                                                                                  | 1.6 s                        | 3.8 s                         |
+| S1 structural + selector solve | `collect_chunk_source_facts`, selector solve                                                                                                                                                                   | source; all module YAML (anchors couple modules)                                                                                | 3.4 s                        | 1.3 s                         |
+| S2 program-wide                | `export_policies`, `export_reentry_reports` (loader derivation, closure blockers), `cross_module::collect_cross_module_imported_purities` (provider execution indexes, callable summaries, premise resolution) | sources, `host_behavior`, `program_premises`, `chunk_export_purity`, premise lists, vendor plan; today also assignment (C1, C3) | 0.2 s + 77 s                 | 7.5 s + 38–40 s               |
+| S3 per-chunk analysis          | `finish_logical_chunk` → `complete_chunk_structural_with_inputs` → `analyze_chunk_with_policy` (one `IterativeInference` context: interpreter and purity)                                                      | chunk source, S2 output, annotation premises, analysis half of `chunk_analysis_options`                                         | 43 s                         | 26 s wall, 55–58 s CPU        |
+| S4 graph and gate              | `compute_dependency_graph_and_atomic_groups_with`, rebind folds, `builder.finalize`, `AssignmentAnalysis`, `validate_and_emit_reports`                                                                         | S3 facts, `commuting_statements`, `dataflow_aware_s_chain`, assignment                                                          | 3.8–4.7 s graph + 4.0 s gate | 5.4–7.4 s + 1.8–3.3 s (`cli`) |
+| S5 lower and emit              | `lower_chunk`, naturalize, emission rewrites (including vendor strip), prune, `ReconstructionPlan`, `write_js_tree`                                                                                            | S4 placement, `chunk_renames`, output config                                                                                    | 5.0 s lower; emit see below  | 0.3 s + 5.2 s                 |
 
 S1 and S2 run once per program; S3, S4 and the lowering half of S5 run per
 chunk in parallel, so Claude's wall is its `cli` chunk.
@@ -63,9 +63,9 @@ cause spurious cache misses.
 | `logical_modules` key set, `chunk_renames` key set, `unassigned_mode` key set                                                                                         | S0 (chunk set), S2 scope | Which chunks are analysed (C7).                                                               |
 | `materialize_logical_modules.prune_other_chunks`                                                                                                                      | S2 scope                 | Changes the S2 universe.                                                                      |
 | `materialize_logical_modules.{file,target_dir}`                                                                                                                       | S1, S5                   | Request paths; analysis sees destinations by index only.                                      |
-| members' selectors, `source_matches`, `anonymous_statements[].source_match`                                                                                           | S1, S4, S5               | The assignment. Results leak into S2/S3 today (C1, C3, C4).                                   |
-| `annotations.{purity, initializer_purity, effect, pure_members, no_sync_callback_members, retained_record_factory}`                                                   | S1, S2 (`pure_new`), S3  | Analysis premises stored in module YAML; destination never read (C2, C4).                     |
-| `anonymous_statements[].no_reentry_call`                                                                                                                              | S1, S3                   | Premise stored in module YAML (C2).                                                           |
+| members' selectors, `source_matches`, `anonymous_statements[].source_match`                                                                                           | S1, S4, S5               | The assignment. Results leak into S2/S3 today (C1, C3).                                       |
+| `annotations.{purity, initializer_purity, effect, pure_members, no_sync_callback_members, retained_record_factory}`                                                   | S1, S2 (`pure_new`), S3  | Analysis premises stored in module YAML; resolved to bindings in the projection.              |
+| `anonymous_statements[].no_reentry_call`                                                                                                                              | S1, S3                   | Resolved to call spans in the projection.                                                     |
 | `chunk_renames.<c>.members`                                                                                                                                           | S4, S5                   |                                                                                               |
 | `chunk_renames.<c>.annotations`                                                                                                                                       | S3                       | Same shape as member annotations.                                                             |
 | `unassigned_mode`                                                                                                                                                     | S1, S4                   | Never read by S2/S3.                                                                          |
@@ -100,25 +100,15 @@ semantic change: a crossing interval becomes a gate rejection instead of an
 analysis error. Both canonical inputs have empty `stable_set_spreads`, so
 acceptance there cannot change.
 
-**C2 — member and chunk-rename annotations, `no_reentry_call`.** Keyed by
-readable name inside a module; the selector solve maps them to binding names
-(`collect_member_analysis_assumptions`, `collect_chunk_rename_analysis_assumptions`).
-No destination is read: moving a member leaves the resulting
-`AnalysisAssumptions` identical. Cut: the projection (below) carries the
-resolved `{chunk → binding → annotation}` map, not module paths.
-
-**C3 — `resolved_member` premise selectors.** Native-operation and
-call-identity premises may name `resolved_member: { module, name }`, resolved
-in S2 through `resolved_member_sites` (`lowering/cross_module.rs`).
-Commuting endpoints may too, but they resolve in S4, where assignment is an
-input anyway. Renaming or moving the member changes the premise's meaning. Cut:
-the projection resolves each to `(chunk, body_index, binding)`; S2 never sees
-module paths. Optionally a later codemod rewrites `resolved_member` to
-`source_match` and retires the variant.
-
-**C4 — `declared_pure_new` reaches S2** from `purity: pure_new` annotations
-(`lowering/mod.rs` → `cross_module.rs:629`). Same shape as C2; covered by the
-same projection.
+**C3 — `resolved_member` premise selectors (residue).** S2 and S3 already
+read the spec only through `lowering::analysis_projection::AnalysisProjection`:
+annotations and `no_reentry_call` premises keyed by resolved binding,
+`purity: pure_new` derived from them, and only the members that
+`native_operation_inputs` name through `resolved_member`. What remains is that
+such a premise names its member by `(module, name)` and its evidence records
+that selector, so renaming the module still changes S2's output. Cut: with C6,
+evidence names the premise by id; optionally a codemod rewrites
+`resolved_member` to `source_match` and retires the variant.
 
 **C6 — spec paths and whole-spec provenance in analysis output.** S2 evidence
 embeds `author_input_spec_path(provenance)`; `spec_location` strings and
@@ -129,7 +119,8 @@ index); report writers in S4/S5 render the location. The artifact header
 carries only its own key.
 
 **C7 — the analysed chunk set comes from assignment key sets.** Cut: the
-projection lists the analysed chunks and `prune_other_chunks` explicitly.
+projection file (step 7) lists the analysed chunks and `prune_other_chunks`
+explicitly.
 
 **C8 — selector anchors couple modules within S1.** `cross_ref.anchor`,
 `reads_member.object` and similar name other members, so the selector solve
@@ -313,9 +304,6 @@ A stage may read only what its key covers. Enforced, not documented:
 Each PR is byte-identical on the e2e suite and both canonical inputs unless
 it says otherwise.
 
-3. **`AnalysisProjection` (C2, C3, C4, C7).** Computed after the selector
-   solve; S2 and S3 consume only it; `resolved_member` premises resolved to
-   `(chunk, body_index, binding)`.
 4. **Stable set spreads as a gate constraint (C1).** Not byte-identical on
    e2e: the crossing-interval case moves from an analysis error to a gate
    rejection. Canonical inputs unaffected (no stable set spreads).
@@ -323,7 +311,8 @@ it says otherwise.
 6. **Serializable artifact.** Serde derives, `rmp-serde` (new dependency)
    and `zstd` (already in `Cargo.Bazel.lock` transitively), context and
    span canonicalization, round-trip and determinism tests.
-7. **CLI**: `spec project-analysis`, `analyze`, `run --analysis`, equivalence
+7. **CLI**: `spec project-analysis` (serializes `AnalysisProjection`, adding the
+   analysed chunk set for C7), `analyze`, `run --analysis`, equivalence
    tests. Graduate the boundary to docs/design.md § Pipeline split and update
    the lessons-learned note.
 8. **`pipeline.bzl`** three actions. gaffer-private repins separately.

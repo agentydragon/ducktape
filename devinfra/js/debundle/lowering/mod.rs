@@ -20,6 +20,7 @@ use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, LogicalModule, UnassignedMode,
 };
 
+mod analysis_projection;
 mod anonymous;
 mod body_facts;
 mod chunk_ast;
@@ -57,8 +58,9 @@ use io::{
     ProgramGraphOutput, prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json,
 };
 
+use analysis_projection::AnalysisProjection;
 use materialize::{
-    ChunkContext, ChunkSpec, CommutingStatementsContext, EmissionChunkOutputs,
+    ChunkContext, ChunkSpec, ClaimedLogicalChunk, CommutingStatementsContext, EmissionChunkOutputs,
     MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
     finish_logical_chunk, prepare_logical_chunk,
 };
@@ -423,8 +425,6 @@ pub fn materialize_logical_modules(
                                 logical_modules,
                                 chunk_renames,
                                 unassigned_mode,
-                                chunk_analysis_options,
-                                host_behavior,
                             },
                         })
                     })
@@ -435,7 +435,7 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
     let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
     let resolutions = solve_projected_chunks(projections)?;
-    let claimed = GLOBALS
+    let mut claimed = GLOBALS
         .with(|globals| {
             prepared
                 .into_par_iter()
@@ -447,12 +447,9 @@ pub fn materialize_logical_modules(
         })
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
-    let declared_pure_new = claimed
-        .iter()
-        .map(|chunk| {
-            let (chunk_id, bindings) = chunk.declared_pure_new();
-            (chunk_id.to_string(), bindings.clone())
-        })
+    let declared_assumptions = claimed
+        .iter_mut()
+        .map(ClaimedLogicalChunk::take_declared_assumptions)
         .collect();
     let explicit_binding_destinations: BTreeMap<_, _> = claimed
         .iter()
@@ -468,19 +465,22 @@ pub fn materialize_logical_modules(
                 .push(site);
         }
     }
+    let projection = AnalysisProjection::new(
+        chunk_analysis_options,
+        chunk_export_purity,
+        host_behavior,
+        declared_assumptions,
+        &resolved_member_sites,
+    );
     let cross_module_purities = cross_module::collect_cross_module_imported_purities(
         &artifact,
         &artifact_indexes,
+        &projection,
         cross_module::CrossModuleAnalysisOptions {
-            chunk_export_purity,
-            chunk_analysis_options,
             graph_provenance: options.graph_provenance.as_ref(),
             explicit_binding_destinations: &explicit_binding_destinations,
-            resolved_member_sites: &resolved_member_sites,
             replacement_packages: &vendor_plan.replacement_packages(),
-            predefined_globals: host_behavior.predefined_globals,
         },
-        &declared_pure_new,
         Some(&cross_module_chunk_closure),
     )?;
     let program_graph = ProgramGraphOutput::new(
@@ -495,6 +495,7 @@ pub fn materialize_logical_modules(
                     GLOBALS.set(globals, || {
                         finish_logical_chunk(
                             chunk,
+                            &projection,
                             &cross_module_purities,
                             &program_graph,
                             CommutingStatementsContext {
