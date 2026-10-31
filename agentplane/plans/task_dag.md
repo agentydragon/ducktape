@@ -16,14 +16,14 @@ concrete autonomous workflow is a daily agent inspecting the previous 24 hours o
 opening useful fix PRs. Agentplane-level child Sessions are important; native harness children
 remain useful but do not provide independently addressable Agentplane Sessions.
 
-| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                            |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | Address concrete instability reported during normal use; dedicated disruption/continuation exercises are [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
-| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                |
-| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                 |
-| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                |
-| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                |
-| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements        |
+| Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_HOST_AFFINITY`: idle Sessions lose JavaScript state when picked up by another healthy replica; dedicated disruption/continuation exercises remain [deferred](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use) |
+| P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                                                                                          |
+| Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                                                                                           |
+| Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                                                                                          |
+| Later     | Launching workers with different privileges, broader delegation and archive-read policy                               | `MULTIAGENT_MODEL`, `AGENT_LAUNCH_POLICY_DESIGN`, `AGENT_SANDBOX_LAUNCH`, broader create grants and held history-read work                                                                                                                                                          |
+| Later     | Broader runtime/conversation redesign and maintenance without a current workflow need                                 | Full `SESSION_RUNTIME_MODEL_DESIGN` and `AGENT_AUTHORED_CONVERSATIONS_DESIGN` implementations, renames, optional queue/database modes, broad protocol-parity research and speculative service/storage replacements                                                                  |
 
 Independent ready work may proceed alongside the main track; priority is not a new dependency edge.
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
@@ -115,6 +115,10 @@ coverage audit and additional acceptance tests. The operator will evaluate relia
 normal use. Revisit [a focused follow-up](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
 only if that use exposes continued instability. This exercise no longer gates the sprint or the
 daily CI milestone; no dedicated acceptance worker is dispatched.
+
+Normal use subsequently exposed a concrete regression:
+[`CENTRAL_SAMPLER_HOST_AFFINITY`](#central_sampler_host_affinity--preserve-healthy-javascript-state-across-idle-turns).
+It is a focused P0 candidate; the dedicated disruption exercise remains deferred.
 
 The [delegation proposal](https://github.com/agentydragon/ducktape/pull/13229) still awaits
 stakeholder review; its implementation remains outside the current dispatch. File conflicts do
@@ -737,6 +741,7 @@ flowchart LR
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
+    CENTRAL_SAMPLER_HOST_AFFINITY[P0 candidate: preserve healthy JS host across idle turns]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -913,6 +918,25 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 `openai/codex` main at `c7234c11` (2026-10-21), and core emits the call output only to hooks, so the runner sees
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
+
+### `CENTRAL_SAMPLER_HOST_AFFINITY` — preserve healthy JavaScript state across idle turns
+
+**P0 candidate; concrete operator-reported regression, 2026-10-31 UTC.** Ordinary turns in a
+Session alternated between two healthy sampler replicas. Each host change was treated as host
+loss, resetting the JavaScript epoch and injecting a loss notice. Neither Pod restarted; the
+original host-instance identity was unchanged on return.
+[Causal evidence](../x/central_sampler/debug/2026_10_31_idle_session_host_loss.md).
+
+Keep turn-execution leases distinct from JavaScript-host placement and liveness. Route subsequent
+work to, or reuse, the still-healthy host retaining the Session's values. Preserve exclusive
+execution and generation fencing; genuine host loss must retain supported recovery and uncertain
+effect behavior. This does not require a replacement JS host, arbitrary heap restoration or the
+full runtime redesign.
+
+Exit: a focused regression with two runtimes sharing durable storage demonstrates that ordinary
+turns separated by idle preserve `store()`/`load()` values and emit no host-loss notice while the
+original host is healthy. Retain genuine-loss fencing/recovery coverage. The separately waived
+disruption/continuation exercise is not a prerequisite.
 
 ### `CENTRAL_SAMPLER_MODEL_CAPABILITIES` — live route check for standard-mode routes
 
