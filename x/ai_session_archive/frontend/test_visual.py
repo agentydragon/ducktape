@@ -145,7 +145,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Inspect a local transcript").click()
-        related_toggle = page.get_by_role("button", name="Related sessions (1 shown)")
+        related_toggle = page.get_by_role("button", name=re.compile(r"^Related sessions \("))
         await related_toggle.click()
         related = page.get_by_role("region", name="Related sessions")
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
