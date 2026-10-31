@@ -277,3 +277,30 @@ fn a_write_that_may_name_a_read_global_keeps_it_unknown() {
         );
     }
 }
+
+/// A bundled library publishing its handler object (MDL's shape): every write
+/// of `handler` stores a fresh object, so the store is fresh.
+const PUBLISHED_HANDLER: &str = "var handler = { register() {} };\nhandler = (function () { var registered = []; return { register(item) { registered.push(item); } }; })();\nglobalThis.componentHandler = handler;\nconst root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction upgrade(element, method) { globalThis.componentHandler && globalThis.componentHandler[method](element); }";
+
+#[test]
+fn a_global_holding_a_fresh_binding_is_bundle_owned() {
+    let members = ["handler", "root", "install", "upgrade"];
+    let anonymous = [
+        "handler = (function () { var registered = []; return { register(item) { registered.push(item); } }; })();",
+        "globalThis.componentHandler = handler;",
+    ];
+    let published = source(PUBLISHED_HANDLER);
+    let fixture = run_fixture(opts(&published, &members, &anonymous, true));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_all_emitted_js_checks(&fixture);
+    // A second write makes `handler` able to hold the global object.
+    let swapped = source(&format!(
+        "{PUBLISHED_HANDLER}\nfunction swap() {{ handler = globalThis; }}"
+    ));
+    let members = ["handler", "root", "install", "upgrade", "swap"];
+    expect_atomic_conflict_rejection(
+        opts(&swapped, &members, &anonymous, true),
+        &["values/native", "values/later"],
+        &[],
+    );
+}
