@@ -1694,11 +1694,10 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 			if err != nil {
 				return err
 			}
-			liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
-			if err != nil {
-				return err
-			}
-			if liveProcess || liveCell {
+			// A JS cell can make its first executor call after setup detached. Only
+			// remote process handles pin the retained executor session; the cell's
+			// independent host lifetime does not establish any executor dependency.
+			if liveProcess {
 				return &protocol.UnknownEffectError{Reason: "executor returned another session; existing handles cannot be replaced"}
 			}
 		}
@@ -2755,7 +2754,12 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
 		if process.Status == protocol.ProcessAbandoned {
-			return nil
+			// Session retirement can abandon this handle while its caller still holds newer
+			// observed output. Retain that snapshot without reviving the handle or regressing
+			// a cursor already recorded by another settlement.
+			if output == nil || process.AfterSequence != nil && (afterSequence == nil || *afterSequence < *process.AfterSequence) {
+				return nil
+			}
 		}
 		if process.Status == protocol.ProcessExited {
 			return protocol.ErrPrecondition

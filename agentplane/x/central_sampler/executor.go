@@ -33,6 +33,8 @@ type Executor struct {
 	codexPath            string
 	environment          map[string]string
 	shell                *execShell
+	prepareMu            sync.Mutex
+	workspacePrepared    bool
 	rpcMu                sync.Mutex
 	sessionStateMu       sync.Mutex
 	dispatchMu           sync.Mutex
@@ -53,7 +55,8 @@ type Executor struct {
 	closing              bool
 }
 
-func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
+// NewExecutor restores local executor state without contacting the execution environment.
+func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
 	request := &samplerpb.OpenSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
@@ -98,6 +101,7 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		environment: map[string]string{"AGENTPLANE_DESTINATION": string(env)}, processLocks: map[string]*sync.Mutex{},
 		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
 		initializeTimeout: settings.ExecutorInitializeTimeout(),
+		workspacePrepared: session.WorkspacePrepared,
 	}
 	state, err := store.ExecutionState(ctx, owner)
 	if err != nil {
@@ -109,57 +113,54 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		_ = connection.Close()
 		return nil, nil, err
 	}
-	needsRemote := len(state.Cells) > 0
+	needsRemote := false
 	for _, process := range state.Processes {
-		if process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessAbandoned {
+		if process.Status != protocol.ProcessExited && process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessAbandoned {
 			needsRemote = true
 		}
 	}
-	var resume *string
 	if needsRemote {
 		if conversation.ExecutorSession == nil {
 			_ = connection.Close()
 			return nil, nil, &protocol.UnknownEffectError{Reason: "live execution handles have no retained execution session; session substitution is unsafe"}
 		}
-		resume = conversation.ExecutorSession
-	}
-	if err := executor.openSession(ctx, resume); err != nil {
-		var rejected *executorRejectedError
-		if resume == nil || !errors.As(err, &rejected) || !isDefinitiveLostExecutorSession(rejected, *resume) {
-			_ = executor.close()
-			return nil, nil, err
-		}
-		if retireErr := store.RetireLostExecutorSession(ctx, owner, *resume, ""); retireErr != nil {
-			_ = executor.close()
-			return nil, nil, errors.Join(err, fmt.Errorf("retire lost executor session: %w", retireErr))
-		}
-		executor.shell = nil
-		if freshErr := executor.openSession(ctx, nil); freshErr != nil {
-			_ = executor.close()
-			return nil, nil, errors.Join(err, fmt.Errorf("open fresh executor session after definitive session loss: %w", freshErr))
-		}
-	}
-	if !session.WorkspacePrepared {
-		input, err := json.Marshal(map[string]string{"cmd": "mkdir -p -- " + shellQuote(request.GetSpec().GetCwd()), "workdir": "/"})
-		if err != nil {
-			_ = executor.close()
-			return nil, nil, err
-		}
-		result, err := executor.execCommand(ctx, input)
-		if err != nil {
-			_ = executor.close()
-			return nil, nil, err
-		}
-		if result.ExitCode == nil || *result.ExitCode != 0 {
-			_ = executor.close()
-			return nil, nil, errors.New("executor workspace preparation did not complete")
-		}
-		if err := store.PreparedWorkspace(ctx, owner, session.ID); err != nil {
-			_ = executor.close()
-			return nil, nil, err
-		}
+		executor.sessionID = *conversation.ExecutorSession
+		executor.reconnectRequired = true
 	}
 	return executor, executor.close, nil
+}
+
+// prepareWorkspace acquires execution only for an operation that needs it. The JavaScript host
+// and model continuation do not depend on the executor being reachable.
+func (e *Executor) prepareWorkspace(ctx context.Context) error {
+	e.prepareMu.Lock()
+	defer e.prepareMu.Unlock()
+	e.rpcMu.Lock()
+	err := e.ensureSessionLocked(ctx, "process/start", "")
+	e.rpcMu.Unlock()
+	if err != nil {
+		return err
+	}
+	if e.workspacePrepared {
+		return nil
+	}
+	processID, sessionID, unlock, err := e.startProcess(ctx, []string{"/bin/sh", "-c", "mkdir -p -- " + shellQuote(e.cwd)}, "/", e.environment, false)
+	if err != nil {
+		return err
+	}
+	observation, err := e.readProcess(ctx, processID, 30000)
+	unlock()
+	if err != nil {
+		return err
+	}
+	if observation.exitCode == nil || *observation.exitCode != 0 {
+		return &toolError{fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, lossyUTF8(observation.output.withOmissionMarker()))}
+	}
+	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scope.GetSessionId()); err != nil {
+		return err
+	}
+	e.workspacePrepared = true
+	return nil
 }
 
 func (e *Executor) Invoke(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
@@ -201,11 +202,23 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			if process.Status == protocol.ProcessStarting {
 				outcome = "not_dispatched"
 			}
-			if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, process.AfterSequence, nil, outcome, notDispatched.retainedSession); abandonErr != nil {
+			afterSequence := notDispatched.afterSequence
+			if afterSequence == nil {
+				afterSequence = process.AfterSequence
+			}
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
 				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.processID, abandonErr)
 			}
 		}
-		return &toolOutcomeError{toolError: &toolError{notDispatched.Error()}, evidence: notDispatched.evidence()}
+		message, encodeErr := formatObservedProcessFailure(observedProcessFailure{
+			Message: notDispatched.Error(), Method: notDispatched.method, Phase: "connection",
+			ProcessID: notDispatched.processID, AfterSeq: notDispatched.afterSequence,
+			RemoteOutcome: "unknown", AutomaticReplay: false,
+		}, notDispatched.output)
+		if encodeErr != nil {
+			return fmt.Errorf("encode observed process connection failure: %w", encodeErr)
+		}
+		return &toolOutcomeError{toolError: &toolError{message}, evidence: notDispatched.evidence()}
 	}
 	var transport *executorTransportError
 	if errors.As(err, &transport) {
@@ -284,10 +297,18 @@ type observedProcessFailure struct {
 }
 
 func observedProcessFailureMessage(transport *executorTransportError) (string, error) {
-	if transport.method != "process/read" || transport.output == nil || transport.output.totalBytes() == 0 {
-		return transport.Error(), nil
+	return formatObservedProcessFailure(observedProcessFailure{
+		Message: transport.Error(), Method: transport.method, Phase: transport.phase,
+		IntentID: transport.intentID, ProcessID: transport.processID, AfterSeq: transport.afterSequence,
+		RemoteOutcome: "unknown", AutomaticReplay: false,
+	}, transport.output)
+}
+
+func formatObservedProcessFailure(failure observedProcessFailure, output *headTailBuffer) (string, error) {
+	if failure.Method != "process/read" || output == nil || output.totalBytes() == 0 {
+		return failure.Message, nil
 	}
-	retained := transport.output.retained()
+	retained := output.retained()
 	const shownBytes = 8 * 1024
 	head, tail := retained, []byte(nil)
 	if len(retained) > shownBytes {
@@ -296,27 +317,40 @@ func observedProcessFailureMessage(transport *executorTransportError) (string, e
 	}
 	displayOmitted := len(retained) - len(head) - len(tail)
 	text := lossyUTF8(head)
-	if displayOmitted > 0 || transport.output.omitted > 0 {
-		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, transport.output.omitted)
+	if displayOmitted > 0 || output.omitted > 0 {
+		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, output.omitted)
 	}
 	text += lossyUTF8(tail)
-	encoded, err := json.Marshal(observedProcessFailure{
-		Message: transport.Error(), Method: transport.method, Phase: transport.phase,
-		IntentID: transport.intentID, ProcessID: transport.processID, AfterSeq: transport.afterSequence,
-		RemoteOutcome: "unknown", AutomaticReplay: false,
-		ObservedOutput: observedProcessOutput{
-			Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: transport.output.omitted,
-			DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),
-			Truncated: displayOmitted > 0 || transport.output.omitted > 0,
-		},
-	})
+	failure.ObservedOutput = observedProcessOutput{
+		Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: output.omitted,
+		DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),
+		Truncated: displayOmitted > 0 || output.omitted > 0,
+	}
+	encoded, err := json.Marshal(failure)
 	return string(encoded), err
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and
 // core/src/unified_exec/process_manager.rs exec_command_inner.
 func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (*unifiedExecResult, error) {
+	args, err := parseExecCommand(arguments)
+	if err != nil {
+		return nil, err
+	}
+	e.rpcMu.Lock()
+	shell := e.shell
+	e.rpcMu.Unlock()
+	if shell != nil {
+		if _, err := args.plan(e.cwd, shell); err != nil {
+			return nil, err
+		}
+	}
+	if err := e.prepareWorkspace(ctx); err != nil {
+		return nil, err
+	}
+	e.rpcMu.Lock()
 	plan, err := planExecCommand(arguments, e.cwd, e.shell)
+	e.rpcMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -345,6 +379,9 @@ func (e *Executor) applyPatch(ctx context.Context, arguments json.RawMessage) (*
 	var patch string
 	if err := json.Unmarshal(arguments, &patch); err != nil || bytes.Equal(bytes.TrimSpace(arguments), []byte("null")) {
 		return nil, &toolError{"apply_patch takes a patch string"}
+	}
+	if err := e.prepareWorkspace(ctx); err != nil {
+		return nil, err
 	}
 	processID, sessionID, unlock, err := e.startProcess(ctx, []string{e.codexPath, "--codex-run-as-apply-patch", patch}, e.cwd, e.environment, false)
 	if err != nil {
@@ -392,7 +429,7 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 	_, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty})
 	if err != nil {
 		var rejected *executorRejectedError
-		if errors.As(err, &rejected) {
+		if errors.As(err, &rejected) && rejected.method == "process/start" {
 			// No process exists; release its session number.
 			if settleErr := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessExited, nil, true); settleErr != nil {
 				lock.Unlock()
@@ -424,6 +461,9 @@ func newChunkID() string {
 }
 
 func (e *Executor) Setup(ctx context.Context, script string, output func(string, []byte) error) (int, error) {
+	if err := e.prepareWorkspace(ctx); err != nil {
+		return 0, err
+	}
 	processID := uuid.NewString()
 	if err := e.store.RegisterProcess(ctx, e.owner, processID, false); err != nil {
 		return 0, err
@@ -498,7 +538,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 		if process.Status == protocol.ProcessAbandoned {
 			return nil, &toolError{fmt.Sprintf("write_stdin failed: process %d has an unknown remote outcome and its handle is abandoned; no input was sent", plan.sessionID)}
 		}
-		return nil, fmt.Errorf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)
+		return nil, &toolError{fmt.Sprintf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)}
 	}
 	if plan.chars != "" {
 		if !process.TTY {
@@ -577,6 +617,10 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS})
 		cancel()
 		if rpcErr != nil {
+			var notDispatched *executorNotDispatchedError
+			if errors.As(rpcErr, &notDispatched) {
+				notDispatched.afterSequence, notDispatched.output = after, output
+			}
 			var transport *executorTransportError
 			if errors.As(rpcErr, &transport) {
 				transport.afterSequence, transport.output = after, output
@@ -595,8 +639,11 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			after = &seq
 		}
 		if result.uncertain() {
-			_ = e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessUnknown, nil, false)
-			return nil, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
+			return nil, &executorTransportError{
+				method: "process/read", phase: "observation", processID: processID,
+				retainedSession: e.retainedSessionID(ctx), afterSequence: after, output: output,
+				cause: errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
+			}
 		}
 		if result.drained() {
 			if err := e.store.ProcessResult(ctx, e.owner, processID, after, protocol.ProcessExited, result.ExitCode, true); err != nil {
@@ -677,9 +724,30 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			return progressed, rpcErr
 		}
 		if result.uncertain() {
-			_ = e.store.ProcessResult(ctx, e.owner, row.ID, row.AfterSequence, protocol.ProcessUnknown, nil, false)
+			output, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, row.BufferedOutput, row.OmittedBytes)
+			if err != nil {
+				lock.Unlock()
+				return progressed, err
+			}
+			for _, chunk := range result.Chunks {
+				output.push(chunk.Chunk)
+			}
+			after := row.AfterSequence
+			if result.NextSeq > 0 {
+				sequence := result.NextSeq - 1
+				after = &sequence
+			}
+			failure := &executorTransportError{
+				method: "process/read", phase: "observation", processID: row.ID,
+				retainedSession: e.retainedSessionID(ctx), afterSequence: after, output: output,
+				cause: errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
+			}
+			handled := e.outcomeToolError(ctx, failure)
 			lock.Unlock()
-			return progressed, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
+			if !errors.As(handled, new(*toolOutcomeError)) {
+				return progressed, handled
+			}
+			return true, nil
 		}
 		chunks := result.Chunks
 		output := result.output()

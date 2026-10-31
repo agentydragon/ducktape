@@ -201,17 +201,30 @@ type execCommandPlan struct {
 	maxOutputTokens *int
 }
 
+// parseExecCommand validates arguments without requiring the remote environment's shell.
+func parseExecCommand(input json.RawMessage) (execCommandArgs, error) {
+	var args execCommandArgs
+	if err := decodeFunctionArguments("exec_command", input, &args); err != nil {
+		return args, err
+	}
+	if args.Cmd == nil {
+		return args, missingField("cmd")
+	}
+	return args, nil
+}
+
 // planExecCommand validates arguments and resolves the command line.
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs
 // ExecCommandHandler::handle_call and unified_exec.rs get_command, for a remote environment.
 func planExecCommand(input json.RawMessage, cwd string, shell *execShell) (*execCommandPlan, error) {
-	var args execCommandArgs
-	if err := decodeFunctionArguments("exec_command", input, &args); err != nil {
+	args, err := parseExecCommand(input)
+	if err != nil {
 		return nil, err
 	}
-	if args.Cmd == nil {
-		return nil, missingField("cmd")
-	}
+	return args.plan(cwd, shell)
+}
+
+func (args execCommandArgs) plan(cwd string, shell *execShell) (*execCommandPlan, error) {
 	if args.Workdir != nil && *args.Workdir != "" {
 		if filepath.IsAbs(*args.Workdir) {
 			cwd = filepath.Clean(*args.Workdir)

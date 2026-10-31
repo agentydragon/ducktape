@@ -833,9 +833,8 @@ func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T
 	}}
 	frameErr := errors.New("native response frame persistence failed")
 	err = executor.finishOpenFailure(t.Context(), intent, response, frameErr)
-	var rejected *executorRejectedError
-	if !errors.As(err, &rejected) || rejected.recorded || isDefinitiveLostExecutorSession(rejected, "retained-executor") {
-		t.Fatalf("partial response evidence qualified for session loss recovery: rejection=%+v error=%v", rejected, err)
+	if isExecutorConnectionFailure(err) {
+		t.Fatalf("native evidence persistence failure became an ordinary connection failure: %v", err)
 	}
 	if !errors.Is(err, frameErr) {
 		t.Fatalf("native frame persistence error was discarded: %v", err)
@@ -1197,7 +1196,7 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 
 func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
 	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute}
+	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute, workspacePrepared: true}
 }
 
 func completedExecutionStatus() *executorpb.ExecutionStatus {
