@@ -76,9 +76,9 @@ func parseServiceURL(base, variable string) (*url.URL, error) {
 	return parsed, nil
 }
 
-// actionGRPCTarget preserves the configured HTTP(S) origin's default port. grpc.NewClient's
-// passthrough resolver otherwise treats a bare host as port 443 even when the URL says http.
-func actionGRPCTarget(parsed *url.URL, variable string) (string, error) {
+// grpcTarget preserves the configured HTTP(S) origin's default port. grpc.NewClient's passthrough
+// resolver otherwise treats a bare host as port 443 even when the URL says http.
+func grpcTarget(parsed *url.URL, variable string) (string, error) {
 	if strings.HasSuffix(parsed.Host, ":") {
 		return "", usageFailure("%s must not have an empty port", variable)
 	}
@@ -119,8 +119,8 @@ func (c bearerCredential) GetRequestMetadata(context.Context, ...string) (map[st
 
 func (bearerCredential) RequireTransportSecurity() bool { return false }
 
-func (a *app) connectActions() (*actionService, error) {
-	const urlVariable, credentialVariable = "AGENTPLANE_ACTIONS_URL", "AGENTPLANE_ACTIONS_CREDENTIAL"
+func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
+	urlVariable, credentialVariable := "AGENTPLANE_"+group+"_URL", "AGENTPLANE_"+group+"_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
 	var missing []string
 	if base == "" {
@@ -139,7 +139,7 @@ func (a *app) connectActions() (*actionService, error) {
 	if parsed.Path != "" && parsed.Path != "/" {
 		return nil, usageFailure("%s must not include a path", urlVariable)
 	}
-	target, err := actionGRPCTarget(parsed, urlVariable)
+	target, err := grpcTarget(parsed, urlVariable)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +155,14 @@ func (a *app) connectActions() (*actionService, error) {
 	)
 	if err != nil {
 		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
+	}
+	return connection, nil
+}
+
+func (a *app) connectActions() (*actionService, error) {
+	connection, err := a.connectGRPC("ACTIONS")
+	if err != nil {
+		return nil, err
 	}
 	return &actionService{connection: connection, client: action_servicepb.NewActionServiceClient(connection)}, nil
 }
