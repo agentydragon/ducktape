@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOperand, CoerceOperands};
 
 pub(crate) fn classify_var_decl_purity(
     var: &VarDecl,
@@ -91,8 +91,7 @@ pub(crate) fn classify_expr_purity(
                             .to_string(),
                         coerce_operands(
                             &[e],
-                            PrimKinds::ANY.without(PrimKinds::SYMBOL),
-                            OperandBindings::Excluded,
+                            CoerceCheck::Within(TO_STRING_SILENT),
                             graph,
                             local_shadowed,
                         ),
@@ -140,10 +139,21 @@ pub(crate) fn classify_expr_purity(
                             "unary + throws on a BigInt operand".to_string(),
                         ))
                     } else {
-                        arg_purity.then(Effects::of_detail(
-                            Effect::Coerce(CoerceSite::Operator),
+                        let admits = if u.op == UnaryOp::Plus {
+                            TO_NUMBER_SILENT
+                        } else {
+                            TO_STRING_SILENT
+                        };
+                        arg_purity.then(Effects::coerce(
+                            CoerceSite::Operator,
                             u.span,
                             format!("unary {} runs ToNumber on a possibly-object operand", u.op),
+                            coerce_operands(
+                                &[&u.arg],
+                                CoerceCheck::Within(admits),
+                                graph,
+                                local_shadowed,
+                            ),
                         ))
                     }
                 }
@@ -198,12 +208,18 @@ pub(crate) fn classify_expr_purity(
                             operands
                         }
                     } else {
-                        operands.then(Effects::of_detail(
-                            Effect::Coerce(CoerceSite::Operator),
+                        operands.then(Effects::coerce(
+                            CoerceSite::Operator,
                             b.span,
                             format!(
                                 "binary {} runs ToPrimitive on a possibly-object operand",
                                 b.op
+                            ),
+                            coerce_operands(
+                                &[&b.left, &b.right],
+                                CoerceCheck::Binary(b.op),
+                                graph,
+                                local_shadowed,
                             ),
                         ))
                     }
@@ -490,8 +506,7 @@ fn classify_member_purity(
                         "computed key runs ToPropertyKey on a possibly-object value".to_string(),
                         coerce_operands(
                             &[&computed.expr],
-                            PrimKinds::ANY,
-                            OperandBindings::Included,
+                            CoerceCheck::Within(PrimKinds::ANY),
                             graph,
                             local_shadowed,
                         ),
@@ -918,8 +933,7 @@ fn classify_propname_purity(
                     "computed key runs ToPropertyKey on a possibly-object value".to_string(),
                     coerce_operands(
                         &[&c.expr],
-                        PrimKinds::ANY,
-                        OperandBindings::Included,
+                        CoerceCheck::Within(PrimKinds::ANY),
                         graph,
                         local_shadowed,
                     ),
@@ -1454,62 +1468,50 @@ pub(crate) fn is_result_primitive(
     }
 }
 
-/// Whether a coercion resolves against a plain top-level binding's value.
-/// Operator and template coercions resolve only against a `PlainData`
-/// member's settled primitive fields; a binding's value resolves only
-/// `ToPropertyKey`, which completes on every primitive.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OperandBindings {
-    Included,
-    Excluded,
-}
+/// Primitive types `ToString` and `ToNumeric` convert without throwing.
+pub(crate) const TO_STRING_SILENT: PrimKinds = PrimKinds::ANY.without(PrimKinds::SYMBOL);
 
-/// The operands deciding a coercion of `operands`: `None` unless every
-/// operand is a primitive within `admits` here, or a top-level binding or a
-/// `PlainData` binding's named member whose value at the statement's program
-/// point can prove it is.
+/// Primitive types `ToNumber` converts without throwing.
+pub(crate) const TO_NUMBER_SILENT: PrimKinds = TO_STRING_SILENT.without(PrimKinds::BIGINT);
+
+/// The operands deciding a coercion of `operands` under `check`: `None`
+/// unless every operand is a primitive of known types here, a top-level
+/// binding, or a `PlainData` binding's named member whose value at the
+/// statement's program point can prove its types.
 pub(crate) fn coerce_operands(
     operands: &[&Expr],
-    admits: PrimKinds,
-    bindings: OperandBindings,
+    check: CoerceCheck,
     graph: &ChunkCodeGraph,
     local_shadowed: &BTreeSet<String>,
 ) -> Option<CoerceOperands> {
     let scope = graph.binding_prims.scope(local_shadowed);
-    let mut resolved = Vec::new();
-    for operand in operands {
-        if evaluate(operand, &scope).is_some_and(|kinds| kinds.is_only(admits)) {
-            continue;
-        }
-        resolved.push(match operand.unwrap_parens() {
-            Expr::Ident(ident)
-                if bindings == OperandBindings::Included
-                    && !local_shadowed.contains(ident.sym.as_ref()) =>
-            {
-                CoerceOperand::Binding(ident.to_id())
+    let operands = operands
+        .iter()
+        .map(|operand| {
+            if let Some(kinds) = evaluate(operand, &scope).filter(|kinds| !kinds.is_empty()) {
+                return Some(CoerceOperand::Known(kinds));
             }
-            Expr::Member(MemberExpr {
-                obj,
-                prop: MemberProp::Ident(property),
-                ..
-            }) => {
-                let Expr::Ident(receiver) = obj.unwrap_parens() else {
-                    return None;
-                };
-                if local_shadowed.contains(receiver.sym.as_ref())
-                    || !graph.is_plain_data(receiver.sym.as_ref())
-                {
-                    return None;
+            match operand.unwrap_parens() {
+                Expr::Ident(ident) if !local_shadowed.contains(ident.sym.as_ref()) => {
+                    Some(CoerceOperand::Binding(ident.to_id()))
                 }
-                CoerceOperand::Member(receiver.to_id(), property.sym.to_string())
+                Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(property),
+                    ..
+                }) => {
+                    let Expr::Ident(receiver) = obj.unwrap_parens() else {
+                        return None;
+                    };
+                    (!local_shadowed.contains(receiver.sym.as_ref())
+                        && graph.is_plain_data(receiver.sym.as_ref()))
+                    .then(|| CoerceOperand::Member(receiver.to_id(), property.sym.to_string()))
+                }
+                _ => None,
             }
-            _ => return None,
-        });
-    }
-    (!resolved.is_empty()).then_some(CoerceOperands {
-        operands: resolved,
-        admits,
-    })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(CoerceOperands { operands, check })
 }
 
 /// Whether `key` is a safe computed property key: ToPropertyKey on

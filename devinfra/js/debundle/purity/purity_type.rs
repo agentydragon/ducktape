@@ -285,17 +285,18 @@ impl Effects {
                     operands
                         .operands
                         .iter()
-                        .map(|operand| operand.binding().clone()),
+                        .filter_map(CoerceOperand::binding)
+                        .cloned(),
                 );
             }
         }
     }
 
-    /// Resolve each coercion whose operands `settled` proves hold only
-    /// admitted primitives: the step runs no user code and cannot throw, so
-    /// it is no effect. `settled` answers for the program point these effects
-    /// start at, and only for operands the evaluation itself cannot change
-    /// before the coercion without another effect.
+    /// Resolve each coercion whose operands `settled` proves are primitives
+    /// of types its check admits: the step runs no user code and cannot
+    /// throw, so it is no effect. `settled` answers for the program point
+    /// these effects start at, and only for operands the evaluation itself
+    /// cannot change before the coercion without another effect.
     pub(crate) fn resolve_coercions(
         mut self,
         settled: impl Fn(&CoerceOperand) -> Option<PrimKinds>,
@@ -304,9 +305,15 @@ impl Effects {
             EffectEvent::Effect {
                 operands: Some(operands),
                 ..
-            } => !operands.operands.iter().all(|operand| {
-                settled(operand).is_some_and(|kinds| kinds.is_only(operands.admits))
-            }),
+            } => !operands
+                .operands
+                .iter()
+                .map(|operand| match operand {
+                    CoerceOperand::Known(kinds) => Some(*kinds),
+                    _ => settled(operand),
+                })
+                .collect::<Option<Vec<_>>>()
+                .is_some_and(|kinds| operands.resolved_by(&kinds)),
             _ => true,
         });
         self

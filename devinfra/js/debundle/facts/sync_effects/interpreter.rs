@@ -517,6 +517,7 @@ impl ExecutionInputs<'_> {
             // A binding the statement rebinds may hold another value at the
             // coercion; any such rebind is itself an effect.
             .resolve_coercions(|operand| match operand {
+                CoerceOperand::Known(kinds) => Some(*kinds),
                 CoerceOperand::Binding(binding) => (!fact.rebinds.eager.contains(binding))
                     .then(|| self.settled_prims(state, binding))
                     .flatten(),

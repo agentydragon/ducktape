@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
-use crate::facts::abstract_domain::effect::CoerceOp;
+use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOp};
 use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
 
 /// What an operand must syntactically be for the row's steps on it to run no
@@ -232,10 +232,16 @@ pub(crate) fn native_call_purity(
                 if is_result_primitive(operand.expr, &graph.primitive_bindings, local_shadowed) {
                     purity
                 } else {
-                    purity.then(Effects::of_detail(
-                        Effect::Coerce(CoerceSite::Operator),
+                    purity.then(Effects::coerce(
+                        CoerceSite::Operator,
                         operand.expr.span(),
                         format!("{spelling} runs ToString on a possibly-object operand"),
+                        coerce_operands(
+                            &[operand.expr],
+                            CoerceCheck::Within(TO_STRING_SILENT),
+                            graph,
+                            local_shadowed,
+                        ),
                     ))
                 }
             }
@@ -247,10 +253,16 @@ pub(crate) fn native_call_purity(
                 ) {
                     purity
                 } else {
-                    purity.then(Effects::of_detail(
-                        Effect::Coerce(CoerceSite::Operator),
+                    purity.then(Effects::coerce(
+                        CoerceSite::Operator,
                         operand.expr.span(),
                         format!("{spelling} runs ToNumber on a possibly-object or BigInt operand"),
+                        coerce_operands(
+                            &[operand.expr],
+                            CoerceCheck::Within(TO_NUMBER_SILENT),
+                            graph,
+                            local_shadowed,
+                        ),
                     ))
                 }
             }
@@ -427,8 +439,7 @@ pub(crate) fn iterable_element(
             format!("{spelling} runs ToPropertyKey on a possibly-object entry key"),
             coerce_operands(
                 &[&key.expr],
-                PrimKinds::ANY,
-                OperandBindings::Included,
+                CoerceCheck::Within(PrimKinds::ANY),
                 graph,
                 local_shadowed,
             ),

@@ -1291,10 +1291,17 @@ reassignment to an object or an unknown alternative restores conservative
 conversion analysis. An exact static own primitive member of a TS enum object
 settled at the statement (as above), used as a computed property key or a
 template substitution, is primitive too; whole-chunk mutation, escape,
-accessor, rebind and source-order checks still apply. A primitive operand omits only conversion callbacks: a Symbol is a safe
-property key but not a string or numeric operand, and mixed BigInt/Number
-arithmetic still throws. No value is folded, and every binding read,
-import-order and TDZ constraint remains.
+accessor, rebind and source-order checks still apply.
+
+Statement purity resolves a coercion against these types, and against the
+values synchronous execution has settled for a top-level binding no other
+statement writes, when the operand types make the specific operation
+non-throwing: a Symbol is a safe property key but throws as a string or numeric
+operand (templates and string concatenation included); BigInt mixed with
+another numeric kind in arithmetic, unary `+` on a BigInt, and `>>>` on a
+BigInt throw. An operand known only to be some primitive does not resolve. A
+hoisted `var` read before its initializer counts as `undefined`. No value is
+folded, and every binding read, import-order and TDZ constraint remains.
 
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts

@@ -411,18 +411,15 @@ atomic group or loss there.
   `fresh_receiver.rs` are deleted). The interpreter's literal values carry
   their primitive types. The heap's "no later write" premise stays
   whole-chunk (design.md § Purity and synchronous execution share one
-  context). Remaining, in order:
-  1. Kind-precise operator and template coercions: a binding's settled types
-     resolve a `Coerce` only when they make that operator non-throwing (no
-     BigInt/Number mix, no unary `+` on a BigInt, no Symbol to number or
-     string). This makes imported primitives a purity fact; purity_soundness
-     § Imported primitive coercion timing changes with it.
-  2. Purity from execution: statement _n_'s purity is projected from
-     executing it, after an audit of what each `statement_is_pure` reader in
-     `interpreter.rs` assumes. `ts_enum_iife.rs` stays until then as the
-     pre-purity admission shape for the heap scan and the initializer's own
-     purity, both of which run before execution evaluates the IIFE; it is
-     deleted in that layer.
+  context). Operator and template coercions resolve when the operands'
+  settled types make the operator non-throwing (`primitive::binary_throws`;
+  purity_soundness § Imported primitive coercion timing). Remaining:
+  purity from execution: statement _n_'s purity is projected from executing
+  it, after an audit of what each `statement_is_pure` reader in
+  `interpreter.rs` assumes. `ts_enum_iife.rs` stays until then as the
+  pre-purity admission shape for the heap scan and the initializer's own
+  purity, both of which run before execution evaluates the IIFE; it is deleted
+  in that layer.
 - TODO: revisit one least fixpoint over growing prefix states (the
   alternative that design section rejects) if per-prefix heap state would
   make enough statements pure on the canonical inputs to matter for
