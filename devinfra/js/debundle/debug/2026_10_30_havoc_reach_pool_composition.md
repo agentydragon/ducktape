@@ -120,19 +120,42 @@ escapes. Escapes by first-route class:
 | Global-object write                                       |      14 |
 | Other (bounded fallback, unknown, local object write)     |       7 |
 
-The optimistic bound drops every local and native escape, as if
-reachability proved none of them reachable. It keeps the 104 held ones,
-together with the call's own arguments and exports. Result:
+Each row keeps the call's own arguments and exports, plus the escapes it
+names, and drops every other escape as if reachability proved it
+unreachable:
 
-- the median pool falls from 341 to 121 (max 187);
-- 1,572 of 4,957 events have 64 members or fewer;
-- every event is at or under 64 for 144 of 624 statements;
-- those statements carry 118,473 of the pool statements' 2,037,837
-  constraining out-edges (5.8%).
+| Escapes kept                                               | Median (max) | Events ≤ 64 | Statements ≤ 64 | Their out-edges |
+| ---------------------------------------------------------- | -----------: | ----------: | --------------: | --------------: |
+| None (no escape ever reinvoked)                            |      23 (78) |       4,956 |             623 |           99.9% |
+| Global writes (14)                                         |      35 (80) |       4,509 |             620 |           98.9% |
+| Vendor-import calls and global writes (78)                 |     87 (144) |       2,017 |             316 |           23.3% |
+| Also parameter/unresolved callees, fallback, unknown (104) |    121 (187) |       1,572 |             144 |            5.8% |
 
-The held escapes alone exceed the limit, so no reachability bound can be
-decisive for Tana's 1,805-module SCC. The bound is offline and approximate:
-it uses first-route attribution and matches roots by name.
+Before any bound, the median pool is 341 (max 425); no event and no statement
+is under 64. Out-edges are the pool statements' 2,037,837 constraining
+out-edges.
+
+The third row reads "vendor-held" as callbacks passed to vendor-import
+calls. It is not sound as stated: a parameter or unresolved callee can be a
+vendor function, which is why the honest set (last row) includes them. Either
+way the held escapes alone exceed the limit, so no reachability bound is
+decisive for Tana's 1,805-module SCC. Only proving that escaped callbacks are
+never reinvoked during initialization (first row) would be. The bound is
+offline and approximate: it uses first-route attribution and matches roots by
+name.
+
+## Raising the pool limit (2026-10-31)
+
+Same Tana input, with a local `-c opt` build of devel `798ae082` and
+`MAX_SYNCHRONOUS_CALLBACK_POOL` raised from 64 to 512.
+
+| Limit | Main-chunk `compute_chunk_analysis`        | Whole run |        Peak RSS |
+| ----: | ------------------------------------------ | --------- | --------------: |
+|    64 | 46 s                                       | 2:35      |        4.40 GiB |
+|   512 | more than 31 min, stopped before finishing | —         | 2.80 GiB so far |
+
+Invoking the real pools instead of summarizing them is unusable at this size,
+so the run gave no edge or SCC numbers. Raising the limit is not a lever.
 
 Caveats: roots are matched by name, so a nested binding that shadows an import
 name is misattributed. Regions are a syntactic closure over top-level
