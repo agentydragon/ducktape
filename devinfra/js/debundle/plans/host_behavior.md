@@ -91,15 +91,9 @@ and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
    evaluates, runs L's body there. If L imports the target, L sees the live
    partial namespace: it can call hoisted exports and read initialized
    bindings. `returns_partial_namespace` covers only a request for the
-   evaluating module itself. Today's rule (every site counts, failure when the
-   loaded closure contains the target) is the right one.
-   - A sound tighter bound counts a top-level site only when its chunk can
-     evaluate inside the target's window (the target's static closure, or a
-     chunk loaded in it), and a nested site only when its chunk can run before
-     the target finishes (it does not transitively import the target). Modelled,
-     it frees 8 of 46 targets (one conflicting: `taskCancel`) and narrows the
-     program-wide classes to 62–75 targets. Build it only once classes 1–4 can
-     clear; until then it moves no graph.
+   evaluating module itself. Sites outside the target's evaluation window are
+   excluded (SPEC.md § Loader-closed derivation); a request that can run in it
+   and reaches the target keeps the target open.
    - Narrowing further means bounding which callbacks an incomplete at-init
      call can run (<abstract_interpreter.md>), not changing the loader rule.
 

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::loader_closure::{
     ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind, LoaderClosureWitness,
-    LoaderRequest, LoaderRequestTarget,
+    LoaderRequest, LoaderRequestTarget, SitePlacement,
 };
 use anyhow::Result;
 use artifact::reports::{
@@ -46,6 +46,9 @@ pub enum ExportReentryLoaderDerivation {
         /// Non-literal loader calls excluded under the program premise.
         #[serde(skip_serializing_if = "is_zero")]
         premised_sites: usize,
+        /// Requests and failing sites that cannot run in the target's window.
+        #[serde(skip_serializing_if = "is_zero")]
+        outside_window_sites: usize,
         /// Loader sites no reachable code can enter, excluded from the closure.
         #[serde(skip_serializing_if = "is_zero")]
         unreachable_sites: usize,
@@ -80,6 +83,7 @@ impl ExportReentryLoaderDerivation {
                 .collect(),
             suspended_sites: closure.suspended_sites,
             premised_sites: closure.premised_sites,
+            outside_window_sites: closure.outside_window_sites,
             unreachable_sites: surfaces.unreachable_sites,
             failures: closure
                 .failures
@@ -308,8 +312,14 @@ impl Classifier<'_> {
                 surface.suspended_sites.push(witness(None));
                 return Ok(());
             }
-            SitePhase::MandatorilySuspended | SitePhase::Synchronous => {}
+            SitePhase::MandatorilySuspended | SitePhase::Synchronous | SitePhase::ModuleBody => {}
         }
+        // A direct load in top-level code runs only while its module's body
+        // does; a loader value that escapes can be called from anywhere.
+        let placement = match phase {
+            SitePhase::ModuleBody => SitePlacement::ModuleBody,
+            _ => SitePlacement::Callable,
+        };
         let (specifier, resolve_from, data_read_only) = match loader_use {
             LoaderUse::Literal {
                 specifier,
@@ -323,10 +333,20 @@ impl Classifier<'_> {
                 surface.premised_sites.push(witness(None));
                 return Ok(());
             }
-            LoaderUse::NonLiteralCall | LoaderUse::Opaque => {
-                surface
-                    .site_failures
-                    .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness(None)));
+            LoaderUse::NonLiteralCall => {
+                surface.fail(
+                    LoaderClosureFailureKind::OpaqueLoaderSite,
+                    witness(None),
+                    placement,
+                );
+                return Ok(());
+            }
+            LoaderUse::Opaque => {
+                surface.fail(
+                    LoaderClosureFailureKind::OpaqueLoaderSite,
+                    witness(None),
+                    SitePlacement::Callable,
+                );
                 return Ok(());
             }
         };
@@ -336,9 +356,12 @@ impl Classifier<'_> {
             .map(|reference| self.report_target(reference));
         let witness = witness(resolved_target.clone());
         if is_loader_factory(specifier) && !data_read_only {
-            surface
-                .site_failures
-                .push((LoaderClosureFailureKind::LoaderFactoryRequest, witness));
+            // The returned `module` namespace makes loaders.
+            surface.fail(
+                LoaderClosureFailureKind::LoaderFactoryRequest,
+                witness,
+                SitePlacement::Callable,
+            );
             return Ok(());
         }
         let target = match &resolved {
@@ -346,9 +369,11 @@ impl Classifier<'_> {
                 Some(chunk) => {
                     if self.alias_chunks.contains(&chunk) {
                         // The returned namespace holds the exported loader.
-                        surface
-                            .site_failures
-                            .push((LoaderClosureFailureKind::OpaqueLoaderSite, witness.clone()));
+                        surface.fail(
+                            LoaderClosureFailureKind::OpaqueLoaderSite,
+                            witness.clone(),
+                            SitePlacement::Callable,
+                        );
                     }
                     (
                         LoaderRequestTarget::Chunk(chunk),
@@ -356,9 +381,11 @@ impl Classifier<'_> {
                     )
                 }
                 None => {
-                    surface
-                        .site_failures
-                        .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
+                    surface.fail(
+                        LoaderClosureFailureKind::UnresolvableLoaderRequest,
+                        witness,
+                        placement,
+                    );
                     return Ok(());
                 }
             },
@@ -368,10 +395,11 @@ impl Classifier<'_> {
                     LoaderRequestReportTarget::Builtin(builtin),
                 ),
                 Some(_) => {
-                    surface.site_failures.push((
+                    surface.fail(
                         LoaderClosureFailureKind::NonReentryFreeBuiltinRequest,
                         witness,
-                    ));
+                        placement,
+                    );
                     return Ok(());
                 }
                 // An absolute request names an embedded file by its virtual
@@ -393,17 +421,20 @@ impl Classifier<'_> {
                             )
                         }
                         _ => {
-                            surface.site_failures.push((
+                            surface.fail(
                                 LoaderClosureFailureKind::NonReentryFreeEmbeddedFile,
                                 witness,
-                            ));
+                                placement,
+                            );
                             return Ok(());
                         }
                     },
                     None => {
-                        surface
-                            .site_failures
-                            .push((LoaderClosureFailureKind::UnresolvableLoaderRequest, witness));
+                        surface.fail(
+                            LoaderClosureFailureKind::UnresolvableLoaderRequest,
+                            witness,
+                            placement,
+                        );
                         return Ok(());
                     }
                 },
@@ -416,6 +447,7 @@ impl Classifier<'_> {
         surface.requests.push(LoaderRequest {
             target: target.0,
             witness,
+            placement,
         });
         Ok(())
     }
@@ -522,28 +554,30 @@ pub(super) fn loader_surfaces(
         for request in &runtime.namespace_requests {
             if is_loader_factory(&request.specifier) {
                 // The namespace carries `createRequire` and the loader hooks.
-                surface.site_failures.push((
+                surface.fail(
                     LoaderClosureFailureKind::LoaderFactoryRequest,
                     witness(LoaderSite::NamespaceRequest {
                         item: request.item_index,
                         specifier: request.specifier.clone(),
                         resolved_target: None,
                     }),
-                ));
+                    SitePlacement::Callable,
+                );
                 continue;
             }
             let resolved = classifier.resolve(&request.specifier, source)?;
             if let Some(reference) = &resolved
                 && classifier.alias_chunks.contains(&reference.target_chunk_id)
             {
-                surface.site_failures.push((
+                surface.fail(
                     LoaderClosureFailureKind::OpaqueLoaderSite,
                     witness(LoaderSite::NamespaceRequest {
                         item: request.item_index,
                         specifier: request.specifier.clone(),
                         resolved_target: Some(classifier.report_target(reference)),
                     }),
-                ));
+                    SitePlacement::Callable,
+                );
             }
         }
         for site in &runtime.interop_uses {
@@ -586,9 +620,9 @@ pub(super) fn loader_surfaces(
                             let phase = match site.phase {
                                 SitePhase::Unreachable => SitePhase::Unreachable,
                                 // The namespace outlives the job that loads it.
-                                SitePhase::MandatorilySuspended | SitePhase::Synchronous => {
-                                    SitePhase::Synchronous
-                                }
+                                SitePhase::MandatorilySuspended
+                                | SitePhase::Synchronous
+                                | SitePhase::ModuleBody => SitePhase::Synchronous,
                             };
                             classifier.classify(
                                 &mut surface,
@@ -653,10 +687,11 @@ pub(super) fn loader_surfaces(
                             member => MODULE_DATA_MEMBERS.contains(&member),
                         };
                         if !classified {
-                            surface.site_failures.push((
+                            surface.fail(
                                 LoaderClosureFailureKind::LoaderFactoryRequest,
                                 use_witness(loader_use, None),
-                            ));
+                                SitePlacement::Callable,
+                            );
                         }
                     }
                     continue;
@@ -707,14 +742,15 @@ pub(super) fn loader_surfaces(
                     let defining = reference.target_chunk_id;
                     if classifier.entry_chunk(&reference)?.is_none() {
                         // Not the entry that exports the alias: unclassified.
-                        surface.site_failures.push((
+                        surface.fail(
                             LoaderClosureFailureKind::OpaqueLoaderSite,
                             witness(LoaderSite::NamespaceRequest {
                                 item: binding.uses.first().map_or(0, |u| u.item_index),
                                 specifier: specifier.clone(),
                                 resolved_target: Some(classifier.report_target(&reference)),
                             }),
-                        ));
+                            SitePlacement::Callable,
+                        );
                         continue;
                     }
                     if !aliases.contains(&(defining, imported.clone())) {
