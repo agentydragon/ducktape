@@ -5,6 +5,7 @@ import { CodeBlock } from "../../../util/frontend/code_block";
 import { Markdown } from "../../../util/frontend/markdown";
 import { DisclosureBody } from "../../../util/frontend/disclosure";
 import { RetainedDisclosure } from "../../../util/frontend/transcript/retained_disclosures";
+import { TextBlock } from "../../../util/frontend/transcript/text_block";
 import type { EventRecord } from "./schema";
 
 export function recordLabel(record: EventRecord): string {
@@ -23,7 +24,7 @@ export function recordLabel(record: EventRecord): string {
   return record.kind || (typeof parsed.type === "string" ? parsed.type : "Record");
 }
 
-export function RecordContent({ record }: { record: EventRecord }): JSX.Element {
+export function RecordContent({ record }: { record: EventRecord }): JSX.Element | null {
   if (record.parse_error != null) {
     return (
       <Stack gap="xs">
@@ -38,12 +39,9 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
   }
 
   const parsed = object(record.parsed);
-  if (parsed === null)
-    return (
-      <Text size="sm" c="dimmed">
-        Structured record; expand raw data to inspect it.
-      </Text>
-    );
+  if (parsed === null) return null;
+  const attachment = parsed.type === "attachment" ? object(parsed.attachment) : null;
+  if (attachment !== null) return <TextBlock label="Details" text={formatValue(attachment)} language="json" />;
 
   const content = claudeContent(parsed) ?? codexContent(parsed) ?? [];
   if (content.length > 0) {
@@ -58,13 +56,7 @@ export function RecordContent({ record }: { record: EventRecord }): JSX.Element 
 
   const payload = object(parsed.payload);
   const summary = payload === null ? null : (text(payload.message) ?? text(payload.summary) ?? text(payload.output));
-  return summary === null ? (
-    <Text size="sm" c="dimmed">
-      Structured record; expand raw data to inspect it.
-    </Text>
-  ) : (
-    <Markdown source={summary} />
-  );
+  return summary === null ? null : <Markdown source={summary} />;
 }
 
 type Part = { kind: string; text?: string; value?: unknown };

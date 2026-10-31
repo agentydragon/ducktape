@@ -370,6 +370,35 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
         await view.capture(name=f"{capture_name}_source")
 
 
+@pytest.mark.parametrize("width", [1440, 390], ids=["desktop", "mobile"])
+async def test_claude_attachment_widgets(visual: VisualHarness, capture_name: str, width: int) -> None:
+    async with visual.open(
+        "claude-attachment-widgets",
+        viewport=Viewport(width=width, height=1000),
+        color_scheme="light",
+        capture_name=capture_name,
+    ) as view:
+        page = view.page
+        await expect(page.get_by_role("heading", name="Local agent sessions")).to_be_visible()
+        if width < 600:
+            await page.get_by_role("button", name="Session list", exact=True).click()
+        await page.get_by_role("link", name=re.compile("Claude attachment disclosures")).click()
+        history = page.get_by_role("region", name="Conversation records")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await history.get_by_role("button", name="2 attachments", exact=True).click()
+        attachments = history.locator('[data-activity-step="attachment"]')
+        await expect(attachments).to_have_count(2)
+        await expect(history).not_to_contain_text("Structured record;")
+        await expect(history).not_to_contain_text("export const enabled")
+        await view.capture(name=f"{capture_name}_collapsed")
+        edited = attachments.filter(has_text="edited text file")
+        await edited.get_by_role("button", name=re.compile("Attachment · edited text file")).click()
+        await edited.get_by_role("region", name="Details", exact=True).scroll_into_view_if_needed()
+        await expect(edited).to_contain_text("export const enabled = true;")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await view.capture(name=f"{capture_name}_expanded")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
 
