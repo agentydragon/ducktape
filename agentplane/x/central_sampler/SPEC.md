@@ -52,7 +52,7 @@ completion acknowledgement. Successful setup is not repeated when later commands
 
 ## Runtime and effects
 
-One shared service runs the provider loop and owns one lazy upstream Codex JavaScript host process.
+Each sampler replica runs the provider loop and owns one lazy upstream Codex JavaScript host process.
 The host starts when the first code-mode Session needs it and stays up until runtime shutdown or
 host failure. It multiplexes logical Session IDs over one reader/writer, with globally allocated operation and
 delegate IDs; each Session retains its own executor/delegate and process-handle namespace. Each
@@ -444,6 +444,7 @@ commands, events, and unresolved-effect state. It unwraps legacy Anthropic messa
 removes their redundant execution projections, and renders old shared inputs into native messages.
 The API is determined from recorded exchanges or an explicit configured model-route mapping;
 ambiguous classification or invalid conversion fails initialization. A live conversation lease
-prevents conversion. The sampler Deployment uses Recreate, so the old writer exits before the new
-initializer changes the schema. Schema rollback requires restoring the pre-migration database
-backup together with the old service image.
+prevents conversion of that legacy row. The sampler Deployment uses two rolling replicas; its
+init containers serialize Goose migrations and the native conversion through database locks.
+New migrations must remain compatible with serving old replicas during a rollout. Schema rollback
+requires restoring the pre-migration database backup together with the old service image.
