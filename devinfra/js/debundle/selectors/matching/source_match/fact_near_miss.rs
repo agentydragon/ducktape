@@ -318,10 +318,23 @@ pub fn fact_source_match_body_debt(
     })
 }
 
+/// Match index of every top-level item of a runtime module (`None` for a
+/// non-extractable item), built once and shared by every near-miss probe over
+/// the module: extracting them per probe re-reads the whole chunk.
+pub struct ItemMatchIndices(Vec<Option<Index>>);
+
+impl ItemMatchIndices {
+    pub fn new(module: &Module) -> Self {
+        Self(module.body.iter().map(item_index).collect())
+    }
+}
+
 /// The near misses of `parsed`'s template among the top-level statements
-/// `candidates` of `runtime_module`: see [`near_misses_among`].
+/// `candidates` of `runtime_module`, whose item indices are `runtime_indices`:
+/// see [`near_misses_among`].
 pub fn fact_near_misses(
     runtime_module: &Module,
+    runtime_indices: &ItemMatchIndices,
     parsed: &ParsedSourceMatchSelector,
     candidates: impl IntoIterator<Item = usize>,
     min_score: usize,
@@ -333,7 +346,7 @@ pub fn fact_near_misses(
     let needle_indices = item_indices(parsed.body());
     let candidates = candidates
         .into_iter()
-        .filter_map(|idx| item_index(&runtime_module.body[idx]).map(|index| (idx, index)));
+        .filter_map(|idx| runtime_indices.0[idx].as_ref().map(|index| (idx, index)));
     near_misses_among(
         runtime_module,
         parsed.body(),

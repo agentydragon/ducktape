@@ -44,6 +44,7 @@ pub struct Chunk<'m> {
     structural: StructuralChunkSourceFacts<'m>,
     matcher: OnceCell<ChunkResolver<'m>>,
     places: OnceCell<Places>,
+    near_miss_indices: OnceCell<source_match::ItemMatchIndices>,
 }
 
 /// Top-level statements by source body index: the source unit of each statement,
@@ -56,6 +57,9 @@ struct Places {
     declarations: BTreeMap<String, Vec<(SourceUnitId, SourceUnitOrdinal, StatementKind)>>,
     /// Chunk import bindings, indexed once with the declaration sites.
     imports: HashMap<String, ImportBinding>,
+    /// Every top-level declared and imported name: what a template's free
+    /// identifier can refer to in this chunk.
+    shadowing: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -503,6 +507,7 @@ impl<'m> Chunk<'m> {
             structural,
             matcher: OnceCell::new(),
             places: OnceCell::new(),
+            near_miss_indices: OnceCell::new(),
         }
     }
 
@@ -530,6 +535,7 @@ impl<'m> Chunk<'m> {
                 source_unit_by_body_and_binding: BTreeMap::new(),
                 declarations: BTreeMap::new(),
                 imports: import_bindings(self.module),
+                shadowing: BTreeSet::new(),
             };
             for statement in &self.structural.per_statement {
                 for binding in &statement.declared {
@@ -556,6 +562,13 @@ impl<'m> Chunk<'m> {
                         .insert((body_idx.0, binding.0.as_str().to_string()), source_unit);
                 }
             }
+            places.shadowing = self
+                .structural
+                .per_statement
+                .iter()
+                .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
+                .chain(places.imports.keys().cloned())
+                .collect();
             places
         })
     }
@@ -732,6 +745,9 @@ fn add_nearest_unclaimed(
         };
         *nearest_unclaimed = source_match::fact_near_misses(
             chunk.module,
+            chunk
+                .near_miss_indices
+                .get_or_init(|| source_match::ItemMatchIndices::new(chunk.module)),
             template,
             unclaimed.iter().copied(),
             NEAREST_UNCLAIMED_MIN_SCORE,
@@ -1411,14 +1427,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     .push((module_index, referent));
             }
         }
-        let shadowing = self
-            .chunk
-            .structural
-            .per_statement
-            .iter()
-            .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
-            .chain(self.chunk.places().imports.keys().cloned())
-            .collect::<BTreeSet<_>>();
+        let shadowing = &self.chunk.places().shadowing;
 
         for (index, entity) in collected.iter().enumerate() {
             let identifiers = entity
@@ -1426,7 +1435,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 .iter()
                 .map(|name| FreeIdentifier {
                     name: name.clone(),
-                    meaning: match classify(name, entity.module_index, &exports, &shadowing) {
+                    meaning: match classify(name, entity.module_index, &exports, shadowing) {
                         Meaning::Reference(_, Referent::Projected(referenced))
                             if referenced == index =>
                         {
@@ -1459,7 +1468,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let mut narrowed = Vec::with_capacity(collected.len());
         for (index, entity) in collected.iter().enumerate() {
             narrowed.push(narrow_by_references(
-                index, entity, modules, &exports, &shadowing,
+                index, entity, modules, &exports, shadowing,
             ));
         }
         let settled = settle_references(&collected, &mut narrowed, modules);
@@ -1593,7 +1602,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     .export_name
                     .clone();
                 let module_neutral_meaning =
-                    match classify_without_local_preference(name, &exports, &shadowing) {
+                    match classify_without_local_preference(name, &exports, shadowing) {
                         Meaning::Ambiguous(_) => ModuleNeutralReferenceMeaning::Ambiguous,
                         Meaning::Reference(_, _) => ModuleNeutralReferenceMeaning::Unique,
                         Meaning::Global | Meaning::Wildcard => {
