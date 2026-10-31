@@ -792,3 +792,24 @@ it("folds intermediate work, preserves final answers, and exposes the original r
   const rawPanel = document.getElementById(rawControl.getAttribute("aria-controls")!)!;
   expect(rawPanel.querySelector("pre")?.textContent).toContain("read_build_log");
 });
+
+it("keeps an activity group open when older records extend it", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listEvents(sessionId, versionId, cursor, signal) {
+      const page = await sessionFixtureApi.listEvents(sessionId, versionId, undefined, signal);
+      return cursor === undefined
+        ? { data: page.data.filter((record) => record.ordinal >= 4), next_cursor: 4 }
+        : { data: page.data.filter((record) => record.ordinal < cursor), next_cursor: null };
+    },
+  };
+  const view = await renderViewer(api, "/sessions/mixed-transcript-fixture");
+  await act(async () => findControl(view, "Tools and reasoning · 4 records").click());
+  expect(view.textContent).toContain("I will inspect the build log.");
+  await act(async () => {
+    findControl(view, "Load earlier records").click();
+    await flush();
+  });
+  expect(findControl(view, "Tools and reasoning · 5 records").getAttribute("aria-expanded")).toBe("true");
+  expect(view.textContent).toContain("I will inspect the build log.");
+});

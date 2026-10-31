@@ -42,8 +42,8 @@ export function ArchiveTranscript({
         label="Conversation records"
         showJumpToLatest={true}
         rows={transcriptRows(records).map((row) => ({
-          key: String(row.records[0].ordinal),
-          revision: `${row.kind}:${row.records.length}:${row.records.at(-1)!.ordinal}`,
+          key: String(row.records.at(-1)!.ordinal),
+          revision: `${row.kind}:${row.records.length}:${row.records[0].ordinal}`,
           value: row,
           anchorKeys: row.records.map((record) => String(record.ordinal)),
           presentation: { kind: row.kind, entityCount: row.records.length },
@@ -56,7 +56,7 @@ export function ArchiveTranscript({
 }
 
 function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
-  const id = `group:${row.records[0].ordinal}`;
+  const id = `group:${row.records.at(-1)!.ordinal}`;
   const [open] = useRetainedDisclosure(id);
   if (row.kind === "record") return <EventRow record={row.records[0]} />;
   return (
