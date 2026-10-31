@@ -301,6 +301,31 @@ fn plain_data_alias_member_mutation_disqualifies_source() {
     ));
 }
 
+/// Regression: a method stored on the object runs with `this` bound to it,
+/// so calling one that writes through `this` mutates the object. Arrow
+/// methods, `this`-free functions and inherited intrinsics leave it plain.
+#[test]
+fn plain_data_method_call_writing_through_this_disqualifies_receiver() {
+    assert!(!is_plain_data(
+        "const o = { x: 1, m: function () { this.x = 2; } }; o.m();",
+        "o",
+    ));
+    assert!(!is_plain_data(
+        "const o = { x: 1, m: function () { this.x = 2; } }; const alias = o; alias.m();",
+        "o",
+    ));
+    assert!(!is_plain_data(
+        "function bump() { this.x = 2; } const o = { x: 1, bump }; o.bump();",
+        "o",
+    ));
+    assert!(is_plain_data(
+        "function read() { return 3; } \
+         const o = { x: 1, m: () => 2, n: function () { return 3; }, read }; \
+         o.m(); o.n(); o.read(); o.hasOwnProperty('x');",
+        "o",
+    ));
+}
+
 #[test]
 fn plain_data_const_array_literal_is_tracked() {
     assert!(is_plain_data("const TA = [1, 2, 3];", "TA"));

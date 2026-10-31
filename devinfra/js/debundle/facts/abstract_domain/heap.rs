@@ -252,6 +252,27 @@ impl ChunkHeap {
         scan.candidate_index = Some(value_flow.candidate_object_index(&roots));
         scan.primitive_members = primitive_members;
         scan.in_chunk_callables = in_chunk_callables(body);
+        let mut this_free = ThisFreeFunctions(BTreeSet::new());
+        for item in body {
+            item.as_module_item().visit_with(&mut this_free);
+        }
+        // A key holding a binding is this-free when every function value flow
+        // gives the binding is.
+        let this_free_binding = |binding: &Ident| {
+            let values: Vec<Value> = value_flow
+                .values_of_binding(&binding.to_id())
+                .iter()
+                .collect();
+            !values.is_empty()
+                && values.iter().all(|value| {
+                    matches!(value, Value::Alloc(Kind::Function, function) if this_free.0.contains(function))
+                })
+        };
+        scan.this_methods = inits_by_name
+            .values()
+            .flatten()
+            .map(|(init, _)| (site(init), this_methods(init, &this_free_binding)))
+            .collect();
         for item in body {
             let module_item = item.as_module_item();
             match module_item {
@@ -424,6 +445,12 @@ pub(crate) fn plain_array_bindings(
     tracked.retain(|name, _| candidates.contains(name));
     let aliases = BTreeSet::new();
     let mut scan = HeapScan::new(&tracked, shadowed, &aliases);
+    // An array's methods are inherited `%Array.prototype%` intrinsics.
+    scan.this_methods = tracked
+        .values()
+        .flatten()
+        .map(|&site| (site, Some(BTreeSet::new())))
+        .collect();
     for item in body {
         item.as_module_item().visit_with(&mut scan);
     }
@@ -525,6 +552,93 @@ pub(crate) fn sees_only_element(callback: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+/// The own keys of an initializer whose value may be a function that uses
+/// `this`, so calling it as a method can write the allocation. `None` when
+/// any key may be: an object spread copies unknown values. Keys a literal
+/// does not own resolve to inherited intrinsics under A11.
+/// `this_free_binding` says whether a binding only holds `this`-free
+/// functions.
+fn this_methods(
+    init: &Expr,
+    this_free_binding: &dyn Fn(&Ident) -> bool,
+) -> Option<BTreeSet<String>> {
+    let Expr::Object(object) = init.unwrap_parens() else {
+        // Arrays, TS enum objects and derived arrays own no functions.
+        return Some(BTreeSet::new());
+    };
+    let mut keys = BTreeSet::new();
+    for prop in &object.props {
+        let PropOrSpread::Prop(prop) = prop else {
+            return None;
+        };
+        let (key, value) = match prop.as_ref() {
+            Prop::KeyValue(kv) => (&kv.key, Some(kv.value.as_ref())),
+            Prop::Shorthand(name) => {
+                if !this_free_binding(name) {
+                    keys.insert(name.sym.to_string());
+                }
+                continue;
+            }
+            // Not plain data; such a literal is never tracked.
+            _ => continue,
+        };
+        let name = match key {
+            PropName::Ident(name) => name.sym.to_string(),
+            PropName::Str(name) => name.value.to_string_lossy().into_owned(),
+            PropName::Num(number) => number.value.to_string(),
+            PropName::BigInt(number) => number.value.to_string(),
+            PropName::Computed(_) => return None,
+        };
+        let this_free = match value.map(Expr::unwrap_parens) {
+            Some(
+                Expr::Arrow(_) | Expr::Lit(_) | Expr::Tpl(_) | Expr::Object(_) | Expr::Array(_),
+            ) => true,
+            Some(Expr::Fn(function)) => !uses_this(&function.function),
+            Some(Expr::Ident(binding)) => this_free_binding(binding),
+            _ => false,
+        };
+        if !this_free {
+            keys.insert(name);
+        }
+    }
+    Some(keys)
+}
+
+/// Start offsets of the chunk's arrows and of functions that never use
+/// `this`, keyed as value flow keys function allocations.
+struct ThisFreeFunctions(BTreeSet<u32>);
+
+impl Visit for ThisFreeFunctions {
+    fn visit_function(&mut self, function: &Function) {
+        if !uses_this(function) {
+            self.0.insert(function.span.lo.0);
+        }
+        function.visit_children_with(self);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.0.insert(arrow.span.lo.0);
+        arrow.visit_children_with(self);
+    }
+}
+
+/// Whether a function body reads `this`, including through nested arrows.
+fn uses_this(function: &Function) -> bool {
+    struct This(bool);
+    impl Visit for This {
+        fn visit_this_expr(&mut self, _: &ThisExpr) {
+            self.0 = true;
+        }
+        // A nested function or class binds its own `this`.
+        fn visit_function(&mut self, _: &Function) {}
+        fn visit_class(&mut self, _: &Class) {}
+    }
+    let mut this = This(false);
+    function.params.visit_with(&mut this);
+    function.body.visit_with(&mut this);
+    this.0
 }
 
 /// Pure syntactic check for a plain-data initializer: an object literal whose
@@ -818,6 +932,9 @@ struct HeapScan<'a> {
     in_chunk_callables: BTreeSet<BodyKey>,
     /// Whether each enclosing function body is one of `in_chunk_callables`.
     callable_scopes: Vec<bool>,
+    /// Per tracked allocation, the own keys whose value may be a function
+    /// that uses `this`; `None` when any key may be (an object spread).
+    this_methods: BTreeMap<Value, Option<BTreeSet<String>>>,
 }
 
 impl<'a> HeapScan<'a> {
@@ -842,6 +959,7 @@ impl<'a> HeapScan<'a> {
             primitive_members: BTreeMap::new(),
             in_chunk_callables: BTreeSet::new(),
             callable_scopes: Vec::new(),
+            this_methods: BTreeMap::new(),
         }
     }
 }
@@ -1098,6 +1216,59 @@ impl HeapScan<'_> {
         }
     }
 
+    /// A method call `receiver.key(...)` runs the callee with `this` bound to
+    /// the receiver. Publish each tracked allocation the receiver denotes
+    /// whose `key` may hold a function that uses `this`.
+    fn publish_this_receiver(&mut self, callee: &Expr) {
+        let member = match callee.unwrap_parens() {
+            Expr::Member(member) => member,
+            Expr::OptChain(chain) => match chain.base.as_ref() {
+                OptChainBase::Member(member) => member,
+                OptChainBase::Call(_) => return,
+            },
+            _ => return,
+        };
+        let key = match &member.prop {
+            MemberProp::Ident(name) => Some(name.sym.as_ref()),
+            MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(name)) => name.value.as_str(),
+                _ => None,
+            },
+            MemberProp::PrivateName(_) => None,
+        };
+        let receivers: Vec<Value> = match member.obj.unwrap_parens() {
+            Expr::Ident(receiver) => {
+                if self.is_shadowed(receiver.sym.as_ref()) {
+                    return;
+                }
+                self.tracked
+                    .get(receiver.sym.as_ref())
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .collect()
+            }
+            receiver => {
+                let (Some(flow), Some(index)) = (self.value_flow, self.candidate_index.as_ref())
+                else {
+                    return;
+                };
+                let mut roots = Vec::new();
+                index.for_values(&flow.values_of_expr(receiver), |root| roots.push(root));
+                roots
+            }
+        };
+        for site in receivers {
+            let may_use_this = match self.this_methods.get(&site) {
+                Some(Some(keys)) => key.map_or(!keys.is_empty(), |key| keys.contains(key)),
+                Some(None) | None => true,
+            };
+            if may_use_this {
+                self.apply(site, HeapEffect::Publish);
+            }
+        }
+    }
+
     fn visit_top_level_var(&mut self, var: &VarDecl) {
         for decl in &var.decls {
             decl.name.visit_with(self);
@@ -1280,6 +1451,9 @@ impl Visit for HeapScan<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee {
+            self.publish_this_receiver(callee);
+        }
         // A one-argument intrinsic call whose row only inspects its operand
         // (`Object.{keys,values,entries,freeze,fromEntries}(X)`), with the
         // receiver unshadowed, installs no accessor and keeps no reference.
@@ -1366,6 +1540,16 @@ impl Visit for HeapScan<'_> {
                 arg.visit_with(self);
             }
         }
+    }
+
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        self.publish_this_receiver(&node.callee);
+        node.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        self.publish_this_receiver(&node.tag);
+        node.visit_children_with(self);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {

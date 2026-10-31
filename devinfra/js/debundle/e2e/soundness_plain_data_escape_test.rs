@@ -192,3 +192,25 @@ export { foo, getFoo, box, result };
         &["mod_result", "anon_residual_sentinel"],
     );
 }
+
+/// A method stored on the object writes through `this`. The later read must
+/// stay after the call even when the three statements land in different
+/// modules.
+#[test]
+fn method_call_writing_through_this_orders_later_reads() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const foo = { value: 1, bump: function () { this.value = 2; } };
+const before = foo.value;
+foo.bump();
+const after = foo.value;
+console.log(before, after);
+export { foo, before, after };
+"#,
+        vec![
+            logical_module("mod_foo", &[Member::new("foo"), Member::new("before")]),
+            logical_module("mod_after", &[Member::new("after")]),
+            logical_module_with_anon("mod_bump", &[], &["foo.bump();"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+}
