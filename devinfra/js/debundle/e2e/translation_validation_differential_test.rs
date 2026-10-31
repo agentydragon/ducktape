@@ -91,3 +91,25 @@ fn forward_at_init_read_kept_in_source_order_is_reported() {
     assert_eq!(edges(&report, "conflicts"), 0, "{report:#}");
     assert_eq!(edges(&report, "forward_edges_kept"), 1, "{report:#}");
 }
+
+/// The entry's import of `vendor.js` loses its only specifier once `cx()`
+/// moves to `b_module`, which imports `vendor.js` itself. The entry requests
+/// `vendor.js` before `z_module`, so dropping that request would log `z`
+/// before `vendor`; the pruned import stays bare and the order holds.
+#[test]
+fn pruned_import_keeps_its_load_order() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { f as cx } from \"./vendor.js\";\nconst z = (console.log(\"z\"), 1);\nconst b = cx();\nconsole.log(z + b);\nexport { z, b };\n",
+            vec![
+                logical_module("b_module", &[Member::new("b")]),
+                logical_module("z_module", &[Member::new("z")]),
+            ],
+        )
+        .with_extra_files(&[(
+            "static/app/vendor.js",
+            "console.log(\"vendor\");\nexport function f() { return 1; }\n",
+        )]),
+    );
+    assert_entry_output(&fixture, "vendor\nz\n2\n");
+}
