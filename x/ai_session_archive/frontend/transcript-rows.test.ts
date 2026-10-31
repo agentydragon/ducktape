@@ -35,7 +35,7 @@ describe("archive transcript grouping", () => {
           { type: "text", text: "I will compare both files." },
           { type: "tool_use", id: "duplicate", name: "read-first", input: { path: "first.txt" } },
           { type: "tool_use", id: "duplicate", name: "read-second", input: { path: "second.txt" } },
-          { type: "tool_result", tool_use_id: "duplicate", content: "first output" },
+          { type: "tool_result", tool_use_id: "duplicate", content: [{ type: "text", text: "first output" }] },
           { type: "thinking", thinking: "Compare the outputs." },
           { type: "tool_result", tool_use_id: "duplicate", content: "second output", is_error: true },
           { type: "future_block", retained: true },

@@ -466,10 +466,20 @@ function claudeToolStep(event: ToolEvent, call: ToolEvent | null, records: Event
     records,
     name: callPayload === undefined ? "Tool result" : (nonemptyString(callPayload.name) ?? "Tool call"),
     input: callPayload === undefined ? null : displayValue(callPayload.input),
-    output: outputPayload === null ? null : displayValue(outputPayload.content),
+    output: outputPayload === null ? null : claudeToolOutput(outputPayload.content),
     failed: outputPayload?.is_error === true,
     missingCall,
   };
+}
+
+function claudeToolOutput(value: unknown): string | null {
+  if (
+    Array.isArray(value) &&
+    value.every((item) => object(item)?.type === "text" && typeof object(item)?.text === "string")
+  ) {
+    return value.map((item) => object(item)!.text as string).join("\n");
+  }
+  return displayValue(value);
 }
 
 function codexToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
