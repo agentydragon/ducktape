@@ -22,9 +22,10 @@ Inbox recording retains its existing transaction boundary for deduplication, ent
 
 ## Storage and scheduling
 
-The service owns a PostgreSQL database and role on the shared cluster. Its image-coupled Goose
-migrator keeps the advisory lock of the retired Alembic migrator; see
-[`migrations`](../migrations/migrations.go) and the deployment instructions.
+The service owns a PostgreSQL database and role on the shared cluster. The serving process applies
+Goose migrations before it opens listeners or starts workers. Its migration-only mode uses the same
+binary and migration code. Goose retains the advisory lock shared with the retired Alembic migrator;
+see [`migrations`](../migrations/migrations.go) and the deployment instructions.
 
 An inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Inbox entries hold their own payload copies, independent

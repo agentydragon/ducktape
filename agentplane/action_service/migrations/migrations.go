@@ -14,9 +14,9 @@ import (
 //go:embed actions/*.sql
 var scripts embed.FS
 
-// Up applies SQL migrations with Goose in a dedicated init container, never while serving traffic.
+// Up applies this database's SQL migrations with Goose before the service starts serving traffic.
 func Up(ctx context.Context, db *sql.DB) error {
-	// The advisory lock key of the Alembic runner (`database_migrate.py`): the two migrators never run at once.
+	// Retain the advisory lock key shared with the retired Alembic migration path.
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4143_544E))
 	if err != nil {
 		return err

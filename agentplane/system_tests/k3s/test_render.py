@@ -112,20 +112,16 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     )
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
     for workload, migration in {
-        "actions": "agentplane-action-service",
         "app": "agentplane-app-migrate",
         "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
         "mcp-edge": "agentplane-mcp-edge-migrate",
-        "notifications": "agentplane-notification-service",
         "runner-gateway": "agentplane-runner-gateway-queue-migrate",
     }.items():
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")
         assert init["image"] == f"git.allegedly.works/ducktape-ci/{migration}:unset"
         assert init["imagePullPolicy"] == "IfNotPresent"
-        if workload == "actions":
-            assert init["command"] == ["/usr/local/bin/actions-migrate"]
     assert (
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"
@@ -136,6 +132,16 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "port": fixture_chart.ACTIONS_SERVICE.pod_port,
         "service": "livez",
     }
+    for workload in ("actions", "notifications"):
+        pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
+        assert not pod.get("initContainers")
+        container = pod["containers"][0]
+        assert container["startupProbe"]["grpc"] == {
+            "port": container["readinessProbe"]["grpc"]["port"],
+            "service": "livez",
+        }
+        assert container["startupProbe"]["periodSeconds"] == 5
+        assert container["startupProbe"]["failureThreshold"] == 60
     edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
     edge_container = edge_pod["containers"][0]
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
@@ -177,7 +183,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert proxy_env["PGSSLMODE"]["value"] == migrator_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        for container in (*pod_spec["containers"], *pod_spec["initContainers"]):
+        for container in (*pod_spec["containers"], *pod_spec.get("initContainers", [])):
             sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
             assert sslmode == "disable", (workload, container["name"])
 

@@ -14,10 +14,9 @@ import (
 //go:embed notifications/*.sql
 var scripts embed.FS
 
-// Up applies schema changes before the service starts. The Deployment uses Recreate
-// to stop writers, and Goose serializes concurrent init containers with a session lock.
+// Up applies schema changes before the service starts. Goose serializes concurrent service starts with a session lock.
 func Up(ctx context.Context, db *sql.DB) error {
-	// Keep the lock key used by previous Goose and Alembic migrators.
+	// Retain the advisory lock key shared with the previous Goose and Alembic migration paths.
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4E4F_5446))
 	if err != nil {
 		return err

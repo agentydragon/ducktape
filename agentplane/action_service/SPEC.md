@@ -17,12 +17,14 @@ immutable event actors and decision policy evidence use the canonical `Principal
 `PolicyEvidence` protobuf messages as binary snapshots. Arguments, execution results and errors
 remain JSONB. Serving code reads and writes only this representation, with no legacy JSON fallback.
 
-The migration init container and server use the same image. The Deployment uses `Recreate` for
-schema cutovers so old writers stop before migration. Goose serializes init containers with its
-PostgreSQL session lock. Version 7 creates the typed schema for a fresh database or adopts a
-complete version 6 schema without rewriting data. Older and incomplete schemas are rejected;
-existing Goose history remains intact. A database created at version 7 requires a
-version-7-aware rollback image or a coordinated restore.
+The service applies Goose migrations before opening listeners or starting workers. Replicas use
+the environment's rolling deployment profile, and a startup probe waits for migration and service
+initialization before normal health checks begin. Goose serializes concurrent starts with its
+PostgreSQL session lock. Schema changes must remain compatible with old and new replicas during a
+roll. Version 7 creates the typed schema for a fresh database or adopts a complete version 6
+schema without rewriting data. Older and incomplete schemas are rejected; existing Goose history
+remains intact. A database created at version 7 requires a version-7-aware rollback image or a
+coordinated restore.
 
 ## Built-in input contracts
 
