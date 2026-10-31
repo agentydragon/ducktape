@@ -73,12 +73,12 @@ cause spurious cache misses.
 | `chunk_analysis_options.<c>.{value_inputs, native_operation_inputs, native_call_identity_inputs, argument_inputs}`                                                    | S2, S3                   | Resolved in S2; `resolved_member` selectors (C3). Cleared before graph build.                 |
 | `chunk_analysis_options.<c>.no_accessor_install_callables`                                                                                                            | S2                       |                                                                                               |
 | `chunk_analysis_options.<c>.{local_property_effects, trusted_dataflow_summaries, deferred_global_publications, non_reentrant_global_membership, admission_overrides}` | S3                       | `admission_overrides` is source-only and cheap.                                               |
-| `chunk_analysis_options.<c>.commuting_statements`                                                                                                                     | S2 (resolve), S4         | A gate premise routed through `AnalysisAssumptions` (C5).                                     |
+| `chunk_analysis_options.<c>.commuting_statements`                                                                                                                     | S4                       | Resolved only when the chunk graph is built.                                                  |
 | `chunk_analysis_options.<c>.dataflow_aware_s_chain`                                                                                                                   | S4                       |                                                                                               |
 
 Keys read by more than one stage: `predefined_globals`, `vendor`,
 `logical_modules`, `annotations.purity`, every input contract list,
-`commuting_statements`, `chunk_renames`, `unassigned_mode`,
+`chunk_renames`, `unassigned_mode`,
 `materialize_logical_modules.file`. Only the couplings below block caching;
 the rest are reads by both an analysis stage and a later stage, which is fine.
 
@@ -107,10 +107,11 @@ No destination is read: moving a member leaves the resulting
 `AnalysisAssumptions` identical. Cut: the projection (below) carries the
 resolved `{chunk → binding → annotation}` map, not module paths.
 
-**C3 — `resolved_member` premise selectors.** Native-operation, call-identity
-and commuting premises may name `resolved_member: { module, name }`, resolved
-through `resolved_member_sites` (`lowering/cross_module.rs` around lines 1042
-and 1251). Renaming or moving the member changes the premise's meaning. Cut:
+**C3 — `resolved_member` premise selectors.** Native-operation and
+call-identity premises may name `resolved_member: { module, name }`, resolved
+in S2 through `resolved_member_sites` (`lowering/cross_module.rs`).
+Commuting endpoints may too, but they resolve in S4, where assignment is an
+input anyway. Renaming or moving the member changes the premise's meaning. Cut:
 the projection resolves each to `(chunk, body_index, binding)`; S2 never sees
 module paths. Optionally a later codemod rewrites `resolved_member` to
 `source_match` and retires the variant.
@@ -118,12 +119,6 @@ module paths. Optionally a later codemod rewrites `resolved_member` to
 **C4 — `declared_pure_new` reaches S2** from `purity: pure_new` annotations
 (`lowering/mod.rs` → `cross_module.rs:629`). Same shape as C2; covered by the
 same projection.
-
-**C5 — `commuting_statements` is a gate premise resolved in S2.** Only graph
-build (`chunk_analysis::build_chunk_graph`) reads it, and
-`AnalysisAssumptions` no longer carries it, but S2 still resolves it. Cut:
-resolve it in S4 against the chunk's structural facts. The
-commuting-statements diagnostic path moves with it.
 
 **C6 — spec paths and whole-spec provenance in analysis output.** S2 evidence
 embeds `author_input_spec_path(provenance)`; `spec_location` strings and
@@ -237,7 +232,7 @@ measured end-to-end run of the split.
 | --------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
 | Today, any edit                                                             | ~130 s to end of the gate                                 | 83 s                                                       |
 | Assignment, co-location, module rename, selector rewrite resolving the same | ~20 s (1.6 + 2.7 + 1.5 + 0.3 + 3.8 + 4.3 + 5.0) plus emit | ~23 s (3.8 + 1.3 + 2.8 + 7.4 + 1.8 + 0.3 + 5.2)            |
-| `commuting_statements`, `dataflow_aware_s_chain` (after C5)                 | same as assignment                                        | same as assignment                                         |
+| `commuting_statements`, `dataflow_aware_s_chain`                            | same as assignment                                        | same as assignment                                         |
 | Premise edits (annotations, input lists, `chunk_export_purity`, host keys)  | full analysis; no gain                                    | full analysis; per-chunk S3 actions recover most (phase 2) |
 
 In Bazel add the projection action (S0 + S1 + selector solve, about 5 s) and
@@ -318,8 +313,6 @@ A stage may read only what its key covers. Enforced, not documented:
 Each PR is byte-identical on the e2e suite and both canonical inputs unless
 it says otherwise.
 
-2. **Resolve `commuting_statements` in S4**, against the chunk's structural
-   facts, with its diagnostics.
 3. **`AnalysisProjection` (C2, C3, C4, C7).** Computed after the selector
    solve; S2 and S3 consume only it; `resolved_member` premises resolved to
    `(chunk, body_index, binding)`.
@@ -337,8 +330,7 @@ it says otherwise.
 9. Phase 2 (per-chunk actions, vendor strip) only if measured edit mix asks
    for it.
 
-PRs 2, 5 and 6 are independent of each other; 3 needs 2 for the commuting
-selectors; 7 needs all before it.
+PRs 5 and 6 are independent of each other; 7 needs all before it.
 
 ## Interaction with other work
 
@@ -346,8 +338,8 @@ selectors; 7 needs all before it.
   and the interpreter in one per-chunk context; that context is internal to
   S3. Step 9 moves gate consumption of `commuting_statements` onto effect
   sets: the gate then reads effect sets from the artifact, which carries them
-  in `StatementFacts`, and PR 2 puts commuting resolution where step 9 needs
-  it. Artifact schema churn from any step is free (engine digest in the key).
+  in `StatementFacts`; commuting resolution already sits in S4, where step 9
+  needs it. Artifact schema churn from any step is free (engine digest in the key).
 - **Analysis performance.** Faster S2/S3 shrinks the cold path and does not
   change the boundary. Work that shares state between S2 and S3 (for example
   reusing S2's prepared execution indexes in S3) must pass it as a value in

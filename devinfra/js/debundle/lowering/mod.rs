@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::GLOBALS;
@@ -24,6 +24,7 @@ mod anonymous;
 mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
+mod commuting_statements;
 mod cross_module;
 mod export_policies;
 mod exports;
@@ -57,9 +58,9 @@ use io::{
 };
 
 use materialize::{
-    ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
-    claim_prepared_chunk, collect_materialized_logical_chunks, finish_logical_chunk,
-    prepare_logical_chunk,
+    ChunkContext, ChunkSpec, CommutingStatementsContext, EmissionChunkOutputs,
+    MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
+    finish_logical_chunk, prepare_logical_chunk,
 };
 use spec_resolution::solve_projected_chunks;
 
@@ -330,6 +331,17 @@ pub fn materialize_logical_modules(
         }
     }
 
+    // A chunk's `commuting_statements` are resolved only when its dependency
+    // graph is built, so an entry for a chunk this run does not materialize
+    // would never be checked.
+    for (chunk, chunk_options) in chunk_analysis_options {
+        ensure!(
+            chunk_options.commuting_statements.is_empty()
+                || seen.contains(&normalize_module_path(chunk)?),
+            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
+        );
+    }
+
     if let Some(dir) = options.report_emission.full_dir() {
         prepare_output_dir(dir)?;
     }
@@ -481,7 +493,15 @@ pub fn materialize_logical_modules(
                 .into_par_iter()
                 .map(|chunk| {
                     GLOBALS.set(globals, || {
-                        finish_logical_chunk(chunk, &cross_module_purities, &program_graph)
+                        finish_logical_chunk(
+                            chunk,
+                            &cross_module_purities,
+                            &program_graph,
+                            CommutingStatementsContext {
+                                graph_provenance: options.graph_provenance.as_ref(),
+                                resolved_member_sites: &resolved_member_sites,
+                            },
+                        )
                     })
                 })
                 .collect::<Vec<_>>()
