@@ -1599,10 +1599,10 @@ no_accessor_install_callables:
 ```
 
 `source_match` selects one declaration whose statement contains exactly one
-function (a nested function or accessor is rejected) and at least one
-computed-key method call; `audited_source_sha256` is the chunk's parser input.
-The author asserts that no activation of the function's computed-key method
-calls installs an accessor, for example because every argument that reaches
+outermost function (or accessor) with at least one computed-key method call;
+`audited_source_sha256` is the chunk's parser input. The entry covers every
+computed-key method call in that function, its nested functions included. The
+author asserts that no activation of those calls installs an accessor, for example because every argument that reaches
 `__defineGetter__`'s callable position is a primitive, which throws `TypeError`
 before installing. Every proof using the bundle-owned set records the entries
 that discharged a call.

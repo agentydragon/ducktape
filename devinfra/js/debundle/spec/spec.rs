@@ -665,7 +665,7 @@ pub struct DependencyGraphOptions {
     pub argument_inputs: Vec<ArgumentInputContract>,
     /// Author-certified callables whose computed-key method calls never
     /// install an accessor through `__defineGetter__` or `__defineSetter__`.
-    /// Each entry selects exactly one function. See SPEC.md § Bundle-owned
+    /// Each entry selects exactly one outermost function. See SPEC.md § Bundle-owned
     /// globals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
@@ -940,7 +940,8 @@ pub struct ArgumentInputContract {
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NoAccessorInstallCallableContract {
-    /// Selects one declaration whose statement contains exactly one function.
+    /// Selects one declaration whose statement contains exactly one outermost
+    /// function.
     pub source_match: SourceMatchClaim,
     pub audited_source_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
