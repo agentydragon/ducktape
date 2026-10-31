@@ -1869,10 +1869,8 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
-    APP_PROXY_REVERSE_PROXY[Candidate: app proxies on httputil.ReverseProxy]
-    APP_LIVE_FRAME_BROADCAST[Candidate: build live frames once and broadcast]
-    SAMPLER_TYPED_STATE[Candidate: typed sampler states]
-    GRPC_NATIVE_LISTENER[Candidate: gRPC on its own listener]
+    SAMPLER_TYPED_STATE[In review: typed sampler states, #13073]
+    GRPC_NATIVE_LISTENER[In review: gRPC on its own listener, #13138]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
@@ -1888,10 +1886,10 @@ staging's RBAC and API server behaviour. Check once Flux applies it: those Pods 
 Ready and stay Ready without readiness flapping, egress admin `GetHealth` reports `available` with an
 empty `failing` map, and the app shows no watch warning. Delete this node once observed.
 
-### Candidates
+### In review
 
 Each candidate is one independently finishable PR; see the plan section of the same name:
-`APP_PROXY_REVERSE_PROXY`, `APP_LIVE_FRAME_BROADCAST`,
+
 `SAMPLER_TYPED_STATE`, `GRPC_NATIVE_LISTENER`.
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
