@@ -1,11 +1,9 @@
 # Electric rolling exception and optional high availability
 
-Source audit, 2026-10-30 PDT. This records the work needed to meet the control-plane target of
-rolling updates. The operator accepts one Electric replica as an explicit exception to the
-two-replica target: a brief sync interruption, refetch, or page reload during replacement is
-acceptable. The chart still uses `Recreate`, so a rolling replacement needs a separate configuration
-change and acceptance check. This is a plan, not a claim about live cluster state or a deployment
-change.
+Source audit, 2026-10-30 PDT. The operator accepts one Electric replica as an explicit exception to
+the two-replica rolling target: a brief sync interruption, refetch, or page reload during replacement
+is acceptable. The chart's current `Recreate` strategy may stay; no Electric deployment change is
+scheduled. This is a reference for any later topology work, not a claim about live cluster state.
 
 ## Current source and protocol
 
@@ -53,8 +51,8 @@ It needs a design and acceptance pass before a manifest change:
    reads and Postgres slot/WAL observations. Verify Service readiness reflects the selected
    topology, and that stopping an instance releases or retires its replication resources.
 
-The accepted near-term state is one active Electric instance. A single-replica rolling replacement
-still needs to keep the shared stream and local shape-store transition honest: do not route traffic
-to a waiting empty-store Pod as if it could serve existing handles. Verify the expected 409/refetch
-or page-reload experience before calling that rollout complete. The optional HA audit does not
-select a storage class, routing algorithm, slot cleanup policy, or upgrade of the pinned image.
+The accepted state is one active Electric instance with the current replacement behavior. If a
+single-replica rolling replacement is considered later, do not route traffic to a waiting empty-store
+Pod as if it could serve existing handles; validate the resulting refetch or reload behavior before
+changing the chart. This optional audit does not select a storage class, routing algorithm, slot
+cleanup policy, or upgrade of the pinned image.

@@ -31,7 +31,7 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
   deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
-- [Electric rolling exception](electric_ha.md) — accepted single replica, remaining rolling replacement check, and optional multi-active HA design boundary
+- [Electric exception](electric_ha.md) — accepted single replica and current replacement impact, with optional rolling and multi-active HA design boundaries
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
