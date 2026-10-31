@@ -45,14 +45,82 @@ host_behavior:
 
 Landed through step 4: the keys, their validation, the loader-closed
 derivation, mandatory suspension, callable reachability and loader-alias
-classification (SPEC.md § Loader-closed derivation). On the canonical Claude
-CLI input with hypothetical audited keys all 76 graphs stay conservative and
-the ten conflicts are unchanged. Every target is held open by: five
-non-literal calls of the exported loader alias (native addon paths), 119
-literal alias calls of names outside the closed builtin list (`assert`,
-`querystring`, `bun:ffi`, `undici`, embedded asset files), three `module`
-requests, and `ws` in loaded closures. Literal requests into application
-chunks reach back into 44 of the 76 targets; no loader site is unreachable.
+classification (SPEC.md § Loader-closed derivation). Gaffer-private #667
+declares the audited block on the canonical Claude CLI 2.1.292 spec; all 76
+graphs stay conservative and the ten conflicts are unchanged. Evidence and
+per-graph numbers: <../debug/2026_10_30_claude_export_reentry_blockers.md>.
+
+## Remaining loader blockers
+
+Site failures hold every target open, so a graph leaves conservative only once
+classes 1–4 all clear and its own static closure clears. Even then class 5 keeps
+44 graphs open, including 9 of the 10 conflicting ones (all but `sessionSDK`).
+Those 44 graphs carry 91% of the 7.16M edges. Clearing classes 1–4, `process`
+and `ws` frees at most the other 32 graphs: 0.67M edges and 692 of the 3,322
+`callback_pool_limit` losses, with no conflict guaranteed to move.
+
+1. **Literal requests outside the closed list** (119 sites).
+   - **Node builtins** `assert`, `constants` and `querystring` are missing from
+     the closed list. Adding them is engine work. Admitting one is an audited
+     host fact: extend the probe's builtin IDs and the leaf audit.
+   - **Bun modules** `bun:ffi` and `undici` (and `ws`, the static blocker in 55
+     graphs) belong in a separate closed list of host-provided non-Node modules.
+     The audit must also show that a bare `undici` or `ws` request from a
+     `$bunfs` module always resolves to the host override, never to a
+     filesystem `node_modules` package.
+   - **Embedded assets** (about 100: `.md`, `.txt`, two `.mjs`, two `.node`).
+     The rule depends on the loader Bun assigns each embedded file, which is
+     recorded in the standalone graph's per-file loader byte; the extractor
+     drops it today. A `text`, `file` or `json` asset evaluates no code and is
+     a reentry-free leaf. A `js` asset outside the analyzed chunks keeps
+     targets open. A `napi` asset is class 3. This needs the extractor to emit
+     the loader per file (an input fact) and the probe to show the host honours
+     it.
+2. **`process`** (6 loader requests, 13 loaded-closure requests, and the static
+   blocker in 70 graphs). Building the namespace reads every property along
+   `process`'s prototype chain, so admitting it needs proof that no
+   application accessor exists on that chain. The engine can't derive this. The
+   bundle's own export helpers install getters on arbitrary receivers, and the
+   per-chunk integrity guard fails on opaque receivers. This needs an author
+   premise (wording in the debug note). The same premise would admit
+   `worker_threads`, whose only audited hazard is `set` on `process` inside a
+   worker.
+3. **Non-literal loader calls** (5 sites, 4 distinct).
+   - `computer-use-swift` loads an addon path from an environment variable,
+     after an unconditional `throw`. The engine can exclude it: statements
+     after an unconditional abrupt completion in the same statement list never
+     run (hoisted function declarations still follow callable reachability).
+   - `audio-capture` and `clipboard-napi` loop over literal `.node` candidate
+     paths, and protobufjs `inquire` loads its parameter. Neither is
+     engine-derivable. A `.node` load runs the addon's native initializer,
+     which the census can't see. This needs an author premise or a per-site
+     assertion of the possible specifiers.
+4. **`module`** (3 sites). The sites are a `builtinModules` read
+   (stack-utils), a `createRequire` result used only for `.resolve`, and
+   fflate's top-level `createRequire("/")("worker_threads")`.
+   - The engine can classify these uses. A data-member read and a `.resolve`
+     load nothing. A `createRequire` result called with a literal is a literal
+     request, resolved against its base. Any other use stays opaque.
+   - The host facts needed are that a `createRequire` loader shares
+     `import.meta.require`'s audited behavior, and that loading `module` runs
+     no application code.
+   - fflate's site still requests `worker_threads`, which needs class 2.
+5. **Reach-back** (44 targets). This is genuine reentry, not a gap in the
+   proof. A request for a chunk L that has not run yet, made while the target
+   evaluates, runs L's body there. If L imports the target, L sees the live
+   partial namespace: it can call hoisted exports and read initialized
+   bindings. `returns_partial_namespace` covers only a request for the
+   evaluating module itself. Today's rule (every site counts, failure when the
+   loaded closure contains the target) is the right one.
+   - A sound tighter bound counts a top-level site only when its chunk can
+     evaluate inside the target's window (the target's static closure, or a
+     chunk loaded in it), and a nested site only when its chunk can run before
+     the target finishes (it does not transitively import the target). Modelled,
+     it frees 8 of 46 targets (one conflicting: `taskCancel`) and narrows the
+     program-wide classes to 62–75 targets. Build it only once classes 1–4 can
+     clear; until then it moves no graph.
+   - Narrowing further means bounding which callbacks an incomplete at-init
+     call can run (<abstract_interpreter.md>), not changing the loader rule.
 
 ## Steps
 
