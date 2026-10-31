@@ -8164,7 +8164,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum PrefixNeededKey {
     Binding(Id),
     Object(Value),

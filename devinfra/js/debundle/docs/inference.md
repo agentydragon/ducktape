@@ -265,9 +265,12 @@ The store retains direct premise keys, not recursive proof-tree copies. Growing
 purity effects contain function keys rather than recursively nested `Arc<Purity>`
 causes. Final diagnostic projection constructs a finite acyclic cause graph after
 closure, retaining provider source locations across imports. The
-current queue uses ordered maps and sets for deterministic discovery and
-deduplication. It schedules affected dependency edges rather than rescanning all
-rules. These are structural bounds, not a measured CPU or memory improvement.
+queue orders evaluation only through its pending set of (round, rule) pairs;
+the fact store, watchers and schedule are hash maps that are looked up, never
+iterated in an order that matters, so every family's key and rule types
+implement `Hash`. `IterativeFacts::keys` is unordered; `into_values` returns
+ordered values. The queue schedules affected dependency edges rather than
+rescanning all rules. These are structural bounds, not a measured CPU or memory improvement.
 Use matched optimized CPU and heap profiles before changing the value arenas,
 bitmap representation or cross-module preparation caches.
 

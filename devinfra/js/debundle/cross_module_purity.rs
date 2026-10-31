@@ -526,25 +526,25 @@ pub struct ResolvedCallableSummaries {
     pub(crate) structural_flows: BTreeMap<ModuleKey, ChunkValueFlow>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CallableExportKey {
     module: ModuleKey,
     export: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CallableImportKey {
     module: ModuleKey,
     local: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CallableFactKey {
     Export(CallableExportKey),
     Import(CallableImportKey),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CallableImportProjection {
     imported: CallableImportKey,
     provider: CallableExportKey,
@@ -563,7 +563,7 @@ impl CallableExportProof {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CallableProjectionRule {
     Export(CallableExportKey),
     Import(CallableImportProjection),

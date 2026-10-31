@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::Span;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub(crate) enum PurityMode {
     /// Per-chunk analysis, where chunk-local authored purity hints apply.
     Local,
@@ -25,7 +25,7 @@ pub(crate) enum PurityMode {
 }
 
 /// Stable identity for a function body across modules and policy contexts.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub(crate) struct PurityFunctionKey {
     pub(crate) module: String,
     pub(crate) binding: String,
@@ -33,7 +33,7 @@ pub(crate) struct PurityFunctionKey {
     pub(crate) mode: PurityMode,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub(crate) enum PurityKey {
     Body(PurityFunctionKey),
     Effects(PurityFunctionKey),
@@ -133,7 +133,7 @@ pub(crate) struct PurityEffectReason {
     pub(crate) callee: Option<PurityFunctionKey>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub(crate) enum PurityRuleKey {
     Body(PurityFunctionKey),
     Effects(PurityFunctionKey),

@@ -1619,7 +1619,7 @@ enum FlowFact {
 
 /// Candidate reachability is a second stratum over the completed value facts:
 /// no event rule reads a candidate key, so it never wakes AST events.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum CandidateRule {
     Reachability(OriginId),
     Binding(BindingSlot),
