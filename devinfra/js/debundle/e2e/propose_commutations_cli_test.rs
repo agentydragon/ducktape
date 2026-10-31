@@ -220,6 +220,28 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_eq!(array(scc, "modules").len(), 2, "{scc:#}");
 }
 
+/// `--limit` keeps the best-ranked proposals, `totals` counts every one, and
+/// the SCC row counts the endpoints left unproven.
+#[test]
+fn limit_keeps_the_best_proposals_and_counts_the_rest() {
+    let rejected = run_rejection_fixture(opaque_split(vec![]));
+    let all = propose_rejected(&rejected, &["--all"]);
+    let every = array(&all, "proposals");
+    assert_eq!(every.len(), 2, "{all:#}");
+    assert_eq!(all["totals"]["proposals"], 2);
+    let limited = propose_rejected(&rejected, &["--limit", "1"]);
+    let [kept] = array(&limited, "proposals") else {
+        panic!("one proposal: {limited:#}");
+    };
+    assert_eq!(kept["entry"], every[0]["entry"]);
+    assert_eq!(limited["totals"]["proposals"], 2);
+    assert_eq!(draft_pairs(&limited).len(), 1);
+    // The pair past the limit shares one endpoint with the kept pair; its
+    // other declared-binding endpoint is assumed, not proven.
+    assert_eq!(only_scc(&all)["unproven_endpoints"], 0);
+    assert_eq!(only_scc(&limited)["unproven_endpoints"], 1);
+}
+
 /// The source unit of a comma-list declarator is the declarator, not the
 /// declaration: its excerpt starts at its own binding.
 #[test]

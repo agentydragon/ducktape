@@ -27,8 +27,10 @@ use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
 use petgraph::algo::{is_cyclic_directed, tarjan_scc};
 use petgraph::graphmap::DiGraphMap;
+use petgraph::visit::EdgeFiltered;
 use selector_codemod::{
-    SourceUnitSelectorRequest, SourceUnitSelectorSynthesis, synthesize_source_unit_selectors,
+    SourceUnitSelectorRequest, SourceUnitSelectorSynthesis, SourceUnitSelectorSynthesizer,
+    with_source_unit_selector_synthesizer,
 };
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
@@ -67,6 +69,16 @@ pub(super) struct ProposeCommutationsArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
+
+    /// Emit at most this many proposals, rejected pairs and co-location rows
+    /// each, best first; `totals` counts all of them.
+    #[arg(long, default_value_t = 50, conflicts_with = "all")]
+    pub limit: usize,
+
+    /// Emit every proposal, rejected pair and co-location row, proving a
+    /// selector for every endpoint.
+    #[arg(long)]
+    pub all: bool,
 }
 
 impl ProposeCommutationsArgs {
@@ -102,16 +114,18 @@ pub struct ProposeCommutationsReport {
     pub graph: PathBuf,
     pub cycles: PathBuf,
     /// One row per blocking SCC: whether its proposals together break it,
-    /// and, when they cannot, the edges that keep it cyclic.
+    /// and, when they cannot, the edges that keep it cyclic. Never limited.
     pub sccs: Vec<SccOutcome>,
+    /// Size of each list before `--limit` cut it.
+    pub totals: ReportTotals,
     /// Ranked best first; `rank` is the 1-based position.
     pub proposals: Vec<CommutationProposal>,
     /// Cut edges a premise can never inert: at-init reads (`eager_use`) and
     /// the other non-`sequenced` kinds. The remedy is co-location.
     pub needs_co_location: Vec<CoLocationNeed>,
-    /// Pairs the gate would reject and pairs without a unique selector; every
-    /// constraining `sequenced` edge inside a blocking SCC lands either here
-    /// or in `proposals`.
+    /// Pairs the gate would reject and pairs without a unique selector; with
+    /// `--all`, every constraining `sequenced` edge inside a blocking SCC
+    /// lands either here or in `proposals`.
     pub rejected: Vec<RejectedCandidate>,
     /// The `chunk_analysis_options` YAML fragment with every proposal, in
     /// rank order, `note` left for the author.
@@ -121,10 +135,25 @@ pub struct ProposeCommutationsReport {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ReportTotals {
+    /// Pairs the gate would accept, deduplicated across nested SCCs. A pair
+    /// past the limit is counted without proving its declared-binding
+    /// endpoints' selectors.
+    pub proposals: usize,
+    pub rejected: usize,
+    pub needs_co_location: usize,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommutationProposal {
     pub rank: usize,
-    /// The SCC whose `sccs` row lists its modules.
+    /// The SCC the pair ranks best in; its `sccs` row lists its modules.
+    /// `cut_edges`, `single_pair_cut` and `remaining_module_pair_edges`
+    /// describe this SCC.
     pub scc_id: usize,
+    /// Other blocking SCCs (nested ones) the pair also lies in.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub also_in_sccs: Vec<usize>,
     /// Indices into the SCC's `cut` this pair's edges cover; empty when the
     /// gate's feedback arc set cut the SCC on another arc.
     pub cut_edges: Vec<usize>,
@@ -194,6 +223,9 @@ pub struct CoLocationNeed {
 #[derive(Debug, Serialize)]
 pub struct RejectedCandidate {
     pub scc_id: usize,
+    /// Other blocking SCCs (nested ones) the pair also lies in.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub also_in_sccs: Vec<usize>,
     /// Indices into the SCC's `cut` this pair's edges cover; empty for a
     /// pair whose edges the feedback arc set did not pick.
     pub cut_edges: Vec<usize>,
@@ -235,6 +267,12 @@ pub struct ConflictingEdge {
 pub struct SccOutcome {
     pub scc_id: usize,
     pub modules: Vec<ModulePath>,
+    /// Declared-binding endpoints of this SCC's pairs past `--limit`, whose
+    /// selectors were assumed rather than proven. A failed selector only
+    /// keeps a pair's edges constraining: `pairs_cannot_break` holds
+    /// whatever they prove, but its counts are then a lower bound and
+    /// `pairs_break` is conditional on them. `--all` proves every one.
+    pub unproven_endpoints: usize,
     #[serde(flatten)]
     pub verdict: SccVerdict,
 }
@@ -296,11 +334,22 @@ pub(super) fn run(
         context.source_path(),
         context.source().to_owned(),
     )?;
+    let limit = (!args.all).then_some(args.limit);
     let mut analysis = Analysis::new(&report, &source, authored_modules.as_ref())?;
-    let (needs_co_location, mut rejected) = analysis.collect_candidates(&sccs)?;
-    let mut proposals = analysis.synthesize_selectors(context, &mut rejected)?;
+    let (mut needs_co_location, mut rejected) = analysis.collect_candidates(&sccs)?;
+    let ranked = analysis.rank_candidates();
+    let (proposals, proposal_total) =
+        analysis.emit_proposals(context, ranked, limit, &mut rejected)?;
     let scc_outcomes = analysis.scc_outcomes()?;
-    rank(&mut proposals);
+    let totals = ReportTotals {
+        proposals: proposal_total,
+        rejected: rejected.len(),
+        needs_co_location: needs_co_location.len(),
+    };
+    if let Some(limit) = limit {
+        rejected.truncate(limit);
+        needs_co_location.truncate(limit);
+    }
     let draft_yaml = render_draft(&report.chunk_id, &proposals)?;
     let draft_written = match &args.out_path {
         Some(path) => {
@@ -315,6 +364,7 @@ pub(super) fn run(
         graph: args.graph.clone(),
         cycles: cycles_path,
         sccs: scc_outcomes,
+        totals,
         proposals,
         needs_co_location,
         rejected,
@@ -360,6 +410,32 @@ struct Candidate {
     inerted: Vec<DependencyEdgeId>,
 }
 
+/// A candidate placed in the SCC where it ranks best.
+struct RankedCandidate {
+    candidate: Candidate,
+    also_in_sccs: Vec<usize>,
+    single_pair_cut: bool,
+    remaining_module_pair_edges: usize,
+}
+
+impl RankedCandidate {
+    fn rank_key(&self) -> impl Ord + use<> {
+        (
+            !self.single_pair_cut,
+            self.remaining_module_pair_edges != 0,
+            std::cmp::Reverse(self.candidate.inerted.len()),
+            self.candidate.cut_edges.is_empty(),
+            self.remaining_module_pair_edges,
+            self.candidate.scc_id,
+            self.candidate.a,
+            self.candidate.b,
+        )
+    }
+}
+
+/// An endpoint's selector and how it was made, or why it has none.
+type EndpointSelector = Result<(SourceUnitSelector, SelectorOrigin), String>;
+
 /// How an endpoint will be written.
 enum EndpointPlan {
     ResolvedMember(ResolvedMemberSelector),
@@ -399,12 +475,16 @@ struct SccState {
     constraining: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>>,
     /// The module pair of every edge in `constraining`.
     edge_module_pairs: HashMap<DependencyEdgeId, (ModuleId, ModuleId)>,
-    /// Whether `constraining` is cyclic with nothing inerted.
+    /// The module graph of `constraining`.
+    graph: DiGraphMap<ModuleId, ()>,
+    /// Whether `graph` is cyclic with nothing inerted.
     cyclic: bool,
     /// Why each rejected source-unit pair's edges stay constraining.
     rejected_pairs: HashMap<(usize, usize), BlockingReason>,
     /// Edges the SCC's proposals inert together.
     inerted: HashSet<DependencyEdgeId>,
+    /// Endpoints of `inerted`'s pairs whose selectors were assumed.
+    unproven_endpoints: HashSet<usize>,
 }
 
 impl<'a> Analysis<'a> {
@@ -559,7 +639,8 @@ impl<'a> Analysis<'a> {
         sccs: &[BlockingSccEntry],
     ) -> Result<(Vec<CoLocationNeed>, Vec<RejectedCandidate>)> {
         let mut needs_co_location = Vec::new();
-        let mut rejected = Vec::new();
+        let mut rejected: Vec<RejectedCandidate> = Vec::new();
+        let mut rejected_by_pair: HashMap<(usize, usize), usize> = HashMap::new();
         for scc in sccs {
             let scc_module_ids = scc
                 .modules
@@ -589,6 +670,7 @@ impl<'a> Analysis<'a> {
                 if matching.is_empty() {
                     rejected.push(RejectedCandidate {
                         scc_id: scc.id,
+                        also_in_sccs: Vec::new(),
                         cut_edges: vec![cut_index],
                         a: None,
                         b: None,
@@ -649,13 +731,24 @@ impl<'a> Analysis<'a> {
                         if let Some(blocking) = reason.blocking_reason() {
                             rejected_pairs.insert((a, b), blocking);
                         }
-                        rejected.push(RejectedCandidate {
-                            scc_id: scc.id,
-                            cut_edges,
-                            a: Some(self.node(a).id.clone()),
-                            b: Some(self.node(b).id.clone()),
-                            reason,
-                        });
+                        // A nested SCC repeats its enclosing SCC's pairs.
+                        match rejected_by_pair.get(&(a, b)) {
+                            Some(&index) => {
+                                let row: &mut RejectedCandidate = &mut rejected[index];
+                                row.also_in_sccs.push(scc.id);
+                            }
+                            None => {
+                                rejected_by_pair.insert((a, b), rejected.len());
+                                rejected.push(RejectedCandidate {
+                                    scc_id: scc.id,
+                                    also_in_sccs: Vec::new(),
+                                    cut_edges,
+                                    a: Some(self.node(a).id.clone()),
+                                    b: Some(self.node(b).id.clone()),
+                                    reason,
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -663,16 +756,19 @@ impl<'a> Analysis<'a> {
                 .iter()
                 .flat_map(|(&pair, edges)| edges.iter().map(move |&id| (id, pair)))
                 .collect();
-            let cyclic = is_cyclic_directed(&module_graph(constraining.keys()));
+            let graph = module_graph(constraining.keys());
+            let cyclic = is_cyclic_directed(&graph);
             self.sccs.insert(
                 scc.id,
                 SccState {
                     modules: scc.modules.clone(),
                     constraining,
                     edge_module_pairs,
+                    graph,
                     cyclic,
                     rejected_pairs,
                     inerted: HashSet::new(),
+                    unproven_endpoints: HashSet::new(),
                 },
             );
         }
@@ -781,43 +877,154 @@ impl<'a> Analysis<'a> {
         })
     }
 
-    /// Give every candidate its two selectors, demoting a candidate whose
-    /// endpoint has no uniquely proven selector to `rejected`.
-    fn synthesize_selectors(
-        &mut self,
-        context: &VerifiedGraphSourceContext,
-        rejected: &mut Vec<RejectedCandidate>,
-    ) -> Result<Vec<CommutationProposal>> {
-        let mut proposals = Vec::new();
-        let mut plans: BTreeMap<usize, Result<EndpointPlan, String>> = BTreeMap::new();
-        for candidate in &self.candidates {
-            for node_index in [candidate.a, candidate.b] {
-                plans
-                    .entry(node_index)
-                    .or_insert_with(|| self.endpoint_plan(node_index));
-            }
+    /// Every candidate once, with its effect in the SCC it ranks best in,
+    /// best first: a single-pair cut, then one that empties its module-pair
+    /// arc, then more inerted edges, then one the gate's cut names.
+    fn rank_candidates(&mut self) -> Vec<RankedCandidate> {
+        let mut by_pair: HashMap<(usize, usize), Vec<RankedCandidate>> = HashMap::new();
+        for candidate in std::mem::take(&mut self.candidates) {
+            let (single_pair_cut, remaining_module_pair_edges) =
+                cut_effect(&self.sccs[&candidate.scc_id], &candidate);
+            by_pair
+                .entry((candidate.a, candidate.b))
+                .or_default()
+                .push(RankedCandidate {
+                    candidate,
+                    also_in_sccs: Vec::new(),
+                    single_pair_cut,
+                    remaining_module_pair_edges,
+                });
         }
-        let requests: Vec<(usize, SourceUnitSelectorRequest)> = plans
-            .iter()
-            .filter_map(|(node_index, plan)| match plan {
-                Ok(EndpointPlan::Synthesize(request)) => Some((*node_index, request.clone())),
-                _ => None,
+        let mut ranked: Vec<RankedCandidate> = by_pair
+            .into_values()
+            .map(|mut placements| {
+                placements.sort_by_key(RankedCandidate::rank_key);
+                let mut placements = placements.into_iter();
+                let mut best = placements.next().expect("a pair has a placement");
+                best.also_in_sccs = placements
+                    .map(|placement| placement.candidate.scc_id)
+                    .collect();
+                best.also_in_sccs.sort_unstable();
+                best
             })
             .collect();
-        let synthesized = synthesize_source_unit_selectors(
+        ranked.sort_by_key(RankedCandidate::rank_key);
+        ranked
+    }
+
+    /// Walk `ranked` in order, emitting a proposal for each candidate whose
+    /// endpoints have selectors until `limit` are emitted, and demoting one
+    /// without to `rejected`. Past the limit, an anonymous endpoint is still
+    /// proven (one resolve of its exact statement) and a declared-binding
+    /// one, whose proof is a minimizing search, is assumed selectable and
+    /// recorded as unproven. Each SCC's `inerted` gets every candidate not
+    /// demoted. Returns the proposals and how many candidates were not
+    /// demoted.
+    fn emit_proposals(
+        &mut self,
+        context: &VerifiedGraphSourceContext,
+        ranked: Vec<RankedCandidate>,
+        limit: Option<usize>,
+        rejected: &mut Vec<RejectedCandidate>,
+    ) -> Result<(Vec<CommutationProposal>, usize)> {
+        with_source_unit_selector_synthesizer(
             &context.source_path().display().to_string(),
             context.source().to_owned(),
-            &requests
-                .iter()
-                .map(|(_, request)| request.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        let mut selectors: BTreeMap<usize, Result<(SourceUnitSelector, SelectorOrigin), String>> =
-            BTreeMap::new();
-        for ((node_index, _), synthesis) in requests.iter().zip(synthesized) {
-            let outcome = match synthesis {
+            |synthesizer| {
+                let mut selectors = HashMap::new();
+                let mut proposals = Vec::new();
+                let mut total = 0;
+                for ranked in ranked {
+                    let emit = limit.is_none_or(|limit| proposals.len() < limit);
+                    let candidate = &ranked.candidate;
+                    let endpoints = [candidate.a, candidate.b].map(|node_index| {
+                        self.endpoint_selector(synthesizer, &mut selectors, node_index, emit)
+                    });
+                    let [a, b] = endpoints;
+                    let (a, b) = (a?, b?);
+                    let failure = [(candidate.a, &a), (candidate.b, &b)].into_iter().find_map(
+                        |(node_index, selector)| match selector {
+                            Some(Err(detail)) => Some((node_index, detail.clone())),
+                            _ => None,
+                        },
+                    );
+                    let sccs = std::iter::once(candidate.scc_id)
+                        .chain(ranked.also_in_sccs.iter().copied())
+                        .collect::<Vec<_>>();
+                    if let Some((failed, detail)) = failure {
+                        for &scc_id in &sccs {
+                            self.scc_mut(scc_id).rejected_pairs.insert(
+                                (candidate.a, candidate.b),
+                                BlockingReason::NoUniqueSelector,
+                            );
+                        }
+                        let (a, b) = (
+                            Some(self.node(candidate.a).id.clone()),
+                            Some(self.node(candidate.b).id.clone()),
+                        );
+                        rejected.push(RejectedCandidate {
+                            scc_id: ranked.candidate.scc_id,
+                            also_in_sccs: ranked.also_in_sccs,
+                            cut_edges: ranked.candidate.cut_edges,
+                            a,
+                            b,
+                            reason: RejectionReason::NoUniqueSelector {
+                                endpoint: self.node(failed).id.clone(),
+                                detail,
+                            },
+                        });
+                        continue;
+                    }
+                    total += 1;
+                    let unproven = [(candidate.a, &a), (candidate.b, &b)]
+                        .into_iter()
+                        .filter(|(_, selector)| selector.is_none())
+                        .map(|(node_index, _)| node_index)
+                        .collect::<Vec<_>>();
+                    for &scc_id in &sccs {
+                        let scc = self.scc_mut(scc_id);
+                        scc.inerted.extend(candidate.inerted.iter().copied());
+                        scc.unproven_endpoints.extend(unproven.iter().copied());
+                    }
+                    if let (Some(Ok(a)), Some(Ok(b))) = (a, b)
+                        && emit
+                    {
+                        let rank = proposals.len() + 1;
+                        proposals.push(self.proposal(rank, ranked, a, b)?);
+                    }
+                }
+                Ok((proposals, total))
+            },
+        )
+    }
+
+    /// The selector of one endpoint, synthesized and cached on first need:
+    /// `None` for a declared binding not yet synthesized when `prove` is
+    /// false.
+    fn endpoint_selector(
+        &self,
+        synthesizer: &SourceUnitSelectorSynthesizer<'_>,
+        selectors: &mut HashMap<usize, EndpointSelector>,
+        node_index: usize,
+        prove: bool,
+    ) -> Result<Option<EndpointSelector>> {
+        if let Some(selector) = selectors.get(&node_index) {
+            return Ok(Some(selector.clone()));
+        }
+        let selector = match self.endpoint_plan(node_index) {
+            Err(reason) => Err(reason),
+            Ok(EndpointPlan::ResolvedMember(member)) => Ok((
+                SourceUnitSelector::ResolvedMember(member),
+                SelectorOrigin::ResolvedMember,
+            )),
+            Ok(EndpointPlan::Synthesize(SourceUnitSelectorRequest::DeclaredBinding { .. }))
+                if !prove =>
+            {
+                return Ok(None);
+            }
+            Ok(EndpointPlan::Synthesize(request)) => match synthesizer.synthesize(&request)? {
                 SourceUnitSelectorSynthesis::Synthesized(selector)
-                    if self.body_indices[*node_index] == Some(selector.body_index) =>
+                    if self.body_indices[node_index] == Some(selector.body_index) =>
                 {
                     Ok((
                         SourceUnitSelector::SourceMatch(selector.claim),
@@ -826,106 +1033,62 @@ impl<'a> Analysis<'a> {
                 }
                 SourceUnitSelectorSynthesis::Synthesized(selector) => Err(format!(
                     "the synthesized selector proves body index {} but the source unit is body index {:?}",
-                    selector.body_index, self.body_indices[*node_index]
+                    selector.body_index, self.body_indices[node_index]
                 )),
                 SourceUnitSelectorSynthesis::Skipped { reason } => Err(reason),
-            };
-            selectors.insert(*node_index, outcome);
-        }
-        for (node_index, plan) in plans {
-            match plan {
-                Ok(EndpointPlan::ResolvedMember(member)) => {
-                    selectors.insert(
-                        node_index,
-                        Ok((
-                            SourceUnitSelector::ResolvedMember(member),
-                            SelectorOrigin::ResolvedMember,
-                        )),
-                    );
-                }
-                Ok(EndpointPlan::Synthesize(_)) => {}
-                Err(reason) => {
-                    selectors.insert(node_index, Err(reason));
-                }
-            }
-        }
+            },
+        };
+        selectors.insert(node_index, selector.clone());
+        Ok(Some(selector))
+    }
 
-        let candidates = std::mem::take(&mut self.candidates);
-        for candidate in candidates {
-            let endpoint =
-                |node_index: usize| -> Result<(SourceUnitSelector, ProposedEndpoint), String> {
-                    let (selector, origin) = selectors[&node_index].clone()?;
-                    let report = self
-                        .endpoint_report(node_index, origin)
-                        .map_err(|error| format!("{error:#}"))?;
-                    Ok((selector, report))
-                };
-            let (a, b) = match (endpoint(candidate.a), endpoint(candidate.b)) {
-                (Ok(a), Ok(b)) => (a, b),
-                (Err(detail), _) | (_, Err(detail)) => {
-                    let failed = if selectors[&candidate.a].is_err() {
-                        candidate.a
-                    } else {
-                        candidate.b
-                    };
-                    self.scc_mut(candidate.scc_id)
-                        .rejected_pairs
-                        .insert((candidate.a, candidate.b), BlockingReason::NoUniqueSelector);
-                    rejected.push(RejectedCandidate {
-                        scc_id: candidate.scc_id,
-                        cut_edges: candidate.cut_edges,
-                        a: Some(self.node(candidate.a).id.clone()),
-                        b: Some(self.node(candidate.b).id.clone()),
-                        reason: RejectionReason::NoUniqueSelector {
-                            endpoint: self.node(failed).id.clone(),
-                            detail,
-                        },
-                    });
-                    continue;
-                }
-            };
-            let scc = self.scc_mut(candidate.scc_id);
-            scc.inerted.extend(candidate.inerted.iter().copied());
-            let (single_pair_cut, remaining_module_pair_edges) = cut_effect(scc, &candidate);
-            let inerted_edges = candidate
-                .inerted
-                .iter()
-                .map(|id| {
-                    let edge: &DependencyEdgeReport = &self.report.edges[id.0];
-                    let cause = edge.sequenced_cause.clone().with_context(|| {
-                        format!("inertable edge {} has no retained cause", edge.id)
-                    })?;
-                    Ok(InertedEdge {
-                        edge: edge.id.clone(),
-                        from: edge.source.clone(),
-                        to: edge.target.clone(),
-                        explanation_text: cause.to_string(),
-                        explanation: cause,
-                    })
+    fn proposal(
+        &self,
+        rank: usize,
+        ranked: RankedCandidate,
+        (a_selector, a_origin): (SourceUnitSelector, SelectorOrigin),
+        (b_selector, b_origin): (SourceUnitSelector, SelectorOrigin),
+    ) -> Result<CommutationProposal> {
+        let candidate = ranked.candidate;
+        let inerted_edges = candidate
+            .inerted
+            .iter()
+            .map(|id| {
+                let edge: &DependencyEdgeReport = &self.report.edges[id.0];
+                let cause = edge
+                    .sequenced_cause
+                    .clone()
+                    .with_context(|| format!("inertable edge {} has no retained cause", edge.id))?;
+                Ok(InertedEdge {
+                    edge: edge.id.clone(),
+                    from: edge.source.clone(),
+                    to: edge.target.clone(),
+                    explanation_text: cause.to_string(),
+                    explanation: cause,
                 })
-                .collect::<Result<Vec<_>>>()?;
-            proposals.push(CommutationProposal {
-                rank: 0,
-                scc_id: candidate.scc_id,
-                cut_edges: candidate.cut_edges,
-                rank_reason: if single_pair_cut {
-                    RankReason::SinglePairCut
-                } else {
-                    RankReason::PartialCut
-                },
-                single_pair_cut,
-                remaining_module_pair_edges,
-                entry: CommutingStatementsContract {
-                    a: a.0,
-                    b: b.0,
-                    note: None,
-                },
-                a: a.1,
-                b: b.1,
-                inerted_edges,
-            });
-        }
-        Ok(proposals)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(CommutationProposal {
+            rank,
+            scc_id: candidate.scc_id,
+            also_in_sccs: ranked.also_in_sccs,
+            cut_edges: candidate.cut_edges,
+            rank_reason: if ranked.single_pair_cut {
+                RankReason::SinglePairCut
+            } else {
+                RankReason::PartialCut
+            },
+            single_pair_cut: ranked.single_pair_cut,
+            remaining_module_pair_edges: ranked.remaining_module_pair_edges,
+            entry: CommutingStatementsContract {
+                a: a_selector,
+                b: b_selector,
+                note: None,
+            },
+            a: self.endpoint_report(candidate.a, a_origin)?,
+            b: self.endpoint_report(candidate.b, b_origin)?,
+            inerted_edges,
+        })
     }
 
     /// Inert every proposal of each SCC together and report what still
@@ -989,6 +1152,7 @@ impl<'a> Analysis<'a> {
             outcomes.push(SccOutcome {
                 scc_id,
                 modules: scc.modules.clone(),
+                unproven_endpoints: scc.unproven_endpoints.len(),
                 verdict,
             });
         }
@@ -1030,7 +1194,7 @@ enum PairVerdict {
 /// Whether inerting `candidate` alone leaves the SCC's constraining subgraph
 /// acyclic, and the constraining edges left on its module pair. Only a module
 /// pair the candidate empties changes the module graph, so the SCC's cycle
-/// check is redone only for a candidate that empties one.
+/// check is redone, without those arcs, only for a candidate that empties one.
 fn cut_effect(scc: &SccState, candidate: &Candidate) -> (bool, usize) {
     let mut inerted_by_pair: BTreeMap<(ModuleId, ModuleId), usize> = BTreeMap::new();
     for pair in candidate
@@ -1052,11 +1216,9 @@ fn cut_effect(scc: &SccState, candidate: &Candidate) -> (bool, usize) {
     let cyclic = if emptied.is_empty() {
         scc.cyclic
     } else {
-        is_cyclic_directed(&module_graph(
-            scc.constraining
-                .keys()
-                .filter(|pair| !emptied.contains(pair)),
-        ))
+        is_cyclic_directed(&EdgeFiltered::from_fn(&scc.graph, |(from, to, _)| {
+            !emptied.contains(&(from, to))
+        }))
     };
     (!cyclic, left(&candidate.module_pair))
 }
@@ -1069,24 +1231,6 @@ fn module_graph<'p>(
         graph.add_edge(from, to, ());
     }
     graph
-}
-
-/// Best first: a pair that alone breaks its SCC, then one the gate's cut
-/// already names, then fewer parallel edges left on its module pair, then
-/// report order.
-fn rank(proposals: &mut [CommutationProposal]) {
-    proposals.sort_by_key(|proposal| {
-        (
-            !proposal.single_pair_cut,
-            proposal.cut_edges.is_empty(),
-            proposal.remaining_module_pair_edges,
-            proposal.scc_id,
-            proposal.a.source_unit.clone(),
-        )
-    });
-    for (index, proposal) in proposals.iter_mut().enumerate() {
-        proposal.rank = index + 1;
-    }
 }
 
 const EXCERPT_LIMIT: usize = 120;
@@ -1186,13 +1330,22 @@ fn render_draft(chunk: &str, proposals: &[CommutationProposal]) -> Result<String
 
 fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
     out.push_str(&format!(
-        "chunk {}: {} proposal(s), {} cut edge(s) need co-location, {} candidate(s) rejected\n",
+        "chunk {}: {} of {} proposal(s), {} of {} cut edge(s) needing co-location, {} of {} rejected candidate(s) shown\n",
         report.chunk,
         report.proposals.len(),
+        report.totals.proposals,
         report.needs_co_location.len(),
+        report.totals.needs_co_location,
         report.rejected.len(),
+        report.totals.rejected,
     ));
     for scc in &report.sccs {
+        if scc.unproven_endpoints > 0 {
+            out.push_str(&format!(
+                "  SCC {}: assuming {} unproven declared-binding endpoint selector(s); --all proves them\n",
+                scc.scc_id, scc.unproven_endpoints
+            ));
+        }
         match &scc.verdict {
             SccVerdict::PairsBreak => out.push_str(&format!(
                 "  SCC {} ({} modules): its proposals together break it\n",

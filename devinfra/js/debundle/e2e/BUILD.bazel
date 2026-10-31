@@ -65,6 +65,16 @@ debundle_e2e_test(
     ],
 )
 
+# Runs in CI: its own wall-clock budget assertion is the regression signal.
+debundle_e2e_test(
+    name = "propose_commutations_budget_test",
+    timeout = "moderate",
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
 debundle_e2e_test(
     name = "propose_commutations_cli_test",
     deps = [
@@ -356,16 +366,6 @@ debundle_e2e_test(
         "scale",
     ],
     deps = ["//devinfra/js/debundle:spec"],
-)
-
-debundle_e2e_test(
-    name = "propose_commutations_scale_test",
-    timeout = "moderate",
-    tags = [
-        "manual",
-        "scale",
-    ],
-    deps = ["@crates//:serde_json"],
 )
 
 # Full-size stress regression; run explicitly when checking value-set sharing.
