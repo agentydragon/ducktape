@@ -638,7 +638,15 @@ fn sweep_unreachable_top_level(
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
                     region.insert(k);
-                    worklist.extend(analyses[k].reads.iter().map(|read| (read, code_may_run)));
+                    // A value this statement itself computes (a loop variable,
+                    // say) derives from what it reads at init; its closures
+                    // are covered above.
+                    let reads = if k == i {
+                        &an.eager_bindings
+                    } else {
+                        &analyses[k].reads
+                    };
+                    worklist.extend(reads.iter().map(|read| (read, code_may_run)));
                 }
             }
         }
