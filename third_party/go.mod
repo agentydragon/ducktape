@@ -108,6 +108,9 @@ require (
 // Gotcha: op.Server and op.RegisterServer "may change until v4", in a v3 minor release too.
 require github.com/zitadel/oidc/v3 v3.51.16
 
+// Direct dependencies for agentplane/runner_transport (SPIFFE mTLS between Runner and Gateway)
+require github.com/spiffe/go-spiffe/v2 v2.7.0
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect

@@ -11,6 +11,10 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_transport",
     deps = [
+        "@com_github_spiffe_go_spiffe_v2//bundle/x509bundle",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
+        "@com_github_spiffe_go_spiffe_v2//svid/x509svid",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//peer",

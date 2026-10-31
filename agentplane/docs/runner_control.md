@@ -231,7 +231,7 @@ reach the holder through the control Service (`control_target`, a required setti
   is required for `QUIESCED`.
 
 Only the replica holding the runner's observation Lease calls it. Callers reach that replica through the
-Sandbox's control Service. Transport reconnect never replays calls; durable command retry uses the
+Sandbox's control Service. Holding that Lease does not make the replica the Sandbox's Dispatcher owner. Transport reconnect never replays calls; durable command retry uses the
 original command ID. Process identities in diagnostics are per-spawn UUIDs, not command addresses.
 Stored native conversations may be dormant while their store's app server is running. A Session
 becomes ready after its native conversation preparation/reconciliation, without needing a turn.
@@ -269,11 +269,12 @@ are not identity evidence.
 
 cert-manager owns leaf renewal through the namespaced runner Issuer, whose intermediate CA is
 signed by the cluster internal CA. trust-manager distributes the cluster internal root bundle.
-Pods use projected credential files; guests use a mounted Secret filesystem. Certificate and root
-files are reloaded at new TLS handshakes. Peer leaf validity is checked during continuing control
-observation, and connections are periodically replaced to pick up rotated credentials and trust.
-Active connection age is bounded to one hour; root removal therefore has that bounded delay for
-existing connections. Workload deletion or replacement is checked on continuing observation.
+Pods use projected credential files; guests use a mounted Secret filesystem. Both ends verify the
+peer with go-spiffe against the mounted roots and authorize exactly the expected SPIFFE ID and EKU.
+A replaced certificate, key or root file is reloaded at the next TLS handshake. Every control call
+and observation snapshot rechecks the peer leaf's validity period. An established connection keeps
+the roots it was verified with until its observation ends. Workload deletion or replacement is
+checked on continuing observation.
 
 The certificate authenticates the Sandbox workload, not every process within it. Code able to read
 the runner's private key can act as that workload. No runner certificate authenticates as the

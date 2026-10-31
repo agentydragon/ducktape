@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 )
 
 // InitializeRequestID names the handshake request the Runner sends once per shared app-server.
@@ -73,21 +74,21 @@ func ServerEnvironment(launch harness.LaunchConfig, store string) map[string]str
 // InitializeFrames are the shared app-server's handshake: the `initialize` request, named
 // InitializeRequestID, and the `initialized` notification that follows its response.
 func InitializeFrames() (request, notification json.RawMessage, err error) {
-	request, err = json.Marshal(map[string]any{
-		"method": "initialize", "id": InitializeRequestID,
-		"params": protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}},
+	request, err = json.Marshal(jsonrpc.Request[protocol.InitializeParams]{
+		ID: InitializeRequestID, Method: "initialize",
+		Params: protocol.InitializeParams{ClientInfo: protocol.ClientInfo{Name: codexClientName, Version: "0.1"}},
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	notification, err = json.Marshal(map[string]any{"method": "initialized"})
+	notification, err = json.Marshal(jsonrpc.Request[any]{Method: "initialized"})
 	return request, notification, err
 }
 
 // InitializeResponse reports whether `frame` answers the `initialize` request, and its refusal if it does.
 func InitializeResponse(frame json.RawMessage) (bool, error) {
-	var response codexWireFrame
-	if json.Unmarshal(frame, &response) != nil || len(response.Method) > 0 || !rawJSONIDEquals(response.ID, InitializeRequestID) {
+	response, err := jsonrpc.Parse(frame)
+	if err != nil || !response.Answers(InitializeRequestID) {
 		return false, nil
 	}
 	if err := codexResponseError(response); err != nil {

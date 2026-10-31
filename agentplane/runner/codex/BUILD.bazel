@@ -17,6 +17,7 @@ go_library(
         "//agentplane/proto:event_go_proto",
         "//agentplane/runner/codex/protocol",
         "//agentplane/runner/harness",
+        "//agentplane/runner/jsonrpc",
         "@com_github_google_uuid//:uuid",
     ],
 )

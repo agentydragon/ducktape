@@ -27,17 +27,6 @@ which `GracefulStop` cannot drain, and which forces the abort-write hook in `grp
 the Action Service and egress. Serve gRPC on its own listener, as the Runner Gateway does. Exit: drain
 on shutdown covered by a test; the abort-write hook removed if nothing else needs it.
 
-### `RUNNER_MTLS_GO_SPIFFE`
-
-`runner_transport/credentials.go` (about 470 lines) skips Go's verification and re-implements SPIFFE
-peer verification, verifies twice per handshake to fill `VerifiedChains`, re-reads certificate, key
-and CA bundle from disk on every handshake and retries loads to ride out rotation. Use
-`github.com/spiffe/go-spiffe/v2` `tlsconfig.MTLSClientConfig`/`MTLSServerConfig` with
-`tlsconfig.AuthorizeID` and `grpccredentials.PeerIDFromContext`, and a rotating file source (grpc-go
-`certprovider/pemfile` or an `x509svid.Source` over the mounted files). Issuance by cert-manager and
-trust-manager stays. Exit: stale credential and epoch rejection tests from the transport contract
-pass unchanged.
-
 ## Kubernetes
 
 ## Work queues
@@ -120,13 +109,3 @@ only on thread changes, and give each entity one client-side source.
 and phase reporting, and because `EventSource` cannot see a 401, `live_stream.ts` probes `/models`
 after each hard close to trigger login. Use one fetch-based SSE reader that sees status codes and goes
 through `fetchWithLogin`.
-
-## Runner
-
-### `RUNNER_JSONRPC`
-
-Two hand-written JSON-RPC 2.0 clients with different envelopes: the exec-server client
-(`runner/execution/connection.go`, `protocol.go`) and the app-server adapter (`runner/codex/adapter.go`,
-a `map[string]any` envelope beside generated params). Both must capture exact native frames for the
-journal. Evaluate an existing Go library with a frame hook (`sourcegraph/jsonrpc2`,
-`creachadair/jrpc2`, `golang.org/x/exp/jsonrpc2`); otherwise share one envelope and correlation helper.

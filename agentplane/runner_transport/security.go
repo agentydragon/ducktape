@@ -103,7 +103,7 @@ func (s Security) AuthorizePeer(ctx context.Context, expectedPeerURI string) err
 	case Insecure:
 		return nil
 	case MutualTLS:
-		if err := validateIdentityURI(expectedPeerURI); err != nil {
+		if _, err := parseIdentity(expectedPeerURI); err != nil {
 			return fmt.Errorf("invalid expected peer URI: %w", err)
 		}
 		identity, err := PeerIdentity(ctx)

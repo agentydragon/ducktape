@@ -1,7 +1,6 @@
 package execution
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"sync"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/runner/jsonrpc"
 	"github.com/coder/websocket"
 )
 
@@ -81,15 +81,12 @@ func (c *connection) read() {
 			c.fail(fmt.Errorf("local exec-server WebSocket frame is %d bytes; limit is %d", len(payload), maxNativeBytes), payload)
 			return
 		}
-		var header struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-		}
-		if err := decodeProtocolObject(payload, &header); err != nil {
+		var header jsonrpc.Header
+		if err := jsonrpc.UnmarshalObject(payload, &header); err != nil {
 			c.fail(fmt.Errorf("decode local exec-server WebSocket frame: %w", err), payload)
 			return
 		}
-		if len(header.ID) == 0 || bytes.Equal(bytes.TrimSpace(header.ID), []byte("null")) {
+		if !header.HasID() {
 			if header.Method == "" {
 				c.fail(errors.New("local exec-server notification omitted method"), payload)
 				return
@@ -130,7 +127,7 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(executorRequest[any]{ID: requestID, Method: method, Params: params})
+	payload, err := json.Marshal(jsonrpc.Request[any]{ID: requestID, Method: method, Params: params})
 	if err != nil {
 		return nil, err
 	}
@@ -161,13 +158,13 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 	select {
 	case native := <-reply:
 		*frames = append(*frames, &executorpb.ExecutionNativeFrame{Direction: "response", Payload: native.payload})
-		var response executorReply
-		if err := decodeProtocolObject(native.payload, &response); err != nil {
+		response, err := jsonrpc.Parse(native.payload)
+		if err != nil {
 			wrapped := fmt.Errorf("decode local exec-server RPC reply: %w", err)
 			c.fail(wrapped, nil)
 			return nil, wrapped
 		}
-		if response.ID == nil || *response.ID != requestID {
+		if !response.Answers(requestID) {
 			err := fmt.Errorf("local exec-server reply ID did not match request %q", requestID)
 			c.fail(err, nil)
 			return nil, err
@@ -196,7 +193,7 @@ func (c *connection) rpc(requestID, method string, params any, frames *[]*execut
 }
 
 func (c *connection) initialized(frames *[]*executorpb.ExecutionNativeFrame) error {
-	payload, err := json.Marshal(executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}})
+	payload, err := json.Marshal(jsonrpc.Request[executorEmpty]{Method: "initialized", Params: executorEmpty{}})
 	if err != nil {
 		return err
 	}
@@ -210,7 +207,7 @@ func rpcResult[T any](c *connection, requestID, method string, params any, frame
 		return nil, err
 	}
 	var result T
-	if err = decodeProtocolObject(raw, &result); err != nil {
+	if err = jsonrpc.UnmarshalObject(raw, &result); err != nil {
 		wrapped := fmt.Errorf("decode local exec-server %s result: %w", method, err)
 		c.fail(wrapped, nil)
 		return nil, wrapped
