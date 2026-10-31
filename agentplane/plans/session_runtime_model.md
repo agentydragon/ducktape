@@ -123,6 +123,14 @@ return output observed so far together with the follower connection failure; do 
 the process exited or that no effects occurred. Preserve unknown mutation outcomes without
 automatically replaying them.
 
+The desired JavaScript interface rejects with an `Error` carrying structured fields such as
+`observed_output`, the observation cursor, remote outcome and `cause`, alongside `message`.
+Agent code should be able to read `error.observed_output.text` directly. The current pinned host
+rejects delegated calls with a primitive string; JSON-encoded failure details are a transport
+constraint, not the target agent interface. When changing the host or delegate adapter, normalize
+that boundary centrally and preserve the original cause/evidence. This does not require replacing
+the host before shipping independently useful recovery fixes.
+
 Define the reconnection protocol before relying on it: what connection/session identity survives,
 how it relates to environment and executor generations, and whether existing processes/handles can
 be rediscovered. A retained process inventory may be useful, but is not yet required; agents can
