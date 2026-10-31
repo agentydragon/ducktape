@@ -37,7 +37,7 @@ use crate::SourceLocation;
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
-    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, ProofDependencies,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic, ProofDependencies,
     ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
     SelectedBindingValueInput, SelectedNativeOperationInput,
 };
@@ -688,6 +688,8 @@ pub struct CallableSummaryInputs<'a> {
     pub predefined_globals: spec::PredefinedGlobals,
     pub no_accessor_install_callables:
         &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
+    /// `program_premises.intrinsics_never_written` families.
+    pub intrinsics_never_written: BTreeSet<NativeIntrinsic>,
 }
 
 pub fn resolve_imported_callable_summaries(
@@ -705,6 +707,7 @@ pub fn resolve_imported_callable_summaries(
         argument_inputs,
         predefined_globals,
         no_accessor_install_callables,
+        intrinsics_never_written,
     } = inputs;
     let required: BTreeSet<_> = modules
         .values()
@@ -1122,9 +1125,22 @@ pub fn resolve_imported_callable_summaries(
         );
         facts.locate_native_writes(module, modules[*module].source.as_ref());
     }
-    let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(
-        prepared.values().map(|facts| facts.native_writes()),
-    );
+    let mut native_integrity =
+        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+            prepared.values().map(|facts| facts.native_writes()),
+        );
+    if !intrinsics_never_written.is_empty() {
+        crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+            &mut native_integrity,
+            &intrinsics_never_written,
+        )
+        .map_err(|refutations| {
+            anyhow::anyhow!(
+                "program_premises.intrinsics_never_written is refuted by census writes on the exact objects of named families: {}",
+                refutations.join("; ")
+            )
+        })?;
+    }
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
             if !required.contains(&CallableExportKey {
@@ -2140,6 +2156,7 @@ mod tests {
                 argument_inputs: &BTreeMap::new(),
                 predefined_globals: spec::PredefinedGlobals::Unknown,
                 no_accessor_install_callables: &BTreeMap::new(),
+                intrinsics_never_written: BTreeSet::new(),
             },
         )
         .unwrap()

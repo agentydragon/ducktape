@@ -465,6 +465,7 @@ pub fn materialize_logical_modules(
         chunk_analysis_options,
         chunk_export_purity,
         host_behavior,
+        program_premises.intrinsics_never_written.as_ref(),
         declared_assumptions,
         &resolved_member_sites,
     );

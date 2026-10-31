@@ -203,16 +203,25 @@ enum Discharge {
     /// `chunk_analysis_options.<chunk>.value_inputs`: the receiver is a
     /// captured ordinary object (SPEC.md § Captured ordinary-object values).
     CapturedValueInput,
+    /// `program_premises.intrinsics_never_written` naming the slot's family
+    /// (SPEC.md § Intrinsics never written).
+    IntrinsicsNeverWritten,
 }
 
-/// Premises that could remove an unknown-receiver witness. A property the
-/// host predefines is never bundle-owned. A program-wide premise that no
-/// analyzed write reaches an intrinsic belongs here once the spec has one.
+/// Premises that could remove a witness that does not name the slot. A
+/// property the host predefines is never bundle-owned.
 fn discharges(witness: &NativeMutationWitness, reach: SlotReach) -> Vec<Discharge> {
+    if matches!(
+        reach,
+        SlotReach::FamilyCoupling | SlotReach::GlobalObjectCoupling
+    ) {
+        return vec![Discharge::IntrinsicsNeverWritten];
+    }
     if reach != SlotReach::UnknownReceiver {
         return Vec::new();
     }
-    match &witness.receiver_global {
+    let mut discharges = vec![Discharge::IntrinsicsNeverWritten];
+    discharges.extend(match &witness.receiver_global {
         Some(property) if is_standard_global(property) => Vec::new(),
         Some(_) => vec![
             Discharge::PredefinedGlobalsBundleOwnership,
@@ -226,7 +235,8 @@ fn discharges(witness: &NativeMutationWitness, reach: SlotReach) -> Vec<Discharg
             vec![Discharge::CapturedValueInput]
         }
         None => Vec::new(),
-    }
+    });
+    discharges
 }
 
 pub(super) fn run(args: ExplainIntegrityArgs, roots: CurrentRoots) -> Result<()> {

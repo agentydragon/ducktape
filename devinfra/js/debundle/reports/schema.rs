@@ -107,6 +107,37 @@ pub struct ProgramGraphReport {
     pub native_integrity_witnesses: Vec<NativeMutationWitness>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_prototype_mutations: Vec<NativePrototypeMutation>,
+    /// Census witnesses `program_premises.intrinsics_never_written` overrides:
+    /// the author's audit list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intrinsics_never_written_overrides: Vec<NeverWrittenOverride>,
+}
+
+/// One census witness `program_premises.intrinsics_never_written` overrides.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NeverWrittenOverride {
+    /// Index into `native_integrity_witnesses`.
+    pub witness: usize,
+    pub chunk_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    /// The named families whose slots this witness would reach.
+    pub families: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    /// Why it reaches them.
+    pub reach: NeverWrittenReach,
+}
+
+/// How an overridden witness reaches a named family.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NeverWrittenReach {
+    /// The receiver may be any native object.
+    UnknownReceiver,
+    /// A write to the global object, whose unknown key may name a binding or
+    /// which couples every prototype slot.
+    GlobalObject,
+    /// A write the census resolves to the family without an exact path.
+    Family,
 }
 
 /// One applied `commuting_statements` premise: the pair's source units
@@ -486,6 +517,8 @@ pub struct NativeIntegrityUse {
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_accessor_install_refs: BTreeSet<crate::analysis_inputs::NoAccessorInstallRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub program_premises: BTreeSet<crate::analysis_inputs::ProgramPremiseKey>,
 }
 
 /// Positive rules participating in a consumed construction certificate.

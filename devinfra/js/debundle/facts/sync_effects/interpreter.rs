@@ -933,12 +933,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .extend(dependencies);
         if !dependencies.value_inputs.is_empty()
             || !dependencies.no_accessor_install_callables.is_empty()
+            || !dependencies.program_premises.is_empty()
         {
             self.state.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
                     guard,
                     value_input_refs: dependencies.value_inputs.clone(),
                     no_accessor_install_refs: dependencies.no_accessor_install_callables.clone(),
+                    program_premises: dependencies.program_premises.clone(),
                 },
             );
         }

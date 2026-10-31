@@ -640,6 +640,17 @@ pub(super) fn collect_cross_module_imported_purities(
             argument_inputs: &argument_inputs,
             predefined_globals,
             no_accessor_install_callables: &no_accessor_install_callables,
+            intrinsics_never_written: projection
+                .intrinsics_never_written
+                .map(|premise| {
+                    premise
+                        .families
+                        .families()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect()
+                })
+                .unwrap_or_default(),
         },
     )?;
     Ok(CrossModulePurities {
@@ -1479,6 +1490,7 @@ mod tests {
                     &no_options,
                     &no_export_purity,
                     &host_behavior,
+                    None,
                     BTreeMap::new(),
                     &BTreeMap::new(),
                 ),
@@ -1539,6 +1551,7 @@ mod tests {
                     &no_options,
                     &assertions,
                     &host_behavior,
+                    None,
                     BTreeMap::new(),
                     &BTreeMap::new(),
                 ),

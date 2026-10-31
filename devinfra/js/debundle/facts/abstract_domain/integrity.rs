@@ -622,6 +622,9 @@ pub(crate) struct IntegrityFlags {
     census_dependencies: ProofDependencies,
     axioms: BTreeMap<u32, IntrinsicIntact>,
     prototype_writes: PrototypeWrites,
+    /// Families `program_premises.intrinsics_never_written` names: every slot
+    /// of theirs is intact in a closed census.
+    never_written: BTreeSet<NativeIntrinsic>,
 }
 
 impl IntegrityFlags {
@@ -644,7 +647,15 @@ impl IntegrityFlags {
             census_dependencies,
             axioms,
             prototype_writes,
+            never_written: BTreeSet::new(),
         }
+    }
+
+    /// Applies `program_premises.intrinsics_never_written`; its key is among
+    /// `census_dependencies` when it overrode a witness.
+    pub(crate) fn with_never_written(mut self, families: BTreeSet<NativeIntrinsic>) -> Self {
+        self.never_written = families;
+        self
     }
 
     /// The completed census's own refinements, for a rule that checks exact
@@ -659,13 +670,14 @@ impl IntegrityFlags {
     /// object has a known or possible write.
     fn census_intact(&self, slot: IntrinsicSlot) -> bool {
         self.census_closed
-            && match slot {
-                IntrinsicSlot::Global(_)
-                | IntrinsicSlot::Static(..)
-                | IntrinsicSlot::PrototypeProperty(..)
-                | IntrinsicSlot::Species(_) => self.own_slot_writes.intact(slot),
-                _ => prototype_slot_intact(&self.mutated, slot),
-            }
+            && (self.never_written.contains(&slot.family())
+                || match slot {
+                    IntrinsicSlot::Global(_)
+                    | IntrinsicSlot::Static(..)
+                    | IntrinsicSlot::PrototypeProperty(..)
+                    | IntrinsicSlot::Species(_) => self.own_slot_writes.intact(slot),
+                    _ => prototype_slot_intact(&self.mutated, slot),
+                })
     }
 
     /// All `slots` at `site`. An axiom at the site is consumed when it covers
@@ -691,13 +703,18 @@ impl IntegrityFlags {
     /// whether the property is intact and how many writes block it.
     pub(crate) fn object_prototype_property(&self, property: &str) -> (bool, usize) {
         let blocking = self.prototype_writes.blocking(property);
-        (self.census_closed && blocking == 0, blocking)
+        let never_written = self.never_written.contains(&NativeIntrinsic::Object);
+        (
+            self.census_closed && (blocking == 0 || never_written),
+            blocking,
+        )
     }
 
     /// The census families (and the global object) that make `slots` unknown.
     pub(crate) fn mutated_roots(&self, slots: &[IntrinsicSlot]) -> BTreeSet<NativeIntrinsic> {
         slots
             .iter()
+            .filter(|slot| !self.never_written.contains(&slot.family()))
             .flat_map(|slot| {
                 slot_mutated_roots(&self.mutated, &self.own_slot_writes, &SlotName::from(*slot))
             })

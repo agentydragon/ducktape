@@ -82,6 +82,7 @@ fn a_failed_guard_names_the_witnesses_behind_its_unknown_slots() {
         assert_eq!(
             delete["discharged_by"],
             json!([
+                "intrinsics_never_written",
                 "predefined_globals_bundle_ownership",
                 "no_accessor_install_callables"
             ])
