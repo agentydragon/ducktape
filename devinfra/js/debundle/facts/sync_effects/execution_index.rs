@@ -5770,6 +5770,8 @@ struct BundleGlobalContext<'a> {
     aliases: &'a BTreeMap<Id, NativeReceiverRoots>,
     globals: &'a GlobalNames,
     declared: &'a BTreeSet<Id>,
+    /// Top-level bindings that only ever hold fresh objects or primitives.
+    fresh_objects: &'a BTreeSet<Id>,
 }
 
 impl BundleGlobalContext<'_> {
@@ -5785,8 +5787,9 @@ impl BundleGlobalContext<'_> {
     }
 
     /// Whether storing `value` into `slot` keeps it bundle-owned: a fresh
-    /// object, a primitive, or the value of a bundle-owned property, the
-    /// slot's own current value included.
+    /// object (inline or through a binding that only holds one), a primitive,
+    /// or the value of a bundle-owned property, the slot's own current value
+    /// included.
     fn keeps(&self, value: &ValueExpr, slot: BundleSlot<'_>) -> bool {
         match value {
             ValueExpr::ObjectLiteral(..)
@@ -5806,6 +5809,7 @@ impl BundleGlobalContext<'_> {
             {
                 true
             }
+            ValueExpr::Binding(id) if self.fresh_objects.contains(id) => true,
             // A sloppy read of the undeclared global itself.
             ValueExpr::Binding(id)
                 if !self.declared.contains(id)
@@ -5825,6 +5829,49 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    /// Simple top-level declared bindings every write of which stores a fresh
+    /// value (`fresh_value`); every write is modeled because the modeled
+    /// writes number as many as the binding's recorded writes. Before the
+    /// first one they are `undefined` or in TDZ.
+    fn fresh_object_bindings(&self) -> BTreeSet<Id> {
+        let mut values: BTreeMap<&Id, Vec<&ValueExpr>> = BTreeMap::new();
+        for (binding, value) in self.bundle_assignments() {
+            values.entry(binding).or_default().push(value);
+        }
+        self.binding_declaration_writes
+            .iter()
+            .filter(|(binding, declarations)| {
+                matches!(declarations.as_slice(), [declaration]
+                    if declaration.direct_top_level && declaration.simple_identifier)
+                    && values.get(binding).is_some_and(|stored| {
+                        self.property_key_assignments
+                            .get(*binding)
+                            .is_some_and(|writes| writes.len() == stored.len())
+                            && stored.iter().all(|value| self.fresh_value(value))
+                    })
+            })
+            .map(|(binding, _)| binding.clone())
+            .collect()
+    }
+
+    /// An object literal, a primitive, or the result of calling an inline
+    /// function whose every own `return` is one.
+    fn fresh_value(&self, value: &ValueExpr) -> bool {
+        let inert = |value: &ValueExpr| {
+            matches!(
+                value,
+                ValueExpr::ObjectLiteral(..) | ValueExpr::Primitive(_) | ValueExpr::Undefined
+            )
+        };
+        inert(value)
+            || matches!(value, ValueExpr::Call(callee, _, _)
+                if matches!(callee.as_ref(), ValueExpr::Alloc(Kind::Function, start)
+                    if self
+                        .callables
+                        .get(start)
+                        .is_some_and(|callable| callable.returns.iter().all(inert))))
+    }
+
     fn bundle_assignments(&self) -> Vec<&(Id, ValueExpr)> {
         self.top_assignments
             .iter()
@@ -5877,10 +5924,12 @@ impl ExecutionIndex {
         let declared = self.declared_bindings();
         let assignments = self.bundle_assignments();
         let aliases = close_raw_intrinsic_aliases(&assignments, &self.census_globals, &declared);
+        let fresh_objects = self.fresh_object_bindings();
         let context = BundleGlobalContext {
             aliases: &aliases,
             globals: &self.census_globals,
             declared: &declared,
+            fresh_objects: &fresh_objects,
         };
         let mut candidates = BundleGlobalNames {
             fresh_collections: true,
@@ -5992,6 +6041,7 @@ impl ExecutionIndex {
         let evidence = |key: &PropertyKeyExpr| {
             property_key_evidence(key, &self.property_key_assignments, &declared)
         };
+        let fresh_objects = self.fresh_object_bindings();
         let mut current = candidates.clone();
         let mut symbol_for_intact = true;
         loop {
@@ -6002,6 +6052,7 @@ impl ExecutionIndex {
                 aliases: &aliases,
                 globals: &globals,
                 declared: &declared,
+                fresh_objects: &fresh_objects,
             };
             let mut next = current.clone();
             next.no_accessor_install_callables.clear();

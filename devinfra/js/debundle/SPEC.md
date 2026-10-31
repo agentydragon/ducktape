@@ -1562,7 +1562,9 @@ Without that key every global-slot read-back stays an unknown value.
 
 A property `g` of the global object is bundle-owned when it is not in the
 standard list (§ Predefined globals), is not a census binding name, and every
-census write that may store into `g` stores a fresh object, a primitive, a
+census write that may store into `g` stores a fresh object (inline, or a
+top-level binding every write of which stores an object literal, a primitive, or
+the result of an inline function whose every `return` is one), a primitive, a
 fresh `Map`, `Set`, `WeakMap` or `WeakSet` (when no write may replace those
 bindings), or the value of a bundle-owned property, `g`'s own included:
 `root.g = {}`, `root.g = root.g || {}`, `root.g ??= new Map()`,
