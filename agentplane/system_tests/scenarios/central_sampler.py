@@ -20,6 +20,7 @@ from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
 from agentplane.x.central_sampler import sampler_pb2
@@ -67,115 +68,121 @@ async def _capture_session_diagnostics(
     cluster: Cluster, deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
 ) -> None:
     """Retain sampler, History, Sandbox, and full event evidence for a Session."""
-    diagnostic: dict[str, object] = {
-        "phase": phase,
-        "session_id": session_id,
-        "command_id": command_id,
-        "dispatcher_admission": admission,
-    }
-    try:
-        pod_artifacts = await capture_sampler_diagnostics(cluster)
-        diagnostic["sampler_pod_artifacts"] = str(pod_artifacts.relative_to(undeclared_outputs_dir()))
-    except Exception as error:
-        diagnostic["sampler_pod_artifacts_error"] = repr(error)
-    try:
-        snapshot = await deployed.sampler.GetSession(
-            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=5
-        )
-        diagnostic["sampler_session"] = str(snapshot)
-    except Exception as error:
-        diagnostic["sampler_session_error"] = repr(error)
-    try:
-        summary = await deployed.history.get_session_summary(session_id)
-        diagnostic["history_summary"] = str(summary)
-    except Exception as error:
-        diagnostic["history_summary_error"] = repr(error)
-    try:
-        events = await deployed.history.read_session_events(session_id, limit=1000)
-        diagnostic["history_events"] = [
-            {
-                "cursor": entry.cursor,
-                "source_id": entry.origin.source_id,
-                "sequence": entry.origin.sequence,
-                "kind": entry.event.WhichOneof("observation"),
-                "event": str(entry.event),
-            }
-            for entry in events.entries
-        ]
-
-    except Exception as error:
-        diagnostic["history_events_error"] = repr(error)
-    try:
-        sandbox_state = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
-        diagnostic["sandbox"] = {
-            "name": sandbox_state["metadata"]["name"],
-            "uid": sandbox_state["metadata"]["uid"],
-            "status": sandbox_state.get("status", {}),
+    with tracer.start_as_current_span("system_test.sampler.diagnostics"):
+        diagnostic: dict[str, object] = {
+            "phase": phase,
+            "session_id": session_id,
+            "command_id": command_id,
+            "dispatcher_admission": admission,
         }
-    except Exception as error:
-        diagnostic["sandbox_error"] = repr(error)
-    try:
-        runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
-        diagnostic["runner_lease"] = json.loads(runner_lease)
-    except Exception as error:
-        diagnostic["runner_lease_error"] = repr(error)
-    try:
-        diagnostic["cluster_services_endpoints_pods"] = json.loads(
-            await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
-        )
-    except Exception as error:
-        diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
-    for component in ("runner-gateway", "history-service"):
         try:
-            diagnostic[f"{component}_logs"] = await cluster.kubectl(
-                "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
+            pod_artifacts = await capture_sampler_diagnostics(cluster)
+            diagnostic["sampler_pod_artifacts"] = str(pod_artifacts.relative_to(undeclared_outputs_dir()))
+        except Exception as error:
+            diagnostic["sampler_pod_artifacts_error"] = repr(error)
+        try:
+            snapshot = await deployed.sampler.GetSession(
+                sampler_pb2.GetSessionRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=5
+            )
+            diagnostic["sampler_session"] = str(snapshot)
+        except Exception as error:
+            diagnostic["sampler_session_error"] = repr(error)
+        try:
+            summary = await deployed.history.get_session_summary(session_id)
+            diagnostic["history_summary"] = str(summary)
+        except Exception as error:
+            diagnostic["history_summary_error"] = repr(error)
+        try:
+            events = await deployed.history.read_session_events(session_id, limit=1000)
+            diagnostic["history_events"] = [
+                {
+                    "cursor": entry.cursor,
+                    "source_id": entry.origin.source_id,
+                    "sequence": entry.origin.sequence,
+                    "kind": entry.event.WhichOneof("observation"),
+                    "event": str(entry.event),
+                }
+                for entry in events.entries
+            ]
+
+        except Exception as error:
+            diagnostic["history_events_error"] = repr(error)
+        try:
+            sandbox_state = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
+            diagnostic["sandbox"] = {
+                "name": sandbox_state["metadata"]["name"],
+                "uid": sandbox_state["metadata"]["uid"],
+                "status": sandbox_state.get("status", {}),
+            }
+        except Exception as error:
+            diagnostic["sandbox_error"] = repr(error)
+        try:
+            runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
+            diagnostic["runner_lease"] = json.loads(runner_lease)
+        except Exception as error:
+            diagnostic["runner_lease_error"] = repr(error)
+        try:
+            diagnostic["cluster_services_endpoints_pods"] = json.loads(
+                await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
             )
         except Exception as error:
-            diagnostic[f"{component}_logs_error"] = repr(error)
-    (undeclared_outputs_dir() / f"central-sampler-session-diagnostics-{session_id}.json").write_text(
-        json.dumps(diagnostic, indent=2) + "\n"
-    )
+            diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
+        for component in ("runner-gateway", "history-service"):
+            try:
+                diagnostic[f"{component}_logs"] = await cluster.kubectl(
+                    "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
+                )
+            except Exception as error:
+                diagnostic[f"{component}_logs_error"] = repr(error)
+        (undeclared_outputs_dir() / f"central-sampler-session-diagnostics-{session_id}.json").write_text(
+            json.dumps(diagnostic, indent=2) + "\n"
+        )
 
 
 async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
     """Wait for setup's retained terminal event before starting the short-timeout provider read."""
-    async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
-        async for _ in changes:
-            try:
-                retained = await deployed.history.read_session_events(session_id, limit=1000)
-            except ServiceError as error:
-                if error.code != grpc.StatusCode.NOT_FOUND:
-                    raise
-                # Dispatcher admission can precede this Session's first History export.
-                continue
-            for entry in retained.entries:
-                if entry.event.HasField("setup_interrupted"):
-                    raise AssertionError(f"sampler setup was interrupted for Session {session_id}")
-                if entry.event.HasField("harness_launch_failed"):
-                    raise AssertionError(f"sampler could not start setup for Session {session_id}")
-                if entry.event.HasField("setup_finished"):
-                    exit_code = entry.event.setup_finished.exit_code
-                    assert exit_code == 0, f"sampler setup for Session {session_id} exited {exit_code}"
-                    return
-        raise TimeoutError("History watch ended before sampler setup finished")
+    with tracer.start_as_current_span("system_test.sampler.setup", attributes={"session.id": session_id}):
+        async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
+            async for _ in changes:
+                try:
+                    retained = await deployed.history.read_session_events(session_id, limit=1000)
+                except ServiceError as error:
+                    if error.code != grpc.StatusCode.NOT_FOUND:
+                        raise
+                    # Dispatcher admission can precede this Session's first History export.
+                    continue
+                for entry in retained.entries:
+                    if entry.event.HasField("setup_interrupted"):
+                        raise AssertionError(f"sampler setup was interrupted for Session {session_id}")
+                    if entry.event.HasField("harness_launch_failed"):
+                        raise AssertionError(f"sampler could not start setup for Session {session_id}")
+                    if entry.event.HasField("setup_finished"):
+                        exit_code = entry.event.setup_finished.exit_code
+                        assert exit_code == 0, f"sampler setup for Session {session_id} exited {exit_code}"
+                        return
+            raise TimeoutError("History watch ended before sampler setup finished")
 
 
 async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, kind: str, phase: str) -> None:
-    events = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
-        metadata=deployed.sampler_metadata,
-        timeout=60,
-    )
-    try:
-        async for frame in events:
-            event = frame.entry.event
-            if event.HasField("execution_progress"):
-                progress = event.execution_progress
-                if progress.kind == kind and progress.phase == phase:
-                    return
-        raise TimeoutError(f"History ended before Session {session_id} {kind} reached {phase!r}")
-    finally:
-        events.cancel()
+    with tracer.start_as_current_span(
+        "system_test.sampler.execution",
+        attributes={"session.id": session_id, "execution.kind": kind, "execution.phase": phase},
+    ):
+        events = deployed.sampler.FollowEvents(
+            sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+            metadata=deployed.sampler_metadata,
+            timeout=60,
+        )
+        try:
+            async for frame in events:
+                event = frame.entry.event
+                if event.HasField("execution_progress"):
+                    progress = event.execution_progress
+                    if progress.kind == kind and progress.phase == phase:
+                        return
+            raise TimeoutError(f"History ended before Session {session_id} {kind} reached {phase!r}")
+        finally:
+            events.cancel()
 
 
 async def _sampler_code_mode_host_pid(cluster: Cluster, deployed: CentralStack) -> tuple[Path, str]:
@@ -196,20 +203,21 @@ async def _read_code_mode_host_pid(pid_file: Path) -> str:
 async def _wait_for_turn_status(
     deployed: CentralStack, session_id: str, turn_id: str, status: event_pb2.TurnStatus
 ) -> None:
-    events = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
-        metadata=deployed.sampler_metadata,
-        timeout=60,
-    )
-    try:
-        async for frame in events:
-            event = frame.entry.event
-            if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
-                assert event.turn_completed.status == status, event.turn_completed
-                return
-        raise TimeoutError(f"History ended before turn {turn_id} completed")
-    finally:
-        events.cancel()
+    with tracer.start_as_current_span("system_test.sampler.turn"):
+        events = deployed.sampler.FollowEvents(
+            sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+            metadata=deployed.sampler_metadata,
+            timeout=60,
+        )
+        try:
+            async for frame in events:
+                event = frame.entry.event
+                if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
+                    assert event.turn_completed.status == status, event.turn_completed
+                    return
+            raise TimeoutError(f"History ended before turn {turn_id} completed")
+        finally:
+            events.cancel()
 
 
 async def dispatcher_central_setup_tool_and_retained_answer(

@@ -30,6 +30,7 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import Text
 
 # What History's settlement may drop once a field completes (`history_service/storage/settlement.go`):
@@ -72,15 +73,18 @@ class Tab:
 
     async def until(self, observation: str) -> list[Frame]:
         """Event frames up to and including the first carrying `observation`; the stream may not end first."""
-        seen: list[Frame] = []
-        while True:
-            frame = await self.next()
-            if frame.event != "event":
-                observed = [list(row.data["event"]) for row in seen[-20:]]
-                raise AssertionError(f"{frame.event} frame before {observation}: {frame.data=} {observed=}")
-            seen.append(frame)
-            if observation in frame.data["event"]:
-                return seen
+        with tracer.start_as_current_span(
+            "system_test.thread_stream.event_wait", record_exception=False, set_status_on_exception=False
+        ):
+            seen: list[Frame] = []
+            while True:
+                frame = await self.next()
+                if frame.event != "event":
+                    observed = [list(row.data["event"]) for row in seen[-20:]]
+                    raise AssertionError(f"{frame.event} frame before {observation}: {frame.data=} {observed=}")
+                seen.append(frame)
+                if observation in frame.data["event"]:
+                    return seen
 
 
 @asynccontextmanager
@@ -88,18 +92,22 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
     headers = {"Accept": "text/event-stream"}
     if last_event_id is not None:
         headers["Last-Event-ID"] = str(last_event_id)
-    async with (
-        asyncio.timeout(TURN_SECONDS),
-        http.stream("GET", f"/threads/{thread_id}/events/stream", headers=headers) as response,
-    ):
-        assert response.status_code == 200, await response.aread()
-        yield Tab(response.aiter_lines())
+    async with asyncio.timeout(TURN_SECONDS):
+        with tracer.start_as_current_span(
+            "system_test.thread_stream.tab_connection", record_exception=False, set_status_on_exception=False
+        ):
+            async with http.stream("GET", f"/threads/{thread_id}/events/stream", headers=headers) as response:
+                assert response.status_code == 200, await response.aread()
+                yield Tab(response.aiter_lines())
 
 
 async def _open(client: Client, view: SandboxView, harness: runner_pb2.Harness, model: str) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (await Agent.open(client, sandbox=view.name, harness=harness, model=model)).thread_id
-    await client.wait_for_thread_feed(thread_id, timeout_s=RUNNER_ANSWERS_SECONDS)
+    with tracer.start_as_current_span(
+        "system_test.thread_stream.feed_ready", record_exception=False, set_status_on_exception=False
+    ):
+        await client.wait_for_thread_feed(thread_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     return thread_id
 
 
@@ -111,7 +119,10 @@ def _input(label: str, text: str) -> command_pb2.Command:
 
 async def _submit(client: Client, thread_id: UUID, command: command_pb2.Command) -> None:
     """Submit `command`; the answer, the Dispatcher's or the archive's, names that same command."""
-    answer = await client.submit_input(thread_id, command.command_id, command.submit_input.text)
+    with tracer.start_as_current_span(
+        "system_test.thread_stream.submit", record_exception=False, set_status_on_exception=False
+    ):
+        answer = await client.submit_input(thread_id, command.command_id, command.submit_input.text)
     if isinstance(answer, session_dispatcher_pb2.Dispatch):
         assert (answer.command_id, answer.operation) == (
             command.command_id,
@@ -124,11 +135,14 @@ async def _submit(client: Client, thread_id: UUID, command: command_pb2.Command)
 
 async def _turn_status(client: Client, thread_id: UUID, status: str) -> None:
     """Wait for the Thread's summary to fold its latest turn to `status`."""
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(REQUEST_SECONDS), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
+    with tracer.start_as_current_span(
+        "system_test.thread_stream.turn_status", record_exception=False, set_status_on_exception=False
     ):
-        with attempt:
-            assert (await client.thread(thread_id)).last_turn_status == status
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(REQUEST_SECONDS), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert (await client.thread(thread_id)).last_turn_status == status
 
 
 def _cursor(frame: Frame) -> int:

@@ -7,7 +7,6 @@ import json
 import re
 from typing import Any
 
-from opentelemetry import trace
 from pydantic import BaseModel
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
@@ -19,13 +18,12 @@ from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm_supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-tracer = trace.get_tracer(__name__)
 
 PING = "Run a shell command, then say exactly PING."
 
@@ -106,7 +104,7 @@ def _assert_native_service_cgroup(cgroup: str, slice_name: str) -> None:
 async def _command(
     agent: Agent, model: CodexModel, *, call_id: str, command: str, exit_code: int
 ) -> tuple[Turn, _ExecResult]:
-    with tracer.start_as_current_span("vm.command", attributes={"command.id": call_id}):
+    with tracer.start_as_current_span("system_test.command", attributes={"command.id": call_id}):
         async with asyncio.timeout(TURN_SECONDS), asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run("Run the requested shell command and report its result."))
             request = await model.request()
@@ -174,9 +172,11 @@ async def vm_sandbox_turn(
                 check_boot()
                 assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
-    with tracer.start_as_current_span("vm.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}):
+    with tracer.start_as_current_span(
+        "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}
+    ):
         agent = await session_setup_is_supervised(client, view.name, harness, offered_model)
-    with tracer.start_as_current_span("vm.turn"):
+    with tracer.start_as_current_span("system_test.turn"):
         async with asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run(PING))
             await model.reply(await model.request(), ShellCall("vm-supervision", VM_SUPERVISION_PROBE))
@@ -213,20 +213,23 @@ async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str,
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
-    with tracer.start_as_current_span("vm.session.open", attributes={"harness": "HARNESS_CODEX"}):
+    with tracer.start_as_current_span("system_test.session.open", attributes={"harness": "HARNESS_CODEX"}):
         agent = await Agent.open(
             client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
         )
     evidence: dict[str, Any] = {}
     try:
-        _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
-        before = _MemoryEvidence.from_output(output.output)
-        evidence["memory_before"] = before.model_dump()
-        _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
-        assert before.max > 0
-        assert before.swap_max == before.oom_group == before.oom_group_kill == 0
-        original = await client.runner_status(view.name)
-        evidence["runner_before"] = original.model_dump(mode="json")
+        with tracer.start_as_current_span(
+            "system_test.vm_oom.baseline", record_exception=False, set_status_on_exception=False
+        ):
+            _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
+            before = _MemoryEvidence.from_output(output.output)
+            evidence["memory_before"] = before.model_dump()
+            _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
+            assert before.max > 0
+            assert before.swap_max == before.oom_group == before.oom_group_kill == 0
+            original = await client.runner_status(view.name)
+            evidence["runner_before"] = original.model_dump(mode="json")
         (app_server,) = original.processes
         assert app_server.pid is not None
         assert app_server.state == "PROCESS_STATE_RUNNING"
@@ -235,57 +238,63 @@ async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str,
         assert session.process_id == app_server.process_id
         assert session.native_session_id is not None
 
-        turn, output = await _command(
-            agent, model, call_id="tool-oom", command=f"limit={before.max}\n" + OOM_COMMAND, exit_code=137
-        )
-        evidence["oom_tool_result"] = output.model_dump()
-        evidence["oom_native_frames"] = turn.native
-        assert "VM_OOM_ALLOCATING" in output.output
-        assert "VM_OOM_UNEXPECTED_SURVIVAL" not in output.output
-        (execution,) = frames.assert_item_lifecycles(
-            [json.loads(line) for line in turn.native], wire.CommandExecutionItem
-        )
-        assert execution.status is wire.CommandExecutionStatus.FAILED
-        assert execution.exit_code == 137
+        with tracer.start_as_current_span(
+            "system_test.vm_oom.trigger_and_survival", record_exception=False, set_status_on_exception=False
+        ):
+            turn, output = await _command(
+                agent, model, call_id="tool-oom", command=f"limit={before.max}\n" + OOM_COMMAND, exit_code=137
+            )
+            evidence["oom_tool_result"] = output.model_dump()
+            evidence["oom_native_frames"] = turn.native
+            assert "VM_OOM_ALLOCATING" in output.output
+            assert "VM_OOM_UNEXPECTED_SURVIVAL" not in output.output
+            (execution,) = frames.assert_item_lifecycles(
+                [json.loads(line) for line in turn.native], wire.CommandExecutionItem
+            )
+            assert execution.status is wire.CommandExecutionStatus.FAILED
+            assert execution.exit_code == 137
 
-        # Inspect the Runner before a follow-up could lazily start a replacement harness.
-        survived = await client.runner_status(view.name)
-        evidence["runner_after_oom"] = survived.model_dump(mode="json")
-        assert survived.runner_boot_id == original.runner_boot_id
-        assert survived.processes == original.processes
-        assert survived.sessions[0].native_session_id == session.native_session_id
-        assert survived.sessions[0].execution_state == "SESSION_EXECUTION_STATE_READY"
+            # Inspect the Runner before a follow-up could lazily start a replacement harness.
+            survived = await client.runner_status(view.name)
+            evidence["runner_after_oom"] = survived.model_dump(mode="json")
+            assert survived.runner_boot_id == original.runner_boot_id
+            assert survived.processes == original.processes
+            assert survived.sessions[0].native_session_id == session.native_session_id
+            assert survived.sessions[0].execution_state == "SESSION_EXECUTION_STATE_READY"
 
         # A fresh turn on the same native Session must execute commands through the surviving leaf.
-        followup, output = await _command(
-            agent, model, call_id="memory-after", command=MEMORY_PROBE + "echo VM_OOM_FOLLOWUP_OK", exit_code=0
-        )
-        evidence["followup_tool_result"] = output.model_dump()
-        after = _MemoryEvidence.from_output(output.output)
-        evidence["memory_after"] = after.model_dump()
-        assert "VM_OOM_FOLLOWUP_OK" in output.output
-        assert after.cgroup == before.cgroup
-        assert after.max == before.max
-        # Either aggregate or leaf can hit its memory limit first. The aggregate's hierarchical
-        # counter proves a memcg OOM in the executor subtree; the leaf counts its actual victims.
-        assert after.executor_oom > before.executor_oom
-        assert after.oom_kill == before.oom_kill + 1
-        assert after.oom_group_kill == 0
-        assert not followup.resumed
-        (execution,) = frames.assert_item_lifecycles(
-            [json.loads(line) for line in followup.native], wire.CommandExecutionItem
-        )
-        assert execution.status is wire.CommandExecutionStatus.COMPLETED
-        assert execution.exit_code == 0
-        final = await client.runner_status(view.name)
-        evidence["runner_after_followup"] = final.model_dump(mode="json")
-        assert final.runner_boot_id == original.runner_boot_id
-        assert final.processes == original.processes
-        assert final.sessions[0].native_session_id == session.native_session_id
-        current = await client.sandbox(view.name)
-        assert current.pod is not None
-        assert current.pod.uid == view.pod.uid
-        evidence["passed"] = True
+        with tracer.start_as_current_span(
+            "system_test.vm_oom.same_session_recovery", record_exception=False, set_status_on_exception=False
+        ):
+            followup, output = await _command(
+                agent, model, call_id="memory-after", command=MEMORY_PROBE + "echo VM_OOM_FOLLOWUP_OK", exit_code=0
+            )
+            evidence["followup_tool_result"] = output.model_dump()
+            after = _MemoryEvidence.from_output(output.output)
+            evidence["memory_after"] = after.model_dump()
+            assert "VM_OOM_FOLLOWUP_OK" in output.output
+            assert after.cgroup == before.cgroup
+            assert after.max == before.max
+            # Either aggregate or leaf can hit its memory limit first. The aggregate's hierarchical
+            # counter proves a memcg OOM in the executor subtree; the leaf counts its actual victims.
+            assert after.executor_oom > before.executor_oom
+            assert after.oom_kill == before.oom_kill + 1
+            assert after.oom_group_kill == 0
+            assert not followup.resumed
+            (execution,) = frames.assert_item_lifecycles(
+                [json.loads(line) for line in followup.native], wire.CommandExecutionItem
+            )
+            assert execution.status is wire.CommandExecutionStatus.COMPLETED
+            assert execution.exit_code == 0
+            final = await client.runner_status(view.name)
+            evidence["runner_after_followup"] = final.model_dump(mode="json")
+            assert final.runner_boot_id == original.runner_boot_id
+            assert final.processes == original.processes
+            assert final.sessions[0].native_session_id == session.native_session_id
+            current = await client.sandbox(view.name)
+            assert current.pod is not None
+            assert current.pod.uid == view.pod.uid
+            evidence["passed"] = True
     finally:
         (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
 

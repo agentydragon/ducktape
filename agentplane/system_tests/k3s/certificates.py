@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.tracing import tracer
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -66,6 +67,7 @@ def _install(kubectl: Kubectl, objects: list[dict[str, Any]], probe: dict[str, A
     _wait_for_api(kubectl, probe)
 
 
+@tracer.start_as_current_span("system_test.pki.controllers")
 def install(kubectl: Kubectl, cert_manager: list[dict[str, Any]], trust_manager: list[dict[str, Any]]) -> None:
     _install(
         kubectl,
@@ -106,6 +108,7 @@ def report(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
             ))  # fmt: skip
 
 
+@tracer.start_as_current_span("system_test.pki.issuance")
 def wait_for_issuance(kubectl: Kubectl, namespace: str, bundle: str) -> None:
     kubectl(
         "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-ca",

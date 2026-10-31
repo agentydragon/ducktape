@@ -23,6 +23,7 @@ from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import Text
 
 # Not a word, not a plausible identifier, and in no harness's vocabulary: a model reaches for it
@@ -51,15 +52,23 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
     """
     view = await sandbox(f"systest-instructions-{harness}")
 
-    instructed = await Agent.open(client, sandbox=view.name, harness=harness, model=model, instructions=INSTRUCTIONS)
-    obeyed = await instructed.run(PROMPT)
+    with tracer.start_as_current_span(
+        "system_test.session_instructions.instructed_turn", record_exception=False, set_status_on_exception=False
+    ):
+        instructed = await Agent.open(
+            client, sandbox=view.name, harness=harness, model=model, instructions=INSTRUCTIONS
+        )
+        obeyed = await instructed.run(PROMPT)
     assert MARKER in obeyed.answer, (
         f"the reply carries no {MARKER}, so the session's standing instruction did not reach the "
         f"model.\n[instruction] {INSTRUCTIONS}\n[prompt] {PROMPT}\n{obeyed.transcript}"
     )
 
-    plain = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    uninstructed = await plain.run(PROMPT)
+    with tracer.start_as_current_span(
+        "system_test.session_instructions.plain_turn", record_exception=False, set_status_on_exception=False
+    ):
+        plain = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
+        uninstructed = await plain.run(PROMPT)
     assert MARKER not in uninstructed.transcript, (
         f"a session opened with no instructions produced {MARKER} anyway, so the instructed half "
         f"proves nothing.\n[prompt] {PROMPT}\n{uninstructed.transcript}"
@@ -78,20 +87,26 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     instructed = await Agent.open(
         client, sandbox=view.name, harness=harness, model=offered_model, instructions=INSTRUCTIONS
     )
-    async with asyncio.TaskGroup() as turns:
-        obeyed = turns.create_task(instructed.run(PROMPT))
-        request = await model.request()
-        assert INSTRUCTIONS in request.system_text, request.system_text
-        await model.reply(request, Text(f"A checksum detects corrupted data.\n{MARKER}"))
+    with tracer.start_as_current_span(
+        "system_test.session_instructions.instructed_exchange", record_exception=False, set_status_on_exception=False
+    ):
+        async with asyncio.TaskGroup() as turns:
+            obeyed = turns.create_task(instructed.run(PROMPT))
+            request = await model.request()
+            assert INSTRUCTIONS in request.system_text, request.system_text
+            await model.reply(request, Text(f"A checksum detects corrupted data.\n{MARKER}"))
     # The scripted reply is the thread's answer: the model's side of the turn came back through ingress.
     assert MARKER in obeyed.result().answer
 
     plain = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
-    async with asyncio.TaskGroup() as turns:
-        turns.create_task(plain.run(PROMPT))
-        request = await model.request()
-        assert INSTRUCTIONS not in request.system_text, request.system_text
-        await model.reply(request, Text("A checksum detects corrupted data."))
+    with tracer.start_as_current_span(
+        "system_test.session_instructions.plain_exchange", record_exception=False, set_status_on_exception=False
+    ):
+        async with asyncio.TaskGroup() as turns:
+            turns.create_task(plain.run(PROMPT))
+            request = await model.request()
+            assert INSTRUCTIONS not in request.system_text, request.system_text
+            await model.reply(request, Text("A checksum detects corrupted data."))
 
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

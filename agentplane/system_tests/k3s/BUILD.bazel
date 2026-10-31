@@ -8,6 +8,8 @@ load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIE
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+package(default_testonly = True)
+
 # The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
 # fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built
 # production image supplies the full toolset. As in production, the runner is not in it: the Pod runs
@@ -231,6 +233,7 @@ py_library(
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:tracing",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -472,12 +475,14 @@ py_test(
 py_library(
     name = "bootstrap",
     srcs = ["bootstrap.py"],
+    deps = ["//agentplane/system_tests:tracing"],
 )
 
 py_library(
     name = "vm_sandboxes",
     srcs = ["vm_sandboxes.py"],
     deps = [
+        "//agentplane/system_tests:tracing",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
@@ -590,6 +595,7 @@ py_library(
     testonly = True,
     srcs = ["certificates.py"],
     deps = [
+        "//agentplane/system_tests:tracing",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",

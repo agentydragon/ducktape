@@ -24,7 +24,9 @@ async def open_resources(
 
         async def diagnostics() -> None:
             for uid in client.opened_sandbox_uids:
-                with phase_tracer.start_as_current_span("vm.diagnostics", attributes={"sandbox.uid": str(uid)}):
+                with phase_tracer.start_as_current_span(
+                    "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
+                ):
                     await native_artifacts.capture(client, sandbox_uid=uid)
 
         # ExitStack runs diagnostics before deleting guests, and closes their client last.

@@ -129,32 +129,31 @@ interval. Each run writes its timings to
 
 ## Phase tracing
 
-Every case writes OpenTelemetry spans to `test.outputs/vm-phases.jsonl` (named for the VM suite that
-introduced it) using the shared
-[test trace exporter](../../util/testing/otel_tracing.py). Each `vm.case` trace carries the pytest
-node ID and covers function-scoped fixtures, scenario execution, diagnostics and cleanup. Shared
-k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these per-case traces.
+All k3s suites use the shared [`tracing.py`](tracing.py) tracer and the test OTel provider.
+`test.outputs/test-spans.jsonl` flushes each completed driver span immediately, including setup,
+per-image imports, PKI, manifest application, Deployment readiness, scenarios, session opening, turn
+collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
+trace context. The pytest log prints the longest stages from these same spans; totals are inclusive
+and concurrent spans overlap. A killed test retains completed spans, but its unfinished spans cannot
+be exported. No separate stopwatch/timeline recorder is needed.
 
-`vm.sandbox.ready` carries an event at each Sandbox and Pod condition's transition time and each
-container start, so a slow launch splits into controller, kubelet, runner-connection and polling
-time. The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
-scenario execution. `test_vm` also separates the scripted turn and each OOM command
-(`memory-before`, `tool-oom`, `memory-after`); each grouped Sandbox scenario has its own `vm.scenario`
-span so their overlap is visible. Cleanup events distinguish suspend acknowledgement,
-observed effective suspension, delete acknowledgement, and observed deletion. Nested spans overlap;
-do not add a scenario's duration to its child turn/command durations. Use `test.xml` for the final
-pytest verdict; a case span includes fixture lifetime and is not itself a pass verdict.
+Every case has a `system_test.case` span, with `system_test.scenario` around its body. Concurrent VM
+scenarios and harness pairs have named child spans. Common Sandbox/session/turn helpers provide the
+same stage boundaries for Pod, MCP, Dispatcher, VM, manual VM and real-model suites. Scenario-specific
+waits add spans for Dispatcher admission/failover, sampler setup/execution and MCP policy decisions.
+`system_test.sandbox.ready` retains controller/Pod transition events and container start timestamps.
+Cleanup events distinguish suspend acceptance, effective suspension, delete acceptance and actual deletion.
+Use `test.xml` for the verdict; a case span measures fixture lifetime. Older investigation artifacts retain
+their original `vm-phases.jsonl` and `k3s-timeline.jsonl` names.
 
-Completed spans flush immediately, including exception status, so earlier phases survive a later
-failure or process kill. An unfinished span is not exported if the process is killed. Attributes
-contain test/Sandbox identities and phase names; command bodies and model transcripts are not
-added to the trace attributes.
+New stages use `tracer.start_as_current_span`; attributes identify fixtures, Sandboxes, Sessions or
+harnesses, never credentials, request bodies or model content.
 
 K3s suites also write `test.outputs/process-spans.jsonl` from a fixture-owned OTLP receiver. The
 stack exposes it at the production `monitoring/alloy` Service name, so service, Pod Runner and VM
 Runner exporters use their usual configuration without an external collector. Each line records
 the emitting service, span name and timing, trace/span/parent IDs, outcome, and selected identity
-and numeric attributes. The test HTTP client propagates the active `vm.case` trace context through
+and numeric attributes. The test HTTP client propagates the active `system_test.case` trace context through
 the app; asynchronous controller work can start a separate trace, so join those spans by
 `session.id`, `thread.id` or Sandbox identity. The receiver flushes each export immediately; SDKs
 batch their own exports, so a process killed without shutdown can still lose its final spans.

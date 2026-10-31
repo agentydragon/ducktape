@@ -35,6 +35,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.operator_login import LoginBlockedError, OperatorCredentials, follow_dex_authorization
 from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
@@ -80,12 +81,13 @@ def _submission(group: str, action: str, arguments: dict[str, Any], *, title: st
 async def _play_cli_turn(model: ScriptedModel[Any], *args: str) -> action_service_pb2.ActionRequest:
     """Play the model through a turn that runs `agentplane --json ARGS`: the receipt it printed, as the
     harness reported it to the model."""
-    call_id = f"agentplane-{uuid4().hex[:8]}"
-    request = await model.request()
-    await model.reply(request, ShellCall(call_id=call_id, command=_command(*args)))
-    request = await model.request()
-    await model.reply(request, Text("Done."))
-    return _receipt(request, call_id)
+    with tracer.start_as_current_span("system_test.mcp.turn"):
+        call_id = f"agentplane-{uuid4().hex[:8]}"
+        request = await model.request()
+        await model.reply(request, ShellCall(call_id=call_id, command=_command(*args)))
+        request = await model.request()
+        await model.reply(request, Text("Done."))
+        return _receipt(request, call_id)
 
 
 def _receipt(request: ModelRequest[Any], call_id: str) -> action_service_pb2.ActionRequest:
@@ -198,24 +200,28 @@ class PolicyObjects:
     async def wait_actions_ready(self, name: str) -> None:
         """Until the binding's ActionsReady condition is True for its current generation: the Action
         Service's own acknowledgement that it holds the binding and every set it names."""
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(POLICY_READY_SECONDS),
-            wait=wait_fixed(1),
-            retry=retry_if_exception_type(PolicyObjectNotReadyError),
-            reraise=True,
-        ):
-            with attempt:
-                obj = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, name, "-o", "json"))
-                conditions = obj.get("status", {}).get("conditions", [])
-                ready = [c for c in conditions if c["type"] == ACTIONS_READY_CONDITION]
-                generation = obj["metadata"]["generation"]
-                if not ready or ready[0].get("observedGeneration") != generation or ready[0]["status"] != "True":
-                    # False is also how a set not yet seen reads, so only the deadline makes it final.
-                    raise PolicyObjectNotReadyError(f"{POLICY_BINDINGS_PLURAL}/{name} generation {generation}: {ready}")
+        with tracer.start_as_current_span("system_test.mcp.policy_ready"):
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(POLICY_READY_SECONDS),
+                wait=wait_fixed(1),
+                retry=retry_if_exception_type(PolicyObjectNotReadyError),
+                reraise=True,
+            ):
+                with attempt:
+                    obj = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, name, "-o", "json"))
+                    conditions = obj.get("status", {}).get("conditions", [])
+                    ready = [c for c in conditions if c["type"] == ACTIONS_READY_CONDITION]
+                    generation = obj["metadata"]["generation"]
+                    if not ready or ready[0].get("observedGeneration") != generation or ready[0]["status"] != "True":
+                        # False is also how a set not yet seen reads, so only the deadline makes it final.
+                        raise PolicyObjectNotReadyError(
+                            f"{POLICY_BINDINGS_PLURAL}/{name} generation {generation}: {ready}"
+                        )
 
     async def delete_all(self) -> None:
-        for plural, name in reversed(self.created):
-            await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")
+        with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
+            for plural, name in reversed(self.created):
+                await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")
 
 
 async def agent_executes_mcp_action(
@@ -425,27 +431,29 @@ async def _decide_pending(
     operator_bff: httpx.AsyncClient, request_id: str, verdict: action_service_pb2.Verdict
 ) -> action_service_pb2.ActionRequest:
     """Check a request waited for the operator, then decide it, so nothing lingers undecided."""
-    path = f"/upstream/actions/v1/action-requests/{request_id}"
-    receipt = _bff_request(await operator_bff.get(path))
-    assert receipt.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
-    if receipt.HasField("decision"):
-        pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
-    decision = operator_action_service_pb2.DecideActionRequestRequest(
-        request_id=str(request_id), verdict=verdict, expected_version=receipt.version, idempotency_key=str(uuid4())
-    )
-    decided = await operator_bff.post(
-        f"/upstream/actions/v1/operator/action-requests/{request_id}/decision", json=json_format.MessageToDict(decision)
-    )
-    assert decided.status_code == HTTPStatus.OK
-    decided_request = _bff_decision(decided)
-    assert decided_request.state == (
-        action_service_pb2.ACTION_STATE_ALLOWED
-        if verdict == action_service_pb2.VERDICT_ALLOW
-        else action_service_pb2.ACTION_STATE_DENIED
-    )
-    assert decided_request.HasField("decision")
-    assert decided_request.decision.verdict == verdict
-    return receipt
+    with tracer.start_as_current_span("system_test.mcp.operator_decision"):
+        path = f"/upstream/actions/v1/action-requests/{request_id}"
+        receipt = _bff_request(await operator_bff.get(path))
+        assert receipt.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+        if receipt.HasField("decision"):
+            pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
+        decision = operator_action_service_pb2.DecideActionRequestRequest(
+            request_id=str(request_id), verdict=verdict, expected_version=receipt.version, idempotency_key=str(uuid4())
+        )
+        decided = await operator_bff.post(
+            f"/upstream/actions/v1/operator/action-requests/{request_id}/decision",
+            json=json_format.MessageToDict(decision),
+        )
+        assert decided.status_code == HTTPStatus.OK
+        decided_request = _bff_decision(decided)
+        assert decided_request.state == (
+            action_service_pb2.ACTION_STATE_ALLOWED
+            if verdict == action_service_pb2.VERDICT_ALLOW
+            else action_service_pb2.ACTION_STATE_DENIED
+        )
+        assert decided_request.HasField("decision")
+        assert decided_request.decision.verdict == verdict
+        return receipt
 
 
 async def policy_binding_auto_approves_the_bound_sandbox(
@@ -517,21 +525,22 @@ async def policy_binding_auto_approves_the_bound_sandbox(
 async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
     """Until the Action Service no longer resolves `binding_name` for the Sandbox's ServiceAccount:
     a deleted binding has no condition left to acknowledge, so ask the service itself."""
-    account = sandbox.service_account
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(POLICY_READY_SECONDS),
-        wait=wait_fixed(1),
-        retry=retry_if_exception_type(PolicyBindingPresentError),
-        reraise=True,
-    ):
-        with attempt:
-            response = await operator_bff.get(f"/caller-grants/{account.namespace}/{account.name}")
-            assert response.status_code == HTTPStatus.OK, response.text
-            policy = CallerGrantView.model_validate(response.json()).action_policy
-            if not isinstance(policy, ActionPolicyView) or not policy.synced:
-                raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
-            if binding_name in {effective.binding for effective in policy.auto_approve_if}:
-                raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
+    with tracer.start_as_current_span("system_test.mcp.policy_unbound"):
+        account = sandbox.service_account
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(POLICY_READY_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(PolicyBindingPresentError),
+            reraise=True,
+        ):
+            with attempt:
+                response = await operator_bff.get(f"/caller-grants/{account.namespace}/{account.name}")
+                assert response.status_code == HTTPStatus.OK, response.text
+                policy = CallerGrantView.model_validate(response.json()).action_policy
+                if not isinstance(policy, ActionPolicyView) or not policy.synced:
+                    raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
+                if binding_name in {effective.binding for effective in policy.auto_approve_if}:
+                    raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
 
 
 async def _launcher_approved(

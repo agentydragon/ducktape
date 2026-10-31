@@ -22,9 +22,10 @@ from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Clu
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from agentplane.system_tests.sandbox import Sandboxes, sandbox_scope
-from agentplane.system_tests.vm_tracing import tracer
+from agentplane.system_tests.tracing import timing_summary, tracer
 from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -46,18 +47,18 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
-    configure_tracing(filename="vm-phases.jsonl")
+    configure_tracing(filename="test-spans.jsonl")
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def phase_tracer(request: pytest.FixtureRequest) -> Iterator[trace.Tracer]:
-    with tracer.start_as_current_span("vm.case", attributes={"pytest.nodeid": request.node.nodeid}):
+    with tracer.start_as_current_span("system_test.case", attributes={"pytest.nodeid": request.node.nodeid}):
         yield tracer
 
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> object:
-    with tracer.start_as_current_span("vm.scenario"):
+    with tracer.start_as_current_span("system_test.scenario", attributes={"pytest.nodeid": item.nodeid}):
         return (yield)
 
 
@@ -86,7 +87,9 @@ async def client(
         finally:
             if request.node.get_closest_marker("vm_sandboxes") is not None:
                 for uid in opened.opened_sandbox_uids:
-                    with phase_tracer.start_as_current_span("vm.diagnostics", attributes={"sandbox.uid": str(uid)}):
+                    with phase_tracer.start_as_current_span(
+                        "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}
+                    ):
                         await native_artifacts.capture(opened, sandbox_uid=uid)
 
 
@@ -146,3 +149,8 @@ def cluster() -> Cluster:
         namespace=os.environ.get(NAMESPACE, STAGING_NAMESPACE),
         kubectl_command=("kubectl",),
     )
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    terminalreporter.write_sep("-", "OpenTelemetry stage timings (inclusive; concurrent spans overlap)")
+    terminalreporter.write_line(timing_summary(undeclared_outputs_dir() / "test-spans.jsonl"))

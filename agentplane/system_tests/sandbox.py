@@ -18,7 +18,7 @@ from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_re
 from agentplane.crd_group import GROUP
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.vm_tracing import tracer
+from agentplane.system_tests.tracing import tracer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "runner"
@@ -94,7 +94,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
             if template is None:
                 template = POD_TEMPLATE
             with phase_tracer.start_as_current_span(
-                "vm.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
+                "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
                 view = await client.create_sandbox(
                     NewSandbox(
@@ -108,12 +108,7 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 )
             # Register before readiness so failed boots are released too.
             owned.append((view.name, view.uid))
-            with phase_tracer.start_as_current_span(
-                "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
-            ) as ready_span:
-                ready = await wait_until_running(client, view.name, expected_uid=view.uid)
-                record_launch_transitions(ready_span, ready)
-                return ready
+            return await wait_until_running(client, view.name, expected_uid=view.uid)
 
         yield create
 
@@ -150,35 +145,39 @@ class SandboxNotReadyError(Exception):
 
 async def wait_until_running(client: Client, name: str, *, expected_uid: UUID) -> SandboxView:
     """Wait for the named Sandbox incarnation to report its own Ready condition."""
-    deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
-    last_status: dict[str, object] | None = None
-    try:
-        async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
-            async for snapshot in snapshots:
-                if not snapshot.watch.healthy:
-                    continue
-                view = next((view for view in snapshot.sandboxes if view.name == name), None)
-                if view is None:
-                    continue
-                if view.uid != expected_uid:
-                    raise SandboxNotReadyError(
-                        f"{name} has been replaced: expected {expected_uid}, observed {view.uid}"
-                    )
-                last_status = view.status
-                if sandbox_is_ready(view):
-                    return view
-            raise SandboxNotReadyError(f"{name}'s Sandbox inventory stream ended before observing Ready")
-    except TimeoutError as error:
-        if not deadline.expired():
-            raise
-        raise SandboxNotReadyError(
-            f"{name} did not reach Ready within {SANDBOX_READY_SECONDS}s: {last_status}"
-        ) from error
+    with tracer.start_as_current_span(
+        "system_test.sandbox.ready", attributes={"sandbox.name": name, "sandbox.uid": str(expected_uid)}
+    ) as ready_span:
+        deadline = asyncio.timeout(SANDBOX_READY_SECONDS)
+        last_status: dict[str, object] | None = None
+        try:
+            async with deadline, aclosing(client.sandbox_snapshots()) as snapshots:
+                async for snapshot in snapshots:
+                    if not snapshot.watch.healthy:
+                        continue
+                    view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                    if view is None:
+                        continue
+                    if view.uid != expected_uid:
+                        raise SandboxNotReadyError(
+                            f"{name} has been replaced: expected {expected_uid}, observed {view.uid}"
+                        )
+                    last_status = view.status
+                    if sandbox_is_ready(view):
+                        record_launch_transitions(ready_span, view)
+                        return view
+                raise SandboxNotReadyError(f"{name}'s Sandbox inventory stream ended before observing Ready")
+        except TimeoutError as error:
+            if not deadline.expired():
+                raise
+            raise SandboxNotReadyError(
+                f"{name} did not reach Ready within {SANDBOX_READY_SECONDS}s: {last_status}"
+            ) from error
 
 
 async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
     with tracer.start_as_current_span(
-        "vm.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+        "system_test.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
     ) as cleanup:
         await client.suspend_sandbox(name)
         cleanup.add_event("suspend.accepted")

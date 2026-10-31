@@ -42,6 +42,7 @@ from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.tracing import tracer
 from agentplane.testing.scripted_model import Text
 
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
@@ -108,15 +109,18 @@ class Probe(BaseModel):
 
 async def _decision_for(client: Client, sandbox: str, host: str, *, after: datetime | None = None) -> Decision:
     """The newest decision about `host`, once the proxy has one later than `after`."""
-    async for attempt in AsyncRetrying(stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True):
-        with attempt:
-            decisions = await client.decisions(sandbox)
-            for decision in reversed(decisions):
-                if decision.host == host and (after is None or decision.at > after):
-                    return decision
-            raise AssertionError(
-                f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
-            )
+    with tracer.start_as_current_span(
+        "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
+    ):
+        async for attempt in AsyncRetrying(stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True):
+            with attempt:
+                decisions = await client.decisions(sandbox)
+                for decision in reversed(decisions):
+                    if decision.host == host and (after is None or decision.at > after):
+                        return decision
+                raise AssertionError(
+                    f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
+                )
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
@@ -205,7 +209,10 @@ async def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy
         },
         "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
     }
-    await cluster.kubectl("create", "-f", "-", body=body)
+    with tracer.start_as_current_span(
+        "system_test.egress.policy_binding.apply", record_exception=False, set_status_on_exception=False
+    ):
+        await cluster.kubectl("create", "-f", "-", body=body)
 
 
 async def _granted_request(cluster: Cluster) -> tuple[str, str]:
@@ -239,13 +246,16 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     # the binding is written as an operator would with kubectl, owned by the Sandbox.
     await _kubectl_create_binding(cluster, view, runtime_grant.POLICY_SET)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
-    async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
-        with attempt:
-            after = datetime.now(UTC)
-            turn = await agent.run_shell(model, command)
-            admitted = await _decision_for(client, view.name, host, after=after)
-            assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
-            assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
+    with tracer.start_as_current_span(
+        "system_test.egress.policy_binding.observe", record_exception=False, set_status_on_exception=False
+    ):
+        async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
+            with attempt:
+                after = datetime.now(UTC)
+                turn = await agent.run_shell(model, command)
+                admitted = await _decision_for(client, view.name, host, after=after)
+                assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
+                assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

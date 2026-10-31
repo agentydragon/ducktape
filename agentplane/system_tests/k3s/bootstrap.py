@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from agentplane.system_tests.tracing import tracer
+
 
 @dataclass(frozen=True)
 class Bootstrap:
@@ -14,6 +16,7 @@ class Bootstrap:
     log_path: Path
     deadline: float
 
+    @tracer.start_as_current_span("system_test.k3s.bootstrap")
     def wait_for(self, *args: str, expected: str) -> None:
         last_output = "kubeconfig has not been written"
         while True:
