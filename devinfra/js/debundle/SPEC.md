@@ -1065,6 +1065,15 @@ not thereby part of this package. The strip pass rejects non-shareable items
 also needed by residual exports and checks retained bindings and observable
 writes before removing swapped items.
 
+A removed item's side effect must not reach state the residual keeps, including
+through the functions it calls. Values a removed item hands to host code — a
+call on a global the chunk does not declare, such as a devtools hook's
+`inject(internals)` — are treated as values: host code calling back into what
+it was handed is outside the analysed program, and the author (for the swap's
+replacement, which hands over its own values) and the host own it, like A11.
+Native methods called on containers the chunk owns still run the callbacks they
+are handed.
+
 ## Synchronous analysis limits
 
 Recursion and analysis limits preserve the first-await boundary where retained
