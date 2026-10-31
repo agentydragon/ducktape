@@ -160,13 +160,8 @@ editing a route.
       Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
       `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718_followups.md` #4).
 - [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
-      Offline roaming nodes leave DaemonSet pods Pending. Current source sets
-      `upgrade.disableWait` for kube-prometheus-stack, Promtail, and Node Feature
-      Discovery; Promtail and Node Feature Discovery also set `maxUnavailable` above
-      the roaming-node count, guarded by
-      `test_roaming_daemonset_capacity`. These safeguards do not remove stale
-      NotReady Nodes. Automatic stale-node cleanup remains the open long-term work;
-      options and evidence are in <plans/offline_node_daemonset_health.md>.
+      Automatic cleanup of stale NotReady roaming nodes remains open; options and
+      evidence are in <plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
       `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
       decide placement before moving it.
