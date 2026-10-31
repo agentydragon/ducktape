@@ -66,6 +66,10 @@ in
       set-hook -g client-dark-theme "source-file ${darkTheme}"
       set-hook -g client-light-theme "source-file ${lightTheme}"
       if-shell -F "#{==:#{client_theme},light}" "source-file ${lightTheme}" "source-file ${darkTheme}"
+
+      # tmux.conf replaces status-right after Continuum initially modifies it.
+      # Restore Continuum's invisible, internally throttled autosave callback.
+      set -ag status-right "#(${pkgs.tmuxPlugins.continuum}/share/tmux-plugins/continuum/scripts/continuum_save.sh)"
     '';
   };
 }
