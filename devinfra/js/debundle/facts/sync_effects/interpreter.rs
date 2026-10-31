@@ -98,8 +98,24 @@ impl Outcome {
             source_location: None,
             span,
         };
-        if !self.effects.precision_losses.contains(&loss) {
-            self.effects.precision_losses.push(loss);
+        self.record_loss(loss);
+    }
+
+    /// One record per reason and site. The same site can be reached with
+    /// different inputs; its reach is `global` if any reach was.
+    fn record_loss(&mut self, loss: ExecutionPrecisionLoss) {
+        let losses = &mut self.effects.precision_losses;
+        match losses.iter_mut().find(|existing| {
+            existing.reason == loss.reason
+                && existing.statement_ordinal == loss.statement_ordinal
+                && existing.span == loss.span
+        }) {
+            Some(existing) => {
+                if existing.reach == HavocReach::Bounded {
+                    existing.reach = loss.reach;
+                }
+            }
+            None => losses.push(loss),
         }
     }
 
@@ -132,9 +148,7 @@ impl Outcome {
 
     fn inherit_precision_losses(&mut self, losses: Vec<ExecutionPrecisionLoss>) {
         for loss in losses {
-            if !self.effects.precision_losses.contains(&loss) {
-                self.effects.precision_losses.push(loss);
-            }
+            self.record_loss(loss);
         }
     }
 

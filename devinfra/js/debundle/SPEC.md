@@ -2275,6 +2275,7 @@ for dynamic scope first, then for each input, then over the read closure:
 - `escaped_callback_pool`: a bound hit while running the callbacks opaque code
   may invoke, whose pool is the escape set accumulated over the prefix.
 
+A site reached more than once keeps one record, `global` if any reach was.
 The classification is a report: both reaches promote the same effects.
 
 Property-specific Object prototype premises appear in
