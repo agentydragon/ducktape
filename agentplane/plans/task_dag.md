@@ -18,7 +18,7 @@ remain useful but do not provide independently addressable Agentplane Sessions.
 
 | Priority  | Outcome                                                                                                               | Work to select                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                                                               |
+| P0        | Sessions remain usable through sampler rolls, crashes and JS/exec faults; tooling bugs do not make them irrecoverable | `CENTRAL_SAMPLER_HISTORY_EXPORT`, `CENTRAL_SAMPLER_REPLICA_ROLLOUT`, `CENTRAL_SAMPLER_TOOL_RECOVERY`; include compaction/route gaps when they prevent the chosen long-running workflow                                                               |
 | P1        | A useful daily CI agent that can create and coordinate Agentplane Sessions with its own privilege level               | `SCHEDULED_AGENT_WAKE`, `THREAD_CREATE_POLICY`, `THREAD_CREATE_AUTHORIZATION`, then the `DAILY_CI_AGENT` product milestone                                                                                         |
 | Alongside | Fewer clicks to start useful work on an existing environment                                                          | `SESSION_LAUNCH_FRICTION`; make reused environments and separate working directories easy                                                                                                                          |
 | Next      | Faster fresh VMs and a usable Bazel client inside a VM                                                                | `VM_STARTUP_LATENCY`, `LOCAL_BAZEL`; select image/layering changes when measurements show they address startup or needed resource headroom                                                                         |
@@ -107,7 +107,8 @@ not dispatched.
 | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `/root/usable_rollout`    | Planned drain implementation; broader ownership and sampling-recovery contract    | In flight: bounded drain selected; sampling-abandonment contract under review                 |
 | `/root/usable_tools`      | `CENTRAL_SAMPLER_TOOL_RECOVERY`: tool failures and agent-visible partial output   | In flight: adopt #13033 maintenance and repair the observed-output error boundary             |
-| `/root/usable_acceptance` | Assembled-system acceptance for the selected rollout and tool contracts           | In flight: prepare provider-barrier roll scenario; reuse existing host-loss recovery coverage |
+| `/root/usable_acceptance` | Assembled-system acceptance for the selected rollout and tool contracts           | Prior draft #13246 remains optional; nested K3s two-replica roll gate is waived                  |
+| `/root/history_export_integration` | Concurrent History export correctness                                               | In flight, 2026-10-31 PDT: two independent exporters on shared PostgreSQL and real History     |
 | `/root`                   | Cross-lane domain-contract review, integration, DAG status and rollout sequencing | In flight                                                                                     |
 
 Start with the rollout deadline/recovery decision and the tool-failure evidence inventory. Review
@@ -144,10 +145,13 @@ its old ordering does not give it precedence over the selected tracks.
 ```mermaid
 flowchart LR
     subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
+        CENTRAL_SAMPLER_HISTORY_EXPORT[Required: async History cumulative-ACK exporter correctness]
         CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
         CENTRAL_SAMPLER_PLANNED_DRAIN[In flight: selected planned-roll drain]
         CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
         CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
+        CENTRAL_SAMPLER_HISTORY_EXPORT --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
+        CENTRAL_SAMPLER_PLANNED_DRAIN --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
     end
     subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
         THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
@@ -739,9 +743,12 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_REPLICA_ROLLOUT[In-flight P0 decision: rolls and owner loss that preserve agents]
+    CENTRAL_SAMPLER_HISTORY_EXPORT[Required P0: async History cumulative-ACK exporter correctness]
     CENTRAL_SAMPLER_PLANNED_DRAIN[In-flight P0: selected planned-roll drain]
     CENTRAL_SAMPLER_TOOL_RECOVERY[In-flight P0: JS and exec faults leave Sessions recoverable]
     CONTROL_PLANE_ROLLING_SERVICES[In review: control-plane deployment target]
+    CENTRAL_SAMPLER_HISTORY_EXPORT --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
+    CENTRAL_SAMPLER_PLANNED_DRAIN --> CENTRAL_SAMPLER_REPLICA_ROLLOUT
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
@@ -841,6 +848,35 @@ script and what it emitted) as runner items. Codex app-server has no `ThreadItem
 only the nested `commandExecution`. Needs upstream support, or reading the rollout or the native frames. Multi-block
 cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
+### `CENTRAL_SAMPLER_HISTORY_EXPORT` — async History export with cumulative acknowledgements
+
+**Required predecessor to sampler rollout; protocol selected by the operator, 2026-10-31 PDT.**
+Keep History export asynchronous to provider and executor work. Treat History's acknowledgement as a
+cumulative durable prefix: an acknowledgement through cursor `N` means every entry through `N` is
+committed, including entries sent by another replica. Exporters may replay overlapping entries;
+History's idempotent append and monotonic cursor are the authority. Do not reject a valid cumulative
+acknowledgement merely because it is beyond the current stream's page boundary. It must still be at
+or below the shared sampler journal's committed cursor; never advance a local checkpoint beyond
+History's durable contiguous prefix.
+
+First replace the current singleton writer with the new exporter semantics while the Deployment
+still uses its singleton `Recreate` profile. Do not overlap old and new exporter writers. As part of
+that cutover, use a one-time migration to clear only the rebuildable `sampler_export_checkpoint`
+rows: legacy markers can record an event acknowledgement before the announced metadata snapshot is
+complete. Preserve sampler conversation, event, effect and History data. Enable rolling two replicas
+only after the new singleton writer and exporter correctness gate are in place.
+
+The completed-snapshot checkpoint means both that History has cumulatively acknowledged the
+announced event prefix and that the History RPC successfully completed its final metadata update.
+A page acknowledgement alone does not mark the snapshot complete.
+
+Exit: automated concurrency coverage runs two independent exporter instances against shared
+sampler PostgreSQL and the real History service, with overlapping appends and delayed, reordered or
+lost acknowledgements. It proves no skipped History entry, no checkpoint regression or advance past
+the durably committed prefix, no snapshot completion before successful metadata/RPC completion, and
+safe reconnect/replay. No separate live gate is required when this proof and the planned-drain/
+fencing coverage leave no deployment-specific uncertainty.
+
 ### `CENTRAL_SAMPLER_REPLICA_ROLLOUT` — multiple replicas and rolls that preserve active agents
 
 **In-flight P0 decision; `/root/usable_rollout`, dispatched by the operator, 2026-10-30 PDT.** An ordinary sampler
@@ -849,11 +885,9 @@ on a sampling intent ([incident evidence](../debug/2026_10_30_sampler_rollout_ab
 The provider had completed; the sampler had persisted only a prefix. Existing explicit recovery
 excludes sampling uncertainty, and draining inbound gRPC does not drain the independent agent loop.
 
-Before enabling two sampler replicas, resolve exporter concurrency. Exporters have no cross-replica
-claim. History deduplicates records and checkpoints cannot regress, but one copier can advance the
-remote acknowledgement beyond another stream's page `through`. Prove concurrent page convergence or
-establish shared export ownership before enabling the two-replica profile. This gate applies only to
-the sampler rollout; it does not block the other seven PostgreSQL service conversions.
+Async History export and cumulative acknowledgements are tracked in
+`CENTRAL_SAMPLER_HISTORY_EXPORT`. This is a required predecessor to rolling two sampler replicas;
+it does not block the other seven PostgreSQL service conversions.
 
 Design how multiple sampler replicas admit and own Sessions, transfer or drain ownership during
 rolls, and survive replica loss without duplicate sampling or executor effects. Include provider
@@ -864,17 +898,17 @@ boundary for planned rolls, with an explicit recovery contract when the owner di
 Decide how an already-blocked sampling intent can be reconciled or explicitly abandoned without
 replaying external effects or discarding conversation/workspace history.
 
-Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and an
-acceptance plan covering two competing replicas, a roll during provider ingestion and a live cell,
-owner loss and late-owner writes, preserved continuation, and no duplicate external execution.
-The bounded planned-drain contract below was selected by `/root` after reviewing the runtime/store
-evidence on 2026-10-30 PDT. The operator then selected rolling updates with at least two replicas.
-The draft assembled-system test [#13246](https://github.com/agentydragon/ducktape/pull/13246)
-records a separate K3s environment prerequisite for proving the sampler roll; it does not gate the
-other control-plane service conversions.
-Review shared-DB admission, ownership, command routing and migration overlap before the deployment
-change; retain drain as an independently finishable improvement. Sampling-abandonment decisions
-also remain here. Create implementation and rollout nodes after their contracts are selected.
+Exit: reviewed ownership, shutdown and recovery contracts; bounded drain/deadline behavior; and
+automated assembled acceptance covering competing sampler runtimes on shared PostgreSQL and
+History, a roll during provider ingestion and a live cell, owner loss and late-owner writes,
+preserved continuation, and no duplicate external execution. Reuse the planned-drain and
+generation-fencing coverage. The operator selected staging with two rolling sampler replicas; this remains the target.
+The K3s fixture remains explicitly one sampler replica independent of staging configuration. A
+nested two-replica rolling test inside RBE/K3s is waived; the K3s Firecracker
+`CONFIG_NETFILTER_XT_MATCH_STATISTIC` limitation is fixture-only and is not a sampler-roll
+prerequisite. Review shared-DB admission, ownership, command routing and migration overlap before
+deployment. Sampling-abandonment decisions also remain here; current recovery still does not resolve
+an uncertain sampling intent.
 
 ### `CENTRAL_SAMPLER_PLANNED_DRAIN` — drain planned rolls to a durable continuation boundary
 
@@ -891,8 +925,9 @@ An unresolved provider intent remains blocked under the current recovery API: ex
 recovery is a separate decision above and is required before declaring the sprint's deadline
 usability outcome complete.
 
-Exit: focused PR with the shutdown contract in `SPEC.md`, deterministic current-effect/next-effect
-ordering, expiry and stale-owner coverage, plus the selected assembled-system roll scenario.
+Exit: focused PR with the shutdown contract in `SPEC.md` and deterministic current-effect/next-effect
+ordering, expiry and stale-owner coverage. Assembled rolling acceptance belongs to
+`CENTRAL_SAMPLER_REPLICA_ROLLOUT`. A nested RBE/K3s two-replica live roll is not required.
 
 ### `CENTRAL_SAMPLER_TOOL_RECOVERY` — JS and exec faults leave Sessions recoverable
 
@@ -939,13 +974,12 @@ target and dependencies, and the `service_workload` init-container parameter can
 all callers convert. Verify that active services, fixtures, generators and operator instructions no
 longer rely on that path; preserve dated incident and handoff evidence.
 
-The sampler's assembled rolling and same-Session acceptance remains under
-`CENTRAL_SAMPLER_REPLICA_ROLLOUT`; it is a separate system-acceptance gate and does not block the
-other seven service conversions. The latest [draft acceptance #13246](https://github.com/agentydragon/ducktape/pull/13246)
-reports that the K3s Firecracker guest kernel lacks iptables `statistic` match support, so kube-proxy
-cannot install ClusterIP rules. The RBE run failed before provider admission or rollout. It did not
-prove rolling continuation or no duplicate external effects; this environment prerequisite does
-not block the other service conversions.
+The sampler's two-replica profile is gated by async History exporter correctness and assembled
+rollout acceptance in `CENTRAL_SAMPLER_HISTORY_EXPORT` and `CENTRAL_SAMPLER_REPLICA_ROLLOUT`; this
+sampler-specific gate does not block the other seven service conversions. The K3s fixture remains
+one sampler replica independent of staging configuration. A nested two-replica RBE/K3s roll test is
+not required; the Firecracker `CONFIG_NETFILTER_XT_MATCH_STATISTIC` limitation is fixture-only and
+does not block sampler rollout.
 
 Electric remains an accepted single-replica `Recreate` exception, as selected in [#13250](https://github.com/agentydragon/ducktape/pull/13250). The operator accepts a brief sync interruption, refetch, or page reload during replacement; no Electric rollout change is scheduled. Its fixed replication stream permits one active writer, while each Pod has its own empty shape store and the App proxy has no stable backend routing. The [Electric audit](electric_ha.md) explains why a replica-setting change alone is unsound and records optional, unscheduled rolling and multi-active HA designs. This exception is independent of the eight PostgreSQL service conversions.
 
