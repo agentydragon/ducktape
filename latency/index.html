@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ducktape CI latency · 30 October 2026</title>
+    <title>Ducktape CI latency · 30 October · follow-up 31 October 2026</title>
     <style>
       :root {
         color-scheme: light;
@@ -314,6 +314,9 @@
           <a
             href="https://github.com/agentydragon/ducktape/commit/49475cae74abd6a669879908f63c04fa78f41242"
             ><code>49475cae74ab</code></a
+          >. Follow-up checked 31 October 2026:
+          <a href="#intervention-followup"
+            >merged changes and investigation results</a
           >. <a href="evidence.json">Reviewed measurements</a> ·
           <a href="manifest.json">Source and window</a>.
         </p>
@@ -325,7 +328,8 @@
           <div class="card">
             <strong>0–20 s</strong
             ><span
-              >Evidence-bounded Pod cleanup candidate; no proven CI saving</span
+              >Bounded cleanup headroom; implementation merged, CI saving
+              unmeasured</span
             >
           </div>
           <div class="card">
@@ -335,6 +339,7 @@
         </div>
       </header>
       <nav aria-label="Report sections">
+        <a href="#intervention-followup">Follow-up</a>
         <a href="#decisions">Decisions</a><a href="#experience">PR feedback</a
         ><a href="#work">Test work & waits</a
         ><a href="#native-work">Native startup</a
@@ -343,6 +348,203 @@
         ><a href="#continuity">Prior work</a><a href="#scope">Scope</a
         ><a href="#live-view">Active invocations</a>
       </nav>
+      <section id="intervention-followup">
+        <h2>
+          Follow-up · 31 October: shipped changes and investigation results
+        </h2>
+        <p class="callout">
+          Go race configuration, independent Sandbox cleanup and visual
+          publisher source changes have merged. Python bytecode works at target
+          level but remains disabled; Pod's delayed submission points to Bazel
+          scheduling under its 50-action cap. The original measurement window
+          and feedback distributions below are unchanged. These follow-ups do
+          not establish fleet-wide or matched end-to-end savings.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Lane / source change</th>
+                <th>Verified result</th>
+                <th>Remaining work</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Go race configuration · merged</strong><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13216"
+                    >#13216</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/commit/42a7870e461177a867d80633aadd979acaafe1ff"
+                    ><code>42a7870e46</code></a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Default race instrumentation in the build configuration;
+                  ordinary production binary roots explicitly opt out. No
+                  repository <code>go_test</code> wrapper. All 170 selected Go
+                  tests retain their prior modes: 166 raced, four pure fixtures.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/da377c33-1b16-5f56-ac90-783f3b53152b"
+                    >Full hosted test: 1,693 passed</a
+                  >;
+                  <a
+                    href="https://app.buildbuddy.io/invocation/5fb4663b-58a1-5e39-9bd5-29761cf5fcaf"
+                    >following build: 8,758 targets, zero packages loaded and
+                    zero targets configured</a
+                  >.
+                </td>
+                <td data-label="Remaining work">
+                  Analysis reuse is verified. Measure elapsed feedback effects
+                  on comparable workloads; the old 50.6 s build is not a saving
+                  estimate.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Independent Sandbox cleanup · merged</strong><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13213"
+                    >#13213</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/commit/4e20d7ad056313ef1a73aaa3183f960c350911da"
+                    ><code>4e20d7ad05</code></a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Overlap independent UID-owned cleanup while preserving each
+                  Sandbox's suspend acknowledgement, deletion completion,
+                  cancellation shielding and peer drainage after failures.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/1bfa5913-7808-5808-86cb-9865364384ab"
+                    >Hosted checks passed, including real Pod, MCP, VM and
+                    Dispatcher suites</a
+                  >.
+                </td>
+                <td data-label="Remaining work">
+                  Full-gate latency and long-run reliability effects remain
+                  unmeasured. The earlier 0–20 s headroom stays conditional.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong>Visual publisher · source merged, pin pending</strong
+                  ><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13253"
+                    >#13253</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/commit/52f4d41240939114c0bdb87fa812fcdcd0d19218"
+                    ><code>52f4d41240</code></a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Exact SHA-256 equality skips baseline PNG reads and decoding;
+                  shared S3 checks/uploads use at most eight workers. Preserve
+                  legacy and pixel-equivalent encoding fallbacks, missing-object
+                  healing, conditional writes and the image-before-index
+                  barrier.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/0e4b69eb-2de2-4c81-8aa3-989d11a1cfc1"
+                    >Publisher tests passed on RBE</a
+                  >.
+                </td>
+                <td data-label="Remaining work">
+                  Release and repin the wheel, then measure a real publication.
+                  The inspected pin still points to
+                  <code>pr-visuals-bebbef7024f2</code>. PR #13216 had 1,207
+                  exact digest matches among 1,216 assets; those baseline
+                  fetches/comparisons are avoidable. Its
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/41172846988/job/124454292680"
+                    >4m46s publication</a
+                  >
+                  is observed cost, not recoverable savings. This lane improves
+                  review availability outside the three required checks.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong
+                    >Python bytecode · investigated, policy deferred</strong
+                  ><br />
+                  <a href="https://github.com/agentydragon/ducktape/pull/13251"
+                    >#13251: findings merged</a
+                  >
+                  ·
+                  <a
+                    href="https://github.com/agentydragon/ducktape/blob/3321f1c8689434355d4f99d5cdb4246a88030a7e/agentplane/system_tests/k3s/debug/pyc_precompilation.md"
+                    >experiment record</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  The old RBE stdlib failure no longer reproduces with
+                  <code>rules_python</code> 2.4.3. Target-level collection
+                  passed; Python consumed 2,053 shipped <code>.pyc</code> files.
+                  Warm <code>test_render</code> invocation 21.6 s versus paired
+                  baseline 28.0 s, on different workers; first bytecode
+                  invocation 145.5 s with thousands of compile actions. Global
+                  precompilation still fails lint-checker analysis for a
+                  <code>main_module</code> binary.
+                </td>
+                <td data-label="Remaining work">
+                  No bytecode policy is enabled. Compare full-suite import and
+                  whole-invocation costs on matched cache states and worker
+                  classes before enabling it; the warm pair is not causal CI
+                  evidence.
+                </td>
+              </tr>
+              <tr>
+                <td data-label="Lane / source change">
+                  <strong
+                    >Earlier Pod start · diagnosis, no source change</strong
+                  ><br />
+                  <a
+                    href="https://app.buildbuddy.io/invocation/87dab0cc-af8e-53e6-8cbb-d96324c9f544"
+                    >Full mainline profile</a
+                  >
+                  ·
+                  <a
+                    href="https://app.buildbuddy.io/invocation/9a9c66a6-29a0-430b-8fd5-4521a964c9c7"
+                    >TestRunner aquery</a
+                  >
+                </td>
+                <td data-label="Verified result">
+                  Runfiles ready at 59.0 s; Pod TestRunner starts at 126.0 s.
+                  Its action inputs are runfiles and Bazel test scripts, with no
+                  remaining image/fixture or mypy dependency. The profile shows
+                  50 active actions at 74, 79, 96, 110 and 125 s under
+                  <code>--jobs=50</code>. RBE queue wait was 0.063 s.
+                </td>
+                <td data-label="Remaining work">
+                  The evidence points to Bazel scheduling and action-slot
+                  contention. Compare matched full-CI runs at 50 versus 100
+                  jobs; evaluate whole-gate time, remote compute and contention
+                  before changing the global limit. No dependency removal was
+                  justified.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Next implementation lane:
+          <a href="#retry">log-stream reconnection</a>. The repository now pins
+          CLI 5.0.498; its
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/5b4fc7a4ccb0d814ec93f8ed0daae7f0325c7f4f/cli/remotebazel/remotebazel.go#L667"
+            >observer still lets INTERNAL escape</a
+          >. The historical fault-injection control below used 5.0.466, so
+          repeat that control on the current version. In parallel, profile
+          <a href="#native-work">cold native startup</a>; its unassigned gaps
+          remain exposed time rather than proven savings.
+        </p>
+      </section>
       <section id="decisions">
         <h2>Decisions supported by the deeper investigation</h2>
         <div class="scroll">
@@ -389,17 +591,19 @@
                   full-gate upper bound is 36.6 s before VM wins.
                 </td>
                 <td data-label="Disposition / coverage to preserve">
-                  Candidate for a focused implementation: approximately 0–20 s
-                  on affected system-test feedback, not a measured CI gain.
-                  Preserve suspension acknowledgement, finalizer/volume release,
-                  failure drainage and cancellation. Whole probe action became
-                  15 s slower on a colder worker.
+                  Implementation merged in
+                  <a href="https://github.com/agentydragon/ducktape/pull/13213"
+                    >#13213</a
+                  >; coverage and cancellation checks passed. Approximately 0–20
+                  s remains conditional headroom, not a measured CI gain. Whole
+                  probe action became 15 s slower on a colder worker.
                 </td>
               </tr>
               <tr>
                 <td data-label="Change and owner">
-                  Keep the single race-enabled test pass; evaluate a per-Go-test
-                  default instead of a global command configuration switch.
+                  Keep the single race-enabled test pass and stable test/build
+                  configuration. Implemented through a build-wide race default
+                  and explicit production-binary opt-outs.
                 </td>
                 <td data-label="Effect supported by evidence">
                   The separate race sweep is gone. A current ordinary full build
@@ -408,10 +612,12 @@
                   mode-placement investigation is recorded below.
                 </td>
                 <td data-label="Disposition / coverage to preserve">
-                  Do not advertise the old 0–20 s race-deduplication estimate as
-                  a measured gain. Preserve race coverage and ordinary
-                  production artifacts; do not turn the detector off to improve
-                  a chart.
+                  Merged in
+                  <a href="https://github.com/agentydragon/ducktape/pull/13216"
+                    >#13216</a
+                  >; full selection passed and the following build reused
+                  analysis. Elapsed savings remain unmeasured; retire the
+                  implementation recommendation.
                 </td>
               </tr>
               <tr>
@@ -680,15 +886,16 @@
                 <td data-label="Observed cost and wait mechanism">
                   Suspend must be acknowledged as SUSPENDED; deletion must
                   complete with finalizer/volume release. VM scenarios already
-                  overlap cleanup. Within Pod cases multiple owned Sandbox
-                  callbacks are serial.
+                  overlap cleanup. Pod callbacks were serial in the measured
+                  baseline; independent owners now overlap after #13213.
                 </td>
                 <td data-label="Equivalent change or reason to retain">
                   Overlap only independent ownership scopes. Keep manual causal
                   launch/revoke/delete sequencing in the MCP launcher test. A
                   focused failure-drainage control and six-case integration
-                  spike passed; cancellation and full-suite resource comparison
-                  are still acceptance work.
+                  spike passed. The merged implementation also passed
+                  cancellation and full-suite checks; matched resource
+                  comparison remains open.
                 </td>
               </tr>
             </tbody>
@@ -864,9 +1071,13 @@
         <p>
           The focused failure test drains every owned resource even when one
           cleanup fails; see its exact invocation and caveats in
-          <a href="evidence.json">evidence</a>. No production cleanup source was
-          changed. Passing the subset does not establish unchanged long-run
-          flakiness or cancellation behavior.
+          <a href="evidence.json">evidence</a>. This was an isolated probe;
+          <a href="https://github.com/agentydragon/ducktape/pull/13213"
+            >#13213</a
+          >
+          subsequently implemented the production cleanup change and passed
+          cancellation and full-suite checks. Long-run flakiness remains
+          unmeasured.
         </p>
       </section>
       <section id="paths">
@@ -973,10 +1184,14 @@
           </table>
         </div>
         <p class="note">
-          The precise cause of Pod’s delayed start is unassigned: runfiles were
-          prepared at ~59 s and TestRunner submitted at ~126 s in the Bazel
-          profile. A tiny executor queue does not prove the target was runnable
-          earlier or explain the intervening Bazel work.
+          The follow-up aquery shows Pod TestRunner depends only on runfiles and
+          Bazel's test scripts. Runfiles finished at 59.0 s, submission began at
+          126.0 s, and the profile held 50 active actions at sampled points
+          through the wait under <code>--jobs=50</code>. This points to Bazel
+          scheduling and action-slot contention, not an avoidable Pod
+          prerequisite. The 0.063 s RBE queue is a separate clock. See the
+          <a href="#intervention-followup">follow-up evidence and experiment</a
+          >.
         </p>
       </section>
       <section id="retry">
@@ -1080,8 +1295,8 @@
           log-stream observer, but propagates INTERNAL out of that loop;
           <code>attemptRun</code> then requests cancellation and the outer loop
           submits <code>Run</code> again. The fault-injection control uses the
-          actual pinned 5.0.466 binary against a fake gRPC service. It
-          reproduces <strong>INTERNAL → two Run requests</strong>, versus
+          then-pinned 5.0.466 binary against a fake gRPC service. It reproduces
+          <strong>INTERNAL → two Run requests</strong>, versus
           <strong>UNAVAILABLE → one Run and two log observations</strong>;
           <a
             href="https://app.buildbuddy.io/invocation/ae03f45a-6124-412d-a845-9ca4fc76e66f"
@@ -1211,19 +1426,22 @@
           as the original global test setting. The normal journal library
           remains <code>linux_amd64</code> without race. Inventory: 161 direct
           Go tests, 19 already explicit race, 4 explicit pure fixtures, 138 with
-          neither attribute. A repository implementation must migrate every
-          eligible rule, preserve pure fixture behavior and verify full target
-          selection/instrumentation. No such coverage-wide migration was made
-          here.
+          neither attribute. This historical probe established an alternative
+          mechanism; the final implementation uses a build-wide default rather
+          than a per-test migration.
         </p>
         <p>
-          Recommendation: implement this placement change as a focused source
-          PR, then run same-source full-selection test→normal-build pairs with
-          real Bazel profiles. The full current build has 43.098 s in Skyframe
-          build-driver evaluation, but that span overlaps analysis/execution and
-          is not all recoverable time. Budgeted savings remain unknown until the
-          full paired comparison; do not turn race coverage off or infer 40 s
-          savings from the cross-revision medians.
+          <a href="https://github.com/agentydragon/ducktape/pull/13216"
+            >#13216</a
+          >
+          merged the simpler final policy:
+          <code>build --@io_bazel_rules_go//go/config:race</code>, with explicit
+          <code>race = "off"</code> at ordinary production binary roots and no
+          repository test wrapper. All 170 selected Go tests preserve their
+          instrumentation modes; full hosted CI passed 1,693 tests and the next
+          build configured zero targets. The earlier 43.098 s Skyframe span
+          overlaps analysis/execution and is not all recoverable. Measure
+          elapsed effects separately; the implementation is no longer pending.
         </p>
       </section>
       <section id="continuity">
@@ -1549,11 +1767,11 @@
           <a href="../">All reports</a>
         </p>
         <p>
-          Latest-only snapshot; historical measurements remain in Git. Source
-          and policy are frozen for this investigation. GitHub Pages updates
-          after the report PR merges. No production test, workflow or retry
-          policy was changed; experiments used isolated source patches and
-          remote execution.
+          Latest-only snapshot; historical measurements remain in Git. The
+          measurement cohort retains its original source and window; the
+          separately dated follow-up links subsequent source changes and probes.
+          GitHub Pages updates after the report PR merges. No fresh cohort or
+          matched end-to-end speedup is claimed by this pointer update.
         </p>
       </footer>
     </main>

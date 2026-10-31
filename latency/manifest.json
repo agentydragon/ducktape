@@ -3,5 +3,8 @@
   "window_start_utc": "2026-10-29T20:50:01Z",
   "window_end_utc": "2026-10-30T22:10:00Z",
   "published_at_utc": "2026-10-30T23:27:37.523237+00:00",
-  "attribution": "not collected"
+  "attribution": "not collected",
+  "followup_checked_at_utc": "2026-10-31T06:26:25.744970+00:00",
+  "followup_source_devel_commit": "415f103bc76f4ad1d8c28ec37b8018fdbec58dc2",
+  "followup_scope": "Intervention pointers and bounded probes; original measurement window, source and distributions unchanged."
 }
