@@ -403,6 +403,11 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, r
 		}
 	}
 	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
+	// Publish the control-call phase with its durable attempt. A prior SuspendPending status has
+	// no stop stage, and the Gateway must be able to route this Quiesce before outer status update.
+	sandbox.Status.OperatingMode = sandboxOperatingMode(sandbox)
+	sandbox.Status.SuspendedBy, sandbox.Status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)
+	sandbox.Status.StopStage = sandboxapi.StopStageQuiescing
 	if err := r.Status().Update(ctx, sandbox); err != nil {
 		return nil, fmt.Errorf("recording quiesce attempt for %s: %w", sandbox.Name, err)
 	}

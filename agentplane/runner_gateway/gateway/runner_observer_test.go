@@ -38,8 +38,9 @@ import (
 
 type observedRunner struct {
 	runnerservicepb.UnimplementedRunnerServer
-	bootID string
-	calls  atomic.Int32
+	bootID       string
+	calls        atomic.Int32
+	quiesceCalls atomic.Int32
 }
 
 func (r *observedRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
@@ -63,6 +64,11 @@ func (r *observedRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusReq
 	}
 	r.calls.Add(1)
 	return &runnerpb.RunnerStatus{}, nil
+}
+
+func (r *observedRunner) Quiesce(context.Context, *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
+	r.quiesceCalls.Add(1)
+	return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
 }
 
 func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {

@@ -99,7 +99,7 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	return phaseSuspend
 }
 
-func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes bool) (sandboxView, error) {
+func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes, allowSuspending bool) (sandboxView, error) {
 	if !r.health.Available() {
 		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox inventory is not synchronized")
 	}
@@ -111,7 +111,7 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxe
 	if writes && (view.phase == phaseQuiescing || view.phase == phaseTearDown) {
 		return sandboxView{}, status.Error(codes.FailedPrecondition, "runner or sandbox state refused the request")
 	}
-	if view.phase != phaseRunning && view.phase != phaseQuiescing {
+	if view.phase != phaseRunning && view.phase != phaseQuiescing && !(allowSuspending && view.phase == phaseSuspend) {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
 	if view.incarnation == nil {

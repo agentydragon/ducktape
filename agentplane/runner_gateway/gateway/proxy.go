@@ -25,7 +25,7 @@ type runnerProxy struct {
 
 // connection is the elected connection to the runner of the Sandbox the call's metadata names. Gateway.Methods
 // admitted the caller.
-func (p *runnerProxy) connection(ctx context.Context) (*runnerConnection, error) {
+func (p *runnerProxy) connection(ctx context.Context, allowSuspending bool) (*runnerConnection, error) {
 	g := p.gateway
 	metadata, _ := metadata.FromIncomingContext(ctx)
 	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
@@ -47,7 +47,7 @@ func (p *runnerProxy) connection(ctx context.Context) (*runnerConnection, error)
 			Namespace: values[sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey][0],
 			Name:      values[sandboxapi.RunnerProxySandboxOwnerNameMetadataKey][0],
 		},
-	}, false)
+	}, false, allowSuspending)
 	if err != nil {
 		return nil, unavailable(err)
 	}
@@ -62,7 +62,7 @@ func (p *runnerProxy) connection(ctx context.Context) (*runnerConnection, error)
 }
 
 func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSe
 }
 
 func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (p *runnerProxy) GetStatus(ctx context.Context, request *runnerpb.GetStatus
 }
 
 func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.OpenSessionRequest) (*runnerservicepb.OpenSessionResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,9 @@ func (p *runnerProxy) OpenSession(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {
-	connection, err := p.connection(ctx)
+	// The controller may have published Quiescing while this Gateway still caches the preceding
+	// SuspendPending phase. Only this controller-authorized control call can use that phase.
+	connection, err := p.connection(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +96,7 @@ func (p *runnerProxy) Quiesce(ctx context.Context, request *runnerpb.QuiesceRequ
 }
 
 func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +104,7 @@ func (p *runnerProxy) SubmitInput(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.ChangeModelRequest) (*runnerservicepb.ChangeModelResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +112,7 @@ func (p *runnerProxy) ChangeModel(ctx context.Context, request *runnerservicepb.
 }
 
 func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runnerservicepb.ChangeReasoningEffortRequest) (*runnerservicepb.ChangeReasoningEffortResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +120,7 @@ func (p *runnerProxy) ChangeReasoningEffort(ctx context.Context, request *runner
 }
 
 func (p *runnerProxy) InterruptTurn(ctx context.Context, request *runnerservicepb.InterruptTurnRequest) (*runnerservicepb.InterruptTurnResponse, error) {
-	connection, err := p.connection(ctx)
+	connection, err := p.connection(ctx, false)
 	if err != nil {
 		return nil, err
 	}

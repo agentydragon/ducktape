@@ -1027,6 +1027,16 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 			if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SuspendPending" {
 				t.Errorf("Ready = %s/%s, want False/SuspendPending", got.Status, got.Reason)
 			}
+			quiescer := r.Quiescer.(*fakeQuiescer)
+			quiescer.before = func() {
+				persisted := getSandbox(t, c)
+				if persisted.Status.OperatingMode != sandboxapi.OperatingModeSuspended || persisted.Status.StopStage != sandboxapi.StopStageQuiescing {
+					t.Fatalf("Quiesce saw status %s/%s, want Suspended/Quiescing", persisted.Status.OperatingMode, persisted.Status.StopStage)
+				}
+				if attempt := persisted.Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-pod" {
+					t.Fatalf("Quiesce ran without a persisted attempt for uid-pod: %v", attempt)
+				}
+			}
 			publishBootstrap(t, c, finished)
 			reconcileOnce(t, r)
 			if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
