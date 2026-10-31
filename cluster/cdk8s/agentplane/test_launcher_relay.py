@@ -23,9 +23,12 @@ RUNNER_POD = {
     "spec": {
         "imagePullSecrets": [{"name": "relay-test-pull"}],
         "containers": [
-            {"name": "runner", "image": "runner:test", "volumeMounts": [{"name": "state", "mountPath": "/state"}]},
+            {"name": "runner", "image": "runner:test", "volumeMounts": [{"name": "state", "mountPath": "/state"}]}
+        ],
+        "initContainers": [
             {
                 "name": "egress-sidecar",
+                "restartPolicy": "Always",
                 "image": "sidecar:test",
                 "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE", "value": "/etc/relay-test/settings.yaml"}],
                 "securityContext": {"allowPrivilegeEscalation": False},
@@ -33,7 +36,7 @@ RUNNER_POD = {
                     {"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True},
                     {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True},
                 ],
-            },
+            }
         ],
         "volumes": [
             {"name": "unrelated", "configMap": {"name": "relay-test-config"}},

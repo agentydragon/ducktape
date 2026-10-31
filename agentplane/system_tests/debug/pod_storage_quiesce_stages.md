@@ -48,3 +48,55 @@ Focused checks passed on RBE in [invocation `b4d634d8`](https://app.buildbuddy.i
 `//agentplane/runner/control:control_test`, `//agentplane/runner_gateway/gateway:gateway_test`,
 `//agentplane/sandbox_controller:sandbox_controller_test`, and
 `//agentplane/system_tests/k3s:test_process_traces` (4/4). Pre-commit passed on the changed files.
+
+## Why the late Runner spans were not collected
+
+The same run's `containerd.log` identifies the replacement Pod's Runner container as
+`24470f2d...` and its egress sidecar as `c31f8ea0...`. At 09:45:34.185 UTC kubelet sent
+SIGTERM to both. The egress sidecar exited at 09:45:34.231, while Runner remained alive until
+09:45:39.238. The successful Quiesce RPC was at 09:45:34.060–34.068, and Gateway received and
+published `draining`, `flushing`, and `quiesced` before 09:45:34.185. Runner's
+`forwardWatchState` records a completed child span for each stage before sending it to Gateway.
+The collector retained Runner's earlier `none` span but none of those later spans; it continued
+receiving Gateway spans during this interval.
+
+Runner's configured OTLP endpoint is `127.0.0.1:3132`, the egress sidecar's telemetry route to
+Alloy. Its SDK batches exports and flushes during process shutdown with a five-second bound.
+Kubelet removed that route about 46 ms after signaling Runner, while Runner still had late
+spans to export. The exact exporter error is not retained in this run, so the artifacts do not
+prove which individual export attempt failed. They do establish that ordinary concurrent Pod
+container termination cannot guarantee collection of shutdown-adjacent Runner spans. The
+Runner Pod template therefore makes the egress relay a Kubernetes-native sidecar: an
+`initContainer` with `restartPolicy: Always`, which kubelet terminates only after ordinary
+containers have exited. This keeps the existing protected telemetry route available through
+Runner's SDK shutdown; no sampling policy, deadline, or application lifecycle barrier changes.
+The earlier `UNAVAILABLE` at 09:44:34.643 remains a separate unresolved RPC failure.
+
+## Ordered-sidecar verification
+
+The same filtered Pod storage case passed again with the ordered relay in
+[invocation `dd7ffc77`](https://app.buildbuddy.io/invocation/dd7ffc77-ecaf-4ef1-a021-e47849c292a6).
+The test action took 165.5 s and `vm.case` took 78.442 s. These runs used different RBE workers
+and cache states; their durations are not a measured speedup. The storage artifact reports
+`passed`, `cleanup_complete`, and `incompatible_claim_refused`.
+
+The fixture receiver collected 1,768 process spans. The first Runner incarnation exported
+`none`, `draining`, `flushing`, and `quiesced` stage spans at 10:04:39.792, 10:04:41.190,
+10:04:41.202, and 10:04:41.212 UTC, plus its Runner-server `Quiesce` span at
+10:04:41.187–41.190. The replacement Runner exported `none` at 10:04:47.842, the server
+`Quiesce` span at 10:05:49.057–49.060, and `draining`, `flushing`, and `quiesced` at
+10:05:49.060, 10:05:49.078, and 10:05:49.084. These are Runner process spans, distinct from
+the Gateway's observation and Lease-publication spans.
+
+For the replacement Pod, `containerd.log` identifies Runner as `c0a458d5...` and its egress
+sidecar as `4974bc15...`. Kubelet sent SIGTERM to Runner at 10:05:49.171 and it exited at
+10:05:49.196. Only then did kubelet signal the sidecar at 10:05:49.224; it exited at
+10:05:49.236. This directly verifies the intended lifecycle ordering in the real K3s Pod.
+The retained `process-spans.jsonl` SHA-256 is
+`56eeaf37c13aaa1362d968373fed730f504f5c1dfba35a9d2354da8e36bcc55e`; the
+`containerd.log` SHA-256 is
+`2444ff73376ced61ecce79e937f8a6b9542e4a77bbe3f0da0754b82fdcde691a`.
+
+The replacement incarnation still had a controller/Gateway `UNAVAILABLE` Quiesce attempt at
+10:04:49.046 and waited for its existing retry deadline. Ordered trace-relay shutdown fixes
+collection of the final Runner spans, not that earlier RPC failure.
