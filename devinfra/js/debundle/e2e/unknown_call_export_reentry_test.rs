@@ -2,7 +2,7 @@
 
 use debundle_e2e_support::*;
 
-const PROVIDER: &str = r#"const prefix = new globalThis.Error();
+const PROVIDER: &str = r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -104,7 +104,7 @@ export { readLater };
 #[test]
 fn cyclic_consumer_can_reenter_exported_reader_during_provider_evaluation() {
     let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -124,7 +124,7 @@ export function enter() { return readLater(); }
 #[test]
 fn named_reexport_backedge_keeps_export_fallback() {
     let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -150,7 +150,7 @@ export function enter() { return readLater(); }
 #[test]
 fn star_reexport_backedge_keeps_export_fallback() {
     let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -176,7 +176,7 @@ export function enter() { return readLater(); }
 #[test]
 fn unresolved_import_in_provider_closure_keeps_export_fallback() {
     let provider = r#"import "./outside.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -198,7 +198,7 @@ export { readLater };
 #[test]
 fn unresolved_source_reexport_keeps_export_fallback() {
     let provider = r#"export * from "./outside.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -220,7 +220,7 @@ export { readLater };
 #[test]
 fn top_level_await_in_an_unselected_dependency_keeps_export_fallback() {
     let provider = r#"import "./bridge.js";
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -261,7 +261,7 @@ export { readLater };
 
 #[test]
 fn global_reader_leak_after_an_opaque_call_keeps_export_fallback() {
-    let provider = r#"const prefix = new globalThis.Error();
+    let provider = r#"const prefix = new globalThis.Date();
 globalThis.reader = readLater;
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -280,7 +280,7 @@ export { readLater };
 #[test]
 fn global_require_member_alias_keeps_export_fallback() {
     let provider = r#"const load = globalThis["require"];
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -299,7 +299,7 @@ export { readLater };
 fn import_meta_require_member_alias_keeps_export_fallback() {
     let provider = r#"const load = import.meta.require;
 globalThis.loader = load;
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";

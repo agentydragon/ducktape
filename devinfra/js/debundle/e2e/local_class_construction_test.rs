@@ -42,7 +42,7 @@ class Holder {
   run() { return this.record.execute(); }
 }
 function create(record) { return new Holder(record); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 42;

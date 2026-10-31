@@ -8,7 +8,7 @@ const PROVIDER_CHUNK: &str = "static/provider";
 
 /// An opaque call precedes later exported state: under the conservative
 /// policy the call can reenter `readLater`, binding the two modules together.
-const PROVIDER: &str = r#"const prefix = new globalThis.Error();
+const PROVIDER: &str = r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";
@@ -241,7 +241,7 @@ fn unknown_or_omitted_loader_keys_keep_the_target_open() {
 
 /// Provider without a host loader site; `import()` alone must not open it.
 const DYNAMIC_PROVIDER: &str = r#"const pending = import("./lazy.js");
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return "ready";

@@ -17,7 +17,7 @@ const HOLDER: &str = r#"class Holder {
 
 const FACTORY: &str = "function create(record) { return new Holder(record, () => later); }\n";
 const COMPUTED_MUTATOR: &str = "function mutate(target, key, value) { target[key] = value; }\n";
-const PREFIX: &str = "const prefix = new globalThis.Error();\n";
+const PREFIX: &str = "const prefix = new globalThis.Date();\n";
 const LATER: &str = "const later = 42;\n";
 
 const FRESH_RECORD: &str = r#"{
@@ -45,7 +45,7 @@ const EXPORTED_RECORD_PROVIDER: &str = r#"class Holder {
   run() { return this.record.execute(); }
 }
 function create(record) { return new Holder(record); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 42;

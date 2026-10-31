@@ -17,7 +17,7 @@ class Policy { allowed() { return true; } }
 
 const FACTORY: &str =
     "function create(record) { return new Holder(record, new Policy(), () => later); }\n";
-const PREFIX_BINDING: &str = "const prefix = new globalThis.Error();\n";
+const PREFIX_BINDING: &str = "const prefix = new globalThis.Date();\n";
 const COMMAND: &str = "const command = create({ execute: () => later });\n";
 const LATER: &str = "const later = 42;\n";
 const OUTPUT: &str = "console.log(command.run(), command.weight);\n";

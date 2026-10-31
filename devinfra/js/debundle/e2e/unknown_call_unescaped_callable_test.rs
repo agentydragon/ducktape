@@ -17,7 +17,7 @@ class Holder {
 }
 class Policy { allowed() { return true; } }
 function create(record) { return new Holder(record, new Policy(), () => later); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const command = create({ constraints: [Flags.FIRST, Flags.SECOND], execute: () => later });
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -117,7 +117,7 @@ class Holder {
   run() { return this.record.execute(); }
 }
 function create(record) { return new Holder(record); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const command = create({ constraints: ARRAY_VALUE, execute: () => later });
 AFTER_COMMAND
 LATE_ENUM_DECL
@@ -179,7 +179,7 @@ const later = dynamic;
 #[test]
 fn unescaped_function_declaration_does_not_root_its_lazy_read() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const prefix = new globalThis.Error();
+        r#"const prefix = new globalThis.Date();
 function readLater() { return later; }
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -234,7 +234,7 @@ fn unpublished_local_constructor_result_stays_deferred() {
 }
 class Policy { allowed() { return true; } }
 function create(record) { return new Holder(record, new Policy()); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const command = create({ execute: () => later });
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -290,7 +290,7 @@ fn published_local_constructor_result_keeps_deferred_read() {
   run() { return this.record.execute(); }
 }
 function create(record) { return new Holder(record); }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const command = create({ execute: () => later });
 globalThis.saved = command;
 const dynamic = ((object) => {
@@ -430,7 +430,7 @@ fn unpublished_local_factory_result_stays_deferred() {
   return { read, write, guarded, preview: async () => read() };
 }
 
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = retain(() => later, () => 0);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -485,7 +485,7 @@ fn fresh_local_record_field_assignment_retains_callback_until_use() {
   result.run = callback;
   return result;
 }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = wrap(() => later);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -521,7 +521,7 @@ fn distinct_own_field_writes_use_the_same_record_proof() {
   result.tag = tag;
   return result;
 }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = wrap(() => later, 2);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -562,7 +562,7 @@ fn record_writes_without_closed_own_field_ownership_keep_the_cycle() {
     ] {
         let source = format!(
             "function wrap(callback) {{ {body} }}\n\
-const prefix = new globalThis.Error();\n\
+const prefix = new globalThis.Date();\n\
 const holder = wrap(() => later);\n\
 const dynamic = ((object) => {{ object[(object.key = 0)] = 'value'; return 1; }})({{}});\n\
 const later = dynamic;\n"
@@ -596,7 +596,7 @@ fn published_local_factory_result_keeps_later_read() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"function retain(read) { return { read }; }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = retain(() => later);
 globalThis.saved = holder;
 const dynamic = ((object) => {
@@ -630,7 +630,7 @@ fn called_local_factory_result_keeps_later_read() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"function retain(read) { return { read }; }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = retain(() => later);
 holder.read();
 const dynamic = ((object) => {
@@ -665,7 +665,7 @@ fn reassigned_local_factory_keeps_conservative_reachability() {
         FixtureOpts::new(
             r#"function retain(read) { return { read }; }
 retain = function replacement(read) { return { read }; };
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = retain(() => later);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -698,7 +698,7 @@ fn accessor_return_from_local_factory_keeps_conservative_reachability() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"function retain(read) { return { get read() { return read(); } }; }
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const holder = retain(() => later);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -731,7 +731,7 @@ fn unpublished_imported_callback_factory_result_stays_deferred() {
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import { observe } from './peer.js';
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const wrapped = observe(() => later);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -781,7 +781,7 @@ fn published_imported_callback_factory_result_keeps_later_read() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"import { observe } from './peer.js';
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 const wrapped = observe(() => later);
 globalThis.saved = wrapped;
 const dynamic = ((object) => {
@@ -816,7 +816,7 @@ const later = dynamic;
 #[test]
 fn earlier_unknown_call_does_not_promote_unescaped_local_reader() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const prefix = new globalThis.Error();
+        r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -901,7 +901,7 @@ console.log(later);
 fn callback_escaped_after_unknown_call_remains_a_possible_accessor() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
-            r#"new globalThis.Error();
+            r#"new globalThis.Date();
 globalThis.callback = readLater;
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -971,7 +971,7 @@ fn cyclic_importer_keeps_exported_hoisted_callable_reachable_before_evaluation()
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"import "./peer.js";
-new globalThis.Error();
+new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -1024,7 +1024,7 @@ fn unsupported_top_level_escape_keeps_later_local_callables_reachable() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"foreignTag`${readLater}`;
-new globalThis.Error();
+new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -1048,7 +1048,7 @@ fn unsupported_callable_body_keeps_later_local_callables_reachable() {
         FixtureOpts::new(
             r#"function opaqueAccessor() { foreignTag`${readLater}`; }
 opaqueAccessor();
-new globalThis.Error();
+new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;

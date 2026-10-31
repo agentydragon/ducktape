@@ -24,7 +24,9 @@ pub enum CoerceOp {
     /// `ToObject`: a TypeError for `undefined` and `null`.
     ToObject,
     /// `GetIterator` and `IteratorStep` over the operand, then the row's
-    /// operation on each produced value.
+    /// operation on each produced value. A keyed-collection constructor first
+    /// reads its adder (`add` or `set`) from the fresh collection, through its
+    /// intrinsic prototype, for any operand but `undefined` and `null`.
     Iterate,
     /// `[[Get]]` of `"0"` and `"1"` on each iterated value: a TypeError for a
     /// primitive value.

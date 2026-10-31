@@ -58,6 +58,7 @@ pub enum IntrinsicOp {
     ObjectDefineProperties,
     ObjectFreeze,
     RegExp,
+    Error,
     ArrayIsArray,
     NumberIsFinite,
     NumberIsInteger,
@@ -99,6 +100,7 @@ impl IntrinsicOp {
             Self::ObjectDefineProperties => ("Object", Some("defineProperties")),
             Self::ObjectFreeze => ("Object", Some("freeze")),
             Self::RegExp => ("RegExp", None),
+            Self::Error => ("Error", None),
             Self::ArrayIsArray => ("Array", Some("isArray")),
             Self::NumberIsFinite => ("Number", Some("isFinite")),
             Self::NumberIsInteger => ("Number", Some("isInteger")),
@@ -526,6 +528,29 @@ pub const ROWS: &[Row] = &[
         throws: Throws::OnValue,
         assumed_intact: false,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::RegExp)],
+    },
+    // OrdinaryCreateFromConstructor reads `%Error%.prototype`, a nonwritable
+    // own property. A message other than `undefined` goes through ToString;
+    // an object options operand's `cause` through HasProperty and [[Get]].
+    // Host stack capture (V8) reads `Error.stackTraceLimit` without running
+    // accessors and formats lazily, so `Error.prepareStackTrace` runs only
+    // on a later `stack` read, outside this row.
+    Row {
+        op: IntrinsicOp::Error,
+        invocation: &[Invocation::Call, Invocation::Construct],
+        cite: "sec-error-message",
+        arity: 0..=2,
+        coerces: &[
+            (ArgSel::Arg(0), CoerceOp::ToString),
+            (ArgSel::Arg(1), CoerceOp::Get),
+        ],
+        invokes: &[],
+        allocates: None,
+        mutates: &[],
+        returns: Return::Unknown,
+        throws: Throws::Never,
+        assumed_intact: false,
+        requires: &[IntrinsicSlot::Global(NativeIntrinsic::Error)],
     },
     // IsArray also throws a TypeError for a revoked Proxy, which `throws`
     // does not model; no user code runs.

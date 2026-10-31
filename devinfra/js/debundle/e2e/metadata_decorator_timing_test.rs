@@ -94,8 +94,8 @@ console.log('Controller' in controller, 'later' in controller,
 #[test]
 fn published_metadata_target_keeps_early_method_read() {
     let source = source_with_opaque_write().replace(
-        "const prefix = new globalThis.Error();",
-        "globalThis.saved = Controller;\nconst prefix = new globalThis.Error();",
+        "const prefix = new globalThis.Date();",
+        "globalThis.saved = Controller;\nconst prefix = new globalThis.Date();",
     );
     let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
     claimed.push(logical_module(
@@ -113,7 +113,7 @@ fn source_with_opaque_write() -> String {
     SOURCE
         .replace(
             "const later = 42;",
-            r#"const prefix = new globalThis.Error();
+            r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 42;
