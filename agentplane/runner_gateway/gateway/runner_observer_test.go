@@ -355,7 +355,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	if _, err := second.runner.GetStatus(ctx, &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("replacement Runner did not serve calls: %v", err)
 	}
-	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity}
+	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
 	if _, err := runnerservicepb.NewRunnerClient(stale).GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
 	}
@@ -500,5 +500,25 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	awaitHeartbeats(runner.heartbeats.Load() + 50)
 	if added := requests.Load() - baseline; added != 0 {
 		t.Fatalf("50 runner heartbeats made %d Sandbox or Pod API requests", added)
+	}
+}
+
+// A proxied call can take a connection from holder just before its observer ends it and closes the
+// ClientConn; gRPC then fails the call Canceled ("the client connection is closing"), which callers
+// do not retry.
+func TestCallOnEndedConnectionReportsTheEnd(t *testing.T) {
+	conn, err := grpc.NewClient("passthrough:///test-runner.invalid:1", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := &runnerConnection{ended: make(chan struct{})}
+	connection.direct = &fencedRunnerConn{conn: conn, identity: metadata.MD{}, connection: connection}
+	connection.runner = runnerservicepb.NewRunnerClient(connection.direct)
+	connection.end(errSupersededConnection)
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.runner.GetStatus(t.Context(), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("call on an ended connection = %v, want the connection's end (Aborted)", err)
 	}
 }
