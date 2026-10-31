@@ -32,6 +32,12 @@ Recheck their current state before dispatch: some old PRs overlap shipped change
 cases can justify pulling a narrower fix forward. The sprint dispatch below scopes the currently
 authorized work; the priority list does not dispatch the other tracks.
 
+**Component restructuring, operator clarification 2026-10-31 UTC:** the named Runner extractions
+below are independently assignable candidates. They need no full runtime-model decision or
+Session/Environment dispatch merge/split. Preserve P0 priority and existing active ownership;
+perform each slice's bounded lifecycle/ownership review before changing its process boundary.
+Session and Environment dispatch remain distinct roles whose binary grouping is for later.
+
 **Quality bar for every selected outcome:** sound domain models, clear ownership/lifetimes and
 maintainability are acceptance criteria. Review the affected domain contract before implementing
 each slice. Keep Session identity, native state, running processes, environment instances and
@@ -737,6 +743,10 @@ flowchart LR
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
+    RUNNER_SHARED_RUNTIME_PACKAGES[Candidate: neutral shared runtime libraries]
+    ENVIRONMENT_EXECUTION_SERVICE[Candidate: standalone execution service]
+    ENVIRONMENT_HARNESS_HOST[Candidate: harness host and environment agent]
+    ENVIRONMENT_RUNTIME_PACKAGING[Candidate: environment image packaging]
     AGENT_AUTHORED_CONVERSATIONS_DESIGN[Decision, unscheduled: conversations agents act on through tools]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
@@ -772,11 +782,82 @@ Image slimming, tools-disk separation and runtime harness delivery are candidate
 prerequisites. Keep reusable environments as a supported path and preserve resource/ownership
 contracts. `LOCAL_BAZEL` independently proves the VM-based coding workflow.
 
+### Runner component restructuring
+
+**Direction agreed; candidates ready to assign, operator, 2026-10-31 UTC.**
+[Names, source layout and boundaries](session_runtime_model.md#role-boundaries-and-routing).
+The independent outcomes below each include their own scoped ownership review and migration plan;
+there is no common design gate or required order between them. Shared-package and image-reference
+conflicts are handled by rebasing. Check active ownership before dispatching overlapping work.
+Preserve existing durable authorities; the broader runner-state/central-authority redesign stays
+frozen. These tasks do not select the deferred Session/Environment dispatch binary regrouping,
+optional queue policy, a replacement JS host, or the complete 0..N-environment API.
+
+### `RUNNER_SHARED_RUNTIME_PACKAGES` — move reusable runtime support to neutral packages
+
+**Candidate.** Move reusable process supervision (`runner/supervision`) to `agentplane/supervision`
+and shared one-shot operation support (`runner/operation`) out of a binary-owned tree. Keep
+component-specific controllers/resources with their owners. Update all consumers, BUILD targets,
+helper-entrypoint references and docs atomically; retain one process-lifetime owner and the existing
+Pod/VM fencing behavior. This is a package-boundary refactor with no new service or runtime policy.
+
+Exit: the shared libraries have no dependency on the Runner composition root or another binary's
+implementation, callers use the new locations, and existing lifecycle coverage still applies.
+Extraction work can proceed against explicit existing interfaces while this move is reviewed.
+
+### `ENVIRONMENT_EXECUTION_SERVICE` — independently runnable process and filesystem service
+
+**Candidate.** Create `agentplane-execution-service` under `agentplane/env/execution`, using the
+neutral execution contract under `agentplane/execution`. Extract both the current
+`runner/execution` typed gRPC adapter and the `runner/executor` companion plus required executor
+lifecycle/backend support. First assign admission, connection/session ownership, process generation,
+drain and fencing for this boundary; preserve Pod PID-1 and VM/systemd semantics.
+
+Exit: a client can use the standalone execution target without a native harness or app-server;
+existing native Codex and central-sampler callers still work. Preserve process identity, retained
+output/cursors, uncertain outcomes and no automatic mutation replay. Update affected callers,
+packaging and system diagrams, with proportional real-boundary acceptance and a data-preserving
+rollback. No new laptop backend or full environment-attachment API is required.
+
+### `ENVIRONMENT_HARNESS_HOST` — separate native harness hosting from the environment agent
+
+**Candidate.** Create `agentplane-harness-host` under `agentplane/harness/host`; native adapters
+belong under sibling `harness/codex` and `harness/claude` packages. Move native Session management,
+continuation state, journals and History ingress to the host. Name the remaining environment
+lifecycle daemon `agentplane-environment-agent`, under `agentplane/env/agent`.
+
+First review this split's admission, state locks, native process ownership, shutdown and fencing.
+Preserve shared Codex app-server/N-Session operation, native Claude support and separately placed
+execution. Use the existing execution API where sufficient; a concrete missing contract creates a
+scoped prerequisite, not a blanket dependency on every execution-service change. The central
+sampler remains an independent host implementation.
+
+Exit: the two entrypoints have distinct ownership and can be placed in separate resource domains;
+Session IDs, native state, journals and authored work survive cutover. Exercise continued useful
+native operation and relevant restart/drain behavior, update actual traffic diagrams and record
+rollback. A source rename does not claim independent lifetimes until the runtime boundary works.
+
+### `ENVIRONMENT_RUNTIME_PACKAGING` — put environment runtime artifacts under their own root
+
+**Candidate.** Move Pod/VM runtime packaging currently under `runner/` to `agentplane/env/images`,
+including the appropriate disk, image, guest-unit and launch definitions. Each independently
+runnable binary keeps its entrypoint/configuration in its own component directory. Update all
+Bazel, Nix, artifact publication, manifest and fixture references in the same slice; preserve the
+currently selected resource, storage, identity and access policies.
+
+Exit: packaging is independent of any one binary's source directory, and existing Pod/VM profiles
+continue to launch the intended components. Shared reference edits do not block the other
+extractions. Rightsizing, changing Claude workload placement and introducing new environments
+remain independently selected work.
+
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
 **Decision, unscheduled; operator requested future design work, 2026-10-28 PDT.**
-[Design brief](session_runtime_model.md). Represent both Sandbox-local harnesses/state and independently
-persistent harnesses whose Sandboxes supply execution. Preserve harness-specific constraints: Claude
+Component names/layout and the Runner extractions above are agreed as of 2026-10-31 UTC; this
+broader object/API decision does not gate those candidates. Session/Environment dispatch roles are
+distinct, but their physical merge/split is deferred. [Design brief](session_runtime_model.md).
+Represent both Sandbox-local harnesses/state and independently persistent harnesses whose Sandboxes
+supply execution. Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
 
@@ -794,7 +875,8 @@ rightsizing and Claude workload placement are independent follow-ups in the brie
 capabilities, lifecycle, authority and attribution; reuse the existing versioned Codex environment
 API evidence without claiming unsupported modes work.
 Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
-these cases. This authorizes no implementation, deployment or native-state migration.
+these cases. The broader model remains design work; independently assignable component extractions
+are scoped above. Recording the plan does not dispatch a worker or authorize a live migration.
 
 ### `AGENT_AUTHORED_CONVERSATIONS_DESIGN` — conversations agents act on through tools
 
@@ -1907,7 +1989,12 @@ flowchart LR
 
 ### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose the queue's role: always on, or optional in one service
 
-**Candidate decision; proposal written, awaiting operator review.** Alternatives: keep the PostgreSQL queue as
+**Later decision; operator clarification, 2026-10-31 UTC.** Session dispatch and Environment
+dispatch are separate responsibilities, but may share a binary or use separate binaries. Leave this
+specific merge/reshuffle for later; the earlier combined-service write-up remains an unapproved
+option. This decision and the optional queue do not gate the Runner component candidates above.
+
+**Proposal awaiting review.** Alternatives: keep the PostgreSQL queue as
 the only mode, add a separate online-only direct-admission contract, or merge the Dispatcher and the Gateway's proxy
 into one gRPC service whose queue is optional. The operator proposed the last (2026-10-20 07:13 UTC), and
 [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) recommends it: queue on stores, delivers and
@@ -1917,8 +2004,9 @@ retries and the database inventory, which shows queue off removes the Gateway's 
 operator chose that the replica holding a Sandbox's runner connection owns its delivery, retiring the
 `dispatcher-<uid>` Lease (2026-10-20 07:34 UTC); the rest awaits review.
 
-No implementation starts, and no implementation nodes other than `DISPATCHER_QUEUE_OPTIONAL` (which the operator
-asked for) are added, before the operator approves. On approval `PROXY_START_METHODS_DISPATCHER_ONLY` finishes with
+No implementation of this dispatch regrouping or persistence proposal starts before operator
+selection. `DISPATCHER_QUEUE_OPTIONAL` remains explicitly low priority; independent Runner
+restructuring is outside this hold. On approval `PROXY_START_METHODS_DISPATCHER_ONLY` finishes with
 the plan's steps; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` stays independent of it.
 
 ### `DISPATCHER_QUEUE_OPTIONAL` — the combined service runs without its queue

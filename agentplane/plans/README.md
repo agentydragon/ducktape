@@ -24,8 +24,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   experiments that would narrow the choice; no direction chosen
 - [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — proposed merge of the Session
   Dispatcher and the Runner Gateway's proxy into one gRPC service with an optional PostgreSQL queue: the command
-  states in both modes, ownership by the replica holding the runner connection, and the order of work; awaiting
-  operator review
+  states in both modes, ownership and order of work; dispatch binary grouping and this reshuffle are
+  deferred for later review and do not gate the Runner extractions
 - [History tags and History's Sandbox records](sandbox_tags.md) — agreed design for history tags
   on the Sandbox and History's own record of each Sandbox, which outlives it
 - [Native session discovery](native_session_discovery.md) — remaining harness characterization and
@@ -35,8 +35,9 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
-- [Session runtime model](session_runtime_model.md) — future common vocabulary for Sandbox-local and
-  independently persistent harnesses, optional execution attachments and backend-specific constraints
+- [Session runtime model](session_runtime_model.md) — agreed component names/layout and independently
+  assignable Runner extractions; future vocabulary for Sandbox-local and independently persistent
+  harnesses, optional execution attachments and backend-specific constraints
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
