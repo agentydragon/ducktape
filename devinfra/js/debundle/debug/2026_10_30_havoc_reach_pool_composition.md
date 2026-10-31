@@ -96,7 +96,7 @@ an imported callee. That is the only share per-chunk scoping could act on.
 - Claude's pool is the export-reentry set. The export-reentry policy
   (`plans/host_behavior.md`) is the lever there, not havoc reach.
 - R1's report shows how much R2 could bound. Tana has 1 `bounded` construction
-  out of 120. Claude has 4 out of 98; the rest are `borrowed_receiver`,
+  out of 120. Claude has 4 out of 88; the rest are `borrowed_receiver`,
   `tainted_input` or `unknown_callee`.
 
 Caveats: roots are matched by name, so a nested binding that shadows an import
