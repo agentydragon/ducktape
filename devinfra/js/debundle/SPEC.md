@@ -658,7 +658,9 @@ program-accessible hooks and getters remain in scope.
 defines no global-object property, own or inherited through the global
 object's host prototypes, outside a closed list, and gives each listed
 property its standard definition; in particular a host-defined `global` is the
-global object. The list is the union of the `globals` npm package's
+global object. A window's named properties (elements with an `id` or `name`,
+child browsing contexts) stay allowed: they are host objects or other realms'
+windows, never this realm's intrinsics. The list is the union of the `globals` npm package's
 (<https://github.com/sindresorhus/globals>, the version pinned in
 `pnpm-lock.yaml`) `builtin`, `es*`, `browser`, `worker`, `serviceworker`,
 `sharedWorker`, `audioWorklet`, `paintWorklet`, `node`, `nodeBuiltin`,
@@ -1367,10 +1369,10 @@ A sloppy assignment to an undeclared `g` is a store into `g`; `delete`,
 updates, destructuring and reflective writes naming `g` drop it.
 
 Soundness, by induction over execution: initially `g` is absent from the
-global object and, by the host claim, from its host prototypes; the
-`%Object.prototype%` names are in the list. Every later store into `g`, on the
-global object or a prototype it inherits from, writes a fresh object, a
-primitive or `g`'s current value, so `g` never holds an intrinsic. Writes
+global object and, by the host claim, from its host prototypes, or is a named
+property; the `%Object.prototype%` names are in the list. Every later store
+into `g`, on the global object or a prototype it inherits from, writes a fresh
+object, a primitive or `g`'s current value, so `g` never holds an intrinsic. Writes
 through `g`'s value land on fresh objects, so they cannot store into `g` on
 the global chain either. Setters and Proxy traps a write runs are analyzed
 source with census writes of their own; A11 excludes host code changing
