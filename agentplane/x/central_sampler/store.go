@@ -434,6 +434,131 @@ func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) 
 	return epoch, err
 }
 
+var errCodeHostInstanceChanged = errors.New("code-mode host instance changed before session/open")
+
+// StampCodeHostInstance records a host generation only after a logical session has opened.
+// A changed marker must first be reconciled before any cell is dispatched on the new host.
+func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instanceID string) error {
+	if _, err := uuid.Parse(instanceID); err != nil {
+		return protocol.ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		var previous sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT code_host_instance::text FROM sampler_conversation WHERE id=$1`, owner.ConversationID).Scan(&previous); err != nil {
+			return err
+		}
+		if previous.Valid {
+			if previous.String != instanceID {
+				return errCodeHostInstanceChanged
+			}
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET code_host_instance=$2 WHERE id=$1`, owner.ConversationID, instanceID)
+		return err
+	})
+}
+
+const (
+	codeHostLossNotice       = "The JavaScript host that held this Session's store()/load() values has been lost. Prior values and live-cell handles are unavailable. No missing operation was replayed. Recreate required JavaScript state in a new exec cell before relying on it."
+	codeHostUndispatchedCall = "The JavaScript host was lost before this call was dispatched. No JavaScript cell or executor operation was started for this call. Prior store()/load() values are unavailable; recreate required state in a new exec cell."
+)
+
+// ReconcileCodeHostLoss runs before any next model step. It clears a stale host marker only
+// after recording the state loss under the current owner fence. Pending model calls are failed
+// with exact call IDs only when no admitted effect or live handle could have dispatched them.
+func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instanceID string, encoding protocol.ExecEncoding) (bool, error) {
+	if _, err := uuid.Parse(instanceID); err != nil {
+		return false, protocol.ErrInvalid
+	}
+	changed := false
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		var previous sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT code_host_instance::text FROM sampler_conversation WHERE id=$1`, conversation.ID).Scan(&previous); err != nil {
+			return err
+		}
+		if !previous.Valid || previous.String == instanceID {
+			return nil
+		}
+		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
+		if err != nil {
+			return err
+		}
+		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		liveProcess, err := hasLiveProcess(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		if conversation.Pending != nil || unresolved || liveCell || liveProcess {
+			return &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect; explicit recovery is required"}
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		calls, err := conversation.Archive.PendingCalls()
+		if err != nil {
+			return err
+		}
+		// Leave unrelated tool calls to their normal dispatcher. Once they settle, the
+		// next iteration adds the notice before sampling. Failed volatile calls already
+		// carry the loss message in their exact paired output.
+		for _, call := range calls {
+			if !call.IsModelTool(encoding) {
+				break
+			}
+			output := []protocol.ContentPart{{Type: "input_text", Text: codeHostUndispatchedCall}}
+			if err := conversation.appendToolResult(call, output); err != nil {
+				return err
+			}
+			encoded, err := json.Marshal(output)
+			if err != nil {
+				return err
+			}
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
+			}}}); err != nil {
+				return err
+			}
+			changed = true
+		}
+		remaining, err := conversation.Archive.PendingCalls()
+		if err != nil {
+			return err
+		}
+		if len(remaining) == 0 {
+			if err := conversation.apply(func(state protocol.Context) error {
+				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: codeHostLossNotice}})
+			}); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET code_session_epoch=code_session_epoch+1,code_host_instance=NULL WHERE id=$1`, conversation.ID); err != nil {
+				return err
+			}
+			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), "code_host_loss", "committed", map[string]any{
+				"previous_instance": previous.String, "next_instance": instanceID, "javascript_state_reset": true, "automatic_replay": false,
+			}); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if changed {
+			return updateConversation(ctx, tx, conversation)
+		}
+		return nil
+	})
+	return changed, err
+}
+
 // RecoverSession abandons one blocked cell/runtime boundary after an operator has inspected the
 // recorded evidence. It never retries the provider request or any executor operation.
 func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {

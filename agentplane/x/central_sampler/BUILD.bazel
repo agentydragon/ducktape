@@ -388,6 +388,7 @@ go_library(
         "schema/0005_code_session_epoch.sql",
         "schema/0006_native_conversations.sql",
         "schema/0007_status_checks.sql",
+        "schema/0008_code_host_instance.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
     visibility = ["//agentplane/x/central_sampler/cmd:__pkg__"],

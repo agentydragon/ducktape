@@ -240,11 +240,19 @@ remain fenced, including late writes from the old generation. During shutdown, l
 a five-second timeout; an unreleased owner remains fenced by lease expiry. Shutdown waits for
 ownership acquisition and release to finish.
 
-A clean drain can still lose process-local `store()` / `load()` values when the old Code Mode host
-exits. Until the host-loss continuation change lands, the successor does not identify that loss
-automatically. This is a known limitation of the drain change, especially when a pending model
-tool call relies on volatile JavaScript state.
 Executor failure leaves continuation and retained conversation outside the failed Sandbox.
+
+The conversation records the actual Code Mode host process generation after its logical Session
+opens. A host restart within one Pod rotates that generation. Before the next model step, a new
+owner compares it under the lease fence. If it differs and no effect is unresolved, the sampler
+advances the durable JavaScript epoch and appends a model-visible notice that prior `store()` /
+`load()` values and live handles were lost. Pending model tool calls proven undispatched receive
+failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
+ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
+the notice. The marker is set again only after a logical Session opens on a real host. With an
+unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
+explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
+and an ordinary same-host reacquisition do not add a notice.
 
 Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
 error text in the matching model tool output without dispatching to the runtime or executor.
