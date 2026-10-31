@@ -102,6 +102,23 @@ This governs every static analysis the validator runs: purity
 classification, side-effect graph construction, top-level-await
 detection, dependency-graph cycles.
 
+### Refusal is a valid soundness strategy for constructs no supported input needs
+
+A construct the analysis does not model has three sound treatments: model
+it, accept an audited author premise for it, or detect it anywhere in the
+input and refuse with an error naming the construct and its source
+location. Refusal is the cheapest of the three. Choose it when no supported
+input (canonical Tana and Claude) contains the construct, so that no
+modelling cost or pool growth is paid for an input nobody runs.
+
+The first case went the other way. A callable stored through a member chain
+onto an intrinsic (`Array.prototype.forEach = f`) used to be invisible to
+later calls. Refusal was checked first, but Tana's vendor chunk contains
+`Function.prototype.toString = function (...)`, Sentry's function-to-string
+wrapper. The construct is therefore modelled (`store_through_member_chain`):
+a write under a global root or onto an intrinsic publishes its callbacks to
+the escaped pool.
+
 ### Conditionally-correct optimizations
 
 `AnalysisAssumptions` carries author-certified contracts, including declared
