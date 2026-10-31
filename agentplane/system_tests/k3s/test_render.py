@@ -24,7 +24,7 @@ from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendere
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
-from agentplane.system_tests.vm_configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.x.central_sampler.settings import (
     MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
@@ -398,11 +398,20 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
     supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
+    oom_template = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     ordinary_root = next(
         volume["containerDisk"]["image"] for volume in vm_spec["volumes"] if volume["name"] == "rootdisk"
     )
     assert ordinary_root == "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
     assert supervision["volumes"] == vm_spec["volumes"]
+    ordinary_config_volume = next(
+        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "runner-vm-config"
+    )
+    oom_config_volume = next(
+        volume for volume in oom_template["volumes"] if volume["name"] == ordinary_config_volume["name"]
+    )
+    assert oom_config_volume["configMap"]["name"] != ordinary_config_volume["configMap"]["name"]
+    assert oom_template["domain"]["resources"] == vm_spec["domain"]["resources"]
     ordinary_boot = vm_spec["domain"]["firmware"]["kernelBoot"]
     assert supervision["domain"]["firmware"]["kernelBoot"] == {
         **ordinary_boot,
@@ -412,6 +421,17 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert {"port": 9090} in interface["ports"]
     config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
     config = json.loads(config_map["data"]["runner.json"])
+    oom_config_map = _resource(fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
+    oom_config = json.loads(oom_config_map["data"]["runner.json"])
+    oom_resources = oom_config["environment"]["resources"]
+    ordinary_resources = config["environment"]["resources"]
+    oom_executor = oom_resources["executor"]
+    ordinary_executor = ordinary_resources["executor"]
+    assert oom_executor["memory_max_bytes"] < ordinary_executor["memory_max_bytes"]
+    assert {
+        **oom_resources,
+        "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
+    } == ordinary_resources
     assert config["codex_readiness"] == {
         "exec_server_ready_timeout_ms": 60_000,
         "exec_server_probe_timeout_ms": 5_000,

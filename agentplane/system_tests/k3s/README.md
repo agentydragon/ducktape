@@ -197,6 +197,12 @@ victim counter proves the single kill: either the aggregate or leaf limit can tr
 This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
 binaries; it does not boot the production NixOS image or force exec-server death/restart.
 
+Only this OOM sandbox selects the cloned `runner-vm-codex-oom` template. Its guest RAM, service,
+aggregate, and process budgets match `runner-vm`; only the native executor leaf's `memory.max` is
+96 MiB. This keeps the exec-server startup path intact while reducing the memory the selected tool
+must charge before the kernel kills it. The rendered fixture test checks this is the sole resource
+difference; see [the measured budget probe](../debug/vm_oom_budget.md).
+
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
 fixture images import. Fixture images (services, migrations, shared runner and optional MCP fixtures)
