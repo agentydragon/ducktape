@@ -165,3 +165,90 @@ observe `ffff`, close, verify blob `0000` contains `abc`, and assert the
 reported last index becomes `0000`. This test has not been run against
 upstream. It does not establish the exact metadata/attempt transition of
 the observed tracing invocation, whose later metadata was `0001`.
+
+## Outside GitHub Actions and the timeout hypothesis
+
+The Oct 31 `ab9396a7` incident was launched by this session's local Nix
+devshell `bbr` process, outside GitHub Actions. The archived local
+`concurrency/interrupted-attempt/pair.log` contains the complete `Internal`
+reset at line 3971, followed by the new `bed0fc63` outer invocation. Its
+448,722-byte file has SHA-256
+`47076dce03fc241acd7a4d44dc31fcb7492d31109facf38b3fc9aa73ce8a0072`.
+The [transport evidence](log_transport_probe.json) preserves the error and
+invocation identities. This was an incidental failure during the full-suite
+experiment, not a deliberate reproduction of the transport failure.
+
+For the three GitHub examples, the client-side `Waiting for available remote
+runner...` line gives the following elapsed times to the error. These include
+queue/startup time and do not identify the lifetime of the final `GetEventLog`
+RPC, which may have reconnected internally.
+
+| Job            | Waiting marker (UTC, Oct 30) | Reset error (UTC) |   Elapsed |
+| -------------- | ---------------------------- | ----------------- | --------: |
+| `124312184823` | 21:07:28.973                 | 21:16:53.320      | 564.347 s |
+| `124318119119` | 21:18:54.568                 | 21:33:20.745      | 866.178 s |
+| `124330549416` | 21:51:09.667                 | 21:57:03.288      | 353.622 s |
+
+The visible `Streaming remote runner logs to` line is itself produced by the
+[runner's build-event reporter](https://github.com/buildbuddy-io/buildbuddy/blob/5b4fc7a4ccb0d814ec93f8ed0daae7f0325c7f4f/enterprise/server/cmd/ci_runner/main.go#L468-L480)
+and stored in the log. It can be buffered or replayed; it is not a reliable
+client RPC-attachment timestamp. Noninteractive `bb` deliberately skips live
+chunks until finalized. Neither silence in GitHub output nor intervals
+between repeated log-start lines establish a transport-idle timeout.
+
+### Controlled low-volume probe
+
+One local probe used the actual pinned `bb` 5.0.498 against
+`remote.buildbuddy.io:443`, with system-trust TLS, `--disable_retry=true`, a
+16-minute outer timeout, and `EstimatedComputeUnits=1`. The script printed a
+start marker, three heartbeats 60 seconds apart, slept for 360 seconds, then
+printed three more heartbeats 60 seconds apart and a completion marker. It
+did not run a full test suite. Keys came from the existing environment and
+were not printed or included in diagnostic arguments.
+
+The [outer invocation](https://app.buildbuddy.io/invocation/4524703c-ee24-4449-84fd-9b5041f358a2)
+completed successfully. Its script ran from 11:29:55.315 to 11:41:55.329 UTC;
+the quiet interval was 11:32:55.322–11:38:55.323. Command and local CLI exit
+codes were zero. Thus this single 12-minute run did **not** reproduce the
+reset.
+
+Two read-only, Bazel-built Go observers called `GetEventLog` on the same
+endpoint without reconnecting or submitting work. They recorded timestamps,
+cursor/live flags, byte counts, and metadata names, without printing payloads
+or authorization metadata. Their continuous RPC lifetimes were 572.242 and
+448.114 seconds, ending in normal `io.EOF`. The first received 162 messages
+during the whole six-minute producer silence; its maximum response gap then
+was 3.136 seconds. The second observer's grpc-go `InPayload.WireLength` summed
+to 334,523 bytes, including repeated live buffers, not HTTP/2 framing or TLS
+overhead. It exposed response header names `alt-svc`, `content-type`, `date`,
+`server`, `via`, and `x-envoy-upstream-service-time`, with no trailers.
+
+This confirms that producer silence did not make the gRPC streams idle:
+unchanged live buffers still arrived about every three seconds. The
+observers attached after the original CLI, so their RPC lifetimes are shorter
+than the 12-minute script. This does not rule out other duration thresholds,
+load-dependent failure, server events, or different routes. The diagnostic's
+generic `status.Convert(io.EOF)` rendered `Unknown`; that is not a server
+error and must not be counted as a failed RPC.
+
+At 11:35:17 UTC, the invocation's attempt changed to 2 and the log cursor
+restarted, while both observer RPCs remained open and the same script
+continued. The new attempt row was created at 11:35:16.950 and updated at
+11:35:17.075. The upstream
+[build-event publisher](https://github.com/buildbuddy-io/buildbuddy/blob/5b4fc7a4ccb0d814ec93f8ed0daae7f0325c7f4f/server/build_event_publisher/build_event_publisher.go#L62-L147)
+retries a failed publishing stream and replays buffered events; this is
+consistent with the observed transition. The producer's initiating error
+has not been obtained. The completed action's 24,077-byte stderr was
+downloaded using its full `bb-snapshot` instance and BLAKE3 resource path;
+it contains no retry, stream, gRPC, reset, or error diagnostic. Its SHA-256
+and CAS URI are in the transport evidence. A bare `HASH/SIZE` download had
+incorrectly reported a miss because it omitted that namespace and digest
+function. This is not a reproduced observer `RST_STREAM` or a new whole-run
+submission.
+
+The source defaults do not establish a five- or ten-minute timer:
+`GetEventLog` sends updates on a three-second fallback; its five-minute
+canary only logs. Native gRPC connection aging defaults to disabled, and the
+HTTP server literals set no write timeout. Hosted flags, proxy configuration,
+and server logs remain unknown. No reset trigger or fixed timeout has been
+identified.
