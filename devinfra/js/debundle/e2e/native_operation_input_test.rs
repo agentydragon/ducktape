@@ -1075,6 +1075,38 @@ fn sibling_global_symbol_replacement_contradicts_symbol_for_input() {
     );
 }
 
+/// An assignment to the unqualified global binding replaces the global slot
+/// and leaves the name global, so writes through it stay positively known.
+#[test]
+fn global_binding_assignments_contradict_symbol_for_input() {
+    for (mutation, expected) in [
+        (
+            "Symbol = { for: () => 'changed' };\n",
+            "global Symbol replacement",
+        ),
+        (
+            "[Symbol] = [{ for: () => 'changed' }];\n",
+            "global Symbol replacement",
+        ),
+        (
+            "function never() { Symbol = null; }\nSymbol.for = () => 'wrong';\n",
+            "global Symbol replacement",
+        ),
+    ] {
+        let source =
+            "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+        expect_rejection_containing_all(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("marker", &[Member::new("marker")])],
+            )
+            .with_extra_chunks(&[("static/mutation", mutation)])
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+            &[expected, "static/mutation"],
+        );
+    }
+}
+
 #[test]
 fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
     for (source, expected) in [
