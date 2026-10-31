@@ -117,7 +117,9 @@ function App() {
               error={spendData.error}
               transactions={spendData.transactions}
               transactionsLoading={spendData.transactionsLoading}
-              transactionsError={spendData.transactionsError}
+              transactionsError={
+                spendData.transactionsErrorPeriodId === spendData.estimatePeriodId ? spendData.transactionsError : null
+              }
               estimatePeriodId={spendData.estimatePeriodId}
               estimatePending={spendData.estimatePending}
               purchase={purchase}
@@ -130,21 +132,15 @@ function App() {
           </Tabs.Panel>
           <Tabs.Panel value="transactions">
             <TransactionsPage
-              transactions={
-                spendData.transactions?.requested_period_id === transactionPeriodId ? spendData.transactions : null
-              }
+              transactions={spendData.transactions}
               loading={spendData.transactionsLoading}
-              error={spendData.transactionsError}
+              error={spendData.transactionsErrorPeriodId === transactionPeriodId ? spendData.transactionsError : null}
               periodId={transactionPeriodId}
               onPeriodChange={setTransactionPeriodId}
             />
           </Tabs.Panel>
           <Tabs.Panel value="configuration">
-            <ConfigurationPage
-              configuration={spendData.configuration}
-              loading={spendData.configurationLoading}
-              error={spendData.configurationError}
-            />
+            <ConfigurationPage configuration={spendData.configuration} error={spendData.configurationError} />
           </Tabs.Panel>
           <Tabs.Panel value="sustainability">
             <SustainabilityPage />
