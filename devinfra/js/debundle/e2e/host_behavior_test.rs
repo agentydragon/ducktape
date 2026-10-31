@@ -4,7 +4,7 @@ use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
 const CHUNK_ID: &str = "static/provider";
-const PROVIDER: &str = r#"const prefix = new globalThis.Error();
+const PROVIDER: &str = r#"const prefix = new globalThis.Date();
 export const value = "ready";
 export function read() { return value; }
 "#;

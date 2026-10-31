@@ -3154,7 +3154,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorS
             ),
             (
                 "static/app.js",
-                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Error());\nconst value = factory();\nexport function read() { return value; }\n",
+                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Date());\nconst value = factory();\nexport function read() { return value; }\n",
             ),
         ],
     );
