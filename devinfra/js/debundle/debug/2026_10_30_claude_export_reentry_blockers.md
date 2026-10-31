@@ -131,3 +131,40 @@ Exact wording for the author to accept or reject:
   The narrower alternative is a per-site assertion of each call's possible
   specifiers: `audio-capture` and `clipboard-napi` candidate paths, and
   protobufjs `inquire` names.
+
+## Loader-reaching callables (tried, not merged)
+
+#13233 (closed) counted a direct load inside a function only when the target's
+evaluation window can enter that function. Entry started from:
+
+- the top-level code of the target, its static closure and its loaded chunks;
+- every pooled function value (anonymous, used as a value, or declared twice)
+  of any chunk that can run before the target finishes;
+- every export of any namespace a running chunk obtains, including any loader
+  request.
+
+From there it followed direct and imported calls. The rule is sound but
+ineffective.
+
+Measured against #13212 on Claude CLI 2.1.292 (`-c opt`, premises spec):
+
+|           | #13212    | #13233                        |
+| --------- | --------- | ----------------------------- |
+| Edges     | 5,018,449 | 5,016,055 (about 0.05% fewer) |
+| Wall time | 78 s      | 94 s (about 20% more)         |
+
+Conflicts: `featureFlags` 720 → 719, `modelBetaDefs` 582 → 578,
+`toolCgroup` 112 → 110, the rest unchanged. `cli`'s `reentry_through` set stays
+at 700 names.
+
+Why: one incomplete statement during initialization (`cli` has 927) may call
+any function value an earlier chunk published, and that pool reaches nearly
+every lazy `import.meta.require` helper. Lazily required namespaces add the
+rest: a request that ran before the window may already have published one, so
+whether the requesting function runs in the window cannot gate it.
+
+An acorn source model that ignored those namespaces predicted large gains
+(`featureFlags` to 185 names). That prediction was the unsound part.
+
+The real lever is heap or registry reasoning about which published values an
+opaque call can reach, not a finer loader rule.
