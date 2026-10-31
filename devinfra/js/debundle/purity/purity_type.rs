@@ -41,11 +41,11 @@ pub struct PurityReason {
     /// `analyze_item_facts`). The classifier itself only fills
     /// `span` — the wire-emitted reason has `source_location`
     /// populated and `span` skipped.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author_guidance: Option<String>,
     /// Report-local ID of the callee's shared cause node. Filled when a
     /// report is assembled; older reports without this field still load.
@@ -53,9 +53,13 @@ pub struct PurityReason {
     pub cause_ref: Option<String>,
     /// The immutable callee verdict, shared by every call site. Keeping it
     /// out of serde prevents transitive causes from expanding on the wire.
-    #[serde(skip)]
+    #[serde(
+        default,
+        skip_serializing_if = "analysis_codec::outside_artifact",
+        with = "analysis_codec::shared_arc"
+    )]
     pub cause: Option<Arc<Purity>>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub span: Span,
 }
 

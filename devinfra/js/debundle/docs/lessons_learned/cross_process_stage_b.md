@@ -34,8 +34,10 @@ misses.
 A same-process `Id` round trip would pass because both ends share
 `Globals`. The cross-`Globals` round trip — parse → serialize → drop
 `Globals` → re-parse fresh → deserialize → assert `top_level_id`
-matches — would (per the analysis below) fail; no test of either
-exists.
+matches — fails with raw `u32` contexts. `analysis_codec.rs` now writes
+contexts as first-occurrence ordinals, which that round trip
+(`lowering/analysis_artifact.rs` tests) passes; the staged pipeline plan
+revisits the rest of this note.
 
 ## Rejected alternatives
 

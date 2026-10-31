@@ -14,13 +14,13 @@ use artifact::reports::{
     SitePhase, StaticModuleRequestMode,
 };
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, ResolvedImportReference};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use swc_common::Span;
 
 use super::{ExportReentryTarget, report_target};
 
 /// How the loader premise of the policy was derived for one target.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "rule", rename_all = "snake_case")]
 pub enum ExportReentryLoaderDerivation {
     /// `synchronous_module_loader: none`.
@@ -30,35 +30,35 @@ pub enum ExportReentryLoaderDerivation {
     LoaderClosure {
         closed: bool,
         /// Host keys the closed certificate consumed.
-        #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
         host_keys: BTreeSet<HostBehaviorKey>,
         /// Program premises the closed certificate consumed.
-        #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
         premise_keys: BTreeSet<ProgramPremiseKey>,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requests: Vec<ExportReentryLoaderRequest>,
         /// Chunks a loader request can evaluate, with their closures.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         loaded_chunks: Vec<String>,
         /// Mandatorily suspended sites excluded from the closure.
-        #[serde(skip_serializing_if = "is_zero")]
+        #[serde(default, skip_serializing_if = "is_zero")]
         suspended_sites: usize,
         /// Non-literal loader calls excluded under the program premise.
-        #[serde(skip_serializing_if = "is_zero")]
+        #[serde(default, skip_serializing_if = "is_zero")]
         premised_sites: usize,
         /// Requests and failing sites that cannot run in the target's window.
-        #[serde(skip_serializing_if = "is_zero")]
+        #[serde(default, skip_serializing_if = "is_zero")]
         outside_window_sites: usize,
         /// Loader sites no reachable code can enter, excluded from the closure.
-        #[serde(skip_serializing_if = "is_zero")]
+        #[serde(default, skip_serializing_if = "is_zero")]
         unreachable_sites: usize,
         /// The first witness and occurrence count of each failure kind.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         failures: Vec<ExportReentryLoaderFailure>,
         /// When reach-back is the only failure: the target's export names that
         /// the chunks it can evaluate import (SPEC.md § Reentry through
         /// imported names).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         reentry_through: Option<BTreeSet<String>>,
     },
 }
@@ -191,7 +191,7 @@ fn is_zero(count: &usize) -> bool {
 }
 
 /// Literal loader requests that resolved, aggregated per source and target.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReentryLoaderRequest {
     pub source_chunk: String,
     pub specifier: String,
@@ -199,7 +199,7 @@ pub struct ExportReentryLoaderRequest {
     pub request_count: usize,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderRequestReportTarget {
     Builtin(spec::HostModule),
@@ -207,7 +207,7 @@ pub enum LoaderRequestReportTarget {
     Chunk(ExportReentryTarget),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportReentryLoaderFailure {
     pub reason: LoaderClosureFailureKind,
     pub occurrences: usize,
@@ -216,48 +216,48 @@ pub struct ExportReentryLoaderFailure {
 
 /// One source site that keeps a target open. Ordered by chunk name, then
 /// site, so the reported first witness is deterministic.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct LoaderSiteWitness {
     pub source_chunk: String,
     #[serde(flatten)]
     pub site: LoaderSite,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub enum LoaderSite {
     /// A census site (SPEC.md § Static-import and host-loader queries).
     Interop {
         kind: InteropUseKind,
         item: usize,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         line: Option<usize>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         specifier: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_target: Option<ExportReentryTarget>,
     },
     StaticRequest {
         specifier: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_target: Option<ExportReentryTarget>,
     },
     /// A use of a binding holding an exported loader alias.
     LoaderBindingUse {
         item: usize,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         line: Option<usize>,
         call: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         specifier: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_target: Option<ExportReentryTarget>,
     },
     /// A request exposing a loader-exporting chunk's whole namespace.
     NamespaceRequest {
         item: usize,
         specifier: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_target: Option<ExportReentryTarget>,
     },
     TopLevelAwait,

@@ -7,7 +7,7 @@ use source_identity::SourceUnitOrdinal;
 /// into a single shape so the "first-order ⊆ lazy" subset invariant
 /// lives in one place ([`Self::record`]) instead of at every
 /// construction site.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PositionBucketed<T> {
     /// At-init position: outside any function/arrow/method/getter/
     /// setter body, constructor body, or instance class-field
@@ -49,7 +49,7 @@ impl PositionBucketed<BTreeSet<Id>> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
     /// Exact stable-array spread producers that must remain in this module.
@@ -164,7 +164,7 @@ pub struct StatementFacts {
     pub kind: StatementKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackFactoryBarrierFact {
     pub namespace_binding: String,
     pub member: String,
@@ -176,7 +176,7 @@ pub struct CallbackFactoryBarrierFact {
     pub rejection: CallbackFactoryBarrierRejection,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CallbackFactoryBarrierRejection {
     NamespaceMemberWrite {
         witness: CallbackFactoryWriteWitness,
@@ -190,7 +190,7 @@ pub enum CallbackFactoryBarrierRejection {
     UnsupportedGuard,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackFactoryCallArgumentWitness {
     pub statement_ordinal: SourceUnitOrdinal,
     pub call_span: swc_common::Span,
@@ -198,14 +198,14 @@ pub struct CallbackFactoryCallArgumentWitness {
     pub namespace_binding: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackFactoryWriteWitness {
     pub statement_ordinal: SourceUnitOrdinal,
     pub receiver_binding: String,
     pub property: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SynchronousCalls {
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
@@ -244,7 +244,7 @@ pub(crate) struct SynchronousCalls {
 /// both observed and assumed is observed. While the interpreter builds an
 /// invocation's outcome the maps are relative to that invocation; the
 /// enclosing statement re-tags them when an assumed path merges them.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct FallbackOnlyEffects {
     pub reads: BTreeMap<Id, AssumedEffectReason>,
     pub rebinds: BTreeMap<Id, AssumedEffectReason>,
@@ -276,14 +276,14 @@ impl SynchronousCalls {
 /// `call_span`; factory and class purity summaries remain unchanged. An
 /// author assertion may supply otherwise-unproved prototype premises, but
 /// native/source evidence can establish them without an assertion.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct LocalRecordFactoryPurityCertificate {
     pub call_span: swc_common::Span,
     pub checked_owners: BTreeSet<SourceUnitOrdinal>,
     pub dependencies: crate::analysis_inputs::ProofDependencies,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallbackFactoryUseFact {
     pub imported_local: String,
     pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
@@ -293,7 +293,7 @@ pub struct CallbackFactoryUseFact {
     pub span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReturnedRecordUseFact {
     pub imported_local: String,
     pub evidence: crate::analysis_inputs::ReturnedRecordSummary,
@@ -364,7 +364,7 @@ impl StatementFacts {
 /// Dynamic-keyed accesses (`globalThis[expr]`) are deliberately not
 /// representable here — statements containing them are marked
 /// non-summarizable.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
     GlobalProp(String),
@@ -389,7 +389,7 @@ pub struct StatementEffectSummary {
 /// effects are inherited by synchronous at-init calls; nested closures remain
 /// deferred. Opaque effects become heap-frontier barriers in the graph builder,
 /// rather than being copied onto every canonical array identity.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct HeapContentEffects {
     /// Canonical local call targets whose heap summaries still need promotion.
     /// Certified construction sites are excluded before sites are unioned.
@@ -406,7 +406,7 @@ pub(crate) struct HeapContentEffects {
     pub opaque: PositionBucketed<bool>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkFactAnalysis {
     pub facts: Vec<StatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
@@ -534,7 +534,7 @@ impl StructuralStatementFacts {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct ConstructorFacts {
     pub reads: BTreeSet<Id>,
     pub rebinds: BTreeSet<Id>,

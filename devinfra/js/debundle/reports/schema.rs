@@ -224,7 +224,7 @@ pub struct CallbackFactoryCallArgumentWitnessReport {
     /// Exact graph source unit containing this ordinary top-level call.
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub namespace_binding: Atom,
     /// SWC callsite byte positions in the analyzed source program.
@@ -241,10 +241,10 @@ pub struct CallbackFactoryWriteWitnessReport {
     /// `statement_ordinal`; the two numeric coordinates are not interchangeable.
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub receiver_binding: Atom,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property: Option<String>,
 }
 
@@ -305,7 +305,7 @@ pub struct NativeMutationWitness {
     /// its containing branch unreachable in every covered activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreachable_branch: Option<NativeUnreachableBranch>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -367,11 +367,11 @@ pub struct NativeUnreachableBranch {
     pub wrapper_call_location: Option<SourceLocation>,
     pub callback_location: Option<SourceLocation>,
     pub guard_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) guard_span: swc_common::Span,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) wrapper_call_span: swc_common::Span,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) callback_span: swc_common::Span,
 }
 
@@ -423,7 +423,7 @@ pub struct NativePrototypeMutation {
     pub properties: Option<BTreeSet<String>>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -571,7 +571,7 @@ pub struct SynchronousExecutionReport {
 pub struct NativeOperationInputUse {
     pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
     pub source_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -583,7 +583,7 @@ pub struct LocalRecordFactoryUse {
     pub prototype_properties: Vec<String>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -601,7 +601,7 @@ pub struct LocalRecordFactoryRejection {
     pub construction: Option<ConstructionRejection>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -654,7 +654,7 @@ pub enum RecordFactoryRejectionReason {
 pub struct ReentryFreeOperationUse {
     pub operation: spec::ReentryFreeOperation,
     pub source_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -666,7 +666,7 @@ pub struct ExecutionPrecisionLoss {
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
 }
 
@@ -902,7 +902,7 @@ pub enum ExecutionOperation {
 pub struct SourceUnitReport {
     pub id: String,
     pub statement_ordinal: SourceUnitOrdinal,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub declared_bindings: Vec<BindingReport>,
     pub statement_kind: StatementKind,
@@ -950,7 +950,7 @@ pub struct DependencyEdgeReport {
     pub source: String,
     pub target: String,
     pub edge_kind: DepKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<Atom>,
     pub statement_ordinal: SourceUnitOrdinal,
     pub constrains_init_order: bool,
@@ -1061,7 +1061,7 @@ pub struct SequencedSourceUnitCause {
     pub source_unit_id: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binding_names: Vec<Atom>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub purity: Purity,
     /// `synchronous_execution.complete` of the source unit; `None` when
@@ -1091,7 +1091,7 @@ pub struct AtomicGroupReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub causes: Vec<DepKind>,
     pub size_lines_estimate: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
 }
