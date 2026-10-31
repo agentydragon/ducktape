@@ -36,3 +36,18 @@ BuildBuddy invocation `dd4b3be4-411d-4ca0-a893-6e2c4ab02537`. The other 11 viewp
 tests pass before the fix, demonstrating the coverage gap: the existing deep
 clicked-disclosure test has no keyed nested landmark, and the nested-anchor test
 checks prepend/remount recovery without subsequent native scrolling.
+
+The generic React/browser regression lives in the same shared package as
+`VirtualizedHistory`, independent of either application's adapters. It uses an
+in-history disclosure, verifies expansion preserves its header position, jumps to
+the expanded tail, and requires a keyed nested landmark with nonzero inset at the
+reading edge before sending a sustained native wheel gesture. It then checks
+upward progress, monotone scroll events, stability after `scrollend`, and explicit
+return to latest.
+
+The browser test fails before the fix: its initial top is 2,337 px and the gesture
+reaches only 2,334 px, failing the required 100 px progress. Invocation:
+`618bde13-58cb-4083-8ff9-9facab87c7ea`. With the fix restored, the same test passes
+in invocation `1e3043e9-efb2-41e1-88a6-6013111669ee`; the post-scroll screenshot was
+reviewed. The shared viewport, geometry and typed lint checks also pass in
+`eaed2d82-d04c-495c-b635-1452f4b33a2d`.

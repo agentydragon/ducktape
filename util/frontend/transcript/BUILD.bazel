@@ -1,6 +1,10 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+
+# gazelle:exclude test_virtualized_history_scroll.py
 
 package(default_visibility = ["//visibility:private"])
 
@@ -148,6 +152,77 @@ ts_library(
         "//:node_modules/react-dom",
         "//util/frontend:disclosure",
     ],
+)
+
+ts_library(
+    name = "virtualized_history_scroll_harness_lib",
+    testonly = True,
+    srcs = ["harness/virtualized_history_scroll.tsx"],
+    isolated_typecheck = True,
+    tsconfig = "//util/frontend:tsconfig",
+    deps = [
+        ":virtualized_history",
+        ":virtualized_history_scroll_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+js_library(
+    name = "virtualized_history_scroll_css",
+    testonly = True,
+    srcs = ["harness/virtualized_history_scroll.css"],
+)
+
+esbuild(
+    name = "virtualized_history_scroll_harness_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "harness/virtualized_history_scroll.tsx",
+    format = "iife",
+    minify = False,
+    output = "harness/dist/harness.js",
+    output_css = "harness/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":virtualized_history_scroll_harness_lib"],
+)
+
+filegroup(
+    name = "virtualized_history_scroll_harness_js",
+    testonly = True,
+    srcs = ["harness/dist/harness.js"],
+)
+
+filegroup(
+    name = "virtualized_history_scroll_harness_css",
+    testonly = True,
+    srcs = ["harness/dist/harness.css"],
+)
+
+py_visual_test(
+    name = "virtualized_history_scroll_visual",
+    assets = [
+        "harness/index.html",
+        ":virtualized_history_scroll_harness_css",
+    ],
+    harness = ":virtualized_history_scroll_harness_js",
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "util.frontend.transcript.test_virtualized_history_scroll",
+    test_srcs = ["test_virtualized_history_scroll.py"],
+    title = "Shared virtualized history scroll regression",
 )
 
 ts_library(
