@@ -12,7 +12,7 @@ import { Box, Loader, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 
 import { isoTime, timeAgo } from "./format_time";
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 
 export const DEGRADED_AFTER_MS = 5_000;
 export const STALE_AFTER_MS = 60_000;

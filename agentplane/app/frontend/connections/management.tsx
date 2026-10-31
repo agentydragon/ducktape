@@ -1,6 +1,6 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./management.css";
-import { type StreamConnection } from "../live_stream";
+import { type StreamConnection } from "../stream_reader";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, HttpError } from "../client";

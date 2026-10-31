@@ -138,7 +138,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:inline_name",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
     ],
 )

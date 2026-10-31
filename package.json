@@ -44,6 +44,7 @@
     "decimal.js": "10.6.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.15",
+    "eventsource-parser": "^3.1.1",
     "img-comparison-slider": "8.0.7",
     "marked": "^18.0.0",
     "openapi-fetch": "^0.17.0",

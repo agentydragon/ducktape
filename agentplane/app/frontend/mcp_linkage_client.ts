@@ -2,7 +2,7 @@ import { create, fromJson, toJson, type JsonValue as ProtoJsonValue } from "@buf
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import { fetchWithLogin, HttpError } from "./client";
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 import { followWatch } from "./watch_stream";
 import {
   DisconnectMcpServerResponseSchema,

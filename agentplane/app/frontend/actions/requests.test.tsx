@@ -8,7 +8,6 @@ import { ActionRequests, stateLabel } from "./requests";
 import {
   ACTION_REQUEST_WATCH,
   TestNdjsonWatch,
-  TestEventSource,
   answerApi,
   button,
   mount,
@@ -127,7 +126,6 @@ describe("ActionRequests", () => {
 
   it("renders server-pushed pending state without requests of its own and closes the stream", async () => {
     const sent = answerApi(() => undefined);
-    vi.stubGlobal("EventSource", TestEventSource);
     const container = await mount(<ActionRequests />);
     expect(container.textContent).toContain("Loading actions");
     expect(container.textContent).not.toContain("No requests are waiting");

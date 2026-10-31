@@ -91,10 +91,3 @@ when only a Pod changed (`app/go/streamapi.go`). The same Sandbox inventory also
 three streams, and the thread page reads the top-bar status and the composer state from different ones.
 Compute each frame once per change and broadcast its bytes (a hub or `singleflight`), re-query threads
 only on thread changes, and give each entity one client-side source.
-
-### `FRONTEND_SSE_CLIENT`
-
-`live_stream.ts` (`EventSource`) and `watch_stream.ts` (fetch plus NDJSON) duplicate backoff, resume
-and phase reporting, and because `EventSource` cannot see a 401, `live_stream.ts` probes `/models`
-after each hard close to trigger login. Use one fetch-based SSE reader that sees status codes and goes
-through `fetchWithLogin`.

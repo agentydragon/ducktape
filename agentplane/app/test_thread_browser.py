@@ -1,7 +1,7 @@
 """The built SPA consumes PostgreSQL/Electric through real HTTP/2 in Chromium.
 
 Only the upstream runner protocol source and Kubernetes/auth boundaries are controlled. Browser
-fetch, EventSource, rendering, and page reload are not replaced by the visual harness's mocks.
+fetch and its streams, rendering, and page reload are not replaced by the visual harness's mocks.
 """
 
 import asyncio

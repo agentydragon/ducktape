@@ -1,7 +1,7 @@
 import { MantineProvider } from "@mantine/core";
 import { type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, type Mock, vi } from "vitest";
+import { afterEach, vi } from "vitest";
 
 import { api } from "../../client";
 import type { ActionGroupView, ActionRequestView, ActionState } from "../client";
@@ -361,21 +361,6 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   return container;
 }
 
-/** The browser's `EventSource` as a test drives it; `TestEventSource.current` is the latest opened. */
-export class TestEventSource extends EventTarget {
-  static readonly CLOSED = 2;
-  static current: TestEventSource | undefined;
-  static readonly opened: Map<string, TestEventSource> = new Map();
-  readyState = 1;
-  close: Mock<() => void> = vi.fn();
-
-  constructor(readonly url: string) {
-    super();
-    TestEventSource.current = this;
-    TestEventSource.opened.set(url, this);
-  }
-}
-
 /** Pushes one snapshot down the latest stream, or the one opened on `url`; a string goes as the
  * frame's raw data. */
 export async function send(value: string | readonly ActionFixture[], url?: string): Promise<void> {
@@ -392,7 +377,7 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
             ? ACTION_REQUEST_WATCH
             : undefined;
   let watch = watchUrl === undefined ? undefined : TestNdjsonWatch.opened.get(watchUrl);
-  if (watch === undefined && TestEventSource.current === undefined) {
+  if (watch === undefined) {
     watchUrl ??= url === undefined ? ACTION_REQUEST_WATCH : undefined;
     if (watchUrl !== undefined) watch = await TestNdjsonWatch.waitForOpen(watchUrl);
   }
@@ -428,12 +413,7 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
     });
     return;
   }
-  const source = url === undefined ? TestEventSource.current : TestEventSource.opened.get(url);
-  await act(async () => {
-    source?.dispatchEvent(
-      new MessageEvent("snapshot", { data: typeof value === "string" ? value : JSON.stringify(value) })
-    );
-  });
+  throw new Error(`No watch is open for ${url ?? "the Action requests"}`);
 }
 
 /** Pushes upsert frames down a generated watch, as the service does after its initial snapshot. */
@@ -513,7 +493,6 @@ export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
 
 /** Mounts `node` with the Action stream stubbed, then pushes `pending` down it. */
 export async function renderLive(node: ReactNode, pending: readonly ActionRequestView[] = []): Promise<HTMLDivElement> {
-  vi.stubGlobal("EventSource", TestEventSource);
   installActionFetch();
   const container = await mount(node);
   await send(pending);
@@ -543,8 +522,6 @@ afterEach(async () => {
     item.container.remove();
   }
   for (const eject of ejects.splice(0)) eject();
-  TestEventSource.current = undefined;
-  TestEventSource.opened.clear();
   for (const watch of TestNdjsonWatch.opened.values()) watch.close();
   TestNdjsonWatch.reset();
   actionAnswer = () => undefined;
