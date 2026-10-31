@@ -2,6 +2,8 @@
 
 The [hosted six-VM suite](https://app.buildbuddy.io/invocation/21baa91d-9f05-549e-a08b-6d6d27f45ee8) passed all selected cases. Five `Ready` driver spans lasted 80.7–105 s from Sandbox creation. `WorkloadReady` occurred around 36–41 s, but `RunnerConnected` did not arrive until around 80–105 s. The latter requires a Gateway-observed `WatchState` connection and a Lease renewal matching the current Pod UID and boot ID (`sandbox_controller/controller.go`, `runner_gateway/gateway/runner_observer.go`); the Kubernetes workload condition alone does not establish Runner availability.
 
+The downloaded driver's `test-spans.jsonl` has SHA-256 `7f5c2e27a1e7ad20c678f3def01d26f280ff36956351b7f509fc363f055bdadf`. The hosted invocation tested the final shared-tracing PR source before that PR merged; BuildBuddy's invocation and retained test outputs, rather than a later branch head, are the evidence for this sample.
+
 The test's retained guest-console and central Gateway logs give this sequence. Offsets are from the first timestamped guest kernel console line for each VM; CRI log buffering makes those offsets approximate. The Ready timestamp is the driver's observed condition, not the instant the guest started listening.
 
 | Guest                  | Network target | `/state` mounted | Workspace preparation | Last Gateway dial failure |   Ready | Last failure to Ready |
