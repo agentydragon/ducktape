@@ -7,7 +7,7 @@ py_library(
 
 py_binary(
     name = "analyze_bin",
-    main_module = "x.ai_usage_investigation.analyze",
+    main_module = "x.ai_sub_value.analyze",
     deps = [":analyze"],
 )
 
@@ -67,7 +67,7 @@ py_library(
 
 py_binary(
     name = "estimate_capacity_bin",
-    main_module = "x.ai_usage_investigation.estimate_capacity",
+    main_module = "x.ai_sub_value.estimate_capacity",
     deps = [":estimate_capacity"],
 )
 
@@ -87,7 +87,7 @@ py_test(
 
 py_binary(
     name = "report_data_bin",
-    main_module = "x.ai_usage_investigation.report_data",
+    main_module = "x.ai_sub_value.report_data",
     deps = [":report_data"],
 )
 

@@ -314,7 +314,7 @@ Coding Plans meter **credits** rather than prompt counts, and GLM-5.3 / GLM-5-Tu
 burn at a **3x coefficient during peak hours** (14:00-18:00 SGT, Mon-Fri) against
 1x off-peak. The window structure this endpoint reports is unchanged, but a given
 `percentage` delta buys a third as much work inside the peak window. Plan-shape
-tradeoffs are in <docs/ai_subscription_comparison.md>.
+tradeoffs are in <../x/ai_sub_value/subscription_comparison.md>.
 
 ### `GET /api/monitor/usage/model-usage`
 

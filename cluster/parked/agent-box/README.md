@@ -9,7 +9,7 @@ host with the matchBlock), attach tmux, drive `codex`.
 
 TOS note: a single-user personal agent on the user's own ChatGPT-Pro sub via the
 Codex CLI / `codex exec` / SDK is documented functionality, not a TOS violation
-(see `docs/self_hosted_coding_agent_platforms.md`, `docs/ai_subscription_comparison.md`).
+(see [self-hosted agent platform notes](../../../docs/self_hosted_coding_agent_platforms.md) and [the subscription comparison](../../../x/ai_sub_value/subscription_comparison.md)).
 Open follow-ups (per-VM SSH, more users, Codex auth provisioning) are tracked in
 <../../k8s/TODO.md> § "agent-box follow-ups".
 

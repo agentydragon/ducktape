@@ -7,15 +7,15 @@ import numpy
 import pytest
 import pytest_bazel
 
-from x.ai_usage_investigation.analyze import Poll
-from x.ai_usage_investigation.bootstrap import (
+from x.ai_sub_value.analyze import Poll
+from x.ai_sub_value.bootstrap import (
     BlockMethod,
     calendar_day_blocks,
     compare_blocks,
     lag_correlations,
     resampling_units,
 )
-from x.ai_usage_investigation.estimate_capacity import (
+from x.ai_sub_value.estimate_capacity import (
     CalibrationRow,
     MoneyPoll,
     QuotaInterval,

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest_bazel
 
-from x.ai_usage_investigation.analyze import ObservedRate, Poll, UnavailableRate, measure_hour
+from x.ai_sub_value.analyze import ObservedRate, Poll, UnavailableRate, measure_hour
 
 START = datetime(2026, 10, 30, tzinfo=UTC)
 RESET = START + timedelta(days=3)

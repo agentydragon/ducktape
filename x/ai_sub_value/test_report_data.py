@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest_bazel
 
-from x.ai_usage_investigation.report_data import assemble_usage, quota_weekly
+from x.ai_sub_value.report_data import assemble_usage, quota_weekly
 
 
 def usage(source: str, tokens: int | None) -> dict:

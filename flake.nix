@@ -408,7 +408,7 @@
           inherit (systemLibs) buildInputs;
           LD_LIBRARY_PATH = systemLibs.libraryPath;
         };
-        ai-usage = import ./x/ai_usage_investigation/shell.nix {
+        ai-usage = import ./x/ai_sub_value/shell.nix {
           inherit pkgs;
           baseShell = self.devShells.${system}.default;
         };

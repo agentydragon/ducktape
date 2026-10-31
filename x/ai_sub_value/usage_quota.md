@@ -40,7 +40,7 @@ export JUPYTER_RUNTIME_DIR="$notebook_runtime/runtime"
 export IPYTHONDIR="$notebook_runtime/ipython"
 python -m ipykernel install --prefix "$notebook_runtime" --name ai-usage \
   --display-name 'AI usage (Nix)'
-cd x/ai_usage_investigation
+cd x/ai_sub_value
 jupyter lab --no-browser --ip=127.0.0.1
 ```
 
@@ -76,4 +76,4 @@ attribution, changing policy and the observed cache/output/effort mix remain
 separate sources of uncertainty.
 
 Tests use synthetic inputs and run through
-`bbr test //x/ai_usage_investigation:all`.
+`bbr test //x/ai_sub_value:all`.

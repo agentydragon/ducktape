@@ -2,7 +2,7 @@
 
 **Historical analysis.** Model rankings, costs, and subscription terms below are
 dated August 2026, not current recommendations. The refreshed September AA dataset,
-including GPT-6, is in <artificial_analysis/README.md>. Its index methodology differs;
+including GPT-6, is in <../../docs/artificial_analysis/README.md>. Its index methodology differs;
 the August CSV is retained so this document's calculations remain reproducible.
 
 ## Goal
@@ -75,12 +75,12 @@ OpenAI's current generation is a size ladder — **Luna (small), Terra (medium),
 ### Intelligence Index vs. cost per task (2026-08)
 
 The rows this document quotes are committed at
-<artificial_analysis/cited_models_2026_08_23.csv> — 53 rows across the 24 models named
+<../../docs/artificial_analysis/cited_models_2026_08_23.csv> — 53 rows across the 24 models named
 below, from a 169-model snapshot fetched 2026-08-23 — so every per-model figure here is
 checkable rather than a summary of a summary. Only the cited rows are committed:
 Artificial Analysis licenses redistribution of the full set, so the population-level
 findings state their result and the recipe to reproduce it instead of shipping the
-corpus. Provenance, columns and that recipe: <artificial_analysis/README.md>.
+corpus. Provenance, columns and that recipe: <../../docs/artificial_analysis/README.md>.
 
 #### The frontier
 
@@ -543,7 +543,7 @@ this document's 2026-08-23 snapshot — so the row above is ~$680/mo, and every 
 `$/task` figure here reads about a third high. Nothing else among the models quoted
 moved: the rest of the differences between snapshot and API are the API's one-decimal
 rounding. The snapshot is deliberately not refreshed from that API, which cannot
-reproduce the derived columns (<artificial_analysis/README.md>).
+reproduce the derived columns (<../../docs/artificial_analysis/README.md>).
 
 **This is the finding that reframes the API question.** "API is ruinously expensive" is true at frontier rates and false a few index points down. The same volume that costs $900/mo on Opus 5 costs $40 on GPT-5.6 Luna — OpenAI cut Luna 80% on 2026-07-30 — and $135 on Gemini 3.7 Flash. A fear calibrated on Opus and GPT-5.6 Sol does not transfer to the models a bulk tier would actually use.
 
@@ -671,7 +671,7 @@ inverting AA's own cost model: each of `cost.nonCacheInput`, `cost.cacheRead`,
 The derivation validates exactly — the output leg reproduces AA's separately published
 `intelligenceIndexOutputTokensPerTask` to the token for every model checked. All four
 cost legs, the derived totals, the cache-read share and the effective rate are columns
-in <artificial_analysis/cited_models_2026_08_23.csv>
+in <../../docs/artificial_analysis/cited_models_2026_08_23.csv>
 (`cost_noncache_input_usd` … `effective_usd_per_m_tokens`), so nothing below rests on a
 scratch calculation.
 
@@ -726,7 +726,7 @@ artifact suggested, and the ordering one would expect from the sticker prices.
 
 ¹ **This row is Z.ai's own published claim, not a measurement.** An earlier revision
 derived 2,940 tasks and a 12x subsidy by extrapolating a 4-day usage sample from
-<zai_api.md>. That derivation is withdrawn — the sample cannot carry it, for six
+<../../docs/zai_api.md>. That derivation is withdrawn — the sample cannot carry it, for six
 separate reasons:
 
 - **Wrong model generation.** The sample is GLM-5.1 (released 2026-04-07); it was
@@ -736,7 +736,7 @@ separate reasons:
   per-call average spans a mixture.
 - **Different cache composition.** AA measures GLM-5.1 at 73.6% cache reads against
   GLM-5.3's 96.2% — the two generations do not spend tokens alike.
-- **Possibly pre-caching.** Every prompt-caching observation in <zai_api.md> dates from
+- **Possibly pre-caching.** Every prompt-caching observation in <../../docs/zai_api.md> dates from
   2026-06 onward; the sample is 2026-05-07 to 05-10.
 - **Different metering regime.** The 2026-07-30 revision switched Coding Plans from
   prompt counts to credits. The sample predates it.
@@ -825,7 +825,7 @@ constraint.
 
 **This is the only measured subscription figure in the document**, and it comes from
 this cluster's own Langfuse instance rather than from any vendor. The LiteLLM proxy at
-<../cluster/k8s/litellm/app/> routes `gpt-5.6-luna`, `-sol` and `-terra` through
+<../../cluster/k8s/litellm/app/> routes `gpt-5.6-luna`, `-sol` and `-terra` through
 `cli-proxy-api`, a credential-substitution proxy backed by the ChatGPT subscription —
 so its traces record subscription consumption, priced at nothing, with real token
 counts on real work.
@@ -1017,13 +1017,13 @@ with the full four-way split — cache reads, cache writes, uncached input, outp
 off-the-shelf tools (`ccusage` and friends) parse it. That ledger covers only sessions
 run on that machine: Claude Code on the web keeps its transcript in the cloud
 container, so a workstation's files undercount, and a complete total needs the OTel
-pipeline (<devinfra/claude/README.md> § Claude Code Telemetry) or archived sessions
-(<devinfra/claude/session_export/README.md>). The measurement above came straight out
+pipeline (<../../devinfra/claude/README.md> § Claude Code Telemetry) or archived sessions
+(<../../devinfra/claude/session_export/README.md>). The measurement above came straight out
 of one such file.
 
 **The gauge half is coarse, and narrower than the endpoints' schemas suggest.** Read
 from aiquota's stored history (5-minute polls, 2026-08-28 to 2026-09-30; method and
-recheck query in <aiquota/README.md> § Gauge resolution):
+recheck query in <../../aiquota/README.md> § Gauge resolution):
 
 - **Both providers report whole percentage points.** No stored reading of Claude's
   `five_hour`/`seven_day` `utilization` or Codex's `used_percent` was fractional, and
@@ -1258,7 +1258,7 @@ Subscriptions are sold well below API cost, and that holds even when badly utili
 
 What actually failed was not the subscription. It was the subscription **with nothing to spill into**. "Everything pauses, come back in 3.7 hours" is the behavior of a plan whose quota exhaustion has no fallback — and Anthropic's extra-usage credits exist precisely to be that fallback, just at a price that makes them unusable at scale.
 
-Z.ai supports the pattern natively, on one key, with two independent meters — confirmed in <docs/zai_api.md>:
+Z.ai supports the pattern natively, on one key, with two independent meters — confirmed in <../../docs/zai_api.md>:
 
 | Base URL                              | Meter                                       |
 | ------------------------------------- | ------------------------------------------- |
@@ -1341,7 +1341,7 @@ subscription at all, and it is testable this week for the price of a coffee.
 
 ### Stretching what is already bought
 
-Routing traffic to cheaper models is the other half and is free. Since Max is metered in tokens, cutting tokens per task raises tasks per weekly window one-for-one: Opus 5 at `medium` costs 69% less than at `max` for 4 index points, and prompt caching bills reads at ~0.1x, so a silently invalidated cache is a multiple on weekly burn rather than only on money. Parallelism makes both levers worth more, since every agent in the fleet pays the same multiplier. <aiquota/README.md> already polls Claude, Codex, and Z.ai and reports which window binds — worth reading before and after any purchase.
+Routing traffic to cheaper models is the other half and is free. Since Max is metered in tokens, cutting tokens per task raises tasks per weekly window one-for-one: Opus 5 at `medium` costs 69% less than at `max` for 4 index points, and prompt caching bills reads at ~0.1x, so a silently invalidated cache is a multiple on weekly burn rather than only on money. Parallelism makes both levers worth more, since every agent in the fleet pays the same multiplier. <../../aiquota/README.md> already polls Claude, Codex, and Z.ai and reports which window binds — worth reading before and after any purchase.
 
 **Do not enable Claude extra usage as a capacity strategy.** It is list API pricing wearing a subscription's clothes, and it is the mechanism that produces four-figure months.
 
@@ -1370,7 +1370,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
 - **A plan's served context window is not the model's native window.** Subscriptions rarely state it: Cerebras Code documents none for GLM-4.7, whose native window is 200K, while every Cerebras figure that is published is 131K. Confirm the served window before sizing agent context on a plan.
 - **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes. GLM-4.7 is a case in point: index 34 overall, but Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard, and tool-call reliability is what governs whether a fleet run finishes.
-- **The committed index data is a 2026-08-23 snapshot.** AA re-scores on new releases and index revisions, and models are added weekly. Re-fetch before treating any ranking here as current; the refresh recipe is in <artificial_analysis/README.md>.
+- **The committed index data is a 2026-08-23 snapshot.** AA re-scores on new releases and index revisions, and models are added weekly. Re-fetch before treating any ranking here as current; the refresh recipe is in <../../docs/artificial_analysis/README.md>.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
 - **Jurisdiction is a per-workload boundary, not a vendor verdict.** Z.ai, DeepSeek, Moonshot, Alibaba and MiniMax are all PRC-jurisdiction; Z.ai has been US Entity-Listed since Jan 2025, and their APIs carry no-train/no-store clauses but no anti-government-request carveout. That disqualifies them for anything confidential and is irrelevant for anything already public — so the question is which repo the work is in, not which vendor is cheapest. Route by workload: public repositories to the cheap tier, private code and anything touching credentials to the first-party subscriptions. A blanket reading of this caveat silently removes the entire cheap tier from consideration, which is the wrong answer for a workload that is mostly open source.
 - **AA prices peak-rate models at their peak rate.** DeepSeek V4-Pro 0813's $1.32/$3.96 in the committed data is the peak tariff; off-peak halves it, and any cost-per-task or Index/$ figure for a DeepSeek row is correspondingly a ceiling. Comparisons that straddle a peak-priced and a flat-priced vendor need this checked before the ratio means anything.
@@ -1380,7 +1380,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 
 ### Cost-per-intelligence analysis
 
-- <artificial_analysis/cited_models_2026_08_23.csv> — **the rows behind every per-model index and cost-per-task figure quoted here** (53 rows, 24 models, from a 169-model snapshot fetched 2026-08-23); provenance, the full-population recipe and why only the cited rows are committed: <artificial_analysis/README.md>
+- <../../docs/artificial_analysis/cited_models_2026_08_23.csv> — **the rows behind every per-model index and cost-per-task figure quoted here** (53 rows, 24 models, from a 169-model snapshot fetched 2026-08-23); provenance, the full-population recipe and why only the cited rows are committed: <../../docs/artificial_analysis/README.md>
 - [Artificial Analysis](https://artificialanalysis.ai/) — Intelligence Index vs. Cost per Task chart with Pareto frontier
 - [AA Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) — index composition
 - [AA model leaderboard](https://artificialanalysis.ai/leaderboards/models) — per-effort scores and cost per task

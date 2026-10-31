@@ -1,6 +1,6 @@
 import pytest_bazel
 
-from x.ai_usage_investigation.langfuse_usage_extract import normalize_row, resolve_provider
+from x.ai_sub_value.langfuse_usage_extract import normalize_row, resolve_provider
 
 
 def usage_row(raw_usage: dict[str, int], **overrides: object) -> dict[str, object]:

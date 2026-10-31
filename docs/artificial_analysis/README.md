@@ -65,7 +65,7 @@ Do not infer local serving cost or latency from AA's API price columns.
 ## Historical snapshot: 2026-09-24
 
 <cited_models_2026_09_24.csv> refreshes the model/effort slugs cited in
-<../ai_subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
+<../../x/ai_sub_value/subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
 efforts plus `qwen3-8-flash-next` (added same-day from the same leaderboard fetch for
 an agent-routing question; not cited in the subscription analysis). It contains
 **57 measured rows: 39 from the historical cohort, 17 GPT-6 rows, and
