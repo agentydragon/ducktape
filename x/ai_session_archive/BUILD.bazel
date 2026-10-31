@@ -134,7 +134,10 @@ py_test(
 py_library(
     name = "codex_metadata",
     srcs = ["codex_metadata.py"],
-    deps = [":restic"],
+    deps = [
+        ":models",
+        ":restic",
+    ],
 )
 
 py_library(

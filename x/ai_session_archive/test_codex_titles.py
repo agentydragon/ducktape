@@ -51,6 +51,20 @@ def test_codex_titles_backfill(tmp_path: Path, postgres_engine: Engine) -> None:
         assert observation is not None
         assert observation.title_source == "sqlite_name"
         assert observation.source_path == ("/.codex/sessions/2026/01/thread-one.jsonl")
+        assert observation.session_kind == "main"
+        assert db.scalar(select(SessionRow.session_kind)) == "main"
+
+    with factory() as db, db.begin():
+        observation = db.get(CodexTitleObservationRow, ("host", second_snapshot.id, "thread-one"))
+        assert observation is not None
+        observation.title = "retained title"
+        observation.session_kind = None
+    ingestor._process_codex_metadata(second_snapshot, refresh_completed=True)
+    with factory() as db:
+        observation = db.get(CodexTitleObservationRow, ("host", second_snapshot.id, "thread-one"))
+        assert observation is not None
+        assert observation.title == "retained title"
+        assert observation.session_kind == "main"
 
 
 if __name__ == "__main__":

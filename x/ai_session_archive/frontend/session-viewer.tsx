@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Center,
+  Checkbox,
   Group,
   Loader,
   Menu,
@@ -14,6 +15,7 @@ import {
   Popover,
   ScrollArea,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -24,7 +26,7 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
+import type { EventRecord, Harness, Machine, SessionKind, SessionSummary, SessionVersion } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
 
 const SESSION_PAGE_SIZE = 50;
@@ -33,6 +35,12 @@ const SESSION_SIDEBAR_MAX_WIDTH = 520;
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
 const SESSION_TRANSCRIPT_MIN_WIDTH = 360;
 const SESSION_RESIZE_HANDLE_WIDTH = 8;
+const SESSION_KINDS: { value: SessionKind; label: string }[] = [
+  { value: "main", label: "Main sessions" },
+  { value: "subagent", label: "Subagents" },
+  { value: "guardian", label: "Guardian" },
+  { value: "unknown", label: "Unknown" },
+];
 
 function maxSessionSidebarWidth(layoutWidth: number): number {
   return Math.max(
@@ -126,6 +134,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const search = new URLSearchParams(location.search);
   const selectedMachineId = search.get("machine") ?? "";
   const selectedHarness = search.get("harness") ?? "";
+  const kindSelection = search.has("kind") ? search.getAll("kind") : ["main", "unknown"];
+  const kindScope = SESSION_KINDS.filter(({ value }) => kindSelection.includes(value))
+    .map(({ value }) => value)
+    .join(",");
+  const selectedKinds = useMemo(() => (kindScope === "" ? [] : (kindScope.split(",") as SessionKind[])), [kindScope]);
   const requestedVersionId = search.get("version");
   const layoutRef = useRef<HTMLDivElement>(null);
   const mobileSessionListRef = useRef<HTMLElement>(null);
@@ -179,7 +192,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const [loadingChildSessions, setLoadingChildSessions] = useState(false);
   const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}`;
+  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}\u0000${kindScope}`;
   const sessionScopeRef = useRef(sessionScope);
   sessionScopeRef.current = sessionScope;
   const selectedSession =
@@ -322,11 +335,19 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     setLoadingSessions(true);
     setLoadingMoreSessions(false);
     setError(null);
+    if (kindScope === "") {
+      setSessions([]);
+      setSessionCursor(null);
+      setLoadedSessionScope(sessionScope);
+      setLoadingSessions(false);
+      return () => controller.abort();
+    }
     void api
       .listSessions(
         {
           ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
           ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          kinds: selectedKinds,
           limit: SESSION_PAGE_SIZE,
         },
         controller.signal
@@ -348,7 +369,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       sessionPageRequest.current?.abort();
       sessionPageRequest.current = null;
     };
-  }, [api, selectedMachineId, selectedHarness, sessionListRefreshRequest]);
+  }, [api, selectedMachineId, selectedHarness, kindScope, sessionListRefreshRequest]);
 
   useEffect(() => {
     if (sessionId === undefined && loadedSessionScope === sessionScope && !loadingSessions && sessions[0]) {
@@ -518,6 +539,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
           ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
           cursor: sessionCursor,
+          kinds: selectedKinds,
           limit: SESSION_PAGE_SIZE,
         },
         controller.signal
@@ -601,6 +623,15 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     else search.delete(name);
     search.delete("version");
     navigate(`/?${search.toString()}`);
+  };
+
+  const changeKinds = (values: string[]): void => {
+    search.delete("kind");
+    for (const { value } of SESSION_KINDS) {
+      if (values.includes(value)) search.append("kind", value);
+    }
+    if (values.length === 0) search.set("kind", "");
+    navigate(`${location.pathname}?${search.toString()}`);
   };
 
   const changeVersion = (versionId: string): void => {
@@ -692,6 +723,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 { value: "codex", label: "Codex CLI" },
               ]}
             />
+            <Checkbox.Group label="Session kinds" value={selectedKinds} onChange={changeKinds}>
+              <SimpleGrid cols={2} spacing={4} mt={4}>
+                {SESSION_KINDS.map(({ value, label }) => (
+                  <Checkbox key={value} value={value} label={label} size="xs" />
+                ))}
+              </SimpleGrid>
+            </Checkbox.Group>
             <Button
               size="xs"
               variant="default"

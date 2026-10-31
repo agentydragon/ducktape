@@ -5,7 +5,7 @@ import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_bazel
 from fastapi.responses import RedirectResponse
@@ -32,7 +32,8 @@ from x.ai_session_archive.web_settings import WebSettings
 def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
-    session_id, child_id, version_id, payload_id = (uuid4() for _ in range(4))
+    session_id, child_id = UUID(int=1), UUID(int=2)
+    version_id, payload_id = (uuid4() for _ in range(2))
     empty_session_id, empty_version_id, pending_session_id, failed_session_id = (uuid4() for _ in range(4))
     captured_at = datetime(2026, 1, 1, tzinfo=UTC)
     raw_line = b'{"broken":\xff}\n'
@@ -48,6 +49,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     harness="claude",
                     source_path="/fake/root.jsonl",
                     source_relative_path="root.jsonl",
+                    session_kind="main",
                 ),
                 SessionRow(
                     id=child_id,
@@ -55,6 +57,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     harness="claude",
                     source_path="/fake/child.jsonl",
                     source_relative_path="child.jsonl",
+                    session_kind="subagent",
                     parent_session_id=session_id,
                     parent_link_kind="claude_path_inferred",
                     identity_inferred=True,
@@ -378,12 +381,24 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     assert client.get(f"/api/sessions/{session_id}").json()["id"] == str(session_id)
     children = client.get("/api/sessions", params={"parent_session_id": str(session_id)}).json()
     assert [child["id"] for child in children["data"]] == [str(child_id)]
+    first_subagent = client.get("/api/sessions", params={"kind": "subagent", "limit": 1}).json()["data"]
+    assert [row["id"] for row in first_subagent] == [str(child_id)]
+    selected_kinds = client.get(
+        "/api/sessions", params=[("kind", "unknown"), ("kind", "subagent"), ("limit", "500")]
+    ).json()["data"]
+    selected_ids = {row["id"] for row in selected_kinds}
+    assert str(child_id) in selected_ids
+    assert {str(empty_session_id), str(pending_session_id), str(failed_session_id)} <= selected_ids
+    assert str(session_id) not in selected_ids
+    assert client.get("/api/sessions", params={"kind": "not-a-session-kind"}).status_code == 422
     session_rows = client.get("/api/sessions", params={"machine_id": "fake-host", "limit": 500}).json()["data"]
     sessions_by_id = {row["id"]: row for row in session_rows}
     assert sessions_by_id[str(session_id)]["transcript_status"] == "captured"
+    assert sessions_by_id[str(session_id)]["session_kind"] == "main"
     assert sessions_by_id[str(session_id)]["latest_version_record_count"] == 1
     assert sessions_by_id[str(child_id)]["transcript_status"] == "unavailable"
     assert sessions_by_id[str(empty_session_id)]["transcript_status"] == "captured"
+    assert sessions_by_id[str(empty_session_id)]["session_kind"] == "unknown"
     assert sessions_by_id[str(empty_session_id)]["latest_version_record_count"] == 0
     assert sessions_by_id[str(pending_session_id)]["transcript_status"] == "pending"
     assert sessions_by_id[str(failed_session_id)]["transcript_status"] == "failed"

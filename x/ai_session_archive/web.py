@@ -21,6 +21,7 @@ from x.ai_session_archive.models import (
     Harness,
     Machine,
     MachineImportProgress,
+    SessionKind,
     SessionPage,
     SessionSummary,
     SessionVersion,
@@ -69,6 +70,7 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
     def sessions(
         machine_id: str | None = None,
         harness: Harness | None = None,
+        kind: Annotated[list[SessionKind] | None, Query()] = None,
         parent_session_id: UUID | None = None,
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
@@ -79,6 +81,7 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
                     db,
                     machine_id=machine_id,
                     harness=harness,
+                    kinds=kind,
                     parent_session_id=parent_session_id,
                     cursor=cursor,
                     limit=limit,

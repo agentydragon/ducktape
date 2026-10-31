@@ -7,7 +7,7 @@ import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SessionBrowserApi } from "./api";
-import { ApiError } from "./api";
+import { ApiError, httpApi } from "./api";
 import { App } from "./app";
 import { sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
@@ -46,6 +46,72 @@ async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
+
+async function toggleKind(view: HTMLElement, kind: string): Promise<void> {
+  const checkbox = view.querySelector<HTMLInputElement>(`input[type="checkbox"][value="${kind}"]`);
+  if (checkbox === null) throw new Error(`Missing session-kind checkbox ${kind}`);
+  await act(async () => {
+    checkbox.click();
+    await flush();
+  });
+}
+
+it("hides guardian and subagent sessions by default and restores them with checkboxes", async () => {
+  const requests = vi.fn(sessionFixtureApi.listSessions);
+  const view = await renderViewer({ ...sessionFixtureApi, listSessions: requests });
+  const sidebar = view.querySelector<HTMLElement>("#session-browser-sidebar")!;
+  expect(sidebar.textContent).toContain("Compare two captured versions");
+  expect(sidebar.textContent).not.toContain("Guardian automation fixture");
+  expect(sidebar.textContent).not.toContain("Inspect a local transcript");
+  expect(requests.mock.calls[0]?.[0].kinds).toEqual(["main", "unknown"]);
+
+  await toggleKind(view, "guardian");
+  expect(sidebar.textContent).toContain("Guardian automation fixture");
+  expect(sidebar.textContent).not.toContain("Inspect a local transcript");
+  await toggleKind(view, "subagent");
+  expect(sidebar.textContent).toContain("Inspect a local transcript");
+});
+
+it("restores kind filters from the URL and permits an empty selection without fetching all kinds", async () => {
+  const requests = vi.fn(sessionFixtureApi.listSessions);
+  const view = await renderViewer({ ...sessionFixtureApi, listSessions: requests }, "/?kind=guardian");
+  const sidebar = view.querySelector<HTMLElement>("#session-browser-sidebar")!;
+  expect(sidebar.textContent).toContain("Guardian automation fixture");
+  expect(sidebar.textContent).not.toContain("Compare two captured versions");
+  const listCalls = (): number => requests.mock.calls.filter(([query]) => query.parentSessionId === undefined).length;
+  const previousCalls = listCalls();
+  await toggleKind(view, "guardian");
+  expect(sidebar.textContent).toContain("No captured sessions match these filters.");
+  expect(listCalls()).toBe(previousCalls);
+});
+
+it("opens hidden session kinds through direct and related links without filtering related children", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/guardian-session");
+  const sidebar = view.querySelector<HTMLElement>("#session-browser-sidebar")!;
+  expect(sidebar.textContent).not.toContain("Guardian automation fixture");
+  expect(view.querySelector("h2")?.textContent).toBe("Guardian automation fixture");
+  const related = await openRelatedSessions(view);
+  await act(async () => {
+    findControl(related, "Compare two captured versions").click();
+    await flush();
+  });
+  const parentRelated = await openRelatedSessions(view);
+  expect(parentRelated.textContent).toContain("Guardian automation fixture");
+});
+
+it("sends each selected session kind as a repeated API parameter", async () => {
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(JSON.stringify({ data: [], next_cursor: null })));
+  try {
+    await httpApi.listSessions({ kinds: ["main", "guardian"], limit: 2 });
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "https://archive.example");
+    expect(url.searchParams.getAll("kind")).toEqual(["main", "guardian"]);
+    expect(url.searchParams.get("limit")).toBe("2");
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
 
 async function openRelatedSessions(view: HTMLElement): Promise<HTMLElement> {
   const trigger = view.querySelector<HTMLButtonElement>(".session-browser-related-trigger");
@@ -190,7 +256,7 @@ it("keeps session selection in history for back and forward navigation", async (
   document.body.append(container);
   root = createRoot(container);
   const router = createMemoryRouter([{ path: "*", element: <App api={sessionFixtureApi} /> }], {
-    initialEntries: ["/sessions/codex-thread-1"],
+    initialEntries: ["/sessions/codex-thread-1?kind=main&kind=subagent&kind=unknown"],
   });
   await act(async () => {
     root?.render(
@@ -248,7 +314,7 @@ it("keeps a missing session link visible instead of silently selecting another s
 it("renders session and related-session navigation as shareable links without carrying the old version", async () => {
   const view = await renderViewer(
     sessionFixtureApi,
-    "/sessions/claude-session-1?machine=atlas&harness=claude&version=claude-version-1"
+    "/sessions/claude-session-1?machine=atlas&harness=claude&kind=main&kind=subagent&version=claude-version-1"
   );
   await openRelatedSessions(view);
   const sidebar = view.querySelector('[aria-label="Session list"]');
@@ -258,11 +324,11 @@ it("renders session and related-session navigation as shareable links without ca
   const sidebarParentLink = [...(sidebar?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((link) =>
     link.textContent?.includes("Inferred Claude parent")
   );
-  const expectedParentPath = "/sessions/inferred-claude-parent?machine=atlas&harness=claude";
+  const expectedParentPath = "/sessions/inferred-claude-parent?machine=atlas&harness=claude&kind=main&kind=subagent";
   expect(parentLink?.getAttribute("href")).toBe(expectedParentPath);
   expect(sidebarParentLink?.getAttribute("href")).toBe(expectedParentPath);
   expect(sidebar?.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
-    "/sessions/claude-session-1?machine=atlas&harness=claude"
+    "/sessions/claude-session-1?machine=atlas&harness=claude&kind=main&kind=subagent"
   );
 
   await act(async () => {
@@ -276,7 +342,9 @@ it("renders session and related-session navigation as shareable links without ca
   const childLink = [...document.body.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find(
     (link) => link.textContent?.includes("Inspect a local transcript")
   );
-  expect(childLink?.getAttribute("href")).toBe("/sessions/claude-session-1?machine=atlas&harness=claude");
+  expect(childLink?.getAttribute("href")).toBe(
+    "/sessions/claude-session-1?machine=atlas&harness=claude&kind=main&kind=subagent"
+  );
 });
 
 it("does not show a different transcript for an unavailable version URL", async () => {
@@ -432,6 +500,7 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
       id,
       machine_id: "thinkpad",
       harness: "codex",
+      session_kind: "main",
       title,
       cwd: null,
       started_at: null,
@@ -580,7 +649,7 @@ it("lets the session list refresh separately from import progress", async () => 
 });
 
 it("shows inferred subagent links and navigates to a placeholder parent", async () => {
-  const view = await renderViewer(sessionFixtureApi);
+  const view = await renderViewer(sessionFixtureApi, "/?kind=main&kind=subagent&kind=unknown");
 
   await act(async () => {
     findControl(view, "Inspect a local transcript").click();
@@ -612,6 +681,7 @@ it("shows unresolved native parent metadata without inventing a session link", a
     id: "codex-child-unresolved",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Inspect native child transcript",
     cwd: null,
     started_at: null,
@@ -648,6 +718,7 @@ it("keeps native parent metadata reachable without counting an uncaptured parent
     id: "codex-child-metadata-only",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Inspect native metadata without a parent link",
     cwd: null,
     started_at: null,
@@ -688,6 +759,7 @@ it("shows parent and child lookup failures instead of leaving loading indicators
     id: "codex-child-unavailable-parent",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Inspect a child with unavailable relations",
     cwd: null,
     started_at: null,
@@ -726,6 +798,7 @@ it("shows conflicting Codex native and parent IDs without inventing a parent lin
     id: "codex-child-conflicting",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Inspect conflicting thread metadata",
     cwd: null,
     started_at: null,
@@ -765,6 +838,7 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
     id: "codex-parent-session",
     machine_id: "thinkpad",
     harness: "codex",
+    session_kind: "main",
     title: "Captured Codex parent",
     cwd: null,
     started_at: null,
@@ -821,7 +895,7 @@ it("does not prepend an older event page after switching sessions", async () => 
       return sessionFixtureApi.listEvents(sessionId, versionId, cursor, signal);
     },
   };
-  const view = await renderViewer(api);
+  const view = await renderViewer(api, "/?kind=main&kind=subagent&kind=unknown");
 
   await act(async () => {
     findControl(view, "Load earlier records").click();
@@ -854,7 +928,7 @@ it("does not prepend an older event page after switching sessions", async () => 
   expect(view.textContent).not.toContain("Stale page content");
 });
 
-it("does not append a session page after changing the harness filter", async () => {
+it.each(["harness", "kind"])("does not append a session page after changing the %s filter", async (filter) => {
   const pending = deferred<SessionPage<SessionSummary>>();
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
@@ -864,19 +938,24 @@ it("does not append a session page after changing the harness filter", async () 
       return { data: page.data.slice(0, 1), next_cursor: query.harness === undefined ? "older" : null };
     },
   };
-  const view = await renderViewer(api);
+  const view = await renderViewer(api, "/?kind=main&kind=subagent&kind=unknown");
 
   await act(async () => {
     findControl(view, "Load more sessions").click();
     await Promise.resolve();
   });
-  const harness = view.querySelector<HTMLSelectElement>('select[aria-label="Filter by harness"]');
-  expect(harness).not.toBeNull();
-  await act(async () => {
-    harness!.value = "claude";
-    harness!.dispatchEvent(new Event("change", { bubbles: true }));
-    await flush();
-  });
+  if (filter === "harness") {
+    const harness = view.querySelector<HTMLSelectElement>('select[aria-label="Filter by harness"]');
+    expect(harness).not.toBeNull();
+    await act(async () => {
+      harness!.value = "claude";
+      harness!.dispatchEvent(new Event("change", { bubbles: true }));
+      await flush();
+    });
+  } else {
+    await toggleKind(view, "main");
+    await toggleKind(view, "unknown");
+  }
   expect(view.textContent).toContain("Inspect a local transcript");
 
   pending.resolve({
@@ -885,6 +964,7 @@ it("does not append a session page after changing the harness filter", async () 
         id: "stale-session",
         machine_id: "thinkpad",
         harness: "codex",
+        session_kind: "main",
         title: "Stale session page",
         cwd: null,
         started_at: null,

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, false, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
@@ -25,6 +25,7 @@ from x.ai_session_archive.models import (
     Harness,
     Machine,
     MachineImportProgress,
+    SessionKind,
     SessionPage,
     SessionSummary,
     SessionVersion,
@@ -190,6 +191,7 @@ def _summary(row: Any) -> SessionSummary:
         id=session_row.id,
         machine_id=session_row.machine_id,
         harness=Harness(session_row.harness),
+        session_kind=SessionKind(session_row.session_kind or SessionKind.UNKNOWN.value),
         title=session_row.title,
         cwd=session_row.cwd,
         parent_session_id=session_row.parent_session_id,
@@ -231,6 +233,7 @@ def list_sessions(
     *,
     machine_id: str | None,
     harness: Harness | None,
+    kinds: list[SessionKind] | None = None,
     parent_session_id: UUID | None = None,
     cursor: str | None,
     limit: int,
@@ -243,6 +246,16 @@ def list_sessions(
         statement = statement.where(SessionRow.machine_id == machine_id)
     if harness is not None:
         statement = statement.where(SessionRow.harness == harness.value)
+    if kinds is not None:
+        kind_values = [kind.value for kind in kinds]
+        if not kind_values:
+            statement = statement.where(false())
+        elif SessionKind.UNKNOWN in kinds:
+            statement = statement.where(
+                or_(SessionRow.session_kind.in_(kind_values), SessionRow.session_kind.is_(None))
+            )
+        else:
+            statement = statement.where(SessionRow.session_kind.in_(kind_values))
     if parent_session_id is not None:
         statement = statement.where(SessionRow.parent_session_id == parent_session_id)
     if cursor is not None:

@@ -144,6 +144,8 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         capture_name=capture_name,
     ) as view:
         page = view.page
+        await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+        await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
         await page.get_by_role("link", name="Inspect a local transcript").click()
         related_toggle = page.get_by_role("button", name="Related sessions (1 shown)")
         await related_toggle.click()
@@ -167,6 +169,8 @@ async def test_related_sessions_menu_stays_with_title(
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
+        await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+        await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
         await page.get_by_role("link", name="Inspect a local transcript").click()
         toggle = page.locator(".session-browser-related-trigger")
         await expect(toggle).to_have_attribute("aria-label", "Related sessions (51 shown, more available)")
@@ -201,6 +205,8 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         page = view.page
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
+        await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+        await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
         await page.get_by_role("link", name="Inspect a local transcript").click()
         related_toggle = page.locator(".session-browser-related-trigger")
         await expect(related_toggle).to_have_attribute("aria-label", "Related sessions (51 shown, more available)")
@@ -321,3 +327,32 @@ async def test_shared_transcript_disclosures(visual: VisualHarness, capture_name
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+@pytest.mark.parametrize(
+    "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
+)
+async def test_session_kind_filters(visual: VisualHarness, capture_name: str, viewport: Viewport) -> None:
+    async with visual.open(
+        "session-kind-filters", viewport=viewport, color_scheme="light", capture_name=capture_name
+    ) as view:
+        page = view.page
+        if viewport.width < 600:
+            await page.get_by_role("button", name="Session list", exact=True).click()
+        sidebar = page.locator("#session-browser-sidebar")
+        await expect(sidebar.get_by_role("checkbox", name="Main sessions", exact=True)).to_be_checked()
+        await expect(sidebar.get_by_role("checkbox", name="Unknown", exact=True)).to_be_checked()
+        await expect(sidebar.get_by_role("checkbox", name="Guardian", exact=True)).not_to_be_checked()
+        await expect(sidebar.get_by_role("checkbox", name="Subagents", exact=True)).not_to_be_checked()
+        await expect(sidebar.get_by_role("link", name="Compare two captured versions")).to_be_visible()
+        await expect(sidebar.get_by_role("link", name="Guardian automation fixture")).to_have_count(0)
+        await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_have_count(0)
+        await view.check(context="default kinds keep the session list focused on main and unclassified sessions")
+        await view.capture(target=page.locator("#root"))
+        await sidebar.get_by_role("checkbox", name="Guardian", exact=True).click()
+        await expect(sidebar.get_by_role("checkbox", name="Guardian", exact=True)).to_be_checked()
+        await sidebar.get_by_role("checkbox", name="Subagents", exact=True).click()
+        await expect(sidebar.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
+        await expect(sidebar.get_by_role("link", name="Guardian automation fixture")).to_be_visible()
+        await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_be_visible()
+        await view.capture(name=f"{capture_name}_all_kinds", target=page.locator("#root"))

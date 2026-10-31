@@ -88,6 +88,7 @@ class SessionRow(Base):
     source_path: Mapped[str] = mapped_column(String, nullable=False)
     source_relative_path: Mapped[str] = mapped_column(String, nullable=False)
     native_session_id: Mapped[str | None] = mapped_column(String)
+    session_kind: Mapped[str | None] = mapped_column(String(20))
     native_session_id_inferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     native_session_id_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     native_session_id_candidates: Mapped[list[str]] = mapped_column(JsonType, nullable=False, default=list)
@@ -104,8 +105,20 @@ class SessionRow(Base):
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint("harness IN ('claude', 'codex')", name="ck_sessions_harness"),
+        CheckConstraint(
+            "session_kind IS NULL OR session_kind IN ('main', 'subagent', 'guardian', 'unknown')",
+            name="ck_sessions_session_kind",
+        ),
         UniqueConstraint("machine_id", "harness", "source_path", name="uq_sessions_source_path"),
         Index("idx_sessions_machine_harness_activity", "machine_id", "harness", "last_activity_at", "id"),
+        Index(
+            "idx_sessions_machine_harness_kind_activity",
+            "machine_id",
+            "harness",
+            "session_kind",
+            "last_activity_at",
+            "id",
+        ),
         Index("idx_sessions_machine_harness_native", "machine_id", "harness", "native_session_id"),
         Index("idx_sessions_machine_harness_conflict", "machine_id", "harness", "native_session_id_conflict"),
     )
@@ -121,14 +134,19 @@ class CodexTitleObservationRow(Base):
     native_session_id: Mapped[str] = mapped_column(String, primary_key=True)
     # Empty means only the id-bearing session index was available.
     source_path: Mapped[str] = mapped_column(String, nullable=False, default="")
-    title: Mapped[str] = mapped_column(String, nullable=False)
-    title_source: Mapped[str] = mapped_column(String(30), nullable=False)
+    title: Mapped[str | None] = mapped_column(String)
+    title_source: Mapped[str | None] = mapped_column(String(30))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    session_kind: Mapped[str | None] = mapped_column(String(20))
     __table_args__ = (
         ForeignKeyConstraint(
             ["machine_id", "snapshot_id"],
             ["restic_snapshots.machine_id", "restic_snapshots.snapshot_id"],
             ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "session_kind IS NULL OR session_kind IN ('main', 'subagent', 'guardian', 'unknown')",
+            name="ck_codex_title_observations_session_kind",
         ),
         Index("idx_codex_title_machine_native", "machine_id", "native_session_id"),
     )

@@ -115,6 +115,17 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await expect(page.get_by_text("Atlas", exact=True).first).to_be_visible()
 
             transcript = page.locator('[aria-label="Session transcript"]')
+            session_list = page.locator('[aria-label="Session list"]')
+            await expect(page.get_by_role("checkbox", name="Main sessions", exact=True)).to_be_checked()
+            await expect(page.get_by_role("checkbox", name="Unknown", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_have_count(0)
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_have_count(0)
+            await page.get_by_role("checkbox", name="Guardian", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Guardian", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Guardian fixture")).to_be_visible()
+            await page.get_by_role("checkbox", name="Subagents", exact=True).click()
+            await expect(page.get_by_role("checkbox", name="Subagents", exact=True)).to_be_checked()
+            await expect(session_list.get_by_role("link", name="Review subagent notes")).to_be_visible()
             await expect(page.get_by_role("link", name="Review archived conversation")).to_be_visible()
             await expect(transcript.get_by_role("heading", name="Review archived conversation")).to_be_visible()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
@@ -269,6 +280,7 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
                     machine_id="atlas",
                     harness="claude",
                     source_path=root_path,
+                    session_kind="main",
                     source_relative_path="projects/demo/root.jsonl",
                     title="Review archived conversation",
                     cwd="/home/example/project",
@@ -280,11 +292,23 @@ def _seed_archive(engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
                     machine_id="atlas",
                     harness="claude",
                     source_path=child_path,
+                    session_kind="subagent",
                     source_relative_path="projects/demo/subagents/agent-1.jsonl",
                     parent_session_id=session_id,
                     parent_link_kind="claude_path_inferred",
                     title="Review subagent notes",
                     cwd="/home/example/project",
+                    started_at=child_time,
+                    last_activity_at=child_time,
+                ),
+                SessionRow(
+                    id=uuid4(),
+                    machine_id="atlas",
+                    harness="codex",
+                    source_path="/.codex/sessions/guardian-fixture.jsonl",
+                    source_relative_path="sessions/guardian-fixture.jsonl",
+                    session_kind="guardian",
+                    title="Guardian fixture",
                     started_at=child_time,
                     last_activity_at=child_time,
                 ),

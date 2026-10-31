@@ -6,11 +6,13 @@ import hashlib
 import json
 import sqlite3
 import tempfile
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from x.ai_session_archive.models import SessionKind
 from x.ai_session_archive.restic import ResticCommandError, ResticOutputError, ResticRepository
 
 SQLITE_MANIFEST = PurePosixPath("/.local/state/ducktape/ai-session-backup-sqlite/manifest.json")
@@ -20,9 +22,23 @@ SQLITE_MANIFEST = PurePosixPath("/.local/state/ducktape/ai-session-backup-sqlite
 class CodexTitle:
     native_session_id: str
     source_path: str
-    title: str
-    title_source: str
+    title: str | None
+    title_source: str | None
     updated_at: datetime | None
+    session_kind: SessionKind
+
+
+def classify_codex_source(source: object) -> SessionKind:
+    if isinstance(source, str):
+        with suppress(json.JSONDecodeError):
+            source = json.loads(source)
+    if source in ("cli", "exec"):
+        return SessionKind.MAIN
+    if isinstance(source, dict) and isinstance(source.get("subagent"), dict):
+        if source["subagent"].get("other") == "guardian":
+            return SessionKind.GUARDIAN
+        return SessionKind.SUBAGENT
+    return SessionKind.UNKNOWN
 
 
 def _snapshot_file(restic: ResticRepository, snapshot_id: str, path: PurePosixPath) -> bool:
@@ -103,9 +119,7 @@ def _manifest_image(manifest: Any) -> tuple[PurePosixPath, PurePosixPath, str] |
     return candidates[0] if candidates else None
 
 
-def _sqlite_titles(
-    restic: ResticRepository, snapshot_id: str, codex_root: PurePosixPath
-) -> dict[str, tuple[str, str, str]]:
+def _sqlite_titles(restic: ResticRepository, snapshot_id: str, codex_root: PurePosixPath) -> dict[str, CodexTitle]:
     if not _snapshot_file(restic, snapshot_id, SQLITE_MANIFEST):
         return {}
     manifest = json.loads(_dump(restic, snapshot_id, SQLITE_MANIFEST))
@@ -126,9 +140,9 @@ def _sqlite_titles(
         try:
             if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ValueError("Codex SQLite image failed quick_check")
-            rows = database.execute("SELECT id, rollout_path, name, title FROM threads")
-            titles = {}
-            for native_id, rollout_path, name, title in rows:
+            rows = database.execute("SELECT id, rollout_path, name, title, source FROM threads")
+            titles: dict[str, CodexTitle] = {}
+            for native_id, rollout_path, name, title, source in rows:
                 if not isinstance(native_id, str) or not isinstance(rollout_path, str):
                     continue
                 try:
@@ -137,13 +151,16 @@ def _sqlite_titles(
                     continue
                 if relative.parts[:1] not in (("sessions",), ("archived_sessions",)) or relative.suffix != ".jsonl":
                     continue
-                value = name if isinstance(name, str) and name.strip() else title
-                if not isinstance(value, str) or not value.strip():
-                    continue
-                titles[native_id] = (
-                    str(codex_root / relative),
-                    value.strip()[:500],
-                    "sqlite_name" if name else "sqlite_title",
+                has_name = isinstance(name, str) and bool(name.strip())
+                value = name if has_name else title
+                has_title = isinstance(value, str) and bool(value.strip())
+                titles[native_id] = CodexTitle(
+                    native_session_id=native_id,
+                    source_path=str(codex_root / relative),
+                    title=value.strip()[:500] if has_title else None,
+                    title_source="sqlite_name" if has_title and has_name else "sqlite_title" if has_title else None,
+                    updated_at=None,
+                    session_kind=classify_codex_source(source),
                 )
             return titles
         finally:
@@ -185,11 +202,17 @@ def read_codex_titles(
         sqlite_value = sqlite.get(native_id)
         if index_value is not None and index_value[0].strip():
             title, timestamp = index_value
+            metadata = sqlite_value or CodexTitle(
+                native_session_id=native_id,
+                source_path="",
+                title=None,
+                title_source=None,
+                updated_at=None,
+                session_kind=SessionKind.UNKNOWN,
+            )
             result.append(
-                CodexTitle(
-                    native_id, sqlite_value[0] if sqlite_value else "", title.strip()[:500], "session_index", timestamp
-                )
+                replace(metadata, title=title.strip()[:500], title_source="session_index", updated_at=timestamp)
             )
         elif sqlite_value is not None:
-            result.append(CodexTitle(native_id, sqlite_value[0], sqlite_value[1], sqlite_value[2], None))
+            result.append(sqlite_value)
     return result, warnings, retry_errors
