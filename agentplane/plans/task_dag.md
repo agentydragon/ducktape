@@ -68,6 +68,12 @@ the supported examples through the real service boundaries and retain proportion
 the owning component's documentation or acceptance suite. Update canonical agent-facing discovery
 and guidance so an agent can follow the workflow from an ordinary assignment.
 
+Workflow validation may expose missing backend capabilities or service boundaries that need
+refactoring. Adding those features or refactors is an acceptable outcome: record the concrete gap,
+owning backend and real prerequisites, then revisit scope, ordering and priorities with the
+stakeholder. An example with unresolved steps remains a proposal until that work is implemented
+and exercised.
+
 The operator is reusing environments partly because fresh startup is slow. Separate directories
 are acceptable for cooperating agents with shared access; that does not imply isolation between
 different principals. Starting less-privileged workers can wait: the selected first spawning
