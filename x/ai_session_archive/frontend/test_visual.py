@@ -191,6 +191,19 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         )
         await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
         if viewport.width <= 760:
+            drawer = page.get_by_role("dialog", name="Session list")
+            transcript_is_covered = await drawer.evaluate(
+                """drawer => {
+                    const history = document.querySelector('[aria-label="Conversation records"]');
+                    const viewport = history.getBoundingClientRect();
+                    const points = [...history.querySelectorAll('[aria-expanded]')].map(control => {
+                        const rect = control.getBoundingClientRect();
+                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                    }).filter(({ x, y }) => x >= viewport.left && x <= viewport.right && y >= viewport.top && y <= viewport.bottom);
+                    return points.length > 0 && points.every(({ x, y }) => drawer.contains(document.elementFromPoint(x, y)));
+                }"""
+            )
+            assert transcript_is_covered, "transcript controls must not paint or receive clicks above the drawer"
             await view.check(context="related children remain reachable in the mobile session-list drawer")
             await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
             await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()

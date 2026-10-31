@@ -1,4 +1,4 @@
-import type { HistoryEvent, HistoryLayout } from "../../../../util/frontend/history_diagnostics";
+import type { HistoryEvent, HistoryLayout, SnapshotPhase } from "../../../../util/frontend/history_diagnostics";
 
 declare global {
   interface Window {
@@ -39,8 +39,6 @@ export interface ThreadViewLayout extends Omit<HistoryLayout, "scopeId"> {
   threadId: string;
 }
 
-type SnapshotPhase =
-  "start" | "mount" | "unmount" | "commit" | "frame" | "virtual-change" | "scroll-before" | "scroll-after";
 type LayoutSource = () => ThreadViewLayout | null;
 interface LayoutSnapshot {
   at: number;

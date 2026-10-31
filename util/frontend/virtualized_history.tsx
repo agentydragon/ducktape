@@ -108,7 +108,14 @@ function HistoryViewportView<T>({
       role="region"
       aria-label={label}
       tabIndex={0}
-      style={{ overflowY: "auto", overflowAnchor: "none", scrollbarGutter: "stable", flex: 1, minHeight: 0 }}
+      style={{
+        isolation: "isolate",
+        overflowY: "auto",
+        overflowAnchor: "none",
+        scrollbarGutter: "stable",
+        flex: 1,
+        minHeight: 0,
+      }}
       onWheel={(event) =>
         controller.input(
           "wheel",
