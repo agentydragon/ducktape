@@ -28,5 +28,41 @@ debundle closure built with it on. Earlier attempts on a recycled runner
 477 s critical path) are unmatched because Skyframe on the recycled runner kept
 the baseline's outputs valid regardless of `--nouse_action_cache`.
 
-Revisit if debundle PR feedback does not move in the next ci-reports window, or
-if a proc-macro or build-script crate misbehaves under metadata-only compiles.
+## Reverted the same day: it broke the aw-importer releases
+
+Adoption shipped as `8c53b49fee` at 2026-10-30T01:04Z. Every `Release
+aw-importer` and `Push aw-server` job after it failed -- 47 of 47 attempts,
+against 52 of 52 succeeding in the seven hours before. The failing action is
+`aw_server_bin`, not a test:
+
+```
+ERROR: .../external/aw_server_rust/BUILD.bazel: Compiling Rust bin
+       aw_server_bin (1 file) failed
+error[E0463]: can't find crate for `aw_server`
+  --> aw-server/src/main.rs:10:5
+```
+
+Two things kept this out of sight until it reached `devel`. The flag is one
+build setting, so it also applies inside the `.bazelignore`d
+`third_party/activitywatch` module, and the root `bazel test //...` sweep never
+walks into that module (`devinfra/ci/plan_releases.py` records the same gap):
+no PR check built these targets.
+
+The per-target `disable_pipelining = True` opt-out that fixed the `@codex`
+overlay does **not** fix this: same error with the opt-out on every
+`rust_library` in the module ([3dc3bd71]), and the same error without it
+([d80bb5a3]); turning the flag off builds and tests clean ([610d4614]).
+`aw_server` itself compiles -- only its dependent fails to resolve it, so the
+`--extern` path for `aw_server_bin` is still taking metadata despite the
+opt-out. The mechanism is unresolved; `bbr build
+@aw_server_rust//:aw_server_bin` with the flag set reproduces it, and an
+upstream report against rules_rust 0.74 is worthwhile.
+
+The gain was ~10-20 s per debundle PR for +14% actions; the cost was the
+aw-importer/aw-server release path. Reverted. Re-adopt together with a PR check
+that builds nested-module Rust, e.g. `bbr build
+@ducktape_activitywatch//importer:aw_importer_test`.
+
+[3dc3bd71]: https://app.buildbuddy.io/invocation/3dc3bd71-c923-4e8a-8dfb-e58e30567dfd
+[d80bb5a3]: https://app.buildbuddy.io/invocation/d80bb5a3-344d-4082-912f-05d2a0e479db
+[610d4614]: https://app.buildbuddy.io/invocation/610d4614-6bf1-46b1-86e8-93619520802f
