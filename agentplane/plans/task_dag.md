@@ -1864,13 +1864,14 @@ emulation, and point the k3s VM scenarios at that guest.
 
 From the 2026-10-30 idiom audit; problems, targets and exits are in
 [standard idioms](standard_idioms.md). Operator selection, 2026-10-30 PDT: all nodes below are
-accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
+accepted; `SAMPLER_JOURNAL_DIET` and `ACTION_SERVICE_PORT_SHARING` await the operator's view.
 
 ```mermaid
 flowchart LR
     KUBERNETES_NATIVE_WATCH_HEALTH[Staging check: informer health after #13060]
     SAMPLER_TYPED_STATE[In review: typed sampler states, #13073]
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
+    ACTION_SERVICE_PORT_SHARING[Decision: a simpler single Action Service address]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: Dispatcher and Gateway merge] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
@@ -1894,6 +1895,19 @@ Each is one independently finishable PR; see the plan section of the same name:
 
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
+
+### `ACTION_SERVICE_PORT_SHARING` — a simpler single Action Service address
+
+**Decision; operator, 2026-10-31: the shared port is more complex than expected; look for a simpler
+approach, to be chosen.** Since #13138 the Action
+Service serves native gRPC and HTTP on one port through [`graceful.Shared`](../grpc/graceful/shared.go)
+(`soheilhy/cmux`, matching the HTTP/2 preface), so a Sandbox keeps the single `AGENTPLANE_ACTIONS_URL`
+that the CLI (gRPC) and the agent-facing documentation and facade (HTTP) share. Notifications and the
+MCP edge split gRPC and HTTP across two ports instead. Option the operator raised: stop serving
+agent-facing documentation over HTTP, so a Sandbox needs only the gRPC address and the Action Service
+can take the same two-port split (HTTP left for metrics, callbacks and operator routes). Exit: one
+agent-facing address with less moving machinery than the shared listener, both protocols drained on
+shutdown.
 
 ### Blocked
 
