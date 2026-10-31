@@ -190,7 +190,7 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     """Assemble the full bb remote command line; returns it with this run's invocation ID.
 
     Argument layout:
-      bb remote [startup/remote flags] <verb> [--invocation_id] [session bazelrc] [user flags+targets]
+      bb remote --disable_retry=true [startup/remote flags] <verb> [--invocation_id] [session bazelrc] [user flags+targets]
 
     bbr mints the invocation ID and passes it into the remote Bazel command, so
     the ID it reports is this run's by construction. Reading it back from bb's
@@ -221,6 +221,9 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     cmd = [
         bb,
         "remote",
+        # The explicit value is required: bare boolean flags can leak through
+        # bb's remote-flag stripping into Bazel startup options.
+        "--disable_retry=true",
         *startup_options,
         *([verb] if verb else []),
         *invocation_id_flag,
@@ -258,13 +261,14 @@ def _extract_invocation_id_file(args: list[str]) -> tuple[list[str], Path | None
 
 
 _HELP = """\
-bbr — bb remote with session metadata, invocation tracking, and a Git-base check.
+bbr — bb remote with session metadata, invocation tracking, no whole-run replay, and a Git-base check.
 
 Usage: bbr [--help] [--dry-run] [--invocation-id-file=PATH] [remote flags...] <bazel-verb> [flags...] [targets...]
 
 Runner defaults come from bb's native .bbrc files; pass remote flags before
 the Bazel verb to override them. Bazel defaults come from the
 runner's .bazelrc. $BBR_BAZELRC supplies session metadata before user arguments.
+Transient CLI/observer errors fail the run rather than replaying the remote command.
 
 Flags:
   --dry-run                  Print the forwarded command without expanding .bbrc
