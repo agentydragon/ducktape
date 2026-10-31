@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//devinfra/go:defs.bzl", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -27,6 +26,7 @@ go_test(
     name = "control_test",
     srcs = ["server_test.go"],
     embed = [":control"],
+    race = "on",
     deps = [
         "//agentplane/proto:runner_state_go_proto",
         "//agentplane/runner:runner_service_go_proto",

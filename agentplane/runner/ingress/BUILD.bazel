@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//devinfra/go:defs.bzl", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane/runner:__subpackages__"])
 
@@ -29,6 +28,7 @@ go_test(
         "supervisor_test.go",
     ],
     embed = [":ingress"],
+    race = "on",
     deps = [
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/proto:event_go_proto",

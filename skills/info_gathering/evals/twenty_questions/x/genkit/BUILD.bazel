@@ -30,5 +30,6 @@ go_binary(
         "//skills/info_gathering/evals/twenty_questions:sim.txt",
     ],
     embed = [":genkit_lib"],
+    race = "off",
     visibility = ["//visibility:public"],
 )

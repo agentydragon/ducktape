@@ -24,15 +24,3 @@ index dac271b..2181b71 100644
  			Symbols: []string{
  				pyBinaryKind,
  				pyLibraryKind,
-
-diff --git a/manifest/defs.bzl b/manifest/defs.bzl
---- a/manifest/defs.bzl
-+++ b/manifest/defs.bzl
-@@ -141,6 +141,7 @@
-                 "_TEST_REQUIREMENTS": "$(rlocationpath {})".format(lockfiles),
-             },
-             "size": "small",
-+            "race": "on",
-         }
-         go_test(
-             name = test_target,

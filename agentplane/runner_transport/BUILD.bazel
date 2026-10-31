@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//devinfra/go:defs.bzl", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -29,6 +28,7 @@ go_test(
         "security_test.go",
     ],
     embed = [":runner_transport"],
+    race = "on",
     deps = [
         "//agentplane/runner_transport/testing",
         "@org_golang_google_grpc//credentials",
