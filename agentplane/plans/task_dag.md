@@ -55,8 +55,10 @@ are acceptable for cooperating agents with shared access; that does not imply is
 different principals. Starting less-privileged workers can wait: the selected first spawning
 scope uses the caller's ServiceAccount and may reuse its environment.
 
-**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation is assigned to other
-agents. Do not dispatch duplicate work on that track.
+**Ownership report, 2026-10-27 PDT:** runner lifecycle implementation was assigned to other
+agents. Confirm current ownership before assigning overlapping lifecycle work; do not duplicate an
+active owner's task. This report does not hold independent sampler-roll, JS/exec recovery,
+scheduling or Session-creation work.
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections.
@@ -69,21 +71,37 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Current tracks and what they leave behind
+### Dispatch order and prerequisites
 
-Each group holds a track's open nodes; cleanup candidates are in
-[section 15](#15-cleanups-after-the-current-tracks) unless a node names another section.
-`REFACTOR_COHERENCE_AUDIT` sweeps what remains after the current tracks and their cleanups.
+Give P0 reliability work first attention. Sampler-roll/ownership and JS/exec recovery can proceed
+independently where their reviewed contracts allow it; neither is held for the full runtime model,
+Dispatcher/Gateway merge, renames or different-privilege delegation.
+
+P1 scheduling and caller-privilege creation contract work can proceed in parallel. Session-creation
+implementation waits for its bounded authority/admission contract; the daily CI product milestone
+needs both scheduled wake and Session creation/cooperation. Its completion also includes the selected
+reliable-roll/recovery acceptance, without making all P1 development wait for P0 to finish.
+
+Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
+next and are independent of each other; image/layering work becomes a prerequisite only when the
+chosen change actually needs it. Existing technical, authorization, data-preservation and explicit
+operator-review gates remain in the owning nodes. Lower-priority maintenance stays in its sections;
+its old ordering does not give it precedence over the selected tracks.
 
 ```mermaid
 flowchart LR
-    subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
-        DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
-        DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
+    subgraph PRIORITY_ZERO[P0: reliable long-running Sessions]
+        CENTRAL_SAMPLER_REPLICA_ROLLOUT[Roll and owner-loss contract]
+        CENTRAL_SAMPLER_TOOL_RECOVERY[JS and exec recovery]
     end
-    FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
-    RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
-    DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
+    subgraph PRIORITY_ONE[P1: useful daily-agent workflow]
+        THREAD_CREATE_POLICY[Caller-privilege create contract] --> THREAD_CREATE_AUTHORIZATION[Session creation and cooperation]
+        THREAD_CREATE_AUTHORIZATION --> DAILY_CI_AGENT[Daily CI product milestone]
+        SCHEDULED_AGENT_WAKE[Durable scheduled wake] --> DAILY_CI_AGENT
+    end
+    SESSION_LAUNCH_FRICTION[Alongside: simpler reused-environment launch]
+    VM_STARTUP_LATENCY[Next: measured fresh-VM startup]
+    LOCAL_BAZEL[Next: Bazel client inside a VM]
 ```
 
 ## 2. Service-owned command admission and later notification presentation
@@ -1679,6 +1697,11 @@ flowchart TD
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
+**Scheduling update, 2026-10-30 PDT:** later work under the stakeholder priorities. The former
+blanket hold until the optional Dispatcher/Gateway merge is removed: an audit of current devel
+does not technically require that design to land. Check the actual code and active ownership when
+selected; each removal still needs its own evidence and any real prerequisite.
+
 **Candidate.** Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Runner Gateway, History Service, ingress, control; Session for the raw stream,
@@ -2022,10 +2045,11 @@ old paths.
 
 ## 15. Cleanups after the current tracks
 
-Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The overview's graph is in
-[Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
-produce are named at the fake and are not cleanups.
+Dead code, transitional pieces and test leftovers each current track reports it will leave behind
+(census of the lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The
+[dispatch order](#dispatch-order-and-prerequisites) controls priority; the nodes below retain their
+actual prerequisites. Fakes kept to inject faults the real API server cannot produce are named at
+the fake and are not cleanups.
 
 ```mermaid
 flowchart LR
