@@ -303,7 +303,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     await _rollout_start(completed_rollout)
     await _open_run(page)
     call = (
-        page.locator(".agentplane-run-steps .transcript-step-details")
+        page.locator(".transcript-steps .transcript-step-details")
         .filter(has=page.locator(".transcript-step-title:text-is('Shell')"))
         .nth(1)
     )
@@ -322,7 +322,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await output.get_by_role("button", name=re.compile("^Show all")).click()
         await expect(output).to_have_attribute("data-expanded", "true")
         history = page.get_by_role("region", name="Thread history")
-        run_steps = page.locator(".agentplane-run-steps").first
+        run_steps = page.locator(".transcript-steps").first
         run_anchor = await run_steps.evaluate("element => element.closest('[data-thread-anchor]').dataset.threadAnchor")
         run_card = history.locator(f'[data-thread-anchor="{run_anchor}"] > .ui-collapsible-card')
         run_heading = run_card.locator(":scope > .ui-disclosure > .ui-disclosure-item > .ui-disclosure-heading")
@@ -761,7 +761,7 @@ async def test_consecutive_reasoning_group_inside_tool_run(view: VisualPage, app
     await view.check(context="fixture ready")
     page = view.page
     await _open_run(page)
-    steps = page.locator(".agentplane-run-steps").first
+    steps = page.locator(".transcript-steps").first
     reasoning_group = steps.locator(":scope > .ui-collapsible-card").nth(1)
     summary = reasoning_group.locator(".ui-disclosure-summary").first
     await expect(summary).to_have_attribute("aria-expanded", "false")
@@ -1076,7 +1076,7 @@ async def test_collapsed_steps_in_open_run_are_compact(shell_calls: VisualPage) 
     page = view.page
     await _open_run(page)
     await expect(page.locator(".transcript-step-details [aria-busy='true']")).to_have_count(0)
-    steps = page.locator(".agentplane-run-steps .transcript-step-details .ui-disclosure-summary[aria-expanded='false']")
+    steps = page.locator(".transcript-steps .transcript-step-details .ui-disclosure-summary[aria-expanded='false']")
     await expect(steps.first).to_be_attached()
     # Both kinds share the step disclosure control. Its normal mobile min-height
     # and label padding must not turn every collapsed step into a full-size card.

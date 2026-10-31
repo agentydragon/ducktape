@@ -7,6 +7,8 @@ preserves typed text. Applications supply message content and metadata.
 
 `StepLine` renders one compact step title and preview with optional disclosed content.
 Applications choose which records form steps and own their retained open state.
+The `transcript-steps` container packs collapsed steps together while leaving space
+after an opened step.
 `TextBlock` renders labeled, syntax-highlighted text in a bounded block; its
 `expansion` prop accepts caller-owned state, and JSON objects or arrays are highlighted
 as JSON when no language is supplied.

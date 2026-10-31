@@ -77,6 +77,8 @@ bounded tool text and virtualized history. Archive-owned adapters leave user pro
 and assistant commentary/answers visible. Consecutive intermediate work folds into
 semantic tool/reasoning/agent-message counts; bookkeeping stays inspectable under
 Session details and does not inflate those counts.
+A lone activity appears directly as an expandable step, with attached bookkeeping
+included in its source inspection.
 
 Codex function/custom calls pair with results by `call_id` across loaded pages. A
 paired step appears at its result's position and exposes both source records, with

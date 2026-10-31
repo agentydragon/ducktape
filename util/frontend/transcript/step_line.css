@@ -1,3 +1,14 @@
+/* The run chooses a compact folded-row policy; the shared header owns its geometry. */
+.transcript-steps {
+  --ui-disclosure-collapsed-height: var(--ui-disclosure-compact-height);
+}
+
+/* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
+   cards when another step follows it. Below the card, so opening it does not move its top edge. */
+.transcript-steps > [data-open="true"]:not(:last-child) {
+  margin-block-end: var(--mantine-spacing-xs);
+}
+
 /* Shared one-line step presentation; callers own packing and inter-step spacing. */
 .transcript-step-row {
   font-size: var(--mantine-font-size-sm);

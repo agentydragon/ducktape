@@ -347,6 +347,7 @@ async def test_codex_work_steps(visual: VisualHarness, capture_name: str, width:
 
         tool = history.locator('[data-activity-step="tool"]').filter(has_text="run_checks")
         await tool.get_by_role("button", name=re.compile("run_checks")).click()
+        await tool.get_by_role("region", name="Output", exact=True).scroll_into_view_if_needed()
         await expect(tool).to_contain_text("PASS check 01")
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(1)
         await tool.scroll_into_view_if_needed()

@@ -90,7 +90,7 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
     page = view.page
     await _rollout_start(view)
     await _open_run(page)
-    steps = page.locator(".agentplane-run-steps").first
+    steps = page.locator(".transcript-steps").first
     if position == "start":
         static_title = await steps.locator(".transcript-step-static .transcript-step-title").first.bounding_box()
         disclosure_title = await steps.locator(".transcript-step-details .transcript-step-title").first.bounding_box()

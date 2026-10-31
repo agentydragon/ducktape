@@ -96,7 +96,7 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
           )
         }
       >
-        <Stack gap={0}>
+        <Stack gap={0} className="transcript-steps">
           {row.kind === "activity" ? (
             <ActivitySteps steps={row.steps} />
           ) : (
@@ -114,7 +114,14 @@ function TranscriptRowView({ row }: { row: TranscriptRow }): JSX.Element {
 function SessionDetails({ records }: { records: EventRecord[] }): JSX.Element | null {
   if (records.length === 0) return null;
   return (
-    <RetainedDisclosure id={`details:${records.at(-1)!.ordinal}`} summary="Session details">
+    <RetainedDisclosure
+      id={`details:${records.at(-1)!.ordinal}`}
+      summary={
+        <Text span size="xs" c="dimmed">
+          Session details
+        </Text>
+      }
+    >
       {records.map((record) => (
         <EventRow key={record.ordinal} record={record} />
       ))}
@@ -173,7 +180,7 @@ function ActivityStepView({
           ? step.text
           : "Recorded activity";
   return (
-    <Box className="transcript-inspection-owner" data-activity-step={step.kind}>
+    <Box className="transcript-inspection-owner" data-activity-step={step.kind} data-open={open}>
       {records.map((record) => (
         <span key={record.ordinal} data-event-ordinal={record.ordinal} />
       ))}
