@@ -33,3 +33,14 @@ failed because `systemd-analyze` started a pager on the serial console and block
 until its 300 s Ready deadline. Explicit `--no-pager` fixed that failure; the passing probe above
 establishes the corrected behavior. The absolute `/usr/bin/systemd-analyze` path exists in the
 guest image.
+
+Repeat with:
+
+```sh
+bbr test //agentplane/system_tests/suites:test_vm --noremote_accept_cached \
+  --test_env=AGENTPLANE_VM_BOOT_PROBE=1
+```
+
+The running fixture adds the kernel argument only to the OOM SandboxTemplate. Its serial output is retained under
+`test.outputs/vm-artifacts/consoles/` in the BuildBuddy test artifacts; search that guest's log for
+`AGENTPLANE_BOOT_CRITICAL_CHAIN_BEGIN` and `AGENTPLANE_BOOT_BLAME_BEGIN`.
