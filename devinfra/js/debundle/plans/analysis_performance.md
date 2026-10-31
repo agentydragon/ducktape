@@ -37,10 +37,13 @@ stage is 77% synchronous interpreter (`annotate_synchronous_calls`).
    statement, and 94% add nothing: every promoted read is already held for
    the same effect owner. They come from escaped and deferred callback
    promotion, which recomputes the same reached owners at each opaque call.
-   Under an assumption such a call is a no-op; under observation it still
-   clears tags. A per-outcome memo of promoted owners must be reset wherever
-   an outcome's effects are drained (`absorb_binding_effects` takes nested
-   effects). Building `referenced` once over the union of reads instead of
+   Such a call now returns after checking that nothing is new, which cut
+   main-chunk analysis by about 2 s; the checks, the reached-owner closures
+   and the per-owner restriction to top-level bindings remain. A per-outcome
+   memo of promoted owners would skip those too, but it must be reset
+   wherever an outcome's effects are drained: `absorb_binding_effects` takes
+   nested effects at nine call sites, and opaque construction appends the
+   shared `fallback_outcome`'s effects. Building `referenced` once over the union of reads instead of
    per owner in `promote_raw_callbacks_transfer` was measured and gave no
    gain.
 3. **Parallel callable-capability preparation** (Claude, about 4 s). The
