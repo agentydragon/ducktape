@@ -383,6 +383,7 @@ flowchart TD
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     SESSION_PLATFORM_GUIDANCE[In review: default platform guidance]
     SESSION_CALLER_AUTHORITY[In flight: trusted same-SA authority]
+    SESSION_CALLER_WAKE_POLICY[Decision: wake authority for same-SA calls]
     SESSION_PRINCIPAL_READS[Retained same-principal History reads]
     SESSION_TARGET_DISCOVERY[In flight: existing target discovery]
     SESSION_DELEGATION_TOOLS[CLI in review, remaining MCP delegation tools]
@@ -533,6 +534,16 @@ creator labels and target identity. Enforce it on commands, lookup, list/watch, 
 and turn-specific interruption. Keep explicit privileged backend/broker paths distinct.
 Unassociated existing records require an explicit trusted association before normal caller access;
 do not infer ownership by name, from a replacement SA or from a parent edge.
+
+### `SESSION_CALLER_WAKE_POLICY` — wake authorization for same-SA Session calls
+
+**Decision under stakeholder review, 2026-10-31; no wake-policy change dispatched.** The existing
+`wake_callers` setting admits backend SAs separately from a target's `wakeOnSend` flag. A newly
+admitted normal caller can enqueue work for its suspended target without causing it to resume.
+Select whether exact same-SA callers should also wake their own opted-in target (recommended),
+preserving the explicit backend/broker path, or retain the allowlist and document the need for
+another actor to resume it. The current question awaits clarification/selection. Ready-target
+discovery, proxy wiring and Session authorization proceed independently of this choice.
 
 ### `SESSION_PRINCIPAL_READS` — narrow retained same-principal History access
 
