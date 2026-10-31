@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import math
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -27,9 +25,12 @@ from x.ai_session_archive.database import (
     SessionRootRow,
     SessionRow,
     SnapshotFileRow,
+    UsageObservationRow,
 )
 from x.ai_session_archive.models import Harness
+from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from x.ai_session_archive.usage_observations import usage_observations_for_record
 
 PARSER_VERSION = "jsonl-v1"
 CHECKPOINT_INTERVAL = 64
@@ -95,10 +96,7 @@ class _ParsedRecord:
     raw_bytes: bytes
     byte_offset: int
     sha256: str
-    parsed: Any | None
-    parse_error: str | None
-    timestamp: datetime | None
-    kind: str | None
+    json: ParsedRecordJson | RecordJsonParseError
 
 
 class SnapshotIngestor:
@@ -648,7 +646,7 @@ class SnapshotIngestor:
             )
             additions = []
             for index, (record, payload) in enumerate(zip(batch, payloads, strict=True)):
-                if record.parse_error is not None:
+                if isinstance(record.json, RecordJsonParseError):
                     issue_count += 1
                 if matching_prefix:
                     parent_index = index
@@ -696,13 +694,32 @@ class SnapshotIngestor:
                 sha256=record.sha256,
                 parser_version=PARSER_VERSION,
                 raw_bytes=record.raw_bytes,
-                parsed=record.parsed,
-                parse_error=record.parse_error,
-                timestamp=record.timestamp,
-                kind=record.kind,
+                parse_error=record.json.parse_error if isinstance(record.json, RecordJsonParseError) else None,
+                timestamp=record.json.timestamp if isinstance(record.json, ParsedRecordJson) else None,
+                kind=record.json.kind if isinstance(record.json, ParsedRecordJson) else None,
             )
             db.add(payload)
             payload_by_hash[record.sha256] = payload
+            if isinstance(record.json, ParsedRecordJson):
+                for observation_index, observation in enumerate(usage_observations_for_record(record.json.parsed)):
+                    db.add(
+                        UsageObservationRow(
+                            payload_id=payload.id,
+                            observation_index=observation_index,
+                            source_field=observation.source_field,
+                            counter_kind=observation.counter_kind,
+                            model=observation.model,
+                            response_id=observation.response_id,
+                            message_id=observation.message_id,
+                            turn_id=observation.turn_id,
+                            input_tokens=observation.input_tokens,
+                            output_tokens=observation.output_tokens,
+                            cache_read_input_tokens=observation.cache_read_input_tokens,
+                            cache_write_input_tokens=observation.cache_write_input_tokens,
+                            reasoning_output_tokens=observation.reasoning_output_tokens,
+                            total_tokens=observation.total_tokens,
+                        )
+                    )
         db.flush()
         return [payload_by_hash[record.sha256] for record in records]
 
@@ -962,35 +979,12 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
     batch_bytes = 0
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
-        content = raw_bytes[:-1] if raw_bytes.endswith(b"\n") else raw_bytes
-        if content.endswith(b"\r"):
-            content = content[:-1]
-        parsed = None
-        parse_error = None
-        timestamp = None
-        kind = None
-        try:
-            text = content.decode("utf-8", errors="strict")
-            parsed = json.loads(text, parse_constant=_reject_json_constant)
-            _validate_jsonb(parsed)
-            if isinstance(parsed, dict):
-                timestamp = _record_timestamp(parsed)
-                kind = _record_kind(parsed)
-                _extract_session_metadata(parsed, metadata)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OverflowError, RecursionError) as exc:
-            parse_error = f"{type(exc).__name__}: {exc}"[:1000]
-            parsed = None
-            timestamp = None
-            kind = None
+        parsed = parse_record_json(raw_bytes)
+        if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
+            _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp)
         records.append(
             _ParsedRecord(
-                raw_bytes=raw_bytes,
-                byte_offset=byte_offset,
-                sha256=hashlib.sha256(raw_bytes).hexdigest(),
-                parsed=parsed,
-                parse_error=parse_error,
-                timestamp=timestamp,
-                kind=kind,
+                raw_bytes=raw_bytes, byte_offset=byte_offset, sha256=hashlib.sha256(raw_bytes).hexdigest(), json=parsed
             )
         )
         byte_offset += len(raw_bytes)
@@ -999,62 +993,9 @@ def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int
     return records
 
 
-def _reject_json_constant(token: str) -> None:
-    raise ValueError(f"invalid JSON numeric constant {token}")
-
-
-def _validate_jsonb(value: Any, path: str = "$", depth: int = 0) -> None:
-    if depth > 200:
-        raise ValueError(f"JSON nesting exceeds Postgres safety limit at {path}")
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise ValueError(f"JSONB cannot store NUL at {path}")
-        try:
-            value.encode("utf-8", errors="strict")
-        except UnicodeEncodeError as exc:
-            raise ValueError(f"JSONB cannot store an unpaired surrogate at {path}") from exc
-    elif isinstance(value, bool) or value is None:
-        return
-    elif isinstance(value, int):
-        if len(str(abs(value))) > 131072:
-            raise ValueError(f"JSONB numeric is too large at {path}")
-    elif isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"JSONB cannot store a non-finite number at {path}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            _validate_jsonb(item, f"{path}[{index}]", depth + 1)
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f"JSON object key is not text at {path}")
-            _validate_jsonb(key, f"{path}.<key>", depth + 1)
-            _validate_jsonb(item, f"{path}.{key}", depth + 1)
-    else:
-        raise ValueError(f"Unsupported JSON value {type(value).__name__} at {path}")
-
-
-def _record_timestamp(record: Mapping[str, Any]) -> datetime | None:
-    for key in ("timestamp", "created_at", "createdAt", "ts"):
-        value = record.get(key)
-        if isinstance(value, str):
-            try:
-                parsed = datetime.fromisoformat(value)
-                return parsed if parsed.tzinfo is not None and parsed.utcoffset() is not None else None
-            except ValueError:
-                continue
-    return None
-
-
-def _record_kind(record: Mapping[str, Any]) -> str | None:
-    for key in ("type", "kind", "event_type"):
-        value = record.get(key)
-        if isinstance(value, str):
-            return value[:200]
-    return None
-
-
-def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any]) -> None:
+def _extract_session_metadata(
+    record: Mapping[str, Any], metadata: dict[str, Any], *, timestamp: datetime | None
+) -> None:
     payload = record.get("payload")
     data = payload if isinstance(payload, dict) else {}
     if record.get("type") == "session_meta":
@@ -1066,7 +1007,6 @@ def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any
         if isinstance(candidate, str):
             metadata.setdefault("cwd", candidate)
             break
-    timestamp = _record_timestamp(record)
     if timestamp is not None:
         first = metadata.get("first_timestamp")
         last = metadata.get("last_timestamp")
