@@ -900,6 +900,134 @@ pub fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static 
     .then_some(row)
 }
 
+/// How an iteration method combines its callback's results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IterationResult {
+    /// `undefined`.
+    Undefined,
+    /// A fresh array of the callback results, in index order.
+    Mapped,
+    /// A fresh array of the elements whose callback result is truthy.
+    Filtered,
+    /// A fresh array of the callback results, an array result spread one
+    /// level through `IsArray`, `length` and index reads.
+    FlatMapped,
+    /// A Boolean. This and the next two may stop at any element; the
+    /// interpreter still invokes the callback for every element, since
+    /// effects join and the extra invocations only add possible effects.
+    Boolean,
+    /// An element, or `undefined`.
+    Element,
+    /// A Number.
+    Index,
+    /// The last callback result; the accumulator starts at `Arg(1)` or, when
+    /// it is absent, at the first element. An empty receiver without `Arg(1)`
+    /// throws.
+    Accumulated,
+}
+
+/// An `%Array.prototype%` method that calls its callback synchronously,
+/// once per index from 0 below the initial `length` that the receiver has
+/// as an own property. The callback receives `(element, index, array)`, or
+/// `(accumulator, element, index, array)` for `Accumulated`, with `this`
+/// undefined: `thisArg` is not admitted.
+#[derive(Debug)]
+pub struct IterationRow {
+    pub member: &'static str,
+    pub cite: &'static str,
+    /// Admitted argument counts; a spread argument is never admitted.
+    pub arity: RangeInclusive<usize>,
+    /// The callback operand.
+    pub invokes: ArgSel,
+    pub result: IterationResult,
+    /// Slots the method's identity, its element reads and, for a fresh
+    /// array result, `ArraySpeciesCreate`'s `constructor` lookup depend on.
+    pub requires: &'static [IntrinsicSlot],
+}
+
+/// The Array machinery an iteration row reads: the method and `constructor`
+/// on `%Array.prototype%`, and the inherited lookups an own-element read
+/// would fall through to. Prototype slots are family-level, so these are
+/// also what every other dense-array model in the interpreter requires.
+pub const ARRAY_PROTOTYPE_SLOTS: &[IntrinsicSlot] = &[
+    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+    IntrinsicSlot::ArrayIteratorPrototype,
+    IntrinsicSlot::Prototype(NativeIntrinsic::Object),
+];
+
+const FOR_EACH: IterationRow = IterationRow {
+    member: "forEach",
+    cite: "sec-array.prototype.foreach",
+    arity: 1..=1,
+    invokes: ArgSel::Arg(0),
+    result: IterationResult::Undefined,
+    requires: ARRAY_PROTOTYPE_SLOTS,
+};
+
+pub const ITERATION_ROWS: &[IterationRow] = &[
+    FOR_EACH,
+    IterationRow {
+        member: "map",
+        cite: "sec-array.prototype.map",
+        result: IterationResult::Mapped,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "filter",
+        cite: "sec-array.prototype.filter",
+        result: IterationResult::Filtered,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "flatMap",
+        cite: "sec-array.prototype.flatmap",
+        result: IterationResult::FlatMapped,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "some",
+        cite: "sec-array.prototype.some",
+        result: IterationResult::Boolean,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "every",
+        cite: "sec-array.prototype.every",
+        result: IterationResult::Boolean,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "find",
+        cite: "sec-array.prototype.find",
+        result: IterationResult::Element,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "findIndex",
+        cite: "sec-array.prototype.findindex",
+        result: IterationResult::Index,
+        ..FOR_EACH
+    },
+    IterationRow {
+        member: "reduce",
+        cite: "sec-array.prototype.reduce",
+        arity: 1..=2,
+        result: IterationResult::Accumulated,
+        ..FOR_EACH
+    },
+];
+
+/// The iteration row a static-member call selects, when its arity matches
+/// and no argument is spread. The receiver is not checked here.
+pub fn iteration_row(member: &str, args: &[ExprOrSpread]) -> Option<&'static IterationRow> {
+    ITERATION_ROWS
+        .iter()
+        .find(|row| row.member == member)
+        .filter(|row| {
+            row.arity.contains(&args.len()) && args.iter().all(|arg| arg.spread.is_none())
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

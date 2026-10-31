@@ -2675,8 +2675,8 @@ they do not assert that every reported dependency executes synchronously.
 
 Direct native calls and constructions the interpreter can summarize without
 running user code are the rows of `facts/abstract_domain/builtins.rs`
-(§ Synchronous analysis limits). The proofs below cover array iteration and
-`push`, which have no row yet.
+(§ Synchronous analysis limits). Array iteration methods are that file's
+`ITERATION_ROWS`; `push` has no row yet.
 
 An unexported `const` facade built by the exact nested
 `Object.freeze(Object.defineProperty({__proto__: null, ...ownData},
@@ -2688,12 +2688,38 @@ identity and property values, so a later call or publication still exposes its
 stored callbacks. The proof changes only construction-time callback reachability;
 ordinary eager dependencies, effects, and ordering remain.
 
-Bounded synchronous analysis can execute a known callback for direct one-callback
-`forEach`, `filter`, and `map` calls over a retained untainted dense ordinary
-array. It passes actual retained element capabilities and preserves callback
-reads, writes, coercions, and publication. Fresh results retain element aliases;
-iteration and spread do not invoke stored functions. Unsupported sources,
-mutation, intrinsic changes, and invocation limits retain conservative effects.
+Bounded synchronous analysis can execute a known callback for a direct
+`forEach`, `map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex` or
+`reduce` call over a retained untainted dense ordinary array: one callback, no
+`thisArg`, no spread; `reduce` also takes an initial value. The callback runs
+once per element, in index order, with the retained element, a primitive index
+and the source array (`reduce` passes the accumulator first). Its reads,
+writes, coercions and publication are observed effects of the statement.
+
+- **Early exit.** `some`, `every`, `find` and `findIndex` can stop at any
+  element. The analysis still runs the callback for every element: effects
+  only join, so the extra invocations add possible effects and remove none.
+- **Results.** `map`, `filter` and `flatMap` return a fresh array that retains
+  the element and callback-result aliases. A `flatMap` result whose positions
+  are unknown keeps its values as contents and is not iterated precisely
+  later. `find` returns an element or `undefined`; `reduce` returns the last
+  accumulator, and on an empty array without an initial value it throws.
+  Iteration and spread of a result do not invoke stored functions.
+- **The array as an argument.** The source array reaches the callback as its
+  last argument under its own allocation, so a write through that parameter
+  is a write to the source.
+- **Mutation.** Before each next element the analysis re-reads the source.
+  Unless the source is the same untainted dense array with the same element
+  values, and no element was tainted, the call falls back to conservative
+  whole effects.
+- **Holes, `thisArg`, own method slots.** A sparse or non-literal source is not
+  dense, a `thisArg` is not admitted, and an own `forEach`-style property on
+  the array taints it. Each is the conservative path.
+- **Integrity.** Each row's `requires` slots (`%Array.prototype%`, the Array
+  iterator, `%Object.prototype%`) must be intact. An intrinsic change, an
+  unsupported operation in the callback, or exhausted invocation limits also
+  keep conservative effects.
+
 See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).
 
 A direct static `binding.push(...)` with non-spread primitive arguments may

@@ -5,10 +5,9 @@ mod prototype_properties;
 
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::value_model::{
-    ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
-    FromEntriesMappedProof, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
+    MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
+    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind,
@@ -17,7 +16,9 @@ use crate::analysis_inputs::{
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
-use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
+use crate::facts::abstract_domain::builtins::{
+    self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
+};
 use crate::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
@@ -11716,26 +11717,22 @@ impl Visit for ExecutionIndex {
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()
             && let MemberProp::Ident(property) = &member.prop
-            && call.args.len() == 1
-            && call.args[0].spread.is_none()
+            && let Some(row) = iteration_row(property.sym.as_ref(), &call.args)
+            && let ArgSel::Arg(callback) = row.invokes
         {
-            let method = match property.sym.as_ref() {
-                "forEach" => Some(ArrayIterationMethod::ForEach),
-                "filter" => Some(ArrayIterationMethod::Filter),
-                "map" => Some(ArrayIterationMethod::Map),
-                _ => None,
-            };
-            if let Some(method) = method {
-                self.array_iterations.insert(
-                    call.span.into(),
-                    ArrayIteration {
-                        method,
-                        source: ValueExpr::from_expr(&member.obj),
-                        callback: ValueExpr::from_expr(&call.args[0].expr),
-                        result: None,
-                    },
-                );
-            }
+            self.array_iterations.insert(
+                call.span.into(),
+                ArrayIteration {
+                    row,
+                    source: ValueExpr::from_expr(&member.obj),
+                    callback: ValueExpr::from_expr(&call.args[callback].expr),
+                    initial: call
+                        .args
+                        .get(1)
+                        .map(|initial| ValueExpr::from_expr(&initial.expr)),
+                    result: None,
+                },
+            );
         }
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()

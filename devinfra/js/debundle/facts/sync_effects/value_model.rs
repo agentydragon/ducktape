@@ -1,5 +1,6 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
+use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
 use imbl::{OrdMap, OrdSet};
@@ -210,18 +211,13 @@ pub(super) enum AbstractValue {
     GlobalObject,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArrayIterationMethod {
-    ForEach,
-    Filter,
-    Map,
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct ArrayIteration {
-    pub(super) method: ArrayIterationMethod,
+    pub(super) row: &'static IterationRow,
     pub(super) source: ValueExpr,
     pub(super) callback: ValueExpr,
+    /// `reduce`'s initial accumulator.
+    pub(super) initial: Option<ValueExpr>,
     pub(super) result: Option<u32>,
 }
 

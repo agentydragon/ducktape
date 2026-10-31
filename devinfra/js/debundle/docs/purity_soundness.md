@@ -645,14 +645,23 @@ opaque consumers; they cannot reuse a pre-push iteration result. Tests cover
 visible intrinsic changes, own-method mutation, argument getters, escapes,
 retained callbacks and reads after mutation.
 
-The synchronous-effects executor models direct static `forEach`, `filter`, and
-`map` calls with one callback and no spread or `thisArg`. This is an effect
-model, not a purity admission: each known synchronous callback executes in the
-existing bounded abstract invocation engine with the retained element value,
-a primitive index, and the source array. Its ordinary reads, writes, calls,
-coercions, and publication effects remain observable. Empty arrays do not
-invoke the callback. `filter` conservatively retains every element; its
-subsequent indexes remain unknown primitives.
+The synchronous-effects executor models direct static calls of the
+`ITERATION_ROWS` methods in `facts/abstract_domain/builtins.rs` (`forEach`,
+`map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex`, `reduce`)
+with one callback, no spread and no `thisArg`; `reduce` may add an initial
+value. This is an effect model, not a purity admission: each known synchronous
+callback executes in the existing bounded abstract invocation engine with the
+retained element value, a primitive index, and the source array, after the
+accumulator for `reduce`. Its ordinary reads, writes, calls, coercions, and
+publication effects remain observable. Empty arrays do not invoke the callback.
+`filter` conservatively retains every element; its subsequent indexes remain
+unknown primitives. Methods that may stop early still invoke the callback for
+every element; the executor's state only joins, so the extra invocations
+over-approximate. `flatMap` spreads a callback result only when it is one
+untainted dense array; otherwise the result keeps the values as unordered
+contents and is tainted. Each callback result a fresh array retains must be a
+primitive, a tracked function, or an untainted retained ordinary or dense array
+object, the same condition `map` checks.
 
 The source must resolve at the current prefix to one untainted dense ordinary
 array. Elements must be primitives, retained ordinary data objects, or tracked
@@ -670,9 +679,11 @@ functions. Visible Array/Object/global intrinsic mutation, constructor capabilit
 mutation/publication, custom iterators, species, methods, getters, holes, proxies,
 and ambiguous sources prevent this proof. Callback effects can themselves
 invalidate it. This follows the standard algorithms for
-[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach),
-[filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter),
-and [map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map).
+[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach)
+and each row's cited section. They read `length` once, then visit indices in
+order through `HasProperty` and `Get`, which on an own dense data element run
+no user code; `flatMap` also applies `IsArray`, `length` and index reads to an
+array callback result.
 
 Within a certified iteration callback, a complete set of simple member
 assignments can preserve a separate fresh ordinary data receiver. Every key and

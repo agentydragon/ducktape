@@ -1,8 +1,8 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::value_model::{
-    AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
-    Context, DenseArray, FrozenNamespaceProof, MemberKey, ValueExpr, Values,
+    AbstractValue, ArrayIteration, CallSite, Captured, CapturedContext, Context, DenseArray,
+    FrozenNamespaceProof, MemberKey, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -15,7 +15,9 @@ use super::{
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
-use crate::facts::abstract_domain::builtins::{ArgSel, IntrinsicOp, Return, Row};
+use crate::facts::abstract_domain::builtins::{
+    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, IterationResult, Return, Row,
+};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
@@ -357,6 +359,7 @@ struct CallbackPoolObservation {
     reachability_revision: u64,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
     dense_arrays: OrdMap<u32, DenseArray>,
+    accumulated_values: OrdMap<u32, Values>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     class_superclasses: OrdMap<u32, Values>,
     set_sizes: [usize; 10],
@@ -381,6 +384,7 @@ impl PartialEq for CallbackPoolObservation {
                 &other.prefix_object_properties,
             )
             && same(&self.dense_arrays, &other.dense_arrays)
+            && same(&self.accumulated_values, &other.accumulated_values)
             && same(&self.applied_accessors, &other.applied_accessors)
             && same(&self.class_superclasses, &other.class_superclasses)
     }
@@ -553,6 +557,8 @@ pub(super) struct ExecutionState {
     own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     dense_arrays: OrdMap<u32, DenseArray>,
+    /// `reduce` results by call site allocation id.
+    accumulated_values: OrdMap<u32, Values>,
     ordinary_spread_copies: BTreeSet<u32>,
     descriptor_copy_results: BTreeSet<u32>,
     array_iteration_depth: usize,
@@ -1619,28 +1625,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn array_intrinsics_intact(&self) -> bool {
+        self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+    }
+
+    fn array_slots_intact(&self, slots: &[IntrinsicSlot]) -> bool {
         let array = ("Array".into(), SyntaxContext::empty());
         !self.state.array_intrinsic_mutated
             && !self.inputs.flow.is_declared(&array)
             && !self.inputs.shadowed.contains("Array")
             && self.inputs.index.dynamic_scope_owners.is_empty()
-            && self.native_guard_intact(
-                NativeIntegrityGuard::ArrayIntrinsics,
-                &[
-                    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
-                    IntrinsicSlot::ArrayIteratorPrototype,
-                    IntrinsicSlot::Prototype(NativeIntrinsic::Object),
-                ],
-            )
+            && self.native_guard_intact(NativeIntegrityGuard::ArrayIntrinsics, slots)
     }
 
-    fn dense_source(&self, values: &Values) -> Option<(u32, DenseArray)> {
+    /// The one untainted dense array `values` denotes, when the Array slots
+    /// the caller reads are intact.
+    fn dense_source(
+        &self,
+        values: &Values,
+        requires: &[IntrinsicSlot],
+    ) -> Option<(u32, DenseArray)> {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
         };
-        if !self.array_intrinsics_intact() || self.state.tainted_objects.contains(object) {
+        if !self.array_slots_intact(requires) || self.state.tainted_objects.contains(object) {
             return None;
         }
         Some((*object, self.state.dense_arrays.get(object)?.clone()))
@@ -1665,7 +1674,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return false;
         }
         let receiver = self.evaluate(receiver, env, captures);
-        let Some((object, _)) = self.dense_source(&receiver) else {
+        let Some((object, _)) = self.dense_source(&receiver, ARRAY_PROTOTYPE_SLOTS) else {
             return false;
         };
         // An intact ordinary array has its own writable length, and the
@@ -1741,7 +1750,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             containment.extend(values.iter().cloned());
             if element.spread {
-                if let Some((_, source)) = self.dense_source(&values) {
+                if let Some((_, source)) = self.dense_source(&values, ARRAY_PROTOTYPE_SLOTS) {
                     slots.extend(source.slots);
                 } else {
                     dense = false;
@@ -1793,7 +1802,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let proof = self.inputs.index.array_iterations.get(&span)?.clone();
         proof.result?;
         let values = self.evaluate(&proof.source, env, captures);
-        let (source, dense) = self.dense_source(&values)?;
+        let (source, dense) = self.dense_source(&values, proof.row.requires)?;
         if dense.slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
             return None;
         }
@@ -1830,6 +1839,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((proof, source, dense, key, captured))
     }
 
+    /// The value an admitted iteration call evaluates to. A fresh array
+    /// result is its allocation, whose slots the transfer retains; the
+    /// accumulator is what the transfer last stored.
+    fn array_iteration_result(&mut self, proof: &ArrayIteration, dense: &DenseArray) -> Values {
+        let result = proof.result.unwrap();
+        match proof.row.result {
+            IterationResult::Undefined => Values::from([AbstractValue::UNDEFINED]),
+            IterationResult::Mapped | IterationResult::Filtered | IterationResult::FlatMapped => {
+                Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
+            }
+            IterationResult::Boolean => {
+                Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))])
+            }
+            IterationResult::Index => {
+                Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))])
+            }
+            IterationResult::Element => {
+                let mut values: Values = dense.slots.iter().flatten().cloned().collect();
+                values.insert(AbstractValue::UNDEFINED);
+                values
+            }
+            // Not yet transferred: what the accumulator can hold is unknown,
+            // but every callback it can reach stays retained.
+            IterationResult::Accumulated => match self.state.accumulated_values.get(&result) {
+                Some(values) => values.clone(),
+                None => {
+                    let mut reachable: Values = dense.slots.iter().flatten().cloned().collect();
+                    reachable.insert(AbstractValue::Value(Value::Alloc(Kind::Object, result)));
+                    let callbacks = self.callback_values(&reachable);
+                    Values::from([
+                        self.deferred_callbacks(callbacks),
+                        AbstractValue::Value(Value::Top),
+                    ])
+                }
+            },
+        }
+    }
+
     fn merge_array_effects(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
         self.apply_rebind_effects(&nested.effects.rebinds);
         outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
@@ -1864,6 +1911,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         handled
     }
 
+    /// Whether a callback result can be stored in a fresh result array, or
+    /// spread into one, without running user code when the result is later
+    /// read, iterated or spread.
+    fn retainable_iteration_value(&self, value: &AbstractValue) -> bool {
+        match value {
+            AbstractValue::Value(Value::Prim(_))
+            | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+            | AbstractValue::Closure(_, _) => true,
+            AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                !self.state.tainted_objects.contains(object)
+                    && (self.inputs.index.plain_data_objects.contains(object)
+                        || self.state.ordinary_spread_copies.contains(object)
+                        || self.state.dense_arrays.contains_key(object))
+            }
+            _ => false,
+        }
+    }
+
+    /// The slots a `flatMap` callback result contributes: one untainted
+    /// dense array spreads its slots; any other retainable value is one
+    /// slot. `None` when an array may sit beside other values, so slot
+    /// positions are unknown.
+    fn flattened_iteration_slots(&self, returned: &Values) -> Option<Vec<Values>> {
+        let arrays: Vec<_> = returned
+            .iter()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    self.state.dense_arrays.get(object)
+                }
+                _ => None,
+            })
+            .collect();
+        match arrays.as_slice() {
+            [] => Some(vec![returned.clone()]),
+            [array] if returned.len() == 1 => Some(array.slots.clone()),
+            _ => None,
+        }
+    }
+
     pub(super) fn execute_array_iteration_transfer(
         &mut self,
         span: CallSite,
@@ -1876,6 +1962,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return false;
         };
+        let row = proof.row;
+        let result = proof.result.unwrap();
         let source_values =
             Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, source))]);
         let original_callbacks = self.callback_values(&source_values);
@@ -1883,44 +1971,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state
             .array_iteration_protected_objects
             .extend(protected_objects);
-        let mut slots = Vec::new();
+        let mut accumulator = proof
+            .initial
+            .as_ref()
+            .map(|initial| self.evaluate(initial, env, captures));
+        let mut slots = Some(Vec::new());
         for values in &dense.slots {
+            if row.result == IterationResult::Accumulated && accumulator.is_none() {
+                accumulator = Some(values.clone());
+                continue;
+            }
+            let mut arguments = vec![
+                values.clone(),
+                Values::from([AbstractValue::PRIMITIVE]),
+                source_values.clone(),
+            ];
+            if let Some(accumulator) = &accumulator {
+                arguments.insert(0, accumulator.clone());
+            }
             let previous_unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported = false;
             self.state.array_iteration_depth += 1;
-            let nested = self.invoke(
-                key,
-                vec![
-                    values.clone(),
-                    Values::from([AbstractValue::PRIMITIVE]),
-                    source_values.clone(),
-                ],
-                captured.clone(),
-                false,
-            );
+            let nested = self.invoke(key, arguments, captured.clone(), false);
             self.state.array_iteration_depth -= 1;
             let unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported |= previous_unsupported;
             let returned = nested.returns.clone();
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
-            let valid = !unsupported && self.dense_source(&current_source).is_some_and(|(object, current)| object == source && current.slots == dense.slots)
+            let valid = !unsupported && self.dense_source(&current_source, row.requires).is_some_and(|(object, current)| object == source && current.slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if self.state.tainted_objects.contains(object)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
             let valid = valid
-                && (proof.method != ArrayIterationMethod::Map
-                    || returned.iter().all(|value| match value {
-                        AbstractValue::Value(Value::Prim(_))
-                        | AbstractValue::Value(Value::Alloc(Kind::Function, _))
-                        | AbstractValue::Closure(_, _) => true,
-                        AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                            !self.state.tainted_objects.contains(object)
-                                && (self.inputs.index.plain_data_objects.contains(object)
-                                    || self.state.ordinary_spread_copies.contains(object)
-                                    || self.state.dense_arrays.contains_key(object))
-                        }
-                        _ => false,
-                    }));
+                && (!matches!(
+                    row.result,
+                    IterationResult::Mapped | IterationResult::FlatMapped
+                ) || returned
+                    .iter()
+                    .all(|value| self.retainable_iteration_value(value)));
             if !valid {
                 let callback_owner = self.inputs.index.callables[&key].owner;
                 let effect_owner = self.state.current_top_owner.unwrap_or(callback_owner);
@@ -1931,27 +2019,114 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
-                self.state.tainted_objects.insert(proof.result.unwrap());
+                self.state.tainted_objects.insert(result);
                 self.state
                     .prefix_object_properties
-                    .entry(proof.result.unwrap())
+                    .entry(result)
                     .or_default()
                     .entry(None)
                     .or_default()
                     .extend(original_callbacks.iter().cloned());
+                if row.result == IterationResult::Accumulated {
+                    let mut retained = original_callbacks.clone();
+                    retained.extend(self.callback_values(&returned));
+                    retained.extend(accumulator.iter().flatten().cloned());
+                    let fallback = Values::from([
+                        self.deferred_callbacks(retained),
+                        AbstractValue::Value(Value::Top),
+                    ]);
+                    self.join_accumulated_value(result, fallback);
+                }
                 self.invoke_possible_callbacks(&[original_callbacks], false, outcome);
                 return false;
             }
-            slots.push(if proof.method == ArrayIterationMethod::Map {
-                returned
-            } else {
-                values.clone()
-            });
+            match row.result {
+                IterationResult::Mapped => {
+                    if let Some(slots) = &mut slots {
+                        slots.push(returned);
+                    }
+                }
+                IterationResult::Filtered => {
+                    if let Some(slots) = &mut slots {
+                        slots.push(values.clone());
+                    }
+                }
+                IterationResult::FlatMapped => {
+                    match (slots.take(), self.flattened_iteration_slots(&returned)) {
+                        (Some(mut retained), Some(flattened)) => {
+                            retained.extend(flattened);
+                            slots = Some(retained);
+                        }
+                        // Positions are unknown: keep the values as contents.
+                        (previous, _) => {
+                            let mut contents: Values =
+                                previous.into_iter().flatten().flatten().collect();
+                            for value in &returned {
+                                match value {
+                                    AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                                        if self.state.dense_arrays.contains_key(object) =>
+                                    {
+                                        contents.extend(
+                                            self.state.dense_arrays[object]
+                                                .slots
+                                                .iter()
+                                                .flatten()
+                                                .cloned(),
+                                        );
+                                    }
+                                    value => {
+                                        contents.insert(value.clone());
+                                    }
+                                }
+                            }
+                            self.state
+                                .prefix_object_properties
+                                .entry(result)
+                                .or_default()
+                                .entry(None)
+                                .or_default()
+                                .extend(contents);
+                        }
+                    }
+                }
+                IterationResult::Accumulated => accumulator = Some(returned),
+                IterationResult::Undefined
+                | IterationResult::Boolean
+                | IterationResult::Element
+                | IterationResult::Index => {}
+            }
         }
-        if proof.method != ArrayIterationMethod::ForEach {
-            self.retain_dense_array(proof.result.unwrap(), slots);
+        match row.result {
+            IterationResult::Mapped | IterationResult::Filtered | IterationResult::FlatMapped => {
+                match slots {
+                    Some(slots) => self.retain_dense_array(result, slots),
+                    None => {
+                        self.state.tainted_objects.insert(result);
+                    }
+                }
+            }
+            IterationResult::Accumulated => {
+                // An empty receiver without an initial value throws.
+                let values = accumulator
+                    .unwrap_or_else(|| Values::from([AbstractValue::Value(Value::Unavailable)]));
+                self.join_accumulated_value(result, values);
+            }
+            IterationResult::Undefined
+            | IterationResult::Boolean
+            | IterationResult::Element
+            | IterationResult::Index => {}
         }
         true
+    }
+
+    /// Repeated evaluations of one `reduce` call join their accumulators.
+    fn join_accumulated_value(&mut self, result: u32, values: Values) {
+        let current = self.state.accumulated_values.entry(result).or_default();
+        let before = current.len();
+        current.extend(values);
+        if current.len() != before {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
     }
 
     fn is_proven_map_entry_array(
@@ -5314,6 +5489,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             reachability_revision: state.reachability.revision,
             prefix_object_properties: state.prefix_object_properties.clone(),
             dense_arrays: state.dense_arrays.clone(),
+            accumulated_values: state.accumulated_values.clone(),
             applied_accessors: state.applied_accessors.clone(),
             class_superclasses: state.class_superclasses.clone(),
             set_sizes: [
@@ -6122,15 +6298,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.state.frozen_namespace_calls.contains(span) {
                     return self.evaluate(&args[0], env, captures);
                 }
-                if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
-                    return if proof.method == ArrayIterationMethod::ForEach {
-                        Values::from([AbstractValue::UNDEFINED])
-                    } else {
-                        Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Object,
-                            proof.result.unwrap(),
-                        ))])
-                    };
+                if let Some((proof, _, dense, _, _)) =
+                    self.array_iteration_plan(*span, env, captures)
+                {
+                    return self.array_iteration_result(&proof, &dense);
                 }
                 let targets = self.evaluate(callee, env, captures);
                 if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
@@ -7067,7 +7238,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
                 return;
             }
-            if self.dense_source(&values).is_some() {
+            if self.dense_source(&values, ARRAY_PROTOTYPE_SLOTS).is_some() {
                 return;
             }
             outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
@@ -8353,6 +8524,7 @@ pub(crate) fn annotate_synchronous_calls(
         own_descriptor_maps: OrdMap::new(),
         applied_accessors: OrdMap::new(),
         dense_arrays: OrdMap::new(),
+        accumulated_values: OrdMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
         descriptor_copy_results: BTreeSet::new(),
         array_iteration_depth: 0,
