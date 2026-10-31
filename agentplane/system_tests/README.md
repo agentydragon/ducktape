@@ -62,7 +62,7 @@ before deletion, and starts cleanup when its assertions finish, overlapping its 
 awaits all cleanup before stopping the shared stack; peer cancellation also waits for
 teardown. The scripted server remains shared and routes by Pod identity.
 The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
-supervisor checks before Runner starts, on the same root image as every other guest. There is no
+supervisor checks before Environment Runtime starts, on the same root image as every other guest. There is no
 additional supervision VM or root image. `test_vm_manual` covers
 VM workspace ownership, suspend/resume and storage by hand. `test_real_model`
 runs the real-model egress and session-instruction cases with the BuildBuddy live-test key

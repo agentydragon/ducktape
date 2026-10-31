@@ -121,13 +121,13 @@ ducktapePkgs
     pathsToLink = [ "/bin" ];
   };
   # Same harnesses, with the shared repository hook/build clients preinstalled.
-  runner-ducktape-image = import ../../agentplane/runner/image.nix {
+  runner-ducktape-image = import ../../agentplane/env/images/image.nix {
     inherit pkgs pkgsUnstable;
     name = "runner-ducktape";
     extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
   };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
-  agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
+  agentplane-runner-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
     inherit pkgs self;
   };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake

@@ -18,7 +18,7 @@ new test run. Versions differ:
 | Claude Code 2.1.296 | This investigation's `/bin/claude --version`                                             | Nix `.claude-wrapped` binary; SHA-256 `8ae9374664a714e8c56d18c6ed22aa024325e7d4b753ff0a69727a2571425537`; embedded JavaScript   |
 | CLIProxyAPI         | [`third_party/cli_proxy_api/MODULE.bazel`](../../third_party/cli_proxy_api/MODULE.bazel) | Fork source commit `0f5c54cd6a1393447484eee02149bf7fab2e4784`                                                                   |
 
-The [runner image](../runner/image.nix) uses nixpkgs harnesses, independently of the scripted-test
+The [runner image](../env/images/image.nix) uses nixpkgs harnesses, independently of the scripted-test
 pins. Neither the 2.1.252 baseline nor this session's installed 2.1.296 establishes which binary ran
 in the incident VM.
 

@@ -1604,9 +1604,9 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
 **Decision; operator, 2026-10-13 and 2026-10-15 PDT.** The 2026-10-15 framing names the property wanted: independent updates and RAM headroom. Today one artifact still carries the harnesses and tools:
-`agentplane/runner/container-disk.nix` bakes both harnesses and the tools into the NixOS qcow2 that
-KubeVirt boots, and `agentplane/runner/image.nix` bakes them into the Pod image. The runner and
-`agentplane` command are already split out onto the Bazel-built `//agentplane/runner:disk_image`, a read-only disk
+`agentplane/env/images/container-disk.nix` bakes both harnesses and the tools into the NixOS qcow2 that
+KubeVirt boots, and `agentplane/env/images/image.nix` bakes them into the Pod image. The environment
+processes and `agentplane` command are packaged by the Bazel-built `//agentplane/env/images:disk_image`, a read-only disk
 the VM attaches and an image the Pod mounts, so a runner bump no longer republishes either; bumping a
 harness or a template's installed tools still rebuilds the whole artifact. Separate the concerns so a platform user supplies an image or definition with
 no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
@@ -1700,8 +1700,10 @@ with the runner jailing a forked child into stage 2 to exec Claude/Codex — is 
 squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
-works. The existing runner/CLI disk (`//agentplane/runner:disk_image`) is mounted at
-`/run/agentplane/runner`; the remaining work is splitting the tools-heavy environment.
+works, so the update path exists. Landed: the environment processes and CLI are published as their own `containerDisk`
+(`//agentplane/env/images:disk_image`), the `runner-vm` template attaches it as a second read-only disk, and the guest
+mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
+(a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
 Preserve the shipped typed guest resource policy when splitting layers: stage 1 owns the OS
 reserve and service caps, and native workloads and the executor keep their separate budgets.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
@@ -2350,7 +2352,7 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
 **Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/k3s/guest`, a
-second implementation of `runner/vm.nix`'s guest boot contract (disks by serial, workspace format,
+second implementation of `agentplane/env/images/vm.nix`'s guest boot contract (disks by serial, workspace format,
 harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.
 

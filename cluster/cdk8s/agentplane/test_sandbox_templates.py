@@ -90,6 +90,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor"]
     assert [container["name"] for container in pod["initContainers"]] == ["egress-sidecar"]
     assert pod["initContainers"][0]["restartPolicy"] == "Always"
+    assert runner["command"] == ["/run/agentplane/runner/bin/agentplane-environment-runtime"]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
     assert config["environment"] == {
@@ -97,7 +98,6 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "supervision": "pid1",
         "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
     }
-    assert runner["command"] == ["/run/agentplane/runner/bin/agentplane-environment-runtime"]
     assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-execution-service"]
     assert executor["args"] == [
         "companion",

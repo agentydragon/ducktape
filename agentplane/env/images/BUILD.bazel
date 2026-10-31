@@ -1,0 +1,64 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/erofs:defs.bzl", "erofs_image")
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# All independently runnable environment processes and the CLI share one read-only disk that a Pod
+# mounts as an image volume (`bin/`) and a VM attaches as a KubeVirt containerDisk (`disk/runner.img`).
+pkg_tar(
+    name = "disk_bin",
+    srcs = [
+        "//agentplane/cli:agentplane",
+        "//agentplane/env/execution/cmd:agentplane-execution-service",
+        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
+    ],
+    mode = "0755",
+    package_dir = "/bin",
+)
+
+erofs_image(
+    name = "disk_erofs",
+    out = "runner.img",
+    tar = ":disk_bin",
+    volume_label = "agentplane",
+)
+
+# KubeVirt's qemu reads the containerDisk as uid 107.
+pkg_tar(
+    name = "disk_img",
+    srcs = [":disk_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+)
+
+oci_image(
+    name = "disk_image",
+    architecture = "amd64",
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    os = "linux",
+    tars = [
+        ":disk_bin",
+        ":disk_img",
+    ],
+    user = "107:107",
+)
+
+py_test(
+    name = "test_disk",
+    srcs = ["test_disk.py"],
+    data = [
+        ":disk_erofs",
+        "//devinfra/erofs:erofs_tool_bin",
+        "@trixie_erofs_utils//:flat",
+    ],
+    env = {"EROFS_CLOSURE": "$(rlocationpath @trixie_erofs_utils//:flat)"},
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)

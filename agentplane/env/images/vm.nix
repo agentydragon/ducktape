@@ -9,12 +9,13 @@
 # /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
 # 107 can write there. The runner runs as root; harness children run as that 107 user.
 #
-# The runner configuration, launch file, trust bundle, and mTLS credentials arrive on read-only
+# The Runtime configuration, launch file, trust bundle, and mTLS credentials arrive on read-only
 # KubeVirt ConfigMap/Secret virtiofs mounts under /run/agentplane.
 #
-# The runner and the `agentplane` command are not in this closure. They arrive on the read-only
-# runner disk (//agentplane/runner:disk_image), a second containerDisk mounted at /run/agentplane/runner, so a new
-# runner release republishes that small disk and not this guest. The harnesses and tools stay here.
+# Runtime, Harness Host, Execution service and the `agentplane` command are not in this closure.
+# They arrive on the read-only runtime disk (//agentplane/env/images:disk_image), a second containerDisk
+# mounted at /run/agentplane/runner, so a service release republishes that small disk and not this
+# guest. The harnesses and tools stay here.
 {
   lib,
   pkgs,
@@ -26,8 +27,8 @@ let
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
-  # The Runner disk's mount point. runner.json includes its bin directory in harness PATH;
-  # //agentplane/runner:disk_image builds the disk.
+  # The Runtime disk's mount point. runner.json includes its bin directory in harness PATH;
+  # //agentplane/env/images:disk_image builds the disk.
   runnerDir = "${runtimeDir}/runner";
   # Pod and VM expose the same logical directories. Values are KubeVirt disk serial suffixes.
   seedDisks = {
@@ -35,7 +36,7 @@ let
     sandbox = "launch";
     trust = "trust";
   };
-  # virtiofsd's identity (above); the Go runner runs harnesses as this user.
+  # virtiofsd's identity (above); the Go Harness Host runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
 
@@ -66,7 +67,7 @@ let
           $out/bin/codex
       '';
 
-  # An ExecCondition that passes where the Runner config's `environment.console_autologin` (unset is false)
+  # An ExecCondition that passes where the environment config's `environment.console_autologin` (unset is false)
   # equals `autologin`. jq exits 1 otherwise, which skips the unit without failing it; an unreadable
   # config (exit 2 or 5) skips both console units. It prints nothing, which the console, a tty
   # for these units, would show.
@@ -93,7 +94,7 @@ let
   );
 in
 {
-  imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
+  imports = [ ./../../../nix/nixos/modules/vm-hardware.nix ];
 
   networking.hostName = "agentplane-runner-vm";
   # The Runner Gateway initiates mTLS gRPC connections to the guest's runner listener.
@@ -317,7 +318,7 @@ in
     serviceConfig.ExecStart = "${pkgs.systemd}/bin/systemd-tmpfiles --create --prefix=${workspaceDir}";
   };
 
-  # The production guest and the real-manager test fixture consume the same unit policy.
+  # The production guest and the real-manager test fixture consume the same Runtime unit policy.
   # Only the Nix store helper path and workspace preparation dependency need a drop-in.
   systemd.services.agentplane-environment-runtime = {
     overrideStrategy = "asDropin";
@@ -334,10 +335,10 @@ in
     ];
   };
 
-  # The guest's package set: the tools every Sandbox kind shares (<../images/tools.nix>), the same
+  # The guest's package set: the tools every Sandbox kind shares (<../../images/tools.nix>), the same
   # hook/build tools as runner-ducktape, what the guest needs of its own, and the harnesses.
   environment.systemPackages =
-    import ../images/tools.nix pkgs
+    import ../../images/tools.nix pkgs
     ++ preCommitPackages
     ++ (with pkgs; [
       bashInteractive
@@ -349,7 +350,7 @@ in
 
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries =
-    (import ../../nix/lib/nix-ld-image.nix { inherit pkgs; }).runtimeLibPkgs;
+    (import ../../../nix/lib/nix-ld-image.nix { inherit pkgs; }).runtimeLibPkgs;
 
   system.stateVersion = "25.11";
 }

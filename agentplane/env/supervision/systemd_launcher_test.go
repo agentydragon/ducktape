@@ -25,9 +25,9 @@ func TestSystemdOwnerValidate(t *testing.T) {
 
 func TestSystemdScopeIdentity(t *testing.T) {
 	const stateDir, sandboxUID = "/state/sandbox", "sandbox-uid"
-	runnerIdentity := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runnerUnit, LifetimeDirectory: runnerLifetimeDirectory, ScopeID: SystemdRunnerScopeID})
+	runnerIdentity := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: SystemdRunnerScopeID})
 	if want := stateDir + "\x00" + sandboxUID; runnerIdentity != want {
-		t.Fatalf("Runner scope identity = %q, want existing identity %q", runnerIdentity, want)
+		t.Fatalf("Runtime scope identity = %q, want legacy identity %q", runnerIdentity, want)
 	}
 	runtime := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdRunnerScopeID})
 	harness := systemdScopeIdentity(stateDir, sandboxUID, SystemdOwner{Unit: "agentplane-harness-host.service", LifetimeDirectory: "/run/agentplane-harness-host-lifetime", ScopeID: "harness-host"})

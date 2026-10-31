@@ -25,7 +25,7 @@ oci_image(
     user = "1000:1000",
 )
 
-# **Deviation:** production appends the runner disk's bin to PATH (agentplane/runner/image.nix). Here
+# **Deviation:** production appends the runner disk's bin to PATH (agentplane/env/images/image.nix). Here
 # `agentplane` is linked into /usr/bin instead, because Codex runs commands in a login shell and
 # Debian's /etc/profile resets PATH.
 pkg_tar(

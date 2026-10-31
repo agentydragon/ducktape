@@ -55,7 +55,7 @@ K3S_SERVICE_IMAGES = {
     "notification_service": "//agentplane/notification_service:service_image",
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_minimal_linux_amd64",
-    "runner_disk": "//agentplane/runner:disk_image",
+    "runner_disk": "//agentplane/env/images:disk_image",
     "runner_gateway": "//agentplane/runner_gateway:image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
 }

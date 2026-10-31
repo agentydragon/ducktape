@@ -1,61 +1,15 @@
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
     "//agentplane/runner/testing:exec_properties.bzl",
     "NATIVE_RUNNER_DOCKER_ENV",
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
-load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
-
-# Environment Runtime, Harness Host, Execution service and the `agentplane` CLI, in one image that
-# a Pod mounts as an image volume (`bin/`) and a runner VM attaches as a KubeVirt containerDisk
-# (`disk/runner.img`, an erofs of the same `bin/`).
-pkg_tar(
-    name = "disk_bin",
-    srcs = [
-        "//agentplane/cli:agentplane",
-        "//agentplane/env/execution/cmd:agentplane-execution-service",
-        "//agentplane/env/harnesshost/cmd:agentplane-harness-host",
-        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
-    ],
-    mode = "0755",
-    package_dir = "/bin",
-)
-
-erofs_image(
-    name = "disk_erofs",
-    out = "runner.img",
-    tar = ":disk_bin",
-    volume_label = "agentplane",
-)
-
-# KubeVirt's qemu reads the containerDisk as uid 107.
-pkg_tar(
-    name = "disk_img",
-    srcs = [":disk_erofs"],
-    mode = "0644",
-    owner = "107.107",
-    package_dir = "/disk",
-)
-
-oci_image(
-    name = "disk_image",
-    architecture = "amd64",
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    os = "linux",
-    tars = [
-        ":disk_bin",
-        ":disk_img",
-    ],
-    user = "107:107",
-)
 
 py_library(
     name = "conftest",
@@ -519,23 +473,6 @@ go_proto_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:runner_state_go_proto",
-    ],
-)
-
-py_test(
-    name = "test_disk",
-    srcs = ["test_disk.py"],
-    data = [
-        ":disk_erofs",
-        "//devinfra/erofs:erofs_tool_bin",
-        "@trixie_erofs_utils//:flat",
-    ],
-    env = {"EROFS_CLOSURE": "$(rlocationpath @trixie_erofs_utils//:flat)"},
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
     ],
 )
 

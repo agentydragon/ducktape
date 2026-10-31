@@ -1,5 +1,5 @@
 # The command-line tools of an agentplane box, as one list for every kind of Sandbox: the Pod images
-# (<sandbox.nix>, and the runner and build images on it) and the VM guest (<../runner/vm.nix>). A tool
+# (<sandbox.nix>, and the runner and build images on it) and the VM guest (<../env/images/vm.nix>). A tool
 # added here reaches all of them. What a kind adds of its own stays with it: the Pod images their FHS
 # bash, CA bundle and `agentplane` command, the guest its disk tools and harnesses.
 pkgs: with pkgs; [

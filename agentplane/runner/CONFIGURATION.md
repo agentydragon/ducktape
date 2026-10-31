@@ -3,13 +3,13 @@
 Pods and VMs start the same executable with the same configuration contract:
 
 ```sh
-/run/agentplane/runner/bin/agentplane-runner \
+/run/agentplane/runner/bin/agentplane-environment-runtime \
   --config /run/agentplane/config/runner.json \
   --launch-file /run/agentplane/sandbox/launch.json
 ```
 
 Both arguments are required. Unknown flags, positional arguments, unknown JSON fields and unsupported
-versions fail before Runner opens state. The executable name does not select a mode. The file schema
+versions fail before Runtime opens state. The executable name does not select a mode. The file schema
 is [`configuration.py`](configuration.py); [`env/configuration/configuration.go`](../env/configuration/configuration.go) validates and
 composes it into the runtime configuration. The [protocol contract](SPEC.md) covers Session behavior.
 
@@ -131,23 +131,26 @@ the harness environment. Lifecycle, recovery and scope are documented in
 ## Shared layout
 
 The delivery mechanism differs: a Pod mounts ConfigMaps, while a VM mounts read-only ConfigMap disks.
-The paths consumed by Runner and tools are identical.
+The paths consumed by Runtime and tools are identical.
 
-| Path                                           | Owner and contents                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `/run/agentplane/config/runner.json`           | Template-owned Runner configuration.                                     |
-| `/run/agentplane/sandbox/launch.json`          | Controller-owned Sandbox identity and bootstrap.                         |
-| `/run/agentplane/config/kubeconfig`            | Sandbox workload identity through the egress proxy.                      |
-| `/run/agentplane/trust/ca-certificates.crt`    | Egress proxy CA bundle.                                                  |
-| `/run/agentplane/trust/ca-certificates.p12`    | Java proxy trust store.                                                  |
-| `/run/agentplane/runner/bin/agentplane-runner` | Shared executable; the Pod companion starts it with the `executor` mode. |
-| `/state`                                       | Durable Session journals and native persistence.                         |
-| `/state/workspaces`                            | Sandbox-owned workspace storage.                                         |
+| Path                                                        | Owner and contents                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------- |
+| `/run/agentplane/config/runner.json`                        | Template-owned environment configuration.               |
+| `/run/agentplane/sandbox/launch.json`                       | Controller-owned Sandbox identity and bootstrap.        |
+| `/run/agentplane/config/kubeconfig`                         | Sandbox workload identity through the egress proxy.     |
+| `/run/agentplane/trust/ca-certificates.crt`                 | Egress proxy CA bundle.                                 |
+| `/run/agentplane/trust/ca-certificates.p12`                 | Java proxy trust store.                                 |
+| `/run/agentplane/runner/bin/agentplane-environment-runtime` | Environment owner and Pod PID 1.                        |
+| `/run/agentplane/runner/bin/agentplane-harness-host`        | Session, harness and journal owner, started by Runtime. |
+| `/run/agentplane/runner/bin/agentplane-execution-service`   | Execution API owner and Pod companion entrypoint.       |
+| `/state`                                                    | Durable Session journals and native persistence.        |
+| `/state/workspaces`                                         | Sandbox-owned workspace storage.                        |
 
 The Pod also mounts the CA at the system trust location for clients which do not read CA environment
-variables. Its runner config is a per-template ConfigMap, including specializations such as the
-BuildBuddy-enabled tools image. The companion mounts workspace/home/tmp and tool configuration;
-it does not mount Runner configuration, provider token variables or projected sidecar tokens.
+variables. Its environment config is a per-template ConfigMap, including specializations such as the
+BuildBuddy-enabled tools image. The Execution Service companion mounts workspace/home/tmp and tool
+configuration; it does not mount environment configuration, provider token variables or projected
+sidecar tokens.
 
 Home persistence is explicit template policy. Pod configuration uses `/home/runner`, shared through
 an `emptyDir` in isolated mode. VM configuration uses the existing `/state/workspaces/.home` on the
@@ -166,14 +169,15 @@ One typed `Environment.vm_resources` value supplies KubeVirt RAM/vCPU sizing and
 resource policy, including boot service limits and harness/executor budgets. `vm.nix` mounts the disks
 and installs the shared systemd units; it does not supply an alternate Runner configuration loader.
 
-Before Runner starts, systemd invokes the executable's private `--vm-resource-properties` mode
+Before Environment Runtime starts, systemd invokes the executable's private `--vm-resource-properties` mode
 with `runner.json`. The preflight validates resource relationships and live `/proc/meminfo` before
 printing `MemoryHigh`, `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The maximum must be
 below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The helper applies
-these properties to `agentplane.slice`, enclosing Runner, workloads and executor. The Runner unit uses
-`OOMPolicy=continue`. Aggregate and native process cgroups use `memory.oom.group=0`, so a cgroup OOM
+these properties to `agentplane.slice`, enclosing Runtime, Host, Execution Service, workloads and
+executor. The Environment Runtime unit uses `OOMPolicy=continue`. Aggregate and native process cgroups use `memory.oom.group=0`, so a cgroup OOM
 selects individual victims. The kernel may select the harness or executor and may kill more processes
-if pressure persists. Native leader exit still fences all descendants. Runner logs OOM counters and available peak memory before releasing a native service.
+if pressure persists. Native leader exit still fences all descendants. Runtime logs OOM counters and
+available peak memory before releasing a native service.
 See [supervision](docs/supervision.md) for the unit hierarchy and startup fence.
 
 `/run/agentplane/config/runner.env` supplies the VM systemd unit's Runner-only OpenTelemetry

@@ -103,7 +103,7 @@ catalog (a new file, a restarted ingress) reaches running Sessions without resta
 harnesses. The runner sets the Codex provider's `model_catalog_url` to this endpoint and passes no context window of its own. cdk8s generates the file for each environment
 (`cluster/cdk8s/agentplane/codex_models.py`): a ChatGPT route takes the pinned Codex's upstream entry, another
 route an entry only where a context window is configured. The pinned Codex must not be older than the runner image's
-(nixpkgs' `codex`, `runner/image.nix`). Codex behavior behind this endpoint, with source citations and test
+(nixpkgs' `codex`, `agentplane/env/images/image.nix`). Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or

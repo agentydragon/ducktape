@@ -756,7 +756,7 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     config_volume["configMap"]["name"] = oom_config_map_name
     objects.extend([oom_config_map, oom_template])
     # Run the private supervisor checks once, in an existing harness VM. All templates use
-    # the same guest root; the boot argument selects the fixture executable before Runner starts.
+    # the same guest root; the boot argument selects the fixture executable before Environment Runtime starts.
     supervision = deepcopy(template)
     supervision["metadata"]["name"] = vm_configuration.SUPERVISION_TEMPLATE
     supervision["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += (

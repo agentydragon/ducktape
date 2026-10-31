@@ -417,7 +417,7 @@
       # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but
       # rejects a repeated dynamic one, so a second `checks.${system}.…` is an eval error.
       checks.${system} = {
-        runner-ducktape-tools = import ./agentplane/runner/ducktape_tools_check.nix {
+        runner-ducktape-tools = import ./agentplane/env/images/ducktape_tools_check.nix {
           inherit pkgs;
           tools = self.packages.${system}.runner-ducktape-tools;
         };
@@ -590,7 +590,7 @@
         agentplane-runner-vm = mkNixos {
           hostname = "agentplane-runner-vm";
           username = "runner";
-          hostModule = ./agentplane/runner/vm.nix;
+          hostModule = ./agentplane/env/images/vm.nix;
           # Keep the guest's repository tooling identical to the Pod runner's.
           extraSpecialArgs = { inherit preCommitPackages; };
           enableHomeManager = false;
