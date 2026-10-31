@@ -154,8 +154,8 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 /// kept as raw source (non-selected chunks). The oracle parses these itself —
 /// every listed chunk participates in cross-module purity, not just the
 /// selected ones.
-struct ReparsedEntry {
-    parsed: ParsedJsModule,
+pub(super) struct ReparsedEntry {
+    pub(super) parsed: ParsedJsModule,
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
@@ -281,26 +281,15 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
 }
 
-pub(super) fn collect_cross_module_imported_purities(
+/// Re-parse the entries stored as raw source so every chunk's body is
+/// analyzable by the cross-module pass. Parse failures only warn: the pass is
+/// an analysis refinement, and an unparseable chunk degrades to conservative
+/// behavior rather than failing the build. The caller keeps the parses, so an
+/// analysis artifact can number the hygiene contexts they introduce.
+pub(super) fn reparse_unretained_entries(
     artifact: &ChunkBundle,
-    indexes: &ArtifactIndexes,
-    projection: &AnalysisProjection<'_>,
-    options: CrossModuleAnalysisOptions<'_>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
-) -> Result<CrossModulePurities> {
-    let CrossModuleAnalysisOptions {
-        graph_provenance,
-        replacement_packages,
-    } = options;
-    let chunk_export_purity = projection.chunk_export_purity;
-    let chunk_analysis_options = projection.chunk_analysis_options;
-    let resolved_member_sites = &projection.premise_members;
-    let predefined_globals = projection.host_behavior.predefined_globals;
-    let declared_pure_new_bindings = &projection.declared_pure_new();
-    // Pass 1: re-parse entries stored as raw source so every chunk's body is
-    // analyzable. Parse failures only warn — the pass is an analysis
-    // refinement, and an unparseable chunk degrades to today's conservative
-    // behavior rather than failing the build.
+) -> BTreeMap<ChunkId, ReparsedEntry> {
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
@@ -339,6 +328,26 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
 
+    reparsed
+}
+
+pub(super) fn collect_cross_module_imported_purities(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    projection: &AnalysisProjection<'_>,
+    options: CrossModuleAnalysisOptions<'_>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+    reparsed: &BTreeMap<ChunkId, ReparsedEntry>,
+) -> Result<CrossModulePurities> {
+    let CrossModuleAnalysisOptions {
+        graph_provenance,
+        replacement_packages,
+    } = options;
+    let chunk_export_purity = projection.chunk_export_purity;
+    let chunk_analysis_options = projection.chunk_analysis_options;
+    let resolved_member_sites = &projection.premise_members;
+    let predefined_globals = projection.host_behavior.predefined_globals;
+    let declared_pure_new_bindings = &projection.declared_pure_new();
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
@@ -1502,6 +1511,7 @@ mod tests {
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
+                &reparse_unretained_entries(&artifact, None),
             )
             .expect("cross-module analysis succeeds");
 
@@ -1563,6 +1573,7 @@ mod tests {
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
+                &reparse_unretained_entries(&artifact, None),
             )
             .expect("cross-module analysis succeeds");
 

@@ -18,6 +18,16 @@ use selector_debt::{
 use spec_stats::{compute_spec_stats, render_spec_stats_text};
 use std::path::PathBuf;
 
+/// Args for `debundle spec project-analysis`.
+#[derive(Debug, ClapArgs)]
+struct ProjectAnalysisArgs {
+    #[command(flatten)]
+    transform: pipeline::TransformArgs,
+    /// Where to write the projection.
+    #[arg(long)]
+    out: PathBuf,
+}
+
 /// Args for `debundle spec ...`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct SpecNs {
@@ -151,6 +161,15 @@ enum SpecNsCommand {
     /// the author's step (docs/spec_editing.md § Proposing commutations).
     #[command(name = "propose-commutations")]
     ProposeCommutations(ProposeCommutationsArgs),
+    /// Write the run's analysis projection: everything `debundle analyze`
+    /// reads from the spec, with premises resolved by the selector solve.
+    ///
+    /// Takes `debundle run`'s inputs and runs the selector solve and nothing
+    /// after it. The bytes are canonical: an edit the analysis does not read
+    /// (module assignment, renames, notes, `commuting_statements`) leaves
+    /// them unchanged.
+    #[command(name = "project-analysis")]
+    ProjectAnalysis(ProjectAnalysisArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -488,6 +507,9 @@ pub(super) fn run(args: SpecNs, source_context: Option<&VerifiedGraphSourceConte
             run_validate_cmd(v).context("running keep-going selector validation")
         }
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
+        SpecNsCommand::ProjectAnalysis(args) => {
+            pipeline::project_analysis_cli(&args.transform.resolve()?, &args.out)
+        }
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,
             source_context.context("propose-commutations verifies its graph before dispatch")?,

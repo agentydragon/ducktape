@@ -1,16 +1,12 @@
-# Cross-process Stage B: why we backed out
+# Cross-process analysis reuse: SWC hygiene
 
-A previous design proposed splitting the per-chunk pipeline into two
-Bazel actions: **Stage A** (parse + facts + dependency graph + atomic-
-units) emits a cacheable JSON artifact; **Stage B** (the materializer:
-assemble assignment → realizability → lower) reads it as input. Goal:
-spec edits hit only Stage B; Stage A's expensive parse + analysis
-gets cached.
-
-The current in-process steps are `chunk_analysis/mod.rs::compute_chunk_facts`
-and `build_chunk_graph`. No on-disk sidecar or
-cross-process consumer exists. **The design is abandoned.** This note records
-why, so we don't sleepwalk back into it.
+A first design split the per-chunk pipeline into two Bazel actions: **Stage A**
+(parse, facts, dependency graph, atomic units) wrote a JSON artifact that
+**Stage B** (assignment, realizability, lowering) read. It was abandoned over
+the problem below. Cross-process reuse now exists: `debundle analyze` writes an
+analysis artifact that `debundle run --analysis` reads (docs/design.md §
+Pipeline split), encoded by `analysis_codec`. This note records why the
+obvious encodings are wrong, so the codec is not "simplified" back into one.
 
 ## What broke it: SWC hygiene is `Globals`-local
 
@@ -94,28 +90,21 @@ cached output is value-less to Stage B: Stage B redoes the parse
 and the fact analysis. At that point Stage A's cache only proves
 "did Stage A succeed", which is not why we'd build the artifact.
 
-### Honest path: SWC hygiene-snapshot replay
+### What works: re-parse, then map context ordinals
 
-The structurally correct cross-process design would serialize the
-sequence of `Mark::fresh(parent)` and `apply_mark(prev, mark)` ops
-Stage A performed during resolution, then replay them in Stage B's
-fresh `Globals` before deserializing any `Id`. The required SWC
-internals are all public (`Mark::parent()`, `SyntaxContext::outer()`,
-`SyntaxContext::remove_mark()`) — no fork required — but it's a
-substantial implementation, and the cache value it delivers
-(~5–10s saved on the downstream corpus-scale spec edits, dominated by parse)
-doesn't justify it.
-
-## What we kept
-
-The composer pattern survived as two named calls, facts
-(`compute_chunk_facts`) then dependency graph and atomic units
-(`build_chunk_graph`). Its value is **structural readability**, not
-cross-process caching.
+Replaying the `Mark` operations Stage A performed is unnecessary. The
+resolver's scope structure is deterministic for given source text, so the
+reader re-parses the same modules (which it does anyway to lower them) and
+numbers every context by its first occurrence in a pre-order walk of those
+modules. The writer writes each `SyntaxContext` as that ordinal; the reader
+maps ordinals back to its own contexts. Inner scopes keep their own ordinal, so
+the shadowing hazard above does not arise. Facts are not recomputed, unlike the
+re-parse alternative. `analysis_codec` implements this; its
+`decodes_into_a_fresh_globals` test is the cross-`Globals` round trip.
 
 ## Pointers
 
-- `../wire_format.md` — the live `Atom`-only convention.
-- `chunk_analysis/mod.rs` — the in-process composer.
+- `../wire_format.md` — the `Atom`-only convention of JSON reports.
+- `analysis_codec.rs`, `lowering/analysis_artifact.rs` — the artifact encoding.
 - Git history: the abandoned design lived in `PIPELINE_SPLIT.md`
   pre-deletion (`git log -- devinfra/js/debundle/PIPELINE_SPLIT.md`).

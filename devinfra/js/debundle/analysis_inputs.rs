@@ -15,7 +15,7 @@ use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, SourceMatchClaim};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
     TypescriptMetadataDecorateHelper,
@@ -754,7 +754,7 @@ pub struct NativeIntegrity {
     pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnalysisAssumptions {
     /// Author prototype premises for source-checked local unary record factories.
     pub retained_record_factories: BTreeSet<String>,

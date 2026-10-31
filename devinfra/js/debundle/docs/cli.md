@@ -464,6 +464,24 @@ rejection was the only failure and the tree is complete; any other failure
 exits 1. The contract is
 <../SPEC.md> § Reading-only output on gate rejection; the tree is not runnable.
 
+### Reusing analysis across runs
+
+Analysis dominates a run, and module assignment edits do not change it. Compute
+it once and reuse it while editing the assignment:
+
+```bash
+debundle spec project-analysis <run args> --out analysis.projection
+debundle analyze --projection analysis.projection \
+  --tree-source-root <root> [--package-root …] --out analysis.dba
+debundle run <run args> --analysis analysis.dba
+```
+
+The projection holds everything analysis reads from the spec; its bytes stay
+the same across assignment edits, module renames, notes and
+`commuting_statements`. `run --analysis` refuses an artifact computed by
+another engine, from other sources, or for another projection, naming what
+differs; rerun the first two commands then. Its output equals `debundle run`'s.
+
 Selector failures follow the keep-going (default) and `--fail-fast` modes of
 <../SPEC.md> § Modes, in the order of `docs/selector_resolution.md` § Order. Bulk
 selector edits keep going, reporting every failure of a pass in each chunk's

@@ -213,7 +213,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
     // realizability, and output roots are deliberately outside this query.
     let spec = load_transform_spec_source(&cli.spec_source)?;
     let loaded = artifact::load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    let prepared = prepare_js_chunks(&spec, loaded)?;
+    let prepared = prepare_js_chunks(&spec.materialize_chunk_ids(), &spec.vendor, loaded)?;
     let source = prepared.program;
     let artifact = source.artifact();
     let table = &artifact.chunk_table;

@@ -12,7 +12,8 @@ use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
-    GateRejectionPolicy, MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
+    AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, GateRejectionPolicy,
+    MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
 };
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
@@ -236,8 +237,140 @@ pub fn collect_package_roots(
 }
 
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
+    run_transform_with_analysis(cli, options, None)
+}
+
+/// `debundle run`, taking analysis from the artifact at `analysis` when given
+/// (`debundle run --analysis`).
+pub fn run_transform_with_analysis(
+    cli: &TransformCli,
+    options: TransformRunOptions,
+    analysis: Option<&Path>,
+) -> Result<()> {
     let (spec, prepared) = prepare_transform(cli, &options, None)?;
-    run_prepared_transform(&spec, prepared, options, false)
+    let mode = match analysis {
+        Some(path) => AnalysisMode::Load {
+            base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
+            artifact: fs::read(path)
+                .with_context(|| format!("read analysis artifact {}", path.display()))?,
+        },
+        None => AnalysisMode::Compute,
+    };
+    run_prepared_transform(&spec, prepared, options, false, mode)?;
+    Ok(())
+}
+
+/// `debundle spec project-analysis`: the run's analysis projection, written to
+/// `out` as its canonical bytes. Runs the selector solve and nothing after it.
+pub fn project_analysis_cli(cli: &TransformCli, out: &Path) -> Result<()> {
+    let options = audit_options();
+    let (spec, prepared) = prepare_transform(cli, &options, None)?;
+    let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
+    let projection =
+        run_prepared_transform(&spec, prepared, options, true, AnalysisMode::Project(base))?
+            .context("spec materializes no chunk, so it has no analysis projection")?;
+    fs::write(out, projection.encode()?)
+        .with_context(|| format!("write analysis projection {}", out.display()))
+}
+
+/// Command-line arguments for `debundle analyze`.
+#[derive(ClapArgs, Debug, Clone)]
+pub struct AnalyzeArgs {
+    /// Analysis projection written by `debundle spec project-analysis`; the
+    /// only spec input.
+    #[arg(long)]
+    pub projection: PathBuf,
+    /// Root the projection's source paths are relative to.
+    #[arg(long = "tree-source-root", env = "DEBUNDLE_TREE_SOURCE_ROOT")]
+    pub tree_source_root: PathBuf,
+    /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
+    #[arg(long = "package-root", value_parser = parse_package_root_kv)]
+    pub package_roots: Vec<(String, PathBuf)>,
+    /// Root directory containing per-package sources (alternative to repeated --package-root).
+    #[arg(long)]
+    pub packages_root: Option<PathBuf>,
+    /// Where to write the analysis artifact.
+    #[arg(long)]
+    pub out: PathBuf,
+}
+
+/// `debundle analyze`: compute the cross-module pass and every analysed
+/// chunk's facts from a projection and the sources, and write them as an
+/// analysis artifact for `debundle run --analysis`.
+pub fn analyze_cli(args: AnalyzeArgs) -> Result<()> {
+    let projection_bytes = fs::read(&args.projection)
+        .with_context(|| format!("read analysis projection {}", args.projection.display()))?;
+    let spec = AnalysisSpec::decode(&projection_bytes)?;
+    anyhow::ensure!(
+        spec.encode()? == projection_bytes,
+        "{} is not a canonical analysis projection",
+        args.projection.display()
+    );
+    let package_roots: HashMap<String, PathBuf> = collect_package_roots(args.package_roots)?
+        .into_iter()
+        .collect();
+    let source_root = graph_provenance::absolute(&args.tree_source_root)?;
+    let mut packages = BTreeMap::new();
+    for (name, root) in &package_roots {
+        packages.insert(name.clone(), graph_provenance::absolute(root)?);
+    }
+    if let Some(root) = &args.packages_root {
+        packages.insert(
+            "__packages_root__".to_string(),
+            graph_provenance::absolute(root)?,
+        );
+    }
+    let projection_dir = graph_provenance::absolute(
+        args.projection
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new(".")),
+    )?;
+    let capture = InputCapture::start(
+        ProvenanceRoots {
+            spec: projection_dir,
+            source: source_root.clone(),
+            packages,
+        },
+        None,
+        std::env::args().collect(),
+    )?;
+    capture.set_source_root(&source_root)?;
+    let inputs = spec.inputs_under(&source_root);
+    let artifact = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
+    let embedded_loaders: BTreeMap<String, spec::BunLoader> = match &inputs.embedded_loaders_path {
+        Some(path) => serde_json::from_str(&graph_provenance::read_source_to_string(path)?)
+            .with_context(|| format!("parse embedded loaders {}", path.display()))?,
+        None => BTreeMap::new(),
+    };
+    let vendor = spec.vendor_under(&source_root);
+    let materialized: BTreeSet<String> = spec.analysed_chunks().iter().cloned().collect();
+    let source = prepare_js_chunks(&materialized, &vendor, artifact)?;
+    let vendor_plan = build_vendor_resolution_plan(
+        source.program.artifact(),
+        source.program.indexes(),
+        &vendor,
+        &VendorPlanOptions {
+            package_roots: &package_roots,
+            packages_root: &args.packages_root,
+            output_manifest_path: None,
+            // Plans where bundled-swap wrappers would be written; analysis
+            // writes none and reads no path from them.
+            output_wrapper_dir: Some(Path::new("vendors/generated")),
+        },
+    )?;
+    let provenance = capture.finish_inputs()?;
+    let bytes = lowering::analyze_program(
+        source.program.into_artifact(),
+        AnalyzeProgramInputs {
+            spec: &spec,
+            embedded_loaders: &embedded_loaders,
+            vendor_plan: &vendor_plan,
+            graph_provenance: &provenance,
+        },
+    )?;
+    fs::write(&args.out, bytes)
+        .with_context(|| format!("write analysis artifact {}", args.out.display()))
 }
 
 /// Input-only preparation shared by the baseline and independent contract probes.
@@ -249,6 +382,8 @@ struct PreparedTransform {
     provenance: GraphProvenance,
     /// Host loader per embedded input file.
     embedded_loaders: BTreeMap<String, spec::BunLoader>,
+    /// The root the spec's source paths resolve against.
+    source_root: PathBuf,
 }
 
 /// One accepted baseline and its immutable input preparation. Only the contract
@@ -268,7 +403,13 @@ pub enum ContractProbeOutcome {
 impl ContractAudit {
     pub fn prepare(cli: &TransformCli, expected_spec: &TransformSpec) -> Result<Self> {
         let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec))?;
-        run_prepared_transform(&spec, prepared.clone(), audit_options(), true)?;
+        run_prepared_transform(
+            &spec,
+            prepared.clone(),
+            audit_options(),
+            true,
+            AnalysisMode::Compute,
+        )?;
         prepared
             .provenance
             .verify(&CurrentRoots::default())
@@ -296,12 +437,18 @@ impl ContractAudit {
         if let Err(error) = validate_transform_spec(&spec) {
             return Ok(ContractProbeOutcome::Inconclusive(error));
         }
-        let outcome = run_prepared_transform(&spec, self.prepared.clone(), audit_options(), true);
+        let outcome = run_prepared_transform(
+            &spec,
+            self.prepared.clone(),
+            audit_options(),
+            true,
+            AnalysisMode::Compute,
+        );
         self.provenance()
             .verify(&CurrentRoots::default())
             .context("audit inputs changed between baseline and probe")?;
         Ok(match outcome {
-            Ok(()) => ContractProbeOutcome::Accepted,
+            Ok(_) => ContractProbeOutcome::Accepted,
             Err(error) if error.chain().any(|cause| cause.is::<std::io::Error>()) => {
                 ContractProbeOutcome::Inconclusive(error)
             }
@@ -355,6 +502,7 @@ fn prepare_transform(
         TransformSpecSource::Flat { .. } => None,
     }
     .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
+    let source_root = graph_provenance::absolute(&source_root)?;
     capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
     if options.output != RunOutput::DryRun {
@@ -367,7 +515,7 @@ fn prepare_transform(
                 .with_context(|| format!("parse embedded loaders {}", path.display()))?,
             None => BTreeMap::new(),
         };
-    let source = prepare_js_chunks(&spec, artifact)?;
+    let source = prepare_js_chunks(&spec.materialize_chunk_ids(), &spec.vendor, artifact)?;
     let source_program = &source.program;
 
     // Single post-prepare vendor resolution pass: validates every mark,
@@ -396,21 +544,26 @@ fn prepare_transform(
             vendor_plan: Arc::new(vendor_plan),
             provenance: graph_provenance,
             embedded_loaders,
+            source_root,
         },
     ))
 }
 
+/// Returns the completed projection when `analysis` is
+/// [`AnalysisMode::Project`], which stops after the selector solve.
 fn run_prepared_transform(
     spec: &TransformSpec,
     prepared: PreparedTransform,
     options: TransformRunOptions,
     suppress_reports: bool,
-) -> Result<()> {
+    analysis: AnalysisMode,
+) -> Result<Option<AnalysisSpec>> {
     let PreparedTransform {
         source,
         vendor_plan,
         provenance,
         embedded_loaders,
+        ..
     } = prepared;
     let SourcePreparation {
         program: source_program,
@@ -485,8 +638,13 @@ fn run_prepared_transform(
                     RunOutput::DryRun | RunOutput::Accepted => GateRejectionPolicy::Refuse,
                     RunOutput::EmitOnRejection => GateRejectionPolicy::LowerUnrunnable,
                 },
+                analysis,
             },
         )?;
+        let materialize_result = match materialize_result {
+            Materialized::Lowered(result) => result,
+            Materialized::Projected(projection) => return Ok(Some(projection)),
+        };
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
@@ -635,7 +793,7 @@ fn run_prepared_transform(
         )?;
     }
 
-    Ok(())
+    Ok(None)
 }
 
 /// Chunk records of the emission set: records of excluded (fully-swapped)

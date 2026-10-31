@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use swc_common::GLOBALS;
@@ -10,9 +10,12 @@ use analysis::RedundantPurityHint;
 use analysis::facts::ExportReentryPolicy;
 use analysis::reports::author_inputs::AuthorInputLocations;
 
+use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
+use analysis_codec::ContextOrdinals;
 use artifact::paths::normalize_module_path;
 use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModuleRequestMode};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, JsFile};
+use graph_provenance::GraphProvenance;
 
 use output_layout::MODULES_REPORT;
 use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
@@ -23,6 +26,7 @@ use spec::{
 
 pub mod analysis_artifact;
 mod analysis_projection;
+pub use analysis_projection::AnalysisSpec;
 mod anonymous;
 mod body_facts;
 mod chunk_ast;
@@ -290,6 +294,32 @@ pub struct MaterializeLogicalModulesOptions {
     pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
     pub gate_rejection: GateRejectionPolicy,
+    pub analysis: AnalysisMode,
+}
+
+/// What a materialization does about analysis, the cross-module pass and
+/// per-chunk facts.
+#[derive(Debug, Clone)]
+pub enum AnalysisMode {
+    Compute,
+    /// Stop after the selector solve and return the completed projection
+    /// (`debundle spec project-analysis`).
+    Project(AnalysisSpec),
+    /// Take the analysis from an artifact (`debundle run --analysis`). The
+    /// run refuses an artifact computed by another engine, from other
+    /// sources, or for a projection other than `base` completed by this
+    /// run's selector solve.
+    Load {
+        base: AnalysisSpec,
+        artifact: Vec<u8>,
+    },
+}
+
+/// A materialization's result: lowered modules, or the projection when
+/// [`AnalysisMode::Project`] stopped it after the selector solve.
+pub enum Materialized {
+    Lowered(MaterializeLogicalModulesResult),
+    Projected(AnalysisSpec),
 }
 
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
@@ -311,7 +341,7 @@ pub fn materialize_logical_modules(
     spec_inputs: MaterializeSpecInputs<'_>,
     vendor_plan: &vendor::VendorResolutionPlan,
     options: MaterializeLogicalModulesOptions,
-) -> Result<MaterializeLogicalModulesResult> {
+) -> Result<Materialized> {
     let MaterializeSpecInputs {
         host_behavior,
         program_premises,
@@ -326,14 +356,8 @@ pub fn materialize_logical_modules(
         bail!("materialize_logical_modules requires at least one chunk_id");
     }
     let target_dir = normalize_optional_relative_dir(&options.config.target_dir)?;
-    let mut selected_chunk_ids = Vec::new();
-    let mut seen = BTreeSet::new();
-    for chunk_id in &options.chunk_ids {
-        let normalized = normalize_module_path(chunk_id)?;
-        if seen.insert(normalized.clone()) {
-            selected_chunk_ids.push(normalized);
-        }
-    }
+    let selected_chunk_ids = normalized_chunk_ids(&options.chunk_ids)?;
+    let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
 
     // A chunk's `commuting_statements` are resolved only when its dependency
     // graph is built, so an entry for a chunk this run does not materialize
@@ -341,7 +365,7 @@ pub fn materialize_logical_modules(
     for (chunk, chunk_options) in chunk_analysis_options {
         ensure!(
             chunk_options.commuting_statements.is_empty()
-                || seen.contains(&normalize_module_path(chunk)?),
+                || seen.contains(normalize_module_path(chunk)?.as_str()),
             "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
         );
     }
@@ -358,22 +382,6 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
-    let export_reentry_reports = export_reentry_reports(
-        &artifact,
-        &artifact_indexes,
-        loader_surface::LoaderAssumptions {
-            host_behavior,
-            program_premises,
-            embedded_loaders,
-        },
-        vendor_plan,
-        &selected_chunk_ids,
-        options.report_emission.rejection_dir().is_some(),
-    )?;
-    let export_reentry_policies = export_reentry_reports
-        .iter()
-        .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
-        .collect();
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
@@ -384,6 +392,59 @@ pub fn materialize_logical_modules(
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
+    let reparsed = match &options.analysis {
+        AnalysisMode::Project(_) => BTreeMap::new(),
+        AnalysisMode::Compute | AnalysisMode::Load { .. } => {
+            cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure))
+        }
+    };
+    let mut loaded = match &options.analysis {
+        AnalysisMode::Load {
+            artifact: bytes, ..
+        } => Some(load_analysis(
+            bytes,
+            &artifact,
+            &selected_chunk_ids,
+            options.config.file.as_deref(),
+            &reparsed,
+            options.graph_provenance.as_ref(),
+        )?),
+        AnalysisMode::Compute | AnalysisMode::Project(_) => None,
+    };
+    let export_reentry_reports = match (&options.analysis, &mut loaded) {
+        (_, Some((_, body))) => std::mem::take(&mut body.export_reentry)
+            .into_iter()
+            .map(|(chunk, mut report)| {
+                // The artifact's copies of these echoed sections carry no
+                // author notes; the report shows the run's spec.
+                report.host_behavior = host_behavior.clone();
+                report.program_premises = program_premises.clone();
+                let chunk_id = artifact
+                    .chunk_table
+                    .get(&chunk)
+                    .with_context(|| format!("analysis artifact names unknown chunk {chunk}"))?;
+                Ok((chunk_id, report))
+            })
+            .collect::<Result<_>>()?,
+        // The projection needs only the selector solve.
+        (AnalysisMode::Project(_), None) => BTreeMap::new(),
+        _ => export_reentry_reports(
+            &artifact,
+            &artifact_indexes,
+            loader_surface::LoaderAssumptions {
+                host_behavior,
+                program_premises,
+                embedded_loaders,
+            },
+            vendor_plan,
+            &selected_chunk_ids,
+            options.report_emission.rejection_dir().is_some(),
+        )?,
+    };
+    let export_reentry_policies = export_reentry_reports
+        .iter()
+        .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
+        .collect();
     let artifact_ref: &ChunkBundle = &artifact;
     // Vendor consultation for lowering's import construction: runtime re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
@@ -470,16 +531,58 @@ pub fn materialize_logical_modules(
         declared_assumptions,
         &resolved_member_sites,
     );
-    let cross_module_purities = cross_module::collect_cross_module_imported_purities(
-        &artifact,
-        &artifact_indexes,
-        &projection,
-        cross_module::CrossModuleAnalysisOptions {
-            graph_provenance: options.graph_provenance.as_ref(),
-            replacement_packages: &vendor_plan.replacement_packages(),
-        },
-        Some(&cross_module_chunk_closure),
-    )?;
+    let completed = |base: &AnalysisSpec| {
+        base.clone().with_premises(
+            projection.declared_assumptions.clone(),
+            projection.premise_members.clone(),
+        )
+    };
+    let (cross_module_purities, mut loaded_chunks) = match (&options.analysis, loaded) {
+        (AnalysisMode::Project(base), _) => return Ok(Materialized::Projected(completed(base)?)),
+        (AnalysisMode::Load { base, .. }, Some((header, body))) => {
+            let completed = completed(base)?;
+            if completed.encode()? != header.projection {
+                let differences =
+                    completed.differences(&AnalysisSpec::decode(&header.projection)?)?;
+                bail!(
+                    "analysis artifact was computed for another projection; differing: {}. Rerun `debundle spec project-analysis` and `debundle analyze`",
+                    differences.join(", ")
+                );
+            }
+            (body.cross_module, Some(body.chunks))
+        }
+        _ => (
+            cross_module::collect_cross_module_imported_purities(
+                &artifact,
+                &artifact_indexes,
+                &projection,
+                cross_module::CrossModuleAnalysisOptions {
+                    graph_provenance: options.graph_provenance.as_ref(),
+                    replacement_packages: &vendor_plan.replacement_packages(),
+                },
+                Some(&cross_module_chunk_closure),
+                &reparsed,
+            )?,
+            None,
+        ),
+    };
+    let claimed = claimed
+        .into_iter()
+        .map(|chunk| {
+            let facts = loaded_chunks
+                .as_mut()
+                .map(|chunks| {
+                    chunks.remove(chunk.chunk_id()).with_context(|| {
+                        format!(
+                            "analysis artifact has no facts for chunk {}",
+                            chunk.chunk_id()
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok((chunk, facts))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let program_graph = ProgramGraphOutput::new(
         options.graph_provenance.as_ref(),
         cross_module_purities.native_integrity.as_ref(),
@@ -489,12 +592,13 @@ pub fn materialize_logical_modules(
         .with(|globals| {
             claimed
                 .into_par_iter()
-                .map(|chunk| {
+                .map(|(chunk, facts)| {
                     GLOBALS.set(globals, || {
                         finish_logical_chunk(
                             chunk,
                             &projection,
                             &cross_module_purities,
+                            facts,
                             &program_graph,
                             CommutingStatementsContext {
                                 graph_provenance: options.graph_provenance.as_ref(),
@@ -533,14 +637,228 @@ pub fn materialize_logical_modules(
     let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
-    Ok(MaterializeLogicalModulesResult {
+    Ok(Materialized::Lowered(MaterializeLogicalModulesResult {
         output,
         selected_lowerings: applied,
         module_count,
         vendor_reference_rewrites,
         unmatched_spec_claims,
         gate_rejections,
-    })
+    }))
+}
+
+/// Chunk ids normalized, first occurrence kept.
+fn normalized_chunk_ids(chunk_ids: &[String]) -> Result<Vec<String>> {
+    let mut seen = BTreeSet::new();
+    let mut normalized_ids = Vec::new();
+    for chunk_id in chunk_ids {
+        let normalized = normalize_module_path(chunk_id)?;
+        if seen.insert(normalized.clone()) {
+            normalized_ids.push(normalized);
+        }
+    }
+    Ok(normalized_ids)
+}
+
+/// Hygiene-context ordinals for an analysis artifact: the analysed chunks'
+/// runtime ASTs in analysis order, every retained entry AST in chunk table
+/// order, then the cross-module pass's re-parsed entries in chunk order.
+/// `debundle analyze` and a run that loads its artifact parse the same files,
+/// retain the same ASTs and re-parse the same entries, so both number the same
+/// contexts.
+fn context_ordinals(
+    artifact: &ChunkBundle,
+    analysed_chunk_ids: &[String],
+    file: Option<&str>,
+    reparsed: &BTreeMap<ChunkId, cross_module::ReparsedEntry>,
+) -> Result<ContextOrdinals> {
+    let mut modules = Vec::new();
+    for chunk_id in analysed_chunk_ids {
+        let interned = artifact
+            .chunk_table
+            .get(chunk_id)
+            .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
+        let (_, _, runtime_ast) =
+            materialize::chunk_runtime_entry(artifact, chunk_id, interned, file)?;
+        modules.push(&runtime_ast.module);
+    }
+    for chunk in &artifact.chunks {
+        if let Some(ast) = chunk
+            .js
+            .get_file(&chunk.js.entry_file)
+            .and_then(JsFile::ast)
+        {
+            modules.push(&ast.module);
+        }
+    }
+    modules.extend(reparsed.values().map(|entry| &entry.parsed.module));
+    Ok(ContextOrdinals::new(modules))
+}
+
+fn chunk_source_digests(provenance: &GraphProvenance) -> BTreeMap<String, String> {
+    provenance
+        .chunk_sources
+        .iter()
+        .map(|source| (source.chunk_id.clone(), source.sha256.clone()))
+        .collect()
+}
+
+/// Read an analysis artifact for this run, refusing one computed by another
+/// engine or from other parser inputs. The projection is checked once the
+/// selector solve has completed it.
+fn load_analysis(
+    bytes: &[u8],
+    artifact: &ChunkBundle,
+    analysed_chunk_ids: &[String],
+    file: Option<&str>,
+    reparsed: &BTreeMap<ChunkId, cross_module::ReparsedEntry>,
+    provenance: Option<&GraphProvenance>,
+) -> Result<(AnalysisArtifactHeader, AnalysisArtifactBody)> {
+    let (header, body) = analysis_artifact::read_header(bytes)?;
+    let provenance = provenance.context("an analysis artifact requires graph provenance")?;
+    ensure!(
+        header.engine_sha256 == provenance.engine_sha256,
+        "analysis artifact was computed by engine {}, this engine is {}",
+        header.engine_sha256,
+        provenance.engine_sha256
+    );
+    let sources = chunk_source_digests(provenance);
+    if header.chunk_sources != sources {
+        let differing: BTreeSet<&String> = header
+            .chunk_sources
+            .keys()
+            .chain(sources.keys())
+            .filter(|chunk| header.chunk_sources.get(*chunk) != sources.get(*chunk))
+            .collect();
+        bail!(
+            "analysis artifact was computed from other parser inputs for chunks: {}",
+            differing
+                .into_iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let ordinals = context_ordinals(artifact, analysed_chunk_ids, file, reparsed)?;
+    let body = analysis_artifact::read_body(body, &ordinals)?;
+    Ok((header, body))
+}
+
+/// Inputs to [`analyze_program`] besides the parsed program.
+pub struct AnalyzeProgramInputs<'a> {
+    pub spec: &'a AnalysisSpec,
+    /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
+    pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
+    pub vendor_plan: &'a vendor::VendorResolutionPlan,
+    pub graph_provenance: &'a GraphProvenance,
+}
+
+/// `debundle analyze`: the cross-module pass and every analysed chunk's facts,
+/// from the parsed program and a projection alone, encoded as an analysis
+/// artifact. A run with the same projection, engine and parser inputs reads it
+/// instead of recomputing them.
+pub fn analyze_program(
+    mut artifact: ChunkBundle,
+    inputs: AnalyzeProgramInputs<'_>,
+) -> Result<Vec<u8>> {
+    let AnalyzeProgramInputs {
+        spec,
+        embedded_loaders,
+        vendor_plan,
+        graph_provenance,
+    } = inputs;
+    let selected_chunk_ids = normalized_chunk_ids(spec.analysed_chunks())?;
+    let resolved_export_purity =
+        export_policies::resolve_source_export_policies(&artifact, &spec.chunk_export_purity)?;
+    if spec.prune_other_chunks {
+        prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
+    }
+    let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    // With closure diagnostics: a run that writes reports shows them.
+    let export_reentry_reports = export_reentry_reports(
+        &artifact,
+        &artifact_indexes,
+        loader_surface::LoaderAssumptions {
+            host_behavior: &spec.host_behavior,
+            program_premises: &spec.program_premises,
+            embedded_loaders,
+        },
+        vendor_plan,
+        &selected_chunk_ids,
+        true,
+    )?;
+    let export_reentry_policies: BTreeMap<_, _> = export_reentry_reports
+        .iter()
+        .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
+        .collect();
+    let cross_module_chunk_closure = cross_module::selected_static_import_closure(
+        &artifact,
+        &artifact_indexes,
+        &selected_chunk_ids,
+    )?;
+    let projection = AnalysisProjection::new(
+        &spec.chunk_analysis_options,
+        resolved_export_purity.as_ref(),
+        &spec.host_behavior,
+        spec.program_premises.intrinsics_never_written.as_ref(),
+        spec.declared_assumptions.clone(),
+        &spec.premise_members,
+    );
+    let reparsed =
+        cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure));
+    let cross_module = cross_module::collect_cross_module_imported_purities(
+        &artifact,
+        &artifact_indexes,
+        &projection,
+        cross_module::CrossModuleAnalysisOptions {
+            graph_provenance: Some(graph_provenance),
+            replacement_packages: &vendor_plan.replacement_packages(),
+        },
+        Some(&cross_module_chunk_closure),
+        &reparsed,
+    )?;
+    let chunks = GLOBALS
+        .with(|globals| {
+            selected_chunk_ids
+                .par_iter()
+                .map(|chunk_id| {
+                    GLOBALS.set(globals, || {
+                        materialize::analyze_logical_chunk(
+                            &artifact,
+                            &artifact_indexes,
+                            chunk_id,
+                            spec.entry_file.as_deref(),
+                            &export_reentry_policies,
+                            &projection,
+                            &cross_module,
+                        )
+                        .map(|facts| (chunk_id.clone(), facts))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let header = AnalysisArtifactHeader {
+        engine_sha256: graph_provenance.engine_sha256.clone(),
+        projection: spec.encode()?,
+        chunk_sources: chunk_source_digests(graph_provenance),
+    };
+    let body = AnalysisArtifactBody {
+        cross_module,
+        export_reentry: export_reentry_reports
+            .into_iter()
+            .map(|(chunk_id, report)| (artifact.chunk_table.name(chunk_id).to_string(), report))
+            .collect(),
+        chunks,
+    };
+    let ordinals = context_ordinals(
+        &artifact,
+        &selected_chunk_ids,
+        spec.entry_file.as_deref(),
+        &reparsed,
+    )?;
+    analysis_artifact::write_artifact(&header, &body, &ordinals)
 }
 
 fn export_reentry_reports(

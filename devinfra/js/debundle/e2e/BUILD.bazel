@@ -61,6 +61,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "staged_analysis_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "commuting_statements_test",
     deps = ["@crates//:serde_yaml"],
 )

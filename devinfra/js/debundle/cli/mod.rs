@@ -26,8 +26,8 @@ use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand}
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{
-    GATE_REJECTED_EXIT_CODE, GateRejected, RunOutput, TransformArgs, TransformRunOptions,
-    run_transform_cli,
+    AnalyzeArgs, GATE_REJECTED_EXIT_CODE, GateRejected, RunOutput, TransformArgs,
+    TransformRunOptions, analyze_cli, run_transform_with_analysis,
 };
 use std::process::ExitCode;
 
@@ -346,6 +346,19 @@ impl InvocationArgs {
     }
 }
 
+/// Args for `debundle run`.
+#[derive(Debug, ClapArgs)]
+pub(crate) struct RunArgs {
+    #[command(flatten)]
+    pub(crate) transform: TransformArgs,
+    /// Take the cross-module summaries and per-chunk facts from this analysis
+    /// artifact (`debundle analyze`) instead of recomputing them. The run
+    /// refuses an artifact computed by another engine, from other sources,
+    /// or for another analysis projection, naming what differs.
+    #[arg(long)]
+    pub(crate) analysis: Option<std::path::PathBuf>,
+}
+
 #[derive(Debug, Subcommand)]
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
@@ -357,7 +370,14 @@ enum DebundleCommand {
     /// `atomic_group_conflicts.json`) is written under
     /// `reports/tree/<chunk>/` next to `dependency_graph.json`, where
     /// `debundle gate list` / `gate describe` read it.
-    Run(TransformArgs),
+    Run(RunArgs),
+    /// Compute the analysis (cross-module summaries and every analysed
+    /// chunk's facts) from a projection written by `debundle spec
+    /// project-analysis`, as an artifact `debundle run --analysis` reads.
+    ///
+    /// The projection is the only spec input, so the artifact stays valid
+    /// across every spec edit that leaves the projection unchanged.
+    Analyze(AnalyzeArgs),
     /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
     /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
@@ -480,11 +500,14 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         _ => false,
     };
     let result = match args.command {
-        DebundleCommand::Run(args) => {
+        DebundleCommand::Run(RunArgs {
+            transform: args,
+            analysis,
+        }) => {
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
-            run_transform_cli(
+            run_transform_with_analysis(
                 &cli,
                 TransformRunOptions {
                     output,
@@ -492,12 +515,14 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                     report_dir_override: None,
                     list_template_identifiers: false,
                 },
+                analysis.as_deref(),
             )?;
             if output == RunOutput::DryRun {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }
             Ok(())
         }
+        DebundleCommand::Analyze(args) => analyze_cli(args),
         DebundleCommand::Bindings(args) => bindings_commands::run(args, source_context.as_ref()),
         DebundleCommand::Modules(args) => modules_commands::run(args, source_context.as_ref()),
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
@@ -806,7 +831,7 @@ mod tests {
     fn parsed_run_args(argv: &[&str]) -> TransformArgs {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
         match parsed.command {
-            DebundleCommand::Run(args) => args,
+            DebundleCommand::Run(args) => args.transform,
             other => panic!("expected run command, got {other:?}"),
         }
     }
