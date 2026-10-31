@@ -21,7 +21,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     EnvValue,
-    ImagePullPolicy,
     MemoryResources,
     Node,
     NodeLabelQuery,
@@ -58,7 +57,6 @@ from cluster.cdk8s.agentplane import actions, database, llm_ingress, notificatio
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
@@ -81,7 +79,6 @@ from util.settings_contract import checked_value, env_name, validate_settings_fr
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "egress"
 _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 # The health service whose verdict is "the process answers", whatever the index says; keep equal to
@@ -135,7 +132,6 @@ DEFAULT_POLICIES = (BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY)
 
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def _pods(namespace: str) -> Pods:
@@ -610,9 +606,6 @@ class Egress(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
-        migrate_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
@@ -626,9 +619,6 @@ class Egress(Construct):
         self.registry_secret_name = registry_secret_name
         self.container_env = container_env or {}
         self.memory_limit = memory_limit
-        self.migrate_pull_policy = migrate_pull_policy
-        self.migrate_memory_limit = migrate_memory_limit
-        self.migrate_env = migrate_env or {}
 
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         content = {
@@ -816,12 +806,12 @@ class Egress(Construct):
                 memory=MemoryResources(request=Size.mebibytes(256), limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
-            migrate=migrate_init_container(
-                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
-                name="migrate",
-                env_variables={"DATABASE_URL": self.database_url, **self.migrate_env},
-                image_pull_policy=self.migrate_pull_policy,
-                memory_limit=self.migrate_memory_limit,
+            startup=grpc_probe(
+                port=self.admin.pod_port,
+                service=_LIVENESS_HEALTH_SERVICE,
+                initial_delay_seconds=0,
+                period_seconds=5,
+                failure_threshold=60,
             ),
             tolerate_control_plane=True,
             placement=self.placement if zones is None else None,

@@ -19,9 +19,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -123,6 +125,9 @@ func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Li
 }
 
 func listenAndServe(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
+		return err
+	}
 	listener, err := netlistener.Open(c.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
@@ -328,13 +333,20 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL", migrations.Up); handled {
+		if err != nil {
+			slog.Error("Runner Gateway migration failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Runner Gateway configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "runner-gateway")
 	if err != nil {
 		slog.Error("Runner Gateway tracing setup failed", "error", err)

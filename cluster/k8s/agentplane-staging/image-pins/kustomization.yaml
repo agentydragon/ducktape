@@ -13,8 +13,6 @@ images:
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
     newTag: devel-20261031054751-42a7870 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
-    newTag: devel-20261021215830-6f00f44 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
   # CI publishes the first sampler image after merge; Flux selects its devel tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261031054803-42a7870 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
@@ -24,8 +22,6 @@ images:
     newTag: devel-20261029184109-0042d29 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
     newTag: devel-20261031054834-42a7870 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
-    newTag: devel-20261024140421-841392f # {"$imagepolicy": "flux-system:agentplane-runner-gateway-queue-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
     newTag: devel-20261031052039-f7648e4 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
@@ -37,12 +33,8 @@ images:
   # Publication bootstrap: unused until the separate MCP edge cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261031054829-42a7870 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate
-    newTag: devel-20261023114534-d74d20e # {"$imagepolicy": "flux-system:agentplane-mcp-edge-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
     newTag: devel-20261031054842-42a7870 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
-    newTag: devel-20261031054804-42a7870 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261031054939-42a7870 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service

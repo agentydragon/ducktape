@@ -26,7 +26,6 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -41,7 +40,6 @@ from util.settings_contract import env_name, validate_settings_fragment
 NAME = "mcp-edge"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
 
 
@@ -68,7 +66,6 @@ class McpEdge(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -114,17 +111,18 @@ class McpEdge(Construct):
             env_variables=variables,
             readiness=grpc_probe(port=self.endpoint.pod_port, initial_delay_seconds=3),
             liveness=grpc_probe(port=self.endpoint.pod_port, service="livez", initial_delay_seconds=20),
+            startup=grpc_probe(
+                port=self.endpoint.pod_port,
+                service="livez",
+                initial_delay_seconds=0,
+                period_seconds=5,
+                failure_threshold=60,
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(30),
-            migrate=migrate_init_container(
-                _MIGRATE_IMAGE,
-                name="migrate",
-                env_variables={env_name(Settings, "database_url"): database_url},
-                image_pull_policy=migrate_pull_policy,
-            ),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

@@ -234,10 +234,6 @@
       "test": "//agentplane/x/central_sampler/...",
       "registry": "forgejo"
     },
-    "agentplane-mcp-edge-migrate": {
-      "target": "//agentplane/mcp_edge/migrations:image",
-      "registry": "forgejo"
-    },
     "agentplane-mcp-edge": {
       "target": "//agentplane/mcp_edge:service_image",
       "test": "//agentplane/mcp_edge/...",
@@ -258,11 +254,6 @@
       "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
-    "agentplane-egress-history-migrate": {
-      "target": "//agentplane/egress/history_migrations:image",
-      "test": "//agentplane/egress/...",
-      "registry": "forgejo"
-    },
     "agentplane-egress-sidecar": {
       "target": "//agentplane/egress:sidecar_image",
       "test": "//agentplane/egress/...",
@@ -271,11 +262,6 @@
     "agentplane-llm-ingress": {
       "target": "//agentplane/llm_ingress:image",
       "test": "//agentplane/llm_ingress/...",
-      "registry": "forgejo"
-    },
-    "agentplane-history-migrate": {
-      "target": "//agentplane/history_service/migrations:image",
-      "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
     "agentplane-history-service": {
@@ -296,11 +282,6 @@
     "agentplane-runner-gateway": {
       "target": "//agentplane/runner_gateway:image",
       "test": "//agentplane/runner_gateway/...",
-      "registry": "forgejo"
-    },
-    "agentplane-runner-gateway-queue-migrate": {
-      "target": "//agentplane/runner_gateway/migrations:image",
-      "test": "//agentplane/runner_gateway/migrations/...",
       "registry": "forgejo"
     },
     "agentplane-runner-disk": {

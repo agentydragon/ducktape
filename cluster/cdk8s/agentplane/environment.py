@@ -162,12 +162,12 @@ class ActionsProps:
 class McpEdgeProps:
     """The independently staged MCP/Connection authority; no Actions settings imply its scope."""
 
-    replicas: ReplicaProfile
     operator_oidc: OperatorOidcSettings
     caller_service_account_namespaces: frozenset[str]
     mintable_accounts: frozenset[ServiceAccountRef]
     oauth_secret_name: str | None
     hostname: str | None
+    replicas: ReplicaProfile | None = None
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 

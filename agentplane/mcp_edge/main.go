@@ -24,8 +24,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -59,6 +61,9 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 }
 
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return err
+	}
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
 		return err
@@ -189,13 +194,20 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_MCP_EDGE_DATABASE_URL", migrations.Up); handled {
+		if err != nil {
+			slog.Error("MCP edge migration failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid MCP edge configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "mcp-edge")
 	if err != nil {
 		slog.Error("MCP edge tracing setup failed", "error", err)

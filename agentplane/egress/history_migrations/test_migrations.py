@@ -15,9 +15,7 @@ from util.testing.postgres import DatabaseNames, create_temporary_database
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_MIGRATOR = get_required_path(
-    own_repo_rlocation("agentplane/egress/history_migrations/cmd/egress-history-migrate_/egress-history-migrate")
-)
+_SERVICE = get_required_path(own_repo_rlocation("agentplane/egress/cmd/egress-proxy_/egress-proxy"))
 _VERSION = "egress_goose_version"
 _INSERT = text("""
 INSERT INTO egress_decision (event_id, decided_at, producer_id, subject_namespace, subject_name,
@@ -29,7 +27,12 @@ VALUES (:id, :now, :producer, 'test-namespace', 'test-workload', 'test-connectio
 
 def _run(url: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(_MIGRATOR), "--database-url", _wire_url(url)], text=True, capture_output=True, timeout=60, check=check
+        [str(_SERVICE), "--migrate-only"],
+        env={"AGENTPLANE_EGRESS_DATABASE_URL": _wire_url(url)},
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=check,
     )
 
 
@@ -76,9 +79,21 @@ def test_fresh_database_and_repeat_preserve_history(
 
 def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: DatabaseNames) -> None:
     with create_temporary_database(postgres_admin_url, database_names()) as url:
-        argv = [str(_MIGRATOR), "--database-url", _wire_url(url)]
-        first = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        second = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        argv = [str(_SERVICE), "--migrate-only"]
+        first = subprocess.Popen(
+            argv,
+            env={"AGENTPLANE_EGRESS_DATABASE_URL": _wire_url(url)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        second = subprocess.Popen(
+            argv,
+            env={"AGENTPLANE_EGRESS_DATABASE_URL": _wire_url(url)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         for process in (first, second):
             stdout, stderr = process.communicate(timeout=60)
             assert process.returncode == 0, (stdout, stderr)
