@@ -7,7 +7,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261031074727-3b19f74 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261031074802-3b19f74 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261031103621-85d673e # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261031074813-3b19f74 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
