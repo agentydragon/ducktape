@@ -488,6 +488,18 @@ class SnapshotIngestor:
                     & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
                 )
                 .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
+                # Matching below depends only on native ID and physical path.
+                # Older observations of that pair cannot win the title rank.
+                # Reduce them in PostgreSQL before SQLAlchemy buffers ORM rows:
+                # the full history contains millions of observations per host.
+                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
+                .order_by(
+                    CodexTitleObservationRow.native_session_id,
+                    CodexTitleObservationRow.source_path,
+                    ResticSnapshotRow.captured_at.desc(),
+                    CodexTitleObservationRow.snapshot_id.desc(),
+                    CodexTitleObservationRow.title.desc(),
+                )
             )
             for observation, captured_at in observations:
                 match = by_path.get(observation.source_path) if observation.source_path else None

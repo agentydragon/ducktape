@@ -41,6 +41,12 @@ The first parser is fixed at `jsonl-v1`. A parser-version change needs an explic
 
 Codex display names are imported separately from each retained snapshot's `/.codex/session_index.jsonl` and the consistent `state_5.sqlite` image listed in `/.local/state/ducktape/ai-session-backup-sqlite/manifest.json`. The image digest and SQLite integrity are checked before reading it. `thread_name` from the index takes precedence, followed by SQLite `threads.name`, then `threads.title`. The SQLite `rollout_path` identifies a physical transcript; an index-only ID is applied only when it matches one unambiguous, confirmed native session ID. Snapshot-specific observations remain in SQL when Restic snapshots are later pruned, and the latest captured observation supplies the browser's current title. Existing, fully imported snapshots are backfilled without reparsing their transcript versions. A malformed index line or damaged SQLite image leaves any other valid title source usable and records a partial metadata status and error on the snapshot.
 
+The current-title projection selects the newest observation per native ID and
+physical source path in PostgreSQL before loading candidates into Python. The
+historical observation ledger stays intact; projection memory does not grow with
+repeated captures of the same mapping. Path-specific and index-only observations
+remain separate candidates until identity/ambiguity checks resolve them.
+
 ## Read API and browser
 
 The browser frontend lives in `//x/ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
