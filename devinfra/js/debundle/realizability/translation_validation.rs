@@ -7,6 +7,14 @@
 //! post-order from the entry, each body in source order. A sweep in that
 //! order finds every swapped statement pair that conflicts without
 //! enumerating pairs.
+//!
+//! An ordering edge `u -> v` asks for `v` to run before `u`. When `v`
+//! precedes `u` in the source, violating it swaps the pair, which the sweep
+//! finds. A forward edge (`v` follows `u` in the source, as for an at-init
+//! read of a later declaration) is violated when the emit keeps source order,
+//! and satisfying it swaps the pair. Neither case is a swapped conflict in the
+//! plan's semantics; step 1 reports both beside the sweep, and only the
+//! violated forward edges count toward the verdict, as they do for the gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,9 +22,7 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
-use analysis::graph::{
-    DependencyEdgeId, EndpointView, assignment_endpoints, chunk_constraining_module_edges,
-};
+use analysis::graph::{DependencyEdgeId, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{DepKind, DependencyGraph, SourceUnitId};
@@ -40,9 +46,11 @@ pub struct TranslationValidation {
     /// Statement pairs whose emitted order differs from source order.
     pub swapped_pairs: u64,
     pub conflicts: Vec<SwappedConflict>,
-    /// Ordering edges from another module into the entry, which evaluates
-    /// last.
-    pub entry_reads: Vec<DependencyEdgeId>,
+    /// Forward ordering edges the emit leaves in source order.
+    pub forward_edges_kept: Vec<DependencyEdgeId>,
+    /// Forward ordering edges whose endpoints the emit swaps. Not part of the
+    /// verdict: the gate accepts them, and the plan's semantics would not.
+    pub forward_edges_swapped: Vec<DependencyEdgeId>,
     /// Placement-equality edges (rebinds, shared `var` declarations,
     /// co-location, local effects) whose endpoints the assignment splits.
     pub placement_splits: Vec<DependencyEdgeId>,
@@ -50,7 +58,9 @@ pub struct TranslationValidation {
 
 impl TranslationValidation {
     pub fn accepts(&self) -> bool {
-        self.conflicts.is_empty() && self.entry_reads.is_empty() && self.placement_splits.is_empty()
+        self.conflicts.is_empty()
+            && self.forward_edges_kept.is_empty()
+            && self.placement_splits.is_empty()
     }
 }
 
@@ -63,14 +73,25 @@ pub fn translation_validate(
     emitted_modules: &BTreeSet<ModuleId>,
     import_order: &EsmImportOrder,
 ) -> TranslationValidation {
-    let entry = assignment.entry_destination().module_id();
     let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
     let post_order = simulate_esm_post_order(
-        entry,
+        assignment.entry_destination().module_id(),
         &canonical.i_successors,
         emitted_modules,
         import_order,
     );
+    let module_position = |unit: SourceUnitId| {
+        let module = assignment.of(unit);
+        *post_order
+            .get(&module)
+            .unwrap_or_else(|| panic!("the entry imports every emitted module, {module:?} too"))
+    };
+    let ordinal = |unit: SourceUnitId| {
+        dependency_graph
+            .node(unit)
+            .expect("edges name graph nodes")
+            .statement_ordinal
+    };
 
     let mut verdict = TranslationValidation::default();
     let mut accesses: BTreeMap<SourceUnitId, Vec<(DependencyEdgeId, Access)>> = BTreeMap::new();
@@ -78,10 +99,11 @@ pub fn translation_validate(
         if dependency_graph.node(edge.from).is_none() || dependency_graph.node(edge.to).is_none() {
             continue;
         }
-        let Some((_, to_module)) = assignment_endpoints(edge, assignment, EndpointView::Gate)
-        else {
+        // Statements of one module never swap. Unlike the gate's module view,
+        // no cross-module edge is dropped: a swap is judged per statement.
+        if assignment.of(edge.from) == assignment.of(edge.to) {
             continue;
-        };
+        }
         match edge.reason.kind {
             DepKind::EagerRebind
             | DepKind::LazyRebind
@@ -90,13 +112,15 @@ pub fn translation_validate(
             | DepKind::CoLocation
             | DepKind::LocalEffect => verdict.placement_splits.push(edge.id),
             DepKind::LazyUse | DepKind::HoistedUse => {}
+            DepKind::EagerUse | DepKind::Sequenced if !edge.reason.constrains_init_order() => {}
+            DepKind::EagerUse | DepKind::Sequenced if ordinal(edge.to) > ordinal(edge.from) => {
+                if module_position(edge.to) > module_position(edge.from) {
+                    verdict.forward_edges_kept.push(edge.id);
+                } else {
+                    verdict.forward_edges_swapped.push(edge.id);
+                }
+            }
             DepKind::EagerUse | DepKind::Sequenced => {
-                if !edge.reason.constrains_init_order() {
-                    continue;
-                }
-                if to_module == entry {
-                    verdict.entry_reads.push(edge.id);
-                }
                 // The dependency writes the edge's cell and the dependent
                 // reads it, so the sweep flags the pair exactly when the emit
                 // swaps it.
@@ -114,13 +138,7 @@ pub fn translation_validate(
 
     let mut emitted: Vec<(usize, SourceUnitOrdinal, SourceUnitId)> = dependency_graph
         .iter_nodes()
-        .map(|node| {
-            let module = assignment.of(node.id);
-            let position = *post_order
-                .get(&module)
-                .unwrap_or_else(|| panic!("entry imports every emitted module, {module:?} too"));
-            (position, node.statement_ordinal, node.id)
-        })
+        .map(|node| (module_position(node.id), node.statement_ordinal, node.id))
         .collect();
     emitted.sort_unstable();
     verdict.swapped_pairs = count_inversions(emitted.iter().map(|(_, ordinal, _)| *ordinal));
@@ -227,7 +245,8 @@ pub struct TranslationValidationReport {
     pub accepts: bool,
     pub swapped_pairs: u64,
     pub conflicts: Vec<SwappedConflictReport>,
-    pub entry_reads: Vec<String>,
+    pub forward_edges_kept: Vec<String>,
+    pub forward_edges_swapped: Vec<String>,
     pub placement_splits: Vec<String>,
 }
 
@@ -276,7 +295,8 @@ impl TranslationValidationReport {
                     kind: dependency_graph.edge(conflict.cell).reason.kind,
                 })
                 .collect(),
-            entry_reads: keys(&verdict.entry_reads),
+            forward_edges_kept: keys(&verdict.forward_edges_kept),
+            forward_edges_swapped: keys(&verdict.forward_edges_swapped),
             placement_splits: keys(&verdict.placement_splits),
         }
     }

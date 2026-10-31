@@ -74,6 +74,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "translation_validation_differential_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "commuting_statements_gate_test",
     deps = [
         "//devinfra/js/debundle:analysis",
