@@ -179,7 +179,7 @@ async def vm_sandbox_turn(
     with tracer.start_as_current_span(
         "system_test.session.open", attributes={"harness": runner_pb2.Harness.Name(harness), "sandbox.name": view.name}
     ):
-        agent = await session_setup_is_supervised(client, view.name, harness, offered_model)
+        agent = await session_setup_is_supervised(client, view.name, view.uid, harness, offered_model)
     with tracer.start_as_current_span("system_test.turn"):
         async with asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run(PING))
@@ -255,6 +255,7 @@ async def codex_tool_oom(
             agent = await Agent.open(
                 client,
                 sandbox=view.name,
+                sandbox_uid=view.uid,
                 harness=runner_pb2.HARNESS_CODEX,
                 model=offered_model,
                 cwd=VM_WORKING_DIRECTORY,

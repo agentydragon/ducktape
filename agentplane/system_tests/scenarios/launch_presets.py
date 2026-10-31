@@ -46,9 +46,13 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.admit_first_session", record_exception=False, set_status_on_exception=False
     ):
         first_id = uuid4()
-        opening = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
+        opening = await client.open_session(
+            view.name, first_id, sandbox_uid=view.uid, overrides={"instructions": INSTRUCTIONS}
+        )
         assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        retried = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
+        retried = await client.open_session(
+            view.name, first_id, sandbox_uid=view.uid, overrides={"instructions": INSTRUCTIONS}
+        )
         assert (retried.session_id, retried.sandbox, retried.created_at) == (
             opening.session_id,
             opening.sandbox,
@@ -100,7 +104,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
             await asyncio.sleep(0.2)
 
         suspended_id = uuid4()
-        suspended_opening = await client.open_session(view.name, suspended_id)
+        suspended_opening = await client.open_session(view.name, suspended_id, sandbox_uid=view.uid)
         assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
         opening_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
         while True:
@@ -133,11 +137,11 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.session_defaults", record_exception=False, set_status_on_exception=False
     ):
         inherited_id = uuid4()
-        await client.create_session(view.name, inherited_id)
+        await client.create_session(view.name, inherited_id, sandbox_uid=view.uid)
         inherited = await client.wait_for_thread_feed(inherited_id, timeout_s=RUNNER_ANSWERS_SECONDS)
         local_model = "systest-local-model-override"
         local_id = uuid4()
-        await client.create_session(view.name, local_id, overrides={"model": local_model})
+        await client.create_session(view.name, local_id, sandbox_uid=view.uid, overrides={"model": local_model})
         local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)
         assert inherited.model == preset.session_defaults.model
         assert local.model == local_model

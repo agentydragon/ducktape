@@ -565,6 +565,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         opened = await stub.OpenSession(
             pb.OpenSessionRequest(
                 sandbox=sandbox,
+                sandbox_uid=uid,
                 session_id=session,
                 spec=runner_pb2.SessionSpec(
                     harness=runner_pb2.HARNESS_CODEX,
@@ -793,6 +794,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     stub.OpenSession(
                         pb.OpenSessionRequest(
                             sandbox=sandbox,
+                            sandbox_uid=uid,
                             session_id=session,
                             spec=runner_pb2.SessionSpec(
                                 harness=runner_pb2.HARNESS_CODEX,

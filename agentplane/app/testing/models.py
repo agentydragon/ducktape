@@ -303,6 +303,7 @@ class NewSession(BaseModel):
 
     spec: dict[str, object]
     session_id: UUID
+    sandbox_uid: UUID
     setup_script: str | None = Field(default=None, max_length=65_536)
 
 

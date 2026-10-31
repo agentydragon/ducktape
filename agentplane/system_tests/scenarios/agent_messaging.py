@@ -104,8 +104,12 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     assert sender.pod is not None
     recipient_model = scripted.model(recipient.pod.name, harness)
     sender_model = scripted.model(sender.pod.name, harness)
-    recipient_agent = await Agent.open(client, sandbox=recipient.name, harness=harness, model=offered_model)
-    sender_agent = await Agent.open(client, sandbox=sender.name, harness=harness, model=offered_model)
+    recipient_agent = await Agent.open(
+        client, sandbox=recipient.name, sandbox_uid=recipient.uid, harness=harness, model=offered_model
+    )
+    sender_agent = await Agent.open(
+        client, sandbox=sender.name, sandbox_uid=sender.uid, harness=harness, model=offered_model
+    )
 
     send = (
         f"agentplane --json notifications send {cluster.namespace}/{recipient.name} {recipient_agent.thread_id}"

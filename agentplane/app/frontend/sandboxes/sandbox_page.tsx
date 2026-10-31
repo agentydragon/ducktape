@@ -191,7 +191,9 @@ export function SandboxPage({
     setError(null);
     let openingAccepted = false;
     try {
-      const opening = await withinSessionCreate(threadId, () => openSession(name, threadId, spec, setupScript));
+      const opening = await withinSessionCreate(threadId, () =>
+        openSession(name, sandbox.uid, threadId, spec, setupScript)
+      );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       openingAccepted = true;
       // The live projection may have resolved this attempt while the Open response was in flight.

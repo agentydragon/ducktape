@@ -56,7 +56,7 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
         "system_test.session_instructions.instructed_turn", record_exception=False, set_status_on_exception=False
     ):
         instructed = await Agent.open(
-            client, sandbox=view.name, harness=harness, model=model, instructions=INSTRUCTIONS
+            client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model, instructions=INSTRUCTIONS
         )
         obeyed = await instructed.run(PROMPT)
     assert MARKER in obeyed.answer, (
@@ -67,7 +67,7 @@ async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
     with tracer.start_as_current_span(
         "system_test.session_instructions.plain_turn", record_exception=False, set_status_on_exception=False
     ):
-        plain = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
+        plain = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
         uninstructed = await plain.run(PROMPT)
     assert MARKER not in uninstructed.transcript, (
         f"a session opened with no instructions produced {MARKER} anyway, so the instructed half "
@@ -85,7 +85,7 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     model = scripted.model(view.pod.name, harness)
 
     instructed = await Agent.open(
-        client, sandbox=view.name, harness=harness, model=offered_model, instructions=INSTRUCTIONS
+        client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model, instructions=INSTRUCTIONS
     )
     with tracer.start_as_current_span(
         "system_test.session_instructions.instructed_exchange", record_exception=False, set_status_on_exception=False
@@ -98,7 +98,7 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
     # The scripted reply is the thread's answer: the model's side of the turn came back through ingress.
     assert MARKER in obeyed.result().answer
 
-    plain = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model)
+    plain = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=offered_model)
     with tracer.start_as_current_span(
         "system_test.session_instructions.plain_exchange", record_exception=False, set_status_on_exception=False
     ):

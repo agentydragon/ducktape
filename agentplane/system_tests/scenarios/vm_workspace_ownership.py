@@ -32,6 +32,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     absent, _ = await run_setup(
         client,
         sandbox_name=view.name,
+        sandbox_uid=view.uid,
         session_id=preflight_session_id,
         harness=harness,
         model=model,
@@ -73,6 +74,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Cli
     output, stderr = await run_setup(
         client,
         sandbox_name=view.name,
+        sandbox_uid=view.uid,
         session_id=session_id,
         harness=harness,
         model=model,

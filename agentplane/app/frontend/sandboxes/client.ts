@@ -119,6 +119,7 @@ export type Decision = {
 export type SessionOpening = {
   sessionId: string;
   sandbox: string;
+  sandboxUid: string;
   state: string;
   reason?: string;
 };
@@ -129,6 +130,7 @@ export type SessionOpening = {
  */
 export async function openSession(
   sandbox: string,
+  sandboxUID: string,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string
@@ -138,6 +140,7 @@ export async function openSession(
       params: { path: { name: sandbox } },
       body: {
         session_id: sessionId,
+        sandbox_uid: sandboxUID,
         spec: toJson(SessionSpecSchema, spec) as JsonObject,
         setup_script: setupScript,
       },

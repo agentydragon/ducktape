@@ -190,7 +190,7 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	}
 	want := []proto.Message{
 		&dispatcherpb.OpenSessionRequest{
-			SessionId: session, Sandbox: launched.Name, SetupScript: new("true"),
+			SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID), SetupScript: new("true"),
 			Spec: &runnerpb.SessionSpec{
 				Harness: runnerpb.Harness_HARNESS_CODEX, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
 			},
@@ -225,7 +225,7 @@ func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
 		"spec": {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "test-model", "cwd": "/test/{session_id}"}
 	}`, launched.Name, launched.UID, session)))
 	want := &dispatcherpb.OpenSessionRequest{
-		SessionId: session, Sandbox: launched.Name,
+		SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
 		Spec: &runnerpb.SessionSpec{
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test/" + session,
 		},

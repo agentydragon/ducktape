@@ -20,7 +20,7 @@ import (
 )
 
 type sessionOpener interface {
-	OpenSession(context.Context, string, uuid.UUID, *runnerpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
+	OpenSession(context.Context, string, string, uuid.UUID, *runnerpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
 	SessionOpening(context.Context, string, uuid.UUID) (*dispatcherpb.SessionOpening, error)
 }
 
@@ -35,6 +35,7 @@ type newSessionInput struct {
 
 type newSessionBody struct {
 	SessionID          uuid.UUID      `json:"session_id" format:"uuid"`
+	SandboxUID         string         `json:"sandbox_uid" minLength:"1"`
 	Spec               map[string]any `json:"spec"`
 	SetupScript        *string        `json:"setup_script,omitempty"`
 	SetupScriptPresent bool           `json:"-"`
@@ -77,9 +78,15 @@ func RegisterSessionRoutes(
 		if body.Spec == nil {
 			return nil, huma.Error422UnprocessableEntity("spec is required")
 		}
+		if body.SandboxUID == "" {
+			return nil, huma.Error422UnprocessableEntity("sandbox_uid is required")
+		}
 		sandbox, err := inventory.Get(ctx, input.Name)
 		if err != nil {
 			return nil, sandboxHTTPError(err)
+		}
+		if sandbox.GetUid() != body.SandboxUID {
+			return nil, huma.Error409Conflict("Sandbox identity changed")
 		}
 		defaults, setupScript, err := sessionDefaults(config, sandbox, body.SetupScriptPresent, body.SetupScript)
 		if err != nil {
@@ -93,7 +100,7 @@ func RegisterSessionRoutes(
 		if err := store.OpenThread(ctx, body.SessionID); err != nil {
 			return nil, httperror.LogServerError(huma.Error503ServiceUnavailable("Thread metadata is unavailable"), err)
 		}
-		opening, err := bridge.OpenSession(ctx, input.Name, body.SessionID, spec, setupScript)
+		opening, err := bridge.OpenSession(ctx, input.Name, body.SandboxUID, body.SessionID, spec, setupScript)
 		if err != nil {
 			return nil, sessionHTTPError(err)
 		}

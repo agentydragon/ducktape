@@ -40,7 +40,8 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     model: ScriptedModel,
 ) -> None:
     response = await http.post(
-        f"/sandboxes/{SANDBOX}/sessions", json={"session_id": str(uuid4()), "spec": MessageToDict(spec)}
+        f"/sandboxes/{SANDBOX}/sessions",
+        json={"session_id": str(uuid4()), "sandbox_uid": sandbox.uid, "spec": MessageToDict(spec)},
     )
     assert response.status_code == 201, response.text
     opening = ParseDict(response.json(), session_dispatcher_pb2.SessionOpening())

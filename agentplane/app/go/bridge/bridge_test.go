@@ -143,18 +143,19 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: "/workspace", Model: "model"}
 	setup := ""
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
-		SessionId: sessionID.String(), Sandbox: "operator-sandbox",
+		SessionId: sessionID.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
 	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", sessionID, spec, &setup)
+	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &setup)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := dispatcher.openRequest
-	if request.GetSessionId() != sessionID.String() || request.GetSandbox() != "operator-sandbox" || !proto.Equal(request.GetSpec(), spec) {
+	if request.GetSessionId() != sessionID.String() || request.GetSandbox() != "operator-sandbox" ||
+		request.GetSandboxUid() != "sandbox-uid" || !proto.Equal(request.GetSpec(), spec) {
 		t.Fatalf("OpenSession request = %v", request)
 	}
 	if request.SetupScript == nil || request.GetSetupScript() != "" || opening != dispatcher.opening {
@@ -166,7 +167,7 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	}
 
 	dispatcher.opening = nil
-	if _, err := bridge.OpenSession(context.Background(), "operator-sandbox", sessionID, spec, nil); err == nil {
+	if _, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, nil); err == nil {
 		t.Fatal("missing or mismatched opening identity was accepted")
 	} else {
 		var notFound *SessionOpeningNotFoundError
@@ -178,24 +179,25 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 		t.Fatalf("absent setup script should stay absent: %v", dispatcher.openRequest)
 	}
 	longScript := strings.Repeat("界", MaxSetupScriptCharacters+1)
-	if _, err := bridge.OpenSession(context.Background(), "operator-sandbox", sessionID, spec, &longScript); err == nil {
+	if _, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, spec, &longScript); err == nil {
 		t.Fatal("overlong setup script was accepted")
 	}
 }
 
 func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
-		SessionId: uuid.Nil.String(), Sandbox: "operator-sandbox",
+		SessionId: uuid.Nil.String(), Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid",
 	}}
 	bridge, err := New(&fakeSandboxGetter{}, nil, dispatcher, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", uuid.Nil, &runnerpb.SessionSpec{}, nil)
+	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, &runnerpb.SessionSpec{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dispatcher.openRequest.GetSessionId() != uuid.Nil.String() || opening.GetSessionId() != uuid.Nil.String() {
+	if dispatcher.openRequest.GetSessionId() != uuid.Nil.String() || dispatcher.openRequest.GetSandboxUid() != "sandbox-uid" ||
+		opening.GetSessionId() != uuid.Nil.String() {
 		t.Fatalf("nil UUID was not forwarded: request=%v opening=%v", dispatcher.openRequest, opening)
 	}
 }
@@ -207,7 +209,7 @@ func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", sessionID, &runnerpb.SessionSpec{}, nil)
+	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, &runnerpb.SessionSpec{}, nil)
 	var timeout *DispatcherRequestTimeoutError
 	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
 		t.Fatalf("timeout = %#v, error = %v", timeout, err)
@@ -473,7 +475,7 @@ func (s *dispatcherTestServer) OpenSession(ctx context.Context, request *dispatc
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
+		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(), SandboxUid: request.GetSandboxUid(),
 	}}, nil
 }
 
@@ -522,7 +524,7 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uuid.NewString()
-	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
+	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.SubmitInput(context.Background(), &dispatcherpb.SubmitInputRequest{CommandId: "input", SessionId: id, Sandbox: "operator-sandbox"}); err != nil {
@@ -555,7 +557,7 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = slowClient.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox"})
+	_, err = slowClient.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"})
 	var timeout *RequestTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)

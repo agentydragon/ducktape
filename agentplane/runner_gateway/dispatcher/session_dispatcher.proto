@@ -31,9 +31,10 @@ service SessionDispatcher {
   }
   // Stores the request and answers with the Session's `SessionOpening` in
   // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
-  // command for the Session. `session_id` is the idempotency key: a retry with the same Sandbox and request
-  // answers with the same `SessionOpening`, and the same ID with another Sandbox or request fails
-  // `ALREADY_EXISTS`. A Sandbox that does not exist fails `NOT_FOUND`.
+  // command for the Session. The request must include the expected Sandbox UID; a missing Sandbox fails
+  // `NOT_FOUND`, and a different current UID fails `FAILED_PRECONDITION` before recording. `session_id` is the
+  // idempotency key: a retry with the same Sandbox name, UID and request answers with the same `SessionOpening`;
+  // conflicting requests under that ID fail `ALREADY_EXISTS`.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:open" body: "*"};
   }
@@ -200,6 +201,8 @@ message OpenSessionRequest {
   string sandbox = 2;
   agentplane.proto.SessionSpec spec = 3;
   optional string setup_script = 4;  // selected only at creation
+  // The expected Sandbox incarnation; requests cannot cross a same-name replacement.
+  string sandbox_uid = 5;
 }
 
 // Where a Session's opening is, in the vocabulary of `DeliveryState`: `DELIVERY_STATE_RUNNER_ADMITTED` is

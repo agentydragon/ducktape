@@ -103,7 +103,9 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
 
 async def _open(client: Client, view: SandboxView, harness: runner_pb2.Harness, model: str) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
-    thread_id = (await Agent.open(client, sandbox=view.name, harness=harness, model=model)).thread_id
+    thread_id = (
+        await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=model)
+    ).thread_id
     with tracer.start_as_current_span(
         "system_test.thread_stream.feed_ready", record_exception=False, set_status_on_exception=False
     ):

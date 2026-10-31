@@ -35,7 +35,7 @@ async def _exercise_case(
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.name
-        agent = await Agent.open(client, sandbox=view.name, harness=harness, model=route)
+        agent = await Agent.open(client, sandbox=view.name, sandbox_uid=view.uid, harness=harness, model=route)
         evidence["thread_id"] = str(agent.thread_id)
         async with asyncio.timeout(300):
             turn = await agent.run(

@@ -29,14 +29,19 @@ The manual queue, replica and wake probes are documented in the
 - **Order**: first in, first out per Session. `InterruptTurn` is not queued: it goes to a Ready
   Sandbox at once, otherwise answers `NO_OP`. The runner rejects a stale target with
   `FAILED_PRECONDITION` before admission. It never interrupts a successor turn.
-- **Opening a Session**: `OpenSession` stores the request keyed by the caller-minted `session_id` and answers
-  with a `SessionOpening` in the same delivery states. A retry with the same Sandbox, spec and
-  `setup_script` returns the stored record; anything else under that ID is `ALREADY_EXISTS`. Once the Sandbox
-  is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
+- **Opening a Session**: `OpenSession` requires the expected `sandbox_uid`, reads the current Sandbox and refuses
+  a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
+  caller-minted `session_id` and answers with a `SessionOpening` in the same delivery states. A retry with the same
+  Sandbox name, UID, spec and `setup_script` returns the stored record; anything else under that ID is
+  `ALREADY_EXISTS`. Once the Sandbox is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as a failed opening.
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
+- **Wire rollout**: during mixed-version overlap, the old Dispatcher ignores the new protobuf field; an old caller
+  reaching the required-UID Dispatcher is rejected with `INVALID_ARGUMENT` when it omits `sandbox_uid`. To roll back,
+  restore the old Dispatcher before rolling back app and Action callers. Existing Session openings and running Sessions
+  are unaffected.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering

@@ -1249,7 +1249,7 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted()
 	store := testStore(t, 3)
 	service := &Service{Store: store, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
-	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}

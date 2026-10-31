@@ -235,7 +235,11 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
         interrupted_opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
-                session_id=interrupted_session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"
+                session_id=interrupted_session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                spec=session_spec,
+                setup_script=":\n",
             ),
             metadata=deployed.metadata,
             timeout=15,
@@ -293,6 +297,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,
                 sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
                 spec=session_spec,
                 setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
             ),
