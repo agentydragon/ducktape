@@ -447,7 +447,7 @@ and unresolved-effect state without copying data. It adds a nullable Code Mode h
 the adopted conversation table in the same transaction, which briefly requires a table schema
 lock. Startup migration connections cap DDL lock waits at five seconds; timeout rolls back
 migration 8 so a later startup can retry. A partial version-7 conversion or older database fails
-startup and requires the previous
-image or explicit repair; startup no longer classifies or converts legacy provider records. Later
+startup and requires the previous image or explicit repair. Startup no longer classifies or converts
+legacy provider records. Later
 schema changes use new additive Goose migrations. Schema rollback requires restoring the
 pre-migration database backup together with the old service image.
