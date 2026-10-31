@@ -13,8 +13,8 @@ from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session as DbSession
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session as DbSession, load_only
 
 from x.ai_session_archive.codex_metadata import read_codex_titles
 from x.ai_session_archive.database import (
@@ -638,10 +638,11 @@ class SnapshotIngestor:
         shared_prefix = 0
         ordinal = 0
         matching_prefix = not is_checkpoint
+        parent_ranks = _version_lineage_ranks(db, previous) if matching_prefix and previous is not None else {}
         while batch := _read_record_batch(contents, metadata, limit=500):
             payloads = self._get_payloads(db, batch)
             parent_ids = (
-                _effective_payload_ids(db, previous, ordinal, ordinal + len(batch))
+                _effective_payload_ids(db, previous, parent_ranks, ordinal, ordinal + len(batch))
                 if matching_prefix and previous is not None
                 else []
             )
@@ -679,9 +680,9 @@ class SnapshotIngestor:
         for start in range(0, len(hashes), 1000):
             batch = hashes[start : start + 1000]
             rows = db.scalars(
-                select(RecordPayloadRow).where(
-                    RecordPayloadRow.sha256.in_(batch), RecordPayloadRow.parser_version == PARSER_VERSION
-                )
+                select(RecordPayloadRow)
+                .options(load_only(RecordPayloadRow.sha256, RecordPayloadRow.raw_bytes))
+                .where(RecordPayloadRow.sha256.in_(batch), RecordPayloadRow.parser_version == PARSER_VERSION)
             )
             payload_by_hash.update((row.sha256, row) for row in rows)
         for record in records:
@@ -706,23 +707,48 @@ class SnapshotIngestor:
         return [payload_by_hash[record.sha256] for record in records]
 
     def _previous_version(self, db: DbSession, current: SnapshotFileRow) -> FileVersionRow | None:
-        snapshot = db.get(ResticSnapshotRow, (current.machine_id, current.snapshot_id))
-        if snapshot is None:
+        # A path absent from many consecutive diffs must not cost one database round trip per snapshot.
+        # Stop at the first independent inventory, matching the diff ancestry's trust boundary.
+        prior = db.execute(
+            text(
+                """
+                WITH RECURSIVE ancestors AS (
+                    SELECT snapshot_id, parent_snapshot_id, comparison_snapshot_id,
+                           ARRAY[snapshot_id]::varchar[] AS seen, 0 AS depth
+                    FROM restic_snapshots
+                    WHERE machine_id = :machine_id
+                      AND snapshot_id = (
+                          SELECT comparison_snapshot_id FROM restic_snapshots
+                          WHERE machine_id = :machine_id AND snapshot_id = :snapshot_id
+                      )
+                    UNION ALL
+                    SELECT parent.snapshot_id, parent.parent_snapshot_id, parent.comparison_snapshot_id,
+                           ancestors.seen || parent.snapshot_id, ancestors.depth + 1
+                    FROM ancestors
+                    JOIN LATERAL (
+                        SELECT snapshot_id, parent_snapshot_id, comparison_snapshot_id
+                        FROM restic_snapshots
+                        WHERE machine_id = :machine_id AND snapshot_id = ancestors.parent_snapshot_id
+                        LIMIT 1
+                    ) AS parent ON true
+                    WHERE ancestors.comparison_snapshot_id IS NOT NULL
+                      AND NOT parent.snapshot_id = ANY(ancestors.seen)
+                )
+                SELECT prior.status, prior.file_version_id
+                FROM ancestors
+                JOIN snapshot_files AS prior
+                  ON prior.machine_id = :machine_id
+                 AND prior.snapshot_id = ancestors.snapshot_id
+                 AND prior.path = :path
+                ORDER BY ancestors.depth
+                LIMIT 1
+                """
+            ),
+            {"machine_id": current.machine_id, "snapshot_id": current.snapshot_id, "path": current.path},
+        ).first()
+        if prior is None or prior.status not in ("complete", "partial") or prior.file_version_id is None:
             return None
-        cursor_id = snapshot.comparison_snapshot_id
-        seen = set()
-        while cursor_id is not None and cursor_id not in seen:
-            seen.add(cursor_id)
-            prior = db.get(SnapshotFileRow, (current.machine_id, cursor_id, current.path))
-            if prior is not None:
-                if prior.status not in ("complete", "partial") or prior.file_version_id is None:
-                    return None
-                return db.get(FileVersionRow, prior.file_version_id)
-            ancestor = db.get(ResticSnapshotRow, (current.machine_id, cursor_id))
-            if ancestor is not None and ancestor.comparison_snapshot_id is None:
-                return None
-            cursor_id = ancestor.parent_snapshot_id if ancestor is not None else None
-        return None
+        return db.get(FileVersionRow, prior.file_version_id)
 
     def _update_session_metadata(self, db: DbSession, row: SessionRow, metadata: Mapping[str, Any]) -> None:
         native_session_id = metadata.get("native_session_id")
@@ -1073,12 +1099,7 @@ def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> 
     metadata.setdefault(key, value)
 
 
-def _effective_payload_ids(db: DbSession, version: FileVersionRow | None, start: int, end: int) -> list[UUID]:
-    if version is None:
-        return []
-    end = min(end, version.record_count)
-    if start >= end:
-        return []
+def _version_lineage_ranks(db: DbSession, version: FileVersionRow) -> dict[UUID, int]:
     lineage = [version]
     while not lineage[-1].is_checkpoint:
         parent_id = lineage[-1].parent_version_id
@@ -1088,7 +1109,15 @@ def _effective_payload_ids(db: DbSession, version: FileVersionRow | None, start:
         if parent is None or parent.session_id != version.session_id:
             raise RuntimeError(f"file version has an invalid parent: {lineage[-1].id}")
         lineage.append(parent)
-    ranks = {row.id: rank for rank, row in enumerate(lineage)}
+    return {row.id: rank for rank, row in enumerate(lineage)}
+
+
+def _effective_payload_ids(
+    db: DbSession, version: FileVersionRow, ranks: Mapping[UUID, int], start: int, end: int
+) -> list[UUID]:
+    end = min(end, version.record_count)
+    if start >= end:
+        return []
     rows = db.execute(
         select(FileVersionRecordRow.file_version_id, FileVersionRecordRow.ordinal, FileVersionRecordRow.payload_id)
         .where(FileVersionRecordRow.file_version_id.in_(ranks))

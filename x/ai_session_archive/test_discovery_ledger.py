@@ -40,17 +40,21 @@ class MemoryResticRepository(ResticRepository):
         self.dumped: list[str] = []
         self.on_dump: Callable[[str], None] | None = None
         self.contents: dict[str, bytes] = {}
+        self.diff_changes: dict[tuple[str, str], list[ResticChange]] = {}
+        self.listed_files_by_snapshot: dict[str, list[ResticFile]] = {}
 
     def list_snapshots(self) -> list[ResticSnapshot]:
         return list(self.snapshots)
 
     def list_files(self, snapshot_id: str, path: str | None = None) -> list[ResticFile]:
         self.listed_files.append(snapshot_id)
-        return [ResticFile(path=PATH, file_type="file", byte_size=1, modified_at=None)]
+        return self.listed_files_by_snapshot.get(
+            snapshot_id, [ResticFile(path=PATH, file_type="file", byte_size=1, modified_at=None)]
+        )
 
     def diff_snapshots(self, before_id: str, after_id: str) -> list[ResticChange]:
         self.diffed.append((before_id, after_id))
-        return [ResticChange(path=PATH, modifier="M")]
+        return self.diff_changes.get((before_id, after_id), [ResticChange(path=PATH, modifier="M")])
 
     def dump_to(self, snapshot_id: str, path: str, destination: BinaryIO) -> None:
         self.dumped.append(snapshot_id)
@@ -182,6 +186,77 @@ def test_pruned_parent_row_is_not_used_as_diff_base(postgres_engine: Engine) -> 
     assert row.comparison_snapshot_id is None
     assert file_row is not None
     assert file_row.change_kind == "inventory"
+
+
+def test_modified_file_inherits_version_across_snapshots_without_path_changes(postgres_engine: Engine) -> None:
+    snapshots = [
+        _snapshot(number, parent_id=f"snapshot-{number - 1}" if number > 1 else None) for number in range(1, 6)
+    ]
+    repository = MemoryResticRepository(snapshots)
+    repository.diff_changes = {
+        (snapshots[0].id, snapshots[1].id): [],
+        (snapshots[1].id, snapshots[2].id): [],
+        (snapshots[2].id, snapshots[3].id): [],
+    }
+    repository.contents[snapshots[-1].id] = b'{"type":"assistant","message":{"content":"changed"}}\n'
+
+    report = _ingestor(postgres_engine, repository).ingest()
+    assert report.files_failed == 0
+    with sessionmaker(postgres_engine)() as db:
+        first = db.get(SnapshotFileRow, (MACHINE_ID, snapshots[0].id, PATH))
+        last = db.get(SnapshotFileRow, (MACHINE_ID, snapshots[-1].id, PATH))
+        assert first is not None
+        assert last is not None
+        assert first.file_version_id is not None
+        assert last.file_version_id is not None
+        first_version = db.get(FileVersionRow, first.file_version_id)
+        last_version = db.get(FileVersionRow, last.file_version_id)
+        assert first_version is not None
+        assert last_version is not None
+        assert last_version.parent_version_id == first_version.id
+        assert last_version.shared_prefix_record_count == 0
+
+
+def test_deleted_file_stops_version_inheritance_across_unchanged_snapshots(postgres_engine: Engine) -> None:
+    snapshots = [
+        _snapshot(number, parent_id=f"snapshot-{number - 1}" if number > 1 else None) for number in range(1, 5)
+    ]
+    repository = MemoryResticRepository(snapshots)
+    repository.diff_changes = {
+        (snapshots[0].id, snapshots[1].id): [ResticChange(path=PATH, modifier="-")],
+        (snapshots[1].id, snapshots[2].id): [],
+    }
+    repository.contents[snapshots[-1].id] = b'{"type":"assistant","message":{"content":"new file"}}\n'
+
+    assert _ingestor(postgres_engine, repository).ingest().files_failed == 0
+    with sessionmaker(postgres_engine)() as db:
+        last = db.get(SnapshotFileRow, (MACHINE_ID, snapshots[-1].id, PATH))
+        assert last is not None
+        assert last.file_version_id is not None
+        version = db.get(FileVersionRow, last.file_version_id)
+        assert version is not None
+        assert version.parent_version_id is None
+
+
+def test_independent_inventory_stops_version_inheritance(postgres_engine: Engine) -> None:
+    first = _snapshot(1)
+    second = _snapshot(2, parent_id=first.id)
+    independent = _snapshot(3)
+    fourth = _snapshot(4, parent_id=independent.id)
+    repository = MemoryResticRepository([first, second, independent, fourth])
+    repository.diff_changes[(first.id, second.id)] = []
+    repository.diff_changes[(independent.id, fourth.id)] = [ResticChange(path=PATH, modifier="+")]
+    repository.listed_files_by_snapshot[independent.id] = []
+    repository.contents[fourth.id] = b'{"type":"assistant","message":{"content":"new file"}}\n'
+
+    assert _ingestor(postgres_engine, repository).ingest().files_failed == 0
+    with sessionmaker(postgres_engine)() as db:
+        last = db.get(SnapshotFileRow, (MACHINE_ID, fourth.id, PATH))
+        assert last is not None
+        assert last.file_version_id is not None
+        version = db.get(FileVersionRow, last.file_version_id)
+        assert version is not None
+        assert version.parent_version_id is None
 
 
 if __name__ == "__main__":
