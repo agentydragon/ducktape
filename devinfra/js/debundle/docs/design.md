@@ -524,9 +524,10 @@ AST analysis, including source chunk, statement, operation, and location. The
 receiver roots precede unknown-global-value widening; `through_local_alias`
 distinguishes an alias path from a direct receiver. `program_graph.json`'s
 `native_integrity_witnesses` stores each census site once for the run. Source units reference
-its affected native families through `synchronous_execution.native_integrity_checks`
-when the ordinary-object-prototype or array-intrinsics guard is evaluated and
-fails. These are failed premises, not claims that a write executed or that it
+its required slots and affected native families through
+`synchronous_execution.native_integrity_checks` when the interpreter
+evaluates a census guard (`NativeIntegrityGuard`) or a native call identity
+and it fails. These are failed premises, not claims that a write executed or that it
 alone explains lost precision. Other eligibility conditions may also fail.
 `describe` follows affected families and invalidated key dependencies to the
 source witnesses, bounding rows with the same total/emitted/truncated metadata as

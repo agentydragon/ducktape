@@ -805,14 +805,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.record_inference_use(guard, premise.inference_use, &premise.dependencies);
             return true;
         }
+        self.record_failed_native_guard(guard, slots);
+        false
+    }
+
+    /// Every slot census-intact, for a proof that records no inference use.
+    /// A failure records the mutated families like [`Self::native_guard_intact`].
+    fn census_slots_intact(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) -> bool {
+        self.observe_native_prefix(guard, None);
+        let intact = matches!(
+            self.inputs.index.integrity.require(slots, None),
+            Integrity::Intact(_)
+        );
+        if !intact {
+            self.record_failed_native_guard(guard, slots);
+        }
+        intact
+    }
+
+    fn record_failed_native_guard(&self, guard: NativeIntegrityGuard, slots: &[IntrinsicSlot]) {
         self.state
             .native_integrity_checks
             .borrow_mut()
             .insert(NativeIntegrityCheck {
                 guard,
-                affected_roots: integrity.mutated_roots(slots),
+                slots: slots.iter().map(ToString::to_string).collect(),
+                affected_roots: self.inputs.index.integrity.mutated_roots(slots),
             });
-        false
     }
 
     fn constructor_field_prototype_absent(&self, class: u32, property: &str) -> bool {
@@ -1164,12 +1183,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ) {
             return None;
         }
-        let premise = native_premise(
+        let Some(premise) = native_premise(
             &self.inputs.index.integrity,
             row.requires,
             Some(site.allocation_id()),
             InferenceRule::NativeCallIdentity,
-        )?;
+        ) else {
+            self.record_failed_native_guard(NativeIntegrityGuard::NativeCallIdentity, row.requires);
+            return None;
+        };
         if !premise.census {
             let evidence = self
                 .inputs
@@ -1974,17 +1996,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.inputs.shadowed.contains("Object")
             || self.inputs.flow.is_declared(&array_intrinsic)
             || self.inputs.shadowed.contains("Array")
-            || !matches!(
-                self.inputs.index.integrity.require(
-                    &[
-                        IntrinsicSlot::Global(NativeIntrinsic::Object),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "fromEntries"),
-                        IntrinsicSlot::Prototype(NativeIntrinsic::Array),
-                        IntrinsicSlot::ArrayIteratorPrototype,
-                    ],
-                    None,
-                ),
-                Integrity::Intact(_)
+            || !self.census_slots_intact(
+                NativeIntegrityGuard::MappedFromEntries,
+                &[
+                    IntrinsicSlot::Global(NativeIntrinsic::Object),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "fromEntries"),
+                    IntrinsicSlot::Prototype(NativeIntrinsic::Array),
+                    IntrinsicSlot::ArrayIteratorPrototype,
+                ],
             )
         {
             return None;
@@ -2287,18 +2306,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !self.inputs.index.top_exported_values[fact.ordinal.0].is_empty()
             || self.inputs.shadowed.contains("Object")
             || self.inputs.shadowed.contains("Symbol")
-            || !matches!(
-                self.inputs.index.integrity.require(
-                    &[
-                        IntrinsicSlot::Global(NativeIntrinsic::Object),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
-                        IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
-                        IntrinsicSlot::Global(NativeIntrinsic::Symbol),
-                        IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
-                    ],
-                    None,
-                ),
-                Integrity::Intact(_)
+            || !self.census_slots_intact(
+                NativeIntegrityGuard::FrozenNamespace,
+                &[
+                    IntrinsicSlot::Global(NativeIntrinsic::Object),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
+                    IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
+                    IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                    IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
+                ],
             )
         {
             return None;

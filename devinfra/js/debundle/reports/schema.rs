@@ -280,6 +280,10 @@ pub struct NativeMutationWitness {
     /// Identity before unknown-global descendants widen to GlobalObject.
     pub receiver_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     pub through_local_alias: bool,
+    /// The global-object property the receiver is read from, by spelling:
+    /// `location` for `window.location.href = url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_global: Option<String>,
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     /// Target paths and keys retained before family-wide integrity widening.
     /// Unknown paths/keys remain visible but are not source-known slot writes.
@@ -391,11 +395,19 @@ pub enum NativeIntegrityGuard {
     SetIterable,
     LocalClassConstruction,
     ForeignCallSummary,
+    /// `Object.fromEntries` over an Array `map` whose callbacks are retained.
+    MappedFromEntries,
+    /// A private `Object.freeze` module-namespace record.
+    FrozenNamespace,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NativeIntegrityCheck {
     pub guard: NativeIntegrityGuard,
+    /// Every slot the guard required, as `%Array.prototype%`; absent from
+    /// graphs written before it was recorded.
+    #[serde(default)]
+    pub slots: BTreeSet<String>,
     /// References to the affected roots in `program_graph.json`'s native_integrity_witnesses.
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 }

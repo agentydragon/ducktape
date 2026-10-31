@@ -960,3 +960,8 @@ debundle_e2e_test(
 debundle_e2e_test(name = "callback_pool_order_test")
 
 debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
+
+debundle_e2e_test(
+    name = "explain_integrity_cli_test",
+    deps = ["@crates//:serde_json"],
+)
